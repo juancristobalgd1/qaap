@@ -6,6 +6,7 @@
 import { injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { MOBILE_NARROW_VIEWPORT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { nls } from '@theia/core/lib/common/nls';
 import * as monaco from '@theia/monaco-editor-core';
 
@@ -23,6 +24,8 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
     protected static readonly TOOLBAR_SELECTOR = '.theia-ChatInputOptions-right';
     protected static readonly INLINE_WRAP_SELECTOR = '.theia-mobile-projects-inline-input-wrap';
     protected static readonly STICKY_WRAP_SELECTOR = '.theia-mobile-projects-sticky-composer-input-wrap';
+    protected static readonly PLAIN_INPUT_SELECTOR =
+        'input.theia-mobile-projects-sticky-composer-input, input.theia-mobile-projects-inline-input';
 
     protected readonly toDispose = new DisposableCollection();
     protected observer: MutationObserver | undefined;
@@ -153,54 +156,136 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
             return;
         }
         let recognition: SpeechRecognition | undefined;
+        let sessionActive = false;
+        let userStopped = false;
         let baseline = '';
+        let trailingSpace = '';
+        let detachObserver: MutationObserver | undefined;
 
-        const stop = (): void => {
+        const refreshBaseline = (): void => {
+            const editor = this.findEditorForInput(chatInput);
+            const model = editor?.getModel();
+            baseline = model?.getValue() ?? '';
+            trailingSpace = this.trailingSpaceForBaseline(baseline);
+        };
+
+        const endSession = (): void => {
+            sessionActive = false;
+            userStopped = false;
             if (recognition) {
-                try { recognition.onend = null; recognition.onresult = null; recognition.onerror = null; recognition.stop(); } catch { /* idempotent */ }
+                try {
+                    recognition.onend = null;
+                    recognition.onresult = null;
+                    recognition.onerror = null;
+                    recognition.stop();
+                } catch { /* idempotent */ }
                 recognition = undefined;
             }
+            detachObserver?.disconnect();
+            detachObserver = undefined;
             this.markButtonIdle(button);
         };
 
-        const start = (): void => {
+        const stop = (): void => {
+            userStopped = true;
+            endSession();
+        };
+
+        const applyTranscript = (transcript: string): void => {
             const editor = this.findEditorForInput(chatInput);
             if (!editor) {
                 return;
             }
-            try {
-                recognition = new Ctor();
-            } catch {
-                return;
-            }
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = this.preferredLang();
-            // Snapshot current text so each `onresult` replaces only the dictated portion. Without this
-            // every interim result would re-append the same words and produce duplicated output.
-            const model = editor.getModel();
-            baseline = model?.getValue() ?? '';
-            const trailingSpace = baseline.length > 0 && !/\s$/.test(baseline) ? ' ' : '';
+            this.replaceInputText(editor, baseline + trailingSpace + transcript);
+        };
 
-            recognition.onresult = (event: SpeechRecognitionEvent) => {
-                let transcript = '';
-                for (let i = 0; i < event.results.length; i++) {
-                    transcript += event.results[i][0].transcript;
-                }
-                this.replaceInputText(editor, baseline + trailingSpace + transcript);
-            };
-            recognition.onerror = () => stop();
-            recognition.onend = () => stop();
+        const beginRecognition = (): boolean => {
+            refreshBaseline();
             try {
-                recognition.start();
-                this.markButtonActive(button);
+                const rec = new Ctor();
+                recognition = rec;
+                rec.continuous = true;
+                rec.interimResults = true;
+                rec.lang = this.preferredLang();
+                rec.onresult = (event: SpeechRecognitionEvent) => {
+                    if (!sessionActive || !button.isConnected) {
+                        stop();
+                        return;
+                    }
+                    applyTranscript(this.buildTranscriptFromEvent(event));
+                };
+                rec.onerror = (event: SpeechRecognitionErrorEvent) => {
+                    const error = event.error;
+                    if (userStopped || this.isFatalSpeechError(error)) {
+                        stop();
+                    }
+                    // Recoverable errors (no-speech while pausing) are handled by onend restart on mobile.
+                };
+                rec.onend = () => {
+                    recognition = undefined;
+                    if (!sessionActive || userStopped || !button.isConnected) {
+                        endSession();
+                        return;
+                    }
+                    if (this.isMobileDictationDevice()) {
+                        if (!beginRecognition()) {
+                            endSession();
+                        }
+                        return;
+                    }
+                    endSession();
+                };
+                rec.start();
+                return true;
             } catch {
-                stop();
+                recognition = undefined;
+                return false;
             }
         };
 
+        const startSession = (): void => {
+            sessionActive = true;
+            userStopped = false;
+            if (!beginRecognition()) {
+                endSession();
+                return;
+            }
+            this.markButtonActive(button);
+            if (typeof MutationObserver !== 'undefined' && !detachObserver) {
+                detachObserver = new MutationObserver(() => {
+                    if (!button.isConnected) {
+                        stop();
+                    }
+                });
+                detachObserver.observe(document.body, { childList: true, subtree: true });
+            }
+        };
+
+        const start = (): void => {
+            const editor = this.findEditorForInput(chatInput);
+            if (editor) {
+                startSession();
+                return;
+            }
+            // Monaco may not be mounted yet when the mic button is tapped on mobile.
+            let attempts = 0;
+            const retry = (): void => {
+                if (!button.isConnected || sessionActive) {
+                    return;
+                }
+                if (this.findEditorForInput(chatInput)) {
+                    startSession();
+                    return;
+                }
+                if (++attempts < 20) {
+                    requestAnimationFrame(retry);
+                }
+            };
+            requestAnimationFrame(retry);
+        };
+
         const toggle = (): void => {
-            if (recognition) {
+            if (sessionActive) {
                 stop();
             } else {
                 start();
@@ -208,21 +293,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         };
 
         this.wireToggleHandlers(button, toggle);
-
-        // Stop recognition if the button is detached (widget hidden, chat view closed).
-        if (typeof MutationObserver !== 'undefined') {
-            const parent = button.parentElement;
-            if (parent) {
-                const detachObserver = new MutationObserver(() => {
-                    if (!document.body.contains(button)) {
-                        stop();
-                        detachObserver.disconnect();
-                    }
-                });
-                detachObserver.observe(parent, { childList: true });
-                this.toDispose.push(Disposable.create(() => detachObserver.disconnect()));
-            }
-        }
+        this.toDispose.push(Disposable.create(() => stop()));
     }
 
     protected wireInlineRecognition(button: HTMLButtonElement, input: HTMLInputElement): void {
@@ -231,49 +302,117 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
             return;
         }
         let recognition: SpeechRecognition | undefined;
+        let sessionActive = false;
+        let userStopped = false;
         let baseline = '';
+        let trailingSpace = '';
+        let detachObserver: MutationObserver | undefined;
 
-        const stop = (): void => {
+        const resolveInput = (): HTMLInputElement | undefined =>
+            this.resolvePlainComposerInput(button, input);
+
+        const refreshBaseline = (): void => {
+            const liveInput = resolveInput();
+            baseline = liveInput?.value ?? '';
+            trailingSpace = this.trailingSpaceForBaseline(baseline);
+        };
+
+        const endSession = (): void => {
+            sessionActive = false;
+            userStopped = false;
             if (recognition) {
-                try { recognition.onend = null; recognition.onresult = null; recognition.onerror = null; recognition.stop(); } catch { /* idempotent */ }
+                try {
+                    recognition.onend = null;
+                    recognition.onresult = null;
+                    recognition.onerror = null;
+                    recognition.stop();
+                } catch { /* idempotent */ }
                 recognition = undefined;
             }
+            detachObserver?.disconnect();
+            detachObserver = undefined;
             this.markButtonIdle(button);
         };
 
-        const start = (): void => {
-            try {
-                recognition = new Ctor();
-            } catch {
+        const stop = (): void => {
+            userStopped = true;
+            endSession();
+        };
+
+        const applyTranscript = (transcript: string): void => {
+            const liveInput = resolveInput();
+            if (!liveInput) {
                 return;
             }
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = this.preferredLang();
-            baseline = input.value;
-            const trailingSpace = baseline.length > 0 && !/\s$/.test(baseline) ? ' ' : '';
+            this.applyPlainInputText(liveInput, baseline + trailingSpace + transcript);
+        };
 
-            recognition.onresult = (event: SpeechRecognitionEvent) => {
-                let transcript = '';
-                for (let i = 0; i < event.results.length; i++) {
-                    transcript += event.results[i][0].transcript;
-                }
-                input.value = baseline + trailingSpace + transcript;
-                // Notify the inline-composer listeners (enable/disable Start button, draft persistence).
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            };
-            recognition.onerror = () => stop();
-            recognition.onend = () => stop();
+        const beginRecognition = (): boolean => {
+            refreshBaseline();
             try {
-                recognition.start();
-                this.markButtonActive(button);
+                const rec = new Ctor();
+                recognition = rec;
+                rec.continuous = true;
+                rec.interimResults = true;
+                rec.lang = this.preferredLang();
+                rec.onresult = (event: SpeechRecognitionEvent) => {
+                    if (!sessionActive || !button.isConnected) {
+                        stop();
+                        return;
+                    }
+                    applyTranscript(this.buildTranscriptFromEvent(event));
+                };
+                rec.onerror = (event: SpeechRecognitionErrorEvent) => {
+                    const error = event.error;
+                    if (userStopped || this.isFatalSpeechError(error)) {
+                        stop();
+                    }
+                };
+                rec.onend = () => {
+                    recognition = undefined;
+                    if (!sessionActive || userStopped || !button.isConnected) {
+                        endSession();
+                        return;
+                    }
+                    if (this.isMobileDictationDevice()) {
+                        if (!beginRecognition()) {
+                            endSession();
+                        }
+                        return;
+                    }
+                    endSession();
+                };
+                rec.start();
+                return true;
             } catch {
-                stop();
+                recognition = undefined;
+                return false;
+            }
+        };
+
+        const start = (): void => {
+            if (!resolveInput()) {
+                return;
+            }
+            sessionActive = true;
+            userStopped = false;
+            if (!beginRecognition()) {
+                endSession();
+                return;
+            }
+            this.markButtonActive(button);
+            if (typeof MutationObserver !== 'undefined' && !detachObserver) {
+                detachObserver = new MutationObserver(() => {
+                    if (!button.isConnected) {
+                        stop();
+                    }
+                });
+                detachObserver.observe(document.body, { childList: true, subtree: true });
             }
         };
 
         const toggle = (): void => {
-            if (recognition) {
+            if (sessionActive) {
                 stop();
             } else {
                 start();
@@ -281,19 +420,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         };
 
         this.wireToggleHandlers(button, toggle);
-
-        // Stop recognition if the inline input is removed (composer collapsed, project card replaced).
-        const parent = button.parentElement;
-        if (parent) {
-            const detachObserver = new MutationObserver(() => {
-                if (!document.body.contains(button)) {
-                    stop();
-                    detachObserver.disconnect();
-                }
-            });
-            detachObserver.observe(parent, { childList: true });
-            this.toDispose.push(Disposable.create(() => detachObserver.disconnect()));
-        }
+        this.toDispose.push(Disposable.create(() => stop()));
     }
 
     /**
@@ -313,6 +440,63 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                 activate(evt);
             }
         });
+    }
+
+    protected buildTranscriptFromEvent(event: SpeechRecognitionEvent): string {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+            transcript += event.results[i][0]?.transcript ?? '';
+        }
+        return transcript;
+    }
+
+    protected trailingSpaceForBaseline(baseline: string): string {
+        return baseline.length > 0 && !/\s$/.test(baseline) ? ' ' : '';
+    }
+
+    protected resolvePlainComposerInput(button: HTMLButtonElement, fallback: HTMLInputElement): HTMLInputElement | undefined {
+        const wrap = button.parentElement;
+        const liveInput = wrap?.querySelector<HTMLInputElement>(QaapChatMicTranscribeContribution.PLAIN_INPUT_SELECTOR);
+        if (liveInput?.isConnected) {
+            return liveInput;
+        }
+        return fallback.isConnected ? fallback : undefined;
+    }
+
+    protected applyPlainInputText(input: HTMLInputElement, text: string): void {
+        if (input.value === text) {
+            return;
+        }
+        input.value = text;
+        const end = text.length;
+        try {
+            input.setSelectionRange(end, end);
+        } catch { /* some input types omit selection APIs */ }
+        if (typeof InputEvent !== 'undefined') {
+            input.dispatchEvent(new InputEvent('input', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertFromDictation',
+                data: text,
+            }));
+        } else {
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }
+
+    protected isMobileDictationDevice(): boolean {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+        return window.matchMedia('(pointer: coarse)').matches
+            || window.matchMedia(MOBILE_NARROW_VIEWPORT_MEDIA_QUERY).matches;
+    }
+
+    protected isFatalSpeechError(error: string | undefined): boolean {
+        return error === 'not-allowed'
+            || error === 'service-not-allowed'
+            || error === 'audio-capture'
+            || error === 'network';
     }
 
     protected replaceInputText(editor: monaco.editor.ICodeEditor, text: string): void {
@@ -385,14 +569,13 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
     }
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 interface SpeechRecognition extends EventTarget {
     continuous: boolean;
     interimResults: boolean;
     lang: string;
     onresult: ((event: SpeechRecognitionEvent) => void) | null;
-    onerror: ((event: any) => void) | null;
-    onend: ((event: any) => void) | null;
+    onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+    onend: ((event: Event) => void) | null;
     start(): void;
     stop(): void;
 }
@@ -400,4 +583,7 @@ interface SpeechRecognition extends EventTarget {
 interface SpeechRecognitionEvent {
     results: ArrayLike<ArrayLike<{ transcript: string }>>;
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
+
+interface SpeechRecognitionErrorEvent extends Event {
+    error: string;
+}
