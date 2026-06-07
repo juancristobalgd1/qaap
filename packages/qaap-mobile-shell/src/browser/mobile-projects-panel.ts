@@ -223,6 +223,7 @@ import {
     type ExecutionSurfaceTabId,
 } from '../common/qaap-execution-surface-tabs';
 import { scrollElementTo, scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
+import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import {
     appendExecutionSurfaceTabIcon,
@@ -334,6 +335,19 @@ import {
     groupQaiqModelsByProvider,
     listQaiqModelsFromPreferences,
 } from '../common/qaap-qaiq-model-catalog';
+
+const TRANSCRIPT_VIRTUALIZE_AFTER_MESSAGES = 80;
+const TRANSCRIPT_RENDER_RECENT_MESSAGES = 50;
+const TRANSCRIPT_AUTOSCROLL_THRESHOLD_PX = 96;
+const TRANSCRIPT_PERF_LOG_STORAGE_KEY = 'qaap.transcript.perf';
+
+interface TranscriptComposerSelectionSnapshot {
+    readonly input: HTMLTextAreaElement;
+    readonly value: string;
+    readonly start: number | null;
+    readonly end: number | null;
+    readonly direction: 'forward' | 'backward' | 'none' | null;
+}
 
 export interface MobileProjectsPanelDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -618,6 +632,7 @@ export class MobileProjectsPanel {
     protected transcriptChatInputWidget: AIChatInputWidget | undefined;
     protected transcriptChatViewWidget: MobileProjectChatViewWidget | undefined;
     protected transcriptRefreshTimer: number | undefined;
+    protected transcriptRefreshRaf: number | undefined;
     protected transcriptScheduleRefresh: (() => void) | undefined;
     protected transcriptLastRenderedConversationId: string | undefined;
     protected transcriptLastRenderedMessageId: string | undefined;
@@ -686,6 +701,14 @@ export class MobileProjectsPanel {
     protected transcriptLastFingerprint: string | undefined;
     protected transcriptLastConv: QaapAgentConversationDTO | undefined;
     protected transcriptLiveUpdatesDispose: Disposable = Disposable.NULL;
+    /** Polling fallback that keeps the open transcript streaming live even if SSE-driven refresh stalls. */
+    protected transcriptStreamPollTimer: number | undefined;
+    protected transcriptStreamPollConversationId: string | undefined;
+    protected transcriptLastRenderedMessageCount = 0;
+    protected transcriptLastRenderedStatus: QaapAgentConversationDTO['status'] | undefined;
+    protected transcriptPerfLoggingEnabledCache: boolean | undefined;
+    protected transcriptPerfLoggingLastCheckedAt = 0;
+    protected readonly transcriptRenderFullConversationIds = new Set<string>();
     protected readonly transcriptTheiaSessionByConversationId = new Map<string, string>();
     /** Monotonic counter that disambiguates each AIChatInputWidget instance from the WidgetManager cache. */
     protected agentChatInputMountSeq = 0;
@@ -1078,9 +1101,11 @@ export class MobileProjectsPanel {
         }
     }
 
-    protected pinStickyComposerToCoder(cwd: string | undefined): void {
-        this.stickyComposerPinnedAgentId = THEIA_CODER_AGENT_ID;
-        writeStoredAgent(cwd, THEIA_CODER_AGENT_ID);
+    protected pinStickyComposerChatDefault(cwd: string | undefined): void {
+        // Phase 1 of dropping the in-browser Coder agent: the chat surface now defaults to the
+        // VPS-backed QAIQ agent instead of Coder.
+        this.stickyComposerPinnedAgentId = QAIQ_AGENT_ID;
+        writeStoredAgent(cwd, QAIQ_AGENT_ID);
     }
 
     /**
@@ -1562,9 +1587,9 @@ export class MobileProjectsPanel {
                 if (this.visible && this.transcriptSheet && this.transcriptChatHost && this.transcriptLastConv) {
                     this.ensureOverlayUi().team.renderTeamSection(this.transcriptChatHost, this.transcriptLastConv);
                 }
-                if (this.visible && this.isTasksHubView()) {
+                if (this.visible && this.isTasksHubView() && !this.hasOpenTranscriptSurface()) {
                     this.renderList();
-                } else if (this.visible && !this.transcriptSheet) {
+                } else if (this.visible && !this.hasOpenTranscriptSurface()) {
                     void this.applyActiveTasksRefresh();
                 }
             });
@@ -1576,9 +1601,17 @@ export class MobileProjectsPanel {
             }
             this.conversationsDispose = this.conversations.onDidChange(() => {
                 this.markTasksFirstLoadComplete(false);
-                if (this.visible && this.isTasksHubView()) {
+                // Stream the open transcript live off the global SSE feed. The composer always submits
+                // via submitBackgroundAgentTask, which never wires the per-conversation watch, so the
+                // open execution view would otherwise stay frozen at "Starting the turn…" until the
+                // user navigates away and back. transcriptScheduleRefresh is debounced + fingerprinted,
+                // so reacting to every conversation event (even unrelated ones) is cheap.
+                if (this.transcriptOpenSummaryId && this.transcriptScheduleRefresh) {
+                    this.transcriptScheduleRefresh();
+                }
+                if (this.visible && this.isTasksHubView() && !this.hasOpenTranscriptSurface()) {
                     this.renderList();
-                } else if (this.visible && !this.transcriptSheet) {
+                } else if (this.visible && !this.hasOpenTranscriptSurface()) {
                     void this.applyActiveTasksRefresh();
                 }
             });
@@ -1685,7 +1718,7 @@ export class MobileProjectsPanel {
     }
 
     protected async applyActiveTasksRefresh(): Promise<void> {
-        if (this.transcriptSheet) {
+        if (this.hasOpenTranscriptSurface()) {
             return;
         }
         try {
@@ -4076,11 +4109,12 @@ export class MobileProjectsPanel {
         this.stickyComposerSurface = readStoredComposerSurface(cwd) ?? 'task';
         const isChatSurface = this.stickyComposerSurface === 'chat';
         if (isChatSurface) {
-            this.pinStickyComposerToCoder(cwd);
+            this.pinStickyComposerChatDefault(cwd);
         }
         const canRunTask = !!project && (!!cwd || !!project.github);
-        const canRunChat = !!this.chatService && !!project;
-        const canSubmit = isChatSurface ? canRunChat : canRunTask;
+        // Phase 1: the chat surface routes to a VPS conversation (QAIQ) like a task, so it needs a
+        // workspace, not the in-browser chat service.
+        const canSubmit = canRunTask;
         const pinnedId = this.resolveStickyComposerPinnedAgentId(project);
         const modes = resolveStickyComposerModes(pinnedId, this.chatAgentService);
         this.stickyComposerModeId = reconcileComposerModeId(
@@ -4137,10 +4171,10 @@ export class MobileProjectsPanel {
             onOpenAgentSheet: isChatSurface ? () => { /* Chat is Coder-only */ } : () => { this.openStickyComposerAgentSheet(project); },
             onSubmit: draft => {
                 const resolvedPinnedId = isChatSurface
-                    ? THEIA_CODER_AGENT_ID
+                    ? QAIQ_AGENT_ID
                     : this.resolveStickyComposerPinnedAgentId(project);
                 const selectedAgentId = isChatSurface
-                    ? THEIA_CODER_AGENT_ID
+                    ? QAIQ_AGENT_ID
                     : resolveExplicitAgentForSubmit(draft, {
                         pinnedChatAgentId: resolvedPinnedId,
                     }) ?? resolvedPinnedId;
@@ -4160,7 +4194,7 @@ export class MobileProjectsPanel {
                     autoApprove,
                 };
                 const done = isChatSurface
-                    ? this.submitLocalChatFromComposer(project, draft, submitOptions)
+                    ? this.submitBackgroundAgentTask(project, draft, { ...submitOptions, forceVps: true })
                     : this.submitBackgroundAgentTask(project, draft, { ...submitOptions, openConversation: false, forceVps: true });
                 void done.finally(() => this.renderStickyComposer());
             },
@@ -4275,7 +4309,7 @@ export class MobileProjectsPanel {
             this.stickyComposerSurface = surface;
             writeStoredComposerSurface(cwd, surface);
             if (surface === 'chat') {
-                this.pinStickyComposerToCoder(cwd);
+                this.pinStickyComposerChatDefault(cwd);
             }
             this.renderStickyComposer();
             this.renderList();
@@ -5073,7 +5107,7 @@ export class MobileProjectsPanel {
 
     protected resolveStickyComposerPinnedAgentId(project: MobileProjectEntry): string {
         if (this.stickyComposerSurface === 'chat') {
-            return THEIA_CODER_AGENT_ID;
+            return QAIQ_AGENT_ID;
         }
         const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
         const pinned = this.stickyComposerPinnedAgentId ?? readStoredAgent(cwd);
@@ -10349,6 +10383,7 @@ export class MobileProjectsPanel {
                     : {}),
         });
         const summary = conversationToSummary(conversation);
+        this.conversations?.recordConversationDetail(conversation);
         this.conversations?.recordSnapshot(summary);
         return summary;
     }
@@ -10609,23 +10644,63 @@ export class MobileProjectsPanel {
             && (this.transcriptSheet !== undefined || this.agentsHubInlineActive);
     }
 
+    protected hasOpenTranscriptSurface(): boolean {
+        return this.transcriptSheet !== undefined || this.agentsHubInlineActive;
+    }
+
+    /**
+     * Resolve the chat host currently mounted in the DOM for the open transcript. The inline
+     * execution shell can recreate its host on re-render, orphaning the reference captured when the
+     * transcript was first opened, so callers must re-resolve before every render.
+     */
+    protected resolveLiveTranscriptChatHost(fallback?: HTMLElement): HTMLElement | undefined {
+        if (this.agentsHubInlineActive && this.agentsHubInlineChatHost?.isConnected) {
+            return this.agentsHubInlineChatHost;
+        }
+        if (this.transcriptChatHost?.isConnected) {
+            return this.transcriptChatHost;
+        }
+        if (fallback?.isConnected) {
+            return fallback;
+        }
+        return undefined;
+    }
+
     protected scheduleTranscriptConversationRefresh(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         chatHost: HTMLElement,
     ): void {
         let refreshInFlight = false;
+        let refreshQueued = false;
         const refresh = async (): Promise<void> => {
             if (this.isPendingNewChatSummary(summary)) {
                 return;
             }
-            if (refreshInFlight || !this.isActiveTranscriptConversation(summary.id) || !chatHost.isConnected) {
+            // Resolve the *live* chat host on every run. The host captured when the transcript was
+            // opened can be detached by a later re-render of the inline execution shell; using the
+            // stale reference made `chatHost.isConnected` false and silently bailed every refresh,
+            // freezing the open view at "Starting the turn…" until a manual re-open.
+            let liveHost = this.resolveLiveTranscriptChatHost(chatHost);
+            if (refreshInFlight) {
+                refreshQueued = true;
+                return;
+            }
+            if (!this.isActiveTranscriptConversation(summary.id) || !liveHost) {
                 return;
             }
             refreshInFlight = true;
+            const refreshStartedAt = this.startTranscriptPerfTimer();
+            let cacheHit = false;
             try {
-                const full = await getConversation(summary.id);
-                if (!this.isActiveTranscriptConversation(summary.id) || !chatHost.isConnected) {
+                const cached = this.conversations?.getCachedConversation(summary.id);
+                cacheHit = !!cached;
+                const full = cached ?? await getConversation(summary.id);
+                if (!cached) {
+                    this.conversations?.recordConversationDetail(full);
+                }
+                liveHost = this.resolveLiveTranscriptChatHost(chatHost);
+                if (!this.isActiveTranscriptConversation(summary.id) || !liveHost) {
                     return;
                 }
                 const fingerprint = this.conversationTranscriptFingerprint(full);
@@ -10635,7 +10710,7 @@ export class MobileProjectsPanel {
                     return;
                 }
                 this.transcriptLastFingerprint = fingerprint;
-                this.renderTranscriptMessages(chatHost, full);
+                this.renderTranscriptMessages(liveHost, full);
                 if (this.transcriptSheet) {
                     const surfaceTab = this.executionSurfaceTabForProject(project);
                     this.showOnlyExecutionSurfaceTab(surfaceTab);
@@ -10648,31 +10723,68 @@ export class MobileProjectsPanel {
                 } else {
                     this.setTranscriptLiveUpdates(Disposable.NULL);
                 }
+                this.logTranscriptPerf('refresh', refreshStartedAt, {
+                    conversationId: full.id,
+                    status: full.status,
+                    cacheHit,
+                    messages: full.messages.length,
+                });
             } catch (error) {
-                if (!chatHost.isConnected) {
+                const errorHost = this.resolveLiveTranscriptChatHost(chatHost);
+                if (!errorHost) {
                     return;
                 }
-                const messageHost = this.resolveTranscriptMessageHost(chatHost);
+                const messageHost = this.resolveTranscriptMessageHost(errorHost);
                 messageHost.replaceChildren();
                 const err = document.createElement('div');
                 err.className = 'theia-mobile-agent-transcript-error';
                 err.textContent = error instanceof Error ? error.message : String(error);
                 messageHost.append(err);
+                this.logTranscriptPerf('refresh-error', refreshStartedAt, {
+                    conversationId: summary.id,
+                    cacheHit,
+                    error: error instanceof Error ? error.message : String(error),
+                });
             } finally {
                 refreshInFlight = false;
+                if (refreshQueued && this.isActiveTranscriptConversation(summary.id)) {
+                    refreshQueued = false;
+                    scheduleRefresh();
+                }
             }
         };
+        // Debounce-with-max-wait: a pure trailing debounce would be starved during active
+        // streaming (SSE fires a `message` event per chunk, faster than the debounce window,
+        // so the timer is perpetually reset and `refresh()` never runs until the turn ends).
+        // Anchoring on the first pending request guarantees the transcript refreshes at least
+        // every REFRESH_MAX_WAIT_MS while output keeps arriving, so the open view streams live.
+        const REFRESH_DEBOUNCE_MS = 450;
+        const REFRESH_MAX_WAIT_MS = 450;
+        let firstPendingRefreshAt: number | undefined;
         const scheduleRefresh = (): void => {
             if (!this.isActiveTranscriptConversation(summary.id)) {
                 return;
             }
+            const now = Date.now();
+            if (firstPendingRefreshAt === undefined) {
+                firstPendingRefreshAt = now;
+            }
             if (this.transcriptRefreshTimer !== undefined) {
                 window.clearTimeout(this.transcriptRefreshTimer);
             }
+            const elapsed = now - firstPendingRefreshAt;
+            const delay = Math.max(0, Math.min(REFRESH_DEBOUNCE_MS, REFRESH_MAX_WAIT_MS - elapsed));
             this.transcriptRefreshTimer = window.setTimeout(() => {
                 this.transcriptRefreshTimer = undefined;
-                void refresh();
-            }, 450);
+                firstPendingRefreshAt = undefined;
+                if (this.transcriptRefreshRaf !== undefined) {
+                    return;
+                }
+                this.transcriptRefreshRaf = window.requestAnimationFrame(() => {
+                    this.transcriptRefreshRaf = undefined;
+                    void refresh();
+                });
+            }, delay);
         };
         this.transcriptScheduleRefresh = scheduleRefresh;
         void refresh();
@@ -13488,6 +13600,7 @@ export class MobileProjectsPanel {
                 options.autoApprove,
             );
             const nextSummary = conversationToSummary(updated);
+            this.conversations?.recordConversationDetail(updated);
             this.conversations?.recordSnapshot(nextSummary);
             if (this.transcriptChatHost && this.transcriptOpenSummaryId === summary.id) {
                 this.transcriptLastFingerprint = undefined;
@@ -14033,17 +14146,27 @@ export class MobileProjectsPanel {
     }
 
     protected renderTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): void {
+        const renderStartedAt = this.startTranscriptPerfTimer();
+        const composerSelection = this.captureTranscriptComposerSelection();
         this.transcriptLastConv = conv;
         const messageHost = this.resolveTranscriptMessageHost(host);
+        this.syncTranscriptTurnStatus(host, conv);
         const sameConversation = this.transcriptLastRenderedConversationId === conv.id;
         const previousLastMessageId = this.transcriptLastRenderedMessageId;
         const nextLastMessageId = conv.messages.at(-1)?.id;
+        const last = conv.messages[conv.messages.length - 1];
+        if (this.tryRenderTranscriptLastMessageOnly(messageHost, conv, host, last, nextLastMessageId)) {
+            return;
+        }
+        const shouldScrollToEnd = !sameConversation || this.shouldAutoScrollTranscript(messageHost);
         messageHost.replaceChildren();
         const isEmptyChat = conv.messages.length === 0 && conv.status !== 'streaming';
         messageHost.classList.toggle('theia-mod-empty-chat', isEmptyChat);
         if (isEmptyChat) {
             this.transcriptLastRenderedConversationId = conv.id;
             this.transcriptLastRenderedMessageId = undefined;
+            this.transcriptLastRenderedMessageCount = 0;
+            this.transcriptLastRenderedStatus = conv.status;
             const project = this.transcriptOpenProject;
             if (project && this.shouldEmbedAgentsHubRecentsInWorkspaceTranscript()) {
                 messageHost.append(this.createAgentsHubRecentsBlock(project));
@@ -14052,22 +14175,20 @@ export class MobileProjectsPanel {
             empty.className = 'theia-mobile-agent-transcript-empty';
             empty.append(this.createAgentsHubQuickActionsBlock());
             messageHost.append(empty);
+            this.syncTranscriptJumpToLatest(host, messageHost, false);
+            this.restoreTranscriptComposerSelection(composerSelection);
+            this.logTranscriptRenderPerf('full-empty', renderStartedAt, conv, { hiddenCount: 0 });
             return;
         }
-        for (const [index, msg] of conv.messages.entries()) {
-            let row: HTMLElement;
-            const agentSegments = this.resolveTranscriptAgentSegments(conv, msg);
-            if (msg.role === 'user') {
-                row = this.createTranscriptUserMessageRow(msg, conv);
-            } else if (agentSegments && agentSegments.length > 0) {
-                row = this.createTranscriptAgentSegmentsRow(agentSegments, msg.error);
-            } else {
-                row = this.createTranscriptMessageRow(
-                    msg.role,
-                    normalizeAgentMessageContentForDisplay(msg.content),
-                    msg.error,
-                );
-            }
+        const rendered = this.resolveRenderedTranscriptMessages(conv);
+        if (rendered.hiddenCount > 0) {
+            messageHost.append(this.createTranscriptVirtualizedHistoryNote(conv, rendered.hiddenCount));
+        }
+        for (const [offset, msg] of rendered.messages.entries()) {
+            const index = rendered.startIndex + offset;
+            const row = this.createTranscriptRenderedMessageRow(conv, msg, {
+                deferArtifacts: conv.status === 'streaming' && index === conv.messages.length - 1 && msg.role === 'agent',
+            });
             if (index === conv.messages.length - 1 && sameConversation && previousLastMessageId && msg.id && msg.id !== previousLastMessageId) {
                 row.classList.add('theia-mod-new-message');
             }
@@ -14075,7 +14196,8 @@ export class MobileProjectsPanel {
         }
         this.transcriptLastRenderedConversationId = conv.id;
         this.transcriptLastRenderedMessageId = nextLastMessageId;
-        const last = conv.messages[conv.messages.length - 1];
+        this.transcriptLastRenderedMessageCount = conv.messages.length;
+        this.transcriptLastRenderedStatus = conv.status;
         if (conv.status === 'streaming') {
             if (last?.role === 'agent') {
                 messageHost.lastElementChild?.classList.add('theia-mod-streaming');
@@ -14083,16 +14205,510 @@ export class MobileProjectsPanel {
                 messageHost.append(this.createTranscriptStreamingActivityRow(conv));
             }
         }
-        scrollElementToEnd(messageHost);
+        this.scrollTranscriptToEndIfNeeded(messageHost, shouldScrollToEnd);
+        this.syncTranscriptJumpToLatest(host, messageHost, !shouldScrollToEnd && conv.status === 'streaming');
         this.transcriptUserScrollPinDispose.dispose();
         this.transcriptUserScrollPinDispose = attachTranscriptUserScrollPin(messageHost);
         this.ensureOverlayUi().team.renderTeamSection(host, conv);
         this.transcriptComposerSendRefresh?.();
+        this.restoreTranscriptComposerSelection(composerSelection);
+        this.logTranscriptRenderPerf('full', renderStartedAt, conv, { hiddenCount: rendered.hiddenCount });
+    }
+
+    protected tryRenderTranscriptLastMessageOnly(
+        messageHost: HTMLElement,
+        conv: QaapAgentConversationDTO,
+        host: HTMLElement,
+        last: QaapAgentMessageDTO | undefined,
+        nextLastMessageId: string | undefined,
+    ): boolean {
+        const renderStartedAt = this.startTranscriptPerfTimer();
+        const composerSelection = this.captureTranscriptComposerSelection();
+        if (!last || last.role !== 'agent' || conv.messages.length === 0) {
+            return false;
+        }
+        if (this.transcriptLastRenderedConversationId !== conv.id
+            || this.transcriptLastRenderedMessageId !== nextLastMessageId
+            || this.transcriptLastRenderedMessageCount !== conv.messages.length) {
+            return false;
+        }
+        const previousLastRow = messageHost.lastElementChild;
+        if (!(previousLastRow instanceof HTMLElement) || !previousLastRow.classList.contains('theia-mod-agent')) {
+            return false;
+        }
+        this.syncTranscriptTurnStatus(host, conv);
+        messageHost.classList.remove('theia-mod-empty-chat');
+        const shouldScrollToEnd = this.shouldAutoScrollTranscript(messageHost);
+        const statusChanged = this.transcriptLastRenderedStatus !== conv.status;
+        let row = previousLastRow;
+        const deferArtifacts = conv.status === 'streaming';
+        if (!this.tryUpdateTranscriptRenderedMessageRow(previousLastRow, conv, last, { deferArtifacts })) {
+            row = this.createTranscriptRenderedMessageRow(conv, last, { deferArtifacts });
+            previousLastRow.replaceWith(row);
+        }
+        row.classList.toggle('theia-mod-streaming', conv.status === 'streaming');
+        this.transcriptLastRenderedConversationId = conv.id;
+        this.transcriptLastRenderedMessageId = nextLastMessageId;
+        this.transcriptLastRenderedMessageCount = conv.messages.length;
+        this.transcriptLastRenderedStatus = conv.status;
+        this.scrollTranscriptToEndIfNeeded(messageHost, shouldScrollToEnd);
+        this.syncTranscriptJumpToLatest(host, messageHost, !shouldScrollToEnd && conv.status === 'streaming');
+        if (statusChanged) {
+            this.ensureOverlayUi().team.renderTeamSection(host, conv);
+            this.transcriptComposerSendRefresh?.();
+        }
+        this.restoreTranscriptComposerSelection(composerSelection);
+        this.logTranscriptRenderPerf('incremental-last-message', renderStartedAt, conv, { hiddenCount: 0 });
+        return true;
+    }
+
+    protected resolveRenderedTranscriptMessages(conv: QaapAgentConversationDTO): {
+        readonly messages: QaapAgentMessageDTO[];
+        readonly startIndex: number;
+        readonly hiddenCount: number;
+    } {
+        if (conv.messages.length <= TRANSCRIPT_VIRTUALIZE_AFTER_MESSAGES || this.transcriptRenderFullConversationIds.has(conv.id)) {
+            return { messages: conv.messages, startIndex: 0, hiddenCount: 0 };
+        }
+        const startIndex = Math.max(0, conv.messages.length - TRANSCRIPT_RENDER_RECENT_MESSAGES);
+        return {
+            messages: conv.messages.slice(startIndex),
+            startIndex,
+            hiddenCount: startIndex,
+        };
+    }
+
+    protected createTranscriptVirtualizedHistoryNote(conv: QaapAgentConversationDTO, hiddenCount: number): HTMLElement {
+        const note = document.createElement('div');
+        note.className = 'theia-mobile-agent-transcript-history-note theia-mod-virtualized-history';
+        const label = document.createElement('span');
+        label.textContent = nls.localize(
+            'qaap/mobileProjects/transcriptVirtualizedHistory',
+            'Showing latest messages. {0} older messages are collapsed.',
+            hiddenCount,
+        );
+        const showAll = document.createElement('button');
+        showAll.type = 'button';
+        showAll.className = 'theia-mobile-agent-transcript-history-inline-action';
+        showAll.textContent = nls.localize('qaap/mobileProjects/transcriptShowAllMessages', 'Show all');
+        showAll.addEventListener('click', () => {
+            this.transcriptRenderFullConversationIds.add(conv.id);
+            this.transcriptLastFingerprint = undefined;
+            const host = this.resolveLiveTranscriptChatHost();
+            if (host && this.transcriptOpenSummaryId === conv.id) {
+                this.renderTranscriptMessages(host, conv);
+            }
+        });
+        note.append(label, showAll);
+        return note;
+    }
+
+    protected shouldAutoScrollTranscript(messageHost: HTMLElement): boolean {
+        return isTranscriptScrollNearBottom(
+            messageHost.scrollTop,
+            messageHost.clientHeight,
+            messageHost.scrollHeight,
+            TRANSCRIPT_AUTOSCROLL_THRESHOLD_PX,
+        );
+    }
+
+    protected scrollTranscriptToEndIfNeeded(messageHost: HTMLElement, shouldScroll: boolean): void {
+        if (shouldScroll) {
+            scrollElementToEnd(messageHost);
+        }
+    }
+
+    protected syncTranscriptTurnStatus(host: HTMLElement, conv: QaapAgentConversationDTO): void {
+        if (!host.classList.contains('theia-mobile-agent-transcript-real-chat')) {
+            return;
+        }
+        const existing = host.querySelector<HTMLElement>(':scope > .theia-mobile-agent-turn-status');
+        if (conv.status === 'idle' && !this.transcriptPreviewRequestPending) {
+            existing?.remove();
+            return;
+        }
+        const status = existing ?? document.createElement('div');
+        status.className = `theia-mobile-agent-turn-status theia-mod-${conv.status}`;
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        status.replaceChildren();
+
+        const activity = conv.status === 'streaming'
+            ? this.resolveTranscriptStreamingActivity(conv)
+            : {
+                kind: conv.status,
+                title: conv.status === 'failed'
+                    ? nls.localize('qaap/mobileProjects/transcriptStatusFailed', 'Needs attention')
+                    : nls.localize('qaap/mobileProjects/transcriptStatusWorking', 'Working'),
+                detail: conv.status === 'failed'
+                    ? nls.localize('qaap/mobileProjects/transcriptStatusFailedDetail', 'The last turn failed')
+                    : '',
+            };
+        const main = document.createElement('div');
+        main.className = 'theia-mobile-agent-turn-status-main';
+        const dot = document.createElement('span');
+        dot.className = `theia-mobile-agent-turn-status-dot theia-mod-${activity.kind}`;
+        dot.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agent-turn-status-label';
+        label.textContent = activity.title;
+        const detail = document.createElement('span');
+        detail.className = 'theia-mobile-agent-turn-status-detail';
+        detail.textContent = activity.detail;
+        main.append(dot, label, detail);
+        status.append(main, this.createTranscriptTurnMiniTimeline(conv));
+
+        const list = this.resolveTranscriptMessageHost(host);
+        if (!existing) {
+            host.insertBefore(status, list);
+        }
+    }
+
+    protected createTranscriptTurnMiniTimeline(conv: QaapAgentConversationDTO): HTMLElement {
+        const rail = document.createElement('div');
+        rail.className = 'theia-mobile-agent-turn-rail';
+        const steps = this.resolveTranscriptTurnSteps(conv);
+        for (const step of steps) {
+            const pill = document.createElement('span');
+            pill.className = `theia-mobile-agent-turn-step theia-mod-${step.state}`;
+            pill.textContent = step.label;
+            rail.append(pill);
+        }
+        return rail;
+    }
+
+    protected resolveTranscriptTurnSteps(conv: QaapAgentConversationDTO): Array<{ readonly label: string; readonly state: 'done' | 'active' | 'pending' | 'failed' }> {
+        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
+        const segments = lastAgent?.segments ?? [];
+        const hasRead = segments.some(segment => segment.type === 'tool' && this.resolveTranscriptToolKind(segment.name) === 'reading');
+        const hasEdit = segments.some(segment => segment.type === 'tool' && this.resolveTranscriptToolKind(segment.name) === 'editing');
+        const hasVerify = segments.some(segment => {
+            if (segment.type !== 'tool' || !this.isTranscriptShellTool(segment.name)) {
+                return false;
+            }
+            const command = this.extractTranscriptToolCommand(segment.args);
+            return !!command && this.isTranscriptVerificationCommand(command);
+        });
+        const hasText = segments.some(segment => segment.type === 'text' && segment.content.trim());
+        const activeTool = [...segments].reverse().find(segment => segment.type === 'tool' && !segment.finished);
+        const activeKind = activeTool?.type === 'tool' ? this.resolveTranscriptToolKind(activeTool.name) : undefined;
+        const failed = conv.status === 'failed';
+        const step = (label: string, done: boolean, active: boolean): { readonly label: string; readonly state: 'done' | 'active' | 'pending' | 'failed' } => ({
+            label,
+            state: failed && active ? 'failed' : active ? 'active' : done ? 'done' : 'pending',
+        });
+        return [
+            step(nls.localize('qaap/mobileProjects/transcriptStepPrompt', 'Prompt'), conv.messages.some(message => message.role === 'user'), false),
+            step(nls.localize('qaap/mobileProjects/transcriptStepRead', 'Read'), hasRead, activeKind === 'reading'),
+            step(nls.localize('qaap/mobileProjects/transcriptStepEdit', 'Edit'), hasEdit, activeKind === 'editing'),
+            step(nls.localize('qaap/mobileProjects/transcriptStepVerify', 'Verify'), hasVerify, activeKind === 'terminal'),
+            step(nls.localize('qaap/mobileProjects/transcriptStepAnswer', 'Answer'), hasText || conv.status === 'idle', conv.status === 'streaming' && !activeKind),
+        ];
+    }
+
+    protected syncTranscriptJumpToLatest(host: HTMLElement, messageHost: HTMLElement, visible: boolean): void {
+        if (!host.classList.contains('theia-mobile-agent-transcript-real-chat')) {
+            return;
+        }
+        const existing = host.querySelector<HTMLButtonElement>(':scope > .theia-mobile-agent-jump-latest');
+        if (!visible) {
+            existing?.remove();
+            return;
+        }
+        const button = existing ?? document.createElement('button');
+        button.type = 'button';
+        button.className = 'theia-mobile-agent-jump-latest';
+        const label = nls.localize('qaap/mobileProjects/transcriptJumpLatest', 'Jump to latest');
+        button.setAttribute('aria-label', label);
+        if (!button.firstChild) {
+            const icon = document.createElement('span');
+            icon.className = 'codicon codicon-arrow-down';
+            icon.setAttribute('aria-hidden', 'true');
+            const text = document.createElement('span');
+            text.textContent = label;
+            button.append(icon, text);
+        }
+        if (!existing) {
+            button.addEventListener('click', () => {
+                scrollElementToEnd(messageHost);
+                button.remove();
+            });
+            host.append(button);
+        }
+        if (messageHost.dataset.qaapJumpLatestScrollBound !== 'true') {
+            messageHost.dataset.qaapJumpLatestScrollBound = 'true';
+            messageHost.addEventListener('scroll', () => {
+                if (this.shouldAutoScrollTranscript(messageHost)) {
+                    host.querySelector<HTMLButtonElement>(':scope > .theia-mobile-agent-jump-latest')?.remove();
+                }
+            }, { passive: true });
+        }
+    }
+
+    protected captureTranscriptComposerSelection(): TranscriptComposerSelectionSnapshot | undefined {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLTextAreaElement)
+            || !this.transcriptComposerHost?.contains(active)
+            || !active.classList.contains('theia-mobile-projects-sticky-composer-input')) {
+            return undefined;
+        }
+        return {
+            input: active,
+            value: active.value,
+            start: active.selectionStart,
+            end: active.selectionEnd,
+            direction: active.selectionDirection,
+        };
+    }
+
+    protected restoreTranscriptComposerSelection(snapshot: TranscriptComposerSelectionSnapshot | undefined): void {
+        if (!snapshot || !snapshot.input.isConnected || document.activeElement !== snapshot.input) {
+            return;
+        }
+        if (snapshot.input.value !== snapshot.value) {
+            return;
+        }
+        window.requestAnimationFrame(() => {
+            if (!snapshot.input.isConnected || snapshot.input.value !== snapshot.value) {
+                return;
+            }
+            snapshot.input.focus();
+            if (snapshot.start !== null && snapshot.end !== null) {
+                snapshot.input.setSelectionRange(snapshot.start, snapshot.end, snapshot.direction ?? 'none');
+            }
+        });
+    }
+
+    protected startTranscriptPerfTimer(): number | undefined {
+        return this.isTranscriptPerfLoggingEnabled() ? performance.now() : undefined;
+    }
+
+    protected isTranscriptPerfLoggingEnabled(): boolean {
+        const now = Date.now();
+        if (this.transcriptPerfLoggingEnabledCache !== undefined && now - this.transcriptPerfLoggingLastCheckedAt < 1000) {
+            return this.transcriptPerfLoggingEnabledCache;
+        }
+        try {
+            this.transcriptPerfLoggingEnabledCache = localStorage.getItem(TRANSCRIPT_PERF_LOG_STORAGE_KEY) === '1';
+        } catch {
+            this.transcriptPerfLoggingEnabledCache = false;
+        }
+        this.transcriptPerfLoggingLastCheckedAt = now;
+        return this.transcriptPerfLoggingEnabledCache;
+    }
+
+    protected logTranscriptRenderPerf(
+        phase: string,
+        startedAt: number | undefined,
+        conv: QaapAgentConversationDTO,
+        extra: Record<string, unknown> = {},
+    ): void {
+        this.logTranscriptPerf(`render:${phase}`, startedAt, {
+            conversationId: conv.id,
+            status: conv.status,
+            messages: conv.messages.length,
+            lastMessageId: conv.messages.at(-1)?.id,
+            lastContentLength: conv.messages.at(-1)?.content.length ?? 0,
+            ...extra,
+        });
+    }
+
+    protected logTranscriptPerf(
+        phase: string,
+        startedAt: number | undefined,
+        data: Record<string, unknown>,
+    ): void {
+        if (startedAt === undefined) {
+            return;
+        }
+        const elapsedMs = Math.round((performance.now() - startedAt) * 10) / 10;
+        // Enable with: localStorage.setItem('qaap.transcript.perf', '1')
+        console.debug('[qaap transcript perf]', { phase, elapsedMs, ...data });
+    }
+
+    protected tryUpdateTranscriptRenderedMessageRow(
+        row: HTMLElement,
+        conv: QaapAgentConversationDTO,
+        msg: QaapAgentMessageDTO,
+        options: { readonly deferArtifacts?: boolean } = {},
+    ): boolean {
+        const nextFingerprint = this.transcriptMessageRenderFingerprint(conv, msg, options);
+        if (row.dataset.qaapTranscriptRenderFingerprint === nextFingerprint) {
+            return true;
+        }
+        const agentSegments = this.resolveTranscriptAgentSegments(conv, msg);
+        if (agentSegments && agentSegments.length > 0) {
+            const body = row.querySelector<HTMLElement>(':scope > .theia-mobile-agent-transcript-segments');
+            if (!body) {
+                return false;
+            }
+            const nextRow = this.createTranscriptAgentSegmentsRow(agentSegments, msg.error, options);
+            const nextBody = nextRow.querySelector<HTMLElement>(':scope > .theia-mobile-agent-transcript-segments');
+            if (!nextBody) {
+                return false;
+            }
+            body.replaceWith(nextBody);
+            this.syncTranscriptRowError(row, msg.error);
+            row.dataset.qaapTranscriptRenderFingerprint = nextFingerprint;
+            return true;
+        }
+        const contentEl = row.querySelector<HTMLElement>(':scope > .theia-mobile-agent-transcript-content');
+        if (!contentEl) {
+            return false;
+        }
+        contentEl.className = 'theia-mobile-agent-transcript-content';
+        contentEl.replaceChildren();
+        this.renderTranscriptRichContent(contentEl, normalizeAgentMessageContentForDisplay(msg.content));
+        this.syncTranscriptRowError(row, msg.error);
+        row.dataset.qaapTranscriptRenderFingerprint = nextFingerprint;
+        return true;
+    }
+
+    protected syncTranscriptRowError(row: HTMLElement, error: string | undefined): void {
+        const existing = row.querySelector<HTMLElement>(':scope > .theia-mobile-agent-transcript-error');
+        if (!error) {
+            existing?.remove();
+            return;
+        }
+        const err = this.createTranscriptErrorBlock(error);
+        if (!existing) {
+            row.append(err);
+        } else {
+            existing.replaceWith(err);
+        }
+    }
+
+    protected createTranscriptErrorBlock(error: string, conv?: QaapAgentConversationDTO): HTMLElement {
+        const block = document.createElement('div');
+        block.className = 'theia-mobile-agent-transcript-error';
+        const text = document.createElement('div');
+        text.className = 'theia-mobile-agent-transcript-error-text';
+        text.textContent = error;
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-agent-transcript-error-actions';
+
+        const summary = this.transcriptComposerSummary ?? this.transcriptOpenSummary;
+        const project = this.transcriptComposerProject ?? this.transcriptOpenProject;
+        if (project && summary && summary.source !== 'theia-chat' && (conv?.status === 'failed' || summary.status === 'failed')) {
+            actions.append(this.createTranscriptErrorAction(
+                nls.localize('qaap/mobileProjects/transcriptErrorRetry', 'Retry'),
+                'codicon-refresh',
+                () => { void this.onRetryConversation(project, summary); },
+            ));
+        }
+        actions.append(this.createTranscriptErrorAction(
+            nls.localize('qaap/mobileProjects/transcriptErrorCopy', 'Copy error'),
+            'codicon-copy',
+            () => { void this.copyTranscriptUserMessage(error); },
+        ));
+        if (project && summary) {
+            actions.append(this.createTranscriptErrorAction(
+                nls.localize('qaap/mobileProjects/transcriptErrorTerminal', 'Terminal'),
+                'codicon-terminal',
+                () => this.selectTranscriptTab('terminal', project, summary),
+            ));
+        }
+        block.append(text);
+        if (actions.childElementCount > 0) {
+            block.append(actions);
+        }
+        return block;
+    }
+
+    protected createTranscriptErrorAction(label: string, iconClass: string, onClick: () => void): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'theia-mobile-agent-transcript-error-action';
+        button.setAttribute('aria-label', label);
+        const icon = document.createElement('span');
+        icon.className = `codicon ${iconClass}`;
+        icon.setAttribute('aria-hidden', 'true');
+        const text = document.createElement('span');
+        text.textContent = label;
+        button.append(icon, text);
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            onClick();
+        });
+        return button;
+    }
+
+    protected createTranscriptRenderedMessageRow(
+        conv: QaapAgentConversationDTO,
+        msg: QaapAgentMessageDTO,
+        options: { readonly deferArtifacts?: boolean } = {},
+    ): HTMLElement {
+        const agentSegments = this.resolveTranscriptAgentSegments(conv, msg);
+        let row: HTMLElement;
+        if (msg.role === 'user') {
+            row = this.createTranscriptUserMessageRow(msg, conv);
+        } else if (agentSegments && agentSegments.length > 0) {
+            row = this.createTranscriptAgentSegmentsRow(agentSegments, msg.error, options);
+        } else {
+            row = this.createTranscriptMessageRow(
+                msg.role,
+                normalizeAgentMessageContentForDisplay(msg.content),
+                msg.error,
+            );
+        }
+        row.dataset.qaapTranscriptRenderFingerprint = this.transcriptMessageRenderFingerprint(conv, msg, options, agentSegments);
+        return row;
+    }
+
+    protected transcriptMessageRenderFingerprint(
+        conv: QaapAgentConversationDTO,
+        msg: QaapAgentMessageDTO,
+        options: { readonly deferArtifacts?: boolean } = {},
+        resolvedSegments = this.resolveTranscriptAgentSegments(conv, msg),
+    ): string {
+        const parts = [
+            msg.id ?? '',
+            msg.role,
+            options.deferArtifacts ? 'defer' : 'full',
+            msg.error ?? '',
+            String(msg.content.length),
+            this.transcriptRenderTextSignature(msg.content),
+        ];
+        if (resolvedSegments && resolvedSegments.length > 0) {
+            parts.push(String(resolvedSegments.length));
+            const last = resolvedSegments[resolvedSegments.length - 1];
+            for (const segment of resolvedSegments) {
+                if (segment.type === 'tool') {
+                    parts.push(
+                        'tool',
+                        segment.name,
+                        segment.finished ? '1' : '0',
+                        String(segment.args.length),
+                        this.transcriptRenderTextSignature(segment.args),
+                        String(segment.result?.length ?? 0),
+                        this.transcriptRenderTextSignature(segment.result ?? ''),
+                    );
+                } else {
+                    parts.push(segment.type, String(segment.content.length), this.transcriptRenderTextSignature(segment.content));
+                }
+            }
+            if (last) {
+                parts.push('last', last.type);
+            }
+        }
+        return parts.join('|');
+    }
+
+    protected transcriptRenderTextSignature(value: string): string {
+        if (!value) {
+            return '';
+        }
+        if (value.length <= 128) {
+            return value;
+        }
+        return `${value.slice(0, 48)}…${value.slice(-80)}`;
     }
 
     protected createTranscriptAgentSegmentsRow(
         segments: QaapAgentMessageSegmentDTO[],
         error?: string,
+        options: { readonly deferArtifacts?: boolean } = {},
     ): HTMLElement {
         const row = document.createElement('div');
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent';
@@ -14116,6 +14732,20 @@ export class MobileProjectsPanel {
         const activity = this.createTranscriptActivityTimeline(segments, !thoughtBrief);
         if (activity) {
             artifacts.append(activity);
+        }
+        const toolSummary = this.createTranscriptToolGroupCard(segments);
+        if (toolSummary) {
+            artifacts.append(toolSummary);
+        }
+        if (options.deferArtifacts) {
+            if (artifacts.childElementCount > 0) {
+                body.append(artifacts);
+            }
+            row.append(body);
+            if (error) {
+                row.append(this.createTranscriptErrorBlock(error));
+            }
+            return row;
         }
         const changedFiles = this.createTranscriptChangedFilesCard(segments);
         if (changedFiles) {
@@ -14157,10 +14787,7 @@ export class MobileProjectsPanel {
 
         row.append(body);
         if (error) {
-            const err = document.createElement('div');
-            err.className = 'theia-mobile-agent-transcript-error';
-            err.textContent = error;
-            row.append(err);
+            row.append(this.createTranscriptErrorBlock(error));
         }
         return row;
     }
@@ -14412,6 +15039,66 @@ export class MobileProjectsPanel {
         }
         card.append(list);
         return card;
+    }
+
+    protected createTranscriptToolGroupCard(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
+        const tools = segments.filter((segment): segment is Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> => segment.type === 'tool');
+        if (tools.length < 4) {
+            return undefined;
+        }
+        const counts = new Map<string, number>();
+        for (const tool of tools) {
+            const kind = this.resolveTranscriptToolKind(tool.name);
+            counts.set(kind, (counts.get(kind) ?? 0) + 1);
+        }
+        const card = document.createElement('details');
+        card.className = 'theia-mobile-agent-premium-card theia-mobile-agent-tool-groups';
+        const summary = document.createElement('summary');
+        summary.className = 'theia-mobile-agent-tool-groups-summary';
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-tools';
+        icon.setAttribute('aria-hidden', 'true');
+        const title = document.createElement('span');
+        title.textContent = nls.localize('qaap/mobileProjects/transcriptToolGroups', 'Tool activity');
+        const count = document.createElement('span');
+        count.className = 'theia-mobile-agent-premium-head-count';
+        count.textContent = String(tools.length);
+        summary.append(icon, title, count);
+        card.append(summary);
+
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-agent-tool-groups-list';
+        for (const [kind, total] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
+            const row = document.createElement('div');
+            row.className = `theia-mobile-agent-tool-group-row theia-mod-${kind}`;
+            const rowIcon = document.createElement('span');
+            rowIcon.className = `codicon ${this.transcriptToolIconClass(kind)}`;
+            rowIcon.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.textContent = this.localizeTranscriptToolKind(kind);
+            const value = document.createElement('span');
+            value.className = 'theia-mobile-agent-tool-group-count';
+            value.textContent = String(total);
+            row.append(rowIcon, label, value);
+            list.append(row);
+        }
+        card.append(list);
+        return card;
+    }
+
+    protected localizeTranscriptToolKind(kind: string): string {
+        switch (kind) {
+            case 'reading':
+                return nls.localize('qaap/mobileProjects/transcriptToolKindReading', 'Reading');
+            case 'searching':
+                return nls.localize('qaap/mobileProjects/transcriptToolKindSearching', 'Searching');
+            case 'editing':
+                return nls.localize('qaap/mobileProjects/transcriptToolKindEditing', 'Editing');
+            case 'terminal':
+                return nls.localize('qaap/mobileProjects/transcriptToolKindTerminal', 'Terminal');
+            default:
+                return nls.localize('qaap/mobileProjects/transcriptToolKindOther', 'Other tools');
+        }
     }
 
     /** "Review" button in the changed-files header — jumps to the transcript's diff Review tab. */
@@ -15314,10 +16001,7 @@ export class MobileProjectsPanel {
         this.renderTranscriptRichContent(contentEl, displayContent);
         row.append(contentEl);
         if (msg.error) {
-            const err = document.createElement('div');
-            err.className = 'theia-mobile-agent-transcript-error';
-            err.textContent = msg.error;
-            row.append(err);
+            row.append(this.createTranscriptErrorBlock(msg.error, conv));
         }
         wrap.append(row);
 
@@ -15420,6 +16104,7 @@ export class MobileProjectsPanel {
         }
         try {
             const updated = await rewindConversationToMessage(conv.id, msg.id);
+            this.conversations?.recordConversationDetail(updated);
             this.conversations?.recordSnapshot(conversationToSummary(updated));
             this.transcriptLastFingerprint = undefined;
             if (this.transcriptChatHost) {
@@ -15455,6 +16140,7 @@ export class MobileProjectsPanel {
         }
         try {
             const updated = await rewindConversationToMessage(conv.id, msg.id);
+            this.conversations?.recordConversationDetail(updated);
             this.conversations?.recordSnapshot(conversationToSummary(updated));
             this.transcriptLastFingerprint = undefined;
             if (this.transcriptChatHost) {
@@ -15666,7 +16352,53 @@ export class MobileProjectsPanel {
                 this.setTranscriptLiveUpdates(Disposable.NULL);
             }
         }));
+        // The SSE-driven onDidChange refresh above is fragile while the user stays on the open
+        // transcript: the subscription can dispose itself before the conversation status flips to
+        // 'streaming', and events can race the summary update. A low-frequency poll guarantees the
+        // open transcript keeps streaming live (it drives the same refresh the manual re-open uses),
+        // and stops itself once the turn goes idle.
+        this.startTranscriptStreamPoll(project, conversationId);
         this.transcriptScheduleRefresh();
+    }
+
+    protected startTranscriptStreamPoll(project: MobileProjectEntry, conversationId: string): void {
+        if (this.transcriptStreamPollTimer !== undefined) {
+            if (this.transcriptStreamPollConversationId === conversationId) {
+                // Already polling for the open transcript; refresh re-arms the watch, don't churn the timer.
+                return;
+            }
+            this.stopTranscriptStreamPoll();
+        }
+        this.transcriptStreamPollConversationId = conversationId;
+        this.transcriptStreamPollTimer = window.setInterval(() => {
+            if (this.transcriptOpenSummaryId !== conversationId) {
+                this.stopTranscriptStreamPoll();
+                return;
+            }
+            const latest = this.conversationsForProject(project).find(c => c.id === conversationId);
+            const stillStreaming = latest?.status === 'streaming' || this.transcriptPreviewRequestPending;
+            // Refresh on every tick while streaming, plus one final refresh once it goes idle so the
+            // terminal agent message lands, then stop polling.
+            this.transcriptScheduleRefresh?.();
+            if (!stillStreaming) {
+                this.stopTranscriptStreamPoll();
+            }
+        }, 600);
+    }
+
+    protected stopTranscriptStreamPoll(): void {
+        if (this.transcriptStreamPollTimer !== undefined) {
+            window.clearInterval(this.transcriptStreamPollTimer);
+            this.transcriptStreamPollTimer = undefined;
+        }
+        this.transcriptStreamPollConversationId = undefined;
+    }
+
+    protected cancelTranscriptRefreshRaf(): void {
+        if (this.transcriptRefreshRaf !== undefined) {
+            window.cancelAnimationFrame(this.transcriptRefreshRaf);
+            this.transcriptRefreshRaf = undefined;
+        }
     }
 
     /** Close the open Agents session but keep the in-panel execution shell (tabs + surfaces). */
@@ -15692,8 +16424,10 @@ export class MobileProjectsPanel {
             window.clearTimeout(this.transcriptRefreshTimer);
             this.transcriptRefreshTimer = undefined;
         }
+        this.cancelTranscriptRefreshRaf();
         this.transcriptScheduleRefresh = undefined;
         this.setTranscriptLiveUpdates(Disposable.NULL);
+        this.stopTranscriptStreamPoll();
         const chatHost = this.agentsHubInlineChatHost;
         const project = this.resolveAgentsHubShellProject();
         if (chatHost && project && this.agentsHubShellActive) {
@@ -15775,8 +16509,10 @@ export class MobileProjectsPanel {
             window.clearTimeout(this.transcriptRefreshTimer);
             this.transcriptRefreshTimer = undefined;
         }
+        this.cancelTranscriptRefreshRaf();
         this.transcriptScheduleRefresh = undefined;
         this.setTranscriptLiveUpdates(Disposable.NULL);
+        this.stopTranscriptStreamPoll();
         this.transcriptUserScrollPinDispose.dispose();
         this.transcriptUserScrollPinDispose = Disposable.NULL;
         this.transcriptSheetDispose.dispose();

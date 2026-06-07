@@ -11165,6 +11165,32 @@ body.theia-mobile-mod-active-transcript #theia-top-panel {
   gap: 10px;
 }
 
+.theia-mobile-agent-transcript-history-note.theia-mod-virtualized-history {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 4px;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-mobile-agent-transcript-history-inline-action {
+  flex: 0 0 auto;
+  border: 1px solid var(--theia-button-border, transparent);
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--theia-button-secondaryForeground, var(--theia-foreground));
+  background: var(--theia-button-secondaryBackground, rgba(127, 127, 127, 0.14));
+  font: inherit;
+}
+
+.theia-mobile-agent-transcript-history-inline-action:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
 /* Execution-view tab strip (icon-only on phones, icon + label when width allows). */
 .theia-mobile-transcript-tabs {
   display: flex;
@@ -13695,7 +13721,124 @@ body > .theia-mobile-transcript-files-menu {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
   overflow: hidden;
+}
+
+.theia-mobile-agent-turn-status {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px 7px;
+  border-bottom: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
+  background: color-mix(in srgb, var(--theia-editor-background, #101010) 92%, var(--q-accent, #E58E40));
+}
+
+.theia-mobile-agent-turn-status-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.theia-mobile-agent-turn-status-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--q-accent, #E58E40);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--q-accent, #E58E40) 18%, transparent);
+}
+
+.theia-mobile-agent-turn-status.theia-mod-streaming .theia-mobile-agent-turn-status-dot {
+  animation: theia-mobile-agent-stream-pulse 1100ms ease-in-out infinite;
+}
+
+.theia-mobile-agent-turn-status.theia-mod-failed .theia-mobile-agent-turn-status-dot {
+  background: var(--theia-errorForeground, #f48771);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theia-errorForeground, #f48771) 18%, transparent);
+}
+
+.theia-mobile-agent-turn-status-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--theia-foreground);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mobile-agent-turn-status-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mobile-agent-turn-rail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.theia-mobile-agent-turn-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.theia-mobile-agent-turn-step {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--theia-descriptionForeground);
+  background: color-mix(in srgb, var(--theia-editorWidget-background, rgba(127, 127, 127, 0.08)) 80%, transparent);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.theia-mobile-agent-turn-step.theia-mod-done {
+  color: color-mix(in srgb, var(--theia-foreground) 84%, var(--theia-descriptionForeground));
+}
+
+.theia-mobile-agent-turn-step.theia-mod-active {
+  color: #1a1310;
+  background: var(--q-accent, #E58E40);
+}
+
+.theia-mobile-agent-turn-step.theia-mod-failed {
+  color: var(--theia-errorForeground, #f48771);
+  background: color-mix(in srgb, var(--theia-errorForeground, #f48771) 12%, transparent);
+}
+
+.theia-mobile-agent-jump-latest {
+  position: absolute;
+  right: max(14px, env(safe-area-inset-right, 0px));
+  bottom: 12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
+  border-radius: 999px;
+  color: var(--theia-button-foreground, #fff);
+  background: var(--theia-button-background, var(--q-accent, #E58E40));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.theia-mobile-agent-jump-latest:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
 }
 
 .theia-mobile-agent-transcript-real-chat > .theia-mobile-agent-transcript {
@@ -13867,6 +14010,11 @@ body > .theia-mobile-transcript-files-menu {
   border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
   font-size: 13px;
   line-height: 1.45;
+}
+
+.theia-mobile-agent-transcript-msg:not(.theia-mod-streaming) {
+  content-visibility: auto;
+  contain-intrinsic-size: 96px;
 }
 
 .theia-mobile-agent-transcript-msg.theia-mod-new-message,
@@ -14102,6 +14250,74 @@ body > .theia-mobile-transcript-files-menu {
   font-weight: 760;
   letter-spacing: 0.02em;
   opacity: 1;
+}
+
+.theia-mobile-agent-transcript-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, #f48771) 28%, transparent);
+  border-radius: 8px;
+  color: var(--theia-errorForeground, #f48771);
+  background: color-mix(in srgb, var(--theia-errorForeground, #f48771) 8%, transparent);
+}
+
+.theia-mobile-agent-transcript-error-text {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.theia-mobile-agent-transcript-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.theia-mobile-agent-transcript-error-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-errorForeground, #f48771) 12%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.theia-mobile-agent-transcript-error-action:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+.theia-mobile-agent-tool-groups-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.theia-mobile-agent-tool-groups-list {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.theia-mobile-agent-tool-group-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-mobile-agent-tool-group-count {
+  color: var(--theia-foreground);
+  font-weight: 700;
 }
 
 /* Single live "thinking/acting" streaming line. */
@@ -15458,12 +15674,6 @@ body > .theia-mobile-transcript-files-menu {
 .theia-mobile-agent-transcript-tool-result {
   margin-top: 6px;
   opacity: 0.92;
-}
-
-.theia-mobile-agent-transcript-error {
-  font-size: 11px;
-  color: var(--theia-errorForeground, #c72e0f);
-  margin-top: 2px;
 }
 
 .theia-mobile-agent-transcript-readonly {
