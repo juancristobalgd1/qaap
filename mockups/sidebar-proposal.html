@@ -1496,6 +1496,49 @@
     gap: 2px;
     padding: 0 8px;
   }
+  .theia-mobile-workqueue-filters {
+    display: flex;
+    gap: 6px;
+    padding: 8px 8px 10px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .theia-mobile-workqueue-filters::-webkit-scrollbar { display: none; }
+  .theia-mobile-workqueue-filter {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 0 9px;
+    border: 1px solid var(--qaap-line);
+    border-radius: var(--qaap-radius-pill);
+    background: color-mix(in srgb, var(--qaap-surface) 78%, #000);
+    color: var(--qaap-ink-2);
+    font-family: var(--qaap-font-sans);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .theia-mobile-workqueue-filter[aria-pressed="true"] {
+    color: var(--qaap-accent-ink);
+    border-color: color-mix(in srgb, var(--qaap-accent) 62%, var(--qaap-line));
+    background: var(--qaap-accent-soft);
+  }
+  .theia-mobile-workqueue-filter-count {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: var(--qaap-radius-pill);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--qaap-line);
+    color: var(--qaap-ink);
+    font-family: var(--qaap-font-mono);
+    font-size: 9.5px;
+    line-height: 1;
+  }
 
   /* Production task row structure (visual only in mockup) */
   .theia-mobile-projects-task-row {
@@ -1538,6 +1581,8 @@
   }
   .theia-mobile-projects-task-dot.theia-mod-needs-input { color: var(--qaap-warn); }
   .theia-mobile-projects-task-dot.theia-mod-verified { color: var(--qaap-success); }
+  .theia-mobile-projects-task-dot.theia-mod-pr-ready { color: var(--qaap-branch); }
+  .theia-mobile-projects-task-dot.theia-mod-failed { color: var(--qaap-danger); }
   .theia-mobile-projects-task-dot.theia-mod-running {
     flex: 0 0 22px;
     width: 22px;
@@ -1573,6 +1618,45 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--qaap-muted);
+  }
+  .theia-mobile-projects-task-status {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 18px;
+    padding: 0 6px;
+    border: 1px solid var(--qaap-line);
+    border-radius: var(--qaap-radius-pill);
+    font-size: 10px;
+    font-weight: 650;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .theia-mobile-projects-task-status.theia-mod-running {
+    color: var(--qaap-success);
+    border-color: color-mix(in srgb, var(--qaap-success) 38%, var(--qaap-line));
+    background: color-mix(in srgb, var(--qaap-success) 11%, transparent);
+  }
+  .theia-mobile-projects-task-status.theia-mod-needs-input {
+    color: var(--qaap-warn);
+    border-color: color-mix(in srgb, var(--qaap-warn) 42%, var(--qaap-line));
+    background: color-mix(in srgb, var(--qaap-warn) 13%, transparent);
+  }
+  .theia-mobile-projects-task-status.theia-mod-pr-ready {
+    color: var(--qaap-branch);
+    border-color: color-mix(in srgb, var(--qaap-branch) 42%, var(--qaap-line));
+    background: color-mix(in srgb, var(--qaap-branch) 12%, transparent);
+  }
+  .theia-mobile-projects-task-status.theia-mod-failed {
+    color: var(--qaap-danger);
+    border-color: color-mix(in srgb, var(--qaap-danger) 42%, var(--qaap-line));
+    background: color-mix(in srgb, var(--qaap-danger) 12%, transparent);
+  }
+  .theia-mobile-projects-task-status.theia-mod-done {
+    color: var(--qaap-muted);
+    border-color: var(--qaap-line);
+    background: color-mix(in srgb, var(--qaap-line-soft) 72%, transparent);
   }
   .theia-mobile-projects-task-agent.theia-mod-linked-pr {
     color: var(--qaap-success);
@@ -1626,6 +1710,45 @@
   .theia-mobile-projects-task-diff-added { color: var(--qaap-add-ink); font-weight: 600; }
   .theia-mobile-projects-task-diff-removed { color: var(--qaap-del-ink); font-weight: 600; }
   .theia-mobile-projects-task-foot-sep { opacity: 0.35; }
+  .theia-mobile-workqueue-subtasks {
+    margin: -2px 8px 6px 42px;
+    padding: 0 0 0 10px;
+    border-left: 1px solid var(--qaap-line);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .theia-mobile-workqueue-subtask {
+    min-height: 30px;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 6px;
+    border-radius: 8px;
+    color: var(--qaap-ink-2);
+    font-size: 11.5px;
+  }
+  .theia-mobile-workqueue-subtask:hover { background: var(--qaap-line-soft); }
+  .theia-mobile-workqueue-subtask-icon {
+    display: inline-flex;
+    justify-content: center;
+    color: var(--qaap-muted);
+    font-size: 13px;
+  }
+  .theia-mobile-workqueue-subtask.theia-mod-running .theia-mobile-workqueue-subtask-icon { color: var(--qaap-success); }
+  .theia-mobile-workqueue-subtask.theia-mod-needs-input .theia-mobile-workqueue-subtask-icon { color: var(--qaap-warn); }
+  .theia-mobile-workqueue-subtask.theia-mod-done .theia-mobile-workqueue-subtask-icon { color: var(--qaap-muted); }
+  .theia-mobile-workqueue-subtask-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .theia-mobile-workqueue-subtask-status {
+    font-family: var(--qaap-font-mono);
+    font-size: 9.5px;
+    color: var(--qaap-muted);
+  }
   .theia-mobile-projects-conversation-menu-btn {
     flex: 0 0 28px;
     width: 28px;
@@ -2155,10 +2278,59 @@
 
           <div class="mock-sidebar-scroll">
             <div class="theia-mobile-tasks-inbox-section-head">
-              <span class="theia-mobile-tasks-inbox-section-label">match · tasks</span>
-              <span class="theia-mobile-projects-conversation-group-count" style="font-family:var(--qaap-font-mono);font-size:10px;color:var(--qaap-muted)">6</span>
+              <span class="theia-mobile-tasks-inbox-section-label">Work queue</span>
+              <span class="theia-mobile-projects-conversation-group-count" style="font-family:var(--qaap-font-mono);font-size:10px;color:var(--qaap-muted)">12</span>
+            </div>
+            <div class="theia-mobile-workqueue-filters" aria-label="Filtros de estado de agentes">
+              <button type="button" class="theia-mobile-workqueue-filter" aria-pressed="true">All <span class="theia-mobile-workqueue-filter-count">12</span></button>
+              <button type="button" class="theia-mobile-workqueue-filter" aria-pressed="false">Running <span class="theia-mobile-workqueue-filter-count">3</span></button>
+              <button type="button" class="theia-mobile-workqueue-filter" aria-pressed="false">Needs you <span class="theia-mobile-workqueue-filter-count">2</span></button>
+              <button type="button" class="theia-mobile-workqueue-filter" aria-pressed="false">PR ready <span class="theia-mobile-workqueue-filter-count">1</span></button>
+              <button type="button" class="theia-mobile-workqueue-filter" aria-pressed="false">Failed <span class="theia-mobile-workqueue-filter-count">1</span></button>
+              <button type="button" class="theia-mobile-workqueue-filter" aria-pressed="false">Done <span class="theia-mobile-workqueue-filter-count">5</span></button>
             </div>
             <div class="theia-mobile-projects-chats-inbox theia-mod-tasks-inbox">
+
+              <div class="theia-mobile-projects-task-row theia-mod-current">
+                <button type="button" class="theia-mobile-projects-task-item" data-task-open>
+                  <span class="theia-mobile-projects-task-dot theia-mod-running" aria-hidden="true">
+                    <span class="theia-mobile-projects-task-progress theia-mod-indeterminate" aria-hidden="true"></span>
+                  </span>
+                  <span class="theia-mobile-projects-task-body">
+                    <span class="theia-mobile-projects-task-title-row">
+                      <span class="theia-mobile-projects-task-title">Refactor mobile sidebar overlay</span>
+                      <span class="theia-mobile-projects-task-status theia-mod-running">Running</span>
+                      <span class="theia-mobile-projects-task-progress-count">3/8</span>
+                      <span class="theia-mobile-projects-task-since">now</span>
+                    </span>
+                    <span class="theia-mobile-projects-task-foot">
+                      <span class="theia-mobile-projects-task-agent"><span class="mock-agent-icon" aria-hidden="true">Q</span><span class="theia-mobile-projects-task-agent-label">QAIQ</span></span>
+                      <span class="theia-mobile-projects-task-diff-added">+412</span>
+                      <span class="theia-mobile-projects-task-diff-removed">−18</span>
+                      <span class="theia-mobile-projects-task-foot-sep">·</span>
+                      <span>qaap · main</span>
+                    </span>
+                  </span>
+                </button>
+                <button type="button" class="theia-mobile-projects-conversation-menu-btn" aria-label="Más opciones">⋮</button>
+              </div>
+              <div class="theia-mobile-workqueue-subtasks" aria-label="Subtareas de Refactor mobile sidebar overlay">
+                <div class="theia-mobile-workqueue-subtask theia-mod-done">
+                  <span class="theia-mobile-workqueue-subtask-icon codicon codicon-check" aria-hidden="true"></span>
+                  <span class="theia-mobile-workqueue-subtask-title">Audit existing sidebar classes</span>
+                  <span class="theia-mobile-workqueue-subtask-status">Done</span>
+                </div>
+                <div class="theia-mobile-workqueue-subtask theia-mod-running">
+                  <span class="theia-mobile-workqueue-subtask-icon codicon codicon-loading codicon-modifier-spin" aria-hidden="true"></span>
+                  <span class="theia-mobile-workqueue-subtask-title">Wire status badges</span>
+                  <span class="theia-mobile-workqueue-subtask-status">Running</span>
+                </div>
+                <div class="theia-mobile-workqueue-subtask theia-mod-needs-input">
+                  <span class="theia-mobile-workqueue-subtask-icon codicon codicon-warning" aria-hidden="true"></span>
+                  <span class="theia-mobile-workqueue-subtask-title">Confirm destructive migration</span>
+                  <span class="theia-mobile-workqueue-subtask-status">Needs you</span>
+                </div>
+              </div>
 
               <div class="theia-mobile-projects-task-row">
                 <button type="button" class="theia-mobile-projects-task-item" data-task-open>
@@ -2167,37 +2339,61 @@
                   </span>
                   <span class="theia-mobile-projects-task-body">
                     <span class="theia-mobile-projects-task-title-row">
-                      <span class="theia-mobile-projects-task-title">llama la atención de inmediato tarde…</span>
-                      <span class="theia-mobile-projects-task-since">2 d</span>
+                      <span class="theia-mobile-projects-task-title">Approve file-system changes</span>
+                      <span class="theia-mobile-projects-task-status theia-mod-needs-input">Needs you</span>
+                      <span class="theia-mobile-projects-task-since">4m</span>
                     </span>
                     <span class="theia-mobile-projects-task-foot">
-                      <span class="theia-mobile-projects-task-agent"><span class="mock-agent-icon" aria-hidden="true">Q</span><span class="theia-mobile-projects-task-agent-label">QAIQ</span></span>
-                      <span class="theia-mobile-projects-task-diff-added">+5496</span>
-                      <span class="theia-mobile-projects-task-diff-removed">−0</span>
+                      <span class="theia-mobile-projects-task-agent theia-mod-codex"><span class="mock-agent-icon" aria-hidden="true">›_</span><span class="theia-mobile-projects-task-agent-label">Codex</span></span>
+                      <span>permission prompt</span>
                       <span class="theia-mobile-projects-task-foot-sep">·</span>
-                      <span>14s</span>
+                      <span>billing-ui</span>
                     </span>
                   </span>
                 </button>
                 <button type="button" class="theia-mobile-projects-conversation-menu-btn" aria-label="Más opciones">⋮</button>
               </div>
 
-              <div class="theia-mobile-projects-task-row theia-mod-current">
+              <div class="theia-mobile-projects-task-row">
                 <button type="button" class="theia-mobile-projects-task-item" data-task-open>
-                  <span class="theia-mobile-projects-task-dot theia-mod-needs-input" aria-hidden="true">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>
+                  <span class="theia-mobile-projects-task-dot theia-mod-pr-ready" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a3 3 0 0 1-3 3H6"/><circle cx="18" cy="6" r="3"/></svg>
                   </span>
                   <span class="theia-mobile-projects-task-body">
                     <span class="theia-mobile-projects-task-title-row">
-                      <span class="theia-mobile-projects-task-title">que es este file</span>
-                      <span class="theia-mobile-projects-task-since">6 d</span>
+                      <span class="theia-mobile-projects-task-title">Ship work queue badges</span>
+                      <span class="theia-mobile-projects-task-status theia-mod-pr-ready">PR ready</span>
+                      <span class="theia-mobile-projects-task-since">17m</span>
                     </span>
                     <span class="theia-mobile-projects-task-foot">
                       <span class="theia-mobile-projects-task-agent"><span class="mock-agent-icon" aria-hidden="true">Q</span><span class="theia-mobile-projects-task-agent-label">QAIQ</span></span>
-                      <span class="theia-mobile-projects-task-diff-added">+2263</span>
-                      <span class="theia-mobile-projects-task-diff-removed">−0</span>
+                      <span class="theia-mobile-projects-task-agent theia-mod-linked-pr">#128</span>
+                      <span class="theia-mobile-projects-task-diff-added">+86</span>
+                      <span class="theia-mobile-projects-task-diff-removed">−12</span>
                       <span class="theia-mobile-projects-task-foot-sep">·</span>
-                      <span>5s</span>
+                      <span>review</span>
+                    </span>
+                  </span>
+                </button>
+                <button type="button" class="theia-mobile-projects-conversation-menu-btn" aria-label="Más opciones">⋮</button>
+              </div>
+
+              <div class="theia-mobile-projects-task-row">
+                <button type="button" class="theia-mobile-projects-task-item" data-task-open>
+                  <span class="theia-mobile-projects-task-dot theia-mod-failed" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+                  </span>
+                  <span class="theia-mobile-projects-task-body">
+                    <span class="theia-mobile-projects-task-title-row">
+                      <span class="theia-mobile-projects-task-title">Re-run flaky checkout flow</span>
+                      <span class="theia-mobile-projects-task-status theia-mod-failed">Failed</span>
+                      <span class="theia-mobile-projects-task-since">1h</span>
+                    </span>
+                    <span class="theia-mobile-projects-task-foot">
+                      <span class="theia-mobile-projects-task-agent"><span class="mock-agent-icon" aria-hidden="true">Q</span><span class="theia-mobile-projects-task-agent-label">QAIQ</span></span>
+                      <span>tests timed out</span>
+                      <span class="theia-mobile-projects-task-foot-sep">·</span>
+                      <span>retry</span>
                     </span>
                   </span>
                 </button>
@@ -2211,13 +2407,16 @@
                   </span>
                   <span class="theia-mobile-projects-task-body">
                     <span class="theia-mobile-projects-task-title-row">
-                      <span class="theia-mobile-projects-task-title">@qaiq dime el nombre del agente…</span>
-                      <span class="theia-mobile-projects-task-since">8 d</span>
+                      <span class="theia-mobile-projects-task-title">Update App Store screenshots</span>
+                      <span class="theia-mobile-projects-task-status theia-mod-done">Done</span>
+                      <span class="theia-mobile-projects-task-since">2h</span>
                     </span>
                     <span class="theia-mobile-projects-task-foot">
                       <span class="theia-mobile-projects-task-agent"><span class="mock-agent-icon" aria-hidden="true">Q</span><span class="theia-mobile-projects-task-agent-label">QAIQ</span></span>
+                      <span class="theia-mobile-projects-task-diff-added">+24</span>
+                      <span class="theia-mobile-projects-task-diff-removed">−4</span>
                       <span class="theia-mobile-projects-task-foot-sep">·</span>
-                      <span>3</span>
+                      <span>exported</span>
                     </span>
                   </span>
                 </button>
@@ -2231,59 +2430,16 @@
                   </span>
                   <span class="theia-mobile-projects-task-body">
                     <span class="theia-mobile-projects-task-title-row">
-                      <span class="theia-mobile-projects-task-title">Refactor mobile sidebar overlay</span>
-                      <span class="theia-mobile-projects-task-progress-count">3/8</span>
-                      <span class="theia-mobile-projects-task-since">ahora</span>
-                    </span>
-                    <span class="theia-mobile-projects-task-foot">
-                      <span class="theia-mobile-projects-task-agent"><span class="mock-agent-icon" aria-hidden="true">Q</span><span class="theia-mobile-projects-task-agent-label">QAIQ</span></span>
-                      <span class="theia-mobile-projects-task-diff-added">+412</span>
-                      <span class="theia-mobile-projects-task-diff-removed">−18</span>
-                      <span class="theia-mobile-projects-task-foot-sep">·</span>
-                      <span>12s</span>
-                    </span>
-                  </span>
-                </button>
-                <button type="button" class="theia-mobile-projects-conversation-menu-btn" aria-label="Más opciones">⋮</button>
-              </div>
-
-              <div class="theia-mobile-projects-task-row">
-                <button type="button" class="theia-mobile-projects-task-item" data-task-open>
-                  <span class="theia-mobile-projects-task-dot theia-mod-needs-input" aria-hidden="true">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--qaap-branch)" stroke-width="1.8"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a3 3 0 0 1-3 3H6"/><circle cx="18" cy="6" r="3"/></svg>
-                  </span>
-                  <span class="theia-mobile-projects-task-body">
-                    <span class="theia-mobile-projects-task-title-row">
-                      <span class="theia-mobile-projects-task-title">que file tienes en contexto</span>
-                      <span class="theia-mobile-projects-task-since">3 d</span>
-                    </span>
-                    <span class="theia-mobile-projects-task-foot">
-                      <span class="theia-mobile-projects-task-agent"><span class="mock-agent-icon" aria-hidden="true">Q</span><span class="theia-mobile-projects-task-agent-label">QAIQ</span></span>
-                      <span class="theia-mobile-projects-task-agent theia-mod-linked-pr">#128</span>
-                      <span class="theia-mobile-projects-task-diff-added">+5496</span>
-                      <span class="theia-mobile-projects-task-diff-removed">−0</span>
-                    </span>
-                  </span>
-                </button>
-                <button type="button" class="theia-mobile-projects-conversation-menu-btn" aria-label="Más opciones">⋮</button>
-              </div>
-
-              <div class="theia-mobile-projects-task-row">
-                <button type="button" class="theia-mobile-projects-task-item" data-task-open>
-                  <span class="theia-mobile-projects-task-dot theia-mod-needs-input" aria-hidden="true">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>
-                  </span>
-                  <span class="theia-mobile-projects-task-body">
-                    <span class="theia-mobile-projects-task-title-row">
-                      <span class="theia-mobile-projects-task-title">que te parece esta app</span>
-                      <span class="theia-mobile-projects-task-since">3 d</span>
+                      <span class="theia-mobile-projects-task-title">Index design token usage</span>
+                      <span class="theia-mobile-projects-task-status theia-mod-running">Running</span>
+                      <span class="theia-mobile-projects-task-progress-count">5/9</span>
+                      <span class="theia-mobile-projects-task-since">23m</span>
                     </span>
                     <span class="theia-mobile-projects-task-foot">
                       <span class="theia-mobile-projects-task-agent theia-mod-codex"><span class="mock-agent-icon" aria-hidden="true">›_</span><span class="theia-mobile-projects-task-agent-label">Codex</span></span>
-                      <span class="theia-mobile-projects-task-diff-added">+5496</span>
-                      <span class="theia-mobile-projects-task-diff-removed">−0</span>
+                      <span>scanning css</span>
                       <span class="theia-mobile-projects-task-foot-sep">·</span>
-                      <span>2s</span>
+                      <span>theme</span>
                     </span>
                   </span>
                 </button>
@@ -2292,20 +2448,21 @@
 
               <div class="theia-mobile-projects-task-row">
                 <button type="button" class="theia-mobile-projects-task-item" data-task-open>
-                  <span class="theia-mobile-projects-task-dot theia-mod-needs-input" aria-hidden="true">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>
+                  <span class="theia-mobile-projects-task-dot theia-mod-verified" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>
                   </span>
                   <span class="theia-mobile-projects-task-body">
                     <span class="theia-mobile-projects-task-title-row">
-                      <span class="theia-mobile-projects-task-title">creame un file llamado open.js</span>
-                      <span class="theia-mobile-projects-task-since">7 d</span>
+                      <span class="theia-mobile-projects-task-title">Clean up old session logs</span>
+                      <span class="theia-mobile-projects-task-status theia-mod-done">Done</span>
+                      <span class="theia-mobile-projects-task-since">1d</span>
                     </span>
                     <span class="theia-mobile-projects-task-foot">
                       <span class="theia-mobile-projects-task-agent"><span class="mock-agent-icon" aria-hidden="true">Q</span><span class="theia-mobile-projects-task-agent-label">QAIQ</span></span>
                       <span class="theia-mobile-projects-task-foot-sep">·</span>
-                      <span>11s</span>
+                      <span>7 files</span>
                       <span class="theia-mobile-projects-task-foot-sep">·</span>
-                      <span>4</span>
+                      <span>archived</span>
                     </span>
                   </span>
                 </button>

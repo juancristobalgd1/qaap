@@ -38,6 +38,7 @@ import { MobileProjectsConversationFlags } from './mobile-projects-conversation-
 import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
 import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
 import { MobileProjectsTeamHubUi, type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
+import { QAAP_OPEN_DIFF_REVIEW } from './qaap-diff-review-contribution';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
 import {
     collectAgentMembers,
@@ -259,7 +260,11 @@ import {
     writeStoredComposerSurface,
     type QaapComposerSurface,
 } from '../common/qaap-composer-surface';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import {
+    resolveQaapAgentTaskVisualStatus,
+    type QaapAgentTaskVisualStatus,
+    type QaapAgentTaskVisualStatusId,
+} from '../common/qaap-agent-task-visual-status';
 import {
     filterCatalogSections,
     QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB,
@@ -497,6 +502,7 @@ interface VerifyCheckResult {
 }
 
 type ComposerAgentPickerView = 'agents' | 'models';
+type WorkQueueStatusFilter = 'all' | 'running' | 'needs-you' | 'pr-ready' | 'failed' | 'verified';
 
 interface ComposerAgentPickerChrome {
     readonly sheet: HTMLElement;
@@ -603,6 +609,7 @@ export class MobileProjectsPanel {
     protected tasksHubSurface: QaapComposerSurface = 'task';
     /** When true, Agents tab shows the legacy full inbox instead of the new landing. */
     protected agentsHubLegacyInbox = false;
+    protected workQueueStatusFilter: WorkQueueStatusFilter = 'all';
     protected sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
     /** Project session groups expanded in the sessions sidebar accordion. */
     protected readonly sessionsSidebarExpandedProjectIds = new Set<string>();
@@ -6803,6 +6810,7 @@ export class MobileProjectsPanel {
 
         const groups = this.collectTasksInboxGroups(projects);
         const teamRendered = this.appendTasksHubTeamSection(root);
+        root.append(this.createWorkQueueStatusFilters(projects));
 
         if (groups.length > 0) {
             const inbox = document.createElement('div');
@@ -7882,7 +7890,10 @@ export class MobileProjectsPanel {
             if (query) {
                 conversations = conversations.filter(c => this.conversationMatchesQuery(c, query));
             }
-            const items = buildWorkHubInboxItems(project, conversations);
+            const items = buildWorkHubInboxItems(project, conversations).filter(item =>
+                this.workQueueStatusFilter === 'all'
+                    || this.resolveWorkQueueItemStatus(item) === this.workQueueStatusFilter,
+            );
             if (items.length === 0) {
                 continue;
             }
@@ -7890,6 +7901,93 @@ export class MobileProjectsPanel {
         }
         groups.sort((a, b) => this.compareChatInboxProjectOrder(a.project, b.project));
         return groups;
+    }
+
+    protected createWorkQueueStatusFilters(projects: MobileProjectEntry[]): HTMLElement {
+        const counts = this.countWorkQueueStatuses(projects);
+        const total = counts.running + counts['needs-you'] + counts['pr-ready'] + counts.failed + counts.verified;
+        const options: Array<{ readonly id: WorkQueueStatusFilter; readonly label: string; readonly count: number }> = [
+            { id: 'all', label: nls.localize('qaap/mobileProjects/workQueueFilterAll', 'All'), count: total },
+            { id: 'running', label: nls.localize('qaap/mobileProjects/workQueueFilterRunning', 'Running'), count: counts.running },
+            { id: 'needs-you', label: nls.localize('qaap/mobileProjects/workQueueFilterNeedsYou', 'Needs you'), count: counts['needs-you'] },
+            { id: 'pr-ready', label: nls.localize('qaap/mobileProjects/workQueueFilterPrReady', 'PR ready'), count: counts['pr-ready'] },
+            { id: 'failed', label: nls.localize('qaap/mobileProjects/workQueueFilterFailed', 'Failed'), count: counts.failed },
+            { id: 'verified', label: nls.localize('qaap/mobileProjects/workQueueFilterDone', 'Done'), count: counts.verified },
+        ];
+        const host = document.createElement('div');
+        host.className = 'theia-mobile-workqueue-filters';
+        host.setAttribute('aria-label', nls.localize('qaap/mobileProjects/workQueueFiltersAria', 'Agent work queue filters'));
+        for (const option of options) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'theia-mobile-workqueue-filter';
+            btn.setAttribute('aria-pressed', String(this.workQueueStatusFilter === option.id));
+            btn.append(document.createTextNode(option.label));
+            const count = document.createElement('span');
+            count.className = 'theia-mobile-workqueue-filter-count';
+            count.textContent = String(option.count);
+            btn.append(count);
+            btn.addEventListener('click', () => {
+                if (this.workQueueStatusFilter === option.id) {
+                    return;
+                }
+                this.workQueueStatusFilter = option.id;
+                this.renderList();
+            });
+            host.append(btn);
+        }
+        return host;
+    }
+
+    protected countWorkQueueStatuses(projects: MobileProjectEntry[]): Record<Exclude<WorkQueueStatusFilter, 'all'>, number> {
+        const counts: Record<Exclude<WorkQueueStatusFilter, 'all'>, number> = {
+            running: 0,
+            'needs-you': 0,
+            'pr-ready': 0,
+            failed: 0,
+            verified: 0,
+        };
+        const query = this.query.trim().toLowerCase();
+        for (const project of projects) {
+            const conversations = this.conversations
+                ? this.vpsTasksForProject(project)
+                : [];
+            const filtered = query
+                ? conversations.filter(c => this.conversationMatchesQuery(c, query))
+                : conversations;
+            for (const item of buildWorkHubInboxItems(project, filtered)) {
+                counts[this.resolveWorkQueueItemStatus(item)]++;
+            }
+        }
+        return counts;
+    }
+
+    protected resolveWorkQueueItemStatus(item: MobileWorkHubInboxItem): Exclude<WorkQueueStatusFilter, 'all'> {
+        if (item.kind === 'pullRequest') {
+            return 'pr-ready';
+        }
+        const task = this.summaryToTaskView(item.summary);
+        const unread = this.isConversationUnread(item.summary);
+        const visualStatus = resolveQaapAgentTaskVisualStatus(task, item.summary, unread);
+        return this.normalizeWorkQueueStatusId(visualStatus.id);
+    }
+
+    protected normalizeWorkQueueStatusId(status: QaapAgentTaskVisualStatusId): Exclude<WorkQueueStatusFilter, 'all'> {
+        if (status === 'idle') {
+            return 'verified';
+        }
+        return status;
+    }
+
+    protected createTaskStatusBadge(visualStatus: QaapAgentTaskVisualStatus): HTMLElement {
+        const badge = document.createElement('span');
+        badge.className = `theia-mobile-projects-task-status ${visualStatus.className}`;
+        const label = visualStatus.id === 'verified'
+            ? nls.localize('qaap/mobileProjects/taskStateDone', 'Done')
+            : nls.localize(visualStatus.labelKey, visualStatus.label);
+        badge.textContent = label;
+        badge.setAttribute('aria-label', nls.localize('qaap/mobileProjects/taskStateBadgeAria', 'State: {0}', label));
+        return badge;
     }
 
     protected collectReviewGroups(
@@ -8898,6 +8996,7 @@ export class MobileProjectsPanel {
         const taskTitle = document.createElement('span');
         taskTitle.className = 'theia-mobile-projects-task-title';
         taskTitle.textContent = task.title;
+        const statusBadge = this.createTaskStatusBadge(visualStatus);
         const taskSince = document.createElement('span');
         taskSince.className = 'theia-mobile-projects-task-since';
         taskSince.textContent = this.formatTaskSince(task, summary);
@@ -8913,9 +9012,9 @@ export class MobileProjectsPanel {
             );
             progressCount.setAttribute('aria-label', progressLabel);
             progressCount.title = progressLabel;
-            taskTitleRow.append(taskTitle, progressCount, taskSince);
+            taskTitleRow.append(taskTitle, statusBadge, progressCount, taskSince);
         } else {
-            taskTitleRow.append(taskTitle, taskSince);
+            taskTitleRow.append(taskTitle, statusBadge, taskSince);
         }
         taskBody.append(taskTitleRow);
 
@@ -14542,12 +14641,9 @@ export class MobileProjectsPanel {
             if (!body) {
                 return false;
             }
-            const nextRow = this.createTranscriptAgentSegmentsRow(agentSegments, msg.error, options);
-            const nextBody = nextRow.querySelector<HTMLElement>(':scope > .theia-mobile-agent-transcript-segments');
-            if (!nextBody) {
+            if (!this.syncTranscriptAgentStableBlocks(body, agentSegments, options)) {
                 return false;
             }
-            body.replaceWith(nextBody);
             this.syncTranscriptRowError(row, msg.error);
             row.dataset.qaapTranscriptRenderFingerprint = nextFingerprint;
             return true;
@@ -14715,21 +14811,85 @@ export class MobileProjectsPanel {
         const body = document.createElement('div');
         body.className = 'theia-mobile-agent-transcript-segments';
 
-        const thoughtBrief = this.createTranscriptThoughtBriefBlock(segments);
-        if (thoughtBrief) {
-            body.append(thoughtBrief);
+        const text = this.createTranscriptAgentTextBlock(segments);
+        if (text.childElementCount > 0) {
+            body.append(text);
+        }
+        const artifacts = this.createTranscriptAgentArtifactsBlock(segments, options);
+        if (artifacts.childElementCount > 0) {
+            body.append(artifacts);
         }
 
-        // Hero content first — Cursor-style: intent/thought, then the visible answer, then artifacts.
-        for (const segment of segments) {
-            if (segment.type === 'text' && segment.content.trim()) {
-                body.append(this.createTranscriptSegmentDetails(segment));
+        row.append(body);
+        if (error) {
+            row.append(this.createTranscriptErrorBlock(error));
+        }
+        return row;
+    }
+
+    protected syncTranscriptAgentStableBlocks(
+        body: HTMLElement,
+        segments: QaapAgentMessageSegmentDTO[],
+        options: { readonly deferArtifacts?: boolean } = {},
+    ): boolean {
+        const existingText = body.querySelector<HTMLElement>(':scope > .theia-mobile-agent-transcript-live-text');
+        const existingArtifacts = body.querySelector<HTMLElement>(':scope > .theia-mobile-agent-transcript-artifacts');
+        if (!existingText && !existingArtifacts && body.childElementCount > 0) {
+            return false;
+        }
+
+        const nextTextFingerprint = this.transcriptAgentTextFingerprint(segments);
+        if (existingText?.dataset.qaapTranscriptBlockFingerprint !== nextTextFingerprint) {
+            const nextText = this.createTranscriptAgentTextBlock(segments);
+            if (nextText.childElementCount === 0) {
+                existingText?.remove();
+            } else if (existingText) {
+                existingText.replaceWith(nextText);
+            } else {
+                body.insertBefore(nextText, existingArtifacts ?? null);
             }
         }
 
+        const nextArtifactsFingerprint = this.transcriptAgentArtifactsFingerprint(segments, options);
+        if (existingArtifacts?.dataset.qaapTranscriptBlockFingerprint !== nextArtifactsFingerprint) {
+            const nextArtifacts = this.createTranscriptAgentArtifactsBlock(segments, options);
+            if (nextArtifacts.childElementCount === 0) {
+                existingArtifacts?.remove();
+            } else if (existingArtifacts) {
+                existingArtifacts.replaceWith(nextArtifacts);
+            } else {
+                body.append(nextArtifacts);
+            }
+        }
+        return true;
+    }
+
+    protected createTranscriptAgentTextBlock(segments: QaapAgentMessageSegmentDTO[]): HTMLElement {
+        const block = document.createElement('div');
+        block.className = 'theia-mobile-agent-transcript-live-text';
+        block.dataset.qaapTranscriptBlockFingerprint = this.transcriptAgentTextFingerprint(segments);
+
+        const thoughtBrief = this.createTranscriptThoughtBriefBlock(segments);
+        if (thoughtBrief) {
+            block.append(thoughtBrief);
+        }
+        for (const segment of segments) {
+            if (segment.type === 'text' && segment.content.trim()) {
+                block.append(this.createTranscriptSegmentDetails(segment));
+            }
+        }
+        return block;
+    }
+
+    protected createTranscriptAgentArtifactsBlock(
+        segments: QaapAgentMessageSegmentDTO[],
+        options: { readonly deferArtifacts?: boolean } = {},
+    ): HTMLElement {
         const artifacts = document.createElement('div');
         artifacts.className = 'theia-mobile-agent-transcript-artifacts';
-        const activity = this.createTranscriptActivityTimeline(segments, !thoughtBrief);
+        artifacts.dataset.qaapTranscriptBlockFingerprint = this.transcriptAgentArtifactsFingerprint(segments, options);
+        const hasThoughtBrief = this.hasTranscriptThoughtBrief(segments);
+        const activity = this.createTranscriptActivityTimeline(segments, !hasThoughtBrief);
         if (activity) {
             artifacts.append(activity);
         }
@@ -14738,14 +14898,7 @@ export class MobileProjectsPanel {
             artifacts.append(toolSummary);
         }
         if (options.deferArtifacts) {
-            if (artifacts.childElementCount > 0) {
-                body.append(artifacts);
-            }
-            row.append(body);
-            if (error) {
-                row.append(this.createTranscriptErrorBlock(error));
-            }
-            return row;
+            return artifacts;
         }
         const changedFiles = this.createTranscriptChangedFilesCard(segments);
         if (changedFiles) {
@@ -14774,22 +14927,59 @@ export class MobileProjectsPanel {
             }
             artifacts.append(this.createTranscriptSegmentDetails(segment));
         }
-        if (artifacts.childElementCount > 0) {
-            body.append(artifacts);
-        }
 
-        if (!thoughtBrief) {
+        if (!hasThoughtBrief) {
             const technicalDetails = this.createTranscriptTechnicalDetailsCard(segments);
             if (technicalDetails) {
-                body.append(technicalDetails);
+                artifacts.append(technicalDetails);
             }
         }
+        return artifacts;
+    }
 
-        row.append(body);
-        if (error) {
-            row.append(this.createTranscriptErrorBlock(error));
+    protected hasTranscriptThoughtBrief(segments: QaapAgentMessageSegmentDTO[]): boolean {
+        const thinking = resolveTranscriptThinkingContent(segments);
+        const stats = resolveTranscriptActivityStats(segments);
+        return !!thinking || hasTranscriptActivityStats(stats);
+    }
+
+    protected transcriptAgentTextFingerprint(segments: QaapAgentMessageSegmentDTO[]): string {
+        const parts: string[] = [];
+        const stats = resolveTranscriptActivityStats(segments);
+        parts.push(
+            String(stats.fileReads),
+            String(stats.searches),
+            String(stats.shells),
+            String(stats.edits),
+            String(stats.otherTools),
+        );
+        for (const segment of segments) {
+            if (segment.type === 'thinking' || segment.type === 'text') {
+                parts.push(segment.type, String(segment.content.length), this.transcriptRenderTextSignature(segment.content));
+            }
         }
-        return row;
+        return parts.join('|');
+    }
+
+    protected transcriptAgentArtifactsFingerprint(
+        segments: QaapAgentMessageSegmentDTO[],
+        options: { readonly deferArtifacts?: boolean } = {},
+    ): string {
+        const parts = [options.deferArtifacts ? 'defer' : 'full'];
+        for (const segment of segments) {
+            if (segment.type !== 'tool') {
+                continue;
+            }
+            parts.push(
+                segment.name,
+                segment.finished ? '1' : '0',
+                String(segment.args.length),
+                this.transcriptRenderTextSignature(segment.args),
+                String(segment.result?.length ?? 0),
+                this.transcriptRenderTextSignature(segment.result ?? ''),
+            );
+        }
+        return parts.join('|');
     }
 
     protected createTranscriptThoughtBriefBlock(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
@@ -14986,59 +15176,125 @@ export class MobileProjectsPanel {
 
     protected createTranscriptChangedFilesCard(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
         const files = this.resolveTranscriptChangedFiles(segments);
-        if (files.length === 0) {
+        const stats = this.resolveTranscriptDiffStats(segments);
+        const checks = this.resolveTranscriptVerificationChecks(segments);
+        const hasCompletedChangeWork = segments.some(segment => segment.type === 'tool' && !!this.resolveTranscriptFileChangeKind(segment.name))
+            && !segments.some(segment => segment.type === 'tool' && !segment.finished);
+        if (files.length === 0 && !stats && !hasCompletedChangeWork) {
             return undefined;
         }
-        const stats = this.resolveTranscriptDiffStats(segments);
 
-        // Collapsible, GitHub-style card: a compact header (count + aggregate +/- stats) that
-        // expands to the per-file list.
-        const card = document.createElement('details');
+        const card = document.createElement('section');
         card.className = 'theia-mobile-agent-premium-card theia-mobile-agent-changed-files';
 
-        const summary = document.createElement('summary');
-        summary.className = 'theia-mobile-agent-changed-files-summary';
-        const chevron = document.createElement('span');
-        chevron.className = 'theia-mobile-agent-changed-files-chevron codicon codicon-chevron-right';
-        chevron.setAttribute('aria-hidden', 'true');
+        const header = document.createElement('div');
+        header.className = 'theia-mobile-agent-changed-files-header';
         const title = document.createElement('span');
         title.className = 'theia-mobile-agent-changed-files-title';
-        title.textContent = files.length === 1
-            ? nls.localize('qaap/mobileProjects/transcriptChangedFilesOne', '{0} file changed', '1')
-            : nls.localize('qaap/mobileProjects/transcriptChangedFilesCount', '{0} files changed', String(files.length));
-        summary.append(chevron, title);
-        if (stats && (stats.added > 0 || stats.removed > 0)) {
-            const statsRow = document.createElement('span');
-            statsRow.className = 'theia-mobile-agent-changed-files-stats';
-            const added = document.createElement('span');
-            added.className = 'theia-mobile-agent-diff-stat theia-mod-added';
-            added.textContent = `+${stats.added}`;
-            const removed = document.createElement('span');
-            removed.className = 'theia-mobile-agent-diff-stat theia-mod-removed';
-            removed.textContent = `-${stats.removed}`;
-            statsRow.append(added, removed);
-            summary.append(statsRow);
-        }
-        summary.append(this.createTranscriptChangedFilesReviewButton());
-        card.append(summary);
+        title.textContent = nls.localize('qaap/mobileProjects/transcriptChangedFilesTitle', 'Files changed');
+        const summaryText = document.createElement('span');
+        summaryText.className = 'theia-mobile-agent-changed-files-summary-text';
+        summaryText.textContent = this.formatTranscriptChangedFilesSummary(files.length, stats, checks);
+        header.append(title, summaryText);
+        card.append(header);
+
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-agent-changed-files-actions';
+        actions.append(
+            this.createTranscriptChangedFilesReviewButton(),
+            this.createTranscriptChangedFilesOpenDiffButton(),
+        );
+        card.append(actions);
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-agent-changed-files-list';
-        for (const file of files.slice(0, 12)) {
-            list.append(this.createTranscriptChangedFileRow(file));
-        }
-        if (files.length > 12) {
-            const more = document.createElement('div');
-            more.className = 'theia-mobile-agent-changed-files-more';
-            more.textContent = nls.localize(
-                'qaap/mobileProjects/transcriptChangedFilesMore',
-                '+{0} more',
-                String(files.length - 12),
-            );
-            list.append(more);
+        if (files.length > 0) {
+            const groups: Array<{
+                readonly kind: 'created' | 'edited' | 'deleted';
+                readonly label: string;
+                readonly files: Array<{ readonly path: string; readonly kind: 'created' | 'edited' | 'deleted' }>;
+            }> = [
+                {
+                    kind: 'created',
+                    label: nls.localize('qaap/mobileProjects/transcriptChangedFilesAdded', 'Added'),
+                    files: files.filter(file => file.kind === 'created'),
+                },
+                {
+                    kind: 'edited',
+                    label: nls.localize('qaap/mobileProjects/transcriptChangedFilesModified', 'Modified'),
+                    files: files.filter(file => file.kind === 'edited'),
+                },
+                {
+                    kind: 'deleted',
+                    label: nls.localize('qaap/mobileProjects/transcriptChangedFilesDeleted', 'Deleted'),
+                    files: files.filter(file => file.kind === 'deleted'),
+                },
+            ];
+            let visible = 0;
+            for (const group of groups) {
+                if (group.files.length === 0 || visible >= 12) {
+                    continue;
+                }
+                list.append(this.createTranscriptChangedFilesGroupHeader(group.label, group.files.length, group.kind));
+                for (const file of group.files.slice(0, Math.max(0, 12 - visible))) {
+                    list.append(this.createTranscriptChangedFileRow(file));
+                    visible++;
+                }
+            }
+            if (files.length > visible) {
+                const more = document.createElement('div');
+                more.className = 'theia-mobile-agent-changed-files-more';
+                more.textContent = nls.localize(
+                    'qaap/mobileProjects/transcriptChangedFilesMore',
+                    '+{0} more',
+                    String(files.length - visible),
+                );
+                list.append(more);
+            }
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'theia-mobile-agent-changed-files-empty';
+            empty.textContent = nls.localize('qaap/mobileProjects/transcriptChangedFilesNone', 'No files detected in this turn.');
+            list.append(empty);
         }
         card.append(list);
         return card;
+    }
+
+    protected formatTranscriptChangedFilesSummary(
+        fileCount: number,
+        stats: { readonly added: number; readonly removed: number } | undefined,
+        checks: Array<{ readonly command: string; readonly state: 'passed' | 'failed' | 'running' }>,
+    ): string {
+        const parts = [
+            fileCount === 1
+                ? nls.localize('qaap/mobileProjects/transcriptChangedFilesOneShort', '1 file')
+                : nls.localize('qaap/mobileProjects/transcriptChangedFilesCountShort', '{0} files', String(fileCount)),
+        ];
+        if (stats) {
+            parts.push(`+${stats.added} -${stats.removed}`);
+        }
+        if (checks.length > 0) {
+            const hasFailed = checks.some(check => check.state === 'failed');
+            const hasRunning = checks.some(check => check.state === 'running');
+            parts.push(hasFailed
+                ? nls.localize('qaap/mobileProjects/transcriptChangedFilesTestsFailed', 'tests failed')
+                : hasRunning
+                    ? nls.localize('qaap/mobileProjects/transcriptChangedFilesTestsRunning', 'tests running')
+                    : nls.localize('qaap/mobileProjects/transcriptChangedFilesTestsPassed', 'tests passed'));
+        }
+        return parts.join(' · ');
+    }
+
+    protected createTranscriptChangedFilesGroupHeader(label: string, count: number, kind: 'created' | 'edited' | 'deleted'): HTMLElement {
+        const header = document.createElement('div');
+        header.className = `theia-mobile-agent-changed-files-group theia-mod-${kind}`;
+        const text = document.createElement('span');
+        text.textContent = label;
+        const badge = document.createElement('span');
+        badge.textContent = String(count);
+        header.append(text, badge);
+        return header;
     }
 
     protected createTranscriptToolGroupCard(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
@@ -15110,10 +15366,9 @@ export class MobileProjectsPanel {
         icon.className = 'codicon codicon-git-compare';
         icon.setAttribute('aria-hidden', 'true');
         const label = document.createElement('span');
-        label.textContent = nls.localize('qaap/mobileProjects/transcriptChangedFilesReview', 'Review');
+        label.textContent = nls.localize('qaap/mobileProjects/transcriptChangedFilesReview', 'Review changes');
         review.append(icon, label);
         review.addEventListener('click', event => {
-            // Inside <summary>: stop the click from toggling the collapsible card.
             event.preventDefault();
             event.stopPropagation();
             const project = this.transcriptComposerProject;
@@ -15125,8 +15380,28 @@ export class MobileProjectsPanel {
         return review;
     }
 
+    /** Opens the full Work Hub diff review surface. */
+    protected createTranscriptChangedFilesOpenDiffButton(): HTMLButtonElement {
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'theia-mobile-agent-changed-files-open-diff';
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-diff';
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.textContent = nls.localize('qaap/mobileProjects/transcriptChangedFilesOpenDiff', 'Open diff');
+        open.append(icon, label);
+        open.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            const project = this.transcriptComposerProject;
+            void this.commands.executeCommand(QAAP_OPEN_DIFF_REVIEW.id, project?.id);
+        });
+        return open;
+    }
+
     protected createTranscriptChangedFileRow(
-        file: { readonly path: string; readonly kind: 'edited' | 'created' },
+        file: { readonly path: string; readonly kind: 'edited' | 'created' | 'deleted' },
     ): HTMLElement {
         const row = document.createElement('div');
         row.className = `theia-mobile-agent-changed-file theia-mod-${file.kind}`;
@@ -15153,7 +15428,9 @@ export class MobileProjectsPanel {
         badge.className = `theia-mobile-agent-changed-file-badge theia-mod-${file.kind}`;
         badge.textContent = file.kind === 'created'
             ? nls.localize('qaap/mobileProjects/transcriptChangedFileNew', 'New')
-            : nls.localize('qaap/mobileProjects/transcriptChangedFileEdited', 'Edited');
+            : file.kind === 'deleted'
+                ? nls.localize('qaap/mobileProjects/transcriptChangedFileDeleted', 'Deleted')
+                : nls.localize('qaap/mobileProjects/transcriptChangedFileEdited', 'Modified');
 
         row.append(icon, info, badge);
         return row;
@@ -15267,8 +15544,8 @@ export class MobileProjectsPanel {
 
     protected resolveTranscriptChangedFiles(
         segments: QaapAgentMessageSegmentDTO[],
-    ): Array<{ readonly path: string; readonly kind: 'edited' | 'created' }> {
-        const byPath = new Map<string, 'edited' | 'created'>();
+    ): Array<{ readonly path: string; readonly kind: 'edited' | 'created' | 'deleted' }> {
+        const byPath = new Map<string, 'edited' | 'created' | 'deleted'>();
         for (const segment of segments) {
             if (segment.type !== 'tool') {
                 continue;
@@ -15281,7 +15558,7 @@ export class MobileProjectsPanel {
             if (!path) {
                 continue;
             }
-            byPath.set(path, kind === 'created' ? 'created' : byPath.get(path) ?? 'edited');
+            byPath.set(path, kind === 'created' || kind === 'deleted' ? kind : byPath.get(path) ?? 'edited');
         }
         return [...byPath.entries()].map(([path, kind]) => ({ path, kind }));
     }
@@ -15328,8 +15605,11 @@ export class MobileProjectsPanel {
         return found ? { added, removed } : undefined;
     }
 
-    protected resolveTranscriptFileChangeKind(toolName: string): 'edited' | 'created' | undefined {
+    protected resolveTranscriptFileChangeKind(toolName: string): 'edited' | 'created' | 'deleted' | undefined {
         const name = toolName.toLowerCase();
+        if (name.includes('delete') || name.includes('remove') || name.includes('unlink')) {
+            return 'deleted';
+        }
         if (name.includes('write') || name.includes('create')) {
             return 'created';
         }
@@ -15902,12 +16182,19 @@ export class MobileProjectsPanel {
     }
 
     protected resolveTranscriptStreamingActivity(conv: QaapAgentConversationDTO): { kind: string; title: string; detail: string } {
+        if (this.cachedAgentApprovals.some(approval => approval.conversationId === conv.id)) {
+            return {
+                kind: 'approval',
+                title: nls.localize('qaap/mobileProjects/transcriptActivityApproval', 'Waiting for approval'),
+                detail: nls.localize('qaap/mobileProjects/transcriptActivityApprovalDetail', 'A manual tool approval is pending.'),
+            };
+        }
         const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
         const segments = lastAgent?.segments ?? [];
         const activeTool = [...segments].reverse().find((segment): segment is Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> =>
             segment.type === 'tool' && !segment.finished);
         if (activeTool) {
-            const label = this.localizeActivityLabel(formatToolActivityLabel(activeTool.name, activeTool.args));
+            const label = this.resolveTranscriptStreamingToolLabel(activeTool);
             return {
                 kind: this.resolveTranscriptToolKind(activeTool.name),
                 title: label,
@@ -15935,6 +16222,24 @@ export class MobileProjectsPanel {
             title: nls.localize('qaap/mobileProjects/transcriptActivityStarting', 'Starting the turn'),
             detail: nls.localize('qaap/mobileProjects/transcriptActivityStartingDetail', 'Preparing context and selecting the next action.'),
         };
+    }
+
+    protected resolveTranscriptStreamingToolLabel(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): string {
+        const kind = this.resolveTranscriptToolKind(segment.name);
+        if (kind === 'terminal') {
+            const command = this.extractTranscriptToolCommand(segment.args);
+            if (command && this.isTranscriptVerificationCommand(command)) {
+                return nls.localize('qaap/mobileProjects/transcriptActivityTesting', 'Running tests');
+            }
+            return nls.localize('qaap/mobileProjects/transcriptActivityRunningCommandShort', 'Running command');
+        }
+        if (kind === 'editing') {
+            return nls.localize('qaap/mobileProjects/transcriptActivityEditingShort', 'Editing');
+        }
+        if (kind === 'reading' || kind === 'searching') {
+            return nls.localize('qaap/mobileProjects/transcriptActivityReadingShort', 'Reading files');
+        }
+        return this.localizeActivityLabel(formatToolActivityLabel(segment.name, segment.args));
     }
 
     protected resolveTranscriptToolKind(toolName: string): string {
