@@ -13,6 +13,9 @@ export const NVIDIA_PROVIDER_ID = 'nvidia';
  * tell at a glance which models cost nothing to try.
  */
 export const NVIDIA_FREE_MODELS: readonly string[] = [
+    // Listed first so it becomes the default selected NVIDIA model and the default
+    // model QAIQ resolves to when no alias is configured.
+    'moonshotai/kimi-k2.6',
     'nvidia/llama-3.3-nemotron-super-49b-v1',
     'meta/llama-3.3-70b-instruct',
     // Replaces qwen/qwen2.5-coder-32b-instruct (NIM EOL 2026-05-12).

@@ -46,6 +46,7 @@ import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutori
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
 import { MobileEditorGestureContribution } from './mobile-editor-gesture-contribution';
 import { QaapEmptyWorkbenchBrandingContribution } from './qaap-empty-workbench-branding-contribution';
+import { QaapUnshippedAgentsContribution } from './qaap-unshipped-agents-contribution';
 import { QaapWatermarkCommandsContribution } from './qaap-watermark-commands-contribution';
 import { LongPressContextMenuContribution } from './long-press-context-menu';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
@@ -132,6 +133,9 @@ export default new ContainerModule(bind => {
 
     bind(QaapEmptyWorkbenchBrandingContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapEmptyWorkbenchBrandingContribution);
+
+    bind(QaapUnshippedAgentsContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapUnshippedAgentsContribution);
 
     bind(LongPressContextMenuContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(LongPressContextMenuContribution);

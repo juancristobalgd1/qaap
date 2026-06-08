@@ -50,6 +50,7 @@ export class MobileProjectsConversations {
     protected readonly byCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected readonly theiaByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected readonly theiaSessionFiles = new Map<string, URI>();
+    protected readonly detailById = new Map<string, QaapAgentConversationDTO>();
     protected source: EventSource | undefined;
     protected reconnectHandle: number | undefined;
     protected started = false;
@@ -281,7 +282,17 @@ export class MobileProjectsConversations {
     /** Optimistic update after a synchronous POST returns, before SSE catches up. */
     recordSnapshot(conv: QaapAgentConversationSummaryDTO): void {
         this.upsert(conv);
+        this.patchCachedConversationSummary(conv);
         this.onDidChangeEmitter.fire();
+    }
+
+    recordConversationDetail(conv: QaapAgentConversationDTO): void {
+        this.detailById.set(conv.id, conv);
+        this.patchCachedConversationSummary(this.summaryFromCachedDetail(conv));
+    }
+
+    getCachedConversation(id: string): QaapAgentConversationDTO | undefined {
+        return this.detailById.get(id);
     }
 
     /** Latest summary row for a conversation id (VPS or Theia-backed). */
@@ -315,6 +326,7 @@ export class MobileProjectsConversations {
         } else {
             map.set(normalized, next);
         }
+        this.detailById.delete(conversationId);
         this.onDidChangeEmitter.fire();
     }
 
@@ -322,12 +334,20 @@ export class MobileProjectsConversations {
         try {
             const groups = await listAllConversationGroups();
             const next = new Map<string, QaapAgentConversationSummaryDTO[]>();
+            const liveIds = new Set<string>();
             for (const group of groups) {
-                next.set(normalizeCwd(group.cwd), sortConversations([...group.conversations]));
+                const conversations = sortConversations([...group.conversations]);
+                conversations.forEach(conversation => liveIds.add(conversation.id));
+                next.set(normalizeCwd(group.cwd), conversations);
             }
             this.byCwd.clear();
             for (const [cwd, list] of next) {
                 this.byCwd.set(cwd, list);
+            }
+            for (const id of this.detailById.keys()) {
+                if (!liveIds.has(id)) {
+                    this.detailById.delete(id);
+                }
             }
             this.onDidChangeEmitter.fire();
         } catch {
@@ -369,6 +389,7 @@ export class MobileProjectsConversations {
         try {
             const payload = JSON.parse(ev.data) as ConversationCreatedEvent;
             this.upsert(payload.conversation);
+            this.patchCachedConversationSummary(payload.conversation);
             this.onDidChangeEmitter.fire();
         } catch {
             /* drop malformed payload */
@@ -386,6 +407,7 @@ export class MobileProjectsConversations {
                 this.onDidChangeEmitter.fire();
                 return;
             }
+            this.patchCachedConversationMessage(payload.conversationId, payload.message);
             const updated: QaapAgentConversationSummaryDTO = {
                 ...existing,
                 updatedAt: payload.message.createdAt,
@@ -416,6 +438,7 @@ export class MobileProjectsConversations {
             } else {
                 this.byCwd.set(cwd, next);
             }
+            this.detailById.delete(payload.conversationId);
             this.onDidChangeEmitter.fire();
         } catch {
             /* drop */
@@ -432,6 +455,75 @@ export class MobileProjectsConversations {
             list.unshift(conv);
         }
         this.byCwd.set(cwd, sortConversations(list));
+    }
+
+    protected patchCachedConversationSummary(summary: QaapAgentConversationSummaryDTO): void {
+        const existing = this.detailById.get(summary.id);
+        if (!existing) {
+            return;
+        }
+        this.detailById.set(summary.id, {
+            ...existing,
+            cwd: summary.cwd,
+            agentId: summary.agentId,
+            title: summary.title,
+            status: summary.status,
+            createdAt: summary.createdAt,
+            updatedAt: summary.updatedAt,
+            priority: summary.priority,
+            paused: summary.paused,
+            autoApprove: summary.autoApprove,
+            forkedFromId: summary.forkedFromId,
+            parallelRunId: summary.parallelRunId,
+            parallelBaseCwd: summary.parallelBaseCwd,
+            linkedPullRequest: summary.linkedPullRequest,
+            contextUsage: summary.contextUsage,
+            contextWindowSize: summary.contextWindowSize,
+            contextUsageEstimated: summary.contextUsageEstimated,
+        });
+    }
+
+    protected patchCachedConversationMessage(conversationId: string, message: QaapAgentMessageDTO): void {
+        const existing = this.detailById.get(conversationId);
+        if (!existing) {
+            return;
+        }
+        const index = existing.messages.findIndex(candidate => candidate.id === message.id);
+        const messages = index >= 0
+            ? existing.messages.map(candidate => candidate.id === message.id ? message : candidate)
+            : [...existing.messages, message];
+        this.detailById.set(conversationId, {
+            ...existing,
+            status: existing.status === 'idle' ? 'streaming' : existing.status,
+            updatedAt: Math.max(existing.updatedAt, message.createdAt),
+            messages,
+        });
+    }
+
+    protected summaryFromCachedDetail(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
+        const last = conv.messages[conv.messages.length - 1];
+        return {
+            id: conv.id,
+            cwd: conv.cwd,
+            agentId: conv.agentId,
+            title: conv.title,
+            status: conv.status,
+            createdAt: conv.createdAt,
+            updatedAt: conv.updatedAt,
+            messageCount: conv.messages.length,
+            lastMessagePreview: last ? excerpt(normalizeAgentMessageContentForDisplay(last.content)) : undefined,
+            lastMessageRole: last?.role,
+            priority: conv.priority,
+            paused: conv.paused,
+            autoApprove: conv.autoApprove,
+            forkedFromId: conv.forkedFromId,
+            parallelRunId: conv.parallelRunId,
+            parallelBaseCwd: conv.parallelBaseCwd,
+            linkedPullRequest: conv.linkedPullRequest,
+            contextUsage: conv.contextUsage,
+            contextWindowSize: conv.contextWindowSize,
+            contextUsageEstimated: conv.contextUsageEstimated,
+        };
     }
 
     protected getAllConversationBuckets(): Array<[string, QaapAgentConversationSummaryDTO[]]> {

@@ -35,17 +35,15 @@ Run everything from the repo root with `npm` (not yarn). Never run `.ts` source 
 - One package: `npx lerna run <compile|test> --scope @theia/<package>`
 - One compiled test file: `npx mocha ./packages/<pkg>/lib/<path>/<file>.spec.js`
 
-Standard verify sequence after a code change: `npm run compile` → `node scripts/qaap-drift-check.js` → `npm run build:browser` (only when UI needs checking in the browser). Note: `build:browser` bundles the frontend only and does NOT reload an already-running server — restart `start:browser` after any `src/node` (backend) change.
+After a code change, verify in order: compile → drift-check → (only if UI needs checking) `build:browser`. `build:browser` bundles the frontend only and does NOT reload a running server — restart `start:browser` after any `src/node` (backend) change.
 
 ### Conventions
 
-- 4-space indent, single quotes, `undefined` (never `null`), explicit return types, arrow functions.
-- PascalCase for types/enums; camelCase for functions/variables; kebab-case file names matching the main exported type.
-- No `I` prefix on interfaces; prefer a class over an interface + symbol when possible.
-- Localize user-facing strings: `nls.localizeByDefault('Close')` when the string exists in VS Code's language packs, otherwise `nls.localize('theia/<package>/<id>', 'text', ...args)`.
-- Pass URIs (as strings) across frontend/backend, never raw paths; manipulate paths with `URI`/`Path`, not string concatenation.
-- No hardcoded colors or inline styles in code: register colors via `ColorContribution` and reference VS Code theme colors in CSS as `var(--theia-...)`.
-- In React, don't bind functions in event handlers; use class-property arrow functions.
+- 4-space indent, single quotes, `undefined` (never `null`), explicit return types — enforced by eslint (`npm run lint:fix`).
+- Localize user-facing strings: `nls.localizeByDefault('Close')` when the string exists in VS Code's packs, otherwise `nls.localize('theia/<package>/<id>', 'text', ...args)`.
+- Pass URIs (as strings) across frontend/backend, never raw paths; no hardcoded colors/styles in code (register via `ColorContribution`, reference as `var(--theia-...)`).
+
+See `doc/coding-guidelines.md` for the full style guide.
 
 ### Qaap product contract (critical)
 
@@ -53,7 +51,7 @@ Work Hub is the default surface after every browser reload, on mobile and deskto
 
 ### Tests
 
-`*.spec.ts` (unit), `*.ui-spec.ts` (UI), `*.slow-spec.ts` (slow). Tests live beside the code under test and must be compiled before running. Example backend test: `packages/core/src/common/content-replacer.spec.ts`. Example frontend test: `packages/ai-code-completion/src/browser/code-completion-postprocessor.spec.ts`.
+`*.spec.ts` (unit), `*.ui-spec.ts` (UI), `*.slow-spec.ts` (slow). Tests live beside the code under test and must be compiled before running.
 
 ### More detail
 

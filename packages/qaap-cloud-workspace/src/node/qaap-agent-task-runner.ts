@@ -885,7 +885,7 @@ export class QaapAgentTaskRunner {
             return '--provider openai --model nvidia/nemotron-3-super-120b-a12b:free';
         }
         if (env.NVIDIA_API_KEY?.trim()) {
-            return '--provider openai --model meta/llama-3.3-70b-instruct';
+            return '--provider openai --model moonshotai/kimi-k2.6';
         }
         if (env.OLLAMA_HOST?.trim()) {
             return '--provider ollama --model qwen2.5-coder:7b';

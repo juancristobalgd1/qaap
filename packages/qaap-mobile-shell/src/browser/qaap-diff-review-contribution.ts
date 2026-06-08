@@ -25,7 +25,7 @@ export class QaapDiffReviewContribution implements CommandContribution, Frontend
 
     registerCommands(commands: CommandRegistry): void {
         commands.registerCommand(QAAP_OPEN_DIFF_REVIEW, {
-            execute: () => this.workHubDiff.openDiffInWorkHub(),
+            execute: (projectId?: string) => this.workHubDiff.openDiffInWorkHub(projectId),
         });
     }
 

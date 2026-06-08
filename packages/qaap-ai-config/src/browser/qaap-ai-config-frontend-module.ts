@@ -11,6 +11,7 @@ import { PreferenceContribution } from '@theia/core/lib/common/preferences/prefe
 import { QaapCoderPromptContribution } from './qaap-coder-prompt-contribution';
 import { QaapTasksBackgroundPromptContribution } from './qaap-tasks-background-prompt-contribution';
 import { QaapAiModelDefaultsContribution } from './qaap-ai-model-defaults-contribution';
+import { QaapHiddenAgentPreferencesContribution } from './qaap-hidden-agent-preferences-contribution';
 import { LanguageModelOptionContribution } from '@theia/ai-ide/lib/browser/ai-configuration/language-model-option-contribution';
 import { QaapLanguageModelOptionContribution } from './qaap-language-model-option-contribution';
 
@@ -23,6 +24,9 @@ export default new ContainerModule(bind => {
 
     bind(QaapAiModelDefaultsContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapAiModelDefaultsContribution);
+
+    bind(QaapHiddenAgentPreferencesContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapHiddenAgentPreferencesContribution);
 
     bind(QaapLanguageModelOptionContribution).toSelf().inSingletonScope();
     bind(LanguageModelOptionContribution).toService(QaapLanguageModelOptionContribution);

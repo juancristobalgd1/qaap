@@ -51,10 +51,18 @@ export interface QaapAgentPreviewChromeHost {
     hardReload(): void;
     openExternal(): void;
     copyCurrentUrl(): Promise<void>;
+    collectPreviewContext?(): QaapAgentPreviewContext;
+    sendContextToAgent?(): Promise<void>;
     takeScreenshot?(): void | Promise<void>;
     onPickElement?(): void;
     onToggleInspector?(): void;
     setInspectorPosition?(position: 'side' | 'bottom'): void;
+}
+
+export interface QaapAgentPreviewContext {
+    readonly url: string;
+    readonly title?: string;
+    readonly text?: string;
 }
 
 export interface QaapAgentPreviewChromeOptions {
@@ -444,6 +452,9 @@ export class QaapAgentPreviewChromeController implements Disposable {
             hardReload: () => this.host.hardReload(),
             openExternal: () => this.host.openExternal(),
             copyCurrentUrl: () => this.host.copyCurrentUrl(),
+            sendContextToAgent: this.host.sendContextToAgent
+                ? () => this.host.sendContextToAgent!()
+                : undefined,
             clipboard: this.options.clipboard,
             messageService: this.options.messageService,
             notify: this.options.notify,
@@ -512,6 +523,7 @@ export interface EmbeddedAgentPreviewChromeOptions extends QaapAgentPreviewChrom
     readonly inspectorDeps?: QaapPreviewInspectorDeps;
     readonly onPickElement?: () => void;
     readonly onToggleInspector?: () => void;
+    readonly onSendContextToAgent?: (context: QaapAgentPreviewContext) => void | Promise<void>;
 }
 
 export interface EmbeddedAgentPreviewChrome extends Disposable {
@@ -715,6 +727,10 @@ export function mountEmbeddedAgentPreviewChrome(
             }
             options.messageService?.info(nls.localize('qaap/preview/urlCopied', 'URL copied to clipboard'));
         },
+        collectPreviewContext: () => collectEmbeddedPreviewContext(frame, currentUrl),
+        sendContextToAgent: options.onSendContextToAgent
+            ? async () => options.onSendContextToAgent!(collectEmbeddedPreviewContext(frame, currentUrl))
+            : undefined,
         onPickElement: pickHandler,
         onToggleInspector: inspectorHandler,
         setInspectorPosition: position => setPreviewInspectorPosition(split, inspectorSlot, position),
@@ -786,6 +802,25 @@ export function mountEmbeddedAgentPreviewChrome(
 function normalizePreviewNavigateUrl(url: string): string {
     const opened = normalizeMiniBrowserOpenUrl(url) || url;
     return normalizePreviewUrlForSameOrigin(opened);
+}
+
+function collectEmbeddedPreviewContext(frame: HTMLIFrameElement, fallbackUrl: string): QaapAgentPreviewContext {
+    let url = fallbackUrl;
+    let title: string | undefined;
+    let text: string | undefined;
+    try {
+        const doc = frame.contentDocument;
+        const href = frame.contentWindow?.location.href;
+        if (href) {
+            url = href;
+        }
+        title = doc?.title?.trim() || undefined;
+        const bodyText = doc?.body?.innerText?.replace(/\s+/g, ' ').trim();
+        text = bodyText ? bodyText.slice(0, 4000) : undefined;
+    } catch {
+        /* Cross-origin previews still provide the loaded URL. */
+    }
+    return { url, title, text };
 }
 
 export function attachAgentPreviewChromeToMiniBrowserContent(

@@ -13,7 +13,7 @@ import { ChatAgentLocation, ChatRequestModel, ChatSession } from '@theia/ai-chat
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import { postConstruct } from '@theia/core/shared/inversify';
-import { THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
+import { QAIQ_AGENT_ID } from '../common/qaap-agent-task-client';
 
 export const MobileProjectChatViewWidgetFactory = Symbol('MobileProjectChatViewWidgetFactory');
 export type MobileProjectChatViewWidgetFactory = (id: string) => MobileProjectChatViewWidget;
@@ -189,7 +189,7 @@ export class MobileProjectAIChatInputWidget extends AIChatInputWidget {
         }
         const agent: ChatAgent | undefined = this._pinnedAgent
             ?? this.chatAgentService.getDefaultAgent()
-            ?? this.chatAgentService.getAgent(THEIA_CODER_AGENT_ID);
+            ?? this.chatAgentService.getAgent(QAIQ_AGENT_ID);
         if (!agent) {
             return;
         }
