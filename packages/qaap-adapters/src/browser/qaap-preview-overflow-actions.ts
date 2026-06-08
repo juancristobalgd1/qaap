@@ -10,6 +10,7 @@ import { readPreviewInspectorPosition } from './qaap-preview-inspector-panel-siz
 
 export type QaapPreviewOverflowActionId =
     | 'take-screenshot'
+    | 'send-context'
     | 'reload'
     | 'hard-reload'
     | 'copy-url'
@@ -30,6 +31,7 @@ export interface QaapPreviewOverflowActionContext {
     readonly hardReload: () => void;
     readonly openExternal: () => void;
     readonly copyCurrentUrl: () => Promise<void>;
+    readonly sendContextToAgent?: () => Promise<void>;
     readonly clipboard?: ClipboardService;
     readonly messageService?: MessageService;
     /** Optional toast (e.g. mobile snackbar) in addition to MessageService. */
@@ -56,14 +58,18 @@ export interface QaapPreviewOverflowMenuItem {
     readonly checked?: boolean;
 }
 
-export function buildPreviewOverflowMenuItems(ctx: Pick<QaapPreviewOverflowActionContext, 'bookmarkBarVisible'>): QaapPreviewOverflowMenuItem[] {
+export function buildPreviewOverflowMenuItems(ctx: Pick<QaapPreviewOverflowActionContext, 'bookmarkBarVisible' | 'sendContextToAgent'>): QaapPreviewOverflowMenuItem[] {
     const bookmarkVisible = ctx.bookmarkBarVisible();
     const inspectorPosition = readPreviewInspectorPosition();
-    return [
+    const items: QaapPreviewOverflowMenuItem[] = [
         {
             id: 'take-screenshot',
             label: nls.localize('qaap/preview/takeScreenshot', 'Take Screenshot'),
         },
+        ...(ctx.sendContextToAgent ? [{
+            id: 'send-context' as const,
+            label: nls.localize('qaap/preview/sendContextToAgent', 'Send Context to Agent'),
+        }] : []),
         {
             id: 'hard-reload',
             label: nls.localize('qaap/preview/hardReload', 'Hard Reload'),
@@ -105,6 +111,7 @@ export function buildPreviewOverflowMenuItems(ctx: Pick<QaapPreviewOverflowActio
             label: nls.localize('qaap/preview/clearCache', 'Clear Cache'),
         },
     ];
+    return items;
 }
 
 export async function runPreviewOverflowAction(
@@ -114,6 +121,14 @@ export async function runPreviewOverflowAction(
     switch (id) {
         case 'take-screenshot':
             await runPreviewTakeScreenshot(ctx);
+            return;
+        case 'send-context':
+            if (!ctx.sendContextToAgent) {
+                previewNotify(ctx, nls.localize('qaap/preview/sendContextUnavailable', 'No agent conversation is attached to this preview.'), 'warn');
+                return;
+            }
+            await ctx.sendContextToAgent();
+            previewNotify(ctx, nls.localize('qaap/preview/contextSent', 'Preview context sent to agent'));
             return;
         case 'reload':
             ctx.reload();
@@ -163,7 +178,11 @@ export function mountPreviewOverflowMenu(options: MountPreviewOverflowMenuOption
     menu.className = 'qaap-agent-preview-overflow-menu';
     menu.setAttribute('role', 'menu');
 
-    const items = buildPreviewOverflowMenuItems({ bookmarkBarVisible: options.bookmarkBarVisible });
+    const initialContext = options.getContext();
+    const items = buildPreviewOverflowMenuItems({
+        bookmarkBarVisible: options.bookmarkBarVisible,
+        sendContextToAgent: initialContext.sendContextToAgent,
+    });
     for (const item of items) {
         menu.append(createPreviewOverflowMenuRow(item));
     }

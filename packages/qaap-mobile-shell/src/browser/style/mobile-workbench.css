@@ -8137,6 +8137,21 @@ body.theia-mobile-mod-landing
   background: var(--qaap-mobile-active-bg);
 }
 
+.theia-mobile-projects-task-row.theia-mod-action-pending {
+  opacity: 0.68;
+  pointer-events: none;
+}
+
+.theia-mobile-projects-task-row.theia-mod-action-pending .theia-mobile-projects-task-dot,
+.theia-mobile-projects-task-row.theia-mod-action-pending .theia-mobile-projects-task-lineage {
+  animation: qaap-mobile-task-pending-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes qaap-mobile-task-pending-pulse {
+  from { opacity: 0.42; }
+  to { opacity: 1; }
+}
+
 .theia-mobile-projects-task-row.theia-mod-paused .theia-mobile-projects-task-item {
   opacity: 0.55;
   filter: saturate(0.7);

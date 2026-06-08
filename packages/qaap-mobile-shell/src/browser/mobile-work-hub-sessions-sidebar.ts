@@ -61,6 +61,7 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly resizeHandle: HTMLElement;
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
+    protected refreshRaf: number | undefined;
 
     constructor(protected readonly delegate: MobileWorkHubSessionsSidebarDelegate) {
         this.root = document.createElement('aside');
@@ -241,6 +242,7 @@ export class MobileWorkHubSessionsSidebar {
         if (!this.visible) {
             return;
         }
+        this.cancelScheduledRefresh();
         dismissQaapAccountMenu();
         this.scrollTouchDispose.dispose();
         this.edgeSwipeDispose.dispose();
@@ -276,11 +278,32 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     refreshList(): void {
+        if (!this.visible) {
+            return;
+        }
+        if (this.refreshRaf !== undefined) {
+            return;
+        }
+        this.refreshRaf = window.requestAnimationFrame(() => {
+            this.refreshRaf = undefined;
+            this.renderListNow();
+        });
+    }
+
+    protected renderListNow(): void {
         this.listHost.replaceChildren();
         this.delegate.renderSessionList(this.listHost);
         if (this.visible) {
             this.ensureScrollTouchFallback();
         }
+    }
+
+    protected cancelScheduledRefresh(): void {
+        if (this.refreshRaf === undefined) {
+            return;
+        }
+        window.cancelAnimationFrame(this.refreshRaf);
+        this.refreshRaf = undefined;
     }
 
     protected onKeyDown(event: KeyboardEvent): void {
