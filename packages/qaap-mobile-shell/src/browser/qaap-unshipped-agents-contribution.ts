@@ -58,7 +58,10 @@ export class QaapUnshippedAgentsContribution implements FrontendApplicationContr
         // test and work with GitHub natively):
         'AppTester',            // browser E2E verification
         'code-reviewer',        // in-chat code review
-        'GitHub'                // GitHub / PR / ticket integration
+        'GitHub',               // GitHub / PR / ticket integration
+        // The in-browser Theia chat agent. Qaap's chat now routes to the VPS-backed QAIQ agent
+        // (see the chat surface in mobile-projects-panel), so Coder is no longer shipped.
+        'Coder'
     ]);
 
     /**

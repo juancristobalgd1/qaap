@@ -137,8 +137,9 @@ export class QaapAgentChatWidget extends ReactWidget {
     }
 
     protected readonly onNewChat = (): void => {
-        const coder = this.chatAgentService.getAgent('Coder');
-        const session = this.chatService.createSession(ChatAgentLocation.Panel, undefined, coder);
+        // Qaap ships the VPS-backed QAIQ agent instead of the in-browser Coder agent.
+        const agent = this.chatAgentService.getAgent('qaiq');
+        const session = this.chatService.createSession(ChatAgentLocation.Panel, undefined, agent);
         void this.openSession(session.id);
     };
 

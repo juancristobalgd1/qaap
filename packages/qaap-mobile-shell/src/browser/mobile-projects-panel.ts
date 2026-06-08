@@ -2336,7 +2336,10 @@ export class MobileProjectsPanel {
         }
         // Parallel-run variants live in a tmpdir worktree but belong to this repo (parallelBaseCwd).
         const variants = cwd ? this.conversations.getVariantsForBaseCwd(cwd) : [];
-        return this.mergeConversationSummaries(directChatSessions, [...list, ...variants]);
+        // The in-browser Coder agent is no longer shipped: hide legacy theia-chat (Coder)
+        // conversations so the surfaced list only contains VPS-backed agent conversations (QAIQ, …).
+        return this.mergeConversationSummaries(directChatSessions, [...list, ...variants])
+            .filter(summary => summary.source !== 'theia-chat');
     }
 
     protected async refreshChatServiceSessionSummaries(): Promise<void> {
@@ -10520,53 +10523,6 @@ export class MobileProjectsPanel {
         }
     }
 
-    protected async submitLocalChatFromComposer(
-        project: MobileProjectEntry,
-        draft: string,
-        options: {
-            openConversation?: boolean;
-            selectedAgentId?: string;
-            modeId?: string;
-            capabilityOverrides?: Record<string, boolean>;
-            genericCapabilitySelections?: GenericCapabilitySelections;
-            variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-        } = {},
-    ): Promise<void> {
-        if (!this.chatService) {
-            MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/agentInputUnavailable', 'Agent input is unavailable.'),
-                { duration: 2400 },
-            );
-            return;
-        }
-        const cwd = this.projectsService.getProjectCwd(project)
-            ?? this.preparedCwdByProjectId.get(project.id)
-            ?? project.name;
-        try {
-            const summary = await this.createProjectTheiaChatSession(
-                project,
-                cwd,
-                stripNonCoderAgentMention(draft),
-                options,
-            );
-            this.stickyComposerDraft = '';
-            MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/chatStarted', 'Chat started'),
-                { kind: 'success', duration: 1400 },
-            );
-            await this.refreshChatServiceSessionSummaries();
-            if (options.openConversation ?? true) {
-                void this.openTheiaChatTranscriptSheet(project, summary);
-            }
-        } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            this.messageService?.error(nls.localize(
-                'qaap/mobileProjects/chatStartFailed',
-                'Could not start chat: {0}',
-                detail,
-            ));
-        }
-    }
 
     protected async createProjectChatSession(
         project: MobileProjectEntry,
@@ -10582,9 +10538,8 @@ export class MobileProjectsPanel {
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
         },
     ): Promise<QaapAgentConversationSummaryDTO> {
-        if (!options.forceVps && this.shouldUseTheiaCoder(draft, options.selectedAgentId)) {
-            return this.createProjectTheiaChatSession(project, cwd, draft, options);
-        }
+        // The in-browser Coder agent is no longer shipped: every chat — including replies to legacy
+        // theia-chat conversations and any `@coder` mention — now routes to a VPS-backed agent (QAIQ).
         const agent = await this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId);
         const message = applyBackendInteractionModeToPrompt(draft, options.modeId);
         const agentModel = resolveStoredAgentModelForSubmit(agent, cwd);
@@ -10611,12 +10566,6 @@ export class MobileProjectsPanel {
         return summary;
     }
 
-    protected shouldUseTheiaCoder(content: string, selectedAgentId?: string): boolean {
-        if (extractBackendAgentMention(content)) {
-            return false;
-        }
-        return isTheiaCoderAgent(selectedAgentId) || isTheiaCoderMention(content);
-    }
 
     protected async loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot> {
         try {
@@ -13912,46 +13861,6 @@ export class MobileProjectsPanel {
             }
             throw error;
         }
-    }
-
-    protected async createProjectTheiaChatSession(
-        project: MobileProjectEntry,
-        cwd: string,
-        draft: string,
-        options: {
-            modeId?: string;
-            capabilityOverrides?: Record<string, boolean>;
-            genericCapabilitySelections?: GenericCapabilitySelections;
-            variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-        },
-    ): Promise<QaapAgentConversationSummaryDTO> {
-        if (!this.chatService) {
-            throw new Error(nls.localize('qaap/mobileProjects/agentInputUnavailable', 'Agent input is unavailable.'));
-        }
-        const previousActiveSessionId = this.chatService.getActiveSession()?.id;
-        const coderAgent = this.chatAgentService?.getAgent(THEIA_CODER_AGENT_ID);
-        const session = this.chatService.createSession(ChatAgentLocation.Panel, { focus: false }, coderAgent);
-        this.rememberChatSessionProject(session.id, project);
-        if (cwd) {
-            writeStoredAgent(cwd, THEIA_CODER_AGENT_ID);
-        }
-        this.trackChatServiceSessionModels();
-        const summary = this.chatServiceSessionToSummary(session, project, cwd, draft, 'streaming');
-        this.upsertProjectChatServiceSummary(project.id, summary);
-        if (previousActiveSessionId && this.chatService.getSession(previousActiveSessionId)) {
-            this.chatService.setActiveSession(previousActiveSessionId, { focus: false });
-        }
-        const pinnedId = THEIA_CODER_AGENT_ID;
-        const invocation = await this.chatService.sendRequest(session.id, {
-            text: this.formatTheiaChatRequestText(stripNonCoderAgentMention(draft), pinnedId),
-            modeId: options.modeId,
-            capabilityOverrides: options.capabilityOverrides,
-            genericCapabilitySelections: options.genericCapabilitySelections,
-            ...(options.variables && options.variables.length > 0 ? { variables: options.variables } : {}),
-        });
-        this.scheduleChatServiceRefresh();
-        void invocation?.responseCompleted.finally(() => this.scheduleChatServiceRefresh());
-        return summary;
     }
 
     protected async submitTranscriptViaTheiaChat(

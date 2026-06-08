@@ -3372,3 +3372,152 @@ details.theia-tool-confirmation-args>summary::marker {
 .chat-view-widget .theia-ChatInputOptions-right .option:not(.disabled):has(.codicon-send) {
   flex-shrink: 0;
 }
+
+/* Minimal activity rows, closer to Codex/Claude Code desktop transcripts. */
+.chat-view-widget .theia-ResponseNode-ProgressMessage,
+.chat-view-widget .theia-toolCall,
+.chat-view-widget .theia-thinking {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 3px 0 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-chat-premium-muted);
+  font-family: var(--theia-ui-font-family);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.chat-view-widget .theia-toolCall-denied,
+.chat-view-widget .theia-toolCall-rejected,
+.chat-view-widget .theia-toolCall-unavailable,
+.chat-view-widget .theia-toolCall-finished summary,
+.chat-view-widget .theia-toolCall-allowed,
+.chat-view-widget .theia-toolCall-waiting {
+  font-weight: 500;
+}
+
+.chat-view-widget .theia-toolCall details[open],
+.chat-view-widget .theia-thinking details[open] {
+  width: min(100%, 820px);
+}
+
+.chat-view-widget .theia-toolCall-response-result {
+  margin: 7px 0 0 14px;
+  padding-left: 12px;
+  border-left: 1px solid var(--theia-chat-premium-line);
+}
+
+.chat-view-widget .theia-toolCall details pre,
+.chat-view-widget .theia-thinking details pre {
+  margin-top: 6px;
+  padding: 8px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-chat-premium-ink);
+}
+
+.chat-view-widget .tool-call.container,
+.chat-view-widget .shell-execution-tool.container {
+  max-width: 820px;
+  margin: 5px 0 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.chat-view-widget .tool-call.header,
+.chat-view-widget .shell-execution-tool.header {
+  min-height: 0;
+  padding: 0;
+  gap: 7px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-chat-premium-muted);
+}
+
+.chat-view-widget .tool-call.header.finished:hover,
+.chat-view-widget .tool-call.header.error:hover,
+.chat-view-widget .tool-call.header.canceled:hover,
+.chat-view-widget .shell-execution-tool.header.finished:hover,
+.chat-view-widget .shell-execution-tool.header.error:hover,
+.chat-view-widget .shell-execution-tool.header.canceled:hover {
+  background: transparent;
+  filter: none;
+}
+
+.chat-view-widget .tool-call.header .codicon.codicon-terminal,
+.chat-view-widget .tool-call.header .codicon.codicon-comment-discussion,
+.chat-view-widget .shell-execution-tool.header .codicon.codicon-terminal {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-chat-premium-muted);
+  font-size: 13px;
+}
+
+.chat-view-widget .tool-call.command-preview,
+.chat-view-widget .tool-call.title-preview,
+.chat-view-widget .shell-execution-tool.command-preview {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-chat-premium-ink);
+  font-family: var(--theia-ui-font-family);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.chat-view-widget .tool-call.duration,
+.chat-view-widget .tool-call.status-label,
+.chat-view-widget .tool-call.pending-text,
+.chat-view-widget .shell-execution-tool.duration,
+.chat-view-widget .shell-execution-tool.status-label {
+  color: var(--theia-chat-premium-muted);
+  font-family: var(--theia-ui-font-family);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.chat-view-widget .tool-call.meta-badges,
+.chat-view-widget .shell-execution-tool.meta-badges {
+  gap: 7px;
+}
+
+.chat-view-widget .tool-call.expanded-content,
+.chat-view-widget .shell-execution-tool.expanded-content {
+  margin: 7px 0 0 10px;
+  padding: 0 0 0 12px;
+  border-top: 0;
+  border-left: 1px solid var(--theia-chat-premium-line);
+}
+
+.chat-view-widget .tool-call.full-command,
+.chat-view-widget .tool-call.output-box,
+.chat-view-widget .shell-execution-tool.full-command,
+.chat-view-widget .shell-execution-tool.output-box {
+  border-radius: 0;
+  background: transparent;
+}
+
+.chat-view-widget .tool-call.output-header,
+.chat-view-widget .shell-execution-tool.output-header {
+  padding: 6px 0;
+  border: 0;
+}
+
+.chat-view-widget .tool-call.output,
+.chat-view-widget .shell-execution-tool.output {
+  max-height: 220px;
+  padding: 0;
+  background: transparent;
+  color: var(--theia-chat-premium-ink);
+  font-size: 12px;
+}
