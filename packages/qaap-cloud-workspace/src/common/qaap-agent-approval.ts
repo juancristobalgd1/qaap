@@ -115,6 +115,11 @@ const LOG_APPROVAL_PATTERNS: readonly RegExp[] = [
     /Press .* to approve/i,
     /waiting for (?:your )?approval/i,
     /permission prompt/i,
+    // Claude Code / QAIQ: emitted when a tool call is blocked by --permission-mode default
+    /(?:Error:\s+)?[Tt]his command requires approval/i,
+    /(?:Error:\s+)?[Tt]his tool requires approval/i,
+    /requires (?:user )?approval/i,
+    /(?:bash|shell|command|tool) (?:call )?(?:is )?(?:not )?allowed/i,
 ];
 
 export function detectLogApprovalPrompt(logTail: string): { summary: string; detail: string } | undefined {

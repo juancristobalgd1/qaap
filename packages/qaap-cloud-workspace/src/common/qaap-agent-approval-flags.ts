@@ -171,13 +171,10 @@ function applyOpencodeApprovalFlags(
 function stripNonInteractiveApprovalFlags(command: string, agentId: string | undefined): string {
     const id = agentId?.trim().toLowerCase();
     if (id === 'qaiq' || /\b(qaiq|openclaude)\b/.test(command)) {
-        if (qaiqCommandUsesInteractionFlags(command)) {
-            return injectAfterPattern(
-                stripFlagToken(command, '--dangerously-skip-permissions'),
-                /\b(qaiq|openclaude)\b/,
-                '--permission-mode default',
-            );
-        }
+        // Always ensure --permission-mode default for request-approval, regardless of whether
+        // the template already injected interaction flags.
+        const stripped = stripQaiqInteractionFlags(stripFlagToken(command, '--dangerously-skip-permissions'));
+        return injectAfterPattern(stripped, /\b(qaiq|openclaude)\b/, '--permission-mode default');
     }
     if (id === 'claude' || /\bclaude\b/.test(command)) {
         return injectAfterExecutable(stripClaudeApprovalFlags(command), 'claude', '--permission-mode default');
@@ -186,6 +183,14 @@ function stripNonInteractiveApprovalFlags(command: string, agentId: string | und
         return stripCodexApprovalFlags(command);
     }
     return command;
+}
+
+function stripQaiqInteractionFlags(command: string): string {
+    return stripFlagTokens(command, [
+        /--permission-mode\s+(?:default|acceptEdits|bypassPermissions|plan|dontAsk)\b/g,
+        /--allowed-tools\s+[^\s]+(?:\s+[^\s-][^\s]*)*/g,
+        /--disallowed-tools\s+[^\s]+(?:\s+[^\s-][^\s]*)*/g,
+    ]);
 }
 
 function stripClaudeApprovalFlags(command: string): string {

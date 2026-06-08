@@ -311,7 +311,7 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         const pending = resolveTranscriptInlineApproval(this.host.cachedAgentApprovals, conv.id);
-        if (!pending || pending.kind === 'tool') {
+        if (!pending) {
             return;
         }
         const bar = document.createElement('div');
