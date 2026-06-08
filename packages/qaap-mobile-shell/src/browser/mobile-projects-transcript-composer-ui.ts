@@ -19,6 +19,7 @@ import {
     writeStoredAgent,
     writeStoredAgentModel,
     type QaapAgentTaskAgentOption,
+    type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
 import {
@@ -59,6 +60,7 @@ export interface MobileProjectsTranscriptComposerHost {
     transcriptComposerApprovalSheet: HTMLElement | undefined;
     stickyComposerWorkspaceSheet: HTMLElement | undefined;
     transcriptComposerPinnedAgentId: string | undefined;
+    transcriptComposerPinnedAgentModel: QaapCreateAgentTaskQaiqModel | undefined;
     transcriptComposerModeId: string | undefined;
     transcriptComposerPrefsConvId: string | undefined;
     transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
@@ -105,6 +107,8 @@ export interface MobileProjectsTranscriptComposerHost {
             readonly cwd: string | undefined;
             readonly agents: readonly QaapAgentTaskAgentOption[];
             readonly selectedAgentId: string | undefined;
+            /** Per-conversation model — displayed next to the selected agent and pre-selected in the model sub-picker. */
+            readonly selectedModel?: QaapCreateAgentTaskQaiqModel;
             readonly includeCoder: boolean;
             readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
         },
@@ -278,9 +282,13 @@ export class MobileProjectsTranscriptComposerUi {
                 cwd,
                 agents,
                 selectedAgentId: this.host.transcriptComposerPinnedAgentId,
+                selectedModel: this.host.transcriptComposerPinnedAgentModel,
                 includeCoder: true,
                 onSelectAgent: (agentId, model) => {
                     this.host.transcriptComposerPinnedAgentId = agentId;
+                    // Persist the chosen model in memory (per-conversation) and in cwd localStorage
+                    // (as the "last used" default for future new conversations).
+                    this.host.transcriptComposerPinnedAgentModel = model;
                     this.host.transcriptComposerPrefsConvId = summary.id;
                     if (cwd) {
                         writeStoredAgent(cwd, agentId);

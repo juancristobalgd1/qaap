@@ -95,6 +95,7 @@ import {
     writeStoredAgent,
     writeStoredAgentModel,
     type QaapAgentTaskAgentOption,
+    type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
     type QaapAgentTaskListSnapshot,
 } from '../common/qaap-agent-task-client';
@@ -547,6 +548,8 @@ export class MobileProjectsPanel {
     protected transcriptComposerContext: StickyComposerContextEntry[] = [];
     protected transcriptComposerFilesExpanded = true;
     protected transcriptComposerPinnedAgentId: string | undefined;
+    /** Per-conversation model — source of truth while a transcript conversation is active. */
+    protected transcriptComposerPinnedAgentModel: QaapCreateAgentTaskQaiqModel | undefined;
     protected transcriptComposerDraft = '';
     protected readonly transcriptFollowUpQueue = new TranscriptFollowUpQueue();
     protected transcriptFollowUpFlushInFlight = false;
@@ -4259,6 +4262,8 @@ export class MobileProjectsPanel {
         onContextUsageBadgeMounted?: (badge: HTMLElement) => void;
         showWorkspaceBar?: boolean;
         transcriptOverlay?: boolean;
+        /** Per-conversation model — used for the agent chip label; falls back to cwd localStorage when absent. */
+        pinnedModel?: QaapCreateAgentTaskQaiqModel;
     }): HTMLElement {
         const column = document.createElement('div');
         column.className = 'theia-mobile-projects-sticky-composer-column';
@@ -4320,7 +4325,7 @@ export class MobileProjectsPanel {
         agentBtn.className = 'theia-mobile-projects-sticky-composer-agent';
         const agentLabel = options.resolveAgentLabel();
         const agentId = options.resolveAgentId();
-        const modelLabel = this.resolveStickyComposerModelLabel(agentId, options.project);
+        const modelLabel = this.resolveStickyComposerModelLabel(agentId, options.project, options.pinnedModel);
         agentBtn.title = modelLabel
             ? nls.localize('qaap/mobileProjects/stickyComposerAgentWithModel', 'Agent: {0}, model: {1}', agentLabel, modelLabel)
             : nls.localize('qaap/mobileProjects/stickyComposerAgent', 'Agent: {0}', agentLabel);
@@ -4592,9 +4597,16 @@ export class MobileProjectsPanel {
         return this.resolveConversationAgentLabel(undefined);
     }
 
-    protected resolveStickyComposerModelLabel(agentId: string, project?: MobileProjectEntry): string | undefined {
+    protected resolveStickyComposerModelLabel(
+        agentId: string,
+        project?: MobileProjectEntry,
+        pinnedModel?: QaapCreateAgentTaskQaiqModel,
+    ): string | undefined {
         if (!agentSupportsModelPicker(agentId)) {
             return undefined;
+        }
+        if (pinnedModel) {
+            return pinnedModel.modelId;
         }
         const cwd = project
             ? (this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id))
@@ -5030,6 +5042,7 @@ export class MobileProjectsPanel {
             readonly cwd: string | undefined;
             readonly agents: readonly QaapAgentTaskAgentOption[];
             readonly selectedAgentId: string | undefined;
+            readonly selectedModel?: QaapCreateAgentTaskQaiqModel;
             readonly includeCoder: boolean;
             readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
         },
@@ -5038,7 +5051,8 @@ export class MobileProjectsPanel {
         if (options.view === 'models' && options.modelPickerAgentId) {
             const modelAgentId = options.modelPickerAgentId;
             const pickerModels = await this.resolveModelsForAgentPicker(modelAgentId);
-            const storedModel = readStoredAgentModel(options.cwd, modelAgentId);
+            // Prefer the per-conversation pinned model for the checkmark highlight.
+            const storedModel = options.selectedModel ?? readStoredAgentModel(options.cwd, modelAgentId);
             chrome.header.classList.add('theia-mod-drilldown');
             chrome.backBtn.hidden = false;
             chrome.title.textContent = nls.localize('qaap/mobileProjects/stickyComposerPickModel', 'Choose model');
@@ -5059,7 +5073,10 @@ export class MobileProjectsPanel {
         const appendAgent = (agentId: string, label: string): void => {
             const hasModels = agentSupportsModelPicker(agentId);
             const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
-            const storedModel = readStoredAgentModel(options.cwd, agentId);
+            // For the selected agent use the per-conversation pinned model; for others fall back to cwd localStorage.
+            const storedModel = agentSelected
+                ? (options.selectedModel ?? readStoredAgentModel(options.cwd, agentId))
+                : readStoredAgentModel(options.cwd, agentId);
             let displayLabel = label;
             if (storedModel?.modelId && agentSelected) {
                 displayLabel = `${label} · ${storedModel.modelId}`;

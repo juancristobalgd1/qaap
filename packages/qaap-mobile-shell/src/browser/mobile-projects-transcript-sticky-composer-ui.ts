@@ -18,11 +18,11 @@ import {
 import {
     agentSupportsModelPicker,
     QAAP_PRIMARY_AGENT_ID,
-    readStoredAgentModel,
     resolveExplicitAgentForSubmit,
     writeStoredAgent,
     writeStoredAgentModel,
     type QaapAgentTaskAgentOption,
+    type QaapCreateAgentTaskQaiqModel,
 } from '../common/qaap-agent-task-client';
 import {
     buildUpdateConversationComposerPatch,
@@ -77,6 +77,8 @@ export interface TranscriptStickyComposerColumnOptions {
     project: MobileProjectEntry;
     surface?: string;
     agentLocked?: boolean;
+    /** Per-conversation model — overrides the cwd-scoped stored model for display. */
+    pinnedModel?: QaapCreateAgentTaskQaiqModel;
     getContext: () => StickyComposerContextEntry[];
     clearContext: () => void;
     removeContextItem: (index: number) => void;
@@ -123,6 +125,8 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     transcriptComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     transcriptComposerPinnedAgentId: string | undefined;
+    /** Per-conversation model selection — kept in memory, not written to cwd localStorage on load. */
+    transcriptComposerPinnedAgentModel: QaapCreateAgentTaskQaiqModel | undefined;
     transcriptComposerPrefsConvId: string | undefined;
     transcriptComposerDraftPersistTimer: number | undefined;
     transcriptComposerPrefsPersistTimer: number | undefined;
@@ -315,11 +319,13 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
         this.host.transcriptComposerPrefsConvId = conv.id;
         this.host.transcriptComposerPinnedAgentId = prefs.agentId;
+        // Always set (even undefined) so a conversation without a stored model clears any
+        // model left over from a previously-viewed conversation.
+        this.host.transcriptComposerPinnedAgentModel = prefs.agentModel;
         if (cwd) {
             writeStoredAgent(cwd, prefs.agentId);
-            if (prefs.agentModel) {
-                writeStoredAgentModel(cwd, prefs.agentId, prefs.agentModel);
-            }
+            // Do NOT call writeStoredAgentModel here. Writing the conversation's model to the
+            // cwd-scoped key would bleed it into other conversations that share the same cwd.
             if (prefs.interactionModeId) {
                 writeStoredComposerMode(cwd, prefs.interactionModeId);
             }
@@ -401,7 +407,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const patch = buildUpdateConversationComposerPatch({
             agentId,
             ...(agentSupportsModelPicker(agentId)
-                ? { agentModel: readStoredAgentModel(cwd, agentId) }
+                ? { agentModel: this.host.transcriptComposerPinnedAgentModel }
                 : {}),
             ...(this.host.transcriptComposerModeId ? { interactionModeId: this.host.transcriptComposerModeId } : {}),
             ...(this.host.transcriptComposerApprovalPolicyId
@@ -449,6 +455,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
         this.host.transcriptComposerProject = project;
         this.host.transcriptComposerSummary = summary;
         this.host.transcriptComposerSendRefresh = undefined;
+        // Clear the pinned model so a stale value from the previous conversation is never shown
+        // while we wait for the async prefs hydration of the newly-opened conversation.
+        this.host.transcriptComposerPinnedAgentModel = undefined;
         this.host.stickyComposerContextUsageDispose.dispose();
         host.replaceChildren();
         if (this.host.transcriptLastConv?.id === summary.id) {
@@ -491,6 +500,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             project,
             surface: 'task',
             agentLocked: isLegacyTheiaChat,
+            pinnedModel: this.host.transcriptComposerPinnedAgentModel,
             getContext: () => this.host.transcriptComposerContext,
             clearContext: () => {
                 disposeComposerContextEntries(this.host.transcriptComposerContext);
