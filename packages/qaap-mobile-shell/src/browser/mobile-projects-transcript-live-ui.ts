@@ -60,7 +60,13 @@ import {
     QaapTranscriptLiveController,
     type QaapTranscriptLiveRefreshOptions,
 } from './qaap-transcript-live-controller';
+import { nls } from '@theia/core/lib/common/nls';
 import { MobileSnackbar } from './mobile-snackbar';
+import {
+    applyTranscriptApprovalCardOptimisticUi,
+    findTranscriptApprovalCardFromEvent,
+    type TranscriptApprovalDecision,
+} from './qaap-transcript-approval-card-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -145,6 +151,8 @@ export class MobileProjectsTranscriptLiveUi {
     protected sseRenderRafId = 0;
     protected sseRenderTimer: number | undefined;
     protected lastMountedApprovalId: string | undefined;
+    /** Approvals the user already acted on — hide until the VPS queue confirms removal. */
+    protected optimisticallyDismissedApprovalIds = new Set<string>();
     protected transcriptComposerActivityTimer: number | undefined;
     protected transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
     protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
@@ -640,9 +648,17 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         try {
-            this.host.cachedAgentApprovals = await fetchAgentApprovals(this.host.transcriptOpenProject
+            const fetched = await fetchAgentApprovals(this.host.transcriptOpenProject
                 ? this.host.projectsService.getProjectCwd(this.host.transcriptOpenProject)
                 : this.host.transcriptOpenSummary?.cwd);
+            for (const id of [...this.optimisticallyDismissedApprovalIds]) {
+                if (!fetched.some(approval => approval.id === id)) {
+                    this.optimisticallyDismissedApprovalIds.delete(id);
+                }
+            }
+            this.host.cachedAgentApprovals = fetched.filter(
+                approval => !this.optimisticallyDismissedApprovalIds.has(approval.id),
+            );
             if (this.host.transcriptLastConv) {
                 this.syncTranscriptPendingApproval(this.host.transcriptLastConv);
             }
@@ -654,6 +670,59 @@ export class MobileProjectsTranscriptLiveUi {
                 this.scheduleTranscriptApprovalRefresh();
             }
         }
+    }
+
+    isApprovalOptimisticallyDismissed(approvalId: string): boolean {
+        return this.optimisticallyDismissedApprovalIds.has(approvalId);
+    }
+
+    submitTranscriptApprovalOptimistic(
+        approvalId: string,
+        decision: TranscriptApprovalDecision,
+        card?: HTMLElement,
+    ): void {
+        if (this.optimisticallyDismissedApprovalIds.has(approvalId)) {
+            return;
+        }
+        if (card) {
+            applyTranscriptApprovalCardOptimisticUi(card, decision);
+        }
+        this.optimisticallyDismissedApprovalIds.add(approvalId);
+        this.host.cachedAgentApprovals = this.host.cachedAgentApprovals.filter(
+            approval => approval.id !== approvalId,
+        );
+        this.lastMountedApprovalId = undefined;
+        clearTranscriptPendingApprovalBar(this.host.transcriptComposerHost);
+        if (this.host.transcriptLastConv) {
+            this.syncTranscriptPendingApproval(this.host.transcriptLastConv);
+        }
+        const request = decision === 'allow'
+            ? approveAgentRequest(approvalId)
+            : rejectAgentRequest(approvalId);
+        void request.then(result => {
+            if (!result.ok) {
+                this.optimisticallyDismissedApprovalIds.delete(approvalId);
+                MobileSnackbar.show(
+                    result.error
+                        ?? nls.localize('qaap/mobileProjects/transcriptApprovalFailed', 'Approval action failed'),
+                    { kind: 'warning' },
+                );
+                void this.refreshTranscriptApprovals();
+                this.host.ensureTranscriptConversationRefresh();
+                return;
+            }
+            this.stopTranscriptApprovalRefresh();
+            void this.refreshTranscriptApprovals();
+            this.host.ensureTranscriptConversationRefresh();
+        }).catch(error => {
+            this.optimisticallyDismissedApprovalIds.delete(approvalId);
+            MobileSnackbar.show(
+                error instanceof Error ? error.message : String(error),
+                { kind: 'warning' },
+            );
+            void this.refreshTranscriptApprovals();
+            this.host.ensureTranscriptConversationRefresh();
+        });
     }
 
     ensureTranscriptLiveController(): QaapTranscriptLiveController {
@@ -714,25 +783,25 @@ export class MobileProjectsTranscriptLiveUi {
             this.host.transcriptComposerHost,
             showPending ? pending : undefined,
             {
-                onApprove: () => {
+                onApprove: event => {
                     if (!pending) {
                         return;
                     }
-                    void approveAgentRequest(pending.id).then(() => {
-                        this.stopTranscriptApprovalRefresh();
-                        void this.refreshTranscriptApprovals();
-                        this.ensureTranscriptConversationRefresh();
-                    });
+                    this.submitTranscriptApprovalOptimistic(
+                        pending.id,
+                        'allow',
+                        findTranscriptApprovalCardFromEvent(event),
+                    );
                 },
-                onReject: () => {
+                onReject: event => {
                     if (!pending) {
                         return;
                     }
-                    void rejectAgentRequest(pending.id).then(() => {
-                        this.stopTranscriptApprovalRefresh();
-                        void this.refreshTranscriptApprovals();
-                        this.ensureTranscriptConversationRefresh();
-                    });
+                    this.submitTranscriptApprovalOptimistic(
+                        pending.id,
+                        'deny',
+                        findTranscriptApprovalCardFromEvent(event),
+                    );
                 },
             },
         );

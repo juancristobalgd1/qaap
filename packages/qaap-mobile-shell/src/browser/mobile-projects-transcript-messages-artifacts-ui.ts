@@ -4,14 +4,13 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { approveAgentRequest, rejectAgentRequest } from '../common/qaap-agent-approval-client';
 import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
 import { excerptTranscriptThought, extractTranscriptDiffCard, hasTranscriptActivityStats, hasTranscriptActivityTimeline, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars } from '../common/qaap-transcript-stream-status';
 import { buildTranscriptToolApprovalId, isPendingTranscriptToolSegment } from '../common/qaap-transcript-approval-inline';
-import { buildTranscriptApprovalCard, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
+import { buildTranscriptApprovalCard, findTranscriptApprovalCardFromEvent, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { buildTranscriptDiffCardFromExtracted, buildTranscriptToolUiPayloadElement } from './qaap-transcript-rich-content-ui';
 import { resolveTranscriptToolUiPayloadFromSegment } from '../common/qaap-transcript-tool-ui-payloads';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
@@ -274,7 +273,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
         conv?: QaapAgentConversationDTO,
     ): void {
-        const manualApproval = !!conv && conversationUsesInteractiveApprovals(conv);
         const descriptors = resolveTranscriptToolPillDescriptors([segment], {
             resolvePath: args => this.resolversUi.extractTranscriptToolFullPath(args),
         });
@@ -313,7 +311,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             body.className = 'theia-mobile-agent-tool-pill-body';
             pill.append(body);
         }
-        const pendingApproval = manualApproval && isPendingTranscriptToolSegment(segment);
+        const pendingApproval = !!conv && this.shouldShowTranscriptToolApprovalCard(conv, segment);
         const pendingApprovalChanged = pendingApproval !== !!body.querySelector(`.${TRANSCRIPT_APPROVAL_CARD_CLASS}`);
         if (!pendingApprovalChanged
             && this.toolUi.canPatchTranscriptToolResultStream(previous, segment)
@@ -541,7 +539,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
         conv?: QaapAgentConversationDTO,
     ): HTMLDetailsElement {
-        const manualApproval = !!conv && conversationUsesInteractiveApprovals(conv);
         const descriptors = resolveTranscriptToolPillDescriptors([segment], {
             resolvePath: args => this.resolversUi.extractTranscriptToolFullPath(args),
         });
@@ -581,8 +578,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         const body = document.createElement('div');
         body.className = 'theia-mobile-agent-tool-pill-body';
-        if (manualApproval && isPendingTranscriptToolSegment(segment)) {
-            body.append(this.createTranscriptToolApprovalActions(conv!.id, segment));
+        if (conv && this.shouldShowTranscriptToolApprovalCard(conv, segment)) {
+            body.append(this.createTranscriptToolApprovalActions(conv.id, segment));
         }
         const richPayload = resolveTranscriptToolUiPayloadFromSegment(segment.name, segment.args, segment.result);
         if (richPayload && !segment.result?.trim()) {
@@ -616,13 +613,33 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }, {
             onApprove: event => {
                 event.stopPropagation();
-                void approveAgentRequest(approvalId).then(() => this.host.transcriptLiveUi.ensureTranscriptConversationRefresh());
+                this.host.transcriptLiveUi.submitTranscriptApprovalOptimistic(
+                    approvalId,
+                    'allow',
+                    findTranscriptApprovalCardFromEvent(event),
+                );
             },
             onReject: event => {
                 event.stopPropagation();
-                void rejectAgentRequest(approvalId).then(() => this.host.transcriptLiveUi.ensureTranscriptConversationRefresh());
+                this.host.transcriptLiveUi.submitTranscriptApprovalOptimistic(
+                    approvalId,
+                    'deny',
+                    findTranscriptApprovalCardFromEvent(event),
+                );
             },
         });
+    }
+
+    protected shouldShowTranscriptToolApprovalCard(
+        conv: QaapAgentConversationDTO,
+        segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+    ): boolean {
+        if (!conversationUsesInteractiveApprovals(conv) || !isPendingTranscriptToolSegment(segment)) {
+            return false;
+        }
+        return !this.host.transcriptLiveUi.isApprovalOptimisticallyDismissed(
+            buildTranscriptToolApprovalId(conv.id, segment.toolUseId),
+        );
     }
 
     /** Claude-Code-style diff card for the latest edit: "Edited <file> +N −N" header + numbered lines. */
