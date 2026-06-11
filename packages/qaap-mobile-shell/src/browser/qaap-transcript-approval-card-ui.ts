@@ -10,9 +10,39 @@ export const TRANSCRIPT_APPROVAL_CARD_CLASS = 'theia-mobile-agent-approval-card'
 export const TRANSCRIPT_APPROVAL_CARD_ALLOW_CLASS = 'theia-mobile-agent-approval-card-allow';
 export const TRANSCRIPT_APPROVAL_CARD_DENY_CLASS = 'theia-mobile-agent-approval-card-deny';
 
+export type TranscriptApprovalDecision = 'allow' | 'deny';
+
 export interface TranscriptApprovalCardHandlers {
     readonly onApprove: (event: Event) => void;
     readonly onReject: (event: Event) => void;
+}
+
+/** Instant feedback after Allow/Deny — hides actions and shows the chosen outcome. */
+export function applyTranscriptApprovalCardOptimisticUi(
+    card: HTMLElement,
+    decision: TranscriptApprovalDecision,
+): void {
+    if (card.classList.contains('theia-mod-resolved')) {
+        return;
+    }
+    card.classList.add('theia-mod-resolved');
+    card.classList.add(decision === 'allow' ? 'theia-mod-allowed' : 'theia-mod-denied');
+    card.querySelector('.theia-mobile-agent-approval-card-actions')?.remove();
+    const title = card.querySelector('.theia-mobile-agent-approval-card-title');
+    if (title) {
+        title.textContent = decision === 'allow'
+            ? nls.localize('qaap/mobileProjects/transcriptApprovalAllowed', 'Allowed')
+            : nls.localize('qaap/mobileProjects/transcriptApprovalDenied', 'Denied');
+    }
+}
+
+export function findTranscriptApprovalCardFromEvent(event: Event): HTMLElement | undefined {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) {
+        return undefined;
+    }
+    const found = target.closest(`.${TRANSCRIPT_APPROVAL_CARD_CLASS}`);
+    return found instanceof HTMLElement ? found : undefined;
 }
 
 /**

@@ -20,8 +20,8 @@ export function removeTranscriptPendingApprovalHosts(root: ParentNode): void {
 export function buildTranscriptPendingApprovalBar(
     pending: QaapAgentApprovalRequestDTO,
     handlers: {
-        readonly onApprove: () => void;
-        readonly onReject: () => void;
+        readonly onApprove: (event: Event) => void;
+        readonly onReject: (event: Event) => void;
     },
 ): HTMLElement {
     return buildTranscriptApprovalCard({
@@ -30,10 +30,7 @@ export function buildTranscriptPendingApprovalBar(
             ? nls.localize('qaap/mobileProjects/transcriptApprovalTool', 'Approve tool: {0}', pending.toolName)
             : nls.localize('qaap/mobileProjects/transcriptApprovalPending', 'Approval required'),
         description: pending.summary,
-    }, {
-        onApprove: () => { handlers.onApprove(); },
-        onReject: () => { handlers.onReject(); },
-    });
+    }, handlers);
 }
 
 export function clearTranscriptPendingApprovalBar(composerHost: HTMLElement | undefined): void {
@@ -48,8 +45,8 @@ export function mountTranscriptPendingApprovalBar(
     composerHost: HTMLElement | undefined,
     pending: QaapAgentApprovalRequestDTO | undefined,
     handlers: {
-        readonly onApprove: () => void;
-        readonly onReject: () => void;
+        readonly onApprove: (event: Event) => void;
+        readonly onReject: (event: Event) => void;
     },
 ): void {
     clearTranscriptPendingApprovalBar(composerHost);

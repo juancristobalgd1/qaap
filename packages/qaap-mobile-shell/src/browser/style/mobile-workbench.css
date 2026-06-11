@@ -5734,6 +5734,24 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   background: color-mix(in srgb, var(--q-accent, #E58E40) 30%, transparent);
 }
 
+.theia-mobile-agent-approval-card.theia-mod-resolved {
+  pointer-events: none;
+}
+
+.theia-mobile-agent-approval-card.theia-mod-resolved .theia-mobile-agent-approval-card-title {
+  font-weight: 600;
+}
+
+.theia-mobile-agent-approval-card.theia-mod-allowed .theia-mobile-agent-approval-card-icon {
+  color: var(--theia-testing-iconPassed, #3fb950);
+  background: color-mix(in srgb, var(--theia-testing-iconPassed, #3fb950) 16%, transparent);
+}
+
+.theia-mobile-agent-approval-card.theia-mod-denied .theia-mobile-agent-approval-card-icon {
+  color: var(--theia-errorForeground, #f85149);
+  background: color-mix(in srgb, var(--theia-errorForeground, #f85149) 14%, transparent);
+}
+
 /* Tool UI rich content cards in transcript markdown + tool payloads. */
 .theia-mobile-agent-rich-card-sep {
   height: 1px;
