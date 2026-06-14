@@ -17,6 +17,8 @@ import {
     QaapPostAgentMessageRequest,
     QaapUpdateAgentConversationRequest,
 } from '../common/qaap-agent-conversation';
+import type { QaapStartAgentGoalLoopRequest } from '../common/qaap-agent-goal-loop';
+import { QaapGoalLoopRunner } from './qaap-goal-loop-runner';
 import {
     QAAP_AGENT_CONVERSATION_WS_PATH,
     parseQaapAgentConversationWsClientMessage,
@@ -44,6 +46,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     @inject(QaapConversationWorktreeService)
     protected readonly worktrees: QaapConversationWorktreeService;
 
+    @inject(QaapGoalLoopRunner)
+    protected readonly goalLoopRunner: QaapGoalLoopRunner;
+
     configure(app: Application): void {
         // List for one cwd (or all).
         app.get(QAAP_AGENT_CONVERSATION_API_PATH, (req, res) => {
@@ -70,6 +75,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/messages`, (req, res) => {
             this.handlePostMessage(req, res);
+        });
+        app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/goal-loop`, (req, res) => {
+            this.handleGetGoalLoop(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/goal-loop/start`, (req, res) => {
+            void this.handleStartGoalLoop(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/goal-loop/cancel`, (req, res) => {
+            void this.handleCancelGoalLoop(req, res);
         });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             this.handleUpdate(req, res);
@@ -337,6 +351,54 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return;
         }
         res.json(conv);
+    }
+
+    protected handleGetGoalLoop(req: Request, res: Response): void {
+        const conv = this.store.get(req.params.id);
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation not found.' });
+            return;
+        }
+        res.json({
+            conversationId: conv.id,
+            goalLoop: conv.goalLoop,
+        });
+    }
+
+    protected async handleStartGoalLoop(req: Request, res: Response): Promise<void> {
+        const body = (req.body ?? {}) as Partial<QaapStartAgentGoalLoopRequest>;
+        const goal = typeof body.goal === 'string' ? body.goal.trim() : '';
+        if (!goal) {
+            res.status(400).json({ error: '"goal" must be a non-empty string.' });
+            return;
+        }
+        try {
+            const goalLoop = await this.goalLoopRunner.start(req.params.id, {
+                goal,
+                budget: body.budget,
+                verify: body.verify,
+                initialPrompt: typeof body.initialPrompt === 'string' ? body.initialPrompt : undefined,
+            });
+            res.status(202).json({ goalLoop });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const status = message === 'Conversation not found.' ? 404 : 400;
+            res.status(status).json({ error: message });
+        }
+    }
+
+    protected async handleCancelGoalLoop(req: Request, res: Response): Promise<void> {
+        const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : undefined;
+        try {
+            const goalLoop = await this.goalLoopRunner.cancel(req.params.id, reason || undefined);
+            if (!this.store.get(req.params.id)) {
+                res.status(404).json({ error: 'Conversation not found.' });
+                return;
+            }
+            res.json({ goalLoop });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     /** SSE feed of conversation events used by every connected client for live updates. */

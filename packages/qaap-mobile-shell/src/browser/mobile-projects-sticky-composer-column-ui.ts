@@ -74,6 +74,10 @@ export class MobileProjectsStickyComposerColumnUi {
         onOpenAgentSheet: (anchor: HTMLButtonElement) => void;
         onSubmit: (draft: string) => void;
         onSubmitBlocked?: () => void;
+        /** Show the backend goal-loop toggle (VPS agents hub composer). */
+        showRunUntilDone?: boolean;
+        runUntilDone?: boolean;
+        onRunUntilDoneChange?: (enabled: boolean) => void;
         afterInputChange?: () => void;
         sendLabel?: string;
         onSendControlMounted?: (refresh: () => void) => void;
@@ -144,6 +148,28 @@ export class MobileProjectsStickyComposerColumnUi {
                 this.openComposerControlSheet(ev, input, () => options.onOpenApprovalPolicySheet!(approvalButton));
             });
             controlsLeftItems.push(approvalBtn);
+        }
+        if (options.showRunUntilDone) {
+            const goalBtn = document.createElement('button');
+            goalBtn.type = 'button';
+            goalBtn.className = 'theia-mobile-projects-sticky-composer-goal-loop';
+            const syncGoalLoop = (): void => {
+                const on = options.runUntilDone === true;
+                goalBtn.classList.toggle('theia-mod-active', on);
+                goalBtn.title = on
+                    ? nls.localize('qaap/mobileProjects/runUntilDoneOn', 'Run until done — ON')
+                    : nls.localize('qaap/mobileProjects/runUntilDoneOff', 'Run until done — OFF');
+                goalBtn.setAttribute('aria-label', goalBtn.title);
+                goalBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            };
+            goalBtn.textContent = nls.localize('qaap/mobileProjects/runUntilDoneShort', 'Until done');
+            goalBtn.addEventListener('click', ev => {
+                ev.stopPropagation();
+                options.onRunUntilDoneChange?.(!(options.runUntilDone === true));
+                syncGoalLoop();
+            });
+            syncGoalLoop();
+            controlsLeftItems.push(goalBtn);
         }
 
         const agentBtn = document.createElement('button');

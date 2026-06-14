@@ -82,6 +82,7 @@ import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapDiffReviewContribution } from './qaap-diff-review-contribution';
 import { QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
+import { QaapWorkHubTranscriptDeepLinkService } from './qaap-work-hub-transcript-deeplink-service';
 import { QaapPushNotificationContribution } from './qaap-push-notification-contribution';
 import { QaapAgentCompletionContribution } from './qaap-agent-completion-contribution';
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
@@ -204,6 +205,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapCommitMessageAi).toSelf().inSingletonScope();
     bind(QaapWorkHubDiffService).toSelf().inSingletonScope();
+    bind(QaapWorkHubTranscriptDeepLinkService).toSelf().inSingletonScope();
     bind(QaapDiffReviewWidget).toSelf();
     bind(WidgetFactory).toDynamicValue(({ container }) => ({
         id: QaapDiffReviewWidget.ID,

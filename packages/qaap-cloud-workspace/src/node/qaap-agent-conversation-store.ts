@@ -66,6 +66,7 @@ import {
 import { planConversationRewind } from '../common/qaap-agent-conversation-rewind';
 import type { QaapParallelRunVariantStats } from '../common/qaap-parallel-run';
 import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
+import type { QaapAgentGoalLoopState } from '../common/qaap-agent-goal-loop';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
@@ -104,6 +105,14 @@ export class QaapAgentConversationStore {
 
     @inject(QaapAgentTaskRunner)
     protected readonly taskRunner: QaapAgentTaskRunner;
+
+    protected readonly onTurnSettledEmitter = new Emitter<{
+        readonly conversationId: string;
+        readonly conv: QaapAgentConversation;
+        readonly userMessageId: string;
+    }>();
+    /** Fired after an agent turn settles — consumed by {@link QaapGoalLoopRunner}. */
+    readonly onTurnSettled = this.onTurnSettledEmitter.event;
 
     protected readonly conversations = new Map<string, QaapAgentConversation>();
     /** Reverse index: task id → conversation turn metadata so we can route output/completion. */
@@ -181,6 +190,26 @@ export class QaapAgentConversationStore {
 
     get(id: string): QaapAgentConversation | undefined {
         return this.conversations.get(id);
+    }
+
+    /** Persist backend goal-loop state and notify SSE/WebSocket subscribers. */
+    patchGoalLoop(id: string, goalLoop: QaapAgentGoalLoopState | undefined): QaapAgentConversation {
+        const conv = this.conversations.get(id);
+        if (!conv) {
+            throw new Error('Conversation not found.');
+        }
+        const next: QaapAgentConversation = {
+            ...conv,
+            goalLoop,
+            updatedAt: Date.now(),
+        };
+        this.conversations.set(id, next);
+        if (goalLoop) {
+            this.fire({ type: 'goal_loop', conversationId: id, goalLoop });
+        }
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        void this.persist();
+        return next;
     }
 
     /** Running turn task id for a conversation, if any. */
@@ -691,6 +720,10 @@ export class QaapAgentConversationStore {
         }
     }
 
+    protected emitTurnSettled(conversationId: string, conv: QaapAgentConversation, userMessageId: string): void {
+        this.onTurnSettledEmitter.fire({ conversationId, conv, userMessageId });
+    }
+
     protected finishLeaderTurnAndMaybeSynthesize(
         conversationId: string,
         leaderTaskId: string,
@@ -848,6 +881,7 @@ export class QaapAgentConversationStore {
             const next: QaapAgentConversation = { ...finalized, status: 'idle', updatedAt: Date.now() };
             this.publishFinalizedAgentMessage(conversationId, next, agentMessageId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, next);
+            void this.emitTurnSettled(conversationId, next, userMessageId);
             return;
         }
         const detail = await this.taskRunner.detail(task.id);
@@ -883,6 +917,7 @@ export class QaapAgentConversationStore {
             const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
             this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, finalized);
+            void this.emitTurnSettled(conversationId, finalized, userMessageId);
             return;
         }
         let withReply: QaapAgentConversation;
@@ -938,6 +973,7 @@ export class QaapAgentConversationStore {
         this.modelFallbackTriedByUserMessage.delete(userMessageId);
         this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, withReply);
         this.maybeAutoContinueIncompleteTurn(conversationId, withReply, userMessageId);
+        void this.emitTurnSettled(conversationId, withReply, userMessageId);
     }
 
     /**

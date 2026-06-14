@@ -10,10 +10,12 @@ import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { ChatRequestModel, ChatService, ChatSession } from '@theia/ai-chat';
 import {
     cancelConversation,
+    cancelGoalLoop,
     conversationToSummary,
     deleteConversation,
     forkConversation,
     isConversationAutoApproveEnabled,
+    isGoalLoopPhaseActive,
     renameConversation,
     retryConversation,
     updateConversation,
@@ -232,7 +234,12 @@ export class MobileProjectsConversationActionsUi {
                     await this.host.chatService?.cancelRequest(session.id, request.id);
                 }
             } else {
-                await cancelConversation(summary.id);
+                const live = this.host.conversations?.findSummaryById(summary.id) ?? summary;
+                if (isGoalLoopPhaseActive(live.goalLoopPhase)) {
+                    await cancelGoalLoop(summary.id);
+                } else {
+                    await cancelConversation(summary.id);
+                }
             }
         } catch (error) {
             this.host.messageService?.error(nls.localize(

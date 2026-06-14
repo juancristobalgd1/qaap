@@ -30,6 +30,9 @@ import { QaapWorkHubRoutineEndpoint } from './qaap-work-hub-routine-endpoint';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineScheduler } from './qaap-work-hub-routine-scheduler';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
+import { QaapGoalLoopRunner } from './qaap-goal-loop-runner';
+import { QaapGoalLoopVerifyRunner } from './qaap-goal-loop-verify-runner';
+import { QaapGoalLoopLlmEvaluator } from './qaap-goal-loop-llm-evaluator';
 
 export default new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
     bind(QaapCloudWorkspaceStore).toSelf().inSingletonScope();
@@ -49,6 +52,9 @@ export default new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsy
     bind(QaapAgentTaskEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentTaskEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
+    bind(QaapGoalLoopVerifyRunner).toSelf().inSingletonScope();
+    bind(QaapGoalLoopLlmEvaluator).toSelf().inSingletonScope();
+    bind(QaapGoalLoopRunner).toSelf().inSingletonScope();
     bind(QaapConversationWorktreeService).toSelf().inSingletonScope();
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);

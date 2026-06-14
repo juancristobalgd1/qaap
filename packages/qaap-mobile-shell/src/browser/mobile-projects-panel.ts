@@ -23,7 +23,7 @@ import {
     MobileProjectFilter,
     MobileProjectsHubView,
 } from './mobile-projects-types';
-import { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
+import { MobileProjectsActiveTasks, MobileProjectTaskView, cwdMatchesProject } from './mobile-projects-active-tasks';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
@@ -48,6 +48,8 @@ import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-p
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
+    conversationToSummary,
+    getConversation,
 } from '../common/qaap-agent-conversation-client';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
@@ -464,6 +466,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected stickyComposerFabLiftPx = 0;
     protected stickyComposerFabLiftObserver: ResizeObserver | undefined;
     protected stickyComposerDraft = '';
+    protected stickyComposerRunUntilDone = false;
     protected stickyComposerContext: StickyComposerContextEntry[] = [];
     protected stickyComposerFilesExpanded = true;
     protected stickyComposerPinnedAgentId: string | undefined;
@@ -1401,6 +1404,36 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
         await this.conversationOpenUi.openConversationSummary(project, summary);
+    }
+
+    async openConversationById(conversationId: string): Promise<void> {
+        let summary = this.findConversationSummaryById(conversationId);
+        if (!summary) {
+            try {
+                const conv = await getConversation(conversationId);
+                summary = conversationToSummary(conv);
+                this.conversations?.recordSnapshot(summary);
+            } catch {
+                return;
+            }
+        }
+        const project = this.resolveProjectForConversationSummary(summary);
+        if (!project) {
+            return;
+        }
+        await this.openConversationSummary(project, summary);
+    }
+
+    protected resolveProjectForConversationSummary(
+        summary: QaapAgentConversationSummaryDTO,
+    ): MobileProjectEntry | undefined {
+        for (const project of this.projects) {
+            const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
+            if (cwd === summary.cwd || cwdMatchesProject(summary.cwd, project)) {
+                return project;
+            }
+        }
+        return this.projects.find(project => cwdMatchesProject(summary.cwd, project));
     }
 
     protected async onTogglePin(project: MobileProjectEntry): Promise<void> {

@@ -19,6 +19,7 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
+    type QaapAgentGoalLoopStateDTO,
 } from '../common/qaap-agent-conversation-client';
 import { isQaapWorkHubPerfProbeEnabled } from '../common/qaap-work-hub-perf-probe';
 import {
@@ -67,6 +68,11 @@ interface ConversationParallelRunEvent {
     readonly runId: string;
     readonly variants: import('../common/qaap-parallel-run-client').QaapParallelRunVariantStatsDTO[];
 }
+interface ConversationGoalLoopEvent {
+    readonly type: 'goal_loop';
+    readonly conversationId: string;
+    readonly goalLoop: QaapAgentGoalLoopStateDTO;
+}
 interface ConversationSnapshotEvent {
     readonly type: 'snapshot';
     readonly groups: ReadonlyArray<{
@@ -81,6 +87,7 @@ type ConversationServerEvent =
     | ConversationMessageDeltaEvent
     | ConversationDeletedEvent
     | ConversationParallelRunEvent
+    | ConversationGoalLoopEvent
     | { readonly type: 'pong' };
 
 /**
@@ -560,6 +567,7 @@ export class MobileProjectsConversations {
             source.addEventListener('message_delta', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('deleted', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('parallel-run', ev => this.dispatchSseEvent(ev as MessageEvent));
+            source.addEventListener('goal_loop', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('open', () => this.schedulePrimeFromAll());
             source.addEventListener('error', () => this.scheduleSseReconnect());
         } catch {
@@ -610,6 +618,20 @@ export class MobileProjectsConversations {
             case 'parallel-run':
                 this.onDidReceiveParallelRunEmitter.fire(payload);
                 return;
+            case 'goal_loop': {
+                const existing = this.findSummaryById(payload.conversationId);
+                if (existing) {
+                    this.upsert({
+                        ...existing,
+                        goalLoopPhase: payload.goalLoop.phase,
+                        goalLoopIteration: payload.goalLoop.iteration,
+                        goalLoopMaxIterations: payload.goalLoop.budget.maxIterations,
+                        updatedAt: payload.goalLoop.updatedAt,
+                    });
+                }
+                this.onDidChangeEmitter.fire();
+                return;
+            }
             case 'pong':
                 return;
             default:

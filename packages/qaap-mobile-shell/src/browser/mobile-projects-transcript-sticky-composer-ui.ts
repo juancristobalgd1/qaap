@@ -13,6 +13,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     conversationToSummary,
     getConversation,
+    isGoalLoopPhaseActive,
     updateConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -156,6 +157,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptFollowUpFlushInFlight: boolean;
     transcriptFollowUpQueue: TranscriptFollowUpQueue;
     transcriptTheiaSessionByConversationId: ReadonlyMap<string, string>;
+    stickyComposerRunUntilDone: boolean;
     projectsService: MobileProjectsService;
     chatAgentService?: ChatAgentService;
     chatService?: import('@theia/ai-chat').ChatService;
@@ -845,6 +847,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (!summary || !this.host.transcriptComposerHost?.isConnected) {
             return false;
         }
+        if (isGoalLoopPhaseActive(summary.goalLoopPhase)) {
+            return true;
+        }
         if (this.host.transcriptLastConv?.id === summary.id) {
             return this.host.transcriptLastConv.status === 'streaming';
         }
@@ -1178,6 +1183,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
             onOpenAgentSheet: isLegacyTheiaChat
                 ? () => { /* Legacy Theia chat is not agent-switchable */ }
                 : anchor => { this.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary, anchor); },
+            showRunUntilDone: !isLegacyTheiaChat && showApprovalPolicy && !isGoalLoopPhaseActive(summary.goalLoopPhase),
+            runUntilDone: this.host.stickyComposerRunUntilDone,
+            onRunUntilDoneChange: enabled => {
+                this.host.stickyComposerRunUntilDone = enabled;
+                this.remountTranscriptStickyComposer();
+            },
             sendLabel: this.isTranscriptStickyComposerAgentWorking()
                 ? nls.localize('qaap/mobileProjects/transcriptQueue', 'Queue')
                 : nls.localize('qaap/mobileProjects/transcriptSend', 'Send'),
@@ -1248,6 +1259,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                                     summary.cwd,
                                 ),
                                 agentModel: this.host.transcriptComposerAgentModel,
+                                runUntilDone: this.host.stickyComposerRunUntilDone,
                             });
                         } catch {
                             /* submitBackgroundAgentTask surfaces errors */
@@ -1271,6 +1283,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
                                     this.host.transcriptComposerApprovalPolicyId,
                                     summary.cwd,
                                 ),
+                                agentModel: this.host.transcriptComposerAgentModel,
+                                runUntilDone: this.host.stickyComposerRunUntilDone,
                             });
                         } else {
                             await this.host.submitTranscriptViaBackendConversation(project, summary, draft, {
@@ -1283,6 +1297,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                                     summary.cwd,
                                 ),
                                 agentModel: this.host.transcriptComposerAgentModel,
+                                runUntilDone: this.host.stickyComposerRunUntilDone,
                             });
                         }
                     } catch (error) {

@@ -72,6 +72,7 @@ transcriptComposerHost: HTMLElement | undefined;
 stickyComposerContext: StickyComposerContextEntry[];
 stickyComposerFilesExpanded: boolean;
 stickyComposerDraft: string;
+stickyComposerRunUntilDone: boolean;
 stickyComposerSurface: QaapComposerSurface;
 stickyComposerModeId: string | undefined;
 stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
@@ -250,6 +251,12 @@ export class MobileProjectsStickyComposerRenderUi {
             onOpenAgentSheet: isChatSurface
                 ? () => { /* Chat is Coder-only */ }
                 : anchor => { this.host.stickyComposerSheetsUi.openStickyComposerAgentSheet(project, anchor); },
+            showRunUntilDone: !isChatSurface && showApprovalPolicy,
+            runUntilDone: this.host.stickyComposerRunUntilDone,
+            onRunUntilDoneChange: enabled => {
+                this.host.stickyComposerRunUntilDone = enabled;
+                this.renderStickyComposer();
+            },
             onSubmit: draft => {
                 if (this.host.stickyComposerContextUi.hasPendingComposerAttachments()) {
                     this.host.stickyComposerContextUi.notifyPendingComposerAttachments();
@@ -288,6 +295,7 @@ export class MobileProjectsStickyComposerRenderUi {
                         ? reconcileAgentApprovalPolicyId(this.host.stickyComposerApprovalPolicyId, cwd)
                         : undefined,
                     agentModel: readStoredAgentModel(cwd, selectedAgentId),
+                    runUntilDone: this.host.stickyComposerRunUntilDone,
                 });
                 void done.finally(() => this.renderStickyComposer());
             },

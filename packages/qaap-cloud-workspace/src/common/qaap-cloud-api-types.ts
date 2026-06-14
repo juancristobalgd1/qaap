@@ -96,6 +96,8 @@ export interface QaapPushNotifyRequest {
     readonly userLogin?: string;
     /** In-app destination to open when the notification is clicked (e.g. 'diff-review'). */
     readonly route?: string;
+    /** Opens the matching agent conversation when `route` is `transcript`. */
+    readonly conversationId?: string;
 }
 
 export interface QaapPushVapidResponse {

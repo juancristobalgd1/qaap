@@ -19369,6 +19369,31 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
   opacity: 0.72;
 }
 
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-goal-loop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--theia-foreground) 78%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-goal-loop.theia-mod-active {
+  border-color: color-mix(in srgb, var(--theia-focusBorder) 55%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder) 12%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-projects-active-chat-chip.theia-mod-running {
+  color: var(--theia-focusBorder);
+}
+
 .theia-qaap-approval-policy-toolbar-icon {
   font-size: 16px;
 }
