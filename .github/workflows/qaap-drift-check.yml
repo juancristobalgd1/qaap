@@ -36,14 +36,21 @@ jobs:
         with:
           node-version: 22.x
 
-      - name: Fetch upstream Theia (eclipse-theia/master)
+      - name: Fetch pinned upstream Theia ref
         run: |
+          UPSTREAM_REF="$(grep -v '^#' scripts/qaap-upstream-ref.txt | head -1 | awk '{print $1}')"
+          if [ -z "$UPSTREAM_REF" ]; then
+            echo "Missing pin in scripts/qaap-upstream-ref.txt"
+            exit 1
+          fi
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream https://github.com/eclipse-theia/theia.git
           else
             git remote add upstream https://github.com/eclipse-theia/theia.git
           fi
-          git fetch --no-tags --depth=1 upstream master:upstream/master
+          git fetch --no-tags --depth=1 upstream "${UPSTREAM_REF}:refs/qaap/upstream-pin"
 
       - name: Run qaap:drift-check
+        env:
+          QAAP_DIFF_BASE: refs/qaap/upstream-pin
         run: npm run qaap:drift-check

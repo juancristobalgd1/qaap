@@ -36,7 +36,24 @@ function sh(cmd) {
     }
 }
 
-const base = process.env.QAAP_DIFF_BASE || 'upstream/master';
+/** Prefer QAAP_DIFF_BASE, then scripts/qaap-upstream-ref.txt, else upstream/master. */
+function resolveDiffBase() {
+    if (process.env.QAAP_DIFF_BASE) {
+        return process.env.QAAP_DIFF_BASE;
+    }
+    const pinPath = path.join(__dirname, 'qaap-upstream-ref.txt');
+    if (fs.existsSync(pinPath)) {
+        for (const line of fs.readFileSync(pinPath, 'utf8').split('\n')) {
+            const token = line.replace(/#.*$/, '').trim().split(/\s+/)[0];
+            if (token) {
+                return token;
+            }
+        }
+    }
+    return 'upstream/master';
+}
+
+const base = resolveDiffBase();
 const reportOnly = process.env.QAAP_DRIFT_CHECK_REPORT === '1';
 
 /** @type {RegExp[]} Paths allowed to differ from upstream (seams + examples + tooling). */

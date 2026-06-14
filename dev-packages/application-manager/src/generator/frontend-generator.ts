@@ -572,9 +572,9 @@ self.addEventListener('notificationclick', event => {
         const explicit = pwaConfig?.appleTouchIcons;
         if (explicit?.length) {
             return '\n  ' + explicit.map(entry => {
-                const sizes = entry.sizes?.trim();
-                const sizesAttr = sizes ? ` sizes="${this.escapeHtmlAttribute(sizes)}"` : '';
-                return `<link rel="apple-touch-icon"${sizesAttr} href="${this.escapeHtmlAttribute(entry.src)}">`;
+                const entrySizes = entry.sizes?.trim();
+                const entrySizesAttr = entrySizes ? ` sizes="${this.escapeHtmlAttribute(entrySizes)}"` : '';
+                return `<link rel="apple-touch-icon"${entrySizesAttr} href="${this.escapeHtmlAttribute(entry.src)}">`;
             }).join('\n  ');
         }
         const icons = pwaConfig?.icons ?? [];
