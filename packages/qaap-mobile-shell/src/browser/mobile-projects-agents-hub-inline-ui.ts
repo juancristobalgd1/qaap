@@ -364,9 +364,7 @@ export class MobileProjectsAgentsHubInlineUi {
         const activeSummary = this.host.agentsHubInlineActive && this.host.transcriptOpenSummary
             ? this.host.transcriptOpenSummary
             : summary;
-        const conv = this.host.agentsHubInlineActive
-            && this.host.transcriptLastConv
-            && this.host.transcriptLastConv.id === activeSummary.id
+        const conv = this.host.transcriptLastConv?.id === activeSummary.id
             ? this.host.transcriptLastConv
             : this.host.transcriptSheetUi.summaryToTranscriptPlaceholder(activeSummary);
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);

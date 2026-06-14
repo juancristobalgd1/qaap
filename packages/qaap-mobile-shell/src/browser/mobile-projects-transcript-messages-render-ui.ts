@@ -26,6 +26,13 @@ import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-t
 import type { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 
+/** Remove idle empty-state chrome before incremental streaming patches or non-empty renders. */
+export function clearAgentTranscriptEmptyState(messageHost: HTMLElement): void {
+    messageHost.classList.remove('theia-mod-empty-chat');
+    messageHost.querySelector(':scope > .theia-mobile-agent-transcript-empty')?.remove();
+    messageHost.querySelector(':scope > .theia-mobile-agents-hub-landing.theia-mod-transcript-recents')?.remove();
+}
+
 export class MobileProjectsTranscriptMessagesRenderUi {
     constructor(
         protected readonly host: MobileProjectsTranscriptMessagesHost,
@@ -139,7 +146,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const normalized = normalizeAgentConversationFailures(conv);
         this.host.transcriptLastConv = normalized;
         const messageHost = this.resolveTranscriptMessageHost(host);
-        messageHost.classList.remove('theia-mod-empty-chat');
+        clearAgentTranscriptEmptyState(messageHost);
         messageHost.classList.add('theia-mod-virtual-scroll');
 
         const list = this.host.transcriptUi.mount(messageHost, normalized, index => {
@@ -200,8 +207,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         this.host.transcriptUi.disposeList();
         messageHost.classList.remove('theia-mod-virtual-scroll');
+        clearAgentTranscriptEmptyState(messageHost);
         messageHost.replaceChildren();
-        messageHost.classList.toggle('theia-mod-empty-chat', false);
         for (let index = 0; index < conv.messages.length; index++) {
             messageHost.append(this.createTranscriptMessageRowAtIndex(conv, index));
         }
@@ -268,6 +275,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return this.tryPatchStreamingTranscriptVirtual(host, conv, patchKind);
         }
         const messageHost = this.resolveTranscriptMessageHost(host);
+        if (conv.messages.length > 0) {
+            clearAgentTranscriptEmptyState(messageHost);
+        }
         const wasNearBottom = isTranscriptScrollNearBottom(
             messageHost.scrollTop,
             messageHost.clientHeight,

@@ -181,6 +181,51 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(refreshCalls).to.equal(0);
     });
 
+    it('renderAgentsHubShellChat keeps cached transcript before inline session is marked active', () => {
+        const summary = openSummary();
+        const liveConversation = {
+            id: summary.id,
+            cwd: summary.cwd,
+            agentId: summary.agentId,
+            title: summary.title,
+            status: 'streaming' as const,
+            createdAt: summary.createdAt,
+            updatedAt: summary.updatedAt,
+            messages: [{
+                id: 'user-1',
+                role: 'user' as const,
+                content: 'Fix login',
+                createdAt: summary.updatedAt,
+            }],
+        };
+        let renderedConversation: typeof liveConversation | undefined;
+        const host = createHost({
+            agentsHubInlineActive: false,
+            transcriptLastConv: liveConversation,
+            transcriptMessagesUi: {
+                renderTranscriptMessages: (_host: HTMLElement, conv: typeof liveConversation) => { renderedConversation = conv; },
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptMessagesUi'],
+            transcriptSheetUi: {
+                summaryToTranscriptPlaceholder: () => ({
+                    id: summary.id,
+                    cwd: summary.cwd,
+                    agentId: summary.agentId,
+                    title: summary.title,
+                    status: 'idle' as const,
+                    createdAt: summary.createdAt,
+                    updatedAt: summary.updatedAt,
+                    messages: [],
+                }),
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
+            projectsService: {
+                getProjectCwd: () => '/tmp/demo',
+            } as unknown as MobileProjectsAgentsHubInlineHost['projectsService'],
+        });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.renderAgentsHubShellChat(document.createElement('div'), createProject(), summary);
+        expect(renderedConversation).to.equal(liveConversation);
+    });
+
     it('switches inline sessions without tearing down the execution shell', async () => {
         let renderListCalls = 0;
         let renderMessagesCalls = 0;
