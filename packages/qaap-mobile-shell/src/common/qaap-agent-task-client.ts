@@ -254,6 +254,26 @@ export function mergeComposerAgentPickerOptions(
     return Array.from(merged.values()).sort((left, right) => left.label.localeCompare(right.label));
 }
 
+/** Merge HTTP `/all` and WebSocket snapshot agent lists (WebSocket may arrive after the first fetch). */
+export function mergeAgentTaskAgentOptions(
+    ...lists: readonly (readonly QaapAgentTaskAgentOption[])[]
+): QaapAgentTaskAgentOption[] {
+    const merged = new Map<string, QaapAgentTaskAgentOption>();
+    for (const list of lists) {
+        for (const agent of list) {
+            if (!agent.id?.trim()) {
+                continue;
+            }
+            const key = agent.id.toLowerCase();
+            const existing = merged.get(key);
+            if (!existing || agent.available && !existing.available) {
+                merged.set(key, agent);
+            }
+        }
+    }
+    return Array.from(merged.values()).sort((left, right) => left.label.localeCompare(right.label));
+}
+
 /** Composer pickers expose VPS-backed agents (QAIQ, Codex, …) but hide shell and UI-hidden runners. */
 export function filterQaapComposerAgents(
     agents: readonly QaapAgentTaskAgentOption[],

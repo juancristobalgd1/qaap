@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatAgent } from '@theia/ai-chat';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
@@ -102,10 +103,18 @@ export class MobileProjectsStickyComposerAgentsUi {
         return filterQaapComposerAgents(agents);
     }
     async refreshStickyComposerAgents(project: MobileProjectEntry): Promise<void> {
+        this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
         try {
             const snapshot = await this.host.loadBackendAgentSnapshot();
-            const filteredAgents = this.filterSelectableComposerAgents(snapshot.agents);
+            let filteredAgents = this.filterSelectableComposerAgents(snapshot.agents);
+            if (filteredAgents.length === 0) {
+                await this.waitForSelectableActiveTaskAgents(3000);
+                const liveAgents = this.filterSelectableComposerAgents(this.host.activeTasks?.getAgents() ?? []);
+                if (liveAgents.length > 0) {
+                    filteredAgents = liveAgents;
+                }
+            }
             this.host.stickyComposerBackendAgents = filteredAgents;
             this.host.stickyComposerQaiqModels = snapshot.qaiqModels;
             const resolved = this.reconcileStickyComposerPinnedAgent(
@@ -119,10 +128,12 @@ export class MobileProjectsStickyComposerAgentsUi {
                 this.host.stickyComposerRenderUi.renderStickyComposer();
             }
         } catch {
+            await this.waitForSelectableActiveTaskAgents(1500);
             this.host.stickyComposerBackendAgents = this.filterSelectableComposerAgents(this.host.activeTasks?.getAgents() ?? []);
             this.host.stickyComposerQaiqModels = [];
         }
     }
+
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {
         chrome.list.replaceChildren();
         const loading = document.createElement('p');
@@ -130,11 +141,40 @@ export class MobileProjectsStickyComposerAgentsUi {
         loading.textContent = nls.localize('qaap/mobileProjects/stickyComposerLoadingAgents', 'Loading agents…');
         chrome.list.append(loading);
     }
-    async ensureStickyComposerAgentsLoaded(project: MobileProjectEntry): Promise<readonly QaapAgentTaskAgentOption[]> {
-        if (this.host.stickyComposerBackendAgents.length === 0) {
+
+    async ensureStickyComposerAgentsLoaded(
+        project: MobileProjectEntry,
+        options?: { force?: boolean },
+    ): Promise<readonly QaapAgentTaskAgentOption[]> {
+        if (options?.force || this.host.stickyComposerBackendAgents.length === 0) {
             await this.refreshStickyComposerAgents(project);
         }
         return this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents);
     }
-}
 
+    async waitForSelectableActiveTaskAgents(timeoutMs: number): Promise<void> {
+        const activeTasks = this.host.activeTasks;
+        if (!activeTasks) {
+            return;
+        }
+        const hasSelectable = (): boolean =>
+            this.filterSelectableComposerAgents(activeTasks.getAgents()).length > 0;
+        if (hasSelectable()) {
+            return;
+        }
+        await new Promise<void>(resolve => {
+            let disposable: Disposable | undefined;
+            const timer = window.setTimeout(() => {
+                disposable?.dispose();
+                resolve();
+            }, timeoutMs);
+            disposable = activeTasks.onDidChange(() => {
+                if (hasSelectable()) {
+                    window.clearTimeout(timer);
+                    disposable?.dispose();
+                    resolve();
+                }
+            });
+        });
+    }
+}

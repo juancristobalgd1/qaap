@@ -20,6 +20,7 @@ import {
     fetchAgentTaskListAll,
     isTheiaCoderAgent,
     isTheiaCoderMention,
+    mergeAgentTaskAgentOptions,
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     readStoredAgent,
     resolveAgentModelForSubmit,
@@ -200,12 +201,23 @@ export class MobileProjectsBackgroundTaskUi {
         return isTheiaCoderAgent(selectedAgentId) || isTheiaCoderMention(content);
     }
     async loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot> {
+        this.host.activeTasks?.start();
         try {
-            return await fetchAgentTaskListAll();
+            const snapshot = await fetchAgentTaskListAll();
+            const agents = mergeAgentTaskAgentOptions(snapshot.agents, this.host.activeTasks?.getAgents() ?? []);
+            return {
+                ...snapshot,
+                agents,
+                agentConfigured: snapshot.agentConfigured || (this.host.activeTasks?.isAgentConfigured() ?? false),
+            };
         } catch {
-            return this.host.activeTasks
-                ? { agents: this.host.activeTasks.getAgents(), defaultAgent: this.host.activeTasks.getDefaultAgent(), agentConfigured: true, qaiqModels: [] }
-                : { agents: [], defaultAgent: undefined, agentConfigured: false, qaiqModels: [] };
+            const liveAgents = this.host.activeTasks?.getAgents() ?? [];
+            return {
+                agents: mergeAgentTaskAgentOptions(liveAgents),
+                defaultAgent: this.host.activeTasks?.getDefaultAgent(),
+                agentConfigured: this.host.activeTasks?.isAgentConfigured() ?? false,
+                qaiqModels: [],
+            };
         }
     }
     async selectBackendConversationAgent(

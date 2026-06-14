@@ -91,6 +91,7 @@ stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
 preparedCwdByProjectId: Map<string, string>;
 projectsService: MobileProjectsService;
 chatAgentService?: import('@theia/ai-chat/lib/common/chat-agent-service').ChatAgentService;
+activeTasks?: import('./mobile-projects-active-tasks').MobileProjectsActiveTasks;
     readPreference?: (key: string) => unknown;
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
 stickyComposerQaiqModels: QaapQaiqModelOption[];
@@ -256,7 +257,7 @@ export class MobileProjectsStickyComposerSheetsUi {
         }
         this.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
         this.syncAgentPickerPopoverPosition(chrome.sheet);
-        void this.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project).then(agents => {
+        void this.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }).then(agents => {
             if (this.host.stickyComposerAgentSheet !== chrome.sheet) {
                 return;
             }
@@ -824,10 +825,16 @@ export class MobileProjectsStickyComposerSheetsUi {
         if (chrome.list.childElementCount === 0) {
             const hint = document.createElement('p');
             hint.className = 'theia-qaap-agent-sheet-empty-models';
-            hint.textContent = nls.localize(
-                'qaap/mobileProjects/stickyComposerNoAgents',
-                'No agents are available. Check your workspace server connection or AI configuration.',
-            );
+            const agentConfigured = this.host.activeTasks?.isAgentConfigured() ?? false;
+            hint.textContent = agentConfigured
+                ? nls.localize(
+                    'qaap/mobileProjects/stickyComposerNoAgentsFiltered',
+                    'Agents were detected on the server but none are selectable in this composer. Restart the backend after installing CLIs (qaiq, codex, claude, …).',
+                )
+                : nls.localize(
+                    'qaap/mobileProjects/stickyComposerNoAgents',
+                    'No agents are available. Install a VPS agent CLI on PATH (qaiq, codex, claude) or set QAAP_AGENT_COMMAND, then restart the backend.',
+                );
             chrome.list.append(hint);
         }
         window.requestAnimationFrame(() => this.syncAgentPickerPopoverPosition(chrome.sheet));
