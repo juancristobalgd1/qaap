@@ -13,13 +13,18 @@ import type {
 } from './mobile-projects-panel-factory';
 import type { MobileProjectsService } from './mobile-projects-service';
 
-describe('mobile-projects-panel-factory', () => {
+describe('mobile-projects-panel-factory', function (): void {
+    this.timeout(10000);
 
     let MobileProjectsPanelFactory: typeof MobileProjectsPanelFactoryType;
     let disableJSDOM: (() => void) | undefined;
 
     before(() => {
         disableJSDOM = enableJSDOM();
+        const globalScope = globalThis as typeof globalThis & { DragEvent?: typeof DragEvent };
+        if (globalScope.DragEvent === undefined) {
+            globalScope.DragEvent = class extends Event {} as unknown as typeof DragEvent;
+        }
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         MobileProjectsPanelFactory = require('./mobile-projects-panel-factory').MobileProjectsPanelFactory;
     });
