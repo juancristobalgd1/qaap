@@ -96,6 +96,7 @@ import {
     isAntigravityCliCommand,
 } from './qaap-antigravity-settings';
 import { buildQaapHealthResponse, type QaapHealthResponse } from '../common/qaap-cloud-api-types';
+import { consumeConversationTaskForRichPush } from '../common/qaap-agent-task-conversation-registry';
 import { QaapWebPushService } from './qaap-web-push-service';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
@@ -312,11 +313,14 @@ export class QaapAgentTaskRunner {
     protected snapshotPersistTimer: NodeJS.Timeout | undefined;
 
     protected readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
+    protected readonly onApprovalNeededEmitter = new Emitter<{ readonly taskId: string }>();
     /**
      * Fires every time a task is created, transitions state, or is cancelled. SSE endpoints and
      * cross-project UIs subscribe here to update their views without polling.
      */
     readonly onDidChangeTask: Event<QaapAgentTaskEvent> = this.onDidChangeTaskEmitter.event;
+    /** Fires when a manual-approval task queues a tool permission prompt. */
+    readonly onApprovalNeeded: Event<{ readonly taskId: string }> = this.onApprovalNeededEmitter.event;
 
     @postConstruct()
     protected init(): void {
@@ -1781,6 +1785,9 @@ export class QaapAgentTaskRunner {
                     const pending = this.pendingQaiqControlRequests.get(task.id) ?? [];
                     pending.push(event.request);
                     this.pendingQaiqControlRequests.set(task.id, pending);
+                    if (task.autoApprove === false) {
+                        this.onApprovalNeededEmitter.fire({ taskId: task.id });
+                    }
                     // "Request approval" runs wait indefinitely; auto-approve runs get a
                     // grace window so an unattended turn still finishes.
                     if (task.autoApprove !== false) {
@@ -2038,7 +2045,11 @@ export class QaapAgentTaskRunner {
 
     /** Push the result to the user's devices — works with every tab closed. */
     protected async notifyCompletion(task: QaapAgentTask): Promise<void> {
+        if (consumeConversationTaskForRichPush(task.id)) {
+            return;
+        }
         const ok = task.state === 'completed';
+        const projectName = task.cwd.split(/[/\\]/).filter(Boolean).pop() ?? task.cwd;
         try {
             await this.webPush.notify({
                 title: ok ? 'Task finished' : 'Task failed',
@@ -2046,7 +2057,7 @@ export class QaapAgentTaskRunner {
                 tag: `qaap-agent-task-${task.id}`,
                 route: 'diff-review',
                 taskId: task.id,
-                projectName: task.cwd.split(/[/\\]/).filter(Boolean).pop() ?? task.cwd,
+                projectName,
             });
         } catch {
             /* push failure must not crash the runner */

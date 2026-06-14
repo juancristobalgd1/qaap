@@ -19,6 +19,7 @@ import {
     type QaapAgentGoalLoopState,
     type QaapStartAgentGoalLoopRequest,
 } from '../common/qaap-agent-goal-loop';
+import { buildAgentTurnPushNotifyRequest } from '../common/qaap-web-push-payload';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapGoalLoopLlmEvaluator } from './qaap-goal-loop-llm-evaluator';
 import { QaapGoalLoopVerifyRunner } from './qaap-goal-loop-verify-runner';
@@ -365,15 +366,18 @@ export class QaapGoalLoopRunner {
         }
         const ok = state.phase === 'completed';
         const projectName = conv.cwd.split(/[/\\]/).filter(Boolean).pop() ?? conv.cwd;
-        void this.webPush.notify({
-            title: ok ? 'Goal completed' : 'Goal loop stopped',
-            body: `${conv.title}: ${state.stopReason ?? state.goal}`,
-            tag: `qaap-goal-loop-${conversationId}`,
-            route: 'transcript',
+        void this.webPush.notify(buildAgentTurnPushNotifyRequest({
+            ok,
+            title: conv.title,
             conversationId,
             agentId: conv.agentId,
             projectName,
-        }).catch(() => undefined);
+            linesAdded: conv.gitDiffAdded,
+            linesRemoved: conv.gitDiffRemoved,
+            logHint: ok ? undefined : (state.stopReason ?? state.goal),
+            pushTitle: ok ? 'Goal completed' : 'Goal loop stopped',
+            tag: `qaap-goal-loop-${conversationId}`,
+        })).catch(() => undefined);
         void this.githubEvidence.notifyGoalLoopTerminal(conversationId, conv, state).catch(() => undefined);
     }
 

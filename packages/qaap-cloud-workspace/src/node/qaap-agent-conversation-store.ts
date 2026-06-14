@@ -67,6 +67,7 @@ import { planConversationRewind } from '../common/qaap-agent-conversation-rewind
 import type { QaapParallelRunVariantStats } from '../common/qaap-parallel-run';
 import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import type { QaapAgentGoalLoopState } from '../common/qaap-agent-goal-loop';
+import { markConversationTaskForRichPush } from '../common/qaap-agent-task-conversation-registry';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
@@ -268,6 +269,20 @@ export class QaapAgentConversationStore {
         for (const [taskId, ref] of this.taskToConversation) {
             if (ref.conversationId === conversationId) {
                 return taskId;
+            }
+        }
+        return undefined;
+    }
+
+    /** Resolve a running or recent turn task back to its conversation thread. */
+    findConversationIdForTask(taskId: string): string | undefined {
+        const active = this.taskToConversation.get(taskId);
+        if (active) {
+            return active.conversationId;
+        }
+        for (const conv of this.conversations.values()) {
+            if (conv.messages.some(message => message.taskId === taskId)) {
+                return conv.id;
             }
         }
         return undefined;
@@ -649,6 +664,7 @@ export class QaapAgentConversationStore {
             if (task.state === 'running') {
                 return; // only react when the turn settles
             }
+            markConversationTaskForRichPush(task.id);
             this.taskToConversation.delete(task.id);
             void this.applyTaskOutcome(ref.conversationId, ref.userMessageId, ref.agentMessageId, task, ref.startSha);
             return;

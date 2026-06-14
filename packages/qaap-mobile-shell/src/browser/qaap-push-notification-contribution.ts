@@ -8,6 +8,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { WindowBlinkService } from '@theia/ai-core/lib/browser/window-blink-service';
+import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { QaapBootstrapStateChange, QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 
 export const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';
@@ -23,15 +24,21 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
     @inject(QaapProjectBootstrapService)
     protected readonly bootstrap: QaapProjectBootstrapService;
 
+    @inject(WorkspaceService)
+    protected readonly workspaceService: WorkspaceService;
+
+    protected notificationPermissionRequested = false;
+
     onStart(): void {
         this.bootstrap.onStateChange((state: QaapBootstrapStateChange) => {
             if (state.phase === 'install-failed' || state.phase === 'run-failed') {
                 this.notifyBuildFailed(state.error);
                 window.dispatchEvent(new CustomEvent(QAAP_BOOTSTRAP_FAILED_EVENT, { detail: { error: state.error } }));
             }
-            if (state.phase === 'running') {
-                void this.requestNotificationPermission();
-            }
+        });
+        void this.workspaceService.roots.then(roots => this.maybeRequestNotificationPermission(roots.length > 0));
+        this.workspaceService.onWorkspaceChanged(() => {
+            void this.workspaceService.roots.then(roots => this.maybeRequestNotificationPermission(roots.length > 0));
         });
         window.addEventListener(QAAP_AGENT_COMPLETED_EVENT, this.onAgentCompleted);
         window.addEventListener(QAAP_AGENT_CONFIRMATION_NEEDED_EVENT, this.onConfirmationNeeded);
@@ -103,5 +110,13 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
         } catch {
             /* user dismissed */
         }
+    }
+
+    protected maybeRequestNotificationPermission(hasWorkspace: boolean): void {
+        if (!hasWorkspace || this.notificationPermissionRequested) {
+            return;
+        }
+        this.notificationPermissionRequested = true;
+        void this.requestNotificationPermission();
     }
 }

@@ -539,26 +539,30 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
     event.notification.close();
-    const data = event.notification.data || {};
-    const route = data.route;
-    const conversationId = data.conversationId;
-    event.waitUntil((async () => {
-        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-        const message = { type: 'qaap-notification-route', route, conversationId };
-        if (clients.length > 0) {
-            await clients[0].focus();
-            if (route) {
-                clients[0].postMessage(message);
+        const data = event.notification.data || {};
+        const route = data.route;
+        const conversationId = data.conversationId;
+        const taskId = data.taskId;
+        event.waitUntil((async () => {
+            const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+            const message = { type: 'qaap-notification-route', route, conversationId, taskId };
+            if (clients.length > 0) {
+                await clients[0].focus();
+                if (route) {
+                    clients[0].postMessage(message);
+                }
+                return;
             }
-            return;
-        }
-        const params = new URLSearchParams();
-        if (route) {
-            params.set('qaap_route', route);
-        }
-        if (conversationId) {
-            params.set('qaap_conversation', conversationId);
-        }
+            const params = new URLSearchParams();
+            if (route) {
+                params.set('qaap_route', route);
+            }
+            if (conversationId) {
+                params.set('qaap_conversation', conversationId);
+            }
+            if (taskId) {
+                params.set('qaap_task', taskId);
+            }
         const query = params.toString();
         await self.clients.openWindow('./' + (query ? '?' + query : ''));
     })());
