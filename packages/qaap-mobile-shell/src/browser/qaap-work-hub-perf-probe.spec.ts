@@ -19,7 +19,9 @@ describe('qaap-work-hub-perf-probe', () => {
     after(() => {
         disableJSDOM?.();
         disableJSDOM = undefined;
-        delete window.__qaapWorkHubPerfProbe;
+        if (typeof window !== 'undefined') {
+            delete window.__qaapWorkHubPerfProbe;
+        }
     });
 
     beforeEach(() => {
