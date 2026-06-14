@@ -40,6 +40,9 @@ export interface MobileProjectsRenderListHost {
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    hubIncrementalUi: import('./mobile-projects-hub-incremental-ui').MobileProjectsHubIncrementalUi;
+    tryPatchHubListBeforeRebuild(): boolean;
+    resetHubIncrementalStructure(): void;
 }
 
 /**
@@ -57,7 +60,10 @@ export class MobileProjectsRenderListUi {
         this.host.projectDetailSurfaceTargets = undefined;
         this.host.projectDetailTabStrip = undefined;
         if (!this.host.shouldPreserveAgentsHubInlineTranscriptShell()) {
-            this.host.scroll.replaceChildren();
+            if (!this.host.tryPatchHubListBeforeRebuild()) {
+                this.host.resetHubIncrementalStructure();
+                this.host.scroll.replaceChildren();
+            }
         }
         try {
             if (this.host.hubView === 'diff') {

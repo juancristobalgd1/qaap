@@ -10,6 +10,11 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
+import {
+    QAAP_INBOX_ROW_FP_ATTR,
+    QAAP_INBOX_ROW_ID_ATTR,
+} from './mobile-projects-hub-incremental-ui';
 import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
 import { formatConversationComposerSessionMeta } from '../common/qaap-conversation-composer-state';
 import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
@@ -801,6 +806,20 @@ export class MobileProjectsProjectRowsUi {
                 });
                 row.append(menuBtn, menu);
             }
+
+            const rowKey = summary?.id ?? task.id;
+            row.setAttribute(QAAP_INBOX_ROW_ID_ATTR, rowKey);
+            row.setAttribute(
+                QAAP_INBOX_ROW_FP_ATTR,
+                summary
+                    ? buildWorkHubInboxRowFingerprintFromSummary(summary, {
+                        rowKey,
+                        visualStatusId: visualStatus.id,
+                        unread: isUnread,
+                        isCurrent: this.host.transcriptOpenSummaryId === summary.id,
+                    })
+                    : `${rowKey}:${task.state}:${task.title}`,
+            );
 
             return row;
         }

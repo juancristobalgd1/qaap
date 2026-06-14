@@ -145,6 +145,9 @@ const IDLE_TASK_TIMEOUT_MS = 20 * 60 * 1000;
  * agent can finish the turn with the tools it has.
  */
 const QUEUED_APPROVAL_GRACE_TIMEOUT_MS = 5 * 60 * 1000;
+/** Default cap on simultaneously running VPS agent processes per backend instance. */
+const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
+const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
 
 /** Auth token file shared between the backend and the `qaap-task` helper. */
 const TOKEN_PATH = path.join(os.homedir(), '.qaap', 'task-token');
@@ -271,6 +274,8 @@ export class QaapAgentTaskRunner {
     protected readonly projectNameCache = new Map<string, string>();
     /** Cached `.prompts/project-info.prompttemplate` per cwd — primed by {@link warmForCwd}. */
     protected readonly projectInfoCache = new Map<string, string | undefined>();
+    /** Original create requests for tasks waiting on the concurrency queue. */
+    protected readonly queuedCreateRequests = new Map<string, QaapCreateAgentTaskRequest>();
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
     protected readonly probedAgentBins = new Set<string>();
 
@@ -528,11 +533,58 @@ export class QaapAgentTaskRunner {
             const raw = await fsp.readFile(INDEX_PATH, 'utf8');
             const stored = JSON.parse(raw) as QaapAgentTask[];
             for (const task of stored) {
-                this.tasks.set(task.id, task.state === 'running' ? { ...task, state: 'interrupted' } : task);
+                const restored = task.state === 'running'
+                    ? { ...task, state: 'interrupted' as const }
+                    : task.state === 'queued'
+                        ? { ...task, state: 'queued' as const }
+                        : task;
+                this.tasks.set(task.id, restored);
             }
             await this.persist();
+            this.drainQueuedTasks();
         } catch {
             /* no prior tasks */
+        }
+    }
+
+    protected maxConcurrentAgents(): number {
+        const raw = process.env[MAX_CONCURRENT_AGENTS_ENV]?.trim();
+        if (!raw) {
+            return DEFAULT_MAX_CONCURRENT_AGENTS;
+        }
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CONCURRENT_AGENTS;
+    }
+
+    protected countRunningTasks(): number {
+        let count = 0;
+        for (const task of this.tasks.values()) {
+            if (task.state === 'running') {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    protected drainQueuedTasks(): void {
+        while (this.countRunningTasks() < this.maxConcurrentAgents()) {
+            const next = [...this.tasks.values()]
+                .filter(task => task.state === 'queued')
+                .sort((left, right) => left.createdAt - right.createdAt)[0];
+            if (!next) {
+                return;
+            }
+            const request = this.queuedCreateRequests.get(next.id);
+            if (!request) {
+                this.finishTask(next.id, 'failed', undefined);
+                continue;
+            }
+            const running: QaapAgentTask = { ...next, state: 'running' };
+            this.tasks.set(next.id, running);
+            this.queuedCreateRequests.delete(next.id);
+            void this.spawnProcessWhenReady(running, request);
+            void this.persist();
+            this.onDidChangeTaskEmitter.fire({ type: 'created', task: running });
         }
     }
 
@@ -779,12 +831,13 @@ export class QaapAgentTaskRunner {
         const autoApprove = resolveAgentAutoApprove(
             request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
         );
+        const atCapacity = this.countRunningTasks() >= this.maxConcurrentAgents();
         const task: QaapAgentTask = {
             id,
             title: (request.title ?? '').trim() || prompt || rawCommand,
             command: rawCommand || prompt,
             cwd,
-            state: 'running',
+            state: atCapacity ? 'queued' : 'running',
             createdAt: Date.now(),
             parentId,
             autoApprove,
@@ -794,7 +847,11 @@ export class QaapAgentTaskRunner {
             })(),
         };
         this.tasks.set(id, task);
-        void this.spawnProcessWhenReady(task, request);
+        if (atCapacity) {
+            this.queuedCreateRequests.set(id, request);
+        } else {
+            void this.spawnProcessWhenReady(task, request);
+        }
         void this.persist();
         this.onDidChangeTaskEmitter.fire({ type: 'created', task });
         return task;
@@ -1104,9 +1161,12 @@ export class QaapAgentTaskRunner {
         if (process) {
             process.kill('SIGTERM');
         }
+        this.queuedCreateRequests.delete(id);
         const task = this.tasks.get(id);
-        if (task && task.state === 'running') {
-            return this.finishTask(id, 'cancelled', undefined);
+        if (task && (task.state === 'running' || task.state === 'queued')) {
+            const finished = this.finishTask(id, 'cancelled', undefined);
+            this.drainQueuedTasks();
+            return finished;
         }
         return task;
     }
@@ -1646,6 +1706,7 @@ export class QaapAgentTaskRunner {
         if (isQaapAgentTaskFinished(state) && state !== 'cancelled') {
             void this.notifyCompletion(finished);
         }
+        this.drainQueuedTasks();
         return finished;
     }
 

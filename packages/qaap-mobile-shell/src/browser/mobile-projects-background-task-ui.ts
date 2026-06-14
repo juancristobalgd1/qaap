@@ -144,6 +144,16 @@ export class MobileProjectsBackgroundTaskUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
         },
     ): Promise<QaapAgentConversationSummaryDTO> {
+        const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);
+        if (useWorktree && options.worktree !== true) {
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobileProjects/autoWorktree',
+                    'Running in an isolated worktree so agents do not conflict.',
+                ),
+                { duration: 2200 },
+            );
+        }
         const agent = await this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId ?? QAAP_COMPOSER_DEFAULT_AGENT_ID);
         const message = applyBackendInteractionModeToPrompt(draft, options.modeId);
         const agentModel = resolveAgentModelForSubmit(agent, cwd, options.agentModel);
@@ -160,7 +170,7 @@ export class MobileProjectsBackgroundTaskUi {
             message,
             interactionModeId: options.modeId,
             approvalPolicyId,
-            ...(options.worktree === true ? { worktree: true } : {}),
+            ...(useWorktree ? { worktree: true } : {}),
             ...(contextPreamble ? { contextPreamble } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
             ...(options.autoApprove === false
@@ -172,6 +182,16 @@ export class MobileProjectsBackgroundTaskUi {
         const summary = conversationToSummary(conversation);
         this.host.conversations?.recordSnapshot(summary);
         return summary;
+    }
+    /**
+     * When another agent is already streaming in the same repo, default to an isolated worktree
+     * so parallel agents do not stomp the same working tree.
+     */
+    resolveWorktreeForSession(cwd: string, explicitWorktree?: boolean): boolean {
+        if (explicitWorktree === true || explicitWorktree === false) {
+            return explicitWorktree;
+        }
+        return (this.host.conversations?.getStreamingCountForCwd(cwd) ?? 0) > 0;
     }
     shouldUseTheiaCoder(content: string, selectedAgentId?: string): boolean {
         if (extractBackendAgentMention(content)) {

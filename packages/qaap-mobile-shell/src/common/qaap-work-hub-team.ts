@@ -106,6 +106,24 @@ export function collectAgentMembers(input: CollectAgentMembersInput): WorkHubTea
         });
     }
     for (const task of input.tasks) {
+        if (task.state === 'queued') {
+            const cwd = normalizeTeamCwd(task.cwd);
+            members.push({
+                id: task.id,
+                kind: task.parentId ? 'subtask' : 'leader-task',
+                title: task.title,
+                projectName: basenameFromCwd(cwd),
+                cwd,
+                agentId: inferAgentIdFromCommand(task.command),
+                state: 'queued',
+                parentId: task.parentId,
+                childCount: 0,
+                createdAt: task.createdAt,
+                updatedAt: task.createdAt,
+                taskId: task.id,
+            });
+            continue;
+        }
         if (task.state !== 'running') {
             continue;
         }
@@ -188,6 +206,10 @@ export function filterTeamMembersForDisplay(members: readonly WorkHubTeamMember[
 
 export function countRunningTeamMembers(members: readonly WorkHubTeamMember[]): number {
     return members.filter(member => member.state === 'running' || member.state === 'streaming').length;
+}
+
+export function countQueuedTeamMembers(members: readonly WorkHubTeamMember[]): number {
+    return members.filter(member => member.state === 'queued').length;
 }
 
 function attachChildCounts(members: WorkHubTeamMember[]): WorkHubTeamMember[] {

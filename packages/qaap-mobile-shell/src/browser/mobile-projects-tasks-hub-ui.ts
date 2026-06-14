@@ -86,6 +86,7 @@ export interface MobileProjectsTasksHubHost {
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    hubIncrementalUi: import('./mobile-projects-hub-incremental-ui').MobileProjectsHubIncrementalUi;
 }
 
 /** Tasks hub inbox rendering and Agents Hub landing recents / quick-action prompts. */
@@ -356,6 +357,16 @@ export class MobileProjectsTasksHubUi {
                 }
                 root.append(host);
             }
+            this.host.hubIncrementalUi.rememberRenderedStructure('chat-inbox', groups.map(group => ({
+                project: group.project,
+                items: group.summaries.map(summary => ({
+                    kind: 'conversation' as const,
+                    project: group.project,
+                    summary,
+                    sortAt: summary.updatedAt,
+                    priority: 0,
+                })),
+            })));
             this.host.scroll.append(root);
             this.updateTasksAttentionChrome();
             this.host.renderSubtitle();
@@ -381,6 +392,7 @@ export class MobileProjectsTasksHubUi {
                 inbox.append(this.host.createInboxProjectGroup(group.project, group.items));
             }
             root.append(inbox);
+            this.host.hubIncrementalUi.rememberRenderedStructure('tasks-inbox', groups, { teamEmbedded: teamRendered });
         }
 
         if (!teamRendered && groups.length === 0) {

@@ -157,6 +157,10 @@ import {
     type MobileProjectsProjectNavigationHost,
 } from './mobile-projects-project-navigation-ui';
 import {
+    MobileProjectsHubIncrementalUi,
+    type MobileProjectsHubIncrementalPatchHost,
+} from './mobile-projects-hub-incremental-ui';
+import {
     MobileProjectsRenderListUi,
     type MobileProjectsRenderListHost,
 } from './mobile-projects-render-list-ui';
@@ -507,6 +511,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly projectDetailUi = new MobileProjectsProjectDetailUi(this as unknown as MobileProjectsProjectDetailHost);
     protected readonly projectNavigationUi = new MobileProjectsProjectNavigationUi(this as unknown as MobileProjectsProjectNavigationHost);
     protected readonly renderListUi = new MobileProjectsRenderListUi(this as unknown as MobileProjectsRenderListHost);
+    protected readonly hubIncrementalUi = new MobileProjectsHubIncrementalUi(this as unknown as MobileProjectsHubIncrementalPatchHost);
     /** Coalesces bursty hub list rebuilds from WS/SSE into one paint per animation frame. */
     protected readonly hubListRenderScheduler = new QaapChatViewStreamUpdateScheduler(
         () => this.renderListUi.renderList(),
@@ -908,6 +913,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected renderList(): void {
         this.renderListUi.renderList();
+    }
+
+    protected tryPatchHubListBeforeRebuild(): boolean {
+        return this.hubIncrementalUi.tryPatchBeforeRebuild();
+    }
+
+    protected resetHubIncrementalStructure(): void {
+        this.hubIncrementalUi.resetStructureFingerprint();
     }
 
     protected scheduleRenderList(): void {
