@@ -11,6 +11,13 @@ export interface WorkHubPerfProbeMetrics {
     inlineExecutionConnected: boolean;
 }
 
+export interface WorkHubPerfProbeDiagnostics {
+    projectCount: number;
+    mcRowCount: number;
+    teamRowCount: number;
+    hubView: string;
+}
+
 export interface WorkHubPerfProbeApi {
     burstConversationTicks(count: number): void;
     setTranscriptOverlayOpenForProbe(open: boolean): void;
@@ -21,14 +28,16 @@ export interface WorkHubPerfProbeApi {
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
     hasProjectsForProbe(): boolean;
+    hasWorkspaceForProbe(): boolean;
+    getProbeDiagnostics(): WorkHubPerfProbeDiagnostics;
     resetMetrics(): WorkHubPerfProbeMetrics;
     getMetrics(): WorkHubPerfProbeMetrics;
 }
+
+export const QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY = 'qaapWorkHubPerfProbe';
 
 declare global {
     interface Window {
         __qaapWorkHubPerfProbe?: WorkHubPerfProbeApi;
     }
 }
-
-export const QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY = 'qaapWorkHubPerfProbe';

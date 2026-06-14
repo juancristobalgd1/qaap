@@ -92,6 +92,8 @@ type ConversationServerEvent =
 export class MobileProjectsConversations {
 
     protected readonly byCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
+    /** E2E perf probe: survives server snapshot clears in {@link applyConversationGroups}. */
+    protected readonly perfProbeByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected readonly theiaByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected readonly theiaSessionFiles = new Map<string, URI>();
     protected source: EventSource | undefined;
@@ -153,7 +155,7 @@ export class MobileProjectsConversations {
         if (!isQaapWorkHubPerfProbeEnabled()) {
             return;
         }
-        this.byCwd.set(cwd, sortConversations([...summaries]));
+        this.perfProbeByCwd.set(normalizeCwd(cwd), sortConversations([...summaries]));
     }
 
     /** E2E perf probe: bump streaming turn progress and emit one change event. */
@@ -161,7 +163,8 @@ export class MobileProjectsConversations {
         if (!isQaapWorkHubPerfProbeEnabled()) {
             return;
         }
-        const list = this.byCwd.get(cwd) ?? [];
+        const key = normalizeCwd(cwd);
+        const list = this.perfProbeByCwd.get(key) ?? [];
         const next = list.map(summary => summary.status === 'streaming'
             ? {
                 ...summary,
@@ -169,7 +172,7 @@ export class MobileProjectsConversations {
                 updatedAt: summary.updatedAt + 1,
             }
             : summary);
-        this.byCwd.set(cwd, sortConversations(next));
+        this.perfProbeByCwd.set(key, sortConversations(next));
         this.onDidChangeEmitter.fire();
     }
 
@@ -204,10 +207,26 @@ export class MobileProjectsConversations {
 
     /** Conversations for one project cwd, sorted newest first. */
     getConversationsForCwd(cwd: string): QaapAgentConversationSummaryDTO[] {
-        return sortConversations([
-            ...(lookupByCwd(this.theiaByCwd, cwd) ?? []),
-            ...(lookupByCwd(this.byCwd, cwd) ?? []),
-        ]);
+        const probe = isQaapWorkHubPerfProbeEnabled()
+            ? lookupByCwd(this.perfProbeByCwd, cwd) ?? []
+            : [];
+        return this.mergeCwdConversationLists(
+            lookupByCwd(this.theiaByCwd, cwd) ?? [],
+            lookupByCwd(this.byCwd, cwd) ?? [],
+            probe,
+        );
+    }
+
+    protected mergeCwdConversationLists(
+        ...lists: ReadonlyArray<readonly QaapAgentConversationSummaryDTO[]>
+    ): QaapAgentConversationSummaryDTO[] {
+        const byId = new Map<string, QaapAgentConversationSummaryDTO>();
+        for (const list of lists) {
+            for (const summary of list) {
+                byId.set(summary.id, summary);
+            }
+        }
+        return sortConversations([...byId.values()]);
     }
 
     /** True when any conversation in any project is currently streaming a turn. */

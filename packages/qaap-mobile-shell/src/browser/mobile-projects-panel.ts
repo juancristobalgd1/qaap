@@ -37,7 +37,13 @@ import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQ
 import { MobileProjectsService } from './mobile-projects-service';
 import { isAgentsHubExecutionSurfacePainted } from '../common/qaap-agents-hub-landing';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
+import {
+    buildProbeStreamingSummaries,
+    ensureProbeWorkspaceProject,
+    QAAP_PROBE_WORKSPACE_PROJECT_ID,
+} from './qaap-work-hub-perf-probe-host';
 import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
+import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-probe';
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
@@ -981,12 +987,28 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 panel.renderList();
             },
             showTasksInboxWithTeamForProbe: () => {
-                panel.agentsHubLegacyInbox = true;
                 panel.navigateHubTab('tasks');
+                panel.agentsHubLegacyInbox = true;
+                panel.renderList();
             },
             seedMultiAgentProbeConversations: () => {
                 if (!panel.conversations) {
                     return;
+                }
+                panel.conversations.start();
+                panel.activeTasks?.start();
+                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+                if (workspaceCwd) {
+                    panel.projects = ensureProbeWorkspaceProject(panel.projects, panel.projectsService, workspaceCwd);
+                    for (const project of panel.projects) {
+                        const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
+                            ? workspaceCwd
+                            : panel.preparedCwdByProjectId.get(project.id)
+                                ?? panel.projectsService.getProjectCwd(project);
+                        if (cwd) {
+                            panel.preparedCwdByProjectId.set(project.id, cwd);
+                        }
+                    }
                 }
                 const cwdSet = new Set<string>();
                 for (const project of panel.projects) {
@@ -996,7 +1018,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                         cwdSet.add(cwd);
                     }
                 }
-                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
                 if (workspaceCwd) {
                     cwdSet.add(workspaceCwd);
                 }
@@ -1004,44 +1025,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                     return;
                 }
                 for (const cwd of cwdSet) {
-                    panel.conversations.perfProbeSeedSummaries(cwd, [
-                        {
-                            id: 'probe-agent-a',
-                            cwd,
-                            agentId: 'qaiq',
-                            title: 'Agent A — inbox',
-                            status: 'streaming',
-                            createdAt: 1,
-                            updatedAt: 300,
-                            messageCount: 2,
-                            turnProgressCurrent: 2,
-                            turnProgressTotal: 5,
-                        },
-                        {
-                            id: 'probe-agent-b',
-                            cwd,
-                            agentId: 'codex',
-                            title: 'Agent B — team',
-                            status: 'streaming',
-                            createdAt: 1,
-                            updatedAt: 200,
-                            messageCount: 2,
-                            turnProgressCurrent: 1,
-                            turnProgressTotal: 4,
-                        },
-                        {
-                            id: 'probe-agent-c',
-                            cwd,
-                            agentId: 'claude',
-                            title: 'Agent C — MC',
-                            status: 'streaming',
-                            createdAt: 1,
-                            updatedAt: 100,
-                            messageCount: 2,
-                            turnProgressCurrent: 3,
-                            turnProgressTotal: 6,
-                        },
-                    ]);
+                    panel.conversations.perfProbeSeedSummaries(cwd, buildProbeStreamingSummaries(cwd));
                 }
                 panel.scheduleRenderList();
             },
@@ -1065,7 +1049,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                     panel.conversations.perfProbeTickStreamingSummaries(cwd);
                 }
             },
-            hasProjectsForProbe: () => panel.projects.length > 0 || !!panel.projectsService.getCurrentWorkspaceCwd(),
+            hasProjectsForProbe: () => panel.projects.length > 0,
+            hasWorkspaceForProbe: () => !!panel.projectsService.getCurrentWorkspaceCwd(),
+            getProbeDiagnostics: (): WorkHubPerfProbeDiagnostics => ({
+                projectCount: panel.projects.length,
+                mcRowCount: panel.scroll.querySelectorAll('.theia-mobile-mission-control-row').length,
+                teamRowCount: panel.scroll.querySelectorAll(
+                    '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks .theia-mobile-hub-team-row',
+                ).length,
+                hubView: panel.hubView,
+            }),
         });
     }
 

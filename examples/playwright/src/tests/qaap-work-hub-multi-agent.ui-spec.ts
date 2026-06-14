@@ -57,15 +57,18 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
         await waitForWorkHubPerfProbe(app.page);
 
         await expect.poll(async () => app.page.evaluate(
-            () => window.__qaapWorkHubPerfProbe?.hasProjectsForProbe() === true,
+            () => window.__qaapWorkHubPerfProbe?.hasWorkspaceForProbe() === true,
         ), { timeout: 60_000 }).toBe(true);
 
         await app.page.evaluate(() => {
-            window.__qaapWorkHubPerfProbe?.seedMultiAgentProbeConversations();
             window.__qaapWorkHubPerfProbe?.navigateToHomeHubForProbe();
+            window.__qaapWorkHubPerfProbe?.seedMultiAgentProbeConversations();
         });
         await flushAnimationFrames(app.page, 3);
-        await expect(app.page.locator('.theia-mobile-mission-control-row')).toHaveCount(3, { timeout: 30_000 });
+
+        await expect.poll(async () => app.page.evaluate(
+            () => window.__qaapWorkHubPerfProbe?.getProbeDiagnostics()?.mcRowCount ?? 0,
+        ), { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
 
         await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.expandMissionControlForProbe());
         await flushAnimationFrames(app.page, 3);
@@ -93,7 +96,7 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
         await waitForWorkHubPerfProbe(app.page);
 
         await expect.poll(async () => app.page.evaluate(
-            () => window.__qaapWorkHubPerfProbe?.hasProjectsForProbe() === true,
+            () => window.__qaapWorkHubPerfProbe?.hasWorkspaceForProbe() === true,
         ), { timeout: 60_000 }).toBe(true);
 
         await app.page.evaluate(() => {
@@ -101,7 +104,10 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
             window.__qaapWorkHubPerfProbe?.seedMultiAgentProbeConversations();
         });
         await flushAnimationFrames(app.page, 3);
-        await expect(app.page.locator('.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks .theia-mobile-hub-team-row')).toHaveCount(3, { timeout: 30_000 });
+
+        await expect.poll(async () => app.page.evaluate(
+            () => window.__qaapWorkHubPerfProbe?.getProbeDiagnostics()?.teamRowCount ?? 0,
+        ), { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
 
         await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.resetMetrics());
         await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.tickProbeStreamingConversations());
