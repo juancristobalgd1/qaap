@@ -90,6 +90,8 @@ const ALLOWED = [
     /^configs\/base\.tsconfig\.json$/,
     /^\.github\/workflows\/set-milestone-on-pr\.yml$/,
     /^\.github\/workflows\/generate-sbom\.yml$/,
+    // Canonical fork slug for gh PR guard scripts (not upstream Theia).
+    /^\.github\/QAAP_GH_REPO$/,
     // ---- Product seams in upstream Theia AI packages -----------------------
     // Small tweaks in upstream Theia AI packages to match product behaviour
     // (model lists, branding strings, dropped-Theia-only test fixtures, minor
@@ -106,6 +108,7 @@ const ALLOWED = [
     /^packages\/ai-ide\/src\/browser\/workspace-launch-provider\.ts$/,
     // ---- Qaap product tooling / editor config (not upstream Theia) --------
     /^\.cursor\/rules\/work-hub-reload-default\.mdc$/,
+    /^\.cursor\/rules\/qaap-pr-fork-only\.mdc$/,
     /^\.tool-ui\/agent\.json$/,
     /^scripts\/extract-sessions-sidebar\.py$/,
     /^scripts\/extract-sticky-composer-batch\.py$/,
