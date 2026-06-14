@@ -164,6 +164,16 @@ export class QaapAgentConversationStore {
             .map(toConversationSummary);
     }
 
+    /** Best-effort cwd for a GitHub repo from existing conversations. */
+    findCwdForGithubRepo(owner: string, repo: string): string | undefined {
+        for (const conv of this.conversations.values()) {
+            if (this.cwdMatchesGithubRepo(conv.cwd, owner, repo)) {
+                return conv.cwd;
+            }
+        }
+        return undefined;
+    }
+
     listAllGroupedByCwd(): QaapAgentConversationCwdGroup[] {
         const buckets = new Map<string, QaapAgentConversation[]>();
         for (const conv of this.conversations.values()) {

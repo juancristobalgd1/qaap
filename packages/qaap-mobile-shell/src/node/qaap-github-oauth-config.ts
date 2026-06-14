@@ -24,6 +24,7 @@ export function buildQaapGithubCallbackUrl(publicUrl: string): string {
 /**
  * Reads QAAP_GITHUB_CLIENT_ID, QAAP_GITHUB_CLIENT_SECRET, QAAP_OAUTH_PUBLIC_URL from process.env.
  * Optional QAAP_GITHUB_WEBHOOK_SECRET verifies POST /qaap/api/github/webhook (GitHub App / repo hook).
+ * Optional QAAP_GITHUB_TRIGGER_LABEL (default `qaap`) enables label-based agent triggers on issues.
  */
 export function readQaapGithubOAuthConfig(): QaapGithubOAuthConfig | undefined {
     const clientId = process.env.QAAP_GITHUB_CLIENT_ID?.trim();

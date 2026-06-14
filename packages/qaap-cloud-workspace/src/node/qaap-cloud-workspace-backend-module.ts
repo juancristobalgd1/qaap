@@ -33,6 +33,8 @@ import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
 import { QaapGoalLoopRunner } from './qaap-goal-loop-runner';
 import { QaapGoalLoopVerifyRunner } from './qaap-goal-loop-verify-runner';
 import { QaapGoalLoopLlmEvaluator } from './qaap-goal-loop-llm-evaluator';
+import { QaapGithubAgentTriggerService } from './qaap-github-agent-trigger-service';
+import { QaapGithubAgentTriggerBridge } from '@theia/qaap-mobile-shell/lib/node/qaap-github-agent-trigger-bridge';
 
 export default new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
     bind(QaapCloudWorkspaceStore).toSelf().inSingletonScope();
@@ -55,6 +57,8 @@ export default new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsy
     bind(QaapGoalLoopVerifyRunner).toSelf().inSingletonScope();
     bind(QaapGoalLoopLlmEvaluator).toSelf().inSingletonScope();
     bind(QaapGoalLoopRunner).toSelf().inSingletonScope();
+    bind(QaapGithubAgentTriggerService).toSelf().inSingletonScope();
+    bind(QaapGithubAgentTriggerBridge).toService(QaapGithubAgentTriggerService);
     bind(QaapConversationWorktreeService).toSelf().inSingletonScope();
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);

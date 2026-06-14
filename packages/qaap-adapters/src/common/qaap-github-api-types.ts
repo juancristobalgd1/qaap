@@ -138,6 +138,15 @@ export type QaapGithubInboxEvent =
         readonly pullRequest: QaapGithubPullRequestSummary;
         readonly linkedConversationCount: number;
     }
+    | {
+        readonly type: 'agent_triggered';
+        readonly owner: string;
+        readonly repo: string;
+        readonly issueNumber: number;
+        readonly conversationId?: string;
+        readonly ok: boolean;
+        readonly error?: string;
+    }
     | { readonly type: 'inbox_refresh' };
 
 /** Per-repository agent/dev session snapshot (hub + KPI). */
