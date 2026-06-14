@@ -6,7 +6,6 @@
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
-import { createHmac, timingSafeEqual } from 'crypto';
 import {
     QAAP_GITHUB_API_PATH,
     type QaapGithubPullRequestSummary,
@@ -16,6 +15,7 @@ import {
     isLikelyQaapAckComment,
     stripQaapMentionFromPrompt,
 } from '../common/qaap-github-agent-trigger';
+import { verifyGithubWebhookSignature } from '../common/qaap-github-webhook-signature';
 import {
     QaapGithubAgentTriggerBridge,
     type QaapGithubAgentTriggerRequest,
@@ -280,19 +280,10 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
     }
 
     protected verifyWebhookSignature(req: Request, secret: string): boolean {
-        const signature = req.header('x-hub-signature-256');
-        if (!signature?.startsWith('sha256=')) {
-            return false;
-        }
         const payload = typeof req.body === 'string'
             ? req.body
             : JSON.stringify(req.body ?? {});
-        const expected = `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
-        try {
-            return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-        } catch {
-            return false;
-        }
+        return verifyGithubWebhookSignature(payload, secret, req.header('x-hub-signature-256'));
     }
 
     protected handleInboxStream(req: Request, res: Response): void {

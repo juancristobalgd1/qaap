@@ -87,6 +87,11 @@ curl -s "http://127.0.0.1:${THEIA_PORT:-4873}/qaap/api/health" | jq .
 curl -s "http://127.0.0.1:${THEIA_PORT:-4873}/qaap/api/agent-tasks/all" | jq '.agents'
 ```
 
+## GitHub `@qaap` triggers (optional)
+
+Para disparar agentes desde issues/PR y recibir evidencia al terminar, configura OAuth + webhook.
+Guía completa: [qaap-github-triggers.md](./qaap-github-triggers.md).
+
 ## What the image includes
 
 The runtime stage of `Dockerfile` installs:
