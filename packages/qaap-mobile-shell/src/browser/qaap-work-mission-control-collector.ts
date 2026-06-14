@@ -25,8 +25,12 @@ export interface CollectMissionControlItemsInput {
 export function collectMissionControlItems(input: CollectMissionControlItemsInput): MissionControlItem[] {
     const query = input.query?.trim().toLowerCase() ?? '';
     const items: MissionControlItem[] = [];
+    const seenConversationIds = new Set<string>();
     for (const project of input.projects) {
         for (const summary of input.conversationsForProject(project)) {
+            if (seenConversationIds.has(summary.id)) {
+                continue;
+            }
             if (summary.parallelRunId) {
                 continue;
             }
@@ -54,6 +58,7 @@ export function collectMissionControlItems(input: CollectMissionControlItemsInpu
                 hasPullRequest: !!summary.linkedPullRequest?.number,
                 failureKind: failure?.kind,
             });
+            seenConversationIds.add(summary.id);
         }
     }
     items.sort((left, right) => right.updatedAt - left.updatedAt);

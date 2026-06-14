@@ -7,6 +7,7 @@ import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conve
 import { isQaapWorkHubPerfProbeEnabled } from '../common/qaap-work-hub-perf-probe';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
+import { normalizeCwd } from './mobile-projects-active-tasks';
 
 export const QAAP_PROBE_WORKSPACE_PROJECT_ID = '__qaap_probe_workspace__';
 
@@ -67,12 +68,13 @@ export function ensureProbeWorkspaceProject(
     if (!isQaapWorkHubPerfProbeEnabled()) {
         return [...projects];
     }
+    const normalizedWorkspaceCwd = normalizeCwd(workspaceCwd);
     const matches = projects.some(project => {
         if (project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID) {
             return true;
         }
         const cwd = projectsService.getProjectCwd(project);
-        return cwd === workspaceCwd;
+        return cwd !== undefined && normalizeCwd(cwd) === normalizedWorkspaceCwd;
     });
     if (matches) {
         return [...projects];
