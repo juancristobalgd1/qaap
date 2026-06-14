@@ -5,6 +5,35 @@
 
 export const QAAP_CLOUD_API_PATH = '/qaap/api/cloud';
 
+/** Liveness probe for VPS deploy checklists — agent runner snapshot, no auth required. */
+export const QAAP_HEALTH_API_PATH = '/qaap/api/health';
+
+export interface QaapHealthResponse {
+    readonly ok: boolean;
+    readonly uptimeMs: number;
+    readonly agentConfigured: boolean;
+    /** Agent ids detected on PATH at startup (excludes the shell pseudo-agent). */
+    readonly agents: readonly string[];
+    readonly defaultAgent: string;
+}
+
+/** Pure builder for {@link QaapHealthResponse} — `ok` when at least one agent CLI was detected. */
+export function buildQaapHealthResponse(params: {
+    readonly uptimeMs: number;
+    readonly agentConfigured: boolean;
+    readonly detectedAgentIds: readonly string[];
+    readonly defaultAgent: string;
+}): QaapHealthResponse {
+    const agents = [...params.detectedAgentIds];
+    return {
+        ok: agents.length > 0,
+        uptimeMs: params.uptimeMs,
+        agentConfigured: params.agentConfigured,
+        agents,
+        defaultAgent: params.defaultAgent,
+    };
+}
+
 /**
  * Default CDP endpoint AppTester's `chrome-devtools-mcp` MCP server connects to. Must point at a
  * Chrome running with `--remote-debugging-port=9222` on the *backend* host (same machine as the

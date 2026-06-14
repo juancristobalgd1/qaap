@@ -29,6 +29,8 @@ import * as React from '@theia/core/shared/react';
 import { KeymapsCommands } from '@theia/keymaps/lib/browser';
 import { TerminalCommands } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { WorkspaceCommands, WorkspaceService } from '@theia/workspace/lib/browser';
+import { isQaapCloudOnboarding } from '@theia/qaap-mobile-shell/lib/common/qaap-cloud-onboarding';
+import { QAAP_WORK_HUB_ADD_REPOSITORY_COMMAND } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-commands';
 /**
  * Default implementation of the `QaapGettingStartedWidget`.
  * The widget is displayed when there are currently no workspaces present.
@@ -253,6 +255,22 @@ export class QaapGettingStartedWidget extends ReactWidget {
      * Displays a collection of "start-to-work" related commands like `open` commands and some other.
      */
     protected renderStart(): React.ReactNode {
+        if (isQaapCloudOnboarding()) {
+            const addRepository = <div className='gs-action-container'>
+                <a
+                    role={'button'}
+                    tabIndex={0}
+                    onClick={this.doAddRepository}
+                    onKeyDown={this.doAddRepositoryEnter}>
+                    {nls.localize('qaap/workHub/addRepository', 'Add repository')}
+                </a>
+            </div>;
+            return <div className='gs-section gs-section--primary'>
+                <h3 className='gs-section-header'><i className={codicon('repo')}></i>{nls.localizeByDefault('Start')}</h3>
+                {addRepository}
+            </div>;
+        }
+
         const requireSingleOpen = isOSX || !environment.electron.is();
 
         const createFile = <div className='gs-action-container'>
@@ -518,6 +536,14 @@ export class QaapGettingStartedWidget extends ReactWidget {
     /**
      * Trigger the open folder command.
      */
+    protected doAddRepository = (): Promise<void> | undefined =>
+        this.commandRegistry.executeCommand(QAAP_WORK_HUB_ADD_REPOSITORY_COMMAND);
+    protected doAddRepositoryEnter = (e: React.KeyboardEvent): void => {
+        if (this.isEnterKey(e)) {
+            void this.doAddRepository();
+        }
+    };
+
     protected doOpenFolder = () => this.commandRegistry.executeCommand(WorkspaceCommands.OPEN_FOLDER.id);
     protected doOpenFolderEnter = (e: React.KeyboardEvent) => {
         if (this.isEnterKey(e)) {

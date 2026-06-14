@@ -22,6 +22,7 @@ import type { MobileProjectsPanel } from './mobile-projects-panel';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileShellSessionState } from './mobile-shell-session-state';
+import { isWorkMissionControlEnabled } from './mobile-work-mission-control';
 
 export interface MobileShellWorkHubBootstrapHost {
     isMobileActive(): boolean;
@@ -208,18 +209,23 @@ export class MobileShellWorkHubBootstrapController {
             if (!panel || !this.shouldContinueAgentsBootstrap(epoch)) {
                 return;
             }
-            this.projectsService.setHubView('tasks');
-            panel.preferComposerSurface('task');
-            setMobileWorkHubComposerHeaderChrome(true);
-            await panel.show({ preferredHubView: 'tasks' });
-            panel.ensureAgentsHubExecutionShellRendered();
+            if (isWorkMissionControlEnabled()) {
+                this.projectsService.setHubView('home');
+                await panel.show({ preferredHubView: 'home' });
+            } else {
+                this.projectsService.setHubView('tasks');
+                panel.preferComposerSurface('task');
+                setMobileWorkHubComposerHeaderChrome(true);
+                await panel.show({ preferredHubView: 'tasks' });
+                panel.ensureAgentsHubExecutionShellRendered();
+                markPreferAgentsSurface();
+            }
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 panel.hide();
                 this.host.disposeProjectsPanelForDesktopIde();
                 return;
             }
             this.host.ensureDesktopWorkHubSessionsSidebarOpen();
-            markPreferAgentsSurface();
             await this.host.collapseMobileSideSheets();
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 panel.hide();

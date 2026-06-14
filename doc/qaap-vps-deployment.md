@@ -54,7 +54,38 @@ docker compose up --build -d
 docker compose logs -f theia   # wait for "Configuration directory URI"
 ```
 
+**Local dev:** `npx lerna run compile` only updates `lib/` — the browser app bundles the backend via webpack. After backend changes, run `npm run build:browser` (or `npm run watch`) and **restart** `npm run start:browser` before probing health.
+
 Open `http://<your-vps-ip>:4873`.
+
+## Verify deploy (health + agents)
+
+After `docker compose up -d`, run the automated checklist from the repo root:
+
+```bash
+chmod +x scripts/qaap-vps-verify.sh   # once, after clone
+./scripts/qaap-vps-verify.sh
+```
+
+It checks `qaiq --version` inside the container, then `GET /qaap/api/health` on the host port
+(`THEIA_PORT`, default `4873`). The health endpoint returns JSON like:
+
+```json
+{
+  "ok": true,
+  "uptimeMs": 12345,
+  "agentConfigured": true,
+  "agents": ["qaiq", "codex"],
+  "defaultAgent": "qaiq"
+}
+```
+
+`ok` is `true` when at least one agent CLI was detected on PATH at backend startup. Manual probe:
+
+```bash
+curl -s "http://127.0.0.1:${THEIA_PORT:-4873}/qaap/api/health" | jq .
+curl -s "http://127.0.0.1:${THEIA_PORT:-4873}/qaap/api/agent-tasks/all" | jq '.agents'
+```
 
 ## What the image includes
 
@@ -167,6 +198,8 @@ extra_hosts:
 ```
 
 ## Verify agent CLIs inside the running container
+
+Prefer `./scripts/qaap-vps-verify.sh` (health + CLI). Manual checks:
 
 ```bash
 docker compose exec theia qaiq --version

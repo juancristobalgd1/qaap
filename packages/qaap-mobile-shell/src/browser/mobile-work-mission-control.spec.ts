@@ -6,9 +6,11 @@
 import { expect } from 'chai';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
+    buildMissionControlItems,
     classifyMissionControlLane,
     classifyMissionControlSurface,
     filterMissionControlItems,
+    shouldUseMissionControlLanding,
     type MissionControlItem,
 } from './mobile-work-mission-control';
 
@@ -105,5 +107,60 @@ describe('filterMissionControlItems', () => {
 
     it('intersects lane and surface', () => {
         expect(filterMissionControlItems(items, 'needs-you', 'pr').map(i => i.key)).to.deep.equal(['2']);
+    });
+});
+
+describe('buildMissionControlItems', () => {
+    it('builds cross-project rows with lane and surface classification', () => {
+        const items = buildMissionControlItems({
+            projects: [{
+                id: 'p1', name: 'app', color: '#f00', branch: 'main', status: 'idle', task: '',
+                progress: 0, agents: [], lastActive: '', tokens: '', cost: '', pinned: false, isCurrent: false,
+            }],
+            conversationsForProject: () => [summary({
+                id: 'c1',
+                title: 'Fix bug',
+                status: 'streaming',
+                source: 'qaap-agent',
+            })],
+            isConversationUnread: () => false,
+            resolveAgentLabel: id => `@${id}`,
+        });
+        expect(items).to.have.length(1);
+        expect(items[0].key).to.equal('p1:c1');
+        expect(items[0].lane).to.equal('running');
+        expect(items[0].surface).to.equal('task');
+        expect(items[0].agentLabel).to.equal('@shell');
+    });
+
+    it('skips empty idle conversations', () => {
+        const items = buildMissionControlItems({
+            projects: [{
+                id: 'p1', name: 'app', color: '#f00', branch: 'main', status: 'idle', task: '',
+                progress: 0, agents: [], lastActive: '', tokens: '', cost: '', pinned: false, isCurrent: false,
+            }],
+            conversationsForProject: () => [summary({ messageCount: 0, status: 'idle' })],
+            isConversationUnread: () => false,
+            resolveAgentLabel: id => id,
+        });
+        expect(items).to.have.length(0);
+    });
+});
+
+describe('shouldUseMissionControlLanding', () => {
+    it('is true on the tasks hub in home mode when mission control is enabled', () => {
+        expect(shouldUseMissionControlLanding({
+            homeMode: true,
+            hubView: 'tasks',
+            agentsHubLegacyInbox: false,
+        })).to.equal(true);
+    });
+
+    it('is false on the repos hub', () => {
+        expect(shouldUseMissionControlLanding({
+            homeMode: true,
+            hubView: 'repos',
+            agentsHubLegacyInbox: false,
+        })).to.equal(false);
     });
 });

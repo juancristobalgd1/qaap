@@ -13,6 +13,7 @@ import {
     type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
+import { isAskUserQuestionToolName } from '../common/qaap-transcript-ask-user-question';
 import {
     fetchAgentApprovals,
     type QaapAgentApprovalRequestDTO,
@@ -721,6 +722,14 @@ export class MobileProjectsTranscriptLiveUi {
         }
         const pending = resolveTranscriptInlineApproval(this.host.cachedAgentApprovals, conv.id);
         const pendingId = pending?.id;
+        if (pending && isAskUserQuestionToolName(pending.toolName)) {
+            clearTranscriptPendingApprovalBar(this.host.transcriptComposerHost);
+            this.lastMountedApprovalId = pendingId;
+            if (chatHost) {
+                this.reconcileTranscriptInlineToolApprovalCards(chatHost, conv);
+            }
+            return;
+        }
         if (pendingId === this.lastMountedApprovalId) {
             return;
         }

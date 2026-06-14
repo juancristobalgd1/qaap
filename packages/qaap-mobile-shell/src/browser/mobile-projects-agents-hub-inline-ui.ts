@@ -13,6 +13,7 @@ import {
     buildAgentsHubIdleConversationSummary,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
 } from '../common/qaap-agents-hub-landing';
+import { shouldUseMissionControlLanding } from './mobile-work-mission-control';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -153,6 +154,13 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     shouldUseAgentsHubLanding(): boolean {
+        if (shouldUseMissionControlLanding({
+            homeMode: this.host.homeMode,
+            hubView: this.host.hubView,
+            agentsHubLegacyInbox: this.host.agentsHubLegacyInbox,
+        })) {
+            return false;
+        }
         return QAAP_AGENTS_HUB_LANDING_ENABLED
             && this.host.homeMode
             && this.host.hubView === 'tasks'

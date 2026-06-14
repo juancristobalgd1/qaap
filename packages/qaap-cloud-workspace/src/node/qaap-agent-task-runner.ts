@@ -95,6 +95,7 @@ import {
     applyAntigravityModelSetting,
     isAntigravityCliCommand,
 } from './qaap-antigravity-settings';
+import { buildQaapHealthResponse, type QaapHealthResponse } from '../common/qaap-cloud-api-types';
 import { QaapWebPushService } from './qaap-web-push-service';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
@@ -950,6 +951,16 @@ export class QaapAgentTaskRunner {
         return this.detectedAgents.size > 0 || !!process.env.QAAP_AGENT_COMMAND?.trim();
     }
 
+    /** Snapshot for `GET /qaap/api/health` and VPS verify scripts. */
+    getHealthSnapshot(): QaapHealthResponse {
+        return buildQaapHealthResponse({
+            uptimeMs: Math.floor(process.uptime() * 1000),
+            agentConfigured: this.isAgentConfigured(),
+            detectedAgentIds: [...this.detectedAgents.keys()],
+            defaultAgent: this.defaultAgent(),
+        });
+    }
+
     /** Agents the UI can offer in its picker, in priority order. */
     listAgents(): QaapAgentDescriptor[] {
         const result: QaapAgentDescriptor[] = [];
@@ -1524,7 +1535,12 @@ export class QaapAgentTaskRunner {
      * (resuming the paused tool call); other interactive agents get a legacy
      * `y`/`n` line on stdin. Requires the task to have been spawned with stdin piped.
      */
-    respondToApprovalPrompt(taskId: string, action: 'approve' | 'reject', toolUseId?: string): boolean {
+    respondToApprovalPrompt(
+        taskId: string,
+        action: 'approve' | 'reject',
+        toolUseId?: string,
+        updatedInput?: Record<string, unknown>,
+    ): boolean {
         const child = this.processes.get(taskId);
         if (!child?.stdin) {
             return false;
@@ -1536,7 +1552,7 @@ export class QaapAgentTaskRunner {
                 return false;
             }
             try {
-                child.stdin.write(buildQaiqControlResponseLine(entry, action));
+                child.stdin.write(buildQaiqControlResponseLine(entry, action, { updatedInput }));
             } catch {
                 return false;
             }

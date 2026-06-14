@@ -13,6 +13,7 @@ import {
     setMobileLandingHubListChrome,
     setMobileWorkHubComposerHeaderChrome,
 } from './mobile-projects-open';
+import { isWorkMissionControlEnabled } from './mobile-work-mission-control';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -160,7 +161,11 @@ export class MobileProjectsPanelLifecycleUi {
         } else if (!this.host.visible) {
             const storedHubView = this.host.projectsService.getHubView();
             if (this.host.homeMode && !hasMobileProjectsLeftLanding()) {
-                this.host.hubView = storedHubView === 'home' ? 'tasks' : this.host.hubQueryUi.redirectHubView(storedHubView);
+                if (isWorkMissionControlEnabled()) {
+                    this.host.hubView = this.host.hubQueryUi.redirectHubView(storedHubView);
+                } else {
+                    this.host.hubView = storedHubView === 'home' ? 'tasks' : this.host.hubQueryUi.redirectHubView(storedHubView);
+                }
                 this.host.projectsService.setHubView(this.host.hubView);
             } else {
                 this.host.hubView = this.host.hubQueryUi.redirectHubView(storedHubView);

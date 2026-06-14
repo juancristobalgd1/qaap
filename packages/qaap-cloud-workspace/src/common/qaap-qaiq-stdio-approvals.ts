@@ -91,12 +91,12 @@ export function buildQaiqStdioPromptLine(prompt: string): string {
 export function buildQaiqControlResponseLine(
     pending: QaapQaiqPendingControlRequest,
     action: 'approve' | 'reject',
-    options: { readonly denyMessage?: string } = {},
+    options: { readonly denyMessage?: string; readonly updatedInput?: Record<string, unknown> } = {},
 ): string {
     const response = action === 'approve'
         ? {
             behavior: 'allow',
-            updatedInput: {},
+            updatedInput: options.updatedInput ?? {},
             ...(pending.toolUseId ? { toolUseID: pending.toolUseId } : {}),
         }
         : {

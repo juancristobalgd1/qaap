@@ -44,6 +44,8 @@ export interface MobileProjectsSubtitleHost {
     buildHomeSnapshot(): WorkHubHomeSnapshot;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     shouldUseAgentsHubLanding(): boolean;
+    shouldUseMissionControlLanding(): boolean;
+    missionControlUi: import('./mobile-projects-mission-control-ui').MobileProjectsMissionControlUi;
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
     countTasksAttention(): { needsYou: number; running: number };
     isProjectDetailView(): boolean;
@@ -136,6 +138,36 @@ export class MobileProjectsSubtitleUi {
                     this.host.transcriptOpenProject,
                     this.host.transcriptOpenSummary,
                 );
+                return;
+            }
+            if (this.host.shouldUseMissionControlLanding()) {
+                const needsYou = this.host.missionControlUi.countByLane('needs-you');
+                const running = this.host.missionControlUi.countByLane('running');
+                if (needsYou > 0 && running > 0) {
+                    this.host.subtitleEl.textContent = nls.localize(
+                        'qaap/workMissionControl/subtitleNeedsYouAndRunning',
+                        '{0} need you · {1} running',
+                        String(needsYou),
+                        String(running),
+                    );
+                } else if (needsYou > 0) {
+                    this.host.subtitleEl.textContent = nls.localize(
+                        'qaap/workMissionControl/subtitleNeedsYou',
+                        '{0} need your attention',
+                        String(needsYou),
+                    );
+                } else if (running > 0) {
+                    this.host.subtitleEl.textContent = nls.localize(
+                        'qaap/workMissionControl/subtitleRunning',
+                        '{0} running on the VPS',
+                        String(running),
+                    );
+                } else {
+                    this.host.subtitleEl.textContent = nls.localize(
+                        'qaap/workMissionControl/subtitleIdle',
+                        'Delegate work and track it here until PR',
+                    );
+                }
                 return;
             }
             if (this.host.shouldUseAgentsHubLanding()) {

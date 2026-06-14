@@ -10,10 +10,11 @@ import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common
 import { excerptTranscriptThought, extractTranscriptDiffCard, hasTranscriptActivityStats, hasTranscriptActivityTimeline, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars } from '../common/qaap-transcript-stream-status';
 import { isPendingTranscriptToolSegment } from '../common/qaap-transcript-approval-inline';
+import { buildAskUserQuestionUpdatedInput, isAskUserQuestionToolName } from '../common/qaap-transcript-ask-user-question';
 import { buildTranscriptApprovalCard, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
 import { buildTranscriptDiffCardFromExtracted, buildTranscriptToolUiPayloadElement } from './qaap-transcript-rich-content-ui';
-import { resolveTranscriptToolUiPayloadFromSegment } from '../common/qaap-transcript-tool-ui-payloads';
+import { resolveTranscriptToolUiPayloadFromSegment, type TranscriptToolUiQuestionFlowPayload } from '../common/qaap-transcript-tool-ui-payloads';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
@@ -585,13 +586,19 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         const body = document.createElement('div');
         body.className = 'theia-mobile-agent-tool-pill-body';
-        if (pendingApproval) {
+        const isAskUserQuestion = isAskUserQuestionToolName(segment.name);
+        const richPayload = resolveTranscriptToolUiPayloadFromSegment(segment.name, segment.args, segment.result);
+        if (pendingApproval && isAskUserQuestion && richPayload?.kind === 'question_flow' && conv) {
+            pill.open = true;
+            body.append(this.createTranscriptAskUserQuestionCard(conv.id, segment, richPayload));
+        } else if (pendingApproval) {
             body.append(this.createTranscriptToolApprovalActions(conv!.id, segment));
             pill.open = true;
         }
-        const richPayload = resolveTranscriptToolUiPayloadFromSegment(segment.name, segment.args, segment.result);
         if (richPayload && !segment.result?.trim()) {
-            body.append(buildTranscriptToolUiPayloadElement(richPayload));
+            if (!(pendingApproval && isAskUserQuestion && richPayload.kind === 'question_flow')) {
+                body.append(buildTranscriptToolUiPayloadElement(richPayload));
+            }
         }
         if (segment.result?.trim() || todoChecklist) {
             body.append(this.toolUi.createTranscriptToolResultBody(
@@ -604,6 +611,30 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         pill.append(body);
         return pill;
+    }
+
+    createTranscriptAskUserQuestionCard(
+        conversationId: string,
+        segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+        payload: TranscriptToolUiQuestionFlowPayload,
+    ): HTMLElement {
+        const onSettled = (): void => {
+            void this.host.transcriptLiveUi.refreshTranscriptApprovals();
+            this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
+        };
+        return buildTranscriptToolUiPayloadElement(payload, {
+            onSelect: selection => {
+                const pending = this.host.transcriptLiveUi.getPendingTranscriptToolApproval(conversationId, segment.toolUseId);
+                const updatedInput = buildAskUserQuestionUpdatedInput(segment.args, selection);
+                if (!pending || !updatedInput) {
+                    return;
+                }
+                void respondToTranscriptApproval(pending.id, 'approve', {
+                    updatedInput,
+                    callbacks: { onSettled },
+                });
+            },
+        });
     }
 
     createTranscriptToolApprovalActions(

@@ -12,6 +12,7 @@ import { MOBILE_VERTICAL_SCROLL_SELECTORS } from './mobile-vertical-touch-scroll
 /** Overlay scroll hosts added with product UI — must stay registered in touch-scroll CSS. */
 const OVERLAY_SCROLL_HOSTS = [
     '.theia-mobile-work-hub-sessions-sidebar-scroll',
+    '.theia-mobile-mission-control-host',
     '.theia-mobile-sticky-composer-sheet-list',
     '.theia-qaap-approval-policy-sheet-list',
     '.qaap-project-bootstrap-picker',

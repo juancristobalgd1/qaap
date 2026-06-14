@@ -85,6 +85,12 @@ import { TranscriptOverlayController } from './mobile-projects-transcript-overla
 import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcript-overlay-state';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
+import { MobileProjectsMissionControlUi, type MobileProjectsMissionControlHost } from './mobile-projects-mission-control-ui';
+import {
+    shouldUseMissionControlLanding,
+    type MissionControlLaneFilter,
+    type MissionControlSurfaceFilter,
+} from './mobile-work-mission-control';
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
 import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHost } from './mobile-projects-theia-chat-session-ui';
 import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from './mobile-projects-hub-catalog-ui';
@@ -547,6 +553,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly stickyComposerRenderUi = new MobileProjectsStickyComposerRenderUi(this as unknown as MobileProjectsStickyComposerRenderHost);
     protected readonly executionSurfaceTabsUi = new MobileProjectsExecutionSurfaceTabsUi(this as unknown as MobileProjectsExecutionSurfaceTabsHost);
     protected readonly tasksHubUi = new MobileProjectsTasksHubUi(this as unknown as MobileProjectsTasksHubHost);
+    protected missionControlLaneFilter: MissionControlLaneFilter = 'all';
+    protected missionControlSurfaceFilter: MissionControlSurfaceFilter = 'all';
+    protected readonly missionControlUi = new MobileProjectsMissionControlUi(this as unknown as MobileProjectsMissionControlHost);
     protected readonly hubCatalogUi = new MobileProjectsHubCatalogUi(this as unknown as MobileProjectsHubCatalogHost);
     protected readonly reposHubUi = new MobileProjectsReposHubUi(this as unknown as MobileProjectsReposHubHost);
     protected readonly inboxPrUi = new MobileProjectsInboxPrUi(this as unknown as MobileProjectsInboxPrHost);
@@ -1513,6 +1522,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.tasksHubUi.updateTasksAttentionChrome();
     }
 
+    protected conversationMatchesQuery(summary: QaapAgentConversationSummaryDTO, query: string): boolean {
+        return this.hubQueryUi.conversationMatchesQuery(summary, query);
+    }
+
     protected appendTasksHubTeamSection(container: HTMLElement): boolean {
         return this.tasksHubUi.appendTasksHubTeamSection(container);
     }
@@ -1834,6 +1847,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected shouldUseAgentsHubLanding(): boolean {
         return this.agentsHubInlineUi.shouldUseAgentsHubLanding();
+    }
+
+    protected shouldUseMissionControlLanding(): boolean {
+        return shouldUseMissionControlLanding({
+            homeMode: this.homeMode,
+            hubView: this.hubView,
+            agentsHubLegacyInbox: this.agentsHubLegacyInbox,
+        });
     }
 
     protected shouldPreserveAgentsHubInlineTranscriptShell(): boolean {

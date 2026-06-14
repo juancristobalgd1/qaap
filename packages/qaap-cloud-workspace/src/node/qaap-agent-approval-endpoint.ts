@@ -40,7 +40,8 @@ export class QaapAgentApprovalEndpoint implements BackendApplicationContribution
 
     protected async handleApprove(req: Request, res: Response): Promise<void> {
         try {
-            const result = await this.store.approve(req.params.id);
+            const updatedInput = this.readUpdatedInput(req);
+            const result = await this.store.approve(req.params.id, updatedInput);
             res.status(result.ok ? 200 : 400).json(result);
         } catch (error) {
             res.status(500).json({ ok: false, error: this.errorMessage(error) });
@@ -54,6 +55,18 @@ export class QaapAgentApprovalEndpoint implements BackendApplicationContribution
         } catch (error) {
             res.status(500).json({ ok: false, error: this.errorMessage(error) });
         }
+    }
+
+    protected readUpdatedInput(req: Request): Record<string, unknown> | undefined {
+        const body = req.body;
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+            return undefined;
+        }
+        const candidate = (body as { updatedInput?: unknown }).updatedInput;
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+            return undefined;
+        }
+        return candidate as Record<string, unknown>;
     }
 
     protected errorMessage(error: unknown): string {

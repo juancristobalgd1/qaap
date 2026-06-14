@@ -6074,6 +6074,30 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   background: color-mix(in srgb, var(--theia-foreground, #fff) 4%, transparent);
 }
 
+button.theia-mobile-agent-question-flow-card-option {
+  width: 100%;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  appearance: none;
+}
+
+.theia-mobile-agent-question-flow-card-option.theia-mod-interactive {
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+}
+
+.theia-mobile-agent-question-flow-card-option.theia-mod-interactive:hover {
+  border-color: color-mix(in srgb, var(--q-accent, #E58E40) 34%, transparent);
+  background: color-mix(in srgb, var(--q-accent, #E58E40) 8%, transparent);
+}
+
+.theia-mobile-agent-question-flow-card-option.theia-mod-interactive:active {
+  background: color-mix(in srgb, var(--q-accent, #E58E40) 14%, transparent);
+}
+
 .theia-mobile-agent-option-list-card-option.theia-mod-selected,
 .theia-mobile-agent-question-flow-card-option.theia-mod-selected {
   border-color: color-mix(in srgb, var(--q-accent, #E58E40) 42%, transparent);

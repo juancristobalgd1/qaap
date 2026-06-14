@@ -36,6 +36,8 @@ export interface MobileProjectsTasksHubHost {
     titleAttentionEl: HTMLElement;
 
     shouldUseAgentsHubLanding(): boolean;
+    shouldUseMissionControlLanding(): boolean;
+    missionControlUi: import('./mobile-projects-mission-control-ui').MobileProjectsMissionControlUi;
     isTasksHubView(): boolean;
     renderAgentsHubExecutionShell(): void;
     teardownAgentsHubExecutionShell(): void;
@@ -226,7 +228,29 @@ export class MobileProjectsTasksHubUi {
     }
 
     updateTasksAttentionChrome(): void {
-        if (!this.host.homeMode || !this.host.hubQueryUi.isTasksHubView() || this.host.tasksHubSurface === 'chat' || this.host.shouldUseAgentsHubLanding()) {
+        if (!this.host.homeMode || !this.host.hubQueryUi.isTasksHubView() || this.host.tasksHubSurface === 'chat') {
+            this.host.titleAttentionEl.hidden = true;
+            this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
+            return;
+        }
+        if (this.host.shouldUseMissionControlLanding()) {
+            const needsYou = this.host.missionControlUi.countByLane('needs-you');
+            if (needsYou <= 0) {
+                this.host.titleAttentionEl.hidden = true;
+                this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
+                return;
+            }
+            this.host.titleAttentionEl.hidden = false;
+            this.host.titleAttentionEl.setAttribute('aria-hidden', 'false');
+            this.host.titleAttentionEl.textContent = String(needsYou);
+            this.host.titleAttentionEl.title = nls.localize(
+                'qaap/workMissionControl/needsYouTitle',
+                '{0} need your attention',
+                String(needsYou),
+            );
+            return;
+        }
+        if (this.host.shouldUseAgentsHubLanding()) {
             this.host.titleAttentionEl.hidden = true;
             this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
             return;
@@ -328,6 +352,16 @@ export class MobileProjectsTasksHubUi {
     }
 
     renderTasksHubView(projects: MobileProjectEntry[]): void {
+        if (this.host.shouldUseMissionControlLanding()) {
+            void projects;
+            if (this.host.agentsHubShellActive) {
+                this.host.teardownAgentsHubExecutionShell();
+            }
+            this.host.missionControlUi.renderFullView();
+            this.updateTasksAttentionChrome();
+            this.host.renderSubtitle();
+            return;
+        }
         if (this.host.shouldUseAgentsHubLanding()) {
             void projects;
             this.host.renderAgentsHubExecutionShell();

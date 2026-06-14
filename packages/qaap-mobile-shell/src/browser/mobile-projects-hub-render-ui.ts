@@ -16,6 +16,7 @@ export interface MobileProjectsHubRenderHost {
 
     isProjectDiffView(): boolean;
     shouldUseAgentsHubLanding(): boolean;
+    shouldUseMissionControlLanding(): boolean;
     isProjectDetailView(): boolean;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
@@ -42,6 +43,7 @@ export class MobileProjectsHubRenderUi {
         this.host.root.classList.toggle('theia-mod-hub-routines', this.host.hubView === 'routines');
         this.host.root.classList.toggle('theia-mod-hub-repos', this.host.hubView === 'repos');
         this.host.root.classList.toggle('theia-mod-agents-hub-landing', this.host.shouldUseAgentsHubLanding());
+        this.host.root.classList.toggle('theia-mod-mission-control-landing', this.host.shouldUseMissionControlLanding());
         this.host.root.classList.toggle('theia-mod-project-detail', this.host.isProjectDetailView());
         const detailProject = this.host.projectNavigationUi.resolveSelectedProject();
         const detailTab = detailProject ? this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(detailProject) : 'messages';
