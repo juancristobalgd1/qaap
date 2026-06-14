@@ -6,7 +6,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { TheiaAppLoader } from '../theia-app-loader';
 import { TheiaWorkspace } from '../theia-workspace';
-import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from './qaap-work-hub-perf-probe-types';
+import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '../qaap-work-hub-perf-probe-support';
 import * as path from 'path';
 
 const MOBILE_VIEWPORT = { width: 375, height: 812 };

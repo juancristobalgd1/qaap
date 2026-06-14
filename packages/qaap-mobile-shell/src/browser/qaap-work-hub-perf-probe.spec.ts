@@ -51,6 +51,7 @@ describe('qaap-work-hub-perf-probe', () => {
             showTasksInboxWithTeamForProbe: () => undefined,
             seedMultiAgentProbeConversations: () => undefined,
             tickProbeStreamingConversations: () => undefined,
+            hasProjectsForProbe: () => true,
         });
 
         expect(window.__qaapWorkHubPerfProbe).to.not.equal(undefined);
@@ -81,6 +82,7 @@ describe('qaap-work-hub-perf-probe', () => {
             showTasksInboxWithTeamForProbe: () => undefined,
             seedMultiAgentProbeConversations: () => undefined,
             tickProbeStreamingConversations: () => undefined,
+            hasProjectsForProbe: () => true,
         });
 
         window.__qaapWorkHubPerfProbe?.setTranscriptOverlayOpenForProbe(true);

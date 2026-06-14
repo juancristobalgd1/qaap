@@ -6,7 +6,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { TheiaAppLoader } from '../theia-app-loader';
 import { TheiaWorkspace } from '../theia-workspace';
-import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from './qaap-work-hub-perf-probe-types';
+import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '../qaap-work-hub-perf-probe-support';
 import * as path from 'path';
 
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
@@ -56,9 +56,13 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
         await expect(app.page.locator('.theia-mobile-projects-sticky-composer-input')).toBeVisible({ timeout: 60_000 });
         await waitForWorkHubPerfProbe(app.page);
 
+        await expect.poll(async () => app.page.evaluate(
+            () => window.__qaapWorkHubPerfProbe?.hasProjectsForProbe() === true,
+        ), { timeout: 60_000 }).toBe(true);
+
         await app.page.evaluate(() => {
-            window.__qaapWorkHubPerfProbe?.navigateToHomeHubForProbe();
             window.__qaapWorkHubPerfProbe?.seedMultiAgentProbeConversations();
+            window.__qaapWorkHubPerfProbe?.navigateToHomeHubForProbe();
         });
         await flushAnimationFrames(app.page, 3);
         await expect(app.page.locator('.theia-mobile-mission-control-row')).toHaveCount(3, { timeout: 30_000 });
@@ -87,6 +91,10 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
         await dismissMobileTutorial(app.page);
         await expect(app.page.locator('.theia-mobile-projects-sticky-composer-input')).toBeVisible({ timeout: 60_000 });
         await waitForWorkHubPerfProbe(app.page);
+
+        await expect.poll(async () => app.page.evaluate(
+            () => window.__qaapWorkHubPerfProbe?.hasProjectsForProbe() === true,
+        ), { timeout: 60_000 }).toBe(true);
 
         await app.page.evaluate(() => {
             window.__qaapWorkHubPerfProbe?.showTasksInboxWithTeamForProbe();

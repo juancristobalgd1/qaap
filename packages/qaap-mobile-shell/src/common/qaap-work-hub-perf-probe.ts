@@ -21,6 +21,7 @@ export interface QaapWorkHubPerfProbeApi {
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
+    hasProjectsForProbe(): boolean;
     resetMetrics(): QaapWorkHubPerfProbeMetrics;
     getMetrics(): QaapWorkHubPerfProbeMetrics;
 }

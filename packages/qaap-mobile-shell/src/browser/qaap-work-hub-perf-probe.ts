@@ -29,6 +29,7 @@ export interface QaapWorkHubPerfProbeHost {
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
+    hasProjectsForProbe(): boolean;
 }
 
 export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): void {
@@ -138,6 +139,7 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         tickProbeStreamingConversations: () => {
             host.tickProbeStreamingConversations();
         },
+        hasProjectsForProbe: () => host.hasProjectsForProbe(),
         resetMetrics: () => {
             metrics.hubScrollReplaceChildren = 0;
             metrics.sidebarListReplaceChildren = 0;

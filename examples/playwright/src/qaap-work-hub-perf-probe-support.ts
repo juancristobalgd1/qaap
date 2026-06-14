@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+/** Shared Work Hub perf-probe types for Playwright E2E (not a test file). */
 export interface WorkHubPerfProbeMetrics {
     hubScrollReplaceChildren: number;
     sidebarListReplaceChildren: number;
@@ -19,6 +20,7 @@ export interface WorkHubPerfProbeApi {
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
+    hasProjectsForProbe(): boolean;
     resetMetrics(): WorkHubPerfProbeMetrics;
     getMetrics(): WorkHubPerfProbeMetrics;
 }

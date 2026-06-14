@@ -985,63 +985,87 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 panel.navigateHubTab('tasks');
             },
             seedMultiAgentProbeConversations: () => {
-                const project = panel.projects[0];
-                const cwd = project
-                    ? (panel.preparedCwdByProjectId.get(project.id) ?? panel.projectsService.getProjectCwd(project))
-                    : undefined;
-                if (!cwd || !panel.conversations) {
+                if (!panel.conversations) {
                     return;
                 }
-                panel.conversations.perfProbeSeedSummaries(cwd, [
-                    {
-                        id: 'probe-agent-a',
-                        cwd,
-                        agentId: 'qaiq',
-                        title: 'Agent A — inbox',
-                        status: 'streaming',
-                        createdAt: 1,
-                        updatedAt: 300,
-                        messageCount: 2,
-                        turnProgressCurrent: 2,
-                        turnProgressTotal: 5,
-                    },
-                    {
-                        id: 'probe-agent-b',
-                        cwd,
-                        agentId: 'codex',
-                        title: 'Agent B — team',
-                        status: 'streaming',
-                        createdAt: 1,
-                        updatedAt: 200,
-                        messageCount: 2,
-                        turnProgressCurrent: 1,
-                        turnProgressTotal: 4,
-                    },
-                    {
-                        id: 'probe-agent-c',
-                        cwd,
-                        agentId: 'claude',
-                        title: 'Agent C — MC',
-                        status: 'streaming',
-                        createdAt: 1,
-                        updatedAt: 100,
-                        messageCount: 2,
-                        turnProgressCurrent: 3,
-                        turnProgressTotal: 6,
-                    },
-                ]);
+                const cwdSet = new Set<string>();
+                for (const project of panel.projects) {
+                    const cwd = panel.preparedCwdByProjectId.get(project.id)
+                        ?? panel.projectsService.getProjectCwd(project);
+                    if (cwd) {
+                        cwdSet.add(cwd);
+                    }
+                }
+                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+                if (workspaceCwd) {
+                    cwdSet.add(workspaceCwd);
+                }
+                if (cwdSet.size === 0) {
+                    return;
+                }
+                for (const cwd of cwdSet) {
+                    panel.conversations.perfProbeSeedSummaries(cwd, [
+                        {
+                            id: 'probe-agent-a',
+                            cwd,
+                            agentId: 'qaiq',
+                            title: 'Agent A — inbox',
+                            status: 'streaming',
+                            createdAt: 1,
+                            updatedAt: 300,
+                            messageCount: 2,
+                            turnProgressCurrent: 2,
+                            turnProgressTotal: 5,
+                        },
+                        {
+                            id: 'probe-agent-b',
+                            cwd,
+                            agentId: 'codex',
+                            title: 'Agent B — team',
+                            status: 'streaming',
+                            createdAt: 1,
+                            updatedAt: 200,
+                            messageCount: 2,
+                            turnProgressCurrent: 1,
+                            turnProgressTotal: 4,
+                        },
+                        {
+                            id: 'probe-agent-c',
+                            cwd,
+                            agentId: 'claude',
+                            title: 'Agent C — MC',
+                            status: 'streaming',
+                            createdAt: 1,
+                            updatedAt: 100,
+                            messageCount: 2,
+                            turnProgressCurrent: 3,
+                            turnProgressTotal: 6,
+                        },
+                    ]);
+                }
                 panel.scheduleRenderList();
             },
             tickProbeStreamingConversations: () => {
-                const project = panel.projects[0];
-                const cwd = project
-                    ? (panel.preparedCwdByProjectId.get(project.id) ?? panel.projectsService.getProjectCwd(project))
-                    : undefined;
-                if (!cwd || !panel.conversations) {
+                if (!panel.conversations) {
                     return;
                 }
-                panel.conversations.perfProbeTickStreamingSummaries(cwd);
+                const cwdSet = new Set<string>();
+                for (const project of panel.projects) {
+                    const cwd = panel.preparedCwdByProjectId.get(project.id)
+                        ?? panel.projectsService.getProjectCwd(project);
+                    if (cwd) {
+                        cwdSet.add(cwd);
+                    }
+                }
+                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+                if (workspaceCwd) {
+                    cwdSet.add(workspaceCwd);
+                }
+                for (const cwd of cwdSet) {
+                    panel.conversations.perfProbeTickStreamingSummaries(cwd);
+                }
             },
+            hasProjectsForProbe: () => panel.projects.length > 0 || !!panel.projectsService.getCurrentWorkspaceCwd(),
         });
     }
 
@@ -1668,6 +1692,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> {
         return this.workHubInboxUi.collectChatHubGroups(projects);
+    }
+
+    protected projectsForCurrentHubList(): MobileProjectEntry[] {
+        return this.hubQueryUi.projectsForCurrentHubList();
     }
 
     protected collectTasksInboxGroups(
