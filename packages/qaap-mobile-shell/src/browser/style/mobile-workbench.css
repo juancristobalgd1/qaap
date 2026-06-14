@@ -3328,6 +3328,19 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   justify-content: center;
 }
 
+.theia-mobile-agents-hub-no-project-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 280px;
+  margin-top: 4px;
+}
+
+.theia-mobile-agents-hub-no-project-actions .q-empty-action.theia-mod-secondary {
+  background: transparent;
+}
+
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-scroll,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-scroll {
   display: flex;

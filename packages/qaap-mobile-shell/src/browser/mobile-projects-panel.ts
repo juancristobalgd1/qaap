@@ -896,6 +896,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.repoLifecycleUi.onNewClick();
     }
 
+    protected async onStartNewProject(): Promise<void> {
+        await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet();
+    }
+
     protected async onCloneClick(): Promise<void> {
         await this.repoLifecycleUi.onCloneClick();
     }

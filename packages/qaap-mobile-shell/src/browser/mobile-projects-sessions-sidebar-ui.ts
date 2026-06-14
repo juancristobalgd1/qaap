@@ -77,6 +77,7 @@ stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').Mo
 closeCurrentWorkspace(): Promise<void>;
 openConversationSummary(project: MobileProjectEntry, summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
 runCatalogAction(action: import('../common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
+onNewClick(): Promise<void>;
 }
 
 export class MobileProjectsSessionsSidebarUi {
@@ -589,6 +590,7 @@ export class MobileProjectsSessionsSidebarUi {
     async onWorkHubSessionsSidebarNewChat(): Promise<void> {
         const project = this.resolveWorkHubSessionsSidebarProject();
         if (!project) {
+            await this.host.onNewClick();
             return;
         }
         await this.openEmptyMobileChatSheet(project);

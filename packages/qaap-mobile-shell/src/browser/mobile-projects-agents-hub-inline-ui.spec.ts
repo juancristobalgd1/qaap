@@ -100,9 +100,20 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             conversationIndexUi: {
                 conversationsForProject: () => [],
             } as unknown as MobileProjectsAgentsHubInlineHost['conversationIndexUi'],
+            onNewClick: async () => undefined,
+            onStartNewProject: async () => undefined,
             ...overrides,
         };
     }
+
+    it('shows add-repository onboarding when no project is available', () => {
+        const host = createHost();
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.renderAgentsHubExecutionShell();
+        expect(host.scroll.querySelector('.theia-mobile-agents-hub-no-project-onboarding')).to.not.equal(null);
+        expect(host.scroll.textContent).to.include('Add repository');
+        expect(host.scroll.textContent).to.include('Start new project');
+    });
 
     const openSummary = (): QaapAgentConversationSummaryDTO => ({
         id: 'conv-open',

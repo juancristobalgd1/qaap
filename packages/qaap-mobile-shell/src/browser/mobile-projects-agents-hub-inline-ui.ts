@@ -100,7 +100,9 @@ export interface MobileProjectsAgentsHubInlineHost {
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
     updateTasksAttentionChrome(): void;
     conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi
+    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    onNewClick(): Promise<void>;
+    onStartNewProject(): Promise<void>;
 }
 
 /** Agents Hub inline transcript shell: open/close session, execution surfaces, idle chat. */
@@ -193,13 +195,7 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.agentsHubShellActive = false;
             const note = document.createElement('div');
             note.className = 'theia-mobile-agent-transcript-empty theia-mod-no-project';
-            const title = document.createElement('div');
-            title.className = 'theia-mobile-agent-transcript-empty-title';
-            title.textContent = nls.localize(
-                'qaap/mobileProjects/stickyComposerNoProject',
-                'Add or open a repository first.',
-            );
-            note.append(title);
+            note.append(this.createAgentsHubNoProjectOnboarding());
             this.host.scroll.append(note);
             this.host.updateTasksAttentionChrome();
             this.host.renderSubtitle();
@@ -272,6 +268,40 @@ export class MobileProjectsAgentsHubInlineUi {
         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummaryId) {
             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
         }
+    }
+
+    protected createAgentsHubNoProjectOnboarding(): HTMLElement {
+        const empty = document.createElement('div');
+        empty.className = 'q-empty theia-mobile-work-hub-home-empty theia-mobile-agents-hub-no-project-onboarding';
+        const icon = document.createElement('span');
+        icon.className = 'q-empty-icon codicon codicon-repo';
+        icon.setAttribute('aria-hidden', 'true');
+        const title = document.createElement('p');
+        title.className = 'q-empty-title';
+        title.textContent = nls.localize('qaap/workHubHome/noProjectsTitle', 'No workspaces yet');
+        const hint = document.createElement('p');
+        hint.className = 'q-empty-hint';
+        hint.textContent = nls.localize(
+            'qaap/workHubHome/noProjects',
+            'Add a GitHub repository to delegate agent work and review the resulting PR.',
+        );
+        empty.append(icon, title, hint);
+
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-agents-hub-no-project-actions';
+        const addRepo = document.createElement('button');
+        addRepo.type = 'button';
+        addRepo.className = 'q-empty-action';
+        addRepo.textContent = nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
+        addRepo.addEventListener('click', () => { void this.host.onNewClick(); });
+        const newProject = document.createElement('button');
+        newProject.type = 'button';
+        newProject.className = 'q-empty-action theia-mod-secondary';
+        newProject.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
+        newProject.addEventListener('click', () => { void this.host.onStartNewProject(); });
+        actions.append(addRepo, newProject);
+        empty.append(actions);
+        return empty;
     }
 
     /** Same transcript host for idle and active sessions; idle shows starter chips in the scroll area. */
