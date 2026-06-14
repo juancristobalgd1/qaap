@@ -6,35 +6,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { TheiaAppLoader } from '../theia-app-loader';
 import { TheiaWorkspace } from '../theia-workspace';
+import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from './qaap-work-hub-perf-probe-types';
 import * as path from 'path';
 
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 const SAMPLE_FILES = path.join(path.resolve(__dirname, '../../src/tests/resources'), 'sample-files1');
-const QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY = 'qaapWorkHubPerfProbe';
-
-interface WorkHubPerfProbeMetrics {
-    hubScrollReplaceChildren: number;
-    sidebarListReplaceChildren: number;
-    chatHostConnected: boolean;
-    inlineExecutionConnected: boolean;
-}
-
-interface WorkHubPerfProbeApi {
-    burstConversationTicks(count: number): void;
-    navigateToHomeHubForProbe(): void;
-    expandMissionControlForProbe(): void;
-    showTasksInboxWithTeamForProbe(): void;
-    seedMultiAgentProbeConversations(): void;
-    tickProbeStreamingConversations(): void;
-    resetMetrics(): WorkHubPerfProbeMetrics;
-    getMetrics(): WorkHubPerfProbeMetrics;
-}
-
-declare global {
-    interface Window {
-        __qaapWorkHubPerfProbe?: WorkHubPerfProbeApi;
-    }
-}
 
 async function dismissMobileTutorial(page: Page): Promise<void> {
     const skip = page.locator('button').filter({ hasText: /^skip$/i }).first();
