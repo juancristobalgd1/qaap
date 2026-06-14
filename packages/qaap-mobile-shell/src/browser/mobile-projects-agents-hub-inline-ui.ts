@@ -103,6 +103,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     onNewClick(): Promise<void>;
     onStartNewProject(): Promise<void>;
+    onOpenLocalWorkspaceFolder(): Promise<void>;
 }
 
 /** Agents Hub inline transcript shell: open/close session, execution surfaces, idle chat. */
@@ -317,7 +318,17 @@ export class MobileProjectsAgentsHubInlineUi {
         newProject.addEventListener('click', () => { void this.host.onStartNewProject(); });
 
         actions.append(addRepo, newProject);
-        root.append(mark, title, hint, actions);
+
+        const openLocal = document.createElement('button');
+        openLocal.type = 'button';
+        openLocal.className = 'theia-mobile-agents-hub-onboarding-local-link';
+        openLocal.textContent = nls.localize(
+            'qaap/mobileProjects/openLocalFolder',
+            'Open folder on this device',
+        );
+        openLocal.addEventListener('click', () => { void this.host.onOpenLocalWorkspaceFolder(); });
+
+        root.append(mark, title, hint, actions, openLocal);
         return root;
     }
 

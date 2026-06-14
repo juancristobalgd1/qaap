@@ -3428,6 +3428,27 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   background: var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 6%, transparent));
 }
 
+.theia-mobile-agents-hub-onboarding-local-link {
+  margin-top: 14px;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-underline-color: color-mix(in srgb, currentColor 42%, transparent);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-agents-hub-onboarding-local-link:active {
+  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
+}
+
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-scroll,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-scroll {
   display: flex;

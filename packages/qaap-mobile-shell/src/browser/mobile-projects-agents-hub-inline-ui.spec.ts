@@ -102,6 +102,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             } as unknown as MobileProjectsAgentsHubInlineHost['conversationIndexUi'],
             onNewClick: async () => undefined,
             onStartNewProject: async () => undefined,
+            onOpenLocalWorkspaceFolder: async () => undefined,
             ...overrides,
         };
     }

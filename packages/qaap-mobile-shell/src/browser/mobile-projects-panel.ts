@@ -900,6 +900,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet();
     }
 
+    protected async onOpenLocalWorkspaceFolder(): Promise<void> {
+        await this.projectNavigationUi.openLocalWorkspaceFolder();
+    }
+
     protected async onCloneClick(): Promise<void> {
         await this.repoLifecycleUi.onCloneClick();
     }
