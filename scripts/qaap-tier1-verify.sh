@@ -44,7 +44,8 @@ npx lerna run test --scope @theia/qaap-mobile-shell
 
 step "github trigger + webhook signature specs"
 npx lerna run test --scope @theia/qaap-mobile-shell -- --grep 'qaap-github'
-npx lerna run test --scope @theia/qaap-cloud-workspace -- --grep 'github-pr-evidence|qaap-web-push'
+npx lerna run test --scope @theia/qaap-cloud-workspace -- --grep 'github-pr-evidence'
+npx lerna run test --scope @theia/qaap-cloud-workspace -- --grep 'qaap-web-push'
 
 if [[ "$RUN_VPS" == true ]]; then
     step "VPS health (docker compose)"
