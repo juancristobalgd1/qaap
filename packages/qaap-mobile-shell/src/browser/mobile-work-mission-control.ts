@@ -93,6 +93,14 @@ export function classifyMissionControlLane(
     summary: QaapAgentConversationSummaryDTO,
     unread: boolean,
 ): MissionControlLane {
+    if (summary.goalLoopPhase === 'executing'
+        || summary.goalLoopPhase === 'verifying'
+        || summary.goalLoopPhase === 'evaluating') {
+        return 'running';
+    }
+    if (summary.goalLoopPhase === 'blocked') {
+        return 'needs-you';
+    }
     if (summary.status === 'streaming') {
         return 'running';
     }

@@ -2045,6 +2045,8 @@ export class QaapAgentTaskRunner {
                 body: `${task.title}${ok ? ' completed.' : ` exited with code ${task.exitCode ?? 'unknown'}.`}`,
                 tag: `qaap-agent-task-${task.id}`,
                 route: 'diff-review',
+                taskId: task.id,
+                projectName: task.cwd.split(/[/\\]/).filter(Boolean).pop() ?? task.cwd,
             });
         } catch {
             /* push failure must not crash the runner */

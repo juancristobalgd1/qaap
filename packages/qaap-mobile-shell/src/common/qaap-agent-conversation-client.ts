@@ -89,6 +89,7 @@ export interface QaapAgentConversationSummaryDTO {
     readonly goalLoopPhase?: QaapAgentGoalLoopPhase;
     readonly goalLoopIteration?: number;
     readonly goalLoopMaxIterations?: number;
+    readonly goalLoopStopReason?: string;
 }
 
 export type QaapAgentGoalLoopPhase =
@@ -286,6 +287,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
             goalLoopPhase: conv.goalLoop.phase,
             goalLoopIteration: conv.goalLoop.iteration,
             goalLoopMaxIterations: conv.goalLoop.budget.maxIterations,
+            ...(conv.goalLoop.stopReason ? { goalLoopStopReason: conv.goalLoop.stopReason } : {}),
         } : {}),
     };
 }
@@ -553,4 +555,8 @@ export async function fetchGoalLoopStatus(conversationId: string): Promise<QaapA
 
 export function isGoalLoopPhaseActive(phase: QaapAgentGoalLoopPhase | undefined): boolean {
     return phase === 'executing' || phase === 'verifying' || phase === 'evaluating';
+}
+
+export function isGoalLoopBlocked(phase: QaapAgentGoalLoopPhase | undefined): boolean {
+    return phase === 'blocked';
 }

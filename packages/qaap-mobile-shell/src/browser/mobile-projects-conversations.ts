@@ -626,6 +626,9 @@ export class MobileProjectsConversations {
                         goalLoopPhase: payload.goalLoop.phase,
                         goalLoopIteration: payload.goalLoop.iteration,
                         goalLoopMaxIterations: payload.goalLoop.budget.maxIterations,
+                        ...(payload.goalLoop.stopReason
+                            ? { goalLoopStopReason: payload.goalLoop.stopReason }
+                            : {}),
                         updatedAt: payload.goalLoop.updatedAt,
                     });
                 }

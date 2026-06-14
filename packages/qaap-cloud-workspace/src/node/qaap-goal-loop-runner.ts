@@ -360,12 +360,15 @@ export class QaapGoalLoopRunner {
             return;
         }
         const ok = state.phase === 'completed';
+        const projectName = conv.cwd.split(/[/\\]/).filter(Boolean).pop() ?? conv.cwd;
         void this.webPush.notify({
             title: ok ? 'Goal completed' : 'Goal loop stopped',
             body: `${conv.title}: ${state.stopReason ?? state.goal}`,
             tag: `qaap-goal-loop-${conversationId}`,
             route: 'transcript',
             conversationId,
+            agentId: conv.agentId,
+            projectName,
         }).catch(() => undefined);
     }
 

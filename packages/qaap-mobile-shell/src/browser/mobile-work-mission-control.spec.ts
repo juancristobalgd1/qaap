@@ -35,6 +35,14 @@ describe('classifyMissionControlLane', () => {
         expect(classifyMissionControlLane(summary({ status: 'streaming' }), true)).to.equal('running');
     });
 
+    it('classifies an active goal loop as running even when idle', () => {
+        expect(classifyMissionControlLane(summary({ status: 'idle', goalLoopPhase: 'verifying' }), false)).to.equal('running');
+    });
+
+    it('classifies a blocked goal loop as needs-you', () => {
+        expect(classifyMissionControlLane(summary({ status: 'idle', goalLoopPhase: 'blocked' }), false)).to.equal('needs-you');
+    });
+
     it('classifies a failed conversation as needs-you', () => {
         expect(classifyMissionControlLane(summary({ status: 'failed' }), false)).to.equal('needs-you');
     });

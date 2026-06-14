@@ -94,12 +94,16 @@ export class MobileProjectsTranscriptHeaderUi {
             : summary.goalLoopPhase === 'blocked' || summary.goalLoopPhase === 'cancelled'
                 ? 'theia-mod-fail'
                 : 'theia-mod-running';
-        return this.createActiveChatContextChip(
+        const chip = this.createActiveChatContextChip(
             'codicon-sync',
             label,
             nls.localize('qaap/mobileProjects/goalLoopChipAria', 'Goal loop'),
             modifier,
         );
+        if (summary.goalLoopPhase === 'blocked' && summary.goalLoopStopReason) {
+            chip.title = summary.goalLoopStopReason;
+        }
+        return chip;
     }
 
     createActiveChatContextChip(

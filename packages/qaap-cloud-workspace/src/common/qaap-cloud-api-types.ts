@@ -98,6 +98,12 @@ export interface QaapPushNotifyRequest {
     readonly route?: string;
     /** Opens the matching agent conversation when `route` is `transcript`. */
     readonly conversationId?: string;
+    readonly agentId?: string;
+    readonly projectName?: string;
+    readonly taskId?: string;
+    readonly linesAdded?: number;
+    readonly linesRemoved?: number;
+    readonly needsApproval?: boolean;
 }
 
 export interface QaapPushVapidResponse {
