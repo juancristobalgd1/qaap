@@ -9,6 +9,8 @@ import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-project
 export interface MobileProjectsRenderListHost {
     hubView: MobileProjectsHubView;
     agentsHubShellActive: boolean;
+    agentsHubInlineActive: boolean;
+    transcriptOpenSummaryId: string | undefined;
     scroll: HTMLElement;
     diffProjectTabsHost: HTMLElement;
     diffWidgetHost: HTMLElement;
@@ -52,7 +54,8 @@ export class MobileProjectsRenderListUi {
     constructor(protected readonly host: MobileProjectsRenderListHost) { }
 
     renderList(): void {
-        if ((this.host.hubView !== 'tasks' || !this.host.shouldUseAgentsHubLanding()) && this.host.agentsHubShellActive) {
+        const keepInlineTranscriptSession = this.host.agentsHubInlineActive && !!this.host.transcriptOpenSummaryId;
+        if ((this.host.hubView !== 'tasks' || !this.host.shouldUseAgentsHubLanding()) && this.host.agentsHubShellActive && !keepInlineTranscriptSession) {
             this.host.teardownAgentsHubExecutionShell();
         }
         this.host.cardMenuUi.closeCardMenu();

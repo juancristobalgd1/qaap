@@ -84,6 +84,7 @@ import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-tran
 import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcript-overlay-state';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import { QAAP_AGENTS_HUB_LANDING_ENABLED } from '../common/qaap-agents-hub-landing';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
 import { MobileProjectsMissionControlUi, type MobileProjectsMissionControlHost } from './mobile-projects-mission-control-ui';
 import {
@@ -1754,8 +1755,15 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     // WorkHubTranscriptBridge — explicit hub surface for transcript overlay
     // ========================================================================
 
+    shouldOpenAgentsHubInlineTranscript(): boolean {
+        return QAAP_AGENTS_HUB_LANDING_ENABLED
+            && this.homeMode
+            && this.hubView === 'tasks'
+            && !this.isProjectDetailView();
+    }
+
     isAgentsHubLanding(): boolean {
-        return this.shouldUseAgentsHubLanding();
+        return this.shouldOpenAgentsHubInlineTranscript();
     }
 
     shouldEmbedAgentsHubRecentsInWorkspaceTranscript(): boolean {

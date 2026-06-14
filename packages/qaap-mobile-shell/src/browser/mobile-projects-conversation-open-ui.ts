@@ -19,6 +19,7 @@ export interface MobileProjectsConversationOpenHost {
     homeMode: boolean;
     hubView: MobileProjectsHubView;
     agentsHubSelectedProjectId: string | undefined;
+    missionControlLandingActive: boolean;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     transcriptLastFingerprint: string | undefined;
     transcriptLastSseDeltaAt: number | undefined;
@@ -39,6 +40,8 @@ export interface MobileProjectsConversationOpenHost {
     isProjectDetailView(): boolean;
     selectHubLandingView(view: MobileProjectsHubView, preferredDiffProjectId?: string, options?: { force?: boolean }): void;
     refreshWorkHubConversationChrome(): void;
+    openInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    shouldOpenAgentsHubInlineTranscript(): boolean;
 }
 
 export class MobileProjectsConversationOpenUi {
@@ -65,6 +68,7 @@ export class MobileProjectsConversationOpenUi {
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        this.host.missionControlLandingActive = false;
         if (this.host.homeMode && !this.host.isProjectDetailView()) {
             this.host.agentsHubSelectedProjectId = project.id;
             if (this.host.hubView !== 'tasks') {
@@ -75,7 +79,11 @@ export class MobileProjectsConversationOpenUi {
         // Opening a chat clears its unread badge — record the high-water mark before navigating so
         // the project glyph drops the "new replies" treatment on the next render.
         this.host.conversationFlags?.markRead(summary.id, summary.updatedAt);
-        await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);
+        if (this.host.shouldOpenAgentsHubInlineTranscript()) {
+            await this.host.openInlineTranscript(project, summary);
+        } else {
+            await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);
+        }
         this.host.refreshWorkHubConversationChrome();
     }
 
