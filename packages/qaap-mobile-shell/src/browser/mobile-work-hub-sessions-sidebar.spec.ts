@@ -4,7 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import {
+    MobileWorkHubSessionsSidebar,
     QAAP_SESSIONS_SIDEBAR_DISMISS_HINT_KEY,
     hasSeenSessionsSidebarDismissHint,
     markSessionsSidebarDismissHintSeen,
@@ -12,7 +15,17 @@ import {
 
 describe('mobile-work-hub-sessions-sidebar', () => {
 
+    let disableJSDOM: (() => void) | undefined;
     const storage = new Map<string, string>();
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM?.();
+        disableJSDOM = undefined;
+    });
 
     beforeEach(() => {
         storage.clear();
@@ -25,7 +38,15 @@ describe('mobile-work-hub-sessions-sidebar', () => {
                 key: () => null,
                 length: 0,
             },
+            requestAnimationFrame: (callback: FrameRequestCallback) => {
+                return setTimeout(() => callback(performance.now()), 0) as unknown as number;
+            },
+            cancelAnimationFrame: (id: number) => {
+                clearTimeout(id);
+            },
         } as unknown as Window;
+        document.body.innerHTML = '';
+        FrontendApplicationConfigProvider.set({ applicationName: 'Qaap' });
     });
 
     afterEach(() => {
@@ -37,6 +58,65 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         markSessionsSidebarDismissHintSeen();
         expect(storage.get(QAAP_SESSIONS_SIDEBAR_DISMISS_HINT_KEY)).to.equal('1');
         expect(hasSeenSessionsSidebarDismissHint()).to.equal(true);
+    });
+
+    it('scheduleRefreshList coalesces multiple refresh requests into one render pass', async () => {
+        let renderCalls = 0;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                renderCalls++;
+                host.append(document.createElement('div'));
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+
+        sidebar.scheduleRefreshList();
+        sidebar.scheduleRefreshList();
+        sidebar.scheduleRefreshList();
+        await new Promise<void>(resolve => setTimeout(resolve, 20));
+
+        expect(renderCalls).to.equal(1);
+    });
+
+    it('skips DOM rebuild when delegate reports unchanged sidebar fingerprint', () => {
+        let renderCalls = 0;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                renderCalls++;
+                host.append(document.createElement('div'));
+            },
+            shouldSkipSessionListRefresh: () => renderCalls > 0,
+            rememberSessionListFingerprint: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        sidebar.refreshList();
+        expect(renderCalls).to.equal(1);
+    });
+
+    it('force refresh bypasses sidebar fingerprint short-circuit', () => {
+        let renderCalls = 0;
+        let skipEnabled = false;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                renderCalls++;
+                host.append(document.createElement('div'));
+            },
+            shouldSkipSessionListRefresh: () => skipEnabled,
+            rememberSessionListFingerprint: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        skipEnabled = true;
+        sidebar.refreshList();
+        sidebar.refreshList({ force: true });
+        expect(renderCalls).to.equal(2);
     });
 
 });
