@@ -5,9 +5,19 @@
 
 import {
     isQaapWorkHubPerfProbeEnabled,
+    type QaapNavigationTimingResult,
     type QaapWorkHubPerfProbeApi,
     type QaapWorkHubPerfProbeMetrics,
+    type QaapWorkHubStreamingPerfSample,
 } from '../common/qaap-work-hub-perf-probe';
+import type { QaapChatUiPerfTurnSnapshot } from '../common/qaap-chat-ui-perf';
+import {
+    logQaapFpsSample,
+    logQaapMemorySnapshot,
+    QaapWorkHubFpsSampler,
+    readQaapMemorySnapshot,
+    waitForAnimationFrames,
+} from '../common/qaap-work-hub-runtime-metrics';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 
@@ -29,9 +39,28 @@ export interface QaapWorkHubPerfProbeHost {
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
+    openProbeConversation(conversationId: string): Promise<void>;
     hasProjectsForProbe(): boolean;
     hasWorkspaceForProbe(): boolean;
     getProbeDiagnostics(): import('../common/qaap-work-hub-perf-probe').WorkHubPerfProbeDiagnostics;
+}
+
+const TRANSCRIPT_MESSAGE_SELECTOR = '.theia-mobile-agent-transcript-real-chat .theia-mobile-agent-transcript-msg';
+
+async function waitForTranscriptHistoryVisible(timeoutMs = 5_000): Promise<boolean> {
+    const startedAt = performance.now();
+    while (performance.now() - startedAt < timeoutMs) {
+        const chatHost = document.querySelector('.theia-mobile-agent-transcript-real-chat');
+        if (chatHost?.querySelector(TRANSCRIPT_MESSAGE_SELECTOR)) {
+            return true;
+        }
+        await waitForAnimationFrames(2);
+    }
+    return false;
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => window.setTimeout(resolve, ms));
 }
 
 export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): void {
@@ -46,6 +75,9 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         hubScrollReplaceChildren: 0,
         sidebarListReplaceChildren: 0,
     };
+    let workHubFirstShowMs: number | undefined;
+    let lastNavigation: QaapNavigationTimingResult | undefined;
+    let activeFpsSampler: QaapWorkHubFpsSampler | undefined;
 
     const patchReplaceChildren = (
         element: HTMLElement,
@@ -141,6 +173,15 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         tickProbeStreamingConversations: () => {
             host.tickProbeStreamingConversations();
         },
+        burstProbeTranscriptDeltas: (conversationId: string, count: number) => {
+            const conversations = host.conversations;
+            if (!conversations) {
+                return;
+            }
+            for (let index = 0; index < count; index++) {
+                conversations.perfProbeEmitStreamingDelta(conversationId);
+            }
+        },
         hasProjectsForProbe: () => host.hasProjectsForProbe(),
         hasWorkspaceForProbe: () => host.hasWorkspaceForProbe(),
         getProbeDiagnostics: () => host.getProbeDiagnostics(),
@@ -150,6 +191,85 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
             return readMetrics();
         },
         getMetrics: () => readMetrics(),
+        recordWorkHubFirstShowMs: (durationMs: number) => {
+            workHubFirstShowMs = Math.round(durationMs);
+            if (typeof console !== 'undefined' && typeof console.info === 'function') {
+                console.info(`[Qaap work-hub tti] firstShow=${workHubFirstShowMs}ms`);
+            }
+        },
+        getMemorySnapshot: () => {
+            const snapshot = readQaapMemorySnapshot();
+            logQaapMemorySnapshot(snapshot);
+            return snapshot;
+        },
+        getRuntimeSnapshot: () => ({
+            memory: readQaapMemorySnapshot(),
+            workHubFirstShowMs,
+            lastNavigation,
+        }),
+        getLastChatUiPerf: (): QaapChatUiPerfTurnSnapshot | undefined => window.__qaapLastChatUiPerf,
+        measureOpenConversation: async (conversationId: string): Promise<QaapNavigationTimingResult> => {
+            metrics.hubScrollReplaceChildren = 0;
+            metrics.sidebarListReplaceChildren = 0;
+            const startedAt = performance.now();
+            performance.mark('qaap-sidebar-chat-start');
+            await host.openProbeConversation(conversationId);
+            const historyVisible = await waitForTranscriptHistoryVisible();
+            const durationMs = Math.round(performance.now() - startedAt);
+            performance.mark('qaap-sidebar-chat-end');
+            try {
+                performance.measure('qaap-sidebar-to-chat', 'qaap-sidebar-chat-start', 'qaap-sidebar-chat-end');
+            } catch {
+                /* duplicate measure in repeated runs */
+            }
+            const probeMetrics = readMetrics();
+            lastNavigation = {
+                conversationId,
+                durationMs,
+                historyVisible,
+                hubScrollReplaceChildren: probeMetrics.hubScrollReplaceChildren,
+                inlineExecutionConnected: probeMetrics.inlineExecutionConnected,
+            };
+            if (typeof console !== 'undefined' && typeof console.info === 'function') {
+                console.info([
+                    '[Qaap work-hub navigation]',
+                    `conversation=${conversationId}`,
+                    `duration=${durationMs}ms`,
+                    `historyVisible=${historyVisible}`,
+                    `hubRebuilds=${probeMetrics.hubScrollReplaceChildren}`,
+                    `inline=${probeMetrics.inlineExecutionConnected}`,
+                ].join(' '));
+            }
+            return lastNavigation;
+        },
+        sampleStreamingPerf: async (options?: {
+            durationMs?: number;
+            burstCount?: number;
+            conversationId?: string;
+        }): Promise<QaapWorkHubStreamingPerfSample | undefined> => {
+            activeFpsSampler?.dispose();
+            const sampler = new QaapWorkHubFpsSampler();
+            activeFpsSampler = sampler;
+            const durationMs = options?.durationMs ?? 2_000;
+            const burstCount = options?.burstCount ?? 12;
+            const conversationId = options?.conversationId ?? host.getTranscriptOpenSummaryId();
+            sampler.start();
+            const burstIntervalMs = Math.max(16, Math.floor(durationMs / Math.max(burstCount, 1)));
+            for (let index = 0; index < burstCount; index++) {
+                if (conversationId) {
+                    host.conversations?.perfProbeEmitStreamingDelta(conversationId);
+                } else {
+                    host.tickProbeStreamingConversations();
+                }
+                await sleep(burstIntervalMs);
+            }
+            await sleep(Math.max(0, durationMs - burstIntervalMs * burstCount));
+            const fps = sampler.stop();
+            activeFpsSampler = undefined;
+            sampler.dispose();
+            logQaapFpsSample(fps);
+            return { fps, burstCount };
+        },
     };
 
     window.__qaapWorkHubPerfProbe = api;

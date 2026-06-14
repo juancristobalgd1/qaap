@@ -94,6 +94,8 @@ export class MobileProjectsConversations {
     protected readonly byCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     /** E2E perf probe: survives server snapshot clears in {@link applyConversationGroups}. */
     protected readonly perfProbeByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
+    /** E2E perf probe: in-memory conversation bodies for sidebar → chat navigation timing. */
+    protected readonly perfProbeConversations = new Map<string, QaapAgentConversationDTO>();
     protected readonly theiaByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected readonly theiaSessionFiles = new Map<string, URI>();
     protected source: EventSource | undefined;
@@ -156,6 +158,60 @@ export class MobileProjectsConversations {
             return;
         }
         this.perfProbeByCwd.set(normalizeCwd(cwd), sortConversations([...summaries]));
+    }
+
+    /** E2E perf probe: seed a full conversation payload for local transcript opens. */
+    perfProbeSeedConversation(conversation: QaapAgentConversationDTO): void {
+        if (!isQaapWorkHubPerfProbeEnabled()) {
+            return;
+        }
+        this.perfProbeConversations.set(conversation.id, conversation);
+    }
+
+    /** E2E perf probe: resolve a seeded conversation without network I/O. */
+    perfProbeGetConversation(conversationId: string): QaapAgentConversationDTO | undefined {
+        if (!isQaapWorkHubPerfProbeEnabled()) {
+            return undefined;
+        }
+        return this.perfProbeConversations.get(conversationId);
+    }
+
+    /**
+     * E2E perf probe: append a token to the open probe conversation and emit a live
+     * message event so transcript streaming perf can be sampled without a backend agent.
+     */
+    perfProbeEmitStreamingDelta(conversationId: string): void {
+        if (!isQaapWorkHubPerfProbeEnabled()) {
+            return;
+        }
+        const existing = this.perfProbeConversations.get(conversationId);
+        if (!existing || existing.messages.length === 0) {
+            return;
+        }
+        const messages = [...existing.messages];
+        const lastIndex = messages.length - 1;
+        const last = messages[lastIndex];
+        if (last.role !== 'agent') {
+            return;
+        }
+        const nextMessage: QaapAgentMessageDTO = {
+            ...last,
+            content: `${last.content ?? ''} token`,
+        };
+        messages[lastIndex] = nextMessage;
+        const nextConversation: QaapAgentConversationDTO = {
+            ...existing,
+            status: 'streaming',
+            updatedAt: existing.updatedAt + 1,
+            messages,
+        };
+        this.perfProbeConversations.set(conversationId, nextConversation);
+        this.onDidReceiveMessageEmitter.fire({
+            type: 'message',
+            conversationId,
+            cwd: existing.cwd,
+            message: nextMessage,
+        });
     }
 
     /** E2E perf probe: bump streaming turn progress and emit one change event. */

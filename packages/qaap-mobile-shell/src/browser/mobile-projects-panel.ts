@@ -38,6 +38,7 @@ import { MobileProjectsService } from './mobile-projects-service';
 import { isAgentsHubExecutionSurfacePainted } from '../common/qaap-agents-hub-landing';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
+    buildProbeConversationDTO,
     buildProbeStreamingSummaries,
     ensureProbeWorkspaceProject,
     QAAP_PROBE_WORKSPACE_PROJECT_ID,
@@ -1028,7 +1029,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                     return;
                 }
                 for (const cwd of cwdSet) {
-                    panel.conversations.perfProbeSeedSummaries(cwd, buildProbeStreamingSummaries(cwd));
+                    const summaries = buildProbeStreamingSummaries(cwd);
+                    panel.conversations.perfProbeSeedSummaries(cwd, summaries);
+                    for (const summary of summaries) {
+                        panel.conversations.perfProbeSeedConversation(buildProbeConversationDTO(summary));
+                    }
                 }
                 panel.scheduleRenderList();
             },
@@ -1062,6 +1067,30 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 ).length,
                 hubView: panel.hubView,
             }),
+            openProbeConversation: async (conversationId: string) => {
+                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+                if (!workspaceCwd) {
+                    throw new Error('Probe workspace cwd unavailable');
+                }
+                panel.conversations?.start();
+                const project = panel.projects.find(entry => entry.isCurrent)
+                    ?? panel.projects.find(entry => entry.id === QAAP_PROBE_WORKSPACE_PROJECT_ID)
+                    ?? panel.projects[0];
+                if (!project) {
+                    throw new Error('Probe project unavailable');
+                }
+                const summary = panel.conversations?.getConversationsForCwd(workspaceCwd)
+                    .find(entry => entry.id === conversationId);
+                if (!summary) {
+                    throw new Error(`Probe conversation ${conversationId} not seeded`);
+                }
+                panel.missionControlLandingActive = false;
+                panel.agentsHubSelectedProjectId = project.id;
+                if (panel.hubView !== 'tasks') {
+                    panel.selectHubLandingView('tasks', undefined, { force: true });
+                }
+                await panel.openConversationSummary(project, summary);
+            },
         });
     }
 

@@ -3,6 +3,21 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type {
+    QaapFpsSampleResult,
+    QaapMemorySnapshot,
+    QaapNavigationTimingResult,
+    QaapRuntimeSnapshot,
+} from './qaap-work-hub-runtime-metrics';
+import type { QaapChatUiPerfTurnSnapshot } from './qaap-chat-ui-perf';
+
+export type {
+    QaapFpsSampleResult,
+    QaapMemorySnapshot,
+    QaapNavigationTimingResult,
+    QaapRuntimeSnapshot,
+} from './qaap-work-hub-runtime-metrics';
+
 export const QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY = 'qaapWorkHubPerfProbe';
 
 export interface WorkHubPerfProbeDiagnostics {
@@ -19,6 +34,11 @@ export interface QaapWorkHubPerfProbeMetrics {
     readonly inlineExecutionConnected: boolean;
 }
 
+export interface QaapWorkHubStreamingPerfSample {
+    readonly fps: QaapFpsSampleResult;
+    readonly burstCount: number;
+}
+
 export interface QaapWorkHubPerfProbeApi {
     burstConversationTicks(count: number): void;
     setTranscriptOverlayOpenForProbe(open: boolean): void;
@@ -28,11 +48,18 @@ export interface QaapWorkHubPerfProbeApi {
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
+    burstProbeTranscriptDeltas(conversationId: string, count: number): void;
     hasProjectsForProbe(): boolean;
     hasWorkspaceForProbe(): boolean;
     getProbeDiagnostics(): WorkHubPerfProbeDiagnostics;
     resetMetrics(): QaapWorkHubPerfProbeMetrics;
     getMetrics(): QaapWorkHubPerfProbeMetrics;
+    recordWorkHubFirstShowMs(durationMs: number): void;
+    getRuntimeSnapshot(): QaapRuntimeSnapshot;
+    getMemorySnapshot(): QaapMemorySnapshot | undefined;
+    measureOpenConversation(conversationId: string): Promise<QaapNavigationTimingResult>;
+    sampleStreamingPerf(options?: { durationMs?: number; burstCount?: number; conversationId?: string }): Promise<QaapWorkHubStreamingPerfSample | undefined>;
+    getLastChatUiPerf(): QaapChatUiPerfTurnSnapshot | undefined;
 }
 
 export function isQaapWorkHubPerfProbeEnabled(): boolean {
@@ -49,5 +76,6 @@ export function isQaapWorkHubPerfProbeEnabled(): boolean {
 declare global {
     interface Window {
         __qaapWorkHubPerfProbe?: QaapWorkHubPerfProbeApi;
+        __qaapLastChatUiPerf?: QaapChatUiPerfTurnSnapshot;
     }
 }

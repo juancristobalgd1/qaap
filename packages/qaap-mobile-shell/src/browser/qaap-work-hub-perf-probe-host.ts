@@ -3,7 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type {
+    QaapAgentConversationDTO,
+    QaapAgentConversationSummaryDTO,
+    QaapAgentMessageDTO,
+} from '../common/qaap-agent-conversation-client';
 import { isQaapWorkHubPerfProbeEnabled } from '../common/qaap-work-hub-perf-probe';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -16,6 +20,39 @@ export interface WorkHubPerfProbeDiagnostics {
     readonly mcRowCount: number;
     readonly teamRowCount: number;
     readonly hubView: string;
+}
+
+export const QAAP_PROBE_CONVERSATION_IDS = {
+    agentA: 'probe-agent-a',
+    agentB: 'probe-agent-b',
+    agentC: 'probe-agent-c',
+} as const;
+
+export function buildProbeConversationDTO(summary: QaapAgentConversationSummaryDTO): QaapAgentConversationDTO {
+    const messageCount = Math.max(2, summary.messageCount ?? 2);
+    const messages: QaapAgentMessageDTO[] = [];
+    for (let index = 0; index < messageCount; index++) {
+        const role = index % 2 === 0 ? 'user' as const : 'agent' as const;
+        messages.push({
+            id: `${summary.id}-msg-${index}`,
+            role,
+            content: role === 'user'
+                ? 'Fix the login flow and add tests.'
+                : `Probe agent history block ${index}. `.repeat(12),
+            createdAt: summary.createdAt + index,
+        });
+    }
+    return {
+        id: summary.id,
+        cwd: summary.cwd,
+        agentId: summary.agentId,
+        title: summary.title,
+        status: summary.status,
+        createdAt: summary.createdAt,
+        updatedAt: summary.updatedAt,
+        messages,
+        autoApprove: true,
+    };
 }
 
 export function buildProbeStreamingSummaries(cwd: string): QaapAgentConversationSummaryDTO[] {

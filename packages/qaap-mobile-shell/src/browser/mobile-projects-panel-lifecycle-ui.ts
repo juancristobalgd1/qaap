@@ -192,6 +192,9 @@ export class MobileProjectsPanelLifecycleUi {
             return;
         }
         const elapsed = Math.round(performance.now() - startedAt);
+        if (typeof window !== 'undefined') {
+            window.__qaapWorkHubPerfProbe?.recordWorkHubFirstShowMs(elapsed);
+        }
         if (elapsed > 50) {
             console.debug(`[qaap-mobile-shell] Work Hub first show painted in ${elapsed}ms`);
         }
