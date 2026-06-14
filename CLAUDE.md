@@ -16,6 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Compile one package | `npx lerna run compile --scope @theia/package-name` |
 | Run a single compiled test file | `npx mocha ./packages/core/lib/browser/some-file.spec.js` |
 | Check upstream drift | `node scripts/qaap-drift-check.js` |
+| Create a pull request (fork only) | `scripts/qaap-gh-pr.sh create --title "..." --body "..."` |
+
+**PR target (critical):** never open PRs on `eclipse-theia/theia`. Always use `--repo juancristobalgd1/qaap` or `scripts/qaap-gh-pr.sh`. After clone: `scripts/qaap-ensure-gh-default.sh`.
 
 **Verify sequence after any code change:**
 1. `npm run compile` — TypeScript errors
