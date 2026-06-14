@@ -125,6 +125,13 @@ import {
     type MobileProjectsHomeHubHost,
 } from './mobile-projects-home-hub-ui';
 import {
+    MobileProjectsMissionControlHubUi,
+} from './mobile-projects-mission-control-hub-ui';
+import type {
+    MissionControlLaneFilter,
+    MissionControlSurfaceFilter,
+} from './mobile-work-mission-control';
+import {
     MobileProjectsHubHeaderUi,
     type MobileProjectsHubHeaderHost,
 } from './mobile-projects-hub-header-ui';
@@ -416,6 +423,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected filter: MobileProjectFilter = 'all';
     protected hubView: MobileProjectsHubView = 'tasks';
     protected query = '';
+    protected missionControlExpanded = false;
+    protected missionControlLaneFilter: MissionControlLaneFilter = 'all';
+    protected missionControlSurfaceFilter: MissionControlSurfaceFilter = 'all';
     protected agentApprovalsFetchGeneration = 0;
     /** Project ids whose conversation list is fully expanded (not capped at {@link CONVERSATIONS_COLLAPSED_LIMIT}). */
     protected readonly expandedConversationProjectIds = new Set<string>();
@@ -499,6 +509,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly conversationOpenUi = new MobileProjectsConversationOpenUi(this as unknown as MobileProjectsConversationOpenHost);
     protected readonly diffHubUi = new MobileProjectsDiffHubUi(this as unknown as MobileProjectsDiffHubHost);
     protected readonly homeHubUi = new MobileProjectsHomeHubUi(this as unknown as MobileProjectsHomeHubHost);
+    protected readonly missionControlHubUi = new MobileProjectsMissionControlHubUi(this as unknown as import('./mobile-projects-mission-control-hub-ui').MobileProjectsMissionControlHubHost);
     protected readonly hubHeaderUi = new MobileProjectsHubHeaderUi(this as unknown as MobileProjectsHubHeaderHost);
     protected readonly hubLandingUi = new MobileProjectsHubLandingUi(this as unknown as MobileProjectsHubLandingHost);
     protected readonly hubListChromeUi = new MobileProjectsHubListChromeUi(this as unknown as MobileProjectsHubListChromeHost);
@@ -921,6 +932,18 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected resetHubIncrementalStructure(): void {
         this.hubIncrementalUi.resetStructureFingerprint();
+    }
+
+    protected setMissionControlExpanded(expanded: boolean): void {
+        this.missionControlExpanded = expanded;
+    }
+
+    protected setMissionControlLaneFilter(filter: MissionControlLaneFilter): void {
+        this.missionControlLaneFilter = filter;
+    }
+
+    protected setMissionControlSurfaceFilter(filter: MissionControlSurfaceFilter): void {
+        this.missionControlSurfaceFilter = filter;
     }
 
     protected scheduleRenderList(): void {

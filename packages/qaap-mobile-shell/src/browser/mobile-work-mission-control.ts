@@ -146,6 +146,9 @@ export interface MissionControlRenderOptions {
     readonly showFilters?: boolean;
     readonly laneFilter?: MissionControlLaneFilter;
     readonly surfaceFilter?: MissionControlSurfaceFilter;
+    /** Full-screen mission control on the home hub (shows collapse instead of view-all). */
+    readonly expanded?: boolean;
+    readonly onCollapse?: () => void;
 }
 
 const LANE_FILTER_ORDER: readonly MissionControlLaneFilter[] = ['all', 'needs-you', 'running', 'done'];
@@ -193,7 +196,7 @@ export class MobileWorkMissionControl {
         panel.className = 'theia-mobile-work-hub-home-panel q-card theia-mobile-mission-control';
 
         const needsYou = items.filter(item => item.lane === 'needs-you').length;
-        panel.append(this.createHeader(needsYou, items.length));
+        panel.append(this.createHeader(needsYou, items.length, options));
 
         if (showFilters) {
             panel.append(this.createFilters(items, laneFilter, surfaceFilter));
@@ -227,6 +230,33 @@ export class MobileWorkMissionControl {
             panel.append(this.createLane(lane, laneItems));
         }
         host.append(panel);
+    }
+
+    protected resolveHeaderAction(
+        needsYou: number,
+        total: number,
+        options: MissionControlRenderOptions,
+    ): HTMLElement | undefined {
+        if (options.expanded) {
+            if (!options.onCollapse) {
+                return undefined;
+            }
+            const link = document.createElement('button');
+            link.type = 'button';
+            link.className = 'theia-mobile-work-hub-home-section-action';
+            link.textContent = nls.localize('qaap/workMissionControl/showLess', 'Show less');
+            link.addEventListener('click', () => options.onCollapse?.());
+            return link;
+        }
+        if (total <= 0) {
+            return undefined;
+        }
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.className = 'theia-mobile-work-hub-home-section-action';
+        link.textContent = nls.localize('qaap/workMissionControl/viewAll', 'View all');
+        link.addEventListener('click', () => this.deps.onShowAll());
+        return link;
     }
 
     protected createEmpty(text: string): HTMLElement {
@@ -317,7 +347,11 @@ export class MobileWorkMissionControl {
         return row;
     }
 
-    protected createHeader(needsYou: number, total: number): HTMLElement {
+    protected createHeader(
+        needsYou: number,
+        total: number,
+        options: MissionControlRenderOptions = {},
+    ): HTMLElement {
         const head = document.createElement('div');
         head.className = 'theia-mobile-work-hub-home-section-head theia-mobile-mission-control-head';
 
@@ -338,13 +372,9 @@ export class MobileWorkMissionControl {
             head.append(badge);
         }
 
-        if (total > 0) {
-            const link = document.createElement('button');
-            link.type = 'button';
-            link.className = 'theia-mobile-work-hub-home-section-action';
-            link.textContent = nls.localize('qaap/workMissionControl/viewAll', 'View all');
-            link.addEventListener('click', () => this.deps.onShowAll());
-            head.append(link);
+        const action = this.resolveHeaderAction(needsYou, total, options);
+        if (action) {
+            head.append(action);
         }
         return head;
     }
