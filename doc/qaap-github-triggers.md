@@ -117,6 +117,22 @@ Con secret configurado, un POST sin header `X-Hub-Signature-256` válido → **4
 ## Tests
 
 ```bash
+# Automated tier-1 (compile + drift + unit tests; add --vps --webhook on VPS)
+./scripts/qaap-tier1-verify.sh
+
+# Webhook only (backend must be running)
+./scripts/qaap-github-webhook-smoke.sh
+
 npx lerna run test --scope @theia/qaap-mobile-shell -- --grep qaap-github
 npx lerna run test --scope @theia/qaap-cloud-workspace -- --grep github-pr-evidence
 ```
+
+### Manual checklist (después de `./scripts/qaap-tier1-verify.sh --vps --webhook`)
+
+1. OAuth GitHub en Qaap → **Add repository** para el repo de prueba.
+2. Comentario real `@qaap …` en un issue → ack en GitHub + conversación en Work Hub.
+3. Esperar fin de turno → comentario de evidencia con resumen y link.
+4. Goal loop **Until done** en una tarea → push al cerrar; un solo comment de evidencia al terminal.
+5. F5 tras **Open IDE** → vuelve a Work Hub (no IDE clásico).
+6. Mission Control en ≤767px → scroll táctil en listas largas.
+7. Tab en background → Web Push con proyecto/agente; click abre transcript.
