@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Verify sidebar "New chat" opens VPS task composer (not locked local Coder chat). */
+/** Verify header "New agent" opens VPS task composer (not locked local Coder chat). */
 import { chromium } from 'playwright';
 
 const BASE = 'http://127.0.0.1:3000';
@@ -18,19 +18,14 @@ async function main() {
     await page.waitForSelector('#theia-app-shell', { timeout: 30000 });
     await page.waitForTimeout(2500);
 
-    await page.waitForSelector('.theia-workbench-nav-btn.theia-mod-mobile-sessions-sidebar', { timeout: 15000 });
+    await page.waitForSelector('.theia-mobile-projects-new-chat-btn:not([hidden])', { timeout: 15000 });
     await page.evaluate(() => {
-        const btn = document.querySelector('.theia-workbench-nav-btn.theia-mod-mobile-sessions-sidebar');
+        const btn = document.querySelector('.theia-mobile-projects-new-chat-btn:not([hidden])');
         if (!(btn instanceof HTMLButtonElement)) {
-            throw new Error('Sessions sidebar toggle button not found');
+            throw new Error('Header new-agent button not found');
         }
         btn.click();
     });
-    await page.waitForSelector('.theia-mobile-work-hub-sessions-sidebar.theia-mod-visible', { timeout: 10000 });
-
-    const newChatBtn = page.locator('.theia-mobile-work-hub-sessions-sidebar-nav-item').filter({ hasText: /new chat/i }).first();
-    await newChatBtn.waitFor({ timeout: 5000 });
-    await newChatBtn.click();
     await page.waitForTimeout(1500);
 
     const composer = page.locator('.theia-mobile-projects-sticky-composer-input').first();

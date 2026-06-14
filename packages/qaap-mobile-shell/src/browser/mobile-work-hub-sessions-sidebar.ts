@@ -30,7 +30,6 @@ const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 328;
 
 export interface MobileWorkHubSessionsSidebarDelegate {
     renderSessionList(host: HTMLElement): void;
-    onNewChat(): void;
     onClose(): void;
     storageScope?(): string | undefined;
     onAccountMenu?(anchor: HTMLButtonElement): void;
@@ -129,14 +128,6 @@ export class MobileWorkHubSessionsSidebar {
         nav.className = 'theia-mobile-work-hub-sessions-sidebar-nav';
         nav.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/navLabel', 'Sidebar shortcuts'));
         nav.append(
-            this.createNavButton(
-                'codicon-add',
-                nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
-                () => {
-                    this.hideForMobileOverlay();
-                    this.delegate.onNewChat();
-                },
-            ),
             this.createNavButton(
                 'codicon-bell-dot',
                 nls.localize('qaap/sessionsSidebar/missionControl', 'Agent work to PR'),

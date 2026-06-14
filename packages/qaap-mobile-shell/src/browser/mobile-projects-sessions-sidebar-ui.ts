@@ -126,7 +126,6 @@ export class MobileProjectsSessionsSidebarUi {
                 renderSessionList: host => this.renderWorkHubSessionsSidebarList(host),
                 shouldSkipSessionListRefresh: () => this.shouldSkipSessionsSidebarListRender(),
                 rememberSessionListFingerprint: () => this.rememberSessionsSidebarListFingerprint(),
-                onNewChat: () => { void this.onWorkHubSessionsSidebarNewChat(); },
                 onClose: () => {
                     this.host.cardMenuUi.closeCardMenu();
                 },
