@@ -87,6 +87,7 @@ import {
 } from '../common/qaap-git-review';
 import {
     ensureStickyComposerShellBorderBeam,
+    patchStickyComposerChangesPill,
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
     type StickyComposerActivityStackOptions,
@@ -716,9 +717,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
             return;
         }
         const changesPill = this.buildTranscriptComposerChangesPill(project, summary);
-        const existingPill = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
+        const existingPill = wrap.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-changes-pill-host');
+        const activityOptions = this.buildTranscriptComposerActivityOptions(project, summary);
         if (!changesPill) {
             existingPill?.remove();
+        } else if (existingPill && activityOptions && patchStickyComposerChangesPill(existingPill, activityOptions)) {
+            // Keep the live pill mounted so diff counters can push-animate.
         } else if (existingPill) {
             existingPill.replaceWith(changesPill);
         } else {

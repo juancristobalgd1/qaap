@@ -15,6 +15,7 @@ import {
     ChatInputProductChromeContext,
     ChatInputProductContextElement,
 } from '@theia/ai-chat-ui/lib/browser/chat-input-product-chrome';
+import { QaapShimmeringText } from './qaap-shimmering-text';
 
 interface QuickCommand {
     name: string;
@@ -90,7 +91,7 @@ const ChatInputStatusBar: React.FunctionComponent<{
     const statusText = !isEnabled
         ? nls.localize('theia/ai/chat-ui/inputStatusDisabled', 'AI unavailable')
         : pending
-            ? nls.localize('theia/ai/chat-ui/inputStatusWaiting', 'Waiting for response')
+            ? undefined
             : nls.localize('theia/ai/chat-ui/inputStatusReady', 'Ready');
     const statusDetail = !isEnabled
         ? nls.localize('theia/ai/chat-ui/inputStatusDisabledDetail', 'Enable AI features before sending.')
@@ -107,7 +108,9 @@ const ChatInputStatusBar: React.FunctionComponent<{
         <div className={`theia-ChatInput-StatusBar${pending ? ' pending' : ''}${!isEnabled ? ' disabled' : ''}`}>
             <div className="theia-ChatInput-StatusPrimary">
                 <span className={`codicon ${pending ? 'codicon-loading codicon-modifier-spin' : !isEnabled ? 'codicon-warning' : 'codicon-pass'}`} />
-                <span className="theia-ChatInput-StatusText">{statusText}</span>
+                {pending
+                    ? <QaapShimmeringText cycle className="theia-ChatInput-StatusText" />
+                    : <span className="theia-ChatInput-StatusText">{statusText}</span>}
                 <span className="theia-ChatInput-StatusDetail">{statusDetail}</span>
             </div>
             <div className="theia-ChatInput-StatusPills">

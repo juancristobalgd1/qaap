@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { mountQaapCounterPush, resolveQaapCounterPushHandle, type QaapCounterPushHandle } from './qaap-counter-push-dom';
 import type { TranscriptFollowUpEntry } from '../common/qaap-transcript-follow-up-queue';
 import type { QaapGitCommitWorkflowAction } from '../common/qaap-git-review';
 
@@ -73,6 +74,42 @@ export function renderStickyComposerChangesPill(options: StickyComposerActivityS
     host.className = 'theia-mobile-sticky-composer-changes-pill-host';
     host.append(renderStickyComposerChangedFilesSection(options));
     return host;
+}
+
+/** Patch diff stats in place so counter push animations can run between SSE refreshes. */
+export function patchStickyComposerChangesPill(
+    host: HTMLElement,
+    options: StickyComposerActivityStackOptions,
+): boolean {
+    const pill = host.querySelector<HTMLElement>('.theia-mobile-sticky-composer-changes-pill');
+    if (!pill) {
+        return false;
+    }
+    const hasCommit = !!host.querySelector('.theia-mobile-sticky-composer-commit-group');
+    const wantsCommit = !!options.onCommitAction;
+    if (hasCommit !== wantsCommit) {
+        return false;
+    }
+    const hasStop = !!host.querySelector('.theia-mobile-sticky-composer-activity-stop');
+    const wantsStop = !!(options.agentWorking && options.onStop);
+    if (hasStop !== wantsStop) {
+        return false;
+    }
+    const files = options.changedFiles ?? [];
+    const stats = options.diffStats;
+    const fileCount = files.length > 0
+        ? files.length
+        : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
+    pill.setAttribute('aria-label', buildChangesPillAriaLabel(fileCount, stats));
+    syncDiffStatsInline(pill, stats, true);
+    const commitGroup = host.querySelector<HTMLElement>('.theia-mobile-sticky-composer-commit-group');
+    if (commitGroup) {
+        commitGroup.classList.toggle('theia-mod-busy', !!options.commitBusy);
+        commitGroup.querySelectorAll('button').forEach(button => {
+            button.disabled = !!options.commitBusy;
+        });
+    }
+    return true;
 }
 
 export function renderStickyComposerActivityStack(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
@@ -186,28 +223,66 @@ function renderQueueItem(
     return row;
 }
 
-function appendDiffStatsInline(
+const QAAP_DIFF_STAT_ADDED_ATTR = 'data-qaap-diff-stat-added';
+const QAAP_DIFF_STAT_REMOVED_ATTR = 'data-qaap-diff-stat-removed';
+
+function syncDiffStatsInline(
     host: HTMLElement,
     stats: { readonly added?: number; readonly removed?: number } | undefined,
+    animate: boolean,
 ): void {
-    if (!stats || ((stats.added ?? 0) <= 0 && (stats.removed ?? 0) <= 0)) {
+    const added = stats?.added ?? 0;
+    const removed = stats?.removed ?? 0;
+    if (added <= 0 && removed <= 0) {
+        host.querySelector('.theia-mobile-sticky-composer-activity-inline-stats')?.remove();
         return;
     }
-    const statsInline = document.createElement('span');
-    statsInline.className = 'theia-mobile-sticky-composer-activity-inline-stats';
-    if ((stats.added ?? 0) > 0) {
-        const added = document.createElement('span');
-        added.className = 'theia-mobile-agent-diff-stat theia-mod-added';
-        added.textContent = `+${stats.added}`;
-        statsInline.append(added);
+    let statsInline = host.querySelector<HTMLElement>('.theia-mobile-sticky-composer-activity-inline-stats');
+    if (!statsInline) {
+        statsInline = document.createElement('span');
+        statsInline.className = 'theia-mobile-sticky-composer-activity-inline-stats';
+        host.append(statsInline);
     }
-    if ((stats.removed ?? 0) > 0) {
-        const removed = document.createElement('span');
-        removed.className = 'theia-mobile-agent-diff-stat theia-mod-removed';
-        removed.textContent = `-${stats.removed}`;
-        statsInline.append(removed);
+    syncAnimatedDiffStatBadge(statsInline, QAAP_DIFF_STAT_ADDED_ATTR, 'added', added, value => `+${value}`, animate);
+    syncAnimatedDiffStatBadge(statsInline, QAAP_DIFF_STAT_REMOVED_ATTR, 'removed', removed, value => `-${value}`, animate);
+    if (!statsInline.querySelector(`[${QAAP_DIFF_STAT_ADDED_ATTR}], [${QAAP_DIFF_STAT_REMOVED_ATTR}]`)) {
+        statsInline.remove();
     }
-    host.append(statsInline);
+}
+
+function syncAnimatedDiffStatBadge(
+    statsInline: HTMLElement,
+    attr: string,
+    kind: 'added' | 'removed',
+    value: number,
+    format: (next: number) => string,
+    animate: boolean,
+): void {
+    let badge = statsInline.querySelector<HTMLElement>(`[${attr}]`);
+    if (value <= 0) {
+        if (badge) {
+            resolveQaapCounterPushHandle(badge)?.dispose();
+            badge.remove();
+        }
+        return;
+    }
+    if (!badge) {
+        const counter = mountQaapCounterPush({
+            value,
+            format,
+            className: `theia-mobile-agent-diff-stat theia-mod-${kind} qaap-counter-push-stat`,
+        });
+        badge = counter.element;
+        badge.setAttribute(attr, 'true');
+        statsInline.append(badge);
+        return;
+    }
+    const handle: QaapCounterPushHandle | undefined = resolveQaapCounterPushHandle(badge);
+    if (handle) {
+        handle.setValue(value, { animate });
+        return;
+    }
+    badge.textContent = format(value);
 }
 
 function buildChangesPillAriaLabel(
@@ -258,7 +333,7 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
         label.className = 'theia-mobile-sticky-composer-changes-pill-label';
         label.textContent = nls.localize('qaap/diff/changes', 'Changes');
         pill.append(label);
-        appendDiffStatsInline(pill, stats);
+        syncDiffStatsInline(pill, stats, false);
         pill.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();

@@ -13,6 +13,7 @@ import { isTranscriptAgentTailStreaming } from '../common/qaap-transcript-turn-s
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
+import { disposeQaapShimmeringTextHost } from './qaap-shimmering-text-dom';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import {
     attachTranscriptRowDeferObserver,
@@ -511,10 +512,20 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     }
 
     removeTranscriptActivityRow(messageHost: HTMLElement): void {
-        messageHost.querySelector(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)?.remove();
+        const row = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        if (row) {
+            disposeQaapShimmeringTextHost(row);
+            row.remove();
+        }
     }
 
     syncTranscriptActivityRow(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+        const existing = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        if (existing && conv.status === 'streaming' && conv.messages.at(-1)?.role === 'user') {
+            if (this.artifactsUi.patchTranscriptStreamingActivityRow(existing, conv)) {
+                return;
+            }
+        }
         this.removeTranscriptActivityRow(messageHost);
         messageHost.querySelectorAll('.theia-mod-streaming').forEach(element => {
             element.classList.remove('theia-mod-streaming');

@@ -77,6 +77,7 @@ import { QaapBackgroundContextProvider } from './qaap-background-context-provide
 import { QaapQaiqBashToolRenderer } from './qaap-qaiq-bash-tool-renderer';
 import { QaapQaiqGenericToolRenderer } from './qaap-qaiq-generic-tool-renderer';
 import { QaapMarkdownPartRenderer } from './qaap-markdown-part-renderer';
+import { QaapDelegationToolRenderer } from './qaap-delegation-tool-renderer';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
@@ -191,6 +192,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapMarkdownPartRenderer).toSelf().inSingletonScope();
     bind(ChatResponsePartRenderer).toService(QaapMarkdownPartRenderer);
+    bind(QaapDelegationToolRenderer).toSelf().inSingletonScope();
+    bind(ChatResponsePartRenderer).toService(QaapDelegationToolRenderer);
 
     bind(QaapProjectBootstrapContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapProjectBootstrapContribution);

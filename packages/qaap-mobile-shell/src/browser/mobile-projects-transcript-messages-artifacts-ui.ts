@@ -38,6 +38,8 @@ import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-project
 import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
+import { shouldCycleQaapAgentLoadingPhrases } from '../common/qaap-agent-loading-phrases';
+import { bindQaapShimmeringTextHandle, mountQaapShimmeringText, resolveQaapShimmeringTextHandle } from './qaap-shimmering-text-dom';
 
 export class MobileProjectsTranscriptMessagesArtifactsUi {
     constructor(
@@ -451,7 +453,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     createTranscriptPlanningLine(): HTMLElement {
         const line = document.createElement('div');
         line.className = 'theia-mobile-agent-planning-line';
-        line.textContent = nls.localize('qaap/mobileProjects/transcriptActivityPlanning', 'Planning next moves');
+        const shimmer = mountQaapShimmeringText({
+            text: nls.localize('qaap/mobileProjects/transcriptActivityPlanning', 'Planning next moves'),
+            cycle: true,
+        });
+        line.append(shimmer.element);
         return line;
     }
 
@@ -1092,25 +1098,44 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent theia-mod-streaming theia-mobile-agent-activity';
         const state = this.resolveTranscriptStreamingActivity(conv);
 
-        // A single, live "thinking/acting" line — minimalist, with an animated dot and a shimmering
-        // label that reflects what the agent is doing right now.
         const line = document.createElement('div');
         line.className = `theia-mobile-agent-stream-line theia-mod-${state.kind}`;
         const dot = document.createElement('span');
         dot.className = 'theia-mobile-agent-stream-dot';
         dot.setAttribute('aria-hidden', 'true');
-        const label = document.createElement('span');
-        label.className = 'theia-mobile-agent-stream-label';
-        label.textContent = state.kind === 'thinking'
+        const title = state.kind === 'thinking'
             ? state.title
             : `${state.title}…`;
-        line.append(dot, label);
+        const shimmer = mountQaapShimmeringText({
+            text: title,
+            cycle: shouldCycleQaapAgentLoadingPhrases(state.kind),
+        });
+        bindQaapShimmeringTextHandle(row, shimmer);
+        line.append(dot, shimmer.element);
         const meta = this.createTranscriptStreamMeta(conv);
         if (meta) {
             line.append(meta);
         }
         row.append(line);
         return row;
+    }
+
+    patchTranscriptStreamingActivityRow(row: HTMLElement, conv: QaapAgentConversationDTO): boolean {
+        const state = this.resolveTranscriptStreamingActivity(conv);
+        const line = row.querySelector('.theia-mobile-agent-stream-line');
+        if (!(line instanceof HTMLElement)) {
+            return false;
+        }
+        line.className = `theia-mobile-agent-stream-line theia-mod-${state.kind}`;
+        const title = state.kind === 'thinking'
+            ? state.title
+            : `${state.title}…`;
+        const handle = resolveQaapShimmeringTextHandle(row);
+        if (!handle) {
+            return false;
+        }
+        handle.setCycleEnabled(shouldCycleQaapAgentLoadingPhrases(state.kind), title);
+        return true;
     }
 
     /**

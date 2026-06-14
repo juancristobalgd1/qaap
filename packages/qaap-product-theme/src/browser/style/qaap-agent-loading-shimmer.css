@@ -1,0 +1,90 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+.qaap-shimmering-text {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  background: linear-gradient(
+    100deg,
+    var(--theia-descriptionForeground) 0%,
+    var(--theia-foreground) 50%,
+    var(--theia-descriptionForeground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-shimmering-text-gradient 2.1s linear infinite;
+}
+
+.qaap-shimmering-text-phrase {
+  display: inline-block;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.qaap-shimmering-text-phrase.qaap-mod-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.qaap-shimmering-text-phrase.qaap-mod-hidden {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+@keyframes qaap-shimmering-text-gradient {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.theia-ChatContentInProgress.qaap-mod-shimmer {
+  color: transparent;
+  white-space: nowrap;
+}
+
+.theia-ChatContentInProgress.qaap-mod-shimmer::after {
+  content: none;
+  animation: none;
+}
+
+.theia-ChatInput-StatusBar.pending .theia-ChatInput-StatusText {
+  background: linear-gradient(
+    100deg,
+    var(--theia-descriptionForeground) 0%,
+    var(--theia-foreground) 50%,
+    var(--theia-descriptionForeground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-shimmering-text-gradient 2.1s linear infinite;
+}
+
+.delegation-status .qaap-shimmering-text,
+.delegation-response-placeholder .theia-ChatContentInProgress.qaap-mod-shimmer {
+  max-width: min(100%, 36ch);
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qaap-shimmering-text,
+  .theia-ChatInput-StatusBar.pending .theia-ChatInput-StatusText {
+    animation: none;
+    -webkit-text-fill-color: var(--theia-descriptionForeground);
+    color: var(--theia-descriptionForeground);
+    background: none;
+  }
+
+  .qaap-shimmering-text-phrase {
+    transition: none;
+  }
+}

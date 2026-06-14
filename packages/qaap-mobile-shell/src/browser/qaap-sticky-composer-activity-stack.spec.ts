@@ -7,6 +7,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
+    patchStickyComposerChangesPill,
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
     type StickyComposerChangedFileView,
@@ -44,8 +45,8 @@ describe('qaap-sticky-composer-activity-stack', () => {
             const pill = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-changes-pill');
             expect(pill).to.exist;
             expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-label')?.textContent).to.equal('Changes');
-            expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+5');
-            expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('-1');
+            expect(pill!.querySelector(`[data-qaap-diff-stat-added] .qaap-counter-push-number`)?.textContent).to.equal('+5');
+            expect(pill!.querySelector(`[data-qaap-diff-stat-removed] .qaap-counter-push-number`)?.textContent).to.equal('-1');
             expect(host!.querySelector('.theia-mobile-sticky-composer-changed-file-row')).to.equal(null);
 
             pill!.click();
@@ -134,6 +135,23 @@ describe('qaap-sticky-composer-activity-stack', () => {
             document.body.append(host!);
 
             expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
+        });
+
+        it('patches diff stats in place for counter push animation', async () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 5, removed: 1 },
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+
+            const patched = patchStickyComposerChangesPill(host!, {
+                diffStats: { added: 12, removed: 3 },
+                onReview: () => undefined,
+            });
+            expect(patched).to.equal(true);
+            await new Promise(resolve => window.setTimeout(resolve, 320));
+            expect(host!.querySelector(`[data-qaap-diff-stat-added] .qaap-counter-push-number`)?.textContent).to.equal('+12');
+            expect(host!.querySelector(`[data-qaap-diff-stat-removed] .qaap-counter-push-number`)?.textContent).to.equal('-3');
         });
     });
 
