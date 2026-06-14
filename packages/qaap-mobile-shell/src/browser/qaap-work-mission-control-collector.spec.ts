@@ -97,4 +97,27 @@ describe('collectMissionControlItems', () => {
         expect(items).to.have.length(1);
         expect(items[0]?.conversationId).to.equal('c-match');
     });
+
+    it('surfaces quota failures in needs-you lane with localized preview', () => {
+        const items = collectMissionControlItems({
+            projects: [project],
+            conversationsForProject: () => [{
+                id: 'c-quota',
+                cwd: '/repo',
+                agentId: 'qaiq',
+                title: 'Sidebar perf',
+                status: 'failed',
+                createdAt: 1,
+                updatedAt: 70,
+                messageCount: 2,
+                lastMessagePreview: 'insufficient_quota: billing hard limit',
+            }],
+            isUnread: () => false,
+            resolveAgentLabel: agentId => `@${agentId}`,
+        });
+        const item = items.find(entry => entry.conversationId === 'c-quota');
+        expect(item?.lane).to.equal('needs-you');
+        expect(item?.failureKind).to.equal('quota');
+        expect(item?.preview).to.include('credit');
+    });
 });

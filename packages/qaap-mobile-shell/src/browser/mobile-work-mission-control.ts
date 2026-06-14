@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import type { QaapAgentFailureKind } from '../common/qaap-agent-failure-message';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 
 /**
@@ -43,6 +44,8 @@ export interface MissionControlItem {
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
     readonly hasPullRequest: boolean;
+    /** Classified agent/API failure when the conversation last turn failed. */
+    readonly failureKind?: QaapAgentFailureKind;
 }
 
 /** Single-axis classification used by the "Chats / Tasks / PRs" filter. */
@@ -411,6 +414,9 @@ export class MobileWorkMissionControl {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `theia-mobile-work-hub-home-row theia-mobile-mission-control-row theia-mod-${item.lane}`;
+        if (item.failureKind) {
+            btn.classList.add(`theia-mod-failure-${item.failureKind}`);
+        }
         btn.style.setProperty('--qaap-mobile-project-accent', item.projectColor);
         btn.addEventListener('click', () => this.deps.onOpenItem(item));
 
@@ -429,6 +435,8 @@ export class MobileWorkMissionControl {
         titleRow.append(title);
         if (item.lane === 'running') {
             titleRow.append(this.createProgressChip(item));
+        } else if (item.failureKind) {
+            titleRow.append(this.createFailureChip(item.failureKind));
         }
 
         const meta = document.createElement('span');
@@ -485,6 +493,28 @@ export class MobileWorkMissionControl {
             );
         } else {
             chip.textContent = nls.localize('qaap/workMissionControl/working', 'working…');
+        }
+        return chip;
+    }
+
+    protected createFailureChip(kind: QaapAgentFailureKind): HTMLElement {
+        const chip = document.createElement('span');
+        chip.className = `theia-mobile-mission-control-failure-chip theia-mod-${kind}`;
+        switch (kind) {
+            case 'quota':
+                chip.textContent = nls.localize('qaap/workMissionControl/quotaChip', 'Credits');
+                break;
+            case 'rate_limit':
+                chip.textContent = nls.localize('qaap/workMissionControl/rateLimitChip', 'Rate limit');
+                break;
+            case 'model_unavailable':
+                chip.textContent = nls.localize('qaap/workMissionControl/modelChip', 'Model');
+                break;
+            case 'auth':
+                chip.textContent = nls.localize('qaap/workMissionControl/authChip', 'Auth');
+                break;
+            default:
+                chip.textContent = nls.localize('qaap/workMissionControl/failedChip', 'Failed');
         }
         return chip;
     }

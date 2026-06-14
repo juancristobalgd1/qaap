@@ -13,6 +13,11 @@ import {
 } from './mobile-projects-hub-incremental-ui';
 import { buildWorkHubInboxStructureFingerprint, buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
 import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import {
+    QAAP_TEAM_MEMBER_ID_ATTR,
+    QAAP_TEAM_ROW_FP_ATTR,
+} from '../common/qaap-work-hub-team-fingerprint';
+import { MobileProjectsTeamHubUi } from './mobile-projects-team-hub-ui';
 
 describe('MobileProjectsHubIncrementalUi', () => {
 
@@ -127,6 +132,8 @@ describe('MobileProjectsHubIncrementalUi', () => {
             collectReviewGroups: () => [],
             updateTasksAttentionChrome: () => undefined,
             renderSubtitle: () => undefined,
+            getFilteredTeamHubState: () => ({ members: [], filteredApprovals: [] }),
+            ensureOverlayUi: () => ({ teamHub: { patchSections: () => true } }),
             conversationIndexUi: {
                 activeInfoForProject: () => ({ running: 1, needsInput: 0, completed: 0, activeCount: 1 }),
                 summaryToTaskView: (summary: { id: string; title: string; status: string; createdAt: number; cwd: string }) => ({
@@ -157,6 +164,71 @@ describe('MobileProjectsHubIncrementalUi', () => {
         expect(createCalls).to.equal(1);
         expect(list.querySelectorAll('.theia-mobile-projects-task-row')).to.have.length(2);
         expect(list.querySelector(`[${QAAP_INBOX_ROW_ID_ATTR}="conv-a"]`)?.getAttribute(QAAP_INBOX_ROW_FP_ATTR)).to.equal('new-a');
+
+        scroll.remove();
+    });
+
+    it('patches embedded team rows without rebuilding the tasks hub root', () => {
+        const scroll = document.createElement('div');
+        const root = document.createElement('div');
+        root.className = 'theia-mobile-tasks-hub-root';
+        const teamRoot = document.createElement('div');
+        teamRoot.className = 'theia-mobile-hub-team-root theia-mod-embedded-in-tasks';
+        const teamUi = new MobileProjectsTeamHubUi({
+            resolveAgentLabel: (agentId: string) => `@${agentId}`,
+            onMemberClick: () => undefined,
+        });
+        const members = [{
+            id: 'leader-1',
+            kind: 'conversation' as const,
+            agentId: 'qaiq',
+            title: 'Refactor inbox',
+            state: 'streaming',
+            cwd: '/repo',
+            projectId: 'p1',
+            projectName: 'qaap-mobile-shell',
+            createdAt: 1,
+            updatedAt: 100,
+            childCount: 0,
+        }];
+        teamUi.renderSections(teamRoot, members, { embedded: true });
+        root.append(teamRoot);
+        scroll.append(root);
+        document.body.append(scroll);
+
+        teamRoot.querySelector<HTMLElement>(
+            `.theia-mobile-hub-team-row[${QAAP_TEAM_MEMBER_ID_ATTR}="leader-1"]`,
+        )!.setAttribute(QAAP_TEAM_ROW_FP_ATTR, 'stale');
+
+        const ui = new MobileProjectsHubIncrementalUi({
+            query: '',
+            scroll,
+            transcriptOpenSummaryId: undefined,
+            justAddedTaskId: undefined,
+            hubView: 'tasks',
+            tasksHubSurface: 'task',
+            shouldUseAgentsHubLanding: () => false,
+            projectsForCurrentHubList: () => [],
+            collectTasksInboxGroups: () => [],
+            collectChatHubGroups: () => [],
+            collectReviewGroups: () => [],
+            updateTasksAttentionChrome: () => undefined,
+            renderSubtitle: () => undefined,
+            getFilteredTeamHubState: () => ({
+                members: [{ ...members[0], activityLabel: 'Patching rows' }],
+                filteredApprovals: [],
+            }),
+            ensureOverlayUi: () => ({ teamHub: teamUi }),
+            conversationIndexUi: {} as never,
+            projectRowsUi: {} as never,
+            createInboxProjectGroup: () => document.createElement('section'),
+        });
+
+        expect(ui.tryPatchBeforeRebuild()).to.equal(true);
+        const patchedRow = teamRoot.querySelector<HTMLElement>(
+            `.theia-mobile-hub-team-row[${QAAP_TEAM_MEMBER_ID_ATTR}="leader-1"]`,
+        );
+        expect(patchedRow?.getAttribute(QAAP_TEAM_ROW_FP_ATTR)).to.not.equal('stale');
 
         scroll.remove();
     });

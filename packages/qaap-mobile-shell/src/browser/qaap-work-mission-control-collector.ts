@@ -10,6 +10,7 @@ import {
     classifyMissionControlSurface,
     type MissionControlItem,
 } from './mobile-work-mission-control';
+import { resolveMissionControlFailure } from './qaap-work-mission-control-failure';
 
 export interface CollectMissionControlItemsInput {
     readonly projects: readonly MobileProjectEntry[];
@@ -33,6 +34,7 @@ export function collectMissionControlItems(input: CollectMissionControlItemsInpu
                 continue;
             }
             const unread = input.isUnread(summary);
+            const failure = resolveMissionControlFailure(summary);
             items.push({
                 key: `${project.id}:${summary.id}`,
                 conversationId: summary.id,
@@ -40,7 +42,7 @@ export function collectMissionControlItems(input: CollectMissionControlItemsInpu
                 projectName: project.name,
                 projectColor: project.color,
                 title: summary.title?.trim() || 'Untitled',
-                preview: summary.lastMessagePreview,
+                preview: failure?.preview ?? summary.lastMessagePreview,
                 lane: classifyMissionControlLane(summary, unread),
                 surface: classifyMissionControlSurface(summary),
                 agentLabel: input.resolveAgentLabel(summary.agentId),
@@ -50,6 +52,7 @@ export function collectMissionControlItems(input: CollectMissionControlItemsInpu
                 linesAdded: summary.linesAdded,
                 linesRemoved: summary.linesRemoved,
                 hasPullRequest: !!summary.linkedPullRequest?.number,
+                failureKind: failure?.kind,
             });
         }
     }

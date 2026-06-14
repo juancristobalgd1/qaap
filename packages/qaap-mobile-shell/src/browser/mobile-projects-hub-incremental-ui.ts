@@ -10,7 +10,9 @@ import {
     type WorkHubInboxProjectGroupFingerprintInput,
 } from '../common/qaap-work-hub-inbox-fingerprint';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
+import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
 import type { MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
+import type { WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
 
 export const QAAP_INBOX_STRUCTURE_FP_ATTR = 'data-qaap-inbox-structure-fp';
@@ -48,6 +50,23 @@ export interface MobileProjectsHubIncrementalPatchHost extends MobileProjectsHub
     projectsForCurrentHubList(): MobileProjectEntry[];
     updateTasksAttentionChrome(): void;
     renderSubtitle(): void;
+    getFilteredTeamHubState(): {
+        members: WorkHubTeamMember[];
+        filteredApprovals: WorkHubApprovalItem[];
+    };
+    ensureOverlayUi(): {
+        teamHub: {
+            patchSections(
+                host: HTMLElement,
+                members: readonly WorkHubTeamMember[],
+                options: {
+                    searchQuery: string;
+                    approvals: readonly WorkHubApprovalItem[];
+                    embedded: boolean;
+                },
+            ): boolean;
+        };
+    };
 }
 
 /** Incremental DOM patcher for Work Hub inbox lists — avoids scroll.replaceChildren on SSE ticks. */
@@ -88,8 +107,14 @@ export class MobileProjectsHubIncrementalUi {
             }
             const groups = this.host.collectTasksInboxGroups(projects);
             const inboxRoot = this.findInboxRoot('tasks-inbox');
-            const teamEmbedded = !!this.host.scroll.querySelector('.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks');
-            if (this.tryPatchInbox('tasks-inbox', inboxRoot, groups, { teamEmbedded })) {
+            const teamRoot = this.host.scroll.querySelector<HTMLElement>(
+                '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks',
+            );
+            const teamEmbedded = !!teamRoot;
+            const hasInbox = groups.length > 0 || !!inboxRoot;
+            const inboxPatched = !hasInbox || this.tryPatchInbox('tasks-inbox', inboxRoot, groups, { teamEmbedded });
+            const teamPatched = !teamEmbedded || this.tryPatchTeamSection(teamRoot!);
+            if (inboxPatched && teamPatched && (hasInbox || teamEmbedded)) {
                 this.host.updateTasksAttentionChrome();
                 this.host.renderSubtitle();
                 return true;
@@ -202,6 +227,15 @@ export class MobileProjectsHubIncrementalUi {
         }
         this.lastStructureFingerprint = structure;
         return true;
+    }
+
+    tryPatchTeamSection(teamRoot: HTMLElement): boolean {
+        const { members, filteredApprovals } = this.host.getFilteredTeamHubState();
+        return this.host.ensureOverlayUi().teamHub.patchSections(teamRoot, members, {
+            searchQuery: this.host.query,
+            approvals: filteredApprovals,
+            embedded: true,
+        });
     }
 
     rememberRenderedStructure(
