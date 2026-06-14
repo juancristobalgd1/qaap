@@ -36,6 +36,7 @@ import {
 import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
 import { MobileProjectsService } from './mobile-projects-service';
 import { isAgentsHubExecutionSurfacePainted } from '../common/qaap-agents-hub-landing';
+import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
@@ -505,6 +506,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly projectDetailUi = new MobileProjectsProjectDetailUi(this as unknown as MobileProjectsProjectDetailHost);
     protected readonly projectNavigationUi = new MobileProjectsProjectNavigationUi(this as unknown as MobileProjectsProjectNavigationHost);
     protected readonly renderListUi = new MobileProjectsRenderListUi(this as unknown as MobileProjectsRenderListHost);
+    /** Coalesces bursty hub list rebuilds from WS/SSE into one paint per animation frame. */
+    protected readonly hubListRenderScheduler = new QaapChatViewStreamUpdateScheduler(
+        () => this.renderListUi.renderList(),
+        () => 0,
+    );
     protected readonly repoFiltersUi = new MobileProjectsRepoFiltersUi(this as unknown as MobileProjectsRepoFiltersHost);
     protected readonly repoLifecycleUi = new MobileProjectsRepoLifecycleUi(this as unknown as MobileProjectsRepoLifecycleHost);
     protected readonly subtitleUi = new MobileProjectsSubtitleUi(this as unknown as MobileProjectsSubtitleHost);
@@ -802,6 +808,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     dispose(): void {
+        this.hubListRenderScheduler.dispose();
         this.panelLifecycleUi.dispose();
     }
 
@@ -900,6 +907,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected renderList(): void {
         this.renderListUi.renderList();
+    }
+
+    protected scheduleRenderList(): void {
+        this.hubListRenderScheduler.schedule();
+    }
+
+    protected flushScheduledRenderList(): void {
+        this.hubListRenderScheduler.flushNow();
     }
 
     /** FAB opens "new repository"; hide while a repo row is expanded (conversations + composer). */

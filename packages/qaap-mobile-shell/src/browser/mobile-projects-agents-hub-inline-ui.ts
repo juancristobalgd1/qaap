@@ -51,7 +51,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptSheet: HTMLElement | undefined;
     transcriptTabStrip: HTMLElement | undefined;
-    sessionsSidebar: { isVisible(): boolean; refreshList(): void } | undefined;
+    sessionsSidebar: { isVisible(): boolean; refreshList(options?: { force?: boolean }): void; scheduleRefreshList(): void } | undefined;
     transcriptLastStatus: QaapAgentConversationSummaryDTO['status'] | undefined;
     transcriptLastFingerprint: string | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
@@ -119,6 +119,9 @@ export class MobileProjectsAgentsHubInlineUi {
 
     /** SSE ticks while a transcript is open should not rebuild the whole Work Hub list. */
     shouldSkipFullRenderListOnConversationTick(): boolean {
+        if (this.host.transcriptSheet && this.host.transcriptOpenSummaryId) {
+            return true;
+        }
         return this.host.hubView === 'tasks'
             && this.shouldUseAgentsHubLanding()
             && !!this.host.transcriptOpenSummaryId
@@ -127,7 +130,7 @@ export class MobileProjectsAgentsHubInlineUi {
 
     refreshWorkHubConversationChrome(): void {
         if (this.host.sessionsSidebar?.isVisible()) {
-            this.host.sessionsSidebar.refreshList();
+            this.host.sessionsSidebar.scheduleRefreshList();
         }
         const project = this.resolveAgentsHubShellProject();
         const summary = this.host.transcriptOpenSummary;
