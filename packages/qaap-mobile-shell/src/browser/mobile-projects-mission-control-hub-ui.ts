@@ -16,6 +16,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 export interface MobileProjectsMissionControlHubHost {
     projects: MobileProjectEntry[];
     query: string;
+    scroll: HTMLElement;
     missionControlExpanded: boolean;
     missionControlLaneFilter: MissionControlLaneFilter;
     missionControlSurfaceFilter: MissionControlSurfaceFilter;
@@ -79,12 +80,43 @@ export class MobileProjectsMissionControlHubUi {
             laneFilter: this.host.missionControlLaneFilter,
             surfaceFilter: this.host.missionControlSurfaceFilter,
             expanded,
+            query: this.host.query,
             onCollapse: expanded ? () => {
                 this.host.setMissionControlExpanded(false);
                 this.host.renderList();
             } : undefined,
         });
         host.append(panelHost);
+    }
+
+    /**
+     * Attempt in-place mission-control row patches before {@link HTMLElement.replaceChildren} on the hub scroll host.
+     */
+    tryPatchBeforeRebuild(): boolean {
+        if (!this.isEnabled()) {
+            return false;
+        }
+        const panel = this.findMissionControlPanel();
+        if (!panel) {
+            return false;
+        }
+        const items = this.collectItems();
+        const expanded = this.host.missionControlExpanded;
+        const patched = this.missionControl.patchRows(panel, items, {
+            showFilters: expanded,
+            laneFilter: this.host.missionControlLaneFilter,
+            surfaceFilter: this.host.missionControlSurfaceFilter,
+            expanded,
+            query: this.host.query,
+        });
+        return patched;
+    }
+
+    protected findMissionControlPanel(): HTMLElement | undefined {
+        const host = this.host.scroll.querySelector<HTMLElement>(
+            '.theia-mobile-mission-control-host, .theia-mobile-mission-control-preview',
+        );
+        return host?.querySelector<HTMLElement>('.theia-mobile-mission-control') ?? undefined;
     }
 
     protected async onOpenItem(item: MissionControlItem): Promise<void> {

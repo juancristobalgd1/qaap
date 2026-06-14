@@ -60,10 +60,16 @@ export class MobileProjectsRenderListUi {
         this.host.projectDetailSurfaceTargets = undefined;
         this.host.projectDetailTabStrip = undefined;
         if (!this.host.shouldPreserveAgentsHubInlineTranscriptShell()) {
-            if (!this.host.tryPatchHubListBeforeRebuild()) {
-                this.host.resetHubIncrementalStructure();
-                this.host.scroll.replaceChildren();
+            if (this.host.tryPatchHubListBeforeRebuild()) {
+                this.host.updateNewFabVisibility();
+                this.host.syncLandingHubListChrome();
+                if (this.host.homeMode) {
+                    this.host.stickyComposerRenderUi.renderStickyComposer();
+                }
+                return;
             }
+            this.host.resetHubIncrementalStructure();
+            this.host.scroll.replaceChildren();
         }
         try {
             if (this.host.hubView === 'diff') {

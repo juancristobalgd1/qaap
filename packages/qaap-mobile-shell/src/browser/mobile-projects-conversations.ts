@@ -20,6 +20,7 @@ import {
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
 } from '../common/qaap-agent-conversation-client';
+import { isQaapWorkHubPerfProbeEnabled } from '../common/qaap-work-hub-perf-probe';
 import {
     QaapConversationStreamMetricsCollector,
     countCompressedWireFields,
@@ -144,6 +145,31 @@ export class MobileProjectsConversations {
 
     /** E2E perf probe: simulate one live conversation tick without network I/O. */
     perfProbeFireDidChange(): void {
+        this.onDidChangeEmitter.fire();
+    }
+
+    /** E2E perf probe: seed synthetic summaries for multi-agent hub scenarios. */
+    perfProbeSeedSummaries(cwd: string, summaries: readonly QaapAgentConversationSummaryDTO[]): void {
+        if (!isQaapWorkHubPerfProbeEnabled()) {
+            return;
+        }
+        this.byCwd.set(cwd, sortConversations([...summaries]));
+    }
+
+    /** E2E perf probe: bump streaming turn progress and emit one change event. */
+    perfProbeTickStreamingSummaries(cwd: string): void {
+        if (!isQaapWorkHubPerfProbeEnabled()) {
+            return;
+        }
+        const list = this.byCwd.get(cwd) ?? [];
+        const next = list.map(summary => summary.status === 'streaming'
+            ? {
+                ...summary,
+                turnProgressCurrent: (summary.turnProgressCurrent ?? 0) + 1,
+                updatedAt: summary.updatedAt + 1,
+            }
+            : summary);
+        this.byCwd.set(cwd, sortConversations(next));
         this.onDidChangeEmitter.fire();
     }
 

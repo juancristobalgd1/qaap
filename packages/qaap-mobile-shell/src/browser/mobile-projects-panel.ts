@@ -927,6 +927,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected tryPatchHubListBeforeRebuild(): boolean {
+        if (this.hubQueryUi.isHomeHubView() && this.missionControlHubUi.tryPatchBeforeRebuild()) {
+            this.subtitleUi.renderSubtitle();
+            return true;
+        }
         return this.hubIncrementalUi.tryPatchBeforeRebuild();
     }
 
@@ -971,6 +975,73 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             getTranscriptOpenSummaryId: () => panel.transcriptOpenSummaryId,
             setTranscriptOpenSummaryId: value => { panel.transcriptOpenSummaryId = value; },
             openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
+            navigateToHomeHubForProbe: () => panel.navigateHubTab('home'),
+            expandMissionControlForProbe: () => {
+                panel.setMissionControlExpanded(true);
+                panel.renderList();
+            },
+            showTasksInboxWithTeamForProbe: () => {
+                panel.agentsHubLegacyInbox = true;
+                panel.navigateHubTab('tasks');
+            },
+            seedMultiAgentProbeConversations: () => {
+                const project = panel.projects[0];
+                const cwd = project
+                    ? (panel.preparedCwdByProjectId.get(project.id) ?? panel.projectsService.getProjectCwd(project))
+                    : undefined;
+                if (!cwd || !panel.conversations) {
+                    return;
+                }
+                panel.conversations.perfProbeSeedSummaries(cwd, [
+                    {
+                        id: 'probe-agent-a',
+                        cwd,
+                        agentId: 'qaiq',
+                        title: 'Agent A — inbox',
+                        status: 'streaming',
+                        createdAt: 1,
+                        updatedAt: 300,
+                        messageCount: 2,
+                        turnProgressCurrent: 2,
+                        turnProgressTotal: 5,
+                    },
+                    {
+                        id: 'probe-agent-b',
+                        cwd,
+                        agentId: 'codex',
+                        title: 'Agent B — team',
+                        status: 'streaming',
+                        createdAt: 1,
+                        updatedAt: 200,
+                        messageCount: 2,
+                        turnProgressCurrent: 1,
+                        turnProgressTotal: 4,
+                    },
+                    {
+                        id: 'probe-agent-c',
+                        cwd,
+                        agentId: 'claude',
+                        title: 'Agent C — MC',
+                        status: 'streaming',
+                        createdAt: 1,
+                        updatedAt: 100,
+                        messageCount: 2,
+                        turnProgressCurrent: 3,
+                        turnProgressTotal: 6,
+                    },
+                ]);
+                panel.scheduleRenderList();
+            },
+            tickProbeStreamingConversations: () => {
+                const project = panel.projects[0];
+                const cwd = project
+                    ? (panel.preparedCwdByProjectId.get(project.id) ?? panel.projectsService.getProjectCwd(project))
+                    : undefined;
+                if (!cwd || !panel.conversations) {
+                    return;
+                }
+                panel.conversations.perfProbeTickStreamingSummaries(cwd);
+            },
         });
     }
 

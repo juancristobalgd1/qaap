@@ -6,6 +6,13 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentFailureKind } from '../common/qaap-agent-failure-message';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import {
+    buildMissionControlRowFingerprint,
+    buildMissionControlStructureFingerprint,
+    QAAP_MC_ROW_FP_ATTR,
+    QAAP_MC_ROW_KEY_ATTR,
+    QAAP_MC_STRUCTURE_FP_ATTR,
+} from '../common/qaap-work-mission-control-fingerprint';
 
 /**
  * Prototype "mission control" for the Work Hub landing — a single cross-project view of agent work
@@ -152,6 +159,7 @@ export interface MissionControlRenderOptions {
     /** Full-screen mission control on the home hub (shows collapse instead of view-all). */
     readonly expanded?: boolean;
     readonly onCollapse?: () => void;
+    readonly query?: string;
 }
 
 const LANE_FILTER_ORDER: readonly MissionControlLaneFilter[] = ['all', 'needs-you', 'running', 'done'];
@@ -210,6 +218,10 @@ export class MobileWorkMissionControl {
                 'qaap/workMissionControl/empty',
                 'No agent work in flight. Capture a task, delegate it, then track it here until PR.',
             )));
+            panel.setAttribute(
+                QAAP_MC_STRUCTURE_FP_ATTR,
+                this.buildStructureFingerprint(items, options, !options.expanded),
+            );
             host.append(panel);
             return;
         }
@@ -220,6 +232,10 @@ export class MobileWorkMissionControl {
                 'qaap/workMissionControl/emptyFilter',
                 'Nothing matches this filter.',
             )));
+            panel.setAttribute(
+                QAAP_MC_STRUCTURE_FP_ATTR,
+                this.buildStructureFingerprint(items, options, !options.expanded),
+            );
             host.append(panel);
             return;
         }
@@ -232,7 +248,96 @@ export class MobileWorkMissionControl {
             }
             panel.append(this.createLane(lane, laneItems));
         }
+        panel.setAttribute(
+            QAAP_MC_STRUCTURE_FP_ATTR,
+            this.buildStructureFingerprint(items, options, !options.expanded),
+        );
         host.append(panel);
+    }
+
+    /**
+     * In-place row updates when structure is unchanged — used by hub incremental patching on SSE ticks.
+     */
+    patchRows(
+        panel: HTMLElement,
+        items: readonly MissionControlItem[],
+        options: MissionControlRenderOptions = {},
+    ): boolean {
+        const showOverview = !options.expanded;
+        const structure = this.buildStructureFingerprint(items, options, showOverview);
+        if (panel.getAttribute(QAAP_MC_STRUCTURE_FP_ATTR) !== structure) {
+            return false;
+        }
+        const showFilters = options.showFilters === true;
+        const laneFilter = options.laneFilter ?? 'all';
+        const surfaceFilter = options.surfaceFilter ?? 'all';
+        if (items.length === 0) {
+            return true;
+        }
+        const visible = showFilters ? filterMissionControlItems(items, laneFilter, surfaceFilter) : items;
+        if (visible.length === 0) {
+            return true;
+        }
+        const needsYou = items.filter(item => item.lane === 'needs-you').length;
+        const badge = panel.querySelector('.theia-mobile-mission-control-badge');
+        if (badge) {
+            badge.textContent = String(needsYou);
+        } else if (needsYou > 0) {
+            return false;
+        }
+        const byLane = this.groupByLane(visible, !showFilters);
+        for (const lane of LANE_ORDER) {
+            const laneItems = byLane.get(lane) ?? [];
+            for (const item of laneItems) {
+                const nextFingerprint = buildMissionControlRowFingerprint(item);
+                const existing = panel.querySelector<HTMLElement>(
+                    `.theia-mobile-mission-control-row[${QAAP_MC_ROW_KEY_ATTR}="${cssEscape(item.key)}"]`,
+                );
+                if (!existing) {
+                    return false;
+                }
+                if (existing.getAttribute(QAAP_MC_ROW_FP_ATTR) === nextFingerprint) {
+                    continue;
+                }
+                existing.replaceWith(this.createRow(item));
+            }
+            const laneCount = panel.querySelector(
+                `.theia-mobile-mission-control-lane.theia-mod-${lane} .theia-mobile-mission-control-lane-count`,
+            );
+            if (laneCount && laneItems.length > 0) {
+                laneCount.textContent = String(laneItems.length);
+            }
+        }
+        return true;
+    }
+
+    protected buildStructureFingerprint(
+        items: readonly MissionControlItem[],
+        options: MissionControlRenderOptions,
+        showOverview: boolean,
+    ): string {
+        const showFilters = options.showFilters === true;
+        const laneFilter = options.laneFilter ?? 'all';
+        const surfaceFilter = options.surfaceFilter ?? 'all';
+        const visible = showFilters
+            ? filterMissionControlItems(items, laneFilter, surfaceFilter)
+            : items;
+        const byLane = this.groupByLane(visible, !showFilters);
+        const rowKeys: string[] = [];
+        for (const lane of LANE_ORDER) {
+            const laneItems = byLane.get(lane) ?? [];
+            for (const item of laneItems) {
+                rowKeys.push(item.key);
+            }
+        }
+        return buildMissionControlStructureFingerprint({
+            expanded: options.expanded === true,
+            laneFilter,
+            surfaceFilter,
+            query: options.query ?? '',
+            showOverview,
+            rowKeys,
+        });
     }
 
     protected resolveHeaderAction(
@@ -414,6 +519,8 @@ export class MobileWorkMissionControl {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `theia-mobile-work-hub-home-row theia-mobile-mission-control-row theia-mod-${item.lane}`;
+        btn.setAttribute(QAAP_MC_ROW_KEY_ATTR, item.key);
+        btn.setAttribute(QAAP_MC_ROW_FP_ATTR, buildMissionControlRowFingerprint(item));
         if (item.failureKind) {
             btn.classList.add(`theia-mod-failure-${item.failureKind}`);
         }
@@ -533,4 +640,11 @@ function projectInitials(name: string): string {
         return (parts[0][0] + parts[1][0]).toUpperCase();
     }
     return name.slice(0, 2).toUpperCase();
+}
+
+function cssEscape(value: string): string {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+        return CSS.escape(value);
+    }
+    return value.replace(/["\\]/g, '\\$&');
 }

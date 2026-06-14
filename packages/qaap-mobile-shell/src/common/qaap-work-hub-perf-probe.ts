@@ -16,6 +16,11 @@ export interface QaapWorkHubPerfProbeApi {
     burstConversationTicks(count: number): void;
     setTranscriptOverlayOpenForProbe(open: boolean): void;
     openSessionsSidebarForProbe(): void;
+    navigateToHomeHubForProbe(): void;
+    expandMissionControlForProbe(): void;
+    showTasksInboxWithTeamForProbe(): void;
+    seedMultiAgentProbeConversations(): void;
+    tickProbeStreamingConversations(): void;
     resetMetrics(): QaapWorkHubPerfProbeMetrics;
     getMetrics(): QaapWorkHubPerfProbeMetrics;
 }

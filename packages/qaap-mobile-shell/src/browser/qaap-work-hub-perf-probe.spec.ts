@@ -46,6 +46,11 @@ describe('qaap-work-hub-perf-probe', () => {
             getTranscriptOpenSummaryId: () => transcriptOpenSummaryId,
             setTranscriptOpenSummaryId: value => { transcriptOpenSummaryId = value; },
             openWorkHubSessionsSidebar: () => undefined,
+            navigateToHomeHubForProbe: () => undefined,
+            expandMissionControlForProbe: () => undefined,
+            showTasksInboxWithTeamForProbe: () => undefined,
+            seedMultiAgentProbeConversations: () => undefined,
+            tickProbeStreamingConversations: () => undefined,
         });
 
         expect(window.__qaapWorkHubPerfProbe).to.not.equal(undefined);
@@ -71,6 +76,11 @@ describe('qaap-work-hub-perf-probe', () => {
             getTranscriptOpenSummaryId: () => transcriptOpenSummaryId,
             setTranscriptOpenSummaryId: value => { transcriptOpenSummaryId = value; },
             openWorkHubSessionsSidebar: () => undefined,
+            navigateToHomeHubForProbe: () => undefined,
+            expandMissionControlForProbe: () => undefined,
+            showTasksInboxWithTeamForProbe: () => undefined,
+            seedMultiAgentProbeConversations: () => undefined,
+            tickProbeStreamingConversations: () => undefined,
         });
 
         window.__qaapWorkHubPerfProbe?.setTranscriptOverlayOpenForProbe(true);

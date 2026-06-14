@@ -24,6 +24,11 @@ export interface QaapWorkHubPerfProbeHost {
     getTranscriptOpenSummaryId(): string | undefined;
     setTranscriptOpenSummaryId(value: string | undefined): void;
     openWorkHubSessionsSidebar(): void;
+    navigateToHomeHubForProbe(): void;
+    expandMissionControlForProbe(): void;
+    showTasksInboxWithTeamForProbe(): void;
+    seedMultiAgentProbeConversations(): void;
+    tickProbeStreamingConversations(): void;
 }
 
 export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): void {
@@ -117,6 +122,21 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         openSessionsSidebarForProbe: () => {
             host.openWorkHubSessionsSidebar();
             ensureSidebarListPatched();
+        },
+        navigateToHomeHubForProbe: () => {
+            host.navigateToHomeHubForProbe();
+        },
+        expandMissionControlForProbe: () => {
+            host.expandMissionControlForProbe();
+        },
+        showTasksInboxWithTeamForProbe: () => {
+            host.showTasksInboxWithTeamForProbe();
+        },
+        seedMultiAgentProbeConversations: () => {
+            host.seedMultiAgentProbeConversations();
+        },
+        tickProbeStreamingConversations: () => {
+            host.tickProbeStreamingConversations();
         },
         resetMetrics: () => {
             metrics.hubScrollReplaceChildren = 0;
