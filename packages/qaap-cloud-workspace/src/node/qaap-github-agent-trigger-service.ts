@@ -70,6 +70,12 @@ export class QaapGithubAgentTriggerService implements QaapGithubAgentTriggerBrid
                 title: request.prompt.slice(0, 120) || `GitHub #${request.issueNumber}`,
                 message,
                 autoApprove: true,
+                githubEvidence: {
+                    owner: request.owner,
+                    repo: request.repo,
+                    issueNumber: request.issueNumber,
+                    ...(request.commentId !== undefined ? { triggerCommentId: request.commentId } : {}),
+                },
             });
             if (request.commentId !== undefined) {
                 this.pruneRecentCommentIds();

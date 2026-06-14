@@ -222,6 +222,47 @@ export class QaapAgentConversationStore {
         return next;
     }
 
+    /** Record GitHub evidence comment idempotency markers on a conversation. */
+    patchGithubEvidencePosted(
+        id: string,
+        patch: { readonly taskId?: string; readonly goalLoop?: boolean },
+    ): QaapAgentConversation {
+        const conv = this.conversations.get(id);
+        if (!conv) {
+            throw new Error('Conversation not found.');
+        }
+        let githubEvidence = conv.githubEvidence;
+        let githubEvidencePostedTaskIds = conv.githubEvidencePostedTaskIds;
+        if (patch.taskId) {
+            if (githubEvidence) {
+                const posted = githubEvidence.postedTaskIds ?? [];
+                if (!posted.includes(patch.taskId)) {
+                    githubEvidence = {
+                        ...githubEvidence,
+                        postedTaskIds: [...posted, patch.taskId],
+                    };
+                }
+            } else {
+                const posted = githubEvidencePostedTaskIds ?? [];
+                if (!posted.includes(patch.taskId)) {
+                    githubEvidencePostedTaskIds = [...posted, patch.taskId];
+                }
+            }
+        }
+        if (patch.goalLoop && githubEvidence && !githubEvidence.goalLoopPosted) {
+            githubEvidence = { ...githubEvidence, goalLoopPosted: true };
+        }
+        const next: QaapAgentConversation = {
+            ...conv,
+            ...(githubEvidence ? { githubEvidence } : {}),
+            ...(githubEvidencePostedTaskIds ? { githubEvidencePostedTaskIds } : {}),
+            updatedAt: Date.now(),
+        };
+        this.conversations.set(id, next);
+        void this.persist();
+        return next;
+    }
+
     /** Running turn task id for a conversation, if any. */
     getActiveTaskIdForConversation(conversationId: string): string | undefined {
         for (const [taskId, ref] of this.taskToConversation) {
@@ -262,6 +303,7 @@ export class QaapAgentConversationStore {
             ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
             ...(request.approvalPolicyId ? { approvalPolicyId: request.approvalPolicyId } : {}),
             ...(request.toolApprovalRules ? { toolApprovalRules: request.toolApprovalRules } : {}),
+            ...(request.githubEvidence ? { githubEvidence: request.githubEvidence } : {}),
             ...(() => {
                 const agentModel = request.agentModel ?? request.qaiqModel;
                 return agentModel && agentSupportsModelPicker(agentId)

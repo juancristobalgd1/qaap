@@ -22,6 +22,7 @@ import {
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapGoalLoopLlmEvaluator } from './qaap-goal-loop-llm-evaluator';
 import { QaapGoalLoopVerifyRunner } from './qaap-goal-loop-verify-runner';
+import { QaapGithubPrEvidenceService } from './qaap-github-pr-evidence-service';
 import { QaapWebPushService } from './qaap-web-push-service';
 
 /** Backend closed loop: execute agent turns → verify → evaluate until done or blocked. */
@@ -39,6 +40,9 @@ export class QaapGoalLoopRunner {
 
     @inject(QaapWebPushService)
     protected readonly webPush: QaapWebPushService;
+
+    @inject(QaapGithubPrEvidenceService)
+    protected readonly githubEvidence: QaapGithubPrEvidenceService;
 
     @postConstruct()
     protected init(): void {
@@ -370,6 +374,7 @@ export class QaapGoalLoopRunner {
             agentId: conv.agentId,
             projectName,
         }).catch(() => undefined);
+        void this.githubEvidence.notifyGoalLoopTerminal(conversationId, conv, state).catch(() => undefined);
     }
 
     protected blockIfBudgetExceeded(

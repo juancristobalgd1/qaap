@@ -134,6 +134,10 @@ export interface QaapAgentConversation {
     readonly gitDiffRemoved?: number;
     /** When set, this thread is tied to a GitHub pull request (Work Hub inbox). */
     readonly linkedPullRequest?: QaapLinkedPullRequest;
+    /** GitHub issue/PR thread for posting task completion evidence (Issue 4 triggers). */
+    readonly githubEvidence?: import('./qaap-github-pr-evidence').QaapGithubEvidenceAnchor;
+    /** Task ids that received evidence comments via {@link linkedPullRequest} (no anchor). */
+    readonly githubEvidencePostedTaskIds?: ReadonlyArray<string>;
     /** Cumulative token usage when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
@@ -243,6 +247,7 @@ export interface QaapCreateAgentConversationRequest {
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
+    readonly githubEvidence?: import('./qaap-github-pr-evidence').QaapGithubEvidenceAnchor;
 }
 
 export interface QaapPostAgentMessageRequest {
