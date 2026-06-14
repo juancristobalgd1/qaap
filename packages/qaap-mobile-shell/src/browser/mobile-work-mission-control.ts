@@ -243,8 +243,10 @@ export function shouldUseMissionControlLanding(input: {
     homeMode: boolean;
     hubView: 'home' | 'repos' | 'chat' | 'tasks' | 'review' | 'diff' | 'workflows' | 'routines' | 'team';
     agentsHubLegacyInbox: boolean;
+    missionControlLandingActive: boolean;
 }): boolean {
     return isWorkMissionControlEnabled()
+        && input.missionControlLandingActive
         && input.homeMode
         && input.hubView === 'tasks'
         && !input.agentsHubLegacyInbox;

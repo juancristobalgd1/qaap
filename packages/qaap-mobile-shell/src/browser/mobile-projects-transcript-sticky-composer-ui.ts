@@ -557,7 +557,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const conv = this.host.transcriptLastConv?.id === summary.id ? this.host.transcriptLastConv : undefined;
         const activityFiles = this.resolveComposerActivityFilesForStack(project, summary, conv);
         void this.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
-        const agentWorking = this.isTranscriptStickyComposerAgentWorking();
+        const agentWorking = this.isTranscriptComposerBackendStreaming();
         return {
             queueEntries: this.host.transcriptFollowUpQueue.peek(summary.id),
             queueExpanded: this.host.transcriptComposerQueueExpanded,
@@ -810,6 +810,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
     }
 
+    /** UI queue/follow-up — false once the visible turn looks complete. */
     isTranscriptStickyComposerAgentWorking(): boolean {
         const summary = this.host.transcriptComposerSummary;
         if (!summary || !this.host.transcriptComposerHost?.isConnected) {
@@ -817,6 +818,32 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         if (this.host.transcriptLastConv?.id === summary.id) {
             return resolveTranscriptEffectiveStatus(this.host.transcriptLastConv) === 'streaming';
+        }
+        if (summary.source === 'theia-chat' && this.host.chatService) {
+            const sessionId = summary.sessionId ?? this.host.transcriptTheiaSessionByConversationId.get(summary.id);
+            const session = sessionId ? this.host.chatService.getSession(sessionId) : undefined;
+            if (session && this.host.chatServiceSummariesUi.isChatSessionWorking(session)) {
+                return true;
+            }
+        }
+        const project = this.host.transcriptComposerProject;
+        if (project) {
+            const latest = this.host.conversationIndexUi.conversationsForProject(project).find(candidate => candidate.id === summary.id);
+            if (latest?.status === 'streaming') {
+                return true;
+            }
+        }
+        return this.host.transcriptOpenSummary?.id === summary.id && this.host.transcriptOpenSummary.status === 'streaming';
+    }
+
+    /** Backend task still attached — drives border-beam, Stop, and activity-stack chrome. */
+    isTranscriptComposerBackendStreaming(): boolean {
+        const summary = this.host.transcriptComposerSummary;
+        if (!summary || !this.host.transcriptComposerHost?.isConnected) {
+            return false;
+        }
+        if (this.host.transcriptLastConv?.id === summary.id) {
+            return this.host.transcriptLastConv.status === 'streaming';
         }
         if (summary.source === 'theia-chat' && this.host.chatService) {
             const sessionId = summary.sessionId ?? this.host.transcriptTheiaSessionByConversationId.get(summary.id);
@@ -1141,7 +1168,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 }
                 : undefined,
             canSubmit: true,
-            isAgentWorking: () => this.isTranscriptStickyComposerAgentWorking(),
+            isAgentWorking: () => this.isTranscriptComposerBackendStreaming(),
             onStop: () => { void this.host.onCancelConversation(project, summary); },
             onSendControlMounted: refresh => { this.host.transcriptComposerSendRefresh = refresh; },
             onAttach: anchor => { void this.onTranscriptComposerAttach(project, anchor); },

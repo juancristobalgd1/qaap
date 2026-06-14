@@ -39,6 +39,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     projects: MobileProjectEntry[];
     tasksFirstLoadPending: boolean;
     agentsHubLegacyInbox: boolean;
+    missionControlLandingActive: boolean;
     agentsHubSelectedProjectId: string | undefined;
     agentsHubShellActive: boolean;
     agentsHubInlineActive: boolean;
@@ -158,6 +159,7 @@ export class MobileProjectsAgentsHubInlineUi {
             homeMode: this.host.homeMode,
             hubView: this.host.hubView,
             agentsHubLegacyInbox: this.host.agentsHubLegacyInbox,
+            missionControlLandingActive: this.host.missionControlLandingActive,
         })) {
             return false;
         }

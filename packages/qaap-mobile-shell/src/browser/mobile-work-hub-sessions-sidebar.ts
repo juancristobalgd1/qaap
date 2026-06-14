@@ -37,6 +37,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onSearch?: () => void;
     onExtensions?: () => void;
     onAutomations?: () => void;
+    onMissionControl?: () => void;
     /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
     shouldSkipSessionListRefresh?(): boolean;
     rememberSessionListFingerprint?(): void;
@@ -134,6 +135,14 @@ export class MobileWorkHubSessionsSidebar {
                 () => {
                     this.hideForMobileOverlay();
                     this.delegate.onNewChat();
+                },
+            ),
+            this.createNavButton(
+                'codicon-bell-dot',
+                nls.localize('qaap/sessionsSidebar/missionControl', 'Agent work to PR'),
+                () => {
+                    this.hideForMobileOverlay();
+                    this.delegate.onMissionControl?.();
                 },
             ),
             this.createNavButton(

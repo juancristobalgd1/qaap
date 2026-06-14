@@ -106,8 +106,6 @@ export class MobileProjectsWorkHubSearchUi {
                 return this.buildReposSearchPickItems();
             case 'tasks':
                 return this.buildTasksHubSearchPickItems();
-            case 'chat':
-                return this.buildChatHubSearchPickItems();
             case 'review':
                 return this.buildReviewSearchPickItems();
             case 'workflows':
@@ -151,21 +149,8 @@ export class MobileProjectsWorkHubSearchUi {
 
     buildTasksHubSearchPickItems(): Array<WorkHubSearchPickItem | QuickPickSeparator> {
         const items: Array<WorkHubSearchPickItem | QuickPickSeparator> = [];
-        if (this.host.tasksHubSurface === 'chat') {
-            return this.buildChatHubSearchPickItems();
-        }
         for (const project of this.host.projects) {
             for (const conversation of this.host.conversationIndexUi.vpsTasksForProject(project)) {
-                items.push(this.conversationToSearchPickItem(project, conversation));
-            }
-        }
-        return items;
-    }
-
-    buildChatHubSearchPickItems(): Array<WorkHubSearchPickItem | QuickPickSeparator> {
-        const items: Array<WorkHubSearchPickItem | QuickPickSeparator> = [];
-        for (const project of this.host.projects) {
-            for (const conversation of this.host.conversationIndexUi.localChatsForProject(project)) {
                 items.push(this.conversationToSearchPickItem(project, conversation));
             }
         }

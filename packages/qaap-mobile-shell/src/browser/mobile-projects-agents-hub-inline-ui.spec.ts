@@ -36,6 +36,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             projects: [],
             tasksFirstLoadPending: false,
             agentsHubLegacyInbox: false,
+            missionControlLandingActive: false,
             agentsHubSelectedProjectId: undefined,
             agentsHubShellActive: false,
             agentsHubInlineActive: false,

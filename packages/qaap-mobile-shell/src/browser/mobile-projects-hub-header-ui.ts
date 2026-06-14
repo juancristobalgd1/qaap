@@ -84,10 +84,6 @@ export class MobileProjectsHubHeaderUi {
             this.host.titleEl.textContent = nls.localize('qaap/diff/reviewLabel', 'Working changes');
             return;
         }
-        if (this.host.hubView === 'chat') {
-            this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/chatTitle', 'Chat');
-            return;
-        }
         if (this.host.hubView === 'tasks') {
             if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject && this.host.transcriptOpenSummary) {
                 this.host.titleEl.textContent = this.host.transcriptHeaderUi.resolveTranscriptHeaderTitle(
@@ -116,12 +112,6 @@ export class MobileProjectsHubHeaderUi {
         }
         if (this.host.hubView === 'routines') {
             this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/routinesTitle', 'Routines');
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'home') {
-            this.host.titleEl.textContent = this.host.buildHomeGreeting();
-            this.host.titleAttentionEl.hidden = true;
-            this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
             return;
         }
         this.host.titleAttentionEl.hidden = true;

@@ -32,13 +32,11 @@ export class MobileProjectsHubRenderUi {
     constructor(protected readonly host: MobileProjectsHubRenderHost) { }
 
     render(): void {
-        this.host.root.classList.toggle('theia-mod-hub-home', this.host.hubView === 'home');
         this.host.root.classList.toggle('theia-mod-hub-diff', this.host.hubView === 'diff');
         this.host.root.classList.toggle('theia-mod-hub-project-diff', this.host.isProjectDiffView());
         this.host.root.classList.toggle('theia-mod-hub-inbox', this.host.hubView === 'tasks');
         this.host.root.classList.toggle('theia-mod-hub-tasks', this.host.hubView === 'tasks');
         this.host.root.classList.toggle('theia-mod-hub-review', this.host.hubView === 'review');
-        this.host.root.classList.toggle('theia-mod-hub-chat', this.host.hubView === 'chat');
         this.host.root.classList.toggle('theia-mod-hub-workflows', this.host.hubView === 'workflows');
         this.host.root.classList.toggle('theia-mod-hub-routines', this.host.hubView === 'routines');
         this.host.root.classList.toggle('theia-mod-hub-repos', this.host.hubView === 'repos');

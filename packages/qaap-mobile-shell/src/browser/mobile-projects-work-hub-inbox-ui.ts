@@ -108,58 +108,6 @@ export class MobileProjectsWorkHubInboxUi {
         this.host.renderSubtitle();
     }
 
-    renderChatHubView(projects: MobileProjectEntry[]): void {
-        const groups = this.collectChatHubGroups(projects);
-        if (groups.length === 0) {
-            this.host.scroll.append(this.createChatEmptyState());
-            this.host.renderSubtitle();
-            return;
-        }
-        const host = document.createElement('div');
-        host.className = 'theia-mobile-projects-chats-inbox theia-mod-local-chat';
-        for (const group of groups) {
-            const items: MobileWorkHubInboxItem[] = group.summaries.map(summary => ({
-                kind: 'conversation',
-                project: group.project,
-                summary,
-                sortAt: summary.updatedAt,
-                priority: 0,
-            }));
-            host.append(this.createInboxProjectGroup(group.project, items));
-        }
-        this.host.scroll.append(host);
-        this.host.hubIncrementalUi.rememberRenderedStructure('chat-inbox', groups.map(group => ({
-            project: group.project,
-            items: group.summaries.map(summary => ({
-                kind: 'conversation' as const,
-                project: group.project,
-                summary,
-                sortAt: summary.updatedAt,
-                priority: 0,
-            })),
-        })));
-        this.host.renderSubtitle();
-    }
-
-    collectChatHubGroups(
-        projects: MobileProjectEntry[],
-    ): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> {
-        const groups: Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> = [];
-        const query = this.host.query.trim().toLowerCase();
-        for (const project of projects) {
-            let summaries = this.host.conversationIndexUi.localChatsForProject(project);
-            if (query) {
-                summaries = summaries.filter(c => this.host.hubQueryUi.conversationMatchesQuery(c, query));
-            }
-            if (summaries.length === 0) {
-                continue;
-            }
-            groups.push({ project, summaries });
-        }
-        groups.sort((a, b) => this.compareChatInboxProjectOrder(a.project, b.project));
-        return groups;
-    }
-
     collectTasksInboxGroups(
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }> {
@@ -349,29 +297,6 @@ export class MobileProjectsWorkHubInboxUi {
         );
         loading.append(icon, title, body);
         return loading;
-    }
-
-    createChatEmptyState(): HTMLElement {
-        const empty = document.createElement('div');
-        empty.className = 'theia-mobile-projects-empty';
-        const icon = document.createElement('span');
-        icon.className = 'codicon codicon-comment-discussion';
-        const title = document.createElement('strong');
-        title.textContent = this.host.query
-            ? nls.localize('qaap/mobileProjects/noChatSearchResults', 'No matching chats')
-            : nls.localize('qaap/mobileProjects/noChat', 'No local chats yet');
-        const body = document.createElement('span');
-        body.textContent = this.host.query
-            ? nls.localize(
-                'qaap/mobileProjects/noChatSearchResultsBody',
-                'Try another title or message preview.',
-            )
-            : nls.localize(
-                'qaap/mobileProjects/noChatBody',
-                'Open a project and use Agent for interactive chat — sessions persist on this device.',
-            );
-        empty.append(icon, title, body);
-        return empty;
     }
 
     protected activeAgentBranchForProject(project: MobileProjectEntry): string | undefined {

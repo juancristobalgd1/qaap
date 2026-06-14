@@ -99,6 +99,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             markTasksFirstLoadComplete: () => undefined,
             maybeInstallWorkHubPerfProbe: () => undefined,
             shouldSkipFullRenderListOnConversationTick: () => false,
+            shouldUseMissionControlLanding: () => false,
             refreshWorkHubConversationChrome: () => { refreshChromeCalls.value++; },
             mergeInboxPullRequests: polled => polled,
             updateTasksAttentionChrome: () => undefined,

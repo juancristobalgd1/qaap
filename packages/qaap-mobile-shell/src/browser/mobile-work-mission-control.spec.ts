@@ -148,11 +148,21 @@ describe('buildMissionControlItems', () => {
 });
 
 describe('shouldUseMissionControlLanding', () => {
-    it('is true on the tasks hub in home mode when mission control is enabled', () => {
+    it('is false until mission control is opened from the sidebar', () => {
         expect(shouldUseMissionControlLanding({
             homeMode: true,
             hubView: 'tasks',
             agentsHubLegacyInbox: false,
+            missionControlLandingActive: false,
+        })).to.equal(false);
+    });
+
+    it('is true on the tasks hub after the sidebar entry is selected', () => {
+        expect(shouldUseMissionControlLanding({
+            homeMode: true,
+            hubView: 'tasks',
+            agentsHubLegacyInbox: false,
+            missionControlLandingActive: true,
         })).to.equal(true);
     });
 
@@ -161,6 +171,7 @@ describe('shouldUseMissionControlLanding', () => {
             homeMode: true,
             hubView: 'repos',
             agentsHubLegacyInbox: false,
+            missionControlLandingActive: true,
         })).to.equal(false);
     });
 });

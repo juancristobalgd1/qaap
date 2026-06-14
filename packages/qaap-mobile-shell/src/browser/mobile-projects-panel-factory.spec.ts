@@ -45,6 +45,7 @@ describe('mobile-projects-panel-factory', () => {
             onOpenPullRequest: () => { delegateCalls.push('onOpenPullRequest'); },
             onShowAgentsHub: () => { delegateCalls.push('onShowAgentsHub'); },
             onShowRoutinesHub: () => { delegateCalls.push('onShowRoutinesHub'); },
+            onShowMissionControlHub: () => { delegateCalls.push('onShowMissionControlHub'); },
             onHubLandingViewChanged: () => { delegateCalls.push('onHubLandingViewChanged'); },
             onEnterActiveTranscript: () => { delegateCalls.push('onEnterActiveTranscript'); },
             onExitActiveTranscript: () => { delegateCalls.push('onExitActiveTranscript'); },

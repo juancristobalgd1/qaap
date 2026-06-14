@@ -16,6 +16,7 @@ export interface MobileProjectsHubLandingHost {
     hubView: MobileProjectsHubView;
     tasksHubSurface: QaapComposerSurface;
     agentsHubLegacyInbox: boolean;
+    missionControlLandingActive: boolean;
     expandedId: string | undefined;
     soloExpanded: boolean;
     diffPendingPreferredProjectId: string | undefined;
@@ -42,7 +43,6 @@ export interface MobileProjectsHubLandingHost {
     show(options?: { preferredHubView?: MobileProjectsHubView }): Promise<void>;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     refreshHomeHubData(force?: boolean): void;
-    scheduleChatHubListRefreshAfterSummaries(): void;
     refreshTasksHubApprovals(forceRender?: boolean): void;
     render(): void;
     syncLandingHubListChrome(): void;
@@ -64,31 +64,21 @@ export class MobileProjectsHubLandingUi {
         options?: { force?: boolean },
     ): void {
         this.host.transcriptSheetUi.closeTranscriptSheet();
-        if (view === 'chat' || view === 'tasks') {
-            // Chat surface removed — both legacy entry points land on the agentic Task surface.
-            this.host.tasksHubSurface = 'task';
+        if (view !== 'tasks') {
+            this.host.missionControlLandingActive = false;
         }
         if (view === 'tasks') {
             this.host.agentsHubLegacyInbox = false;
+            this.host.tasksHubSurface = 'task';
         }
         view = this.host.hubQueryUi.redirectHubView(view);
         const force = options?.force === true;
-        if (!force && this.host.hubView === view && view === 'home') {
-            this.host.refreshHomeHubData(true);
-            this.host.delegate.onHubLandingViewChanged?.();
-            return;
-        }
         if (!force && this.host.hubView === view && view === 'repos' && this.host.expandedId === undefined) {
             this.host.delegate.onHubLandingViewChanged?.();
             return;
         }
         if (!force && this.host.hubView === view && view === 'diff' && !preferredDiffProjectId) {
             void this.host.refreshDiffHubView();
-            this.host.delegate.onHubLandingViewChanged?.();
-            return;
-        }
-        if (!force && this.host.hubView === view && view === 'chat') {
-            this.host.scheduleChatHubListRefreshAfterSummaries();
             this.host.delegate.onHubLandingViewChanged?.();
             return;
         }
@@ -124,19 +114,11 @@ export class MobileProjectsHubLandingUi {
             return;
         }
         this.host.hubView = view;
-        if (view !== 'home') {
-            this.host.projectsService.setHubView(view);
-        }
+        this.host.projectsService.setHubView(view);
         this.host.expandedId = undefined;
         this.host.soloExpanded = false;
-        if (view === 'home') {
-            this.host.refreshHomeHubData(true);
-        }
         if (view === 'routines') {
             void this.host.refreshWorkHubRoutines(true);
-        }
-        if (view === 'chat') {
-            this.host.scheduleChatHubListRefreshAfterSummaries();
         }
         if (view === 'review') {
             this.host.inboxLoadGeneration++;
@@ -170,6 +152,9 @@ export class MobileProjectsHubLandingUi {
 
     /** Bottom-bar hub tabs: switch landing view without reloading from persisted hub state. */
     navigateHubTab(view: MobileProjectsHubView): void {
+        if (view !== 'tasks') {
+            this.host.missionControlLandingActive = false;
+        }
         if (view === 'tasks') {
             this.host.agentsHubLegacyInbox = false;
             this.host.tasksHubSurface = 'task';

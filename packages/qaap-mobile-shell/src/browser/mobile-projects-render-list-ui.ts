@@ -26,8 +26,7 @@ export interface MobileProjectsRenderListHost {
     shouldPreserveAgentsHubInlineTranscriptShell(): boolean;
     renderDiffHubView(): void;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
-    renderHomeHubView(): void;
-    renderChatHubView(projects: MobileProjectEntry[]): void;
+    renderList(): void;
     renderTasksHubView(projects: MobileProjectEntry[]): void;
     renderReviewHubView(projects: MobileProjectEntry[]): void;
     renderCatalogHubView(): void;
@@ -81,14 +80,6 @@ export class MobileProjectsRenderListUi {
 
             const filtered = this.host.hubQueryUi.projectsForCurrentHubList();
 
-            if (this.host.hubView === 'home') {
-                this.host.renderHomeHubView();
-                return;
-            }
-            if (this.host.hubView === 'chat') {
-                this.host.renderChatHubView(filtered);
-                return;
-            }
             if (this.host.hubView === 'tasks') {
                 this.host.renderTasksHubView(filtered);
                 return;

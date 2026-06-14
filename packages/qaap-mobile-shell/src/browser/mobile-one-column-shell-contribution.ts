@@ -407,6 +407,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 },
                 onShowAgentsHub: () => { void this.hubNavigation.openMobileWorkHubLanding('tasks'); },
                 onShowRoutinesHub: () => { void this.hubNavigation.openMobileWorkHubLanding('routines'); },
+                onShowMissionControlHub: () => { void this.hubNavigation.openMobileWorkHubMissionControl(); },
                 onHubLandingViewChanged: () => {
                     this.syncMobileHubPrimaryBottomChrome();
                     this.refreshBottomBar();
