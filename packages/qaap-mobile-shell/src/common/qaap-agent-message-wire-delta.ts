@@ -63,6 +63,9 @@ function segmentFingerprint(segment: QaapAgentMessageSegmentDTO): string {
     if (segment.type === 'tool') {
         return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}:${segment.name}`;
     }
+    if (segment.type === 'system') {
+        return `s:${segment.kind}:${segment.detail ?? ''}`;
+    }
     return `${segment.type}:${segment.content ?? ''}`;
 }
 

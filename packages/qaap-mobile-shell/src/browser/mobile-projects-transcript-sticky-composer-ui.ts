@@ -85,6 +85,7 @@ import {
     type QaapGitCommitWorkflowAction,
 } from '../common/qaap-git-review';
 import {
+    ensureStickyComposerShellBorderBeam,
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
     type StickyComposerActivityStackOptions,
@@ -707,7 +708,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             return;
         }
         const wrap = host.querySelector('.theia-mobile-projects-sticky-composer-inner');
-        const card = wrap?.querySelector('.theia-mobile-projects-sticky-composer-card.theia-mod-codex');
+        const card = wrap?.querySelector<HTMLElement>('.theia-mobile-projects-sticky-composer-card.theia-mod-codex');
         if (!wrap || !card) {
             this.remountTranscriptStickyComposer();
             return;
@@ -729,6 +730,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         } else if (existing) {
             existing.replaceWith(stack);
             card.classList.add('theia-mod-has-activity');
+            ensureStickyComposerShellBorderBeam(card);
         } else {
             const stage = card.querySelector(':scope > .theia-mobile-projects-sticky-composer-stage');
             if (stage) {
@@ -737,6 +739,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 card.append(stack);
             }
             card.classList.add('theia-mod-has-activity');
+            ensureStickyComposerShellBorderBeam(card);
         }
         this.syncComposerActivityFingerprint(summary, project);
         this.host.composerHeaderUi.updateStickyComposerFabLift();

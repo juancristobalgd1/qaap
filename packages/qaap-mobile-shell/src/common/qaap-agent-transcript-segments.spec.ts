@@ -7,13 +7,17 @@ import { expect } from 'chai';
 import {
     classifyTranscriptToolActivityKind,
     excerptTranscriptThought,
+    formatTranscriptActivitySummaryLine,
     extractInlineDiffPreview,
+    isTranscriptContextSummarizedUserText,
     extractTranscriptDiffCard,
     hasTranscriptActivityTimeline,
     isTranscriptThoughtExcerptTruncated,
     isTranscriptTodoTool,
     parseTranscriptTodoChecklist,
     resolveTranscriptActivityStats,
+    resolveTranscriptSystemLines,
+    resolveTranscriptThoughtDurationSeconds,
     resolveTranscriptThinkingContent,
     resolveTranscriptToolPillDescriptors,
     resolveTranscriptToolRowParts,
@@ -75,21 +79,21 @@ describe('shouldRenderTranscriptToolSegmentInline', () => {
 });
 
 describe('shouldOpenTranscriptToolDetails', () => {
-    it('opens while the tool is still running', () => {
+    it('keeps tools collapsed while running', () => {
         expect(shouldOpenTranscriptToolDetails({
             finished: false,
             resultFailed: false,
-        })).to.equal(true);
+        })).to.equal(false);
     });
 
-    it('opens finished tools when the result failed', () => {
+    it('keeps finished failed tools collapsed until the user expands them', () => {
         expect(shouldOpenTranscriptToolDetails({
             finished: true,
             resultFailed: true,
-        })).to.equal(true);
+        })).to.equal(false);
     });
 
-    it('collapses finished successful tools', () => {
+    it('keeps finished successful tools collapsed', () => {
         expect(shouldOpenTranscriptToolDetails({
             finished: true,
             resultFailed: false,
@@ -124,6 +128,71 @@ describe('resolveTranscriptActivityStats', () => {
             edits: 1,
             otherTools: 0,
         });
+    });
+});
+
+describe('resolveTranscriptThoughtDurationSeconds', () => {
+    it('uses elapsed milliseconds when provided', () => {
+        expect(resolveTranscriptThoughtDurationSeconds('plan', { elapsedMs: 1500 })).to.equal(2);
+        expect(resolveTranscriptThoughtDurationSeconds('plan', { elapsedMs: 400 })).to.equal(1);
+    });
+
+    it('estimates from thinking length when elapsed is unavailable', () => {
+        expect(resolveTranscriptThoughtDurationSeconds('short')).to.equal(1);
+        expect(resolveTranscriptThoughtDurationSeconds('x'.repeat(240))).to.equal(2);
+    });
+});
+
+describe('formatTranscriptActivitySummaryLine', () => {
+    it('formats Cursor-style rollup with edits before explored files', () => {
+        expect(formatTranscriptActivitySummaryLine({
+            fileReads: 14,
+            searches: 6,
+            shells: 0,
+            edits: 5,
+            otherTools: 0,
+        })).to.equal('Edited 5 files, explored 14 files, 6 searches');
+    });
+
+    it('returns undefined when there is no activity', () => {
+        expect(formatTranscriptActivitySummaryLine({
+            fileReads: 0,
+            searches: 0,
+            shells: 0,
+            edits: 0,
+            otherTools: 0,
+        })).to.equal(undefined);
+    });
+});
+
+describe('resolveTranscriptSystemLines', () => {
+    it('collects context summarized system segments', () => {
+        expect(resolveTranscriptSystemLines([
+            { type: 'system', kind: 'context_summarized' },
+        ])).to.deep.equal([{ kind: 'context_summarized' }]);
+    });
+
+    it('infers a line after an explicit /compact user command', () => {
+        expect(resolveTranscriptSystemLines([], { precededByCompactCommand: true })).to.deep.equal([
+            { kind: 'context_summarized' },
+        ]);
+    });
+
+    it('dedupes repeated system lines', () => {
+        expect(resolveTranscriptSystemLines([
+            { type: 'system', kind: 'context_summarized' },
+            { type: 'system', kind: 'context_summarized' },
+        ], { precededByCompactCommand: true })).to.deep.equal([
+            { kind: 'context_summarized' },
+        ]);
+    });
+});
+
+describe('isTranscriptContextSummarizedUserText', () => {
+    it('matches common auto-compact summary phrases', () => {
+        expect(isTranscriptContextSummarizedUserText('Chat context summarized.')).to.equal(true);
+        expect(isTranscriptContextSummarizedUserText('Summarized 12 messages up to this point')).to.equal(true);
+        expect(isTranscriptContextSummarizedUserText('Reading package.json')).to.equal(false);
     });
 });
 

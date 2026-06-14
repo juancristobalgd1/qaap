@@ -39,6 +39,11 @@ export type QaapAgentMessageSegment =
     | { readonly type: 'text'; readonly content: string }
     | { readonly type: 'thinking'; readonly content: string }
     | {
+        readonly type: 'system';
+        readonly kind: 'context_summarized';
+        readonly detail?: string;
+    }
+    | {
         readonly type: 'tool';
         readonly toolUseId: string;
         readonly name: string;

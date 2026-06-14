@@ -396,3 +396,18 @@ function createQueueActionButton(iconClass: string, label: string, onClick: () =
     });
     return btn;
 }
+
+/** Overlay host for the extended codex shell — mirrors the input-panel border-beam stack. */
+export function ensureStickyComposerShellBorderBeam(card: HTMLElement): void {
+    if (card.querySelector(':scope > .qaap-border-beam-shell')) {
+        return;
+    }
+    card.querySelector(':scope > .qaap-border-beam-bloom.theia-mod-composer-shell')?.remove();
+    const shell = document.createElement('div');
+    shell.className = 'qaap-border-beam-shell';
+    shell.setAttribute('aria-hidden', 'true');
+    const bloom = document.createElement('div');
+    bloom.className = 'qaap-border-beam-bloom';
+    shell.append(bloom);
+    card.append(shell);
+}

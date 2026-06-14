@@ -11,6 +11,7 @@ import {
     type QaapAgentContextUsage,
 } from './qaap-agent-context-usage';
 import { resolveMessagePreviewText } from './qaap-agent-message-content';
+import type { QaapTranscriptSystemSegmentKind } from './qaap-agent-transcript-segments';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-tool-approval-rules';
 import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encoding';
 import { Disposable } from '@theia/core/lib/common/disposable';
@@ -89,6 +90,11 @@ export interface QaapAgentConversationSummaryDTO {
 export type QaapAgentMessageSegmentDTO =
     | { readonly type: 'text'; readonly content: string }
     | { readonly type: 'thinking'; readonly content: string }
+    | {
+        readonly type: 'system';
+        readonly kind: QaapTranscriptSystemSegmentKind;
+        readonly detail?: string;
+    }
     | {
         readonly type: 'tool';
         readonly toolUseId: string;

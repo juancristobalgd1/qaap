@@ -106,6 +106,30 @@ describe('QaapQaiqStreamAccumulator', () => {
         expect(acc.getDisplayText()).to.equal('Hola');
     });
 
+    it('records context summarized system envelopes as transcript system segments', () => {
+        const acc = new QaapQaiqStreamAccumulator();
+        acc.push([
+            '{"type":"system","subtype":"compact","summary":"Chat context summarized."}',
+            '{"type":"assistant","timestamp_ms":1,"message":{"content":[{"type":"thinking","thinking":"plan"}]}}',
+        ].join('\n') + '\n');
+        expect(acc.getSegments()).to.deep.equal([
+            { type: 'thinking', content: 'plan' },
+            { type: 'system', kind: 'context_summarized', detail: 'Chat context summarized.' },
+        ]);
+    });
+
+    it('records auto-compact user envelopes as transcript system segments', () => {
+        const acc = new QaapQaiqStreamAccumulator();
+        acc.push([
+            '{"type":"user","message":{"content":[{"type":"text","text":"Summarized 8 messages up to this point"}]}}',
+            '{"type":"assistant","timestamp_ms":1,"message":{"content":[{"type":"text","text":"Continuing"}]}}',
+        ].join('\n') + '\n');
+        expect(acc.getSegments()).to.deep.equal([
+            { type: 'system', kind: 'context_summarized', detail: 'Summarized 8 messages up to this point' },
+            { type: 'text', content: 'Continuing' },
+        ]);
+    });
+
     it('parses assistant text and tool_use blocks', () => {
         const acc = new QaapQaiqStreamAccumulator();
         acc.push([

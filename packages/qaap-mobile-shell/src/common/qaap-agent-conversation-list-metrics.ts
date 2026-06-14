@@ -337,10 +337,12 @@ function collectMessageTexts(
             if (segmentText) {
                 texts.push(segmentText);
             }
-        } else if (segment.result?.trim()) {
-            texts.push(segment.result);
-        } else if (segment.args?.trim()) {
-            texts.push(segment.args);
+        } else if (segment.type === 'tool') {
+            if (segment.result?.trim()) {
+                texts.push(segment.result);
+            } else if (segment.args?.trim()) {
+                texts.push(segment.args);
+            }
         }
     }
     return texts;
