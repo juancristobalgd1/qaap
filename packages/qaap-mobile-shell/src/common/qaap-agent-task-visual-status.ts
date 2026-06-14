@@ -7,6 +7,7 @@ import type { QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-
 
 export type QaapAgentTaskVisualStatusId =
     | 'idle'
+    | 'queued'
     | 'running'
     | 'needs-you'
     | 'failed'
@@ -28,6 +29,14 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         labelKey: 'qaap/mobileProjects/taskStateIdle',
         label: 'idle',
         className: 'theia-mod-idle',
+        color: 'var(--theia-descriptionForeground)',
+    },
+    'queued': {
+        id: 'queued',
+        labelKey: 'qaap/mobileProjects/taskStateQueued',
+        label: 'queued',
+        className: 'theia-mod-queued',
+        iconClass: 'codicon-clock',
         color: 'var(--theia-descriptionForeground)',
     },
     'running': {
@@ -82,11 +91,7 @@ export function resolveQaapAgentTaskVisualStatus(
         return STATUS_BY_ID['failed'];
     }
     if (state === 'queued') {
-        return {
-            ...STATUS_BY_ID['idle'],
-            labelKey: 'qaap/mobileProjects/taskStateQueued',
-            label: 'queued',
-        };
+        return STATUS_BY_ID['queued'];
     }
     if (state === 'running' || summary?.status === 'streaming') {
         return STATUS_BY_ID['running'];

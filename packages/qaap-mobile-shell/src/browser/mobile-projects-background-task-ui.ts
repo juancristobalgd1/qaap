@@ -20,6 +20,7 @@ import {
     fetchAgentTaskListAll,
     isTheiaCoderAgent,
     isTheiaCoderMention,
+    mergeAgentTaskAgentOptions,
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     readStoredAgent,
     resolveAgentModelForSubmit,
@@ -144,6 +145,16 @@ export class MobileProjectsBackgroundTaskUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
         },
     ): Promise<QaapAgentConversationSummaryDTO> {
+        const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);
+        if (useWorktree && options.worktree !== true) {
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobileProjects/autoWorktree',
+                    'Running in an isolated worktree so agents do not conflict.',
+                ),
+                { duration: 2200 },
+            );
+        }
         const agent = await this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId ?? QAAP_COMPOSER_DEFAULT_AGENT_ID);
         const message = applyBackendInteractionModeToPrompt(draft, options.modeId);
         const agentModel = resolveAgentModelForSubmit(agent, cwd, options.agentModel);
@@ -160,7 +171,7 @@ export class MobileProjectsBackgroundTaskUi {
             message,
             interactionModeId: options.modeId,
             approvalPolicyId,
-            ...(options.worktree === true ? { worktree: true } : {}),
+            ...(useWorktree ? { worktree: true } : {}),
             ...(contextPreamble ? { contextPreamble } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
             ...(options.autoApprove === false
@@ -173,6 +184,16 @@ export class MobileProjectsBackgroundTaskUi {
         this.host.conversations?.recordSnapshot(summary);
         return summary;
     }
+    /**
+     * When another agent is already streaming in the same repo, default to an isolated worktree
+     * so parallel agents do not stomp the same working tree.
+     */
+    resolveWorktreeForSession(cwd: string, explicitWorktree?: boolean): boolean {
+        if (explicitWorktree === true || explicitWorktree === false) {
+            return explicitWorktree;
+        }
+        return (this.host.conversations?.getStreamingCountForCwd(cwd) ?? 0) > 0;
+    }
     shouldUseTheiaCoder(content: string, selectedAgentId?: string): boolean {
         if (extractBackendAgentMention(content)) {
             return false;
@@ -180,12 +201,23 @@ export class MobileProjectsBackgroundTaskUi {
         return isTheiaCoderAgent(selectedAgentId) || isTheiaCoderMention(content);
     }
     async loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot> {
+        this.host.activeTasks?.start();
         try {
-            return await fetchAgentTaskListAll();
+            const snapshot = await fetchAgentTaskListAll();
+            const agents = mergeAgentTaskAgentOptions(snapshot.agents, this.host.activeTasks?.getAgents() ?? []);
+            return {
+                ...snapshot,
+                agents,
+                agentConfigured: snapshot.agentConfigured || (this.host.activeTasks?.isAgentConfigured() ?? false),
+            };
         } catch {
-            return this.host.activeTasks
-                ? { agents: this.host.activeTasks.getAgents(), defaultAgent: this.host.activeTasks.getDefaultAgent(), agentConfigured: true, qaiqModels: [] }
-                : { agents: [], defaultAgent: undefined, agentConfigured: false, qaiqModels: [] };
+            const liveAgents = this.host.activeTasks?.getAgents() ?? [];
+            return {
+                agents: mergeAgentTaskAgentOptions(liveAgents),
+                defaultAgent: this.host.activeTasks?.getDefaultAgent(),
+                agentConfigured: this.host.activeTasks?.isAgentConfigured() ?? false,
+                qaiqModels: [],
+            };
         }
     }
     async selectBackendConversationAgent(

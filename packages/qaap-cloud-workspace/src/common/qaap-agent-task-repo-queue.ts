@@ -32,3 +32,27 @@ export function selectNextQueuedTask(tasks: readonly QaapAgentTask[], cwd: strin
     }
     return oldest;
 }
+
+/** Oldest queued task that can spawn under both global and per-repo caps. */
+export function selectNextSpawnableQueuedTask(
+    tasks: readonly QaapAgentTask[],
+    options: {
+        readonly runningCount: number;
+        readonly maxConcurrent: number;
+        readonly countRunningForCwd: (cwd: string) => number;
+        readonly maxConcurrentPerRepo: number;
+    },
+): QaapAgentTask | undefined {
+    if (options.runningCount >= options.maxConcurrent) {
+        return undefined;
+    }
+    const queued = tasks
+        .filter(task => task.state === 'queued')
+        .sort((left, right) => left.createdAt - right.createdAt);
+    for (const task of queued) {
+        if (!shouldQueueTask(options.countRunningForCwd(task.cwd), options.maxConcurrentPerRepo)) {
+            return task;
+        }
+    }
+    return undefined;
+}

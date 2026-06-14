@@ -6,6 +6,7 @@
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { ChatService } from '@theia/ai-chat';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
+import { isWorkMissionControlEnabled } from './mobile-work-mission-control';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import {
     hasMobileProjectsLeftLanding,
@@ -89,11 +90,13 @@ export interface MobileProjectsPanelLifecycleHost {
     refreshHomeHubData(forceRender: boolean): void;
     render(): void;
     renderList(): void;
+    scheduleRenderList(): void;
     renderSubtitle(): void;
     renderFilters(): void;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     syncLandingHubListChrome(): void;
     markTasksFirstLoadComplete(render: boolean): void;
+    maybeInstallWorkHubPerfProbe(): void;
     shouldSkipFullRenderListOnConversationTick(): boolean;
     refreshWorkHubConversationChrome(): void;
     mergeInboxPullRequests(polled: QaapGithubPullRequestSummary[]): QaapGithubPullRequestSummary[];
@@ -179,6 +182,7 @@ export class MobileProjectsPanelLifecycleUi {
         this.startVisibleHubServices();
         this.subscribeToActiveTasks();
         this.host.syncLandingHubListChrome();
+        this.host.maybeInstallWorkHubPerfProbe();
         this.reportFirstShowTiming(startedAt, firstShow);
         this.schedulePrimeVisiblePanelData(firstShow);
     }
@@ -293,7 +297,13 @@ export class MobileProjectsPanelLifecycleUi {
                     this.host.ensureOverlayUi().team.renderTeamSection(this.host.transcriptChatHost, this.host.transcriptLastConv);
                 }
                 if (this.host.visible && this.host.hubQueryUi.isTasksHubView()) {
-                    this.host.renderList();
+                    if (this.host.shouldSkipFullRenderListOnConversationTick()) {
+                        this.host.refreshWorkHubConversationChrome();
+                        return;
+                    }
+                    this.host.scheduleRenderList();
+                } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView() && isWorkMissionControlEnabled()) {
+                    this.host.scheduleRenderList();
                 } else if (this.host.visible && !this.host.transcriptSheet) {
                     void this.applyActiveTasksRefresh();
                 }
@@ -313,10 +323,12 @@ export class MobileProjectsPanelLifecycleUi {
                             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
                             return;
                         }
-                        this.host.renderList();
+                        this.host.scheduleRenderList();
                         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummaryId) {
                             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
                         }
+                    } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView() && isWorkMissionControlEnabled()) {
+                        this.host.scheduleRenderList();
                     } else if (this.host.visible && !this.host.transcriptSheet) {
                         void this.applyActiveTasksRefresh();
                     }
@@ -346,7 +358,7 @@ export class MobileProjectsPanelLifecycleUi {
             }
             this.host.inboxPullRequests = this.host.mergeInboxPullRequests(this.host.inboxPullRequests);
             this.host.inboxPullRequestsLoaded = true;
-            this.host.renderList();
+            this.host.scheduleRenderList();
         });
     }
 
@@ -410,7 +422,7 @@ export class MobileProjectsPanelLifecycleUi {
     scheduleChatHubListRefreshAfterSummaries(): void {
         void this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries().then(() => {
             if (this.host.hubView === 'chat' && this.host.visible) {
-                this.host.renderList();
+                this.host.scheduleRenderList();
                 this.host.renderSubtitle();
             }
         });
@@ -426,7 +438,7 @@ export class MobileProjectsPanelLifecycleUi {
             await this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries();
             this.host.renderSubtitle();
             this.host.renderFilters();
-            this.host.renderList();
+            this.host.scheduleRenderList();
             this.host.stickyComposerRenderUi.renderStickyComposer();
         } catch {
             /* a transient load failure must not break the live view */

@@ -51,7 +51,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptSheet: HTMLElement | undefined;
     transcriptTabStrip: HTMLElement | undefined;
-    sessionsSidebar: { isVisible(): boolean; refreshList(): void } | undefined;
+    sessionsSidebar: { isVisible(): boolean; refreshList(options?: { force?: boolean }): void; scheduleRefreshList(): void } | undefined;
     transcriptLastStatus: QaapAgentConversationSummaryDTO['status'] | undefined;
     transcriptLastFingerprint: string | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
@@ -100,7 +100,10 @@ export interface MobileProjectsAgentsHubInlineHost {
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
     updateTasksAttentionChrome(): void;
     conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi
+    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    onNewClick(): Promise<void>;
+    onStartNewProject(): Promise<void>;
+    onOpenLocalWorkspaceFolder(): Promise<void>;
 }
 
 /** Agents Hub inline transcript shell: open/close session, execution surfaces, idle chat. */
@@ -119,6 +122,9 @@ export class MobileProjectsAgentsHubInlineUi {
 
     /** SSE ticks while a transcript is open should not rebuild the whole Work Hub list. */
     shouldSkipFullRenderListOnConversationTick(): boolean {
+        if (this.host.transcriptSheet && this.host.transcriptOpenSummaryId) {
+            return true;
+        }
         return this.host.hubView === 'tasks'
             && this.shouldUseAgentsHubLanding()
             && !!this.host.transcriptOpenSummaryId
@@ -127,7 +133,7 @@ export class MobileProjectsAgentsHubInlineUi {
 
     refreshWorkHubConversationChrome(): void {
         if (this.host.sessionsSidebar?.isVisible()) {
-            this.host.sessionsSidebar.refreshList();
+            this.host.sessionsSidebar.scheduleRefreshList();
         }
         const project = this.resolveAgentsHubShellProject();
         const summary = this.host.transcriptOpenSummary;
@@ -190,13 +196,7 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.agentsHubShellActive = false;
             const note = document.createElement('div');
             note.className = 'theia-mobile-agent-transcript-empty theia-mod-no-project';
-            const title = document.createElement('div');
-            title.className = 'theia-mobile-agent-transcript-empty-title';
-            title.textContent = nls.localize(
-                'qaap/mobileProjects/stickyComposerNoProject',
-                'Add or open a repository first.',
-            );
-            note.append(title);
+            note.append(this.createAgentsHubNoProjectOnboarding());
             this.host.scroll.append(note);
             this.host.updateTasksAttentionChrome();
             this.host.renderSubtitle();
@@ -269,6 +269,67 @@ export class MobileProjectsAgentsHubInlineUi {
         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummaryId) {
             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
         }
+    }
+
+    protected createAgentsHubNoProjectOnboarding(): HTMLElement {
+        const root = document.createElement('div');
+        root.className = 'theia-mobile-agents-hub-onboarding';
+
+        const mark = document.createElement('span');
+        mark.className = 'theia-mobile-agents-hub-onboarding-mark codicon codicon-repo';
+        mark.setAttribute('aria-hidden', 'true');
+
+        const title = document.createElement('p');
+        title.className = 'theia-mobile-agents-hub-onboarding-title';
+        title.textContent = nls.localize('qaap/workHubHome/noProjectsTitle', 'No workspaces yet');
+
+        const hint = document.createElement('p');
+        hint.className = 'theia-mobile-agents-hub-onboarding-hint';
+        hint.textContent = nls.localize(
+            'qaap/workHubHome/noProjects',
+            'Add a GitHub repository to delegate agent work and review the resulting PR.',
+        );
+
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-agents-hub-onboarding-actions';
+
+        const addRepo = document.createElement('button');
+        addRepo.type = 'button';
+        addRepo.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary';
+        const addRepoIcon = document.createElement('span');
+        addRepoIcon.className = 'codicon codicon-repo-clone theia-mobile-agents-hub-onboarding-btn-icon';
+        addRepoIcon.setAttribute('aria-hidden', 'true');
+        const addRepoLabel = document.createElement('span');
+        addRepoLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
+        addRepoLabel.textContent = nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
+        addRepo.append(addRepoIcon, addRepoLabel);
+        addRepo.addEventListener('click', () => { void this.host.onNewClick(); });
+
+        const newProject = document.createElement('button');
+        newProject.type = 'button';
+        newProject.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-ghost';
+        const newProjectIcon = document.createElement('span');
+        newProjectIcon.className = 'codicon codicon-add theia-mobile-agents-hub-onboarding-btn-icon';
+        newProjectIcon.setAttribute('aria-hidden', 'true');
+        const newProjectLabel = document.createElement('span');
+        newProjectLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
+        newProjectLabel.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
+        newProject.append(newProjectIcon, newProjectLabel);
+        newProject.addEventListener('click', () => { void this.host.onStartNewProject(); });
+
+        actions.append(addRepo, newProject);
+
+        const openLocal = document.createElement('button');
+        openLocal.type = 'button';
+        openLocal.className = 'theia-mobile-agents-hub-onboarding-local-link';
+        openLocal.textContent = nls.localize(
+            'qaap/mobileProjects/openLocalFolder',
+            'Open folder on this device',
+        );
+        openLocal.addEventListener('click', () => { void this.host.onOpenLocalWorkspaceFolder(); });
+
+        root.append(mark, title, hint, actions, openLocal);
+        return root;
     }
 
     /** Same transcript host for idle and active sessions; idle shows starter chips in the scroll area. */

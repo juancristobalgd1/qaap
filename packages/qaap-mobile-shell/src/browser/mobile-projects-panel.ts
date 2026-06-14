@@ -36,6 +36,14 @@ import {
 import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
 import { MobileProjectsService } from './mobile-projects-service';
 import { isAgentsHubExecutionSurfacePainted } from '../common/qaap-agents-hub-landing';
+import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
+import {
+    buildProbeStreamingSummaries,
+    ensureProbeWorkspaceProject,
+    QAAP_PROBE_WORKSPACE_PROJECT_ID,
+} from './qaap-work-hub-perf-probe-host';
+import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
+import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-probe';
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
@@ -123,6 +131,13 @@ import {
     type MobileProjectsHomeHubHost,
 } from './mobile-projects-home-hub-ui';
 import {
+    MobileProjectsMissionControlHubUi,
+} from './mobile-projects-mission-control-hub-ui';
+import type {
+    MissionControlLaneFilter,
+    MissionControlSurfaceFilter,
+} from './mobile-work-mission-control';
+import {
     MobileProjectsHubHeaderUi,
     type MobileProjectsHubHeaderHost,
 } from './mobile-projects-hub-header-ui';
@@ -154,6 +169,10 @@ import {
     MobileProjectsProjectNavigationUi,
     type MobileProjectsProjectNavigationHost,
 } from './mobile-projects-project-navigation-ui';
+import {
+    MobileProjectsHubIncrementalUi,
+    type MobileProjectsHubIncrementalPatchHost,
+} from './mobile-projects-hub-incremental-ui';
 import {
     MobileProjectsRenderListUi,
     type MobileProjectsRenderListHost,
@@ -410,6 +429,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected filter: MobileProjectFilter = 'all';
     protected hubView: MobileProjectsHubView = 'tasks';
     protected query = '';
+    protected missionControlExpanded = false;
+    protected missionControlLaneFilter: MissionControlLaneFilter = 'all';
+    protected missionControlSurfaceFilter: MissionControlSurfaceFilter = 'all';
     protected agentApprovalsFetchGeneration = 0;
     /** Project ids whose conversation list is fully expanded (not capped at {@link CONVERSATIONS_COLLAPSED_LIMIT}). */
     protected readonly expandedConversationProjectIds = new Set<string>();
@@ -493,6 +515,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly conversationOpenUi = new MobileProjectsConversationOpenUi(this as unknown as MobileProjectsConversationOpenHost);
     protected readonly diffHubUi = new MobileProjectsDiffHubUi(this as unknown as MobileProjectsDiffHubHost);
     protected readonly homeHubUi = new MobileProjectsHomeHubUi(this as unknown as MobileProjectsHomeHubHost);
+    protected readonly missionControlHubUi = new MobileProjectsMissionControlHubUi(this as unknown as import('./mobile-projects-mission-control-hub-ui').MobileProjectsMissionControlHubHost);
     protected readonly hubHeaderUi = new MobileProjectsHubHeaderUi(this as unknown as MobileProjectsHubHeaderHost);
     protected readonly hubLandingUi = new MobileProjectsHubLandingUi(this as unknown as MobileProjectsHubLandingHost);
     protected readonly hubListChromeUi = new MobileProjectsHubListChromeUi(this as unknown as MobileProjectsHubListChromeHost);
@@ -505,6 +528,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly projectDetailUi = new MobileProjectsProjectDetailUi(this as unknown as MobileProjectsProjectDetailHost);
     protected readonly projectNavigationUi = new MobileProjectsProjectNavigationUi(this as unknown as MobileProjectsProjectNavigationHost);
     protected readonly renderListUi = new MobileProjectsRenderListUi(this as unknown as MobileProjectsRenderListHost);
+    protected readonly hubIncrementalUi = new MobileProjectsHubIncrementalUi(this as unknown as MobileProjectsHubIncrementalPatchHost);
+    /** Coalesces bursty hub list rebuilds from WS/SSE into one paint per animation frame. */
+    protected readonly hubListRenderScheduler = new QaapChatViewStreamUpdateScheduler(
+        () => this.renderListUi.renderList(),
+        () => 0,
+    );
     protected readonly repoFiltersUi = new MobileProjectsRepoFiltersUi(this as unknown as MobileProjectsRepoFiltersHost);
     protected readonly repoLifecycleUi = new MobileProjectsRepoLifecycleUi(this as unknown as MobileProjectsRepoLifecycleHost);
     protected readonly subtitleUi = new MobileProjectsSubtitleUi(this as unknown as MobileProjectsSubtitleHost);
@@ -802,6 +831,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     dispose(): void {
+        this.hubListRenderScheduler.dispose();
         this.panelLifecycleUi.dispose();
     }
 
@@ -866,6 +896,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.repoLifecycleUi.onNewClick();
     }
 
+    protected async onStartNewProject(): Promise<void> {
+        await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet();
+    }
+
+    protected async onOpenLocalWorkspaceFolder(): Promise<void> {
+        await this.projectNavigationUi.openLocalWorkspaceFolder();
+    }
+
     protected async onCloneClick(): Promise<void> {
         await this.repoLifecycleUi.onCloneClick();
     }
@@ -900,6 +938,136 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected renderList(): void {
         this.renderListUi.renderList();
+    }
+
+    protected tryPatchHubListBeforeRebuild(): boolean {
+        if (this.hubQueryUi.isHomeHubView() && this.missionControlHubUi.tryPatchBeforeRebuild()) {
+            this.subtitleUi.renderSubtitle();
+            return true;
+        }
+        return this.hubIncrementalUi.tryPatchBeforeRebuild();
+    }
+
+    protected resetHubIncrementalStructure(): void {
+        this.hubIncrementalUi.resetStructureFingerprint();
+    }
+
+    protected setMissionControlExpanded(expanded: boolean): void {
+        this.missionControlExpanded = expanded;
+    }
+
+    protected setMissionControlLaneFilter(filter: MissionControlLaneFilter): void {
+        this.missionControlLaneFilter = filter;
+    }
+
+    protected setMissionControlSurfaceFilter(filter: MissionControlSurfaceFilter): void {
+        this.missionControlSurfaceFilter = filter;
+    }
+
+    protected scheduleRenderList(): void {
+        this.hubListRenderScheduler.schedule();
+    }
+
+    protected flushScheduledRenderList(): void {
+        this.hubListRenderScheduler.flushNow();
+    }
+
+    protected maybeInstallWorkHubPerfProbe(): void {
+        const panel = this as MobileProjectsPanel & {
+            transcriptSheet?: HTMLElement;
+            transcriptChatHost?: HTMLElement;
+            transcriptOpenSummaryId?: string;
+        };
+        installQaapWorkHubPerfProbe({
+            scroll: panel.scroll,
+            conversations: panel.conversations,
+            getSessionsSidebar: () => panel.sessionsSidebar,
+            getTranscriptSheet: () => panel.transcriptSheet,
+            setTranscriptSheet: value => { panel.transcriptSheet = value; },
+            getTranscriptChatHost: () => panel.transcriptChatHost,
+            setTranscriptChatHost: value => { panel.transcriptChatHost = value; },
+            getTranscriptOpenSummaryId: () => panel.transcriptOpenSummaryId,
+            setTranscriptOpenSummaryId: value => { panel.transcriptOpenSummaryId = value; },
+            openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
+            navigateToHomeHubForProbe: () => panel.navigateHubTab('home'),
+            expandMissionControlForProbe: () => {
+                panel.setMissionControlExpanded(true);
+                panel.renderList();
+            },
+            showTasksInboxWithTeamForProbe: () => {
+                panel.navigateHubTab('tasks');
+                panel.agentsHubLegacyInbox = true;
+                panel.renderList();
+            },
+            seedMultiAgentProbeConversations: () => {
+                if (!panel.conversations) {
+                    return;
+                }
+                panel.conversations.start();
+                panel.activeTasks?.start();
+                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+                if (workspaceCwd) {
+                    panel.projects = ensureProbeWorkspaceProject(panel.projects, panel.projectsService, workspaceCwd);
+                    for (const project of panel.projects) {
+                        const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
+                            ? workspaceCwd
+                            : panel.preparedCwdByProjectId.get(project.id)
+                                ?? panel.projectsService.getProjectCwd(project);
+                        if (cwd) {
+                            panel.preparedCwdByProjectId.set(project.id, cwd);
+                        }
+                    }
+                }
+                const cwdSet = new Set<string>();
+                for (const project of panel.projects) {
+                    const cwd = panel.preparedCwdByProjectId.get(project.id)
+                        ?? panel.projectsService.getProjectCwd(project);
+                    if (cwd) {
+                        cwdSet.add(cwd);
+                    }
+                }
+                if (workspaceCwd) {
+                    cwdSet.add(workspaceCwd);
+                }
+                if (cwdSet.size === 0) {
+                    return;
+                }
+                for (const cwd of cwdSet) {
+                    panel.conversations.perfProbeSeedSummaries(cwd, buildProbeStreamingSummaries(cwd));
+                }
+                panel.scheduleRenderList();
+            },
+            tickProbeStreamingConversations: () => {
+                if (!panel.conversations) {
+                    return;
+                }
+                const cwdSet = new Set<string>();
+                for (const project of panel.projects) {
+                    const cwd = panel.preparedCwdByProjectId.get(project.id)
+                        ?? panel.projectsService.getProjectCwd(project);
+                    if (cwd) {
+                        cwdSet.add(cwd);
+                    }
+                }
+                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+                if (workspaceCwd) {
+                    cwdSet.add(workspaceCwd);
+                }
+                for (const cwd of cwdSet) {
+                    panel.conversations.perfProbeTickStreamingSummaries(cwd);
+                }
+            },
+            hasProjectsForProbe: () => panel.projects.length > 0,
+            hasWorkspaceForProbe: () => !!panel.projectsService.getCurrentWorkspaceCwd(),
+            getProbeDiagnostics: (): WorkHubPerfProbeDiagnostics => ({
+                projectCount: panel.projects.length,
+                mcRowCount: panel.scroll.querySelectorAll('.theia-mobile-mission-control-row').length,
+                teamRowCount: panel.scroll.querySelectorAll(
+                    '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks .theia-mobile-hub-team-row',
+                ).length,
+                hubView: panel.hubView,
+            }),
+        });
     }
 
     /** FAB opens "new repository"; hide while a repo row is expanded (conversations + composer). */
@@ -1525,6 +1693,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> {
         return this.workHubInboxUi.collectChatHubGroups(projects);
+    }
+
+    protected projectsForCurrentHubList(): MobileProjectEntry[] {
+        return this.hubQueryUi.projectsForCurrentHubList();
     }
 
     protected collectTasksInboxGroups(

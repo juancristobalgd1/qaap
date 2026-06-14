@@ -132,3 +132,26 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+.theia-mobile-mission-control-failure-chip {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--theia-errorForeground, #d9534f);
+  background: color-mix(in srgb, var(--theia-errorForeground, #d9534f) 14%, transparent);
+}
+
+.theia-mobile-mission-control-failure-chip.theia-mod-quota {
+  color: var(--theia-warningForeground, #c77c00);
+  background: color-mix(in srgb, var(--theia-warningForeground, #c77c00) 16%, transparent);
+}
+
+.theia-mobile-mission-control-row.theia-mod-failure-quota::before {
+  background: var(--theia-warningForeground, #c77c00);
+}

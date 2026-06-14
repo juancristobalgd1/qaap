@@ -80,6 +80,7 @@ import {
     countRunningTasksForCwd,
     selectNextQueuedTask,
     shouldQueueTask,
+    selectNextSpawnableQueuedTask,
 } from '../common/qaap-agent-task-repo-queue';
 import { QaapAgentProcessSupervisor } from './qaap-agent-process-supervisor';
 import { scheduleProcessTreeKillByPid } from './qaap-agent-process-kill';
@@ -163,6 +164,9 @@ const MAX_LOG_BYTES = 512 * 1024;
  * agent can finish the turn with the tools it has.
  */
 const QUEUED_APPROVAL_GRACE_TIMEOUT_MS = 5 * 60 * 1000;
+/** Default cap on simultaneously running VPS agent processes per backend instance. */
+const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
+const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
 
 /** Auth token file shared between the backend and the `qaap-task` helper. */
 const TOKEN_PATH = path.join(os.homedir(), '.qaap', 'task-token');
@@ -292,6 +296,8 @@ export class QaapAgentTaskRunner {
     protected readonly projectNameCache = new Map<string, string>();
     /** Cached `.prompts/project-info.prompttemplate` per cwd — primed by {@link warmForCwd}. */
     protected readonly projectInfoCache = new Map<string, string | undefined>();
+    /** Original create requests for tasks waiting on the concurrency queue. */
+    protected readonly queuedCreateRequests = new Map<string, QaapCreateAgentTaskRequest>();
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
     protected readonly probedAgentBins = new Set<string>();
     /** Create payloads for {@link QaapAgentTaskState.queued} tasks — restored from disk on startup. */
@@ -558,14 +564,20 @@ export class QaapAgentTaskRunner {
             const raw = await fsp.readFile(INDEX_PATH, 'utf8');
             const stored = JSON.parse(raw) as QaapAgentTask[];
             for (const task of stored) {
-                this.tasks.set(task.id, task.state === 'running' ? { ...task, state: 'interrupted' } : task);
+                const restored = task.state === 'running'
+                    ? { ...task, state: 'interrupted' as const }
+                    : task.state === 'queued'
+                        ? { ...task, state: 'queued' as const }
+                        : task;
+                this.tasks.set(task.id, restored);
             }
             await this.persist();
+            this.drainQueuedTasks();
         } catch {
             /* no prior tasks */
         }
         await this.restorePendingSpawnsFromDisk();
-        this.drainAllQueues();
+        this.drainQueuedTasks();
         await this.reattachSurvivingProcesses();
     }
 
@@ -824,6 +836,50 @@ export class QaapAgentTaskRunner {
         this.finishTask(taskId, 'failed', undefined);
     }
 
+    protected maxConcurrentAgents(): number {
+        const raw = process.env[MAX_CONCURRENT_AGENTS_ENV]?.trim();
+        if (!raw) {
+            return DEFAULT_MAX_CONCURRENT_AGENTS;
+        }
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CONCURRENT_AGENTS;
+    }
+
+    protected countRunningTasks(): number {
+        let count = 0;
+        for (const task of this.tasks.values()) {
+            if (task.state === 'running') {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    protected drainQueuedTasks(): void {
+        while (true) {
+            const next = selectNextSpawnableQueuedTask([...this.tasks.values()], {
+                runningCount: this.countRunningTasks(),
+                maxConcurrent: this.maxConcurrentAgents(),
+                countRunningForCwd: cwd => this.countRunningForCwd(cwd),
+                maxConcurrentPerRepo: this.maxConcurrentPerRepo(),
+            });
+            if (!next) {
+                return;
+            }
+            const request = this.pendingSpawnRequests.get(next.id)
+                ?? this.queuedCreateRequests.get(next.id)
+                ?? this.reconstructSpawnRequest(next);
+            this.pendingSpawnRequests.delete(next.id);
+            this.queuedCreateRequests.delete(next.id);
+            void this.persistPendingSpawns();
+            const running: QaapAgentTask = { ...next, state: 'running' };
+            this.tasks.set(next.id, running);
+            void this.spawnProcessWhenReady(running, request);
+            void this.persist();
+            this.onDidChangeTaskEmitter.fire({ type: 'created', task: running });
+        }
+    }
+
     list(): QaapAgentTask[] {
         return [...this.tasks.values()].sort((a, b) => b.createdAt - a.createdAt);
     }
@@ -1067,7 +1123,9 @@ export class QaapAgentTaskRunner {
         const autoApprove = resolveAgentAutoApprove(
             request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
         );
-        const shouldQueue = shouldQueueTask(this.countRunningForCwd(cwd), this.maxConcurrentPerRepo());
+        const shouldQueueByRepo = shouldQueueTask(this.countRunningForCwd(cwd), this.maxConcurrentPerRepo());
+        const atCapacity = this.countRunningTasks() >= this.maxConcurrentAgents();
+        const shouldQueue = shouldQueueByRepo || atCapacity;
         const task: QaapAgentTask = {
             id,
             title: (request.title ?? '').trim() || prompt || rawCommand,
@@ -1085,6 +1143,7 @@ export class QaapAgentTaskRunner {
         this.tasks.set(id, task);
         if (shouldQueue) {
             this.pendingSpawnRequests.set(id, request);
+            this.queuedCreateRequests.set(id, request);
             void this.persistPendingSpawns();
         } else {
             void this.spawnProcessWhenReady(task, request);
@@ -1397,8 +1456,10 @@ export class QaapAgentTaskRunner {
         const task = this.tasks.get(id);
         if (task?.state === 'queued') {
             this.pendingSpawnRequests.delete(id);
+            this.queuedCreateRequests.delete(id);
             void this.persistPendingSpawns();
-            return this.finishTask(id, 'cancelled', undefined);
+            const finished = this.finishTask(id, 'cancelled', undefined);
+            return finished;
         }
         const child = this.processes.get(id);
         const externalPid = this.externalPids.get(id);
@@ -1410,6 +1471,8 @@ export class QaapAgentTaskRunner {
             this.stopDetachedLogWatch(id);
             this.unregisterRunningSnapshot(id);
         }
+        this.pendingSpawnRequests.delete(id);
+        this.queuedCreateRequests.delete(id);
         if (task && task.state === 'running') {
             return this.finishTask(id, 'cancelled', undefined);
         }
@@ -1952,7 +2015,7 @@ export class QaapAgentTaskRunner {
             void this.notifyCompletion(finished);
         }
         if (wasRunning) {
-            this.drainQueueForCwd(task.cwd);
+            this.drainQueuedTasks();
         }
         return finished;
     }

@@ -10,6 +10,7 @@ import {
     QAAP_AGENT_MAX_CONCURRENT_PER_REPO_ENV,
     resolveMaxConcurrentPerRepo,
     selectNextQueuedTask,
+    selectNextSpawnableQueuedTask,
     shouldQueueTask,
 } from './qaap-agent-task-repo-queue';
 
@@ -72,5 +73,22 @@ describe('selectNextQueuedTask', () => {
             task({ id: 'running', cwd: '/repo', state: 'running', createdAt: 1 }),
         ];
         expect(selectNextQueuedTask(tasks, '/repo')).to.be.undefined;
+    });
+});
+
+describe('selectNextSpawnableQueuedTask', () => {
+    it('respects both global and per-repo caps', () => {
+        const tasks = [
+            task({ id: 'blocked', cwd: '/repo', state: 'queued', createdAt: 100 }),
+            task({ id: 'ready', cwd: '/other', state: 'queued', createdAt: 200 }),
+            task({ id: 'running-repo', cwd: '/repo', state: 'running', createdAt: 50 }),
+        ];
+        const next = selectNextSpawnableQueuedTask(tasks, {
+            runningCount: 1,
+            maxConcurrent: 2,
+            countRunningForCwd: cwd => countRunningTasksForCwd(tasks, cwd),
+            maxConcurrentPerRepo: 1,
+        });
+        expect(next?.id).to.equal('ready');
     });
 });

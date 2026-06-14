@@ -37,6 +37,9 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onSearch?: () => void;
     onExtensions?: () => void;
     onAutomations?: () => void;
+    /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
+    shouldSkipSessionListRefresh?(): boolean;
+    rememberSessionListFingerprint?(): void;
 }
 
 /**
@@ -62,6 +65,7 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly resizeHandle: HTMLElement;
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
+    protected refreshListRaf = 0;
 
     constructor(protected readonly delegate: MobileWorkHubSessionsSidebarDelegate) {
         this.root = document.createElement('aside');
@@ -275,9 +279,23 @@ export class MobileWorkHubSessionsSidebar {
         }
     }
 
-    refreshList(): void {
+    scheduleRefreshList(): void {
+        if (this.refreshListRaf) {
+            return;
+        }
+        this.refreshListRaf = window.requestAnimationFrame(() => {
+            this.refreshListRaf = 0;
+            this.refreshList();
+        });
+    }
+
+    refreshList(options?: { force?: boolean }): void {
+        if (!options?.force && this.delegate.shouldSkipSessionListRefresh?.()) {
+            return;
+        }
         this.listHost.replaceChildren();
         this.delegate.renderSessionList(this.listHost);
+        this.delegate.rememberSessionListFingerprint?.();
         if (this.visible) {
             this.ensureScrollTouchFallback();
         }

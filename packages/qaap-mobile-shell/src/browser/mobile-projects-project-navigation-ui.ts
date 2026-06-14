@@ -177,6 +177,22 @@ export class MobileProjectsProjectNavigationUi {
         }
     }
 
+    /** Local dev / browser example: open any folder on disk as the active workspace. */
+    async openLocalWorkspaceFolder(): Promise<void> {
+        const openFolder = WorkspaceCommands.OPEN_FOLDER.id;
+        if (!this.host.commands.getCommand(openFolder)) {
+            return;
+        }
+        markMobileProjectReadmeForOpen();
+        await this.host.commands.executeCommand(openFolder);
+        this.host.dismissPanelIfSheet();
+        if (this.host.homeMode) {
+            this.host.delegate.onWorkspaceOpened?.();
+        }
+        await this.host.refreshProjects();
+        this.host.render();
+    }
+
     async closeCurrentWorkspace(): Promise<void> {
         const commandId = WorkspaceCommands.CLOSE.id;
         if (!this.host.commands.getCommand(commandId) || !this.host.commands.isEnabled(commandId)) {

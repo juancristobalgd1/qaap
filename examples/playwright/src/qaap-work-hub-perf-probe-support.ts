@@ -1,0 +1,43 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+/** Shared Work Hub perf-probe types for Playwright E2E (not a test file). */
+export interface WorkHubPerfProbeMetrics {
+    hubScrollReplaceChildren: number;
+    sidebarListReplaceChildren: number;
+    chatHostConnected: boolean;
+    inlineExecutionConnected: boolean;
+}
+
+export interface WorkHubPerfProbeDiagnostics {
+    projectCount: number;
+    mcRowCount: number;
+    teamRowCount: number;
+    hubView: string;
+}
+
+export interface WorkHubPerfProbeApi {
+    burstConversationTicks(count: number): void;
+    setTranscriptOverlayOpenForProbe(open: boolean): void;
+    openSessionsSidebarForProbe(): void;
+    navigateToHomeHubForProbe(): void;
+    expandMissionControlForProbe(): void;
+    showTasksInboxWithTeamForProbe(): void;
+    seedMultiAgentProbeConversations(): void;
+    tickProbeStreamingConversations(): void;
+    hasProjectsForProbe(): boolean;
+    hasWorkspaceForProbe(): boolean;
+    getProbeDiagnostics(): WorkHubPerfProbeDiagnostics;
+    resetMetrics(): WorkHubPerfProbeMetrics;
+    getMetrics(): WorkHubPerfProbeMetrics;
+}
+
+export const QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY = 'qaapWorkHubPerfProbe';
+
+declare global {
+    interface Window {
+        __qaapWorkHubPerfProbe?: WorkHubPerfProbeApi;
+    }
+}

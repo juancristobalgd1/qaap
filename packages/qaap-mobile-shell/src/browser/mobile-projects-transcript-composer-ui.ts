@@ -96,8 +96,11 @@ export class MobileProjectsTranscriptComposerUi {
 
     constructor(protected readonly host: MobileProjectsTranscriptComposerHost) { }
 
-    async ensureTranscriptComposerAgentsLoaded(project: MobileProjectEntry): Promise<readonly QaapAgentTaskAgentOption[]> {
-        if (this.host.transcriptComposerBackendAgents.length === 0) {
+    async ensureTranscriptComposerAgentsLoaded(
+        project: MobileProjectEntry,
+        options?: { force?: boolean },
+    ): Promise<readonly QaapAgentTaskAgentOption[]> {
+        if (options?.force || this.host.transcriptComposerBackendAgents.length === 0) {
             await this.refreshTranscriptComposerAgents(project);
         }
         return this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(this.host.transcriptComposerBackendAgents);
@@ -159,12 +162,22 @@ export class MobileProjectsTranscriptComposerUi {
     }
 
     async refreshTranscriptComposerAgents(project: MobileProjectEntry): Promise<void> {
+        this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project)
             ?? this.host.transcriptComposerSummary?.cwd
             ?? this.host.preparedCwdByProjectId.get(project.id);
         try {
             const snapshot = await this.host.loadBackendAgentSnapshot();
-            const filteredAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(snapshot.agents);
+            let filteredAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(snapshot.agents);
+            if (filteredAgents.length === 0) {
+                await this.host.stickyComposerAgentsUi.waitForSelectableActiveTaskAgents(3000);
+                const liveAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
+                    this.host.activeTasks?.getAgents() ?? [],
+                );
+                if (liveAgents.length > 0) {
+                    filteredAgents = liveAgents;
+                }
+            }
             this.host.transcriptComposerBackendAgents = filteredAgents;
             this.host.transcriptComposerQaiqModels = snapshot.qaiqModels;
             const resolved = this.host.stickyComposerAgentsUi.reconcileStickyComposerPinnedAgent(
@@ -186,7 +199,10 @@ export class MobileProjectsTranscriptComposerUi {
                 }
             }
         } catch {
-            this.host.transcriptComposerBackendAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(this.host.activeTasks?.getAgents() ?? []);
+            await this.host.stickyComposerAgentsUi.waitForSelectableActiveTaskAgents(1500);
+            this.host.transcriptComposerBackendAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
+                this.host.activeTasks?.getAgents() ?? [],
+            );
             this.host.transcriptComposerQaiqModels = [];
         }
     }
@@ -269,7 +285,7 @@ export class MobileProjectsTranscriptComposerUi {
         }
         this.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
         this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
-        void this.ensureTranscriptComposerAgentsLoaded(project).then(agents => {
+        void this.ensureTranscriptComposerAgentsLoaded(project, { force: true }).then(agents => {
             if (this.host.transcriptComposerAgentSheet !== chrome.sheet) {
                 return;
             }

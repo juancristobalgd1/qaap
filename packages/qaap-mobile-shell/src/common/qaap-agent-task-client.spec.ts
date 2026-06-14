@@ -19,6 +19,7 @@ import {
     QAIQ_AGENT_ID,
     readStoredQaiqModel,
     filterQaapComposerAgents,
+    mergeAgentTaskAgentOptions,
     mergeComposerAgentPickerOptions,
     filterUiSelectableVpsAgents,
     migrateQaapProductAgentId,
@@ -77,6 +78,14 @@ describe('qaap-agent-task-client', () => {
         expect(migrateQaapProductAgentId('Coder')).to.equal(QAAP_PRIMARY_AGENT_ID);
         expect(migrateQaapProductAgentId('codex')).to.equal('codex');
         expect(migrateQaapProductAgentId('opencode')).to.equal('opencode');
+    });
+
+    it('mergeAgentTaskAgentOptions unions HTTP and WebSocket agent snapshots', () => {
+        const merged = mergeAgentTaskAgentOptions(
+            [{ id: 'codex', label: 'Codex', available: true }],
+            [{ id: 'qaiq', label: 'QAIQ', available: true }],
+        );
+        expect(merged.map(agent => agent.id)).to.deep.equal(['codex', 'qaiq']);
     });
 
     it('filterQaapComposerAgents exposes selectable VPS agents', () => {

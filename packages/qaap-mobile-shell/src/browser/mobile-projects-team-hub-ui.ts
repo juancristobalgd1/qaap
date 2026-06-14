@@ -9,6 +9,13 @@ import {
     type WorkHubTeamMember,
 } from '../common/qaap-work-hub-team';
 import {
+    buildWorkHubTeamRowFingerprint,
+    buildWorkHubTeamSectionFingerprint,
+    QAAP_TEAM_MEMBER_ID_ATTR,
+    QAAP_TEAM_ROW_FP_ATTR,
+    QAAP_TEAM_SECTION_FP_ATTR,
+} from '../common/qaap-work-hub-team-fingerprint';
+import {
     appendSubtitleMetaPart,
     createAgentMetaBadge,
     createAgentRowAvatar,
@@ -85,8 +92,59 @@ export class MobileProjectsTeamHubUi {
             }
         }
         host.append(list);
+        list.setAttribute(QAAP_TEAM_SECTION_FP_ATTR, buildWorkHubTeamSectionFingerprint(members, approvals.length));
         if (!options.embedded && this.deps.onOpenWorkflows) {
             host.append(this.createWorkflowsLink());
+        }
+        return true;
+    }
+
+    /**
+     * In-place row updates when structure is unchanged — used by hub incremental patching on SSE ticks.
+     */
+    patchSections(
+        host: HTMLElement,
+        members: readonly WorkHubTeamMember[],
+        options: MobileProjectsTeamHubRenderOptions = {},
+    ): boolean {
+        const list = host.querySelector<HTMLElement>('.theia-mobile-hub-team');
+        if (!list) {
+            return false;
+        }
+        const approvals = options.approvals ?? [];
+        const structure = buildWorkHubTeamSectionFingerprint(members, approvals.length);
+        if (list.getAttribute(QAAP_TEAM_SECTION_FP_ATTR) !== structure) {
+            return false;
+        }
+        const tree = buildTeamTree(members);
+        const rows: Array<{ member: WorkHubTeamMember; nested: boolean }> = [];
+        for (const root of tree.roots) {
+            rows.push({ member: root, nested: false });
+            const children = tree.childrenByParent.get(root.id) ?? [];
+            for (const child of children) {
+                rows.push({ member: child, nested: true });
+            }
+        }
+        for (const { member, nested } of rows) {
+            const nextFingerprint = buildWorkHubTeamRowFingerprint(member);
+            const existing = list.querySelector<HTMLElement>(
+                `.theia-mobile-hub-team-row[${QAAP_TEAM_MEMBER_ID_ATTR}="${cssEscape(member.id)}"]`,
+            );
+            if (!existing) {
+                return false;
+            }
+            if (existing.getAttribute(QAAP_TEAM_ROW_FP_ATTR) === nextFingerprint) {
+                continue;
+            }
+            existing.replaceWith(this.createMemberRow(member, nested));
+        }
+        const activeCount = list.querySelector('.theia-mobile-hub-team-section-count');
+        if (activeCount && tree.roots.length > 0) {
+            activeCount.textContent = String(tree.roots.length);
+        }
+        const approvalCount = list.querySelector('.theia-mobile-hub-team-section-count.theia-mod-warn');
+        if (approvalCount && approvals.length > 0) {
+            approvalCount.textContent = String(approvals.length);
         }
         return true;
     }
@@ -229,6 +287,8 @@ export class MobileProjectsTeamHubUi {
         const row = document.createElement('button');
         row.type = 'button';
         row.className = `theia-mobile-hub-team-row${nested ? ' theia-mod-nested' : ''}`;
+        row.setAttribute(QAAP_TEAM_MEMBER_ID_ATTR, member.id);
+        row.setAttribute(QAAP_TEAM_ROW_FP_ATTR, buildWorkHubTeamRowFingerprint(member));
         const agentLabel = this.deps.resolveAgentLabel(member.agentId);
         row.setAttribute(
             'aria-label',
@@ -324,8 +384,17 @@ export class MobileProjectsTeamHubUi {
                 return nls.localize('qaap/mobileProjects/teamStateStreaming', 'Working');
             case 'failed':
                 return nls.localize('qaap/mobileProjects/teamStateFailed', 'Failed');
+            case 'queued':
+                return nls.localize('qaap/mobileProjects/teamStateQueued', 'Queued');
             default:
                 return state;
         }
     }
+}
+
+function cssEscape(value: string): string {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+        return CSS.escape(value);
+    }
+    return value.replace(/["\\]/g, '\\$&');
 }

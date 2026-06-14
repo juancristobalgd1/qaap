@@ -3326,6 +3326,127 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex: 1 1 auto;
   min-height: min(40vh, 320px);
   justify-content: center;
+  padding: 12px 20px 24px;
+}
+
+.theia-mobile-agents-hub-onboarding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.theia-mobile-agents-hub-onboarding-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 14px;
+  border: 1px solid var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 8%, transparent));
+  border-radius: 14px;
+  background: var(--q-surface-raised, color-mix(in srgb, var(--theia-foreground) 3%, transparent));
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+  font-size: 20px;
+  opacity: 0.88;
+}
+
+.theia-mobile-agents-hub-onboarding-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
+}
+
+.theia-mobile-agents-hub-onboarding-hint {
+  margin: 8px 0 0;
+  max-width: 28ch;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+}
+
+.theia-mobile-agents-hub-onboarding-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 22px;
+}
+
+.theia-mobile-agents-hub-onboarding-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--q-radius-row, 12px);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, filter 140ms ease;
+}
+
+.theia-mobile-agents-hub-onboarding-btn-icon {
+  font-size: 15px;
+  opacity: 0.92;
+}
+
+.theia-mobile-agents-hub-onboarding-btn-label {
+  line-height: 1.2;
+}
+
+.theia-mobile-agents-hub-onboarding-btn.theia-mod-primary {
+  border-color: color-mix(in srgb, var(--q-accent, var(--theia-button-background)) 88%, transparent);
+  background: var(--q-accent, var(--theia-button-background));
+  color: var(--q-on-accent, var(--theia-button-foreground, #fff));
+  font-weight: 600;
+}
+
+.theia-mobile-agents-hub-onboarding-btn.theia-mod-primary:active {
+  filter: brightness(0.94);
+}
+
+.theia-mobile-agents-hub-onboarding-btn.theia-mod-ghost {
+  border-color: var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 10%, transparent));
+  background: transparent;
+  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
+}
+
+.theia-mobile-agents-hub-onboarding-btn.theia-mod-ghost:active {
+  background: var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 6%, transparent));
+}
+
+.theia-mobile-agents-hub-onboarding-local-link {
+  margin-top: 14px;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-underline-color: color-mix(in srgb, currentColor 42%, transparent);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-agents-hub-onboarding-local-link:active {
+  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
 }
 
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-scroll,

@@ -83,6 +83,7 @@ describe('mobile-projects-panel host delegates', () => {
         'renderAgentsHubExecutionShell',
         'shouldPreserveAgentsHubInlineTranscriptShell',
         'shouldSkipFullRenderListOnConversationTick',
+        'maybeInstallWorkHubPerfProbe',
         'refreshWorkHubConversationChrome',
         'shouldUseAgentsHubLanding',
         'isProjectDetailView',

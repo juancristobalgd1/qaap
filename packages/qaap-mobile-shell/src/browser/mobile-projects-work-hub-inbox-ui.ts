@@ -66,6 +66,7 @@ export interface MobileProjectsWorkHubInboxHost {
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    hubIncrementalUi: import('./mobile-projects-hub-incremental-ui').MobileProjectsHubIncrementalUi;
 }
 
 /** Shared inbox project groups for Tasks, Review, and Chat Work Hub tabs. */
@@ -93,6 +94,7 @@ export class MobileProjectsWorkHubInboxUi {
             }
             root.append(inbox);
             this.host.scroll.append(root);
+            this.host.hubIncrementalUi.rememberRenderedStructure('review-inbox', groups);
         } else if (!this.host.inboxPullRequestsLoaded && this.host.inboxPullRequestsLoading) {
             this.host.scroll.append(this.createReviewLoadingState());
         } else if (hasGithubRepos && this.host.inboxGithubSignedIn === false) {
@@ -126,6 +128,16 @@ export class MobileProjectsWorkHubInboxUi {
             host.append(this.createInboxProjectGroup(group.project, items));
         }
         this.host.scroll.append(host);
+        this.host.hubIncrementalUi.rememberRenderedStructure('chat-inbox', groups.map(group => ({
+            project: group.project,
+            items: group.summaries.map(summary => ({
+                kind: 'conversation' as const,
+                project: group.project,
+                summary,
+                sortAt: summary.updatedAt,
+                priority: 0,
+            })),
+        })));
         this.host.renderSubtitle();
     }
 
@@ -243,6 +255,7 @@ export class MobileProjectsWorkHubInboxUi {
     ): HTMLElement {
         const section = document.createElement('section');
         section.className = 'theia-mobile-projects-chats-project-group';
+        section.dataset.qaapProjectId = project.id;
         section.style.setProperty('--qaap-mobile-project-accent', project.color);
 
         const head = document.createElement('button');
