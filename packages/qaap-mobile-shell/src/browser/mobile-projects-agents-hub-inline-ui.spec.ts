@@ -110,7 +110,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         const host = createHost();
         const ui = new MobileProjectsAgentsHubInlineUi(host);
         ui.renderAgentsHubExecutionShell();
-        expect(host.scroll.querySelector('.theia-mobile-agents-hub-no-project-onboarding')).to.not.equal(null);
+        expect(host.scroll.querySelector('.theia-mobile-agents-hub-onboarding')).to.not.equal(null);
+        expect(host.scroll.querySelector('.theia-mobile-agents-hub-onboarding-btn.theia-mod-primary')).to.not.equal(null);
         expect(host.scroll.textContent).to.include('Add repository');
         expect(host.scroll.textContent).to.include('Start new project');
     });

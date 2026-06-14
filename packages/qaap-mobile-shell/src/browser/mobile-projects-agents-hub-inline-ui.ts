@@ -271,37 +271,54 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     protected createAgentsHubNoProjectOnboarding(): HTMLElement {
-        const empty = document.createElement('div');
-        empty.className = 'q-empty theia-mobile-work-hub-home-empty theia-mobile-agents-hub-no-project-onboarding';
-        const icon = document.createElement('span');
-        icon.className = 'q-empty-icon codicon codicon-repo';
-        icon.setAttribute('aria-hidden', 'true');
+        const root = document.createElement('div');
+        root.className = 'theia-mobile-agents-hub-onboarding';
+
+        const mark = document.createElement('span');
+        mark.className = 'theia-mobile-agents-hub-onboarding-mark codicon codicon-repo';
+        mark.setAttribute('aria-hidden', 'true');
+
         const title = document.createElement('p');
-        title.className = 'q-empty-title';
+        title.className = 'theia-mobile-agents-hub-onboarding-title';
         title.textContent = nls.localize('qaap/workHubHome/noProjectsTitle', 'No workspaces yet');
+
         const hint = document.createElement('p');
-        hint.className = 'q-empty-hint';
+        hint.className = 'theia-mobile-agents-hub-onboarding-hint';
         hint.textContent = nls.localize(
             'qaap/workHubHome/noProjects',
             'Add a GitHub repository to delegate agent work and review the resulting PR.',
         );
-        empty.append(icon, title, hint);
 
         const actions = document.createElement('div');
-        actions.className = 'theia-mobile-agents-hub-no-project-actions';
+        actions.className = 'theia-mobile-agents-hub-onboarding-actions';
+
         const addRepo = document.createElement('button');
         addRepo.type = 'button';
-        addRepo.className = 'q-empty-action';
-        addRepo.textContent = nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
+        addRepo.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary';
+        const addRepoIcon = document.createElement('span');
+        addRepoIcon.className = 'codicon codicon-repo-clone theia-mobile-agents-hub-onboarding-btn-icon';
+        addRepoIcon.setAttribute('aria-hidden', 'true');
+        const addRepoLabel = document.createElement('span');
+        addRepoLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
+        addRepoLabel.textContent = nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
+        addRepo.append(addRepoIcon, addRepoLabel);
         addRepo.addEventListener('click', () => { void this.host.onNewClick(); });
+
         const newProject = document.createElement('button');
         newProject.type = 'button';
-        newProject.className = 'q-empty-action theia-mod-secondary';
-        newProject.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
+        newProject.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-ghost';
+        const newProjectIcon = document.createElement('span');
+        newProjectIcon.className = 'codicon codicon-add theia-mobile-agents-hub-onboarding-btn-icon';
+        newProjectIcon.setAttribute('aria-hidden', 'true');
+        const newProjectLabel = document.createElement('span');
+        newProjectLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
+        newProjectLabel.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
+        newProject.append(newProjectIcon, newProjectLabel);
         newProject.addEventListener('click', () => { void this.host.onStartNewProject(); });
+
         actions.append(addRepo, newProject);
-        empty.append(actions);
-        return empty;
+        root.append(mark, title, hint, actions);
+        return root;
     }
 
     /** Same transcript host for idle and active sessions; idle shows starter chips in the scroll area. */
