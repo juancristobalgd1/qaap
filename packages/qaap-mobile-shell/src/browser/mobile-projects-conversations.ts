@@ -142,6 +142,11 @@ export class MobileProjectsConversations {
         this.schedulePrimeFromAll();
     }
 
+    /** E2E perf probe: simulate one live conversation tick without network I/O. */
+    perfProbeFireDidChange(): void {
+        this.onDidChangeEmitter.fire();
+    }
+
     protected primeFromAllInFlight: Promise<void> | undefined;
 
     protected schedulePrimeFromAll(): void {

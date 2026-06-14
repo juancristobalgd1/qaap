@@ -95,6 +95,7 @@ export interface MobileProjectsPanelLifecycleHost {
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     syncLandingHubListChrome(): void;
     markTasksFirstLoadComplete(render: boolean): void;
+    maybeInstallWorkHubPerfProbe(): void;
     shouldSkipFullRenderListOnConversationTick(): boolean;
     refreshWorkHubConversationChrome(): void;
     mergeInboxPullRequests(polled: QaapGithubPullRequestSummary[]): QaapGithubPullRequestSummary[];
@@ -180,6 +181,7 @@ export class MobileProjectsPanelLifecycleUi {
         this.startVisibleHubServices();
         this.subscribeToActiveTasks();
         this.host.syncLandingHubListChrome();
+        this.host.maybeInstallWorkHubPerfProbe();
         this.reportFirstShowTiming(startedAt, firstShow);
         this.schedulePrimeVisiblePanelData(firstShow);
     }

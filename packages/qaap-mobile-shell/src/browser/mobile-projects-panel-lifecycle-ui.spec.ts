@@ -97,6 +97,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             stickyComposerRenderUi: { renderStickyComposer: () => undefined } as MobileProjectsPanelLifecycleHost['stickyComposerRenderUi'],
             syncLandingHubListChrome: () => undefined,
             markTasksFirstLoadComplete: () => undefined,
+            maybeInstallWorkHubPerfProbe: () => undefined,
             shouldSkipFullRenderListOnConversationTick: () => false,
             refreshWorkHubConversationChrome: () => { refreshChromeCalls.value++; },
             mergeInboxPullRequests: polled => polled,

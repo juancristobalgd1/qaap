@@ -37,6 +37,7 @@ import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQ
 import { MobileProjectsService } from './mobile-projects-service';
 import { isAgentsHubExecutionSurfacePainted } from '../common/qaap-agents-hub-landing';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
+import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
@@ -915,6 +916,26 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected flushScheduledRenderList(): void {
         this.hubListRenderScheduler.flushNow();
+    }
+
+    protected maybeInstallWorkHubPerfProbe(): void {
+        const panel = this as MobileProjectsPanel & {
+            transcriptSheet?: HTMLElement;
+            transcriptChatHost?: HTMLElement;
+            transcriptOpenSummaryId?: string;
+        };
+        installQaapWorkHubPerfProbe({
+            scroll: panel.scroll,
+            conversations: panel.conversations,
+            getSessionsSidebar: () => panel.sessionsSidebar,
+            getTranscriptSheet: () => panel.transcriptSheet,
+            setTranscriptSheet: value => { panel.transcriptSheet = value; },
+            getTranscriptChatHost: () => panel.transcriptChatHost,
+            setTranscriptChatHost: value => { panel.transcriptChatHost = value; },
+            getTranscriptOpenSummaryId: () => panel.transcriptOpenSummaryId,
+            setTranscriptOpenSummaryId: value => { panel.transcriptOpenSummaryId = value; },
+            openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
+        });
     }
 
     /** FAB opens "new repository"; hide while a repo row is expanded (conversations + composer). */

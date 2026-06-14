@@ -1,0 +1,130 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import {
+    isQaapWorkHubPerfProbeEnabled,
+    type QaapWorkHubPerfProbeApi,
+    type QaapWorkHubPerfProbeMetrics,
+} from '../common/qaap-work-hub-perf-probe';
+import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
+
+const PERF_PROBE_CONVERSATION_ID = '__qaap_work_hub_perf_probe__';
+
+export interface QaapWorkHubPerfProbeHost {
+    scroll: HTMLElement;
+    conversations: MobileProjectsConversations | undefined;
+    getSessionsSidebar(): MobileWorkHubSessionsSidebar | undefined;
+    getTranscriptSheet(): HTMLElement | undefined;
+    setTranscriptSheet(value: HTMLElement | undefined): void;
+    getTranscriptChatHost(): HTMLElement | undefined;
+    setTranscriptChatHost(value: HTMLElement | undefined): void;
+    getTranscriptOpenSummaryId(): string | undefined;
+    setTranscriptOpenSummaryId(value: string | undefined): void;
+    openWorkHubSessionsSidebar(): void;
+}
+
+export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): void {
+    if (!isQaapWorkHubPerfProbeEnabled() || typeof window === 'undefined') {
+        return;
+    }
+    if (window.__qaapWorkHubPerfProbe) {
+        return;
+    }
+
+    const metrics = {
+        hubScrollReplaceChildren: 0,
+        sidebarListReplaceChildren: 0,
+    };
+
+    const patchReplaceChildren = (
+        element: HTMLElement,
+        counter: 'hubScrollReplaceChildren' | 'sidebarListReplaceChildren',
+    ): void => {
+        const original = element.replaceChildren.bind(element);
+        element.replaceChildren = (...nodes: (string | Node)[]) => {
+            metrics[counter]++;
+            return original(...nodes);
+        };
+    };
+
+    patchReplaceChildren(host.scroll, 'hubScrollReplaceChildren');
+
+    const ensureSidebarListPatched = (): void => {
+        const listHost = host.getSessionsSidebar()?.node.querySelector(
+            '.theia-mobile-work-hub-sessions-sidebar-list',
+        );
+        if (listHost instanceof HTMLElement && !listHost.dataset.qaapPerfProbePatched) {
+            listHost.dataset.qaapPerfProbePatched = '1';
+            patchReplaceChildren(listHost, 'sidebarListReplaceChildren');
+        }
+    };
+
+    const readMetrics = (): QaapWorkHubPerfProbeMetrics => {
+        ensureSidebarListPatched();
+        return {
+            hubScrollReplaceChildren: metrics.hubScrollReplaceChildren,
+            sidebarListReplaceChildren: metrics.sidebarListReplaceChildren,
+            chatHostConnected: host.getTranscriptChatHost()?.isConnected === true,
+            inlineExecutionConnected: document.querySelector('.theia-mobile-agents-hub-inline-execution')?.isConnected === true,
+        };
+    };
+
+    const api: QaapWorkHubPerfProbeApi = {
+        burstConversationTicks: (count: number) => {
+            const conversations = host.conversations;
+            if (!conversations) {
+                return;
+            }
+            for (let i = 0; i < count; i++) {
+                conversations.perfProbeFireDidChange();
+            }
+        },
+        setTranscriptOverlayOpenForProbe: (open: boolean) => {
+            if (open) {
+                host.setTranscriptOpenSummaryId(PERF_PROBE_CONVERSATION_ID);
+                let transcriptSheet = host.getTranscriptSheet();
+                if (!transcriptSheet) {
+                    transcriptSheet = document.createElement('div');
+                    transcriptSheet.className = 'theia-mobile-agent-transcript-root theia-mod-visible';
+                    document.body.append(transcriptSheet);
+                    host.setTranscriptSheet(transcriptSheet);
+                }
+                let transcriptChatHost = host.getTranscriptChatHost();
+                if (!transcriptChatHost) {
+                    transcriptChatHost = document.createElement('div');
+                    transcriptChatHost.className = 'theia-mobile-agent-transcript-real-chat';
+                    transcriptChatHost.dataset.qaapPerfProbe = '1';
+                    transcriptSheet.append(transcriptChatHost);
+                    host.setTranscriptChatHost(transcriptChatHost);
+                }
+                return;
+            }
+            const transcriptChatHost = host.getTranscriptChatHost();
+            if (transcriptChatHost?.dataset.qaapPerfProbe === '1') {
+                transcriptChatHost.remove();
+                host.setTranscriptChatHost(undefined);
+            }
+            const transcriptSheet = host.getTranscriptSheet();
+            if (transcriptSheet?.parentElement === document.body && !transcriptSheet.classList.contains('theia-mod-sheet-mounted')) {
+                transcriptSheet.remove();
+                host.setTranscriptSheet(undefined);
+            }
+            host.setTranscriptOpenSummaryId(undefined);
+        },
+        openSessionsSidebarForProbe: () => {
+            host.openWorkHubSessionsSidebar();
+            ensureSidebarListPatched();
+        },
+        resetMetrics: () => {
+            metrics.hubScrollReplaceChildren = 0;
+            metrics.sidebarListReplaceChildren = 0;
+            return readMetrics();
+        },
+        getMetrics: () => readMetrics(),
+    };
+
+    window.__qaapWorkHubPerfProbe = api;
+}
