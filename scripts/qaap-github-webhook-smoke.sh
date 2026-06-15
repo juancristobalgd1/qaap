@@ -9,7 +9,7 @@ cd "$ROOT"
 read_env() {
     local key="$1"
     if [[ -f .env ]]; then
-        grep -E "^${key}=" .env | tail -1 | cut -d= -f2- | sed 's/[[:space:]"'\''\r]//g'
+        grep -E "^${key}=" .env | tail -1 | cut -d= -f2- | sed 's/[[:space:]"'\''\r]//g' || true
     fi
 }
 
@@ -31,7 +31,7 @@ fail() {
     exit 1
 }
 
-PAYLOAD="$(python3 -c "
+PAYLOAD="$(COMMENT_ID="$COMMENT_ID" ISSUE="$ISSUE" OWNER="$OWNER" REPO="$REPO" python3 -c "
 import json, os
 print(json.dumps({
     'action': 'created',
@@ -44,7 +44,7 @@ print(json.dumps({
     'issue': {'number': int(os.environ['ISSUE'])},
     'repository': {'owner': {'login': os.environ['OWNER']}, 'name': os.environ['REPO']},
 }))
-" COMMENT_ID="$COMMENT_ID" ISSUE="$ISSUE" OWNER="$OWNER" REPO="$REPO")"
+")"
 
 CURL_HEADERS=(-H "Content-Type: application/json" -H "X-GitHub-Event: issue_comment")
 

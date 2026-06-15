@@ -9,7 +9,7 @@ cd "$ROOT"
 THEIA_PORT="${THEIA_PORT:-}"
 if [[ -z "$THEIA_PORT" ]] && [[ -f .env ]]; then
     # shellcheck disable=SC2002
-    THEIA_PORT="$(grep -E '^THEIA_PORT=' .env | tail -1 | cut -d= -f2- | sed 's/[[:space:]"'\''\r]//g')"
+    THEIA_PORT="$(grep -E '^THEIA_PORT=' .env | tail -1 | cut -d= -f2- | sed 's/[[:space:]"'\''\r]//g' || true)"
 fi
 THEIA_PORT="${THEIA_PORT:-4873}"
 
