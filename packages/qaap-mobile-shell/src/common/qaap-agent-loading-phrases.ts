@@ -36,3 +36,10 @@ export function shouldCycleQaapAgentLoadingPhrases(activityKind: string | undefi
         || activityKind === 'starting'
         || activityKind === 'writing';
 }
+
+/** Keep the live activity shimmer visible for the whole streaming turn. */
+export function shouldShowTranscriptStreamingActivityRow(
+    conv: { readonly status: string },
+): boolean {
+    return conv.status === 'streaming';
+}

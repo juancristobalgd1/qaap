@@ -132,24 +132,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             }
         }
 
-        if (options?.streaming && conv && this.shouldShowTranscriptPlanningLine(segments)) {
-            body.append(this.createTranscriptPlanningLine());
-        }
-
         if (!thoughtBrief) {
             const technicalDetails = this.createTranscriptTechnicalDetailsCard(segments);
             if (technicalDetails) {
                 body.append(technicalDetails);
-            }
-        }
-
-        if (options?.streaming && conv) {
-            const meta = this.createTranscriptStreamMeta(conv, row);
-            if (meta) {
-                const status = document.createElement('div');
-                status.className = 'theia-mobile-agent-stream-status';
-                status.append(meta);
-                body.append(status);
             }
         }
 

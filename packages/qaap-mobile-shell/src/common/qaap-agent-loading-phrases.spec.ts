@@ -9,6 +9,7 @@ import {
     getQaapAgentLoadingPhrases,
     resolveQaapAgentLoadingPhraseIndex,
     shouldCycleQaapAgentLoadingPhrases,
+    shouldShowTranscriptStreamingActivityRow,
 } from './qaap-agent-loading-phrases';
 
 describe('qaap-agent-loading-phrases', () => {
@@ -27,5 +28,11 @@ describe('qaap-agent-loading-phrases', () => {
         expect(shouldCycleQaapAgentLoadingPhrases('writing')).to.equal(true);
         expect(shouldCycleQaapAgentLoadingPhrases('read')).to.equal(false);
         expect(shouldCycleQaapAgentLoadingPhrases('bash')).to.equal(false);
+    });
+
+    it('keeps the streaming activity row visible for the whole turn', () => {
+        expect(shouldShowTranscriptStreamingActivityRow({ status: 'streaming' })).to.equal(true);
+        expect(shouldShowTranscriptStreamingActivityRow({ status: 'completed' })).to.equal(false);
+        expect(shouldShowTranscriptStreamingActivityRow({ status: 'failed' })).to.equal(false);
     });
 });

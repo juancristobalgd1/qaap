@@ -9,6 +9,7 @@ import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream
 import { QaapCliTranscriptParseWorkerClient } from './qaap-cli-transcript-parse-worker-client';
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
 import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
+import { shouldShowTranscriptStreamingActivityRow } from '../common/qaap-agent-loading-phrases';
 import { isTranscriptAgentTailStreaming } from '../common/qaap-transcript-turn-status';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
@@ -137,11 +138,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     }
 
     buildTranscriptVirtualFooter(conv: QaapAgentConversationDTO): HTMLElement[] {
-        const footers: HTMLElement[] = [];
-        if (conv.status === 'streaming' && conv.messages.at(-1)?.role === 'user') {
-            footers.push(this.artifactsUi.createTranscriptStreamingActivityRow(conv));
+        if (!shouldShowTranscriptStreamingActivityRow(conv)) {
+            return [];
         }
-        return footers;
+        return [this.artifactsUi.createTranscriptStreamingActivityRow(conv)];
     }
 
     renderTranscriptMessagesVirtual(host: HTMLElement, conv: QaapAgentConversationDTO): void {
@@ -220,9 +220,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (conv.status === 'streaming') {
             if (last?.role === 'agent') {
                 messageHost.lastElementChild?.classList.add('theia-mod-streaming');
-            } else {
-                messageHost.append(this.artifactsUi.createTranscriptStreamingActivityRow(conv));
             }
+            this.syncTranscriptActivityRow(messageHost, conv);
+        } else {
+            this.removeTranscriptActivityRow(messageHost);
         }
         scrollElementToEnd(messageHost);
         this.attachTranscriptScrollChrome(host, messageHost, conv);
@@ -264,6 +265,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const patchKind = resolveStreamingTranscriptPatchKind(this.host.transcriptLastConv, conv);
         if (patchKind === 'none') {
             if (isStreamingTranscriptTailUnchanged(this.host.transcriptLastConv, conv)) {
+                this.syncStreamingActivityChrome(host, conv);
                 this.host.transcriptLastConv = conv;
                 return true;
             }
@@ -287,7 +289,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         );
 
         if (patchKind === 'activity-only') {
-            this.syncTranscriptActivityRow(messageHost, conv);
+            this.syncStreamingActivityChrome(host, conv);
             this.host.transcriptLastConv = conv;
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
@@ -310,7 +312,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             );
             if (existing && this.tryPatchStreamingAgentTextContent(existing, prevLast, lastAgent, segments, conv)) {
                 this.markTranscriptMessageRow(existing, lastAgent.id, isTranscriptAgentTailStreaming(conv));
-                this.removeTranscriptActivityRow(messageHost);
+                this.syncTranscriptActivityRow(messageHost, conv);
                 this.host.transcriptLastConv = conv;
                 this.host.transcriptLastRenderedConversationId = conv.id;
                 this.host.transcriptLastRenderedMessageId = lastAgent.id;
@@ -350,10 +352,23 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptLastConv = conv;
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = lastAgent.id;
+        this.syncTranscriptActivityRow(messageHost, conv);
         if (wasNearBottom) {
             scrollElementToEnd(messageHost);
         }
         return true;
+    }
+
+    /** Virtual + non-virtual: keep the shimmer activity row/footer in sync during streaming. */
+    protected syncStreamingActivityChrome(host: HTMLElement, conv: QaapAgentConversationDTO): void {
+        if (this.host.transcriptUi.shouldVirtualize(conv)) {
+            const list = this.host.transcriptUi.activeList;
+            if (list && this.host.transcriptUi.activeConversationId === conv.id) {
+                list.setFooter(this.buildTranscriptVirtualFooter(conv));
+            }
+            return;
+        }
+        this.syncTranscriptActivityRow(this.resolveTranscriptMessageHost(host), conv);
     }
 
     /** Upgrade hybrid/plain streaming markdown once the agent turn looks complete. */
@@ -370,6 +385,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         row.classList.remove('theia-mod-streaming');
         this.contentUi.settleTranscriptStreamingContent(row);
+        this.removeTranscriptActivityRow(messageHost);
     }
 
     tryPatchStreamingTranscriptVirtual(
@@ -520,22 +536,18 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     }
 
     syncTranscriptActivityRow(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+        if (!shouldShowTranscriptStreamingActivityRow(conv)) {
+            this.removeTranscriptActivityRow(messageHost);
+            return;
+        }
         const existing = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
-        if (existing && conv.status === 'streaming' && conv.messages.at(-1)?.role === 'user') {
+        if (existing) {
             if (this.artifactsUi.patchTranscriptStreamingActivityRow(existing, conv)) {
                 return;
             }
+            this.removeTranscriptActivityRow(messageHost);
         }
-        this.removeTranscriptActivityRow(messageHost);
-        messageHost.querySelectorAll('.theia-mod-streaming').forEach(element => {
-            element.classList.remove('theia-mod-streaming');
-            if (element instanceof HTMLElement) {
-                this.contentUi.settleTranscriptStreamingContent(element);
-            }
-        });
-        if (conv.status === 'streaming' && conv.messages.at(-1)?.role === 'user') {
-            messageHost.append(this.artifactsUi.createTranscriptStreamingActivityRow(conv));
-        }
+        messageHost.append(this.artifactsUi.createTranscriptStreamingActivityRow(conv));
     }
 
     createTranscriptAgentFailureRow(

@@ -7,43 +7,43 @@
 .qaap-shimmering-text {
   display: inline-block;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
   white-space: nowrap;
   font-weight: 600;
   vertical-align: baseline;
+  /* Do NOT use overflow:hidden here — it breaks background-clip:text on the phrase in WebKit. */
 }
 
-/* Cursor-style sweep: narrow bright band across muted base text */
+.qaap-shimmering-text-phrase {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: baseline;
+  color: var(--theia-descriptionForeground);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+/* Cursor-style sweep — opaque theme stops only (no color-mix transparent). */
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
   .qaap-shimmering-text-phrase {
-    display: inline-block;
-    color: transparent !important;
-    -webkit-text-fill-color: transparent !important;
-    background-color: transparent;
     background-image: linear-gradient(
       90deg,
-      color-mix(in srgb, var(--theia-descriptionForeground) 96%, transparent) 0%,
-      color-mix(in srgb, var(--theia-descriptionForeground) 96%, transparent) 36%,
-      color-mix(in srgb, var(--theia-foreground) 88%, #ffffff 12%) 50%,
-      color-mix(in srgb, var(--theia-descriptionForeground) 96%, transparent) 64%,
-      color-mix(in srgb, var(--theia-descriptionForeground) 96%, transparent) 100%
+      var(--theia-descriptionForeground) 0%,
+      var(--theia-descriptionForeground) 36%,
+      var(--theia-foreground) 50%,
+      var(--theia-descriptionForeground) 64%,
+      var(--theia-descriptionForeground) 100%
     );
-    background-size: 300% 100%;
+    background-size: 280% 100%;
     background-position: 100% center;
     background-repeat: no-repeat;
     -webkit-background-clip: text;
     background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
     animation: qaap-shimmering-text-gradient 2.4s ease-in-out infinite;
-    transition: opacity 0.28s ease, transform 0.28s ease;
-  }
-}
-
-@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
-  .qaap-shimmering-text-phrase {
-    display: inline-block;
-    color: var(--theia-descriptionForeground);
-    transition: opacity 0.28s ease, transform 0.28s ease;
   }
 }
 
