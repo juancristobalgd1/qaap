@@ -227,6 +227,15 @@
   );
 }
 
+/*
+ * Empty chat — quick actions are the bottom anchor, not a message above composer clearance.
+ * Skip the extra fade/bleed padding so the chip row sits just above the sticky composer.
+ */
+.theia-mobile-agent-transcript-real-chat > .theia-mobile-agent-transcript.theia-mod-empty-chat {
+  scroll-padding-bottom: 0;
+  padding-bottom: 0;
+}
+
 .theia-mobile-agent-transcript > .theia-mobile-agent-transcript-msg:first-child {
   scroll-margin-top: var(--qaap-chat-edge-scroll-padding-top);
 }
