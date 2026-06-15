@@ -235,6 +235,9 @@ export const TRANSCRIPT_ACTIVITY_ROW_ATTR = 'data-transcript-activity-row';
 /** Inline Cursor-style execution timeline inside an agent message row. */
 export const TRANSCRIPT_ACTIVITY_TIMELINE_ATTR = 'data-transcript-activity-timeline';
 
+/** Marks the live step row inside the execution timeline during streaming. */
+export const TRANSCRIPT_ACTIVITY_ACTIVE_ATTR = 'data-transcript-activity-active';
+
 /** Collapsible thought header above the inline execution trace. */
 export const TRANSCRIPT_THOUGHT_BRIEF_ATTR = 'data-transcript-thought-brief';
 

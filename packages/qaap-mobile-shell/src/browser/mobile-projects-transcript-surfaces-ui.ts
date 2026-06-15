@@ -351,7 +351,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
 
-        const done = items.filter(item => item.state === 'done').length;
+        const done = items.filter(item => item.state === 'success').length;
         const ratio = Math.max(0, Math.min(1, done / Math.max(items.length, 1)));
         const head = document.createElement('div');
         head.className = 'theia-mobile-transcript-plan-head';

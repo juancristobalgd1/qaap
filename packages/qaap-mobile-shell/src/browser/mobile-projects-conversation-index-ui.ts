@@ -209,6 +209,12 @@ export class MobileProjectsConversationIndexUi {
         current: QaapAgentConversationSummaryDTO,
         next: QaapAgentConversationSummaryDTO,
     ): QaapAgentConversationSummaryDTO {
+        if (current.status === 'idle' && next.status === 'streaming' && current.updatedAt >= next.updatedAt) {
+            return current;
+        }
+        if (current.status === 'streaming' && next.status === 'idle') {
+            return next.updatedAt >= current.updatedAt ? next : current;
+        }
         if (current.status !== 'streaming' && next.status === 'streaming') {
             return { ...next, id: current.id };
         }

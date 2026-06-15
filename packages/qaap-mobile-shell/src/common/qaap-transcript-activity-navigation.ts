@@ -5,13 +5,23 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
-import { classifyTranscriptToolActivityKind, type QaapTranscriptToolActivityKind } from './qaap-agent-transcript-segments';
+import {
+    classifyTranscriptToolActivityKind,
+    type QaapTranscriptToolActivityKind,
+} from './qaap-agent-transcript-segments';
+import {
+    detectTranscriptToolRetryHint,
+    excerptTranscriptToolError,
+    type TranscriptActivityStepState,
+} from './qaap-transcript-activity-step-state';
+
+export type { TranscriptActivityStepState };
 
 export type TranscriptActivityNavigateTarget = 'file' | 'terminal' | 'thought';
 
 export interface TranscriptActivityNavigationItem {
     readonly label: string;
-    readonly state: 'done' | 'running' | 'thinking';
+    readonly state: TranscriptActivityStepState;
     readonly navigate?: TranscriptActivityNavigateTarget;
     readonly filePath?: string;
     readonly segmentIndex?: number;
@@ -19,6 +29,10 @@ export interface TranscriptActivityNavigationItem {
     readonly grouped?: boolean;
     readonly groupCount?: number;
     readonly segmentIndices?: readonly number[];
+    readonly durationMs?: number;
+    readonly timestamp?: number;
+    readonly errorSummary?: string;
+    readonly retryHint?: boolean;
 }
 
 export interface TranscriptActivityNavigationDeps {
@@ -26,30 +40,107 @@ export interface TranscriptActivityNavigationDeps {
     readonly formatToolActivityLabel: (toolName: string, argsJson: string) => string;
     readonly localizePlanningLabel: () => string;
     readonly localizeWritingLabel: () => string;
+    readonly localizeFailedLabel: (detail: string) => string;
     readonly extractToolPath: (argsJson: string) => string | undefined;
     readonly resolveToolKind: (toolName: string) => string;
+    readonly isToolResultFailed: (result?: string) => boolean;
+    readonly resolveStepDurationMs?: (
+        segmentIndex: number,
+        segment: QaapAgentMessageSegmentDTO,
+    ) => number | undefined;
+    readonly resolveStepTimestamp?: (
+        segmentIndex: number,
+        segment: QaapAgentMessageSegmentDTO,
+    ) => number | undefined;
+}
+
+export interface TranscriptActivityNavigationOptions {
+    readonly streaming?: boolean;
+    readonly stalled?: boolean;
+    readonly pendingToolUseIds?: ReadonlySet<string>;
+    readonly messageCancelled?: boolean;
+}
+
+function resolveToolStepState(
+    segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+    options: TranscriptActivityNavigationOptions | undefined,
+    deps: TranscriptActivityNavigationDeps,
+    previousFailed: boolean,
+): TranscriptActivityStepState {
+    if (options?.messageCancelled) {
+        return 'cancelled';
+    }
+    if (options?.pendingToolUseIds?.has(segment.toolUseId)) {
+        return 'waiting';
+    }
+    if (!segment.finished) {
+        if (previousFailed) {
+            return 'retrying';
+        }
+        if (options?.stalled) {
+            return 'warning';
+        }
+        return 'running';
+    }
+    if (deps.isToolResultFailed(segment.result)) {
+        return 'error';
+    }
+    if (detectTranscriptToolRetryHint(segment.result)) {
+        return 'success';
+    }
+    return 'success';
+}
+
+function resolveToolStepLabel(
+    baseLabel: string,
+    state: TranscriptActivityStepState,
+    errorSummary: string | undefined,
+    deps: TranscriptActivityNavigationDeps,
+): string {
+    if (state === 'error' && errorSummary) {
+        return deps.localizeFailedLabel(errorSummary);
+    }
+    if (state === 'retrying') {
+        return nls.localize('qaap/mobileProjects/transcriptActivityRetrying', 'Retrying: {0}', baseLabel);
+    }
+    if (state === 'waiting') {
+        return nls.localize('qaap/mobileProjects/transcriptActivityWaiting', 'Waiting for approval: {0}', baseLabel);
+    }
+    if (state === 'cancelled') {
+        return nls.localize('qaap/mobileProjects/transcriptActivityCancelled', 'Cancelled: {0}', baseLabel);
+    }
+    return baseLabel;
 }
 
 export function resolveTranscriptActivityNavigationItems(
     segments: readonly QaapAgentMessageSegmentDTO[],
     deps: TranscriptActivityNavigationDeps,
     includeThinkingSteps = true,
+    options?: TranscriptActivityNavigationOptions,
 ): TranscriptActivityNavigationItem[] {
     const items: TranscriptActivityNavigationItem[] = [];
+    let previousFailed = false;
     for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
         const segment = segments[segmentIndex]!;
         if (segment.type === 'thinking' && segment.content.trim()) {
             if (includeThinkingSteps) {
                 items.push({
                     label: deps.localizePlanningLabel(),
-                    state: 'thinking',
+                    state: options?.streaming ? 'thinking' : 'success',
                     navigate: 'thought',
                     segmentIndex,
+                    durationMs: deps.resolveStepDurationMs?.(segmentIndex, segment),
+                    timestamp: deps.resolveStepTimestamp?.(segmentIndex, segment),
                 });
             }
+            previousFailed = false;
             continue;
         }
         if (segment.type !== 'tool') {
+            if (segment.type === 'text' && segment.content.trim()) {
+                continue;
+            }
+            previousFailed = false;
             continue;
         }
         const kind = deps.resolveToolKind(segment.name);
@@ -60,19 +151,30 @@ export function resolveTranscriptActivityNavigationItems(
         } else if ((kind === 'reading' || kind === 'editing' || kind === 'searching') && filePath) {
             navigate = 'file';
         }
+        const errorSummary = deps.isToolResultFailed(segment.result)
+            ? excerptTranscriptToolError(segment.result)
+            : undefined;
+        const state = resolveToolStepState(segment, options, deps, previousFailed);
+        const baseLabel = deps.localizeActivityLabel(deps.formatToolActivityLabel(segment.name, segment.args));
         items.push({
-            label: deps.localizeActivityLabel(deps.formatToolActivityLabel(segment.name, segment.args)),
-            state: segment.finished ? 'done' : 'running',
+            label: resolveToolStepLabel(baseLabel, state, errorSummary, deps),
+            state,
             navigate,
             filePath,
             segmentIndex,
             toolKind: kind as QaapTranscriptToolActivityKind,
+            durationMs: deps.resolveStepDurationMs?.(segmentIndex, segment),
+            timestamp: deps.resolveStepTimestamp?.(segmentIndex, segment),
+            errorSummary,
+            retryHint: detectTranscriptToolRetryHint(segment.result),
         });
+        previousFailed = state === 'error';
     }
     if (segments.some(segment => segment.type === 'text' && segment.content.trim())) {
         items.push({
             label: deps.localizeWritingLabel(),
-            state: 'done',
+            state: options?.streaming ? 'streaming' : 'success',
+            durationMs: undefined,
         });
     }
     return items;
@@ -126,6 +228,18 @@ function resolveGroupedNavigationAnchor(
     return {};
 }
 
+function resolveGroupedDurationMs(group: readonly TranscriptActivityNavigationItem[]): number | undefined {
+    let total = 0;
+    let found = false;
+    for (const item of group) {
+        if (item.durationMs !== undefined) {
+            total += item.durationMs;
+            found = true;
+        }
+    }
+    return found ? total : undefined;
+}
+
 /** Collapse consecutive finished tool steps of the same kind (e.g. "Read 6 files"). */
 export function groupTranscriptActivityNavigationItems(
     items: readonly TranscriptActivityNavigationItem[],
@@ -135,7 +249,7 @@ export function groupTranscriptActivityNavigationItems(
     while (index < items.length) {
         const item = items[index]!;
         const kind = item.toolKind;
-        if (!kind || !GROUPABLE_TOOL_KINDS.has(kind) || item.state !== 'done') {
+        if (!kind || !GROUPABLE_TOOL_KINDS.has(kind) || item.state !== 'success') {
             grouped.push(item);
             index += 1;
             continue;
@@ -143,7 +257,7 @@ export function groupTranscriptActivityNavigationItems(
         let end = index + 1;
         while (end < items.length) {
             const next = items[end]!;
-            if (next.toolKind !== kind || next.state !== 'done') {
+            if (next.toolKind !== kind || next.state !== 'success') {
                 break;
             }
             end += 1;
@@ -157,13 +271,15 @@ export function groupTranscriptActivityNavigationItems(
         const navigation = resolveGroupedNavigationAnchor(slice);
         grouped.push({
             label: formatGroupedActivityLabel(kind, slice.length),
-            state: 'done',
+            state: 'success',
             toolKind: kind,
             grouped: true,
             groupCount: slice.length,
             segmentIndices: slice
                 .map(entry => entry.segmentIndex)
                 .filter((segmentIndex): segmentIndex is number => segmentIndex !== undefined),
+            durationMs: resolveGroupedDurationMs(slice),
+            timestamp: slice[slice.length - 1]?.timestamp,
             ...navigation,
         });
         index = end;

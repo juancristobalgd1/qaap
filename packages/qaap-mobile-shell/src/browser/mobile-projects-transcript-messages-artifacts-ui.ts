@@ -10,14 +10,18 @@ import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-
 import { excerptTranscriptThought, extractTranscriptDiffCard, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, formatTranscriptThoughtDuration, isTranscriptAgentThinkingPhase, isTranscriptStreamStalled, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
-import type { TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
+import type { TranscriptActivityNavigationItem, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
 import { groupTranscriptActivityNavigationItems } from '../common/qaap-transcript-activity-navigation';
+import { isTranscriptActivityLiveState, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
+import { formatTranscriptActivityStepMeta, TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
+import { resolveTranscriptTimelineVisibilityPolicy } from '../common/qaap-transcript-timeline-visibility';
 import { isPendingTranscriptToolSegment } from '../common/qaap-transcript-approval-inline';
 import { buildTranscriptApprovalCard, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
 import { buildTranscriptDiffCardFromExtracted, buildTranscriptToolUiPayloadElement } from './qaap-transcript-rich-content-ui';
 import { resolveTranscriptToolUiPayloadFromSegment } from '../common/qaap-transcript-tool-ui-payloads';
-import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { resolveTranscriptTimelineRenderWindow } from '../common/qaap-transcript-timeline-window';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
@@ -32,6 +36,8 @@ export interface TranscriptActivityTimelineOptions {
     /** When set, controls collapsible inline timeline open state. */
     readonly expanded?: boolean;
     readonly segments?: readonly QaapAgentMessageSegmentDTO[];
+    readonly row?: HTMLElement;
+    readonly conv?: QaapAgentConversationDTO;
 }
 
 interface TranscriptActivityTimelineItem extends TranscriptActivityNavigationItem { }
@@ -47,6 +53,8 @@ interface LazyTranscriptToolPillPayload {
 const lazyTranscriptToolPillBodies = new WeakMap<HTMLDetailsElement, LazyTranscriptToolPillPayload>();
 
 export class MobileProjectsTranscriptMessagesArtifactsUi {
+    protected readonly activityTiming = new TranscriptActivityTimingStore();
+
     constructor(
         protected readonly host: MobileProjectsTranscriptMessagesHost,
         protected readonly contentUi: MobileProjectsTranscriptMessagesContentUi,
@@ -188,7 +196,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         const timeline = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
         if (timeline) {
-            const items = this.resolveTranscriptActivityItemsForDisplay([...segments]);
+            const items = this.resolveTranscriptActivityItemsForDisplay([...segments], { row, conv });
             this.syncTranscriptActivityTimelineElement(timeline, items, {
                 streaming: false,
                 segments,
@@ -391,23 +399,104 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
 
     protected resolveTranscriptActivityItemsForDisplay(
         segments: readonly QaapAgentMessageSegmentDTO[],
-        options?: { readonly stalled?: boolean; readonly includeThinkingSteps?: boolean },
+        options?: {
+            readonly stalled?: boolean;
+            readonly includeThinkingSteps?: boolean;
+            readonly row?: HTMLElement;
+            readonly conv?: QaapAgentConversationDTO;
+            readonly streaming?: boolean;
+        },
     ): readonly TranscriptActivityTimelineItem[] {
+        const rowContext = this.resolveTranscriptActivityRowContext(
+            options?.row,
+            segments,
+            options?.conv,
+            { stalled: options?.stalled, streaming: options?.streaming },
+        );
         const items = groupTranscriptActivityNavigationItems(this.resolversUi.resolveTranscriptActivityItems(
             [...segments],
             options?.includeThinkingSteps ?? true,
+            {
+                stalled: options?.stalled,
+                streaming: rowContext.navigationOptions.streaming,
+                pendingToolUseIds: rowContext.navigationOptions.pendingToolUseIds,
+                messageCancelled: rowContext.navigationOptions.messageCancelled,
+                resolveStepDurationMs: rowContext.resolveDurationMs,
+                resolveStepTimestamp: rowContext.resolveTimestamp,
+            },
         ));
         if (!options?.stalled || items.length === 0) {
             return items;
         }
-        const activeIndex = items.findIndex(item => item.state === 'running' || item.state === 'thinking');
+        const activeIndex = items.findIndex(item => isTranscriptActivityLiveState(item.state));
         if (activeIndex < 0) {
             return items;
         }
         const stallLabel = this.resolveTranscriptStreamStallLabel();
         return items.map((item, index) => index === activeIndex
-            ? { ...item, label: stallLabel }
+            ? { ...item, state: 'warning', label: stallLabel }
             : item);
+    }
+
+    protected resolveTranscriptActivityRowContext(
+        row: HTMLElement | undefined,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        conv?: QaapAgentConversationDTO,
+        options?: { readonly stalled?: boolean; readonly streaming?: boolean },
+    ): {
+        readonly navigationOptions: TranscriptActivityNavigationOptions;
+        readonly resolveDurationMs: (
+            segmentIndex: number,
+            segment: QaapAgentMessageSegmentDTO,
+        ) => number | undefined;
+        readonly resolveTimestamp: (
+            segmentIndex: number,
+            segment: QaapAgentMessageSegmentDTO,
+        ) => number | undefined;
+    } {
+        const messageId = row?.getAttribute(TRANSCRIPT_MESSAGE_ID_ATTR);
+        if (messageId) {
+            this.activityTiming.observe(messageId, segments);
+        }
+        const streaming = options?.streaming
+            ?? row?.classList.contains('theia-mod-streaming')
+            ?? conv?.status === 'streaming';
+        const message = messageId
+            ? conv?.messages.find(entry => entry.id === messageId)
+            : [...(conv?.messages ?? [])].reverse().find(entry => entry.role === 'agent');
+        const pendingToolUseIds = this.resolvePendingTranscriptToolUseIds(conv, segments);
+        return {
+            navigationOptions: {
+                streaming,
+                stalled: options?.stalled,
+                pendingToolUseIds,
+                messageCancelled: !!message?.error || conv?.status === 'failed',
+            },
+            resolveDurationMs: (segmentIndex, segment) => messageId
+                ? this.activityTiming.resolveDurationMs(messageId, segmentIndex, segment)
+                : undefined,
+            resolveTimestamp: (segmentIndex, segment) => messageId
+                ? this.activityTiming.resolveTimestamp(messageId, segmentIndex, segment)
+                : undefined,
+        };
+    }
+
+    protected resolvePendingTranscriptToolUseIds(
+        conv: QaapAgentConversationDTO | undefined,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+    ): ReadonlySet<string> | undefined {
+        if (!conv || !conversationUsesInteractiveApprovals(conv)) {
+            return undefined;
+        }
+        const pending = new Set<string>();
+        for (const segment of segments) {
+            if (segment.type === 'tool'
+                && !segment.finished
+                && this.host.transcriptLiveUi.hasPendingTranscriptToolApproval(conv.id, segment.toolUseId)) {
+                pending.add(segment.toolUseId);
+            }
+        }
+        return pending.size > 0 ? pending : undefined;
     }
 
     ensureTranscriptStreamStallWatch(row: HTMLElement): void {
@@ -445,7 +534,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 timeline.classList.toggle('theia-mod-stalled', stalled);
                 const items = this.resolveTranscriptActivityItemsForDisplay(
                     this.resolveTranscriptRowSegments(conv, row),
-                    { stalled },
+                    { stalled, row, conv, streaming: true },
                 );
                 this.syncTranscriptActivityTimelineElement(timeline, items, {
                     streaming: true,
@@ -528,7 +617,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             this.patchStreamingThoughtBrief(row, nextSegments, conv, true);
             return true;
         }
-        const items = this.resolveTranscriptActivityItemsForDisplay([...nextSegments], { stalled });
+        const items = this.resolveTranscriptActivityItemsForDisplay([...nextSegments], {
+            stalled,
+            row,
+            conv,
+            streaming,
+        });
         if (items.length === 0) {
             this.patchStreamingThoughtBrief(row, nextSegments, conv, true);
             return true;
@@ -731,21 +825,27 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         items: readonly TranscriptActivityTimelineItem[],
         options?: TranscriptActivityTimelineOptions,
     ): void {
-        const limit = options?.maxVisibleItems ?? 8;
-        const visibleItems = limit > 0 ? items.slice(-limit) : items;
-        const activeIndex = visibleItems.findIndex(item => item.state === 'running' || item.state === 'thinking');
+        const policy = resolveTranscriptTimelineVisibilityPolicy(items, {
+            maxVisibleItems: options?.maxVisibleItems,
+        });
+        const visibleItems = policy.visibleItems;
+        const activeIndex = visibleItems.findIndex(item => isTranscriptActivityLiveState(item.state));
         const segments = options?.segments ?? [];
         if (timeline instanceof HTMLDetailsElement) {
             const expanded = options?.expanded ?? shouldExpandTranscriptInlineTimeline(segments, !!options?.streaming);
             timeline.open = expanded;
+            timeline.classList.toggle('theia-mod-collapsed-history', policy.collapsed);
+            timeline.classList.toggle('theia-mod-stalled', !!options?.stalled);
             const summaryLabel = timeline.querySelector<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-label');
             if (summaryLabel) {
-                summaryLabel.textContent = this.resolveTranscriptActivityTimelineSummary(segments, visibleItems);
+                summaryLabel.textContent = this.resolveTranscriptActivityTimelineSummary(segments, visibleItems, policy.hiddenCount);
             }
             const summaryCount = timeline.querySelector<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-count');
             if (summaryCount) {
-                summaryCount.textContent = String(visibleItems.length);
-                summaryCount.hidden = visibleItems.length === 0;
+                summaryCount.textContent = policy.collapsed
+                    ? `${visibleItems.length}/${items.length}`
+                    : String(visibleItems.length);
+                summaryCount.hidden = items.length === 0;
             }
         } else {
             const count = timeline.querySelector('.theia-mobile-agent-premium-head-count');
@@ -757,49 +857,90 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!list) {
             return;
         }
+        list.classList.toggle('theia-mod-virtualized', options?.variant === 'plan' && items.length > 48);
         const ownerRow = timeline.closest<HTMLElement>('.theia-mobile-agent-transcript-msg');
-        const existing = [...list.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-item')];
-        visibleItems.forEach((item, index) => {
-            const isActive = index === activeIndex;
+        const focusIndex = activeIndex >= 0 ? activeIndex : visibleItems.length - 1;
+        const renderWindow = resolveTranscriptTimelineRenderWindow(visibleItems.length, {
+            focusIndex,
+            enabled: options?.variant === 'plan',
+        });
+        const renderedItems = visibleItems.slice(renderWindow.start, renderWindow.end);
+        const renderedActiveIndex = renderedItems.findIndex(
+            (_, index) => renderWindow.start + index === activeIndex,
+        );
+        const slots: Array<
+            | { readonly kind: 'gap'; readonly count: number; readonly position: 'before' | 'after' }
+            | { readonly kind: 'item'; readonly item: TranscriptActivityTimelineItem; readonly isActive: boolean }
+        > = [];
+        if (renderWindow.hiddenBefore > 0) {
+            slots.push({ kind: 'gap', count: renderWindow.hiddenBefore, position: 'before' });
+        }
+        renderedItems.forEach((item, index) => {
+            slots.push({
+                kind: 'item',
+                item,
+                isActive: index === renderedActiveIndex,
+            });
+        });
+        if (renderWindow.hiddenAfter > 0) {
+            slots.push({ kind: 'gap', count: renderWindow.hiddenAfter, position: 'after' });
+        }
+        const existing = [...list.querySelectorAll<HTMLElement>(':scope > li')];
+        slots.forEach((slot, index) => {
             let li = existing[index];
             if (!li) {
                 li = document.createElement('li');
-                li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}`;
-                const label = this.createTranscriptActivityLabel(item.label, isActive && !!options?.streaming && !options?.stalled);
-                if (isActive && options?.stalled) {
-                    label.classList.add('theia-mod-stall');
-                }
-                li.append(
-                    this.createTranscriptActivityIcon(item.state, isActive, item.toolKind),
-                    label,
-                );
                 li.classList.add('theia-mod-enter');
                 li.addEventListener('animationend', () => li.classList.remove('theia-mod-enter'), { once: true });
-                if (ownerRow) {
-                    this.attachTranscriptActivityItemAction(li, item, ownerRow);
-                }
                 list.append(li);
+            }
+            if (slot.kind === 'gap') {
+                this.syncTranscriptActivityHistoryGap(li, slot.count, slot.position);
                 return;
             }
-            li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}`;
-            const label = li.querySelector<HTMLElement>('.theia-mobile-agent-activity-label');
-            if (label) {
-                label.textContent = item.label;
-                const shimmer = isActive && !!options?.streaming && !options?.stalled;
-                label.classList.toggle('theia-mod-shimmer', shimmer);
-                label.classList.toggle('theia-mod-stall', isActive && !!options?.stalled);
-            }
-            const icon = li.querySelector('.theia-mobile-agent-activity-icon');
-            if (icon) {
-                icon.replaceWith(this.createTranscriptActivityIcon(item.state, isActive, item.toolKind));
-            }
+            this.syncTranscriptActivityItemElement(li, slot.item, slot.isActive, options);
             if (ownerRow) {
-                this.attachTranscriptActivityItemAction(li, item, ownerRow);
+                this.attachTranscriptActivityItemAction(li, slot.item, ownerRow);
             }
         });
-        while (list.children.length > visibleItems.length) {
+        while (list.children.length > slots.length) {
             list.lastElementChild?.remove();
         }
+    }
+
+    protected syncTranscriptActivityHistoryGap(
+        li: HTMLElement,
+        hiddenCount: number,
+        position: 'before' | 'after',
+    ): void {
+        li.className = 'theia-mobile-agent-activity-item theia-mod-history-gap';
+        li.removeAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR);
+        li.removeAttribute('data-transcript-activity-action');
+        li.removeAttribute('data-transcript-activity-segment-index');
+        li.classList.remove('theia-mod-clickable');
+        li.removeAttribute('role');
+        li.removeAttribute('tabindex');
+        li.removeAttribute('aria-label');
+        const icon = document.createElement('span');
+        icon.className = 'theia-mobile-agent-activity-icon theia-mod-history-gap codicon codicon-ellipsis';
+        icon.setAttribute('aria-hidden', 'true');
+        const copy = document.createElement('div');
+        copy.className = 'theia-mobile-agent-activity-copy';
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agent-activity-label';
+        label.textContent = position === 'before'
+            ? nls.localize(
+                'qaap/mobileProjects/transcriptActivityHiddenSteps',
+                '+{0} earlier steps',
+                String(hiddenCount),
+            )
+            : nls.localize(
+                'qaap/mobileProjects/transcriptActivityHiddenMoreSteps',
+                '+{0} more steps',
+                String(hiddenCount),
+            );
+        copy.append(label);
+        li.replaceChildren(icon, copy);
     }
 
     /** Append a new text block when a text segment appears at the tail without rebuilding tool pills. */
@@ -1436,19 +1577,31 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     protected resolveTranscriptActivityTimelineSummary(
         segments: readonly QaapAgentMessageSegmentDTO[],
         items: readonly TranscriptActivityTimelineItem[],
+        hiddenCount = 0,
     ): string {
         const stats = resolveTranscriptActivityStats(segments);
+        let summary: string;
         if (hasTranscriptActivityStats(stats)) {
-            return this.formatTranscriptActivityMeta(stats);
+            summary = this.formatTranscriptActivityMeta(stats);
+        } else {
+            const active = [...items].reverse().find(item => isTranscriptActivityLiveState(item.state));
+            if (active) {
+                summary = active.label;
+            } else if (items.length > 0) {
+                summary = items[items.length - 1].label;
+            } else {
+                summary = nls.localize('qaap/mobileProjects/transcriptActivityTimeline', 'Activity');
+            }
         }
-        const active = [...items].reverse().find(item => item.state === 'running' || item.state === 'thinking');
-        if (active) {
-            return active.label;
+        if (hiddenCount > 0) {
+            return nls.localize(
+                'qaap/mobileProjects/transcriptActivityCollapsedSummary',
+                '{0} · {1} earlier steps',
+                summary,
+                String(hiddenCount),
+            );
         }
-        if (items.length > 0) {
-            return items[items.length - 1].label;
-        }
-        return nls.localize('qaap/mobileProjects/transcriptActivityTimeline', 'Activity');
+        return summary;
     }
 
     createTranscriptActivityTimeline(
@@ -1460,12 +1613,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const items = this.resolveTranscriptActivityItemsForDisplay(segments, {
             stalled: options?.stalled,
             includeThinkingSteps,
+            row: options?.row,
+            conv: options?.conv,
+            streaming: options?.streaming,
         });
         if (items.length === 0) {
             return undefined;
         }
-        const limit = options?.maxVisibleItems ?? 8;
-        const visibleItems = limit > 0 ? items.slice(-limit) : items;
         const timelineOptions = { ...options, segments, includeThinkingSteps };
 
         if (variant === 'inline') {
@@ -1486,11 +1640,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             icon.setAttribute('aria-hidden', 'true');
             const label = document.createElement('span');
             label.className = 'theia-mobile-agent-activity-timeline-summary-label';
-            label.textContent = this.resolveTranscriptActivityTimelineSummary(segments, visibleItems);
+            label.textContent = this.resolveTranscriptActivityTimelineSummary(segments, items);
             const count = document.createElement('span');
             count.className = 'theia-mobile-agent-activity-timeline-summary-count';
-            count.textContent = String(visibleItems.length);
-            count.hidden = visibleItems.length === 0;
+            count.textContent = String(items.length);
+            count.hidden = items.length === 0;
             summary.append(icon, label, count);
             const list = document.createElement('ol');
             list.className = 'theia-mobile-agent-activity-list';
@@ -1510,7 +1664,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         timeline.append(this.createTranscriptPremiumHead(
             'codicon-checklist',
             nls.localize('qaap/mobileProjects/planLabel', 'Execution plan'),
-            { count: visibleItems.length, variant: 'todos' },
+            { count: items.length, variant: 'todos' },
         ));
         const list = document.createElement('ol');
         list.className = 'theia-mobile-agent-activity-list';
@@ -1519,15 +1673,94 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return timeline;
     }
 
+    protected syncTranscriptActivityItemElement(
+        li: HTMLElement,
+        item: TranscriptActivityTimelineItem,
+        isActive: boolean,
+        options?: TranscriptActivityTimelineOptions,
+    ): void {
+        li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}`;
+        if (isActive) {
+            li.setAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, 'true');
+        } else {
+            li.removeAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR);
+        }
+        const newIcon = this.createTranscriptActivityIcon(item.state, isActive, item.toolKind);
+        const icon = li.querySelector('.theia-mobile-agent-activity-icon');
+        if (icon) {
+            icon.replaceWith(newIcon);
+        } else {
+            li.prepend(newIcon);
+        }
+        let copy = li.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        if (!copy) {
+            const legacyLabel = li.querySelector('.theia-mobile-agent-activity-label');
+            copy = document.createElement('div');
+            copy.className = 'theia-mobile-agent-activity-copy';
+            if (legacyLabel) {
+                copy.append(legacyLabel);
+            } else {
+                copy.append(this.createTranscriptActivityLabel(item.label, false));
+            }
+            li.append(copy);
+        }
+        this.populateTranscriptActivityStepCopy(copy, item, isActive, options);
+    }
+
+    protected populateTranscriptActivityStepCopy(
+        copy: HTMLElement,
+        item: TranscriptActivityTimelineItem,
+        isActive: boolean,
+        options?: TranscriptActivityTimelineOptions,
+    ): void {
+        let label = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-label');
+        if (!label) {
+            label = this.createTranscriptActivityLabel(item.label, false);
+            copy.prepend(label);
+        }
+        label.textContent = item.label;
+        const shimmer = isActive
+            && !!options?.streaming
+            && !options?.stalled
+            && isTranscriptActivityLiveState(item.state);
+        label.classList.toggle('theia-mod-shimmer', shimmer);
+        label.classList.toggle('theia-mod-stall', isActive && !!options?.stalled);
+
+        const metaText = formatTranscriptActivityStepMeta(item.durationMs);
+        let meta = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-meta');
+        if (metaText) {
+            if (!meta) {
+                meta = document.createElement('span');
+                meta.className = 'theia-mobile-agent-activity-meta';
+                copy.append(meta);
+            }
+            meta.textContent = metaText;
+        } else {
+            meta?.remove();
+        }
+
+        let errorDetail = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-error-detail');
+        if (item.errorSummary && item.state === 'error') {
+            if (!errorDetail) {
+                errorDetail = document.createElement('span');
+                errorDetail.className = 'theia-mobile-agent-activity-error-detail';
+                copy.append(errorDetail);
+            }
+            errorDetail.textContent = item.errorSummary;
+        } else {
+            errorDetail?.remove();
+        }
+    }
+
     createTranscriptActivityIcon(
-        state: 'done' | 'running' | 'thinking',
+        state: TranscriptActivityStepState,
         active: boolean,
         toolKind?: string,
     ): HTMLElement {
         const icon = document.createElement('span');
         icon.className = 'theia-mobile-agent-activity-icon';
         icon.setAttribute('aria-hidden', 'true');
-        if (active) {
+        if (active && isTranscriptActivityLiveState(state)) {
             icon.classList.add('theia-mod-active', 'theia-mod-pulse');
             const arrow = document.createElement('span');
             arrow.className = 'codicon codicon-arrow-small-right';
@@ -1535,25 +1768,44 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             icon.append(arrow);
             return icon;
         }
-        if (state === 'thinking') {
-            icon.classList.add('theia-mod-thinking', 'codicon', 'codicon-lightbulb');
-            return icon;
+        switch (state) {
+            case 'thinking':
+                icon.classList.add('theia-mod-thinking', 'codicon', 'codicon-lightbulb');
+                break;
+            case 'waiting':
+                icon.classList.add('theia-mod-waiting', 'codicon', 'codicon-watch');
+                break;
+            case 'streaming':
+                icon.classList.add('theia-mod-streaming', 'codicon', 'codicon-loading');
+                break;
+            case 'success':
+                if (toolKind) {
+                    icon.classList.add('theia-mod-kind', 'theia-mod-success', 'codicon', this.toolUi.transcriptToolIconClass(toolKind));
+                } else {
+                    icon.classList.add('theia-mod-success', 'codicon', 'codicon-check');
+                }
+                break;
+            case 'error':
+                icon.classList.add('theia-mod-error', 'codicon', 'codicon-error');
+                break;
+            case 'warning':
+                icon.classList.add('theia-mod-warning', 'codicon', 'codicon-warning');
+                break;
+            case 'cancelled':
+                icon.classList.add('theia-mod-cancelled', 'codicon', 'codicon-circle-slash');
+                break;
+            case 'retrying':
+                icon.classList.add('theia-mod-retrying', 'codicon', 'codicon-refresh');
+                break;
+            case 'running':
+            default:
+                if (toolKind) {
+                    icon.classList.add('theia-mod-kind', 'theia-mod-running', 'codicon', this.toolUi.transcriptToolIconClass(toolKind));
+                } else {
+                    icon.classList.add('theia-mod-running', 'codicon', 'codicon-sync');
+                }
+                break;
         }
-        if (toolKind) {
-            const kindClass = this.toolUi.transcriptToolIconClass(toolKind);
-            icon.classList.add('theia-mod-kind', 'codicon', kindClass);
-            if (state === 'done') {
-                icon.classList.add('theia-mod-done');
-            } else {
-                icon.classList.add('theia-mod-running');
-            }
-            return icon;
-        }
-        if (state === 'done') {
-            icon.classList.add('theia-mod-done', 'codicon', 'codicon-check');
-            return icon;
-        }
-        icon.classList.add('theia-mod-pending');
         return icon;
     }
 

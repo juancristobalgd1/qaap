@@ -46,6 +46,21 @@ describe('qaap-conversation-composer-state', () => {
         } as unknown as Window;
     });
 
+    it('conversationToSummary maps visually settled streaming turns to idle', () => {
+        const summary = conversationToSummary({
+            ...baseConv(),
+            status: 'streaming',
+            messages: [{
+                id: 'a1',
+                role: 'agent',
+                content: 'Done.',
+                createdAt: 2,
+                segments: [{ type: 'text', content: 'Done.' }],
+            }],
+        });
+        expect(summary.status).to.equal('idle');
+    });
+
     it('conversationToSummary includes composer prefs fields', () => {
         const summary = conversationToSummary({
             ...baseConv(),

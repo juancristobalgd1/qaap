@@ -9,9 +9,17 @@ import {
     shouldShowTranscriptScrollToBottomState,
     type TranscriptScrollToBottomState,
 } from '../common/qaap-transcript-scroll-to-bottom';
+import {
+    findTranscriptStreamingAgentRow,
+    resolveTranscriptActiveStepScrollTarget,
+    resolveTranscriptScrollFabMode,
+    shouldShowTranscriptScrollFab,
+    type TranscriptScrollFabMode,
+} from '../common/qaap-transcript-active-step';
 import { resolveScrollBehavior } from '../common/qaap-prefers-reduced-motion';
 
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_BUTTON_CLASS = 'theia-mobile-agent-transcript-scroll-to-bottom';
+export const TRANSCRIPT_SCROLL_TO_BOTTOM_ACTIVE_STEP_CLASS = 'theia-mod-active-step';
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_MOUNT_CLASS = 'theia-mod-transcript-scroll-to-bottom-mount';
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_VISIBLE_CLASS = 'theia-mod-visible';
 
@@ -83,6 +91,7 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     button.hidden = true;
     button.setAttribute('aria-hidden', 'true');
     const label = nls.localize('theia/ai/chat-ui/chat-view-tree-widget/scrollToBottom', 'Jump to latest message');
+    const activeStepLabel = nls.localize('qaap/mobileProjects/transcriptJumpToActiveStep', 'Back to current step');
     button.title = label;
     button.setAttribute('aria-label', label);
     const badge = document.createElement('span');
@@ -98,11 +107,12 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     const seenMessageIds = new Set<string>();
 
     const updateBadge = (): void => {
-        badge.hidden = unseenCount <= 0;
+        badge.hidden = unseenCount <= 0 || fabMode === 'active-step';
         badge.textContent = unseenCount > 99 ? '99+' : String(unseenCount);
-        button.setAttribute('aria-label', unseenCount > 0
+        const baseLabel = fabMode === 'active-step' ? activeStepLabel : label;
+        button.setAttribute('aria-label', unseenCount > 0 && fabMode !== 'active-step'
             ? nls.localize('qaap/mobileProjects/transcriptJumpToNew', 'Jump to {0} new messages', String(unseenCount))
-            : label);
+            : baseLabel);
     };
 
     const resetBadge = (): void => {
@@ -153,22 +163,28 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     let resizeObserver: ResizeObserver | undefined;
     let contentObserver: MutationObserver | undefined;
     let showButton = false;
+    let fabMode: TranscriptScrollFabMode = 'bottom';
     let debounceTimer: number | undefined;
     let syncRaf = 0;
 
-    const setButtonVisible = (visible: boolean): void => {
-        if (showButton === visible) {
+    const setButtonVisible = (visible: boolean, mode: TranscriptScrollFabMode = fabMode): void => {
+        if (showButton === visible && fabMode === mode) {
             return;
         }
         showButton = visible;
+        fabMode = mode;
         button.hidden = !visible;
         button.classList.toggle(TRANSCRIPT_SCROLL_TO_BOTTOM_VISIBLE_CLASS, visible);
+        button.classList.toggle(TRANSCRIPT_SCROLL_TO_BOTTOM_ACTIVE_STEP_CLASS, visible && mode === 'active-step');
         button.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        const baseLabel = mode === 'active-step' ? activeStepLabel : label;
+        button.title = baseLabel;
         if (visible) {
             snapshotSeenMessages(boundScroller);
         } else {
             resetBadge();
         }
+        updateBadge();
     };
 
     const clearShowDebounce = (): void => {
@@ -180,14 +196,18 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
 
     const hideButtonImmediately = (): void => {
         clearShowDebounce();
-        setButtonVisible(false);
+        setButtonVisible(false, 'bottom');
     };
 
-    const readShouldShow = (scroller: HTMLElement | undefined): boolean => {
+    const readShouldShow = (scroller: HTMLElement | undefined): { visible: boolean; mode: TranscriptScrollFabMode } => {
         if (!scroller) {
-            return false;
+            return { visible: false, mode: 'bottom' };
         }
-        return shouldShowTranscriptScrollToBottomState(readTranscriptScrollToBottomState(scroller, mountHost));
+        const state = readTranscriptScrollToBottomState(scroller, mountHost);
+        const showBottom = shouldShowTranscriptScrollToBottomState(state);
+        const mode = resolveTranscriptScrollFabMode(scroller, state.nearBottomThresholdPx);
+        const visible = shouldShowTranscriptScrollFab(state, showBottom, scroller);
+        return { visible, mode: visible ? mode : 'bottom' };
     };
 
     const scheduleShowIfStillNeeded = (): void => {
@@ -196,21 +216,24 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         }
         debounceTimer = window.setTimeout(() => {
             debounceTimer = undefined;
-            if (readShouldShow(boundScroller)) {
-                setButtonVisible(true);
+            const next = readShouldShow(boundScroller);
+            if (next.visible) {
+                setButtonVisible(true, next.mode);
             }
         }, SCROLL_BUTTON_GRACE_PERIOD_MS);
     };
 
     const applyScrollVisibility = (): void => {
-        const scroller = boundScroller;
-        if (!readShouldShow(scroller)) {
+        const next = readShouldShow(boundScroller);
+        if (!next.visible) {
             hideButtonImmediately();
             return;
         }
         if (!showButton) {
             scheduleShowIfStillNeeded();
+            return;
         }
+        setButtonVisible(true, next.mode);
     };
 
     const onScrollerScroll = (): void => {
@@ -288,7 +311,18 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         if (!scroller || button.hidden) {
             return;
         }
+        const clickMode = fabMode;
         hideButtonImmediately();
+        if (clickMode === 'active-step') {
+            const streamingRow = findTranscriptStreamingAgentRow(scroller);
+            if (streamingRow) {
+                resolveTranscriptActiveStepScrollTarget(streamingRow)
+                    .scrollIntoView({ block: 'nearest', behavior: resolveScrollBehavior('smooth') });
+                const resync = (): void => onScrollerScroll();
+                window.setTimeout(resync, 450);
+                return;
+            }
+        }
         scrollTranscriptToEnd(scroller);
         const resync = (): void => onScrollerScroll();
         if ('onscrollend' in scroller) {

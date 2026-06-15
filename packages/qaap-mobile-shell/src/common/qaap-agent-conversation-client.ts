@@ -14,6 +14,7 @@ import { resolveMessagePreviewText } from './qaap-agent-message-content';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-tool-approval-rules';
 import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encoding';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { resolveTranscriptEffectiveStatus } from './qaap-transcript-turn-status';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -98,6 +99,9 @@ export type QaapAgentMessageSegmentDTO =
         readonly finished: boolean;
         readonly result?: string;
         readonly resultEncoding?: QaapAgentWireCompressionEncoding;
+        /** Optional VPS timestamps for per-step duration in the execution timeline. */
+        readonly startedAt?: number;
+        readonly finishedAt?: number;
     };
 
 export interface QaapAgentMessageDTO {
@@ -158,13 +162,11 @@ export interface QaapAgentConversationDTO {
 }
 
 function resolveEffectiveConversationStatus(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO['status'] {
-    if (conv.status === 'streaming') {
-        return 'streaming';
-    }
-    if (conv.status === 'failed' || conv.messages.some(message => !!message.error)) {
+    const effective = resolveTranscriptEffectiveStatus(conv);
+    if (effective === 'failed' || conv.messages.some(message => !!message.error)) {
         return 'failed';
     }
-    return conv.status;
+    return effective;
 }
 
 /** Move legacy user-turn errors onto the following agent row for transcript rendering. */

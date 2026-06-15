@@ -220,14 +220,14 @@ export class MobileProjectsTranscriptSheetUi {
         this.bindTranscriptSheetDismiss(back, backdrop);
 
         this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
-        await this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
-
+        this.host.transcriptLiveUi.renderOpenTranscriptPlaceholder(chatHost, summary);
         this.host.transcriptComposerPrefsConvId = undefined;
         this.host.transcriptComposerAgentModel = undefined;
         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);
         this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(chatInputHost, project, summary, chatHost);
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
+        void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
     }
 
     bindTranscriptSheetDismiss(back: HTMLButtonElement, backdrop: HTMLElement): void {

@@ -21,15 +21,34 @@ export class MobileProjectsTranscriptMessagesResolversUi {
     resolveTranscriptActivityItems(
         segments: QaapAgentMessageSegmentDTO[],
         includeThinkingSteps = true,
+        options?: import('../common/qaap-transcript-activity-navigation').TranscriptActivityNavigationOptions & {
+            readonly messageId?: string;
+            readonly resolveStepDurationMs?: (
+                segmentIndex: number,
+                segment: QaapAgentMessageSegmentDTO,
+            ) => number | undefined;
+            readonly resolveStepTimestamp?: (
+                segmentIndex: number,
+                segment: QaapAgentMessageSegmentDTO,
+            ) => number | undefined;
+        },
     ): TranscriptActivityNavigationItem[] {
         return resolveTranscriptActivityNavigationItems(segments, {
             localizeActivityLabel: label => this.host.projectRowsUi.localizeActivityLabel(label),
             formatToolActivityLabel,
             localizePlanningLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityPlanning', 'Planning next steps'),
             localizeWritingLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityResponseReady', 'Writing response'),
+            localizeFailedLabel: detail => nls.localize(
+                'qaap/mobileProjects/transcriptActivityFailed',
+                'Failed: {0}',
+                detail,
+            ),
             extractToolPath: args => this.extractTranscriptToolPath(args),
             resolveToolKind: name => this.resolveTranscriptToolKind(name),
-        }, includeThinkingSteps);
+            isToolResultFailed: result => this.transcriptToolResultFailed(result),
+            resolveStepDurationMs: options?.resolveStepDurationMs,
+            resolveStepTimestamp: options?.resolveStepTimestamp,
+        }, includeThinkingSteps, options);
     }
 
 

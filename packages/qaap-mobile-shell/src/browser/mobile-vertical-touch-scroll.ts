@@ -162,6 +162,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-work-hub-ai-config-embed .ai-configuration-detail',
     '.theia-mobile-work-hub-ai-config-embed .ai-configuration-table-container',
     '.theia-mobile-transcript-plan',
+    '.theia-mobile-agent-activity-list.theia-mod-virtualized',
     '.theia-mobile-transcript-verify',
     '.theia-mobile-transcript-checks-panel',
     '.theia-mobile-transcript-files-preview-body',

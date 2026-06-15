@@ -515,9 +515,9 @@ export class MobileProjectsAgentsHubInlineUi {
             this.syncAgentsHubInlineExecutionHeader(project, summary);
             this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, connectedChatHost);
-            await this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
             this.renderAgentsHubShellChat(connectedChatHost, project, summary);
             this.host.stickyComposerRenderUi.renderStickyComposer();
+            void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
         if (!this.host.agentsHubInlineExecutionRoot?.isConnected) {
@@ -528,8 +528,8 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
         if (chatHost) {
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
-            await this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
             this.renderAgentsHubShellChat(chatHost, project, summary);
+            void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
         }
         this.host.stickyComposerRenderUi.renderStickyComposer();
     }

@@ -413,14 +413,7 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         if (this.host.transcriptLastConv?.id === summary.id) {
-            const effectiveStatus = resolveTranscriptEffectiveStatus(this.host.transcriptLastConv);
-            if (effectiveStatus !== 'streaming') {
-                this.host.transcriptOpenSummary = {
-                    ...summary,
-                    status: effectiveStatus,
-                    updatedAt: Math.max(summary.updatedAt, this.host.transcriptLastConv.updatedAt),
-                };
-            }
+            this.host.transcriptOpenSummary = this.reconcileConversationListSummary(this.host.transcriptLastConv);
         }
         const backendStreaming = this.host.transcriptLastConv?.status === 'streaming';
         const previousStatus = this.host.transcriptLastStatus;
@@ -945,6 +938,44 @@ export class MobileProjectsTranscriptLiveUi {
         this.scheduleTranscriptApprovalRefresh();
     }
 
+    renderOpenTranscriptPlaceholder(
+        chatHost: HTMLElement,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void {
+        const messages: QaapAgentConversationDTO['messages'] = [];
+        if (summary.lastMessagePreview?.trim()) {
+            messages.push({
+                id: `${summary.id}:preview`,
+                role: summary.lastMessageRole ?? 'user',
+                content: summary.lastMessagePreview,
+                createdAt: summary.updatedAt,
+            });
+        }
+        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, {
+            id: summary.id,
+            cwd: summary.cwd,
+            agentId: summary.agentId,
+            title: summary.title,
+            status: summary.status,
+            createdAt: summary.createdAt,
+            updatedAt: summary.updatedAt,
+            messages,
+        });
+    }
+
+    reconcileConversationListSummary(full: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
+        const snapshot = conversationToSummary(full);
+        const stored = this.host.conversations?.findSummaryById(full.id);
+        const shouldPersist = !stored
+            || stored.status !== snapshot.status
+            || snapshot.updatedAt > stored.updatedAt
+            || stored.activityLabel !== snapshot.activityLabel;
+        if (shouldPersist) {
+            this.host.conversations?.recordSnapshot(snapshot);
+        }
+        return snapshot;
+    }
+
     async resolveOpenTranscriptConversation(
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<QaapAgentConversationDTO | undefined> {
@@ -1000,7 +1031,8 @@ export class MobileProjectsTranscriptLiveUi {
                 await this.host.syncTranscriptPreviewFromConversation(activeProject, activeSummary, full);
             }
             this.host.transcriptLastConv = full;
-            this.host.transcriptOpenSummary = conversationToSummary(full);
+            const reconciledSummary = this.reconcileConversationListSummary(full);
+            this.host.transcriptOpenSummary = reconciledSummary;
             if (this.host.transcriptComposerSummary?.id === full.id
                 && this.host.transcriptComposerPrefsConvId !== full.id) {
                 this.host.transcriptStickyComposerUi.applyTranscriptComposerPrefsFromConversation(full, activeProject, activeSummary);
@@ -1009,6 +1041,9 @@ export class MobileProjectsTranscriptLiveUi {
             if (fingerprintUnchanged && !forceStatusSettle) {
                 if (conversationUsesInteractiveApprovals(full)) {
                     this.syncTranscriptPendingApproval(full);
+                }
+                if (reconciledSummary.status !== 'streaming' && this.host.transcriptLastStatus === 'streaming') {
+                    this.syncTranscriptConversationSettledChrome();
                 }
                 if (full.status !== 'streaming' && !this.host.transcriptPreviewRequestPending) {
                     this.host.transcriptLastSseDeltaAt = undefined;

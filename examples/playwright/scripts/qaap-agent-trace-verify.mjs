@@ -94,17 +94,26 @@ async function injectTraceHarness(page) {
               <span class="theia-mobile-agent-activity-timeline-summary-count">3</span>
             </summary>
             <ol class="theia-mobile-agent-activity-list">
-              <li class="theia-mobile-agent-activity-item theia-mod-done theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="file" data-verify="read">
-                <span class="theia-mobile-agent-activity-icon theia-mod-done codicon codicon-check"></span>
-                <span class="theia-mobile-agent-activity-label">Read README.md</span>
+              <li class="theia-mobile-agent-activity-item theia-mod-success theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="file" data-verify="read">
+                <span class="theia-mobile-agent-activity-icon theia-mod-success codicon codicon-check"></span>
+                <div class="theia-mobile-agent-activity-copy">
+                  <span class="theia-mobile-agent-activity-label">Read README.md</span>
+                  <span class="theia-mobile-agent-activity-meta">1.2s</span>
+                </div>
               </li>
-              <li class="theia-mobile-agent-activity-item theia-mod-done theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="terminal" data-verify="terminal">
-                <span class="theia-mobile-agent-activity-icon theia-mod-done codicon codicon-check"></span>
-                <span class="theia-mobile-agent-activity-label">Running: npm test</span>
+              <li class="theia-mobile-agent-activity-item theia-mod-error theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="terminal" data-verify="error">
+                <span class="theia-mobile-agent-activity-icon theia-mod-error codicon codicon-error"></span>
+                <div class="theia-mobile-agent-activity-copy">
+                  <span class="theia-mobile-agent-activity-label">Failed: Port 3000 already in use</span>
+                  <span class="theia-mobile-agent-activity-meta">3.4s</span>
+                  <span class="theia-mobile-agent-activity-error-detail">Agent terminated existing process</span>
+                </div>
               </li>
-              <li class="theia-mobile-agent-activity-item theia-mod-running theia-mod-active theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="file" data-verify="edit">
+              <li class="theia-mobile-agent-activity-item theia-mod-running theia-mod-active theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-active="true" data-transcript-activity-action="file" data-verify="edit">
                 <span class="theia-mobile-agent-activity-icon theia-mod-active theia-mod-pulse"><span class="codicon codicon-arrow-small-right"></span></span>
-                <span class="theia-mobile-agent-activity-label theia-mod-shimmer">Editing src/app.ts</span>
+                <div class="theia-mobile-agent-activity-copy">
+                  <span class="theia-mobile-agent-activity-label theia-mod-shimmer">Editing src/app.ts</span>
+                </div>
               </li>
             </ol>
           </details>
@@ -133,10 +142,30 @@ async function injectTraceHarness(page) {
 </div>`;
         document.body.append(host);
 
-        const results = { composerClick: false, timelineClickable: 0, hasCollapsibleTimeline: false, hasComposerStream: false };
+        const results = {
+            composerClick: false,
+            timelineClickable: 0,
+            hasCollapsibleTimeline: false,
+            hasComposerStream: false,
+            hasThoughtBrief: false,
+            hasErrorStep: false,
+            hasStepDurationMeta: false,
+            hasActivityCopyLayout: false,
+            hasActiveStepMarker: false,
+            stateClasses: [],
+        };
         results.hasCollapsibleTimeline = !!document.querySelector('.theia-mobile-agent-activity-timeline.theia-mod-collapsible');
         results.hasComposerStream = !!document.querySelector('.theia-mobile-sticky-composer-streaming-activity');
+        results.hasThoughtBrief = !!document.querySelector('.theia-mobile-agent-thought-brief');
+        results.hasErrorStep = !!document.querySelector('.theia-mobile-agent-activity-item.theia-mod-error');
+        results.hasStepDurationMeta = !!document.querySelector('.theia-mobile-agent-activity-meta');
+        results.hasActivityCopyLayout = !!document.querySelector('.theia-mobile-agent-activity-copy');
+        results.hasActiveStepMarker = !!document.querySelector('[data-transcript-activity-active="true"]');
         results.timelineClickable = document.querySelectorAll('.theia-mobile-agent-activity-item.theia-mod-clickable').length;
+        results.stateClasses = [...new Set(
+            [...document.querySelectorAll('.theia-mobile-agent-activity-item')]
+                .flatMap(item => [...item.classList].filter(cls => cls.startsWith('theia-mod-') && cls !== 'theia-mod-clickable' && cls !== 'theia-mod-active' && cls !== 'theia-mod-grouped' && cls !== 'theia-mod-enter')),
+        )].sort();
 
         const composerBtn = document.getElementById('qaap-verify-composer-stream');
         composerBtn?.addEventListener('click', () => {
@@ -227,6 +256,26 @@ async function screenshot(page, name) {
     return file;
 }
 
+async function evaluateParityChecklist(page) {
+    return page.evaluate(() => {
+        const checklist = {};
+        checklist['P-01'] = !!document.querySelector('[data-transcript-activity-timeline], .theia-mobile-agent-activity-timeline.theia-mod-collapsible');
+        checklist['P-02'] = !!document.querySelector('[data-transcript-thought-brief], .theia-mobile-agent-thought-brief');
+        checklist['P-03'] = !!document.querySelector('.theia-mobile-sticky-composer-streaming-activity, .theia-mobile-agent-stream-line');
+        checklist['P-04'] = !!document.querySelector('.theia-mobile-agent-activity-item.theia-mod-error, .theia-mobile-agent-activity-item.theia-mod-success, .theia-mobile-agent-activity-item.theia-mod-running');
+        checklist['P-05'] = !!document.querySelector('.theia-mobile-agent-activity-meta');
+        checklist['P-06'] = !!document.querySelector('.theia-mobile-agent-activity-item.theia-mod-error .theia-mobile-agent-activity-error-detail, .theia-mobile-agent-activity-item.theia-mod-error');
+        checklist['P-07'] = !!document.querySelector('.theia-mobile-agent-tool-pill, .theia-mobile-agent-tool-group');
+        checklist['P-08'] = !!document.querySelector('.theia-mobile-agent-changed-files, .theia-mobile-agent-diff-summary');
+        checklist['P-09'] = !!document.querySelector('.theia-mobile-agent-transcript-scroll-to-bottom, [data-transcript-scroll-to-bottom]');
+        checklist['P-10'] = !!document.querySelector('.theia-mobile-agent-activity-timeline.theia-mod-collapsed-history, .theia-mobile-agent-activity-timeline.theia-mod-collapsible');
+        checklist['P-11'] = !!document.querySelector('.theia-mobile-agent-activity-list.theia-mod-virtualized, .theia-mobile-agent-activity-item.theia-mod-history-gap');
+        checklist['P-12'] = !!document.querySelector('[data-transcript-activity-active="true"]');
+        const passed = Object.values(checklist).filter(Boolean).length;
+        return { checklist, passed, total: Object.keys(checklist).length };
+    });
+}
+
 async function main() {
     fs.mkdirSync(OUT_DIR, { recursive: true });
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-trace-verify-'));
@@ -249,6 +298,7 @@ async function main() {
     await page.waitForTimeout(2000);
     const harness = await injectTraceHarness(page);
     report.checks.harness = harness;
+    report.parity = await evaluateParityChecklist(page);
     await page.locator('#qaap-verify-composer-stream').click();
     await page.waitForTimeout(500);
     report.checks.composerScrollAfterClick = await page.evaluate(() => {
@@ -287,7 +337,11 @@ async function main() {
 
     const failed = !harness.hasCollapsibleTimeline
         || !harness.hasComposerStream
-        || harness.timelineClickable < 3;
+        || !harness.hasErrorStep
+        || !harness.hasStepDurationMeta
+        || !harness.hasActivityCopyLayout
+        || harness.timelineClickable < 3
+        || !harness.hasActiveStepMarker;
     if (failed) {
         process.exit(1);
     }
