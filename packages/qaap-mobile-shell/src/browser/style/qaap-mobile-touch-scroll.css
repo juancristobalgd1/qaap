@@ -120,6 +120,20 @@
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
     overscroll-behavior-y: contain;
+    /* Skip layout/paint for off-screen list content inside the scroller. */
+    contain: layout style paint;
+  }
+
+  /*
+   * Promote the scroll layer to the GPU only while the user is actively panning
+   * (`.theia-mod-touch-scrolling` from installMobileVerticalTouchScroll).
+   * Never on `.theia-mobile-projects-scroll` — sticky row heads break when the
+   * scroller becomes its own compositor layer.
+   */
+  .theia-mod-touch-scrolling:not(.theia-mobile-projects-scroll) {
+    transform: translate3d(0, 0, 0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
   }
 
   /* Terminal: xterm viewport is absolute; host must stay bounded. */
