@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO, isGoalLoopPhaseActive } from '../common/qaap-agent-conversation-client';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
 import {
     type MobileProjectEntry,
@@ -65,6 +65,45 @@ export class MobileProjectsTranscriptHeaderUi {
                 nls.localize('qaap/mobileProjects/activityChipAria', 'Last activity'),
             ),
         );
+        const goalChip = this.createGoalLoopChip(summary);
+        if (goalChip) {
+            host.append(goalChip);
+        }
+    }
+
+    createGoalLoopChip(summary?: QaapAgentConversationSummaryDTO): HTMLElement | undefined {
+        if (!summary?.goalLoopPhase) {
+            return undefined;
+        }
+        const phaseLabels: Record<string, string> = {
+            executing: nls.localize('qaap/mobileProjects/goalLoopExecuting', 'Executing'),
+            verifying: nls.localize('qaap/mobileProjects/goalLoopVerifying', 'Verifying'),
+            evaluating: nls.localize('qaap/mobileProjects/goalLoopEvaluating', 'Evaluating'),
+            completed: nls.localize('qaap/mobileProjects/goalLoopCompleted', 'Goal done'),
+            blocked: nls.localize('qaap/mobileProjects/goalLoopBlocked', 'Goal blocked'),
+            cancelled: nls.localize('qaap/mobileProjects/goalLoopCancelled', 'Goal cancelled'),
+        };
+        const phase = phaseLabels[summary.goalLoopPhase] ?? summary.goalLoopPhase;
+        const iter = summary.goalLoopIteration;
+        const max = summary.goalLoopMaxIterations;
+        const label = iter !== undefined && max !== undefined && isGoalLoopPhaseActive(summary.goalLoopPhase)
+            ? `${phase} ${iter}/${max}`
+            : phase;
+        const modifier = summary.goalLoopPhase === 'completed'
+            ? 'theia-mod-ok'
+            : summary.goalLoopPhase === 'blocked' || summary.goalLoopPhase === 'cancelled'
+                ? 'theia-mod-fail'
+                : 'theia-mod-running';
+        const chip = this.createActiveChatContextChip(
+            'codicon-sync',
+            label,
+            nls.localize('qaap/mobileProjects/goalLoopChipAria', 'Goal loop'),
+            modifier,
+        );
+        if (summary.goalLoopPhase === 'blocked' && summary.goalLoopStopReason) {
+            chip.title = summary.goalLoopStopReason;
+        }
+        return chip;
     }
 
     createActiveChatContextChip(

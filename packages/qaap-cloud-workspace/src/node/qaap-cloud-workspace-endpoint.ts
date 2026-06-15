@@ -5,7 +5,6 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
-import { json } from 'body-parser';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import * as http from 'http';
 import {
@@ -29,6 +28,7 @@ import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { normalizeQaapPublicUrl } from '@theia/qaap-mobile-shell/lib/node/qaap-github-oauth-config';
+import { useQaapJsonBodyParser } from '@theia/qaap-mobile-shell/lib/node/qaap-express-json-middleware';
 
 @injectable()
 export class QaapCloudWorkspaceEndpoint implements BackendApplicationContribution {
@@ -58,7 +58,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
     protected readonly shareProxy: QaapPreviewShareProxyContribution;
 
     configure(app: Application): void {
-        app.use(json());
+        useQaapJsonBodyParser(app);
         app.get(`${QAAP_CLOUD_API_PATH}/workspaces`, (req, res) => { void this.handleListWorkspaces(req, res); });
         app.post(`${QAAP_CLOUD_API_PATH}/workspaces/ensure`, (req, res) => { void this.handleEnsureWorkspace(req, res); });
         app.post(`${QAAP_CLOUD_API_PATH}/preview/share`, (req, res) => { void this.handleCreateShare(req, res); });

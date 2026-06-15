@@ -213,13 +213,13 @@ export class MobileShellWorkHubBootstrapController {
             setMobileWorkHubComposerHeaderChrome(true);
             await panel.show({ preferredHubView: 'tasks' });
             panel.ensureAgentsHubExecutionShellRendered();
+            markPreferAgentsSurface();
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 panel.hide();
                 this.host.disposeProjectsPanelForDesktopIde();
                 return;
             }
             this.host.ensureDesktopWorkHubSessionsSidebarOpen();
-            markPreferAgentsSurface();
             await this.host.collapseMobileSideSheets();
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 panel.hide();

@@ -9,6 +9,7 @@ import { BackendApplicationContribution } from '@theia/core/lib/node';
 import * as http from 'http';
 import * as https from 'https';
 import { WebSocketServer, WebSocket as WsClient } from 'ws';
+import { QAAP_HEALTH_API_PATH } from '../common/qaap-cloud-api-types';
 import {
     QAAP_AGENT_TASK_API_PATH,
     type QaapAgentTaskAllResponse,
@@ -63,6 +64,11 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 qaiqModels: this.runner.listQaiqModels(),
             } satisfies QaapAgentTaskAllResponse);
         });
+        const serveHealth = (_req: Request, res: Response): void => {
+            res.status(200).json(this.runner.getHealthSnapshot());
+        };
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/health`, serveHealth);
+        app.get(QAAP_HEALTH_API_PATH, serveHealth);
         app.get(`${QAAP_AGENT_TASK_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
         });

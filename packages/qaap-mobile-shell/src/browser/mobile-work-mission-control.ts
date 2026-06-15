@@ -13,11 +13,12 @@ import {
     QAAP_MC_ROW_KEY_ATTR,
     QAAP_MC_STRUCTURE_FP_ATTR,
 } from '../common/qaap-work-mission-control-fingerprint';
+import type { MobileProjectEntry } from './mobile-projects-types';
 
 /**
- * Prototype "mission control" for the Work Hub landing — a single cross-project view of agent work
- * grouped by what the human should do next, instead of splitting the same conversation object across
- * the Chat / Tasks / Review tabs. It reuses the live cross-project streams already maintained by
+ * Mission control for the Work Hub landing — a single cross-project view of agent work grouped by
+ * what the human should do next, instead of splitting the same conversation object across the Chat /
+ * Tasks / Review tabs. It reuses the live cross-project streams already maintained by
  * {@link MobileProjectsConversations} and {@link MobileProjectsActiveTasks}; it adds no new data
  * source.
  */
@@ -92,6 +93,14 @@ export function classifyMissionControlLane(
     summary: QaapAgentConversationSummaryDTO,
     unread: boolean,
 ): MissionControlLane {
+    if (summary.goalLoopPhase === 'executing'
+        || summary.goalLoopPhase === 'verifying'
+        || summary.goalLoopPhase === 'evaluating') {
+        return 'running';
+    }
+    if (summary.goalLoopPhase === 'blocked') {
+        return 'needs-you';
+    }
     if (summary.status === 'streaming') {
         return 'running';
     }
@@ -191,6 +200,64 @@ export function isWorkMissionControlEnabled(): boolean {
     } catch {
         return true;
     }
+}
+
+export interface BuildMissionControlItemsInput {
+    readonly projects: readonly MobileProjectEntry[];
+    readonly conversationsForProject: (project: MobileProjectEntry) => QaapAgentConversationSummaryDTO[];
+    readonly isConversationUnread: (summary: QaapAgentConversationSummaryDTO) => boolean;
+    readonly resolveAgentLabel: (agentId: string) => string;
+    readonly query?: string;
+    readonly conversationMatchesQuery?: (summary: QaapAgentConversationSummaryDTO, query: string) => boolean;
+}
+
+/** Cross-project mission-control rows from the existing conversation index (no new API). */
+export function buildMissionControlItems(input: BuildMissionControlItemsInput): MissionControlItem[] {
+    const trimmedQuery = input.query?.trim();
+    const items: MissionControlItem[] = [];
+    for (const project of input.projects) {
+        for (const summary of input.conversationsForProject(project)) {
+            if (trimmedQuery && input.conversationMatchesQuery
+                && !input.conversationMatchesQuery(summary, trimmedQuery)) {
+                continue;
+            }
+            if (summary.messageCount === 0 && summary.status === 'idle') {
+                continue;
+            }
+            items.push({
+                key: `${project.id}:${summary.id}`,
+                conversationId: summary.id,
+                projectId: project.id,
+                projectName: project.name,
+                projectColor: project.color,
+                title: summary.title?.trim() || summary.activityLabel?.trim() || summary.cwd,
+                preview: summary.lastMessagePreview,
+                lane: classifyMissionControlLane(summary, input.isConversationUnread(summary)),
+                surface: classifyMissionControlSurface(summary),
+                agentLabel: input.resolveAgentLabel(summary.agentId),
+                updatedAt: summary.updatedAt,
+                progressCurrent: summary.turnProgressCurrent,
+                progressTotal: summary.turnProgressTotal,
+                linesAdded: summary.linesAdded,
+                linesRemoved: summary.linesRemoved,
+                hasPullRequest: !!summary.linkedPullRequest?.number,
+            });
+        }
+    }
+    return items.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function shouldUseMissionControlLanding(input: {
+    homeMode: boolean;
+    hubView: 'home' | 'repos' | 'chat' | 'tasks' | 'review' | 'diff' | 'workflows' | 'routines' | 'team';
+    agentsHubLegacyInbox: boolean;
+    missionControlLandingActive: boolean;
+}): boolean {
+    return isWorkMissionControlEnabled()
+        && input.missionControlLandingActive
+        && input.homeMode
+        && input.hubView === 'tasks'
+        && !input.agentsHubLegacyInbox;
 }
 
 export class MobileWorkMissionControl {

@@ -10,6 +10,7 @@ import {
     conversationToSummary,
     getConversation,
     postConversationMessage,
+    startGoalLoop,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
@@ -62,6 +63,7 @@ export interface MobileProjectsTranscriptSubmitHost {
             approvalPolicyId?: string;
             variables?: AIVariableResolutionRequest[];
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            runUntilDone?: boolean;
         },
     ): Promise<QaapAgentConversationSummaryDTO>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
@@ -147,6 +149,7 @@ export class MobileProjectsTranscriptSubmitUi {
             variables?: AIVariableResolutionRequest[];
             widget?: AIChatInputWidget;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            runUntilDone?: boolean;
         } = {},
     ): Promise<void> {
         if (this.host.transcriptHeaderUi.isPendingNewChatSummary(summary)) {
@@ -166,6 +169,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 approvalPolicyId: options.approvalPolicyId,
                 variables: options.variables,
                 agentModel: options.agentModel ?? this.resolveTranscriptSubmitAgentModel(pendingAgent, summary),
+                runUntilDone: options.runUntilDone,
             });
             this.host.transcriptOpenSummaryId = created.id;
             this.host.transcriptOpenSummary = created;
@@ -193,6 +197,31 @@ export class MobileProjectsTranscriptSubmitUi {
             pinnedChatAgentId: options.selectedAgentId ?? options.widget?.pinnedAgent?.id ?? summary.agentId,
         }) ?? options.selectedAgentId ?? summary.agentId;
         const outbound = applyBackendInteractionModeToPrompt(content, options.modeId);
+        if (options.runUntilDone) {
+            if (options.autoApprove === false) {
+                throw new Error('Run until done requires auto-approve (YOLO).');
+            }
+            this.renderInstantSubmitOptimistic(summary, {
+                id: `pending-user-${Date.now()}`,
+                role: 'user',
+                content: outbound,
+                createdAt: Date.now(),
+            });
+            await startGoalLoop(summary.id, {
+                goal: content.trim(),
+                initialPrompt: outbound,
+            });
+            const updated = await getConversation(summary.id);
+            const nextSummary = conversationToSummary(updated);
+            this.host.conversations?.recordSnapshot(nextSummary);
+            const goalLoopChatHost = this.host.resolveActiveTranscriptChatHost();
+            if (goalLoopChatHost) {
+                this.renderTranscriptSubmitMessages(goalLoopChatHost, updated, summary);
+            }
+            this.host.applyTaskStartedToProject(summary.cwd, content, summary.id);
+            this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
+            return;
+        }
         const pendingUserMessage = {
             id: `pending-user-${Date.now()}`,
             role: 'user' as const,

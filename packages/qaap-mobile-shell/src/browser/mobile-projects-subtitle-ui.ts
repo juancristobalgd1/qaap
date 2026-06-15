@@ -44,6 +44,8 @@ export interface MobileProjectsSubtitleHost {
     buildHomeSnapshot(): WorkHubHomeSnapshot;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     shouldUseAgentsHubLanding(): boolean;
+    shouldUseMissionControlLanding(): boolean;
+    missionControlUi: import('./mobile-projects-mission-control-ui').MobileProjectsMissionControlUi;
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
     countTasksAttention(): { needsYou: number; running: number };
     isProjectDetailView(): boolean;
@@ -85,12 +87,6 @@ export class MobileProjectsSubtitleUi {
             this.host.subtitleEl.textContent = count === 1
                 ? nls.localize('qaap/diff/oneProjectWithChanges', '1 project with changes')
                 : nls.localize('qaap/diff/nProjectsWithChanges', '{0} projects with changes', String(count));
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'home') {
-            this.host.subtitleEl.className = 'theia-mobile-projects-subtitle q-fs-meta';
-            this.host.subtitleEl.textContent = this.host.buildHomeSubtitle(this.host.buildHomeSnapshot());
-            this.host.subtitleEl.hidden = false;
             return;
         }
         if (this.host.homeMode && this.host.hubView === 'workflows') {
@@ -138,6 +134,36 @@ export class MobileProjectsSubtitleUi {
                 );
                 return;
             }
+            if (this.host.shouldUseMissionControlLanding()) {
+                const needsYou = this.host.missionControlUi.countByLane('needs-you');
+                const running = this.host.missionControlUi.countByLane('running');
+                if (needsYou > 0 && running > 0) {
+                    this.host.subtitleEl.textContent = nls.localize(
+                        'qaap/workMissionControl/subtitleNeedsYouAndRunning',
+                        '{0} need you · {1} running',
+                        String(needsYou),
+                        String(running),
+                    );
+                } else if (needsYou > 0) {
+                    this.host.subtitleEl.textContent = nls.localize(
+                        'qaap/workMissionControl/subtitleNeedsYou',
+                        '{0} need your attention',
+                        String(needsYou),
+                    );
+                } else if (running > 0) {
+                    this.host.subtitleEl.textContent = nls.localize(
+                        'qaap/workMissionControl/subtitleRunning',
+                        '{0} running on the VPS',
+                        String(running),
+                    );
+                } else {
+                    this.host.subtitleEl.textContent = nls.localize(
+                        'qaap/workMissionControl/subtitleIdle',
+                        'Delegate work and track it here until PR',
+                    );
+                }
+                return;
+            }
             if (this.host.shouldUseAgentsHubLanding()) {
                 const branchProject = this.host.transcriptOpenProject ?? this.host.resolveHomePinnedProject();
                 if (branchProject) {
@@ -145,23 +171,6 @@ export class MobileProjectsSubtitleUi {
                     this.host.subtitleEl.textContent = '';
                     return;
                 }
-            }
-            if (this.host.tasksHubSurface === 'chat') {
-                const chatCount = this.host.projects.reduce(
-                    (sum, project) => sum + this.host.conversationIndexUi.localChatsForProject(project).length,
-                    0,
-                );
-                this.host.subtitleEl.textContent = chatCount > 0
-                    ? nls.localize(
-                        'qaap/mobileProjects/chatSubtitleCount',
-                        '{0} local chat sessions · saved on this device',
-                        String(chatCount),
-                    )
-                    : nls.localize(
-                        'qaap/mobileProjects/chatSubtitleEmpty',
-                        'Local chat sessions saved on this device',
-                    );
-                return;
             }
             const attention = this.host.countTasksAttention();
             const streamingCount = this.host.projects.reduce(
@@ -219,24 +228,6 @@ export class MobileProjectsSubtitleUi {
                     'Open pull requests across your linked repositories',
                 );
             }
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'chat') {
-            this.host.subtitleEl.className = 'theia-mobile-projects-subtitle';
-            const chatCount = this.host.projects.reduce(
-                (sum, project) => sum + this.host.conversationIndexUi.localChatsForProject(project).length,
-                0,
-            );
-            this.host.subtitleEl.textContent = chatCount > 0
-                ? nls.localize(
-                    'qaap/mobileProjects/chatSubtitleCount',
-                    '{0} local chat sessions · saved on this device',
-                    String(chatCount),
-                )
-                : nls.localize(
-                    'qaap/mobileProjects/chatSubtitle',
-                    'Interactive workspace chat — persists when you close the app',
-                );
             return;
         }
         if (this.host.isProjectDetailView()) {

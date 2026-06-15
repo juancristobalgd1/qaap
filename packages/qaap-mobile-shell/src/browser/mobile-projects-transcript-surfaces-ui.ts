@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { mountQaapShimmeringText } from './qaap-shimmering-text-dom';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
@@ -1440,10 +1441,11 @@ export class MobileProjectsTranscriptSurfacesUi {
         const dot = document.createElement('span');
         dot.className = 'theia-mobile-agent-stream-dot';
         dot.setAttribute('aria-hidden', 'true');
-        const label = document.createElement('span');
-        label.className = 'theia-mobile-agent-stream-label';
-        label.textContent = nls.localize('qaap/mobileProjects/previewLoading', 'Cargando...');
-        line.append(dot, label);
+        const shimmer = mountQaapShimmeringText({
+            text: nls.localize('qaap/mobileProjects/previewLoading', 'Cargando...'),
+            cycle: true,
+        });
+        line.append(dot, shimmer.element);
         wrap.append(line);
         return wrap;
     }

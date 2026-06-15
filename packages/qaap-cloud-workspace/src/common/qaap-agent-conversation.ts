@@ -14,6 +14,7 @@ import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap
 import type { QaapAgentMessageWireDelta } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapParallelRunVariantStats } from './qaap-parallel-run';
+import type { QaapAgentGoalLoopPhase, QaapAgentGoalLoopState } from './qaap-agent-goal-loop';
 
 /** HTTP base path for the persistent agent-conversation endpoints. */
 export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
@@ -38,6 +39,11 @@ export type QaapAgentMessageRole = 'user' | 'agent';
 export type QaapAgentMessageSegment =
     | { readonly type: 'text'; readonly content: string }
     | { readonly type: 'thinking'; readonly content: string }
+    | {
+        readonly type: 'system';
+        readonly kind: 'context_summarized';
+        readonly detail?: string;
+    }
     | {
         readonly type: 'tool';
         readonly toolUseId: string;
@@ -128,12 +134,18 @@ export interface QaapAgentConversation {
     readonly gitDiffRemoved?: number;
     /** When set, this thread is tied to a GitHub pull request (Work Hub inbox). */
     readonly linkedPullRequest?: QaapLinkedPullRequest;
+    /** GitHub issue/PR thread for posting task completion evidence (Issue 4 triggers). */
+    readonly githubEvidence?: import('./qaap-github-pr-evidence').QaapGithubEvidenceAnchor;
+    /** Task ids that received evidence comments via {@link linkedPullRequest} (no anchor). */
+    readonly githubEvidencePostedTaskIds?: ReadonlyArray<string>;
     /** Cumulative token usage when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
     readonly contextWindowSize?: number;
     /** When true, {@link contextUsage} is absent and the UI may show a transcript-based estimate. */
     readonly contextUsageEstimated?: boolean;
+    /** Backend goal loop state — persists across reloads on the VPS. */
+    readonly goalLoop?: QaapAgentGoalLoopState;
 }
 
 /** Summary row used by list endpoints — omits messages to keep payloads small. */
@@ -187,6 +199,10 @@ export interface QaapAgentConversationSummary {
     readonly contextUsageEstimated?: boolean;
     /** Cached estimate for list rows when {@link contextUsageEstimated} is set. */
     readonly estimatedContextTokens?: number;
+    /** Active or terminal goal-loop phase for list badges. */
+    readonly goalLoopPhase?: QaapAgentGoalLoopPhase;
+    readonly goalLoopIteration?: number;
+    readonly goalLoopMaxIterations?: number;
 }
 
 /** Conversations bucketed by project working directory. */
@@ -231,6 +247,7 @@ export interface QaapCreateAgentConversationRequest {
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
+    readonly githubEvidence?: import('./qaap-github-pr-evidence').QaapGithubEvidenceAnchor;
 }
 
 export interface QaapPostAgentMessageRequest {
@@ -283,6 +300,7 @@ export interface QaapLinkConversationsByBranchRequest {
 export type QaapAgentConversationEvent =
     | { readonly type: 'created'; readonly conversation: QaapAgentConversationSummary }
     | { readonly type: 'updated'; readonly conversation: QaapAgentConversationSummary }
+    | { readonly type: 'goal_loop'; readonly conversationId: string; readonly goalLoop: QaapAgentGoalLoopState }
     | { readonly type: 'message'; readonly conversationId: string; readonly cwd: string; readonly message: QaapAgentMessage }
     | {
         readonly type: 'message_delta';
@@ -349,6 +367,11 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.contextUsageEstimated
             ? { estimatedContextTokens: estimateConversationTokensFromMessages(conv.messages, conv.contextPreamble) }
             : {}),
+        ...(conv.goalLoop ? {
+            goalLoopPhase: conv.goalLoop.phase,
+            goalLoopIteration: conv.goalLoop.iteration,
+            goalLoopMaxIterations: conv.goalLoop.budget.maxIterations,
+        } : {}),
     };
 }
 

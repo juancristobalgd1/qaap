@@ -6,10 +6,19 @@
 import { ChatModel, ChatRequestModel, type ChatChangeEvent } from '@theia/ai-chat';
 import {
     ChatViewTreeWidget,
+    isEnterKey,
+    isResponseNode,
+    type RequestNode,
+    type ResponseNode,
 } from '@theia/ai-chat-ui/lib/browser/chat-tree-view/chat-view-tree-widget';
+import { formatTokenCount } from '@theia/ai-chat-ui/lib/browser/chat-token-usage-indicator-util';
+import { PromptVariantBadge } from '@theia/ai-chat-ui/lib/browser/chat-tree-view/prompt-variant-badge';
 import { CompositeTreeNode } from '@theia/core/lib/browser';
+import { MarkdownStringImpl } from '@theia/core/lib/common/markdown-rendering';
+import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { injectable } from '@theia/core/shared/inversify';
+import * as React from '@theia/core/shared/react';
 import { QaapChatUiPerfCollector } from '../common/qaap-chat-ui-perf';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
@@ -17,6 +26,7 @@ import {
     shouldSkipChatModelTreeRecreate,
 } from '../common/qaap-chat-view-tree-incremental';
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
+import { QaapChatAgentProgressLabel } from './qaap-shimmering-text';
 
 /**
  * Chat tree with RAF-coalesced streaming updates, skipped tree recreation on content-only
@@ -156,5 +166,93 @@ export class QaapChatViewTreeWidget extends ChatViewTreeWidget {
         this.paintScheduler?.dispose();
         this.paintScheduler = undefined;
         this.disposeLiveResponseTracking();
+    }
+
+    protected override renderAgent(node: RequestNode | ResponseNode): React.ReactNode {
+        const inProgress = isResponseNode(node) && !node.response.isComplete && !node.response.isCanceled && !node.response.isError;
+        const waitingForInput = isResponseNode(node) && node.response.isWaitingForInput;
+        const toolbarContributions = !inProgress
+            ? this.chatNodeToolbarActionContributions.getContributions()
+                .flatMap(c => c.getToolbarActions(node))
+                .filter(action => this.commandRegistry.isEnabled(action.commandId, node))
+                .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+            : [];
+        const agentLabel = React.createRef<HTMLHeadingElement>();
+        const agentDescription = this.getAgent(node)?.description;
+
+        const promptVariantId = isResponseNode(node) ? node.response.promptVariantId : undefined;
+        const isPromptVariantEdited = isResponseNode(node) ? !!node.response.isPromptVariantEdited : false;
+
+        return <React.Fragment>
+            <div className='theia-ChatNodeHeader'>
+                <div className={`theia-AgentAvatar ${this.getAgentIconClassName(node)}`}></div>
+                <h3 ref={agentLabel}
+                    className='theia-AgentLabel'
+                    onMouseEnter={() => {
+                        const tokenUsage = isResponseNode(node) ? node.response.tokenUsage : undefined;
+                        const hasTokenInfo = tokenUsage && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0);
+                        const tokenInfo = hasTokenInfo
+                            ? `${nls.localize('theia/ai/chat-ui/tokenUsageLabel', 'Token Usage')}: ${nls.localizeByDefault(
+                                'Input: {0}', formatTokenCount(tokenUsage.inputTokens))} | ${nls.localizeByDefault(
+                                'Output: {0}', formatTokenCount(tokenUsage.outputTokens))}`
+                            : undefined;
+                        if (agentDescription || tokenInfo) {
+                            const md = new MarkdownStringImpl();
+                            if (agentDescription) {
+                                md.appendMarkdown(agentDescription);
+                            }
+                            if (agentDescription && tokenInfo) {
+                                md.appendMarkdown('\n\n---\n\n');
+                            }
+                            if (tokenInfo) {
+                                md.appendMarkdown(tokenInfo);
+                            }
+                            this.hoverService.requestHover({
+                                content: md,
+                                target: agentLabel.current!,
+                                position: 'right'
+                            });
+                        }
+                    }}>
+                    {this.getAgentLabel(node)}
+                </h3>
+                {promptVariantId && (
+                    <PromptVariantBadge
+                        variantId={promptVariantId}
+                        isEdited={isPromptVariantEdited}
+                        hoverService={this.hoverService}
+                    />
+                )}
+                {inProgress &&
+                    <QaapChatAgentProgressLabel
+                        waitingForInput={!!waitingForInput}
+                        waitingLabel={nls.localize('theia/ai/chat-ui/chat-view-tree-widget/waitingForInput', 'Waiting for input')}
+                    />}
+                <div className='theia-ChatNodeToolbar'>
+                    {!inProgress &&
+                        toolbarContributions.length > 0 &&
+                        toolbarContributions.map(action =>
+                            <span
+                                key={action.commandId}
+                                className={`theia-ChatNodeToolbarAction ${action.icon}`}
+                                title={action.tooltip}
+                                aria-label={action.tooltip}
+                                tabIndex={0}
+                                onClick={e => {
+                                    e.stopPropagation();
+                                    this.commandRegistry.executeCommand(action.commandId, node);
+                                }}
+                                onKeyDown={e => {
+                                    if (isEnterKey(e)) {
+                                        e.stopPropagation();
+                                        this.commandRegistry.executeCommand(action.commandId, node);
+                                    }
+                                }}
+                                role='button'
+                            ></span>
+                        )}
+                </div>
+            </div>
+        </React.Fragment>;
     }
 }

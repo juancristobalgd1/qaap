@@ -54,7 +54,7 @@ export class MobileProjectsInboxPrUi {
         }
         this.host.inboxPullRequestsLoaded = true;
         this.host.inboxPullRequestsLoading = false;
-        if (this.host.visible && (this.host.hubView === 'review' || this.host.hubView === 'home')) {
+        if (this.host.visible && this.host.hubView === 'review') {
             this.host.renderList();
         }
     }

@@ -73,15 +73,19 @@ export class QaapAgentApprovalStore {
         return [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
     }
 
-    async approve(id: string): Promise<QaapAgentApprovalActionResponse> {
-        return this.respond(id, 'approve');
+    async approve(id: string, updatedInput?: Record<string, unknown>): Promise<QaapAgentApprovalActionResponse> {
+        return this.respond(id, 'approve', updatedInput);
     }
 
     async reject(id: string): Promise<QaapAgentApprovalActionResponse> {
         return this.respond(id, 'reject');
     }
 
-    protected async respond(id: string, action: 'approve' | 'reject'): Promise<QaapAgentApprovalActionResponse> {
+    protected async respond(
+        id: string,
+        action: 'approve' | 'reject',
+        updatedInput?: Record<string, unknown>,
+    ): Promise<QaapAgentApprovalActionResponse> {
         const parsed = this.parseApprovalId(id);
         if (!parsed) {
             return { ok: false, error: 'Invalid approval id.' };
@@ -98,7 +102,7 @@ export class QaapAgentApprovalStore {
         if (!task || task.state !== 'running') {
             return { ok: false, error: 'Task is not running.' };
         }
-        const sent = this.taskRunner.respondToApprovalPrompt(taskId, action, parsed.toolUseId);
+        const sent = this.taskRunner.respondToApprovalPrompt(taskId, action, parsed.toolUseId, updatedInput);
         if (!sent) {
             return {
                 ok: false,

@@ -19,6 +19,7 @@ export async function respondToTranscriptApproval(
     options: {
         readonly card?: HTMLElement;
         readonly fromEvent?: Event;
+        readonly updatedInput?: Record<string, unknown>;
         readonly callbacks?: TranscriptApprovalRespondCallbacks;
     } = {},
 ): Promise<boolean> {
@@ -32,7 +33,7 @@ export async function respondToTranscriptApproval(
     }
     try {
         const result = action === 'approve'
-            ? await approveAgentRequest(approvalId)
+            ? await approveAgentRequest(approvalId, { updatedInput: options.updatedInput })
             : await rejectAgentRequest(approvalId);
         if (result.ok) {
             card?.remove();

@@ -33,7 +33,7 @@ export function filterVpsTaskSummaries<T extends QaapAgentConversationSummaryDTO
 
 /** Legacy hub tab ids — map to current Tasks surface. */
 export function normalizeWorkHubViewId(view: string): string {
-    if (view === 'chats' || view === 'team' || view === 'work') {
+    if (view === 'chats' || view === 'chat' || view === 'team' || view === 'work' || view === 'home') {
         return 'tasks';
     }
     return view;

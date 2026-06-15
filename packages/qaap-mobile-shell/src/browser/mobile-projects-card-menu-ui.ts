@@ -6,7 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { ChatService } from '@theia/ai-chat';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO, isGoalLoopBlocked, isGoalLoopPhaseActive } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -257,6 +257,20 @@ export class MobileProjectsCardMenuUi {
             menu.append(retrySep);
         }
 
+        const live = this.host.conversations?.findSummaryById(summary.id) ?? summary;
+        if (isGoalLoopBlocked(live.goalLoopPhase) && summary.source !== 'theia-chat') {
+            this.appendCardMenuItem(menu, {
+                label: nls.localize('qaap/mobileProjects/retryGoalLoop', 'Retry until done'),
+                iconClass: 'codicon-debug-restart',
+                title: live.goalLoopStopReason,
+                onSelect: () => { void this.host.onRetryConversation(project, summary); },
+            });
+            const blockedSep = document.createElement('div');
+            blockedSep.className = 'theia-mobile-projects-card-menu-separator';
+            blockedSep.setAttribute('role', 'separator');
+            menu.append(blockedSep);
+        }
+
         this.appendCardMenuItem(menu, {
             label: nls.localize('qaap/mobileProjects/openChat', 'Open chat'),
             iconClass: 'codicon-comment-discussion',
@@ -343,14 +357,16 @@ export class MobileProjectsCardMenuUi {
             onSelect: () => { void this.host.onSetConversationPaused(project, summary, !flags.paused); },
         });
 
-        if (summary.status === 'streaming') {
+        if (summary.status === 'streaming' || isGoalLoopPhaseActive(live.goalLoopPhase)) {
             const separator = document.createElement('div');
             separator.className = 'theia-mobile-projects-card-menu-separator';
             separator.setAttribute('role', 'separator');
             menu.append(separator);
 
             this.appendCardMenuItem(menu, {
-                label: nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run'),
+                label: isGoalLoopPhaseActive(live.goalLoopPhase)
+                    ? nls.localize('qaap/mobileProjects/cancelGoalLoop', 'Cancel goal loop')
+                    : nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run'),
                 iconClass: 'codicon-debug-stop',
                 danger: true,
                 onSelect: () => { void this.host.onCancelConversation(project, summary); },

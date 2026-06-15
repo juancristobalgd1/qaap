@@ -30,13 +30,13 @@ const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 328;
 
 export interface MobileWorkHubSessionsSidebarDelegate {
     renderSessionList(host: HTMLElement): void;
-    onNewChat(): void;
     onClose(): void;
     storageScope?(): string | undefined;
     onAccountMenu?(anchor: HTMLButtonElement): void;
     onSearch?: () => void;
     onExtensions?: () => void;
     onAutomations?: () => void;
+    onMissionControl?: () => void;
     /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
     shouldSkipSessionListRefresh?(): boolean;
     rememberSessionListFingerprint?(): void;
@@ -129,11 +129,11 @@ export class MobileWorkHubSessionsSidebar {
         nav.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/navLabel', 'Sidebar shortcuts'));
         nav.append(
             this.createNavButton(
-                'codicon-add',
-                nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
+                'codicon-bell-dot',
+                nls.localize('qaap/sessionsSidebar/missionControl', 'Agent work to PR'),
                 () => {
                     this.hideForMobileOverlay();
-                    this.delegate.onNewChat();
+                    this.delegate.onMissionControl?.();
                 },
             ),
             this.createNavButton(

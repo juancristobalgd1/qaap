@@ -14,6 +14,7 @@ import '../../src/browser/style/qaap-chat-select-dropdown.css';
 import '../../src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
+import '../../../qaap-product-theme/src/browser/style/qaap-agent-loading-shimmer.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';
@@ -46,6 +47,7 @@ import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutori
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
 import { MobileEditorGestureContribution } from './mobile-editor-gesture-contribution';
 import { QaapEmptyWorkbenchBrandingContribution } from './qaap-empty-workbench-branding-contribution';
+import { QaapWorkHubRepositoryCommandsContribution } from './qaap-work-hub-repository-commands-contribution';
 import { QaapWatermarkCommandsContribution } from './qaap-watermark-commands-contribution';
 import { LongPressContextMenuContribution } from './long-press-context-menu';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
@@ -76,11 +78,13 @@ import { QaapBackgroundContextProvider } from './qaap-background-context-provide
 import { QaapQaiqBashToolRenderer } from './qaap-qaiq-bash-tool-renderer';
 import { QaapQaiqGenericToolRenderer } from './qaap-qaiq-generic-tool-renderer';
 import { QaapMarkdownPartRenderer } from './qaap-markdown-part-renderer';
+import { QaapDelegationToolRenderer } from './qaap-delegation-tool-renderer';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapDiffReviewContribution } from './qaap-diff-review-contribution';
 import { QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
+import { QaapWorkHubTranscriptDeepLinkService } from './qaap-work-hub-transcript-deeplink-service';
 import { QaapPushNotificationContribution } from './qaap-push-notification-contribution';
 import { QaapAgentCompletionContribution } from './qaap-agent-completion-contribution';
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
@@ -147,6 +151,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(MobileEditorGestureContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileEditorGestureContribution);
 
+    bind(QaapWorkHubRepositoryCommandsContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(QaapWorkHubRepositoryCommandsContribution);
+
     bind(QaapWatermarkCommandsContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapWatermarkCommandsContribution);
     bind(KeybindingContribution).toService(QaapWatermarkCommandsContribution);
@@ -186,6 +193,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapMarkdownPartRenderer).toSelf().inSingletonScope();
     bind(ChatResponsePartRenderer).toService(QaapMarkdownPartRenderer);
+    bind(QaapDelegationToolRenderer).toSelf().inSingletonScope();
+    bind(ChatResponsePartRenderer).toService(QaapDelegationToolRenderer);
 
     bind(QaapProjectBootstrapContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapProjectBootstrapContribution);
@@ -200,6 +209,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapCommitMessageAi).toSelf().inSingletonScope();
     bind(QaapWorkHubDiffService).toSelf().inSingletonScope();
+    bind(QaapWorkHubTranscriptDeepLinkService).toSelf().inSingletonScope();
     bind(QaapDiffReviewWidget).toSelf();
     bind(WidgetFactory).toDynamicValue(({ container }) => ({
         id: QaapDiffReviewWidget.ID,

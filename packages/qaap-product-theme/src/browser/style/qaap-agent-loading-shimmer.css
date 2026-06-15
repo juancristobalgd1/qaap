@@ -1,0 +1,100 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+.qaap-shimmering-text {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  font-weight: 600;
+  vertical-align: baseline;
+  /* Do NOT use overflow:hidden here — it breaks background-clip:text on the phrase in WebKit. */
+}
+
+.qaap-shimmering-text-phrase {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: baseline;
+  color: var(--theia-descriptionForeground);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+/* Cursor-style sweep — opaque theme stops only (no color-mix transparent). */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .qaap-shimmering-text-phrase {
+    background-image: linear-gradient(
+      90deg,
+      var(--theia-descriptionForeground) 0%,
+      var(--theia-descriptionForeground) 36%,
+      var(--theia-foreground) 50%,
+      var(--theia-descriptionForeground) 64%,
+      var(--theia-descriptionForeground) 100%
+    );
+    background-size: 280% 100%;
+    background-position: 100% center;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: qaap-shimmering-text-gradient 2.4s ease-in-out infinite;
+  }
+}
+
+.qaap-shimmering-text-phrase.qaap-mod-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.qaap-shimmering-text-phrase.qaap-mod-hidden {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+@keyframes qaap-shimmering-text-gradient {
+  0% { background-position: 100% center; }
+  100% { background-position: 0% center; }
+}
+
+/* Upstream chat header paints disabled color + animated "..." dots — disable for shimmer hosts */
+.theia-ChatNodeHeader .theia-ChatContentInProgress.qaap-mod-shimmer {
+  color: inherit;
+}
+
+.theia-ChatNodeHeader .theia-ChatContentInProgress.qaap-mod-shimmer::after {
+  content: none !important;
+  animation: none !important;
+  width: 0 !important;
+  display: none !important;
+}
+
+.theia-ChatInput-StatusBar.pending .theia-ChatInput-StatusText.qaap-shimmering-text {
+  color: inherit;
+}
+
+.delegation-status-text.qaap-mod-shimmer,
+.delegation-response-placeholder .theia-ChatContentInProgress.qaap-mod-shimmer {
+  max-width: min(100%, 36ch);
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.delegation-status-text.qaap-mod-shimmer .qaap-shimmering-text {
+  font-weight: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qaap-shimmering-text-phrase {
+    animation: none !important;
+    -webkit-text-fill-color: var(--theia-descriptionForeground) !important;
+    color: var(--theia-descriptionForeground) !important;
+    background: none !important;
+    transition: none;
+  }
+}

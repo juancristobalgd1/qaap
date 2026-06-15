@@ -181,6 +181,9 @@ export function logQaapChatUiPerf(snapshot: QaapChatUiPerfTurnSnapshot | undefin
     if (!snapshot) {
         return;
     }
+    if (typeof window !== 'undefined') {
+        window.__qaapLastChatUiPerf = snapshot;
+    }
     const line = formatQaapChatUiPerfLog(snapshot);
     if (typeof console !== 'undefined' && typeof console.info === 'function') {
         console.info(line);

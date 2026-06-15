@@ -26,6 +26,7 @@ import {
     createStickyComposerWorkspacePill,
     renderStickyComposerWorkspaceBar,
 } from './qaap-sticky-composer-workspace-bar';
+import { ensureStickyComposerShellBorderBeam } from './qaap-sticky-composer-activity-stack';
 import {
     createContextUsageIndicatorBadge,
 } from './qaap-chat-context-usage-indicator';
@@ -73,6 +74,10 @@ export class MobileProjectsStickyComposerColumnUi {
         onOpenAgentSheet: (anchor: HTMLButtonElement) => void;
         onSubmit: (draft: string) => void;
         onSubmitBlocked?: () => void;
+        /** Show the backend goal-loop toggle (VPS agents hub composer). */
+        showRunUntilDone?: boolean;
+        runUntilDone?: boolean;
+        onRunUntilDoneChange?: (enabled: boolean) => void;
         afterInputChange?: () => void;
         sendLabel?: string;
         onSendControlMounted?: (refresh: () => void) => void;
@@ -143,6 +148,28 @@ export class MobileProjectsStickyComposerColumnUi {
                 this.openComposerControlSheet(ev, input, () => options.onOpenApprovalPolicySheet!(approvalButton));
             });
             controlsLeftItems.push(approvalBtn);
+        }
+        if (options.showRunUntilDone) {
+            const goalBtn = document.createElement('button');
+            goalBtn.type = 'button';
+            goalBtn.className = 'theia-mobile-projects-sticky-composer-goal-loop';
+            const syncGoalLoop = (): void => {
+                const on = options.runUntilDone === true;
+                goalBtn.classList.toggle('theia-mod-active', on);
+                goalBtn.title = on
+                    ? nls.localize('qaap/mobileProjects/runUntilDoneOn', 'Run until done — ON')
+                    : nls.localize('qaap/mobileProjects/runUntilDoneOff', 'Run until done — OFF');
+                goalBtn.setAttribute('aria-label', goalBtn.title);
+                goalBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            };
+            goalBtn.textContent = nls.localize('qaap/mobileProjects/runUntilDoneShort', 'Until done');
+            goalBtn.addEventListener('click', ev => {
+                ev.stopPropagation();
+                options.onRunUntilDoneChange?.(!(options.runUntilDone === true));
+                syncGoalLoop();
+            });
+            syncGoalLoop();
+            controlsLeftItems.push(goalBtn);
         }
 
         const agentBtn = document.createElement('button');
@@ -271,10 +298,15 @@ export class MobileProjectsStickyComposerColumnUi {
         sendBtn.setAttribute('aria-label', sendLabel);
         sendBtn.innerHTML = '<span class="codicon codicon-send" aria-hidden="true"></span>';
 
+        let composerCard: HTMLDivElement | undefined;
         const updateSend = (): void => {
             const has = input.value.trim().length > 0;
             const working = options.isAgentWorking?.() ?? false;
             inputPanel.classList.toggle('theia-mod-agent-working', working);
+            composerCard?.classList.toggle('theia-mod-agent-working', working);
+            if (composerCard && (composerCard.classList.contains('theia-mod-has-activity') || composerCard.classList.contains('theia-mod-has-context'))) {
+                ensureStickyComposerShellBorderBeam(composerCard);
+            }
             const showStop = working && !has;
             const sendLabel = options.sendLabel ?? nls.localize('qaap/mobileProjects/inlineStart', 'Start');
             const stopLabel = options.stopLabel ?? nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run');
@@ -389,6 +421,7 @@ export class MobileProjectsStickyComposerColumnUi {
 
         const card = document.createElement('div');
         card.className = 'theia-mobile-projects-sticky-composer-card theia-mod-codex';
+        composerCard = card;
         if (options.changesPill) {
             wrap.append(options.changesPill);
         }
@@ -410,8 +443,12 @@ export class MobileProjectsStickyComposerColumnUi {
             card.append(options.activityStack);
         }
         card.append(stage);
+        if (options.activityStack || contextItems.length > 0) {
+            ensureStickyComposerShellBorderBeam(card);
+        }
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
         wrap.append(card);
+        updateSend();
         if (branchWorkspaceBar) {
             wrap.append(branchWorkspaceBar);
             void this.host.stickyComposerWorkspaceUi.refreshComposerWorkspaceBranch(options.project).then(branch => {

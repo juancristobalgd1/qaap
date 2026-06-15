@@ -1,0 +1,31 @@
+---
+description: Qaap PRs must target juancristobalgd1/qaap — never eclipse-theia/theia
+alwaysApply: true
+---
+
+# PR target — Qaap fork only (crítico)
+
+Este repo es un **fork de producto Qaap** (`juancristobalgd1/qaap`). El remote `upstream` apunta a `eclipse-theia/theia` solo para merges/drift — **nunca** es destino de PRs de producto.
+
+## Prohibido
+
+- `gh pr create` sin `--repo juancristobalgd1/qaap`
+- Cualquier PR contra `eclipse-theia/theia` o `eclipse-theia/*`
+- Asumir el default de `gh` (puede quedar en upstream tras un clone)
+
+## Obligatorio al crear PR
+
+1. Push a `origin` (fork): `git push -u origin HEAD`
+2. Crear PR **solo** en el fork:
+
+```sh
+gh pr create --repo juancristobalgd1/qaap --base master ...
+```
+
+3. Preferir el wrapper del repo: `scripts/qaap-gh-pr.sh create ...`
+
+4. Tras clonar, fijar default local: `scripts/qaap-ensure-gh-default.sh`
+
+## Si se abrió un PR en upstream por error
+
+Cerrarlo en GitHub y abrir el PR correcto en `juancristobalgd1/qaap`.

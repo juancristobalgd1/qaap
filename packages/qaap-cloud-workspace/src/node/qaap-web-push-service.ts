@@ -5,6 +5,7 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import type { QaapPushNotifyRequest } from '../common/qaap-cloud-api-types';
+import { buildQaapWebPushWirePayload } from '../common/qaap-web-push-payload';
 import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
 
 @injectable()
@@ -39,12 +40,7 @@ export class QaapWebPushService {
             : await this.subscriptions.listAll();
         let sent = 0;
         let failed = 0;
-        const payload = JSON.stringify({
-            title: request.title,
-            body: request.body,
-            tag: request.tag,
-            route: request.route,
-        });
+        const payload = JSON.stringify(buildQaapWebPushWirePayload(request));
         for (const row of targets) {
             try {
                 await webpush.sendNotification(row.subscription, payload);

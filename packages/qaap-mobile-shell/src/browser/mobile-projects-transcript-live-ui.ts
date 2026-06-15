@@ -13,6 +13,7 @@ import {
     type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
+import { isAskUserQuestionToolName } from '../common/qaap-transcript-ask-user-question';
 import {
     fetchAgentApprovals,
     type QaapAgentApprovalRequestDTO,
@@ -58,6 +59,9 @@ import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { scheduleTranscriptIdleWork, type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
+import { isQaapStreamMetricsEnabled } from '../common/qaap-agent-stream-metrics';
+import { isQaapWorkHubPerfProbeEnabled } from '../common/qaap-work-hub-perf-probe';
+import { QaapChatUiPerfCollector } from '../common/qaap-chat-ui-perf';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import {
@@ -150,10 +154,12 @@ export class MobileProjectsTranscriptLiveUi {
     protected sseRenderTimer: number | undefined;
     protected lastMountedApprovalId: string | undefined;
     protected transcriptComposerActivityTimer: number | undefined;
+    protected transcriptComposerActivityRafId = 0;
     protected transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
     protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
     protected transcriptPreviewPollMisses = 0;
     protected visibilityResumeListenerInstalled = false;
+    protected transcriptPerfTurnId: string | undefined;
 
     constructor(protected readonly host: MobileProjectsTranscriptLiveHost) {
         this.ensureBootstrapPreviewListener();
@@ -210,6 +216,8 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         this.ensureTranscriptLiveController().markSseDeltaApplied();
+        this.ensureTranscriptPerfTurn(event.conversationId);
+        QaapChatUiPerfCollector.get().recordContentChange(event.conversationId);
         if (TRANSCRIPT_SSE_COALESCE_RAF) {
             this.pendingSseRenderConv = next;
             this.schedulePendingSseRender();
@@ -258,6 +266,10 @@ export class MobileProjectsTranscriptLiveUi {
         if (this.sseRenderTimer !== undefined) {
             window.clearTimeout(this.sseRenderTimer);
             this.sseRenderTimer = undefined;
+        }
+        if (this.transcriptComposerActivityRafId) {
+            cancelAnimationFrame(this.transcriptComposerActivityRafId);
+            this.transcriptComposerActivityRafId = 0;
         }
         this.transcriptComposerActivityIdleHandle?.cancel();
         this.transcriptComposerActivityIdleHandle = undefined;
@@ -326,6 +338,9 @@ export class MobileProjectsTranscriptLiveUi {
         if (!lastMessage) {
             return;
         }
+        if (this.transcriptPerfTurnId) {
+            QaapChatUiPerfCollector.get().recordPaint(this.transcriptPerfTurnId);
+        }
         this.applyTranscriptSseRender(next, lastMessage);
     }
 
@@ -360,11 +375,56 @@ export class MobileProjectsTranscriptLiveUi {
         }
         if (next.status === 'streaming') {
             this.scheduleTranscriptComposerActivityRefresh(next);
+        } else {
+            this.finishTranscriptPerfTurnIfIdle(next.status);
         }
+    }
+
+    protected ensureTranscriptPerfTurn(conversationId: string): void {
+        if (!isQaapStreamMetricsEnabled() || !conversationId) {
+            return;
+        }
+        if (this.transcriptPerfTurnId === conversationId) {
+            return;
+        }
+        if (this.transcriptPerfTurnId) {
+            QaapChatUiPerfCollector.get().finishTurn(this.transcriptPerfTurnId);
+        }
+        this.transcriptPerfTurnId = conversationId;
+        QaapChatUiPerfCollector.get().beginTurn(conversationId, conversationId, 'transcript');
+    }
+
+    protected finishTranscriptPerfTurnIfIdle(status: QaapAgentConversationSummaryDTO['status']): void {
+        if (status === 'streaming' || !this.transcriptPerfTurnId) {
+            return;
+        }
+        QaapChatUiPerfCollector.get().finishTurn(this.transcriptPerfTurnId);
+        this.transcriptPerfTurnId = undefined;
     }
 
     protected scheduleTranscriptComposerActivityRefresh(conv: QaapAgentConversationDTO): void {
         if (!isTranscriptDocumentVisible()) {
+            return;
+        }
+        if (conv.status === 'streaming') {
+            if (this.transcriptComposerActivityTimer !== undefined) {
+                window.clearTimeout(this.transcriptComposerActivityTimer);
+                this.transcriptComposerActivityTimer = undefined;
+            }
+            this.transcriptComposerActivityIdleHandle?.cancel();
+            this.transcriptComposerActivityIdleHandle = undefined;
+            if (!this.transcriptComposerActivityRafId) {
+                this.transcriptComposerActivityRafId = requestAnimationFrame(() => {
+                    this.transcriptComposerActivityRafId = 0;
+                    if (!isTranscriptDocumentVisible()) {
+                        return;
+                    }
+                    const latest = this.host.transcriptLastConv;
+                    if (latest?.id === conv.id && latest.status === 'streaming') {
+                        this.host.transcriptStickyComposerUi.refreshTranscriptComposerActivityIfNeeded(latest);
+                    }
+                });
+            }
             return;
         }
         if (this.transcriptComposerActivityTimer !== undefined) {
@@ -390,6 +450,10 @@ export class MobileProjectsTranscriptLiveUi {
         if (this.transcriptComposerActivityTimer !== undefined) {
             window.clearTimeout(this.transcriptComposerActivityTimer);
             this.transcriptComposerActivityTimer = undefined;
+        }
+        if (this.transcriptComposerActivityRafId) {
+            cancelAnimationFrame(this.transcriptComposerActivityRafId);
+            this.transcriptComposerActivityRafId = 0;
         }
         this.transcriptComposerActivityIdleHandle?.cancel();
         this.transcriptComposerActivityIdleHandle = undefined;
@@ -721,6 +785,14 @@ export class MobileProjectsTranscriptLiveUi {
         }
         const pending = resolveTranscriptInlineApproval(this.host.cachedAgentApprovals, conv.id);
         const pendingId = pending?.id;
+        if (pending && isAskUserQuestionToolName(pending.toolName)) {
+            clearTranscriptPendingApprovalBar(this.host.transcriptComposerHost);
+            this.lastMountedApprovalId = pendingId;
+            if (chatHost) {
+                this.reconcileTranscriptInlineToolApprovalCards(chatHost, conv);
+            }
+            return;
+        }
         if (pendingId === this.lastMountedApprovalId) {
             return;
         }
@@ -934,6 +1006,12 @@ export class MobileProjectsTranscriptLiveUi {
         if (summary.source === 'theia-chat' || summary.id.startsWith('theia-chat-service:')) {
             return this.host.getChatServiceConversation(summary);
         }
+        if (isQaapWorkHubPerfProbeEnabled()) {
+            const probeConversation = this.host.conversations?.perfProbeGetConversation(summary.id);
+            if (probeConversation) {
+                return probeConversation;
+            }
+        }
         try {
             return await getConversation(summary.id);
         } catch {
@@ -968,6 +1046,11 @@ export class MobileProjectsTranscriptLiveUi {
             if (!full) {
                 throw new Error('Conversation not found');
             }
+            if (full.status === 'streaming') {
+                this.ensureTranscriptPerfTurn(full.id);
+            } else {
+                this.finishTranscriptPerfTurnIfIdle(full.status);
+            }
             if (!this.isActiveTranscriptConversation(activeSummary.id) || !activeChatHost.isConnected) {
                 return;
             }
@@ -999,6 +1082,9 @@ export class MobileProjectsTranscriptLiveUi {
                 return;
             }
             this.host.transcriptLastFingerprint = fingerprint;
+            if (this.transcriptPerfTurnId) {
+                QaapChatUiPerfCollector.get().recordPaint(this.transcriptPerfTurnId);
+            }
             this.host.transcriptMessagesUi.renderTranscriptMessages(activeChatHost, full);
             if (conversationUsesInteractiveApprovals(full)) {
                 this.syncTranscriptPendingApproval(full);

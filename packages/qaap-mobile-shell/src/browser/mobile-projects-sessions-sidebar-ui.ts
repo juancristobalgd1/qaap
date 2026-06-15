@@ -39,6 +39,7 @@ quickInputService?: import('@theia/core/lib/browser').QuickInputService;
 delegate: {
     onProjectOpenInIde?(project: MobileProjectEntry): void | Promise<void>;
     onShowRoutinesHub?(): void | Promise<void>;
+    onShowMissionControlHub?(): void | Promise<void>;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
 };
@@ -125,7 +126,6 @@ export class MobileProjectsSessionsSidebarUi {
                 renderSessionList: host => this.renderWorkHubSessionsSidebarList(host),
                 shouldSkipSessionListRefresh: () => this.shouldSkipSessionsSidebarListRender(),
                 rememberSessionListFingerprint: () => this.rememberSessionsSidebarListFingerprint(),
-                onNewChat: () => { void this.onWorkHubSessionsSidebarNewChat(); },
                 onClose: () => {
                     this.host.cardMenuUi.closeCardMenu();
                 },
@@ -134,6 +134,7 @@ export class MobileProjectsSessionsSidebarUi {
                 onSearch: () => { void this.openSessionsSidebarSearch(); },
                 onExtensions: () => { void this.host.commands.executeCommand('workbench.view.extensions'); },
                 onAutomations: () => { void this.onWorkHubSessionsSidebarAutomations(); },
+                onMissionControl: () => { void this.onWorkHubSessionsSidebarMissionControl(); },
             });
             document.body.append(this.host.sessionsSidebar.node);
         }
@@ -638,6 +639,12 @@ export class MobileProjectsSessionsSidebarUi {
         this.host.sessionsSidebar?.hide();
         await this.host.delegate.onShowRoutinesHub?.();
     }
+
+    async onWorkHubSessionsSidebarMissionControl(): Promise<void> {
+        this.host.sessionsSidebar?.hide();
+        await this.host.delegate.onShowMissionControlHub?.();
+    }
+
     onSessionsSidebarAccountClick(anchor: HTMLButtonElement): void {
         toggleQaapAccountMenu(
             anchor,

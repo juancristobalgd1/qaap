@@ -6,7 +6,6 @@
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { ChatService } from '@theia/ai-chat';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
-import { isWorkMissionControlEnabled } from './mobile-work-mission-control';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import {
     hasMobileProjectsLeftLanding,
@@ -98,6 +97,7 @@ export interface MobileProjectsPanelLifecycleHost {
     markTasksFirstLoadComplete(render: boolean): void;
     maybeInstallWorkHubPerfProbe(): void;
     shouldSkipFullRenderListOnConversationTick(): boolean;
+    shouldUseMissionControlLanding(): boolean;
     refreshWorkHubConversationChrome(): void;
     mergeInboxPullRequests(polled: QaapGithubPullRequestSummary[]): QaapGithubPullRequestSummary[];
     updateTasksAttentionChrome(): void;
@@ -160,7 +160,7 @@ export class MobileProjectsPanelLifecycleUi {
         } else if (!this.host.visible) {
             const storedHubView = this.host.projectsService.getHubView();
             if (this.host.homeMode && !hasMobileProjectsLeftLanding()) {
-                this.host.hubView = storedHubView === 'home' ? 'tasks' : this.host.hubQueryUi.redirectHubView(storedHubView);
+                this.host.hubView = this.host.hubQueryUi.redirectHubView(storedHubView);
                 this.host.projectsService.setHubView(this.host.hubView);
             } else {
                 this.host.hubView = this.host.hubQueryUi.redirectHubView(storedHubView);
@@ -192,6 +192,9 @@ export class MobileProjectsPanelLifecycleUi {
             return;
         }
         const elapsed = Math.round(performance.now() - startedAt);
+        if (typeof window !== 'undefined') {
+            window.__qaapWorkHubPerfProbe?.recordWorkHubFirstShowMs(elapsed);
+        }
         if (elapsed > 50) {
             console.debug(`[qaap-mobile-shell] Work Hub first show painted in ${elapsed}ms`);
         }
@@ -223,9 +226,6 @@ export class MobileProjectsPanelLifecycleUi {
             this.host.inboxStream?.start();
             this.subscribeToInboxStream();
             void this.host.refreshInboxPullRequests(undefined, true);
-        }
-        if (this.host.hubView === 'home') {
-            this.host.refreshHomeHubData(false);
         }
     }
 
@@ -302,7 +302,7 @@ export class MobileProjectsPanelLifecycleUi {
                         return;
                     }
                     this.host.scheduleRenderList();
-                } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView() && isWorkMissionControlEnabled()) {
+                } else if (this.host.visible && this.host.hubQueryUi.isTasksHubView() && this.host.shouldUseMissionControlLanding()) {
                     this.host.scheduleRenderList();
                 } else if (this.host.visible && !this.host.transcriptSheet) {
                     void this.applyActiveTasksRefresh();
@@ -327,7 +327,7 @@ export class MobileProjectsPanelLifecycleUi {
                         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummaryId) {
                             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
                         }
-                    } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView() && isWorkMissionControlEnabled()) {
+                    } else if (this.host.visible && this.host.hubQueryUi.isTasksHubView() && this.host.shouldUseMissionControlLanding()) {
                         this.host.scheduleRenderList();
                     } else if (this.host.visible && !this.host.transcriptSheet) {
                         void this.applyActiveTasksRefresh();
@@ -417,15 +417,6 @@ export class MobileProjectsPanelLifecycleUi {
             this.host.chatServiceRefreshHandle = undefined;
             void this.applyActiveTasksRefresh();
         }, 120);
-    }
-
-    scheduleChatHubListRefreshAfterSummaries(): void {
-        void this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries().then(() => {
-            if (this.host.hubView === 'chat' && this.host.visible) {
-                this.host.scheduleRenderList();
-                this.host.renderSubtitle();
-            }
-        });
     }
 
     async applyActiveTasksRefresh(): Promise<void> {

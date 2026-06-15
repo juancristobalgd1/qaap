@@ -157,4 +157,41 @@ export class MobileShellHubNavigationController {
         this.host.refreshWorkbenchTopBar();
         this.host.ensureDesktopWorkHubSessionsSidebarOpen();
     }
+
+    /** Opens Mission Control (explicit sidebar entry — not the default home or Agents tab). */
+    async openMobileWorkHubMissionControl(): Promise<void> {
+        dismissQaapAccountMenu();
+        clearPreferDesktopIde();
+        installMobileWorkHubBootGuard();
+        if (!this.host.isMobileActive()) {
+            this.host.enterMobileLayout();
+        }
+        this.dismissMobileAgentTranscriptOverlays();
+        void this.finalizeHubLandingNavigation();
+        const existing = this.host.getProjectsPanel();
+        if (existing?.isVisible() && existing.isHomeMode()) {
+            existing.openMissionControlView();
+            markPreferAgentsSurface();
+            this.host.syncMobileHubPrimaryBottomChrome();
+            this.host.refreshBottomBar();
+            this.host.refreshWorkbenchTopBar();
+            return;
+        }
+        await this.host.showMobileProjectsHome('tasks');
+        const panel = this.host.getProjectsPanel();
+        if (!panel) {
+            return;
+        }
+        if (panel.isProjectDetailView()) {
+            panel.closeProjectDetail();
+        }
+        this.host.warmLiveTransport();
+        this.host.startActiveTasks();
+        panel.openMissionControlView();
+        markPreferAgentsSurface();
+        this.host.syncMobileHubPrimaryBottomChrome();
+        this.host.refreshBottomBar();
+        this.host.refreshWorkbenchTopBar();
+        this.host.ensureDesktopWorkHubSessionsSidebarOpen();
+    }
 }

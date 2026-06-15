@@ -38,4 +38,18 @@ export class QaapGithubInboxHub {
     publishRefresh(): void {
         this.onDidChangeEmitter.fire({ type: 'inbox_refresh' });
     }
+
+    publishAgentTriggered(input: {
+        owner: string;
+        repo: string;
+        issueNumber: number;
+        conversationId?: string;
+        ok: boolean;
+        error?: string;
+    }): void {
+        this.onDidChangeEmitter.fire({
+            type: 'agent_triggered',
+            ...input,
+        });
+    }
 }

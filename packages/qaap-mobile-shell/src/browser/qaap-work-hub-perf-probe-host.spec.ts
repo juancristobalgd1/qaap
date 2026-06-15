@@ -9,6 +9,7 @@ import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '../common/qaap-work-hub-pe
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import {
+    buildProbeConversationDTO,
     buildProbeStreamingSummaries,
     ensureProbeWorkspaceProject,
     QAAP_PROBE_WORKSPACE_PROJECT_ID,
@@ -73,5 +74,12 @@ describe('qaap-work-hub-perf-probe-host', () => {
         const next = ensureProbeWorkspaceProject([existing], projectsService, workspaceCwd);
         expect(next).to.have.length(1);
         expect(next[0].id).to.equal('repo-a');
+    });
+
+    it('buildProbeConversationDTO includes assistant history blocks', () => {
+        const [summary] = buildProbeStreamingSummaries('/workspace/demo');
+        const conversation = buildProbeConversationDTO(summary);
+        expect(conversation.messages.length).to.be.greaterThan(1);
+        expect(conversation.messages.some(message => message.role === 'agent')).to.equal(true);
     });
 });

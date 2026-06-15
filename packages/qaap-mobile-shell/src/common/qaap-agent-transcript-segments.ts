@@ -5,10 +5,28 @@
 
 /** Minimal segment shape for transcript activity / inline-render decisions. */
 export interface QaapTranscriptActivitySegment {
-    readonly type: 'thinking' | 'tool' | 'text';
+    readonly type: 'thinking' | 'tool' | 'text' | 'system';
     readonly content?: string;
     readonly name?: string;
+    readonly kind?: QaapTranscriptSystemSegmentKind;
+    readonly detail?: string;
 }
+
+export type QaapTranscriptSystemSegmentKind = 'context_summarized';
+
+export interface QaapTranscriptSystemLine {
+    readonly kind: QaapTranscriptSystemSegmentKind;
+    readonly detail?: string;
+}
+
+/** QAIQ / Claude Code system subtypes that mean the thread context was compacted. */
+export const QAIQ_CONTEXT_SUMMARIZED_SYSTEM_SUBTYPES = new Set([
+    'compact',
+    'compact_summary',
+    'context_summary',
+    'auto_compact',
+    'conversation_summary',
+]);
 
 export type QaapTranscriptToolActivityKind = 'reading' | 'searching' | 'terminal' | 'editing' | 'tool';
 
@@ -42,7 +60,7 @@ export function classifyTranscriptToolActivityKind(toolName: string): QaapTransc
     return 'tool';
 }
 
-/** Aggregates tool-call counts shown under the thought-brief header (Cursor-style meta line). */
+/** Aggregates tool-call counts for the Cursor-style activity rollup line. */
 export function resolveTranscriptActivityStats(
     segments: readonly QaapTranscriptActivitySegment[],
 ): QaapTranscriptActivityStats {
@@ -104,6 +122,131 @@ export function isTranscriptThoughtExcerptTruncated(text: string | undefined, ma
     return (text ?? '').replace(/\s+/g, ' ').trim().length > maxLength;
 }
 
+/** Approximate thinking duration for settled turns; prefers live elapsed when provided. */
+export function resolveTranscriptThoughtDurationSeconds(
+    thinking: string,
+    options?: { readonly elapsedMs?: number },
+): number {
+    if (options?.elapsedMs !== undefined) {
+        return Math.max(1, Math.round(options.elapsedMs / 1000));
+    }
+    const compact = thinking.replace(/\s+/g, ' ').trim();
+    return Math.max(1, Math.round(compact.length / 120));
+}
+
+/**
+ * Cursor-style activity rollup: "Edited 5 files, explored 14 files, 6 searches".
+ * Returns undefined when there is no tool activity to summarise.
+ */
+export function formatTranscriptActivitySummaryLine(stats: QaapTranscriptActivityStats): string | undefined {
+    if (!hasTranscriptActivityStats(stats)) {
+        return undefined;
+    }
+    const parts: string[] = [];
+    if (stats.edits > 0) {
+        parts.push(stats.edits === 1 ? 'edited 1 file' : `edited ${stats.edits} files`);
+    }
+    if (stats.fileReads > 0) {
+        parts.push(stats.fileReads === 1 ? 'explored 1 file' : `explored ${stats.fileReads} files`);
+    }
+    if (stats.searches > 0) {
+        parts.push(stats.searches === 1 ? '1 search' : `${stats.searches} searches`);
+    }
+    if (stats.shells > 0) {
+        parts.push(stats.shells === 1 ? 'ran 1 command' : `ran ${stats.shells} commands`);
+    }
+    if (stats.otherTools > 0) {
+        parts.push(stats.otherTools === 1 ? 'used 1 tool' : `used ${stats.otherTools} tools`);
+    }
+    const joined = parts.join(', ');
+    return joined.charAt(0).toUpperCase() + joined.slice(1);
+}
+
+export function isQaiqContextSummarizedSystemSubtype(subtype: string | undefined): boolean {
+    return !!subtype && QAIQ_CONTEXT_SUMMARIZED_SYSTEM_SUBTYPES.has(subtype);
+}
+
+export function isTranscriptContextSummarizedUserCommand(content: string | undefined): boolean {
+    return /^\/compact(?:\s|$)/i.test((content ?? '').trim());
+}
+
+/** Detects QAIQ user-message envelopes that carry an auto-compact summary block. */
+export function isQaiqContextSummarizedUserEnvelope(value: unknown): boolean {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const envelope = value as {
+        readonly type?: string;
+        readonly message?: { readonly content?: unknown };
+    };
+    if (envelope.type !== 'user') {
+        return false;
+    }
+    const raw = envelope.message?.content;
+    const blocks = typeof raw === 'string' ? [{ text: raw }] : raw;
+    if (!Array.isArray(blocks)) {
+        return false;
+    }
+    for (const block of blocks) {
+        if (typeof block !== 'object' || block === null) {
+            continue;
+        }
+        const text = typeof (block as { readonly text?: unknown }).text === 'string'
+            ? (block as { readonly text: string }).text
+            : typeof block === 'string'
+                ? block
+                : '';
+        if (isTranscriptContextSummarizedUserText(text)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+export function isTranscriptContextSummarizedUserText(text: string | undefined): boolean {
+    const compact = (text ?? '').replace(/\s+/g, ' ').trim();
+    if (!compact) {
+        return false;
+    }
+    return /\bchat context summarized\b/i.test(compact)
+        || /\bsummarized\s+\d+\s+messages?\b/i.test(compact)
+        || /\bconversation (?:was )?compact(?:ed|ion)\b/i.test(compact);
+}
+
+/** Cursor-style muted system lines shown between thought and tool activity. */
+export function resolveTranscriptSystemLines(
+    segments: readonly QaapTranscriptActivitySegment[],
+    options?: { readonly precededByCompactCommand?: boolean },
+): QaapTranscriptSystemLine[] {
+    const lines: QaapTranscriptSystemLine[] = [];
+    for (const segment of segments) {
+        if (segment.type === 'system' && segment.kind === 'context_summarized') {
+            lines.push({
+                kind: 'context_summarized',
+                ...(segment.detail?.trim() ? { detail: segment.detail.trim() } : {}),
+            });
+        }
+    }
+    if (lines.length === 0 && options?.precededByCompactCommand) {
+        lines.push({ kind: 'context_summarized' });
+    }
+    return dedupeTranscriptSystemLines(lines);
+}
+
+function dedupeTranscriptSystemLines(lines: readonly QaapTranscriptSystemLine[]): QaapTranscriptSystemLine[] {
+    const seen = new Set<string>();
+    const result: QaapTranscriptSystemLine[] = [];
+    for (const line of lines) {
+        const key = `${line.kind}:${line.detail ?? ''}`;
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        result.push(line);
+    }
+    return result;
+}
+
 /**
  * Whether the premium activity timeline would render for these segments.
  * Mirrors {@link resolveTranscriptActivityItems} empty-check without building labels.
@@ -141,15 +284,12 @@ export function shouldRenderTranscriptToolSegmentInline(options: {
     return options.resultFailed;
 }
 
-/** Expand tool/shell panels while running or when a failed result needs attention. */
-export function shouldOpenTranscriptToolDetails(options: {
+/** Tool/shell panels stay collapsed until the user expands them (Cursor-style log lines). */
+export function shouldOpenTranscriptToolDetails(_options: {
     readonly finished: boolean;
     readonly resultFailed: boolean;
 }): boolean {
-    if (!options.finished) {
-        return true;
-    }
-    return options.resultFailed;
+    return false;
 }
 
 export type QaapTranscriptInlineDiffLineKind = 'add' | 'remove' | 'context';

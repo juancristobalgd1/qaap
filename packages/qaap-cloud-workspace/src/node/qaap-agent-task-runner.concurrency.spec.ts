@@ -22,9 +22,12 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         Object.assign(runner, {
             tasks,
             queuedCreateRequests,
+            pendingSpawnRequests: queuedCreateRequests,
             processes: new Map(),
             onDidChangeTaskEmitter: { fire: () => undefined },
             maxConcurrentAgents: () => 2,
+            maxConcurrentPerRepo: () => 99,
+            countRunningForCwd: () => 0,
             countRunningTasks: () => [...tasks.values()].filter(task => task.state === 'running').length,
             resolveAgentModelForRequest: () => undefined,
             isDirectory: () => true,

@@ -5,6 +5,7 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
+import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { QaapProjectBootstrapService } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-service';
 
 /** Must match mobile-shell push contribution event names. */
@@ -19,8 +20,16 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
     @inject(QaapProjectBootstrapService)
     protected readonly bootstrap: QaapProjectBootstrapService;
 
+    @inject(WorkspaceService)
+    protected readonly workspaceService: WorkspaceService;
+
+    protected webPushRegistered = false;
+
     onStart(): void {
-        void this.registerWebPushSubscription();
+        void this.workspaceService.roots.then(roots => this.maybeRegisterWebPush(roots.length > 0));
+        this.workspaceService.onWorkspaceChanged(() => {
+            void this.workspaceService.roots.then(roots => this.maybeRegisterWebPush(roots.length > 0));
+        });
         this.bootstrap.onStateChange(state => {
             if (state.phase === 'install-failed' || state.phase === 'run-failed') {
                 void sendQaapPushNotify({
@@ -70,7 +79,12 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         // The agent is blocked waiting on the user — always push, even if the tab is foregrounded
         // but the OS has hidden it (split-screen, screen off). Same `tag` collapses repeats from
         // chained confirmations into a single visible notification.
-        const detail = (event as CustomEvent<{ agentName?: string }>).detail;
+        const detail = (event as CustomEvent<{
+            agentName?: string;
+            agentId?: string;
+            projectName?: string;
+            conversationId?: string;
+        }>).detail;
         if (document.visibilityState === 'visible' && !document.hidden) {
             return;
         }
@@ -79,13 +93,35 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
             body: detail?.agentName
                 ? `${detail.agentName} is waiting for you to approve a tool call.`
                 : 'Your agent is waiting for you to approve a tool call.',
-            tag: 'qaap-agent-confirm',
-            route: 'chat',
+            tag: detail?.conversationId ? `qaap-needs-you-${detail.conversationId}` : 'qaap-agent-confirm',
+            route: 'transcript',
+            ...(detail?.agentId ?? detail?.agentName ? { agentId: detail.agentId ?? detail.agentName } : {}),
+            ...(detail?.projectName ? { projectName: detail.projectName } : {}),
+            ...(detail?.conversationId ? { conversationId: detail.conversationId } : {}),
+            needsApproval: true,
         });
     };
 
+    protected maybeRegisterWebPush(hasWorkspace: boolean): void {
+        if (!hasWorkspace || this.webPushRegistered) {
+            return;
+        }
+        this.webPushRegistered = true;
+        void this.registerWebPushSubscription();
+    }
+
     protected async registerWebPushSubscription(): Promise<void> {
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            return;
+        }
+        if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            try {
+                await Notification.requestPermission();
+            } catch {
+                return;
+            }
+        }
+        if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
             return;
         }
         const vapid = await fetchQaapPushVapid();

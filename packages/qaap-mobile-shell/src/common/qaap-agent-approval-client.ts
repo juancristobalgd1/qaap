@@ -41,10 +41,15 @@ export async function fetchAgentApprovals(cwd?: string): Promise<QaapAgentApprov
     return body.approvals ?? [];
 }
 
-export async function approveAgentRequest(id: string): Promise<QaapAgentApprovalActionResponseDTO> {
+export async function approveAgentRequest(
+    id: string,
+    options?: { readonly updatedInput?: Record<string, unknown> },
+): Promise<QaapAgentApprovalActionResponseDTO> {
     const response = await fetch(`${QAAP_AGENT_APPROVAL_API_PATH}/${encodeURIComponent(id)}/approve`, {
         method: 'POST',
         credentials: 'include',
+        headers: options?.updatedInput ? { 'Content-Type': 'application/json' } : undefined,
+        body: options?.updatedInput ? JSON.stringify({ updatedInput: options.updatedInput }) : undefined,
     });
     const body = await response.json() as QaapAgentApprovalActionResponseDTO;
     if (!response.ok && !body.error) {

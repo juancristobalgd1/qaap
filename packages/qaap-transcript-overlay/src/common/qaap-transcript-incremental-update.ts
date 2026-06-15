@@ -70,6 +70,8 @@ function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapA
                 parts.push(
                     `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}`,
                 );
+            } else if (segment.type === 'system') {
+                parts.push(`s:${segment.kind}:${segment.detail?.length ?? 0}`);
             } else {
                 parts.push(`${segment.type}:${segment.content?.length ?? 0}`);
             }
@@ -239,6 +241,9 @@ function segmentToolFingerprint(segment: Extract<QaapAgentMessageSegmentDTO, { t
 function segmentContentFingerprint(segment: QaapAgentMessageSegmentDTO): string {
     if (segment.type === 'tool') {
         return segmentToolFingerprint(segment);
+    }
+    if (segment.type === 'system') {
+        return `s:${segment.kind}:${segment.detail?.length ?? 0}:${segment.detail ?? ''}`;
     }
     return `${segment.type}:${segment.content?.length ?? 0}:${segment.content ?? ''}`;
 }
@@ -472,6 +477,9 @@ export function fingerprintAgentSegments(segments: readonly QaapAgentMessageSegm
     return segments.map(segment => {
         if (segment.type === 'tool') {
             return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}`;
+        }
+        if (segment.type === 'system') {
+            return `s:${segment.kind}:${segment.detail?.length ?? 0}`;
         }
         return `${segment.type}:${segment.content?.length ?? 0}`;
     }).join('|');

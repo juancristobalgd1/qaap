@@ -21,7 +21,6 @@ export interface MobileProjectsTasksHubAttentionHost {
     collectTeamMembersForHub(): WorkHubTeamMember[];
     collectTeamApprovalItems(members: readonly WorkHubTeamMember[]): WorkHubApprovalItem[];
     isTasksHubView(): boolean;
-    isHomeHubView(): boolean;
     renderList(): void;
     updateTasksAttentionChrome(): void;
     renderSubtitle(): void;
@@ -44,13 +43,11 @@ export class MobileProjectsTasksHubAttentionUi {
         const generation = ++this.host.agentApprovalsFetchGeneration;
         void fetchAgentApprovals().then(approvals => {
             if (generation !== this.host.agentApprovalsFetchGeneration || !this.host.visible
-                || (!this.host.hubQueryUi.isTasksHubView() && !this.host.hubQueryUi.isHomeHubView())) {
+                || !this.host.hubQueryUi.isTasksHubView()) {
                 return;
             }
             this.host.cachedAgentApprovals = approvals;
             if (forceRender) {
-                this.host.renderList();
-            } else if (this.host.hubQueryUi.isHomeHubView()) {
                 this.host.renderList();
             } else {
                 this.host.updateTasksAttentionChrome();
@@ -58,13 +55,11 @@ export class MobileProjectsTasksHubAttentionUi {
             }
         }).catch(() => {
             if (generation !== this.host.agentApprovalsFetchGeneration || !this.host.visible
-                || (!this.host.hubQueryUi.isTasksHubView() && !this.host.hubQueryUi.isHomeHubView())) {
+                || !this.host.hubQueryUi.isTasksHubView()) {
                 return;
             }
             this.host.cachedAgentApprovals = [];
             if (forceRender) {
-                this.host.renderList();
-            } else if (this.host.hubQueryUi.isHomeHubView()) {
                 this.host.renderList();
             } else {
                 this.host.updateTasksAttentionChrome();

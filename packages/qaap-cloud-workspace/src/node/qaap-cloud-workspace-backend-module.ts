@@ -12,6 +12,7 @@ import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoin
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapAgentProcessSupervisor } from './qaap-agent-process-supervisor';
 import { QaapCloudOrchestrator } from './qaap-cloud-orchestrator';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
 import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
@@ -29,6 +30,13 @@ import { QaapWorkHubRoutineEndpoint } from './qaap-work-hub-routine-endpoint';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineScheduler } from './qaap-work-hub-routine-scheduler';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
+import { QaapGoalLoopRunner } from './qaap-goal-loop-runner';
+import { QaapGoalLoopVerifyRunner } from './qaap-goal-loop-verify-runner';
+import { QaapGoalLoopLlmEvaluator } from './qaap-goal-loop-llm-evaluator';
+import { QaapGithubAgentTriggerService } from './qaap-github-agent-trigger-service';
+import { QaapGithubPrEvidenceService } from './qaap-github-pr-evidence-service';
+import { QaapAgentCompletionPushService } from './qaap-agent-completion-push-service';
+import { QaapGithubAgentTriggerBridge } from '@theia/qaap-mobile-shell/lib/node/qaap-github-agent-trigger-bridge';
 
 export default new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
     bind(QaapCloudWorkspaceStore).toSelf().inSingletonScope();
@@ -43,10 +51,18 @@ export default new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsy
     bind(QaapCloudWorkspaceEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapCloudWorkspaceEndpoint);
     bind(BackendApplicationContribution).toService(QaapPreviewShareProxyContribution);
+    bind(QaapAgentProcessSupervisor).toSelf().inSingletonScope();
     bind(QaapAgentTaskRunner).toSelf().inSingletonScope();
     bind(QaapAgentTaskEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentTaskEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
+    bind(QaapGoalLoopVerifyRunner).toSelf().inSingletonScope();
+    bind(QaapGoalLoopLlmEvaluator).toSelf().inSingletonScope();
+    bind(QaapGoalLoopRunner).toSelf().inSingletonScope();
+    bind(QaapGithubPrEvidenceService).toSelf().inSingletonScope();
+    bind(QaapAgentCompletionPushService).toSelf().inSingletonScope();
+    bind(QaapGithubAgentTriggerService).toSelf().inSingletonScope();
+    bind(QaapGithubAgentTriggerBridge).toService(QaapGithubAgentTriggerService);
     bind(QaapConversationWorktreeService).toSelf().inSingletonScope();
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);

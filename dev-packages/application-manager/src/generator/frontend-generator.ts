@@ -539,19 +539,32 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
     event.notification.close();
-    const route = event.notification.data && event.notification.data.route;
-    event.waitUntil((async () => {
-        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-        if (clients.length > 0) {
-            await clients[0].focus();
-            // Tell the live app where to navigate (it may have been backgrounded, not closed).
-            if (route) {
-                clients[0].postMessage({ type: 'qaap-notification-route', route });
+        const data = event.notification.data || {};
+        const route = data.route;
+        const conversationId = data.conversationId;
+        const taskId = data.taskId;
+        event.waitUntil((async () => {
+            const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+            const message = { type: 'qaap-notification-route', route, conversationId, taskId };
+            if (clients.length > 0) {
+                await clients[0].focus();
+                if (route) {
+                    clients[0].postMessage(message);
+                }
+                return;
             }
-            return;
-        }
-        // No window open — carry the route as a query param for the fresh page to read.
-        await self.clients.openWindow(route ? './?qaap_route=' + encodeURIComponent(route) : './');
+            const params = new URLSearchParams();
+            if (route) {
+                params.set('qaap_route', route);
+            }
+            if (conversationId) {
+                params.set('qaap_conversation', conversationId);
+            }
+            if (taskId) {
+                params.set('qaap_task', taskId);
+            }
+        const query = params.toString();
+        await self.clients.openWindow('./' + (query ? '?' + query : ''));
     })());
 });
 `;
@@ -572,9 +585,9 @@ self.addEventListener('notificationclick', event => {
         const explicit = pwaConfig?.appleTouchIcons;
         if (explicit?.length) {
             return '\n  ' + explicit.map(entry => {
-                const sizes = entry.sizes?.trim();
-                const sizesAttr = sizes ? ` sizes="${this.escapeHtmlAttribute(sizes)}"` : '';
-                return `<link rel="apple-touch-icon"${sizesAttr} href="${this.escapeHtmlAttribute(entry.src)}">`;
+                const entrySizes = entry.sizes?.trim();
+                const entrySizesAttr = entrySizes ? ` sizes="${this.escapeHtmlAttribute(entrySizes)}"` : '';
+                return `<link rel="apple-touch-icon"${entrySizesAttr} href="${this.escapeHtmlAttribute(entry.src)}">`;
             }).join('\n  ');
         }
         const icons = pwaConfig?.icons ?? [];

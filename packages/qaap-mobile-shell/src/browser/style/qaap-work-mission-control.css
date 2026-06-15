@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
  * ***************************************************************************** */
 
-/* Prototype mission-control card. Reuses the work-hub-home row primitives; only adds the
- * lane grouping chrome and the running/needs-you accents. */
+/* Mission-control card. Reuses the work-hub-home row primitives; only adds the lane grouping
+ * chrome and the running/needs-you accents. */
 
 .theia-mobile-mission-control {
   padding: 12px 14px 6px;

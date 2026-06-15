@@ -28,8 +28,6 @@ import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/comm
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
 import type { WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
-import type { MobileProjectsMissionControlHubUi } from './mobile-projects-mission-control-hub-ui';
-import { isWorkMissionControlEnabled } from './mobile-work-mission-control';
 
 export interface MobileProjectsHomeHubHost {
     projects: MobileProjectEntry[];
@@ -61,8 +59,6 @@ export interface MobileProjectsHomeHubHost {
     selectHubLandingView(view: import('./mobile-projects-types').MobileProjectsHubView, preferredDiffProjectId?: string, options?: { force?: boolean }): void;
     preferComposerSurface(surface: import('../common/qaap-composer-surface').QaapComposerSurface, projectCwd?: string): void;
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
-    missionControlHubUi: MobileProjectsMissionControlHubUi;
-    missionControlExpanded: boolean;
 }
 
 export class MobileProjectsHomeHubUi {
@@ -230,29 +226,6 @@ export class MobileProjectsHomeHubUi {
     }
 
     buildHomeSubtitle(snapshot: WorkHubHomeSnapshot): string {
-        if (isWorkMissionControlEnabled() && this.host.missionControlHubUi.isEnabled()) {
-            const items = this.host.missionControlHubUi.collectItems();
-            const needsYou = items.filter(item => item.lane === 'needs-you').length;
-            const running = items.filter(item => item.lane === 'running').length;
-            if (needsYou > 0) {
-                return needsYou === 1
-                    ? nls.localize('qaap/workHubHome/subtitleNeedsYouOne', '1 item needs your attention')
-                    : nls.localize(
-                        'qaap/workHubHome/subtitleNeedsYouMany',
-                        '{0} items need your attention',
-                        String(needsYou),
-                    );
-            }
-            if (running > 0) {
-                return running === 1
-                    ? nls.localize('qaap/workHubHome/subtitleRunningOne', '1 agent moving work toward PR')
-                    : nls.localize(
-                        'qaap/workHubHome/subtitleRunningMany',
-                        '{0} agents moving work toward PR',
-                        String(running),
-                    );
-            }
-        }
         const { stats } = snapshot;
         if (stats.needsYou > 0) {
             return stats.needsYou === 1
@@ -293,25 +266,6 @@ export class MobileProjectsHomeHubUi {
             return fromList.startsWith('@') ? fromList : `@${fromList}`;
         }
         return agentId.startsWith('@') ? agentId : `@${agentId}`;
-    }
-
-    renderHomeHubView(): void {
-        const snapshot = this.buildHomeSnapshot();
-        const host = document.createElement('div');
-        host.className = 'theia-mobile-work-hub-home-host';
-        if (this.host.missionControlHubUi.isEnabled()) {
-            this.host.missionControlHubUi.render(host);
-            if (!this.host.missionControlExpanded) {
-                const overviewHost = document.createElement('div');
-                overviewHost.className = 'theia-mobile-work-hub-home-overview-host';
-                this.host.ensureOverlayUi().home.renderDashboard(overviewHost, snapshot);
-                host.append(overviewHost);
-            }
-        } else {
-            this.host.ensureOverlayUi().home.renderDashboard(host, snapshot);
-        }
-        this.host.scroll.append(host);
-        this.host.renderSubtitle();
     }
 
     resolveHomePinnedProject(): MobileProjectEntry | undefined {

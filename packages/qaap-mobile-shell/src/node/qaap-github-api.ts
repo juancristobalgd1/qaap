@@ -272,6 +272,31 @@ export async function mergeGithubPullRequest(
     };
 }
 
+export async function postGithubIssueComment(
+    accessToken: string,
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    body: string,
+): Promise<{ readonly htmlUrl: string }> {
+    const response = await fetch(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${issueNumber}/comments`,
+        {
+            method: 'POST',
+            headers: {
+                ...githubHeaders(accessToken),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ body }),
+        },
+    );
+    const payload = await response.json().catch(() => ({})) as { html_url?: string; message?: string };
+    if (!response.ok || !payload.html_url) {
+        throw new Error(payload.message || `GitHub issue comment API failed (${response.status})`);
+    }
+    return { htmlUrl: payload.html_url };
+}
+
 export async function fetchGithubPullRequestFiles(
     accessToken: string,
     owner: string,

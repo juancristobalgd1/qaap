@@ -1,0 +1,2 @@
+# Pinned eclipse-theia/theia commit for qaap:drift-check (update when merging upstream).
+c56d9c4b3e0191e9d812884695ba500b22a75558

@@ -23,7 +23,7 @@ import {
     MobileProjectFilter,
     MobileProjectsHubView,
 } from './mobile-projects-types';
-import { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
+import { MobileProjectsActiveTasks, MobileProjectTaskView, cwdMatchesProject } from './mobile-projects-active-tasks';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
@@ -38,6 +38,7 @@ import { MobileProjectsService } from './mobile-projects-service';
 import { isAgentsHubExecutionSurfacePainted } from '../common/qaap-agents-hub-landing';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
+    buildProbeConversationDTO,
     buildProbeStreamingSummaries,
     ensureProbeWorkspaceProject,
     QAAP_PROBE_WORKSPACE_PROJECT_ID,
@@ -47,6 +48,8 @@ import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-p
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
+    conversationToSummary,
+    getConversation,
 } from '../common/qaap-agent-conversation-client';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
@@ -84,7 +87,14 @@ import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-tran
 import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcript-overlay-state';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import { QAAP_AGENTS_HUB_LANDING_ENABLED } from '../common/qaap-agents-hub-landing';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
+import { MobileProjectsMissionControlUi, type MobileProjectsMissionControlHost } from './mobile-projects-mission-control-ui';
+import {
+    shouldUseMissionControlLanding,
+    type MissionControlLaneFilter,
+    type MissionControlSurfaceFilter,
+} from './mobile-work-mission-control';
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
 import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHost } from './mobile-projects-theia-chat-session-ui';
 import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from './mobile-projects-hub-catalog-ui';
@@ -130,13 +140,6 @@ import {
     MobileProjectsHomeHubUi,
     type MobileProjectsHomeHubHost,
 } from './mobile-projects-home-hub-ui';
-import {
-    MobileProjectsMissionControlHubUi,
-} from './mobile-projects-mission-control-hub-ui';
-import type {
-    MissionControlLaneFilter,
-    MissionControlSurfaceFilter,
-} from './mobile-work-mission-control';
 import {
     MobileProjectsHubHeaderUi,
     type MobileProjectsHubHeaderHost,
@@ -289,6 +292,8 @@ export interface MobileProjectsPanelDelegate {
     onShowAgentsHub?(): void | Promise<void>;
     /** Show Work Hub Routines from the sessions sidebar. */
     onShowRoutinesHub?(): void | Promise<void>;
+    /** Mission Control full view from the sessions sidebar. */
+    onShowMissionControlHub?(): void | Promise<void>;
     /** Shell bottom bar active state after in-panel hub tab changes. */
     onHubLandingViewChanged?(): void;
     /** Transcript sheet on body: leave Work Hub landing overlay (mockup chat-active). */
@@ -429,9 +434,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected filter: MobileProjectFilter = 'all';
     protected hubView: MobileProjectsHubView = 'tasks';
     protected query = '';
-    protected missionControlExpanded = false;
     protected missionControlLaneFilter: MissionControlLaneFilter = 'all';
     protected missionControlSurfaceFilter: MissionControlSurfaceFilter = 'all';
+    protected missionControlLandingActive = false;
     protected agentApprovalsFetchGeneration = 0;
     /** Project ids whose conversation list is fully expanded (not capped at {@link CONVERSATIONS_COLLAPSED_LIMIT}). */
     protected readonly expandedConversationProjectIds = new Set<string>();
@@ -461,6 +466,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected stickyComposerFabLiftPx = 0;
     protected stickyComposerFabLiftObserver: ResizeObserver | undefined;
     protected stickyComposerDraft = '';
+    protected stickyComposerRunUntilDone = false;
     protected stickyComposerContext: StickyComposerContextEntry[] = [];
     protected stickyComposerFilesExpanded = true;
     protected stickyComposerPinnedAgentId: string | undefined;
@@ -515,7 +521,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly conversationOpenUi = new MobileProjectsConversationOpenUi(this as unknown as MobileProjectsConversationOpenHost);
     protected readonly diffHubUi = new MobileProjectsDiffHubUi(this as unknown as MobileProjectsDiffHubHost);
     protected readonly homeHubUi = new MobileProjectsHomeHubUi(this as unknown as MobileProjectsHomeHubHost);
-    protected readonly missionControlHubUi = new MobileProjectsMissionControlHubUi(this as unknown as import('./mobile-projects-mission-control-hub-ui').MobileProjectsMissionControlHubHost);
     protected readonly hubHeaderUi = new MobileProjectsHubHeaderUi(this as unknown as MobileProjectsHubHeaderHost);
     protected readonly hubLandingUi = new MobileProjectsHubLandingUi(this as unknown as MobileProjectsHubLandingHost);
     protected readonly hubListChromeUi = new MobileProjectsHubListChromeUi(this as unknown as MobileProjectsHubListChromeHost);
@@ -547,6 +552,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly stickyComposerRenderUi = new MobileProjectsStickyComposerRenderUi(this as unknown as MobileProjectsStickyComposerRenderHost);
     protected readonly executionSurfaceTabsUi = new MobileProjectsExecutionSurfaceTabsUi(this as unknown as MobileProjectsExecutionSurfaceTabsHost);
     protected readonly tasksHubUi = new MobileProjectsTasksHubUi(this as unknown as MobileProjectsTasksHubHost);
+    protected readonly missionControlUi = new MobileProjectsMissionControlUi(this as unknown as MobileProjectsMissionControlHost);
     protected readonly hubCatalogUi = new MobileProjectsHubCatalogUi(this as unknown as MobileProjectsHubCatalogHost);
     protected readonly reposHubUi = new MobileProjectsReposHubUi(this as unknown as MobileProjectsReposHubHost);
     protected readonly inboxPrUi = new MobileProjectsInboxPrUi(this as unknown as MobileProjectsInboxPrHost);
@@ -871,10 +877,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.panelLifecycleUi.scheduleChatServiceRefresh();
     }
 
-    protected scheduleChatHubListRefreshAfterSummaries(): void {
-        this.panelLifecycleUi.scheduleChatHubListRefreshAfterSummaries();
-    }
-
     protected async applyActiveTasksRefresh(): Promise<void> {
         await this.panelLifecycleUi.applyActiveTasksRefresh();
     }
@@ -941,10 +943,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected tryPatchHubListBeforeRebuild(): boolean {
-        if (this.hubQueryUi.isHomeHubView() && this.missionControlHubUi.tryPatchBeforeRebuild()) {
-            this.subtitleUi.renderSubtitle();
-            return true;
-        }
         return this.hubIncrementalUi.tryPatchBeforeRebuild();
     }
 
@@ -952,8 +950,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.hubIncrementalUi.resetStructureFingerprint();
     }
 
-    protected setMissionControlExpanded(expanded: boolean): void {
-        this.missionControlExpanded = expanded;
+    openMissionControlView(): void {
+        this.missionControlLandingActive = true;
+        this.agentsHubLegacyInbox = false;
+        this.navigateHubTab('tasks');
     }
 
     protected setMissionControlLaneFilter(filter: MissionControlLaneFilter): void {
@@ -991,8 +991,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
             navigateToHomeHubForProbe: () => panel.navigateHubTab('home'),
             expandMissionControlForProbe: () => {
-                panel.setMissionControlExpanded(true);
-                panel.renderList();
+                panel.openMissionControlView();
             },
             showTasksInboxWithTeamForProbe: () => {
                 panel.navigateHubTab('tasks');
@@ -1033,7 +1032,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                     return;
                 }
                 for (const cwd of cwdSet) {
-                    panel.conversations.perfProbeSeedSummaries(cwd, buildProbeStreamingSummaries(cwd));
+                    const summaries = buildProbeStreamingSummaries(cwd);
+                    panel.conversations.perfProbeSeedSummaries(cwd, summaries);
+                    for (const summary of summaries) {
+                        panel.conversations.perfProbeSeedConversation(buildProbeConversationDTO(summary));
+                    }
                 }
                 panel.scheduleRenderList();
             },
@@ -1067,6 +1070,30 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 ).length,
                 hubView: panel.hubView,
             }),
+            openProbeConversation: async (conversationId: string) => {
+                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+                if (!workspaceCwd) {
+                    throw new Error('Probe workspace cwd unavailable');
+                }
+                panel.conversations?.start();
+                const project = panel.projects.find(entry => entry.isCurrent)
+                    ?? panel.projects.find(entry => entry.id === QAAP_PROBE_WORKSPACE_PROJECT_ID)
+                    ?? panel.projects[0];
+                if (!project) {
+                    throw new Error('Probe project unavailable');
+                }
+                const summary = panel.conversations?.getConversationsForCwd(workspaceCwd)
+                    .find(entry => entry.id === conversationId);
+                if (!summary) {
+                    throw new Error(`Probe conversation ${conversationId} not seeded`);
+                }
+                panel.missionControlLandingActive = false;
+                panel.agentsHubSelectedProjectId = project.id;
+                if (panel.hubView !== 'tasks') {
+                    panel.selectHubLandingView('tasks', undefined, { force: true });
+                }
+                await panel.openConversationSummary(project, summary);
+            },
         });
     }
 
@@ -1157,10 +1184,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected resolveHomeAgentLabel(agentId: string): string {
         return this.homeHubUi.resolveHomeAgentLabel(agentId);
-    }
-
-    protected renderHomeHubView(): void {
-        this.homeHubUi.renderHomeHubView();
     }
 
     protected resolveHomePinnedProject(): MobileProjectEntry | undefined {
@@ -1383,6 +1406,36 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.conversationOpenUi.openConversationSummary(project, summary);
     }
 
+    async openConversationById(conversationId: string): Promise<void> {
+        let summary = this.findConversationSummaryById(conversationId);
+        if (!summary) {
+            try {
+                const conv = await getConversation(conversationId);
+                summary = conversationToSummary(conv);
+                this.conversations?.recordSnapshot(summary);
+            } catch {
+                return;
+            }
+        }
+        const project = this.resolveProjectForConversationSummary(summary);
+        if (!project) {
+            return;
+        }
+        await this.openConversationSummary(project, summary);
+    }
+
+    protected resolveProjectForConversationSummary(
+        summary: QaapAgentConversationSummaryDTO,
+    ): MobileProjectEntry | undefined {
+        for (const project of this.projects) {
+            const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
+            if (cwd === summary.cwd || cwdMatchesProject(summary.cwd, project)) {
+                return project;
+            }
+        }
+        return this.projects.find(project => cwdMatchesProject(summary.cwd, project));
+    }
+
     protected async onTogglePin(project: MobileProjectEntry): Promise<void> {
         await this.repoLifecycleUi.onTogglePin(project);
     }
@@ -1511,6 +1564,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected updateTasksAttentionChrome(): void {
         this.tasksHubUi.updateTasksAttentionChrome();
+    }
+
+    protected conversationMatchesQuery(summary: QaapAgentConversationSummaryDTO, query: string): boolean {
+        return this.hubQueryUi.conversationMatchesQuery(summary, query);
     }
 
     protected appendTasksHubTeamSection(container: HTMLElement): boolean {
@@ -1685,16 +1742,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.workHubInboxUi.renderReviewHubView(projects);
     }
 
-    protected renderChatHubView(projects: MobileProjectEntry[]): void {
-        this.workHubInboxUi.renderChatHubView(projects);
-    }
-
-    protected collectChatHubGroups(
-        projects: MobileProjectEntry[],
-    ): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> {
-        return this.workHubInboxUi.collectChatHubGroups(projects);
-    }
-
     protected projectsForCurrentHubList(): MobileProjectEntry[] {
         return this.hubQueryUi.projectsForCurrentHubList();
     }
@@ -1734,10 +1781,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.workHubInboxUi.createReviewLoadingState();
     }
 
-    protected createChatEmptyState(): HTMLElement {
-        return this.workHubInboxUi.createChatEmptyState();
-    }
-
     protected formatTheiaChatRequestText(content: string, pinnedAgentId?: string): string {
         return this.theiaChatSessionUi.formatTheiaChatRequestText(content, pinnedAgentId);
     }
@@ -1774,8 +1817,15 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     // WorkHubTranscriptBridge — explicit hub surface for transcript overlay
     // ========================================================================
 
+    shouldOpenAgentsHubInlineTranscript(): boolean {
+        return QAAP_AGENTS_HUB_LANDING_ENABLED
+            && this.homeMode
+            && this.hubView === 'tasks'
+            && !this.isProjectDetailView();
+    }
+
     isAgentsHubLanding(): boolean {
-        return this.shouldUseAgentsHubLanding();
+        return this.shouldOpenAgentsHubInlineTranscript();
     }
 
     shouldEmbedAgentsHubRecentsInWorkspaceTranscript(): boolean {
@@ -1834,6 +1884,15 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected shouldUseAgentsHubLanding(): boolean {
         return this.agentsHubInlineUi.shouldUseAgentsHubLanding();
+    }
+
+    protected shouldUseMissionControlLanding(): boolean {
+        return shouldUseMissionControlLanding({
+            homeMode: this.homeMode,
+            hubView: this.hubView,
+            agentsHubLegacyInbox: this.agentsHubLegacyInbox,
+            missionControlLandingActive: this.missionControlLandingActive,
+        });
     }
 
     protected shouldPreserveAgentsHubInlineTranscriptShell(): boolean {

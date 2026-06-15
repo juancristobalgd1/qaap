@@ -65,6 +65,18 @@ describe('qaap-qaiq-stdio-approvals', () => {
         expect(parsed.response.response).to.deep.equal({ behavior: 'allow', updatedInput: {}, toolUseID: 'toolu_1' });
     });
 
+    it('builds allow responses with AskUserQuestion answers', () => {
+        const line = buildQaiqControlResponseLine(
+            { requestId: 'req-2', toolUseId: 'toolu_2' },
+            'approve',
+            { updatedInput: { answers: { 'Which file?': 'Branch files' } } },
+        );
+        const parsed = JSON.parse(line);
+        expect(parsed.response.response.updatedInput).to.deep.equal({
+            answers: { 'Which file?': 'Branch files' },
+        });
+    });
+
     it('builds deny responses with guidance for the model', () => {
         const line = buildQaiqControlResponseLine({ requestId: 'req-1' }, 'reject');
         const parsed = JSON.parse(line);

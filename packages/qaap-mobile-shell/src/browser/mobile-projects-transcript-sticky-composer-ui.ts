@@ -13,6 +13,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     conversationToSummary,
     getConversation,
+    isGoalLoopPhaseActive,
     updateConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -26,6 +27,11 @@ import {
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
+import {
+    accumulateComposerSessionDisplayStats,
+    buildComposerGitFilesBaselineMap,
+    summarizeComposerSessionDiffFiles,
+} from '../common/qaap-composer-session-diff-stats';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
@@ -85,6 +91,8 @@ import {
     type QaapGitCommitWorkflowAction,
 } from '../common/qaap-git-review';
 import {
+    ensureStickyComposerShellBorderBeam,
+    patchStickyComposerChangesPill,
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
     type StickyComposerActivityStackOptions,
@@ -155,6 +163,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptFollowUpFlushInFlight: boolean;
     transcriptFollowUpQueue: TranscriptFollowUpQueue;
     transcriptTheiaSessionByConversationId: ReadonlyMap<string, string>;
+    stickyComposerRunUntilDone: boolean;
     projectsService: MobileProjectsService;
     chatAgentService?: ChatAgentService;
     chatService?: import('@theia/ai-chat').ChatService;
@@ -203,7 +212,36 @@ export interface MobileProjectsTranscriptStickyComposerHost {
 export class MobileProjectsTranscriptStickyComposerUi {
 
     protected lastComposerActivityFingerprint = '';
+    protected lastComposerActivityFilePathsKey = '';
     protected readonly composerActivityGitFilesByConversationId = new Map<string, StickyComposerChangedFileView[]>();
+    /** Empty git snapshots verified after commit/undo — hide the pill even if transcript stats linger. */
+    protected readonly composerActivityGitTreeCleanByConversationId = new Set<string>();
+    /** Git working-tree snapshot captured when a stream starts — deltas surface the pill immediately. */
+    protected readonly composerActivityGitStreamBaselineByConversationId = new Map<string, {
+        readonly snapshotKey: string;
+        readonly stats: { readonly added: number; readonly removed: number };
+        readonly filesByPath: ReadonlyMap<string, { readonly added: number; readonly removed: number }>;
+    }>();
+    /** Cursor-style streaming pill: +N/−N only grow during the active agent run. */
+    protected readonly composerSessionDisplayStatsByConversationId = new Map<string, {
+        readonly added: number;
+        readonly removed: number;
+    }>();
+    protected readonly composerSessionLastAggregateByConversationId = new Map<string, {
+        readonly added: number;
+        readonly removed: number;
+    }>();
+    /** Keeps the Changes pill mounted for the active stream once file edits begin (Codex-style). */
+    protected readonly composerChangesPillLatchedByConversationId = new Set<string>();
+    protected readonly composerActivityGitPollByConversationId = new Map<string, number>();
+    protected readonly composerActivityGitRefreshDebounceByConversationId = new Map<string, number>();
+    protected readonly composerActivityGitRefreshInFlightByConversationId = new Set<string>();
+    protected readonly composerActivityGitRefreshQueuedByConversationId = new Set<string>();
+    protected readonly lastComposerFileChangeToolCountByConversationId = new Map<string, number>();
+    protected readonly lastComposerFileChangeToolPathsKeyByConversationId = new Map<string, string>();
+    protected readonly lastComposerFileChangeToolSignalByConversationId = new Map<string, string>();
+    protected static readonly COMPOSER_GIT_POLL_MS = 100;
+    protected static readonly COMPOSER_GIT_REFRESH_DEBOUNCE_MS = 100;
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
 
@@ -323,22 +361,297 @@ export class MobileProjectsTranscriptStickyComposerUi {
         // backend stamps repo-wide `git diff` stats on every turn, so a tree left dirty by another
         // session would surface the buttons in conversations that never touched a file.
         const transcriptEvidence = this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, undefined, { allTurns: true });
+        const hasFileChangeToolCalls = this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv);
+        const streaming = this.isComposerAgentStreaming(conv);
+        const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
+        const gitDelta = gitFiles !== undefined && this.hasComposerGitDeltaSinceStreamStart(summary.id, gitFiles);
         if (!this.hasComposerAgentActivity(transcriptEvidence)
-            && !this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv)) {
+            && !hasFileChangeToolCalls
+            && !(streaming && gitDelta)) {
             return { files: [] };
         }
-        const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
-        if (gitFiles) {
+        if (gitFiles !== undefined) {
             if (gitFiles.length === 0) {
-                // Working tree is clean (e.g. changes were just committed) — nothing left to review.
-                return { files: [] };
+                if (this.composerActivityGitTreeCleanByConversationId.has(summary.id) && !streaming) {
+                    // Working tree is clean (e.g. changes were just committed) — nothing left to review.
+                    return { files: [] };
+                }
+                const latchedStats = this.composerSessionDisplayStatsByConversationId.get(summary.id);
+                const merged = this.mergeComposerActivityWithToolCallFiles(conv, activityFiles);
+                if (latchedStats && (streaming || this.isComposerChangesPillLatched(summary.id))) {
+                    return {
+                        ...merged,
+                        stats: latchedStats,
+                    };
+                }
+                // Transient empty git snapshot — keep transcript-derived stats visible.
+                return merged;
             }
+            this.composerActivityGitTreeCleanByConversationId.delete(summary.id);
+            const gitStats = this.resolveComposerGitDisplayStats(summary.id, gitFiles, activityFiles.stats, streaming);
+            const merged = this.mergeComposerActivityWithToolCallFiles(conv, activityFiles);
+            const liveStats = this.resolveComposerLiveDiffStats(summary.id, streaming, gitFiles, gitStats, merged.stats);
             return {
                 files: gitFiles,
-                stats: this.resolveChangedFilesStats(gitFiles, activityFiles.stats),
+                stats: liveStats,
             };
         }
-        return activityFiles;
+        const merged = this.mergeComposerActivityWithToolCallFiles(conv, activityFiles);
+        if (streaming && merged.stats) {
+            return {
+                ...merged,
+                stats: this.resolveComposerLiveDiffStats(summary.id, true, undefined, undefined, merged.stats),
+            };
+        }
+        return merged;
+    }
+
+    /** During streaming, git session delta is authoritative (Cursor-style); transcript only before baseline/git lands. */
+    protected resolveComposerLiveDiffStats(
+        conversationId: string,
+        streaming: boolean,
+        gitFiles: readonly StickyComposerChangedFileView[] | undefined,
+        gitStats: { readonly added: number; readonly removed: number } | undefined,
+        transcriptStats: { readonly added: number; readonly removed: number } | undefined,
+    ): { readonly added: number; readonly removed: number } | undefined {
+        if (!streaming) {
+            return gitStats ?? transcriptStats;
+        }
+        const hasBaseline = this.composerActivityGitStreamBaselineByConversationId.has(conversationId);
+        if (hasBaseline && gitFiles !== undefined && gitStats !== undefined) {
+            return gitStats;
+        }
+        if (transcriptStats && (transcriptStats.added > 0 || transcriptStats.removed > 0)) {
+            return transcriptStats;
+        }
+        return gitStats ?? transcriptStats;
+    }
+
+    protected seedComposerGitStreamBaselineFromCache(conversationId: string): void {
+        if (this.composerActivityGitStreamBaselineByConversationId.has(conversationId)) {
+            return;
+        }
+        const cached = this.composerActivityGitFilesByConversationId.get(conversationId);
+        if (cached === undefined) {
+            return;
+        }
+        this.composerActivityGitStreamBaselineByConversationId.set(conversationId, {
+            snapshotKey: this.composerGitSnapshotKey(cached),
+            stats: this.summarizeComposerChangedFiles(cached),
+            filesByPath: buildComposerGitFilesBaselineMap(cached),
+        });
+    }
+
+    protected latchComposerChangesPill(conversationId: string): void {
+        this.composerChangesPillLatchedByConversationId.add(conversationId);
+    }
+
+    protected clearComposerChangesPillLatch(conversationId: string): void {
+        this.composerChangesPillLatchedByConversationId.delete(conversationId);
+    }
+
+    protected isComposerChangesPillLatched(conversationId: string): boolean {
+        return this.composerChangesPillLatchedByConversationId.has(conversationId);
+    }
+
+    protected shouldShowComposerChangesPill(
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO | undefined,
+        activityFiles: {
+            readonly files: readonly StickyComposerChangedFileView[];
+            readonly stats?: { readonly added: number; readonly removed: number };
+        },
+    ): boolean {
+        const hasFileChangeToolCalls = this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv);
+        const streaming = this.isComposerAgentStreaming(conv);
+        const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
+        const gitDelta = gitFiles !== undefined && this.hasComposerGitDeltaSinceStreamStart(summary.id, gitFiles);
+        const visible = this.hasComposerAgentActivity(activityFiles)
+            || hasFileChangeToolCalls
+            || (streaming && gitDelta)
+            || this.isComposerChangesPillLatched(summary.id);
+        if (visible && streaming) {
+            this.latchComposerChangesPill(summary.id);
+        }
+        return visible;
+    }
+
+    protected resolveComposerGitDisplayStats(
+        conversationId: string,
+        files: readonly StickyComposerChangedFileView[],
+        fallback: { readonly added: number; readonly removed: number } | undefined,
+        streaming: boolean,
+    ): { readonly added: number; readonly removed: number } | undefined {
+        const aggregate = this.resolveChangedFilesStats(files, fallback);
+        if (!aggregate) {
+            return fallback;
+        }
+        if (!streaming) {
+            return aggregate;
+        }
+        const baseline = this.composerActivityGitStreamBaselineByConversationId.get(conversationId);
+        if (!baseline) {
+            return undefined;
+        }
+        return this.updateComposerSessionDisplayStatsFromGitAggregate(conversationId, files);
+    }
+
+    protected updateComposerSessionDisplayStatsFromGitAggregate(
+        conversationId: string,
+        files: readonly StickyComposerChangedFileView[],
+    ): { readonly added: number; readonly removed: number } {
+        const currentAggregate = summarizeComposerSessionDiffFiles(files);
+        const previousAggregate = this.composerSessionLastAggregateByConversationId.get(conversationId);
+        const next = accumulateComposerSessionDisplayStats(
+            this.composerSessionDisplayStatsByConversationId.get(conversationId),
+            previousAggregate,
+            currentAggregate,
+        );
+        this.composerSessionLastAggregateByConversationId.set(conversationId, currentAggregate);
+        this.composerSessionDisplayStatsByConversationId.set(conversationId, next);
+        return next;
+    }
+
+    protected clearComposerSessionDisplayStats(conversationId: string): void {
+        this.composerSessionDisplayStatsByConversationId.delete(conversationId);
+        this.composerSessionLastAggregateByConversationId.delete(conversationId);
+    }
+
+    protected mergeComposerActivityWithToolCallFiles(
+        conv: QaapAgentConversationDTO | undefined,
+        activityFiles: {
+            readonly files: readonly StickyComposerChangedFileView[];
+            readonly stats?: { readonly added: number; readonly removed: number };
+        },
+    ): {
+        readonly files: StickyComposerChangedFileView[];
+        readonly stats?: { readonly added: number; readonly removed: number };
+    } {
+        const toolCallFiles = this.host.transcriptMessagesUi.resolveComposerChangedFilesFromToolCalls(conv);
+        if (toolCallFiles.length === 0) {
+            return { files: [...activityFiles.files], stats: activityFiles.stats };
+        }
+        const merged = new Map<string, StickyComposerChangedFileView>();
+        for (const file of [...activityFiles.files, ...toolCallFiles]) {
+            merged.set(file.path, file);
+        }
+        return {
+            files: [...merged.values()],
+            stats: activityFiles.stats,
+        };
+    }
+
+    protected isComposerAgentStreaming(conv: QaapAgentConversationDTO | undefined): boolean {
+        return conv?.status === 'streaming' && this.isTranscriptComposerBackendStreaming();
+    }
+
+    protected countComposerFileChangeToolCalls(conv: QaapAgentConversationDTO | undefined): number {
+        return this.host.transcriptMessagesUi.countComposerFileChangeToolCalls(conv);
+    }
+
+    protected summarizeComposerChangedFiles(
+        files: readonly StickyComposerChangedFileView[],
+    ): { readonly added: number; readonly removed: number } {
+        let added = 0;
+        let removed = 0;
+        for (const file of files) {
+            added += file.added ?? 0;
+            removed += file.removed ?? 0;
+        }
+        return { added, removed };
+    }
+
+    protected composerGitSnapshotKey(files: readonly StickyComposerChangedFileView[]): string {
+        return files
+            .map(file => `${file.path}|${file.added ?? 0}|${file.removed ?? 0}`)
+            .sort()
+            .join('\n');
+    }
+
+    protected async ensureComposerGitStreamBaseline(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        conv?: QaapAgentConversationDTO,
+    ): Promise<void> {
+        if (this.composerActivityGitStreamBaselineByConversationId.has(summary.id)) {
+            return;
+        }
+        const toolCount = conv ? this.countComposerFileChangeToolCalls(conv) : 0;
+        try {
+            const files = await this.fetchWorkspaceChangedFiles(project, summary);
+            if (this.composerActivityGitStreamBaselineByConversationId.has(summary.id)) {
+                return;
+            }
+            if (toolCount > 0) {
+                // Agent already writing — treat current tree as the zero point for this session.
+                this.composerActivityGitStreamBaselineByConversationId.set(summary.id, {
+                    snapshotKey: this.composerGitSnapshotKey(files),
+                    stats: { added: 0, removed: 0 },
+                    filesByPath: buildComposerGitFilesBaselineMap(files),
+                });
+                return;
+            }
+            this.composerActivityGitStreamBaselineByConversationId.set(summary.id, {
+                snapshotKey: this.composerGitSnapshotKey(files),
+                stats: this.summarizeComposerChangedFiles(files),
+                filesByPath: buildComposerGitFilesBaselineMap(files),
+            });
+        } catch {
+            if (!this.composerActivityGitStreamBaselineByConversationId.has(summary.id)) {
+                this.composerActivityGitStreamBaselineByConversationId.set(summary.id, {
+                    snapshotKey: '',
+                    stats: { added: 0, removed: 0 },
+                    filesByPath: new Map(),
+                });
+            }
+        }
+    }
+
+    protected hasComposerGitDeltaSinceStreamStart(
+        conversationId: string,
+        files: readonly StickyComposerChangedFileView[],
+    ): boolean {
+        const baseline = this.composerActivityGitStreamBaselineByConversationId.get(conversationId);
+        if (!baseline) {
+            return false;
+        }
+        return this.composerGitSnapshotKey(files) !== baseline.snapshotKey;
+    }
+
+    protected clearComposerGitStreamBaseline(conversationId: string): void {
+        this.composerActivityGitStreamBaselineByConversationId.delete(conversationId);
+        this.clearComposerSessionDisplayStats(conversationId);
+    }
+
+    protected resolveComposerPendingFileChanges(
+        conv: QaapAgentConversationDTO | undefined,
+        activityFiles: {
+            readonly files: readonly StickyComposerChangedFileView[];
+            readonly stats?: { readonly added: number; readonly removed: number };
+        },
+    ): boolean {
+        const hasFileChangeToolCalls = this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv);
+        if (!hasFileChangeToolCalls) {
+            return false;
+        }
+        return !this.hasComposerAgentActivity(activityFiles) && activityFiles.files.length === 0;
+    }
+
+    protected buildComposerActivityFingerprint(
+        conv: QaapAgentConversationDTO,
+        activityFiles: {
+            readonly files: readonly StickyComposerChangedFileView[];
+            readonly stats?: { readonly added: number; readonly removed: number };
+        },
+        queueSize: number,
+    ): string {
+        const filePathsKey = activityFiles.files.map(file => file.path).join('\n');
+        const gitFiles = this.composerActivityGitFilesByConversationId.get(conv.id);
+        const gitDelta = gitFiles !== undefined && this.hasComposerGitDeltaSinceStreamStart(conv.id, gitFiles);
+        const gitStats = gitFiles !== undefined
+            ? this.resolveComposerGitDisplayStats(conv.id, gitFiles, activityFiles.stats, conv.status === 'streaming')
+            : undefined;
+        return `${queueSize}|${filePathsKey}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${conv.status}|tools:${this.countComposerFileChangeToolCalls(conv)}|gitd:${gitDelta ? 1 : 0}|gs:${gitStats?.added ?? 0}:${gitStats?.removed ?? 0}|lat:${this.isComposerChangesPillLatched(conv.id) ? 1 : 0}`;
     }
 
     protected hasComposerAgentActivity(activityFiles: {
@@ -424,8 +737,31 @@ export class MobileProjectsTranscriptStickyComposerUi {
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<StickyComposerChangedFileView[]> {
         const files = await this.fetchWorkspaceChangedFiles(project, summary);
-        this.composerActivityGitFilesByConversationId.set(summary.id, files);
+        this.applyComposerGitSnapshot(summary.id, files);
         return files;
+    }
+
+    protected applyComposerGitSnapshot(
+        conversationId: string,
+        files: readonly StickyComposerChangedFileView[],
+        options?: { readonly treeClean?: boolean },
+    ): void {
+        this.composerActivityGitFilesByConversationId.set(conversationId, [...files]);
+        if (files.length === 0 || options?.treeClean) {
+            this.composerActivityGitTreeCleanByConversationId.add(conversationId);
+            if (options?.treeClean) {
+                this.clearComposerChangesPillLatch(conversationId);
+            }
+        } else {
+            this.composerActivityGitTreeCleanByConversationId.delete(conversationId);
+        }
+    }
+
+    protected clearComposerGitSnapshot(conversationId: string): void {
+        this.composerActivityGitFilesByConversationId.delete(conversationId);
+        this.composerActivityGitTreeCleanByConversationId.delete(conversationId);
+        this.clearComposerGitStreamBaseline(conversationId);
+        this.clearComposerChangesPillLatch(conversationId);
     }
 
     protected async undoAllComposerChangedFiles(
@@ -522,32 +858,220 @@ export class MobileProjectsTranscriptStickyComposerUi {
         // Tool-call evidence alone must count: some agent CLIs (e.g. opencode/QAIQ) report
         // Edit/Write tool calls without parseable paths or diff stats, leaving activityFiles
         // empty even though the agent did change files — same gate as the pill itself.
-        if (!this.hasComposerAgentActivity(activityFiles)
+        const streaming = this.isComposerAgentStreaming(conv);
+        if (!streaming
+            && !this.hasComposerAgentActivity(activityFiles)
             && !this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv)) {
             return;
         }
-        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
-        if (!cwd) {
+        await this.refreshComposerActivityGitFilesLive(project, summary);
+    }
+
+    /** Poll git stats during streaming so Changes counters can push-animate as edits land. */
+    protected async refreshComposerActivityGitFilesLive(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        if (!this.isComposerBackgroundWorkAllowed()) {
             return;
         }
+        if (this.composerActivityGitRefreshInFlightByConversationId.has(summary.id)) {
+            this.composerActivityGitRefreshQueuedByConversationId.add(summary.id);
+            return;
+        }
+        this.composerActivityGitRefreshInFlightByConversationId.add(summary.id);
         try {
-            const response = await fetch(
-                `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(cwd)}`,
-                { credentials: 'include' },
-            );
-            if (!response.ok) {
+            const conv = this.host.transcriptLastConv?.id === summary.id ? this.host.transcriptLastConv : undefined;
+            const streaming = this.isComposerAgentStreaming(conv);
+            const transcriptEvidence = this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, undefined, { allTurns: true });
+            const hasFileChangeToolCalls = this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv);
+            if (!streaming
+                && !this.hasComposerAgentActivity(transcriptEvidence)
+                && !hasFileChangeToolCalls) {
                 return;
             }
-            const body = await response.json() as { files?: QaapGitChangedFile[] };
-            const files = (body.files ?? []).map(file => this.mapGitChangedFileToComposerView(file));
-            this.composerActivityGitFilesByConversationId.set(summary.id, files);
+            if (streaming) {
+                await this.ensureComposerGitStreamBaseline(project, summary, conv);
+            }
+            const files = await this.fetchWorkspaceChangedFiles(project, summary);
+            const gitDelta = streaming && this.hasComposerGitDeltaSinceStreamStart(summary.id, files);
+            if (streaming
+                && !gitDelta
+                && !hasFileChangeToolCalls
+                && !this.hasComposerAgentActivity(transcriptEvidence)) {
+                return;
+            }
+            if (files.length === 0 && streaming) {
+                if (this.host.transcriptComposerSummary?.id !== summary.id) {
+                    return;
+                }
+                if (this.composerActivityGitStreamBaselineByConversationId.has(summary.id)) {
+                    this.updateComposerSessionDisplayStatsFromGitAggregate(summary.id, files);
+                }
+                if (!this.patchComposerChangesPillIfMounted(project, summary)) {
+                    this.refreshComposerActivityStack();
+                } else {
+                    this.syncComposerActivityFingerprintAfterLivePatch(summary, conv);
+                }
+                return;
+            }
+            this.applyComposerGitSnapshot(summary.id, files, { treeClean: files.length === 0 });
             if (this.host.transcriptComposerSummary?.id !== summary.id) {
                 return;
             }
-            this.refreshComposerActivityStack();
+            if (!this.patchComposerChangesPillIfMounted(project, summary)) {
+                this.refreshComposerActivityStack();
+            } else {
+                this.syncComposerActivityFingerprintAfterLivePatch(summary, conv);
+            }
         } catch {
             // Git review is optional — composer still shows aggregate diff stats.
+        } finally {
+            this.composerActivityGitRefreshInFlightByConversationId.delete(summary.id);
+            if (this.composerActivityGitRefreshQueuedByConversationId.has(summary.id)) {
+                this.composerActivityGitRefreshQueuedByConversationId.delete(summary.id);
+                void this.refreshComposerActivityGitFilesLive(project, summary);
+            }
         }
+    }
+
+    protected syncComposerActivityFingerprintAfterLivePatch(
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO | undefined,
+    ): void {
+        const project = this.host.transcriptComposerProject;
+        if (!project || !conv) {
+            return;
+        }
+        const activityFiles = this.resolveComposerActivityFilesForStack(project, summary, conv);
+        this.lastComposerActivityFilePathsKey = activityFiles.files.map(file => file.path).join('\n');
+        this.lastComposerActivityFingerprint = this.buildComposerActivityFingerprint(
+            conv,
+            activityFiles,
+            this.host.transcriptFollowUpQueue.size(summary.id),
+        );
+    }
+
+    protected patchComposerChangesPillIfMounted(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): boolean {
+        const host = this.host.transcriptComposerHost;
+        if (!host?.isConnected) {
+            return false;
+        }
+        const wrap = host.querySelector('.theia-mobile-projects-sticky-composer-inner');
+        const existingPill = wrap?.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-changes-pill-host');
+        if (!existingPill) {
+            return false;
+        }
+        const options = this.buildTranscriptComposerActivityOptions(project, summary);
+        if (!options) {
+            return false;
+        }
+        patchStickyComposerChangesPill(existingPill, options);
+        this.host.composerHeaderUi.updateStickyComposerFabLift();
+        return true;
+    }
+
+    /** Cursor-style: immediate git refresh on file-edit tool lifecycle; rate-limit token-only SSE noise. */
+    protected scheduleComposerActivityGitRefresh(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO,
+    ): void {
+        if (conv.status !== 'streaming' || !this.isTranscriptComposerBackendStreaming()) {
+            return;
+        }
+        const toolSignal = this.host.transcriptMessagesUi.buildComposerFileChangeToolSignal(conv);
+        const lastSignal = this.lastComposerFileChangeToolSignalByConversationId.get(summary.id) ?? '';
+        const toolPathsKey = this.host.transcriptMessagesUi.resolveComposerChangedFilesFromToolCalls(conv)
+            .map(file => file.path)
+            .sort()
+            .join('\n');
+        const lastPaths = this.lastComposerFileChangeToolPathsKeyByConversationId.get(summary.id) ?? '';
+        const toolCount = this.countComposerFileChangeToolCalls(conv);
+        const lastTools = this.lastComposerFileChangeToolCountByConversationId.get(summary.id) ?? 0;
+        const fileEditEvent = toolSignal !== lastSignal
+            || toolPathsKey !== lastPaths
+            || toolCount > lastTools;
+        this.lastComposerFileChangeToolSignalByConversationId.set(summary.id, toolSignal);
+        this.lastComposerFileChangeToolPathsKeyByConversationId.set(summary.id, toolPathsKey);
+        this.lastComposerFileChangeToolCountByConversationId.set(summary.id, toolCount);
+
+        const run = (): void => {
+            void this.refreshComposerActivityGitFilesLive(project, summary);
+        };
+
+        if (fileEditEvent) {
+            const debounced = this.composerActivityGitRefreshDebounceByConversationId.get(summary.id);
+            if (debounced !== undefined) {
+                window.clearTimeout(debounced);
+                this.composerActivityGitRefreshDebounceByConversationId.delete(summary.id);
+            }
+            run();
+            return;
+        }
+
+        const existing = this.composerActivityGitRefreshDebounceByConversationId.get(summary.id);
+        if (existing !== undefined) {
+            return;
+        }
+        this.composerActivityGitRefreshDebounceByConversationId.set(
+            summary.id,
+            window.setTimeout(() => {
+                this.composerActivityGitRefreshDebounceByConversationId.delete(summary.id);
+                run();
+            }, MobileProjectsTranscriptStickyComposerUi.COMPOSER_GIT_REFRESH_DEBOUNCE_MS),
+        );
+    }
+
+    protected ensureComposerActivityGitPoll(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO,
+    ): void {
+        if (conv.status !== 'streaming' || !this.isTranscriptComposerBackendStreaming()) {
+            this.stopComposerActivityGitPoll(summary.id);
+            return;
+        }
+        if (this.composerActivityGitPollByConversationId.has(summary.id)) {
+            return;
+        }
+        const poll = async (): Promise<void> => {
+            if (!this.isTranscriptComposerBackendStreaming()
+                || this.host.transcriptComposerSummary?.id !== summary.id) {
+                this.stopComposerActivityGitPoll(summary.id);
+                return;
+            }
+            await this.ensureComposerGitStreamBaseline(project, summary, conv);
+            await this.refreshComposerActivityGitFilesLive(project, summary);
+        };
+        void poll();
+        this.composerActivityGitPollByConversationId.set(
+            summary.id,
+            window.setInterval(() => { void poll(); }, MobileProjectsTranscriptStickyComposerUi.COMPOSER_GIT_POLL_MS),
+        );
+    }
+
+    protected stopComposerActivityGitPoll(conversationId: string): void {
+        const timer = this.composerActivityGitPollByConversationId.get(conversationId);
+        if (timer !== undefined) {
+            window.clearInterval(timer);
+            this.composerActivityGitPollByConversationId.delete(conversationId);
+        }
+        const debounced = this.composerActivityGitRefreshDebounceByConversationId.get(conversationId);
+        if (debounced !== undefined) {
+            window.clearTimeout(debounced);
+            this.composerActivityGitRefreshDebounceByConversationId.delete(conversationId);
+        }
+        this.lastComposerFileChangeToolCountByConversationId.delete(conversationId);
+        this.lastComposerFileChangeToolPathsKeyByConversationId.delete(conversationId);
+        this.lastComposerFileChangeToolSignalByConversationId.delete(conversationId);
+        this.composerActivityGitRefreshInFlightByConversationId.delete(conversationId);
+        this.composerActivityGitRefreshQueuedByConversationId.delete(conversationId);
+        this.clearComposerGitStreamBaseline(conversationId);
+        this.clearComposerChangesPillLatch(conversationId);
     }
 
     protected buildTranscriptComposerActivityOptions(
@@ -557,7 +1081,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const conv = this.host.transcriptLastConv?.id === summary.id ? this.host.transcriptLastConv : undefined;
         const activityFiles = this.resolveComposerActivityFilesForStack(project, summary, conv);
         void this.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
-        const agentWorking = this.isTranscriptStickyComposerAgentWorking();
+        const agentWorking = this.isTranscriptComposerBackendStreaming();
         return {
             queueEntries: this.host.transcriptFollowUpQueue.peek(summary.id),
             queueExpanded: this.host.transcriptComposerQueueExpanded,
@@ -578,6 +1102,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
             },
             changedFiles: activityFiles.files,
             diffStats: activityFiles.stats,
+            pendingFileChanges: !this.isComposerChangesPillLatched(summary.id)
+                && this.resolveComposerPendingFileChanges(conv, activityFiles),
             filesExpanded: this.peekTranscriptComposerChangedFilesExpanded(summary.id),
             onFilesExpandedChange: expanded => { this.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
             agentWorking,
@@ -652,7 +1178,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             }
             // `git add -A && git commit` leaves the tree clean — hide the Changes pill and the
             // commit buttons right away, then re-verify against the real working tree.
-            this.composerActivityGitFilesByConversationId.set(summary.id, []);
+            this.applyComposerGitSnapshot(summary.id, [], { treeClean: true });
             void this.syncComposerGitSnapshot(project, summary)
                 .then(() => this.refreshComposerActivityStack())
                 .catch(() => undefined);
@@ -684,7 +1210,15 @@ export class MobileProjectsTranscriptStickyComposerUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): HTMLElement | undefined {
-        return renderStickyComposerChangesPill(this.buildTranscriptComposerActivityOptions(project, summary));
+        const options = this.buildTranscriptComposerActivityOptions(project, summary);
+        const conv = this.host.transcriptLastConv?.id === summary.id ? this.host.transcriptLastConv : undefined;
+        if (!this.shouldShowComposerChangesPill(summary, conv, {
+            files: options.changedFiles ?? [],
+            stats: options.diffStats,
+        })) {
+            return undefined;
+        }
+        return renderStickyComposerChangesPill(options);
     }
 
     syncComposerActivityFingerprint(
@@ -696,7 +1230,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const activityFiles = resolvedProject
             ? this.resolveComposerActivityFilesForStack(resolvedProject, summary, conv)
             : this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        this.lastComposerActivityFingerprint = `${this.host.transcriptFollowUpQueue.size(summary.id)}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${conv?.status ?? summary.status}`;
+        this.lastComposerActivityFingerprint = conv
+            ? this.buildComposerActivityFingerprint(conv, activityFiles, this.host.transcriptFollowUpQueue.size(summary.id))
+            : `${this.host.transcriptFollowUpQueue.size(summary.id)}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${summary.status}`;
+        this.lastComposerActivityFilePathsKey = activityFiles.files.map(file => file.path).join('\n');
     }
 
     refreshComposerActivityStack(): void {
@@ -707,20 +1244,64 @@ export class MobileProjectsTranscriptStickyComposerUi {
             return;
         }
         const wrap = host.querySelector('.theia-mobile-projects-sticky-composer-inner');
-        const card = wrap?.querySelector('.theia-mobile-projects-sticky-composer-card.theia-mod-codex');
+        const card = wrap?.querySelector<HTMLElement>('.theia-mobile-projects-sticky-composer-card.theia-mod-codex');
         if (!wrap || !card) {
             this.remountTranscriptStickyComposer();
             return;
         }
         const changesPill = this.buildTranscriptComposerChangesPill(project, summary);
-        const existingPill = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
-        if (!changesPill) {
-            existingPill?.remove();
-        } else if (existingPill) {
-            existingPill.replaceWith(changesPill);
-        } else {
-            wrap.insertBefore(changesPill, card);
+        const existingPill = wrap.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-changes-pill-host');
+        const activityOptions = this.buildTranscriptComposerActivityOptions(project, summary);
+        const conv = this.host.transcriptLastConv?.id === summary.id ? this.host.transcriptLastConv : undefined;
+        const showPill = this.shouldShowComposerChangesPill(summary, conv, {
+            files: activityOptions?.changedFiles ?? [],
+            stats: activityOptions?.diffStats,
+        });
+        if (!showPill) {
+            if (!this.isComposerChangesPillLatched(summary.id)) {
+                existingPill?.remove();
+            } else if (existingPill && activityOptions) {
+                patchStickyComposerChangesPill(existingPill, activityOptions);
+            }
+        } else if (existingPill && activityOptions && patchStickyComposerChangesPill(existingPill, activityOptions)) {
+            // Keep the live pill mounted so diff counters can push-animate.
+        } else if (changesPill) {
+            if (existingPill) {
+                existingPill.replaceWith(changesPill);
+            } else {
+                wrap.insertBefore(changesPill, card);
+            }
         }
+        this.syncComposerActivityStackInCard(project, summary, card);
+        this.syncComposerActivityFingerprint(summary, project);
+        this.host.composerHeaderUi.updateStickyComposerFabLift();
+        if (conv) {
+            this.ensureComposerActivityGitPoll(project, summary, conv);
+        }
+    }
+
+    protected syncComposerActivityStackOnly(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO,
+    ): void {
+        const host = this.host.transcriptComposerHost;
+        if (!host?.isConnected) {
+            return;
+        }
+        const card = host.querySelector<HTMLElement>('.theia-mobile-projects-sticky-composer-card.theia-mod-codex');
+        if (!card) {
+            return;
+        }
+        this.syncComposerActivityStackInCard(project, summary, card);
+        this.syncComposerActivityFingerprint(summary, project);
+    }
+
+    protected syncComposerActivityStackInCard(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        card: HTMLElement,
+    ): void {
         const stack = this.buildTranscriptComposerActivityStack(project, summary);
         const existing = card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
         if (!stack) {
@@ -729,6 +1310,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         } else if (existing) {
             existing.replaceWith(stack);
             card.classList.add('theia-mod-has-activity');
+            ensureStickyComposerShellBorderBeam(card);
         } else {
             const stage = card.querySelector(':scope > .theia-mobile-projects-sticky-composer-stage');
             if (stage) {
@@ -737,9 +1319,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 card.append(stack);
             }
             card.classList.add('theia-mod-has-activity');
+            ensureStickyComposerShellBorderBeam(card);
         }
-        this.syncComposerActivityFingerprint(summary, project);
-        this.host.composerHeaderUi.updateStickyComposerFabLift();
     }
 
     refreshTranscriptComposerActivityIfNeeded(conv: QaapAgentConversationDTO): void {
@@ -751,20 +1332,53 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (!summary || summary.id !== conv.id || !this.host.transcriptComposerHost?.isConnected) {
             return;
         }
+        if (conv.status !== 'streaming') {
+            this.stopComposerActivityGitPoll(summary.id);
+        } else if (project) {
+            this.seedComposerGitStreamBaselineFromCache(summary.id);
+            void this.ensureComposerGitStreamBaseline(project, summary, conv);
+        }
         const queueSize = this.host.transcriptFollowUpQueue.size(summary.id);
         const activityFiles = project
             ? this.resolveComposerActivityFilesForStack(project, summary, conv)
             : this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        const fingerprint = `${queueSize}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${conv.status}`;
+        const filePathsKey = activityFiles.files.map(file => file.path).join('\n');
+        const fingerprint = this.buildComposerActivityFingerprint(conv, activityFiles, queueSize);
         if (fingerprint === this.lastComposerActivityFingerprint) {
+            if (conv.status === 'streaming' && project) {
+                this.ensureComposerActivityGitPoll(project, summary, conv);
+                this.scheduleComposerActivityGitRefresh(project, summary, conv);
+            }
             this.host.transcriptComposerSendRefresh?.();
             return;
         }
+        const filePathsChanged = filePathsKey !== this.lastComposerActivityFilePathsKey;
+        if (filePathsChanged && conv.status !== 'streaming') {
+            this.clearComposerGitSnapshot(conv.id);
+        }
+        this.lastComposerActivityFilePathsKey = filePathsKey;
         this.lastComposerActivityFingerprint = fingerprint;
-        // Activity changed (new agent edits, turn finished) — drop the cached git snapshot so the
-        // Changes pill refetches instead of keeping a stale (possibly empty) file list.
-        this.composerActivityGitFilesByConversationId.delete(conv.id);
+
+        const host = this.host.transcriptComposerHost;
+        const wrap = host?.querySelector('.theia-mobile-projects-sticky-composer-inner');
+        const existingPill = wrap?.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-changes-pill-host');
+        const activityOptions = project ? this.buildTranscriptComposerActivityOptions(project, summary) : undefined;
+        if (existingPill && activityOptions && project && patchStickyComposerChangesPill(existingPill, activityOptions)) {
+            this.syncComposerActivityStackOnly(project, summary, conv);
+            this.host.composerHeaderUi.updateStickyComposerFabLift();
+            if (conv.status === 'streaming' && project) {
+                this.scheduleComposerActivityGitRefresh(project, summary, conv);
+                this.ensureComposerActivityGitPoll(project, summary, conv);
+            }
+            this.host.transcriptComposerSendRefresh?.();
+            return;
+        }
+
         this.refreshComposerActivityStack();
+        if (conv.status === 'streaming' && project) {
+            this.scheduleComposerActivityGitRefresh(project, summary, conv);
+            this.ensureComposerActivityGitPoll(project, summary, conv);
+        }
         this.host.transcriptComposerSendRefresh?.();
     }
 
@@ -810,6 +1424,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
     }
 
+    /** UI queue/follow-up — false once the visible turn looks complete. */
     isTranscriptStickyComposerAgentWorking(): boolean {
         const summary = this.host.transcriptComposerSummary;
         if (!summary || !this.host.transcriptComposerHost?.isConnected) {
@@ -817,6 +1432,35 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         if (this.host.transcriptLastConv?.id === summary.id) {
             return resolveTranscriptEffectiveStatus(this.host.transcriptLastConv) === 'streaming';
+        }
+        if (summary.source === 'theia-chat' && this.host.chatService) {
+            const sessionId = summary.sessionId ?? this.host.transcriptTheiaSessionByConversationId.get(summary.id);
+            const session = sessionId ? this.host.chatService.getSession(sessionId) : undefined;
+            if (session && this.host.chatServiceSummariesUi.isChatSessionWorking(session)) {
+                return true;
+            }
+        }
+        const project = this.host.transcriptComposerProject;
+        if (project) {
+            const latest = this.host.conversationIndexUi.conversationsForProject(project).find(candidate => candidate.id === summary.id);
+            if (latest?.status === 'streaming') {
+                return true;
+            }
+        }
+        return this.host.transcriptOpenSummary?.id === summary.id && this.host.transcriptOpenSummary.status === 'streaming';
+    }
+
+    /** Backend task still attached — drives border-beam, Stop, and activity-stack chrome. */
+    isTranscriptComposerBackendStreaming(): boolean {
+        const summary = this.host.transcriptComposerSummary;
+        if (!summary || !this.host.transcriptComposerHost?.isConnected) {
+            return false;
+        }
+        if (isGoalLoopPhaseActive(summary.goalLoopPhase)) {
+            return true;
+        }
+        if (this.host.transcriptLastConv?.id === summary.id) {
+            return this.host.transcriptLastConv.status === 'streaming';
         }
         if (summary.source === 'theia-chat' && this.host.chatService) {
             const sessionId = summary.sessionId ?? this.host.transcriptTheiaSessionByConversationId.get(summary.id);
@@ -1063,7 +1707,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         // Conversations share the project's working tree — a git snapshot cached while another
         // session was open can be stale (e.g. committed meanwhile). Refetch per (re)mount so the
         // Changes pill + commit button reflect this conversation's current pending changes.
-        this.composerActivityGitFilesByConversationId.delete(summary.id);
+        this.clearComposerGitSnapshot(summary.id);
         this.host.stickyComposerContextUsageDispose.dispose();
         host.replaceChildren();
         const shell = document.createElement('div');
@@ -1141,13 +1785,19 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 }
                 : undefined,
             canSubmit: true,
-            isAgentWorking: () => this.isTranscriptStickyComposerAgentWorking(),
+            isAgentWorking: () => this.isTranscriptComposerBackendStreaming(),
             onStop: () => { void this.host.onCancelConversation(project, summary); },
             onSendControlMounted: refresh => { this.host.transcriptComposerSendRefresh = refresh; },
             onAttach: anchor => { void this.onTranscriptComposerAttach(project, anchor); },
             onOpenAgentSheet: isLegacyTheiaChat
                 ? () => { /* Legacy Theia chat is not agent-switchable */ }
                 : anchor => { this.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary, anchor); },
+            showRunUntilDone: !isLegacyTheiaChat && showApprovalPolicy && !isGoalLoopPhaseActive(summary.goalLoopPhase),
+            runUntilDone: this.host.stickyComposerRunUntilDone,
+            onRunUntilDoneChange: enabled => {
+                this.host.stickyComposerRunUntilDone = enabled;
+                this.remountTranscriptStickyComposer();
+            },
             sendLabel: this.isTranscriptStickyComposerAgentWorking()
                 ? nls.localize('qaap/mobileProjects/transcriptQueue', 'Queue')
                 : nls.localize('qaap/mobileProjects/transcriptSend', 'Send'),
@@ -1218,6 +1868,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                                     summary.cwd,
                                 ),
                                 agentModel: this.host.transcriptComposerAgentModel,
+                                runUntilDone: this.host.stickyComposerRunUntilDone,
                             });
                         } catch {
                             /* submitBackgroundAgentTask surfaces errors */
@@ -1241,6 +1892,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
                                     this.host.transcriptComposerApprovalPolicyId,
                                     summary.cwd,
                                 ),
+                                agentModel: this.host.transcriptComposerAgentModel,
+                                runUntilDone: this.host.stickyComposerRunUntilDone,
                             });
                         } else {
                             await this.host.submitTranscriptViaBackendConversation(project, summary, draft, {
@@ -1253,6 +1906,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                                     summary.cwd,
                                 ),
                                 agentModel: this.host.transcriptComposerAgentModel,
+                                runUntilDone: this.host.stickyComposerRunUntilDone,
                             });
                         }
                     } catch (error) {
@@ -1343,6 +1997,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (!host?.isConnected || !project || !summary) {
             return;
         }
+        this.stopComposerActivityGitPoll(summary.id);
         this.host.transcriptComposerMountKey = undefined;
         this.mountTranscriptStickyComposer(host, project, summary, chatHost ?? host);
     }

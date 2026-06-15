@@ -22,6 +22,17 @@ export const TRANSCRIPT_LINK_PREVIEW_CARD_CLASS = 'theia-mobile-agent-link-previ
 export const TRANSCRIPT_CITATION_CARD_CLASS = 'theia-mobile-agent-citation-card';
 export const TRANSCRIPT_OPTION_LIST_CARD_CLASS = 'theia-mobile-agent-option-list-card';
 export const TRANSCRIPT_QUESTION_FLOW_CARD_CLASS = 'theia-mobile-agent-question-flow-card';
+export const TRANSCRIPT_QUESTION_FLOW_OPTION_CLASS = 'theia-mobile-agent-question-flow-card-option';
+
+export interface TranscriptQuestionFlowInteraction {
+    readonly disabled?: boolean;
+    readonly onSelect?: (selection: {
+        readonly questionId: string;
+        readonly questionText: string;
+        readonly optionId: string;
+        readonly optionLabel: string;
+    }) => void;
+}
 
 function appendCopyButton(host: HTMLElement, copyFrom: () => string): void {
     const copyBtn = document.createElement('button');
@@ -191,7 +202,10 @@ export function buildTranscriptOptionListCard(payload: TranscriptToolUiOptionLis
     return card;
 }
 
-export function buildTranscriptQuestionFlowCard(payload: TranscriptToolUiQuestionFlowPayload): HTMLElement {
+export function buildTranscriptQuestionFlowCard(
+    payload: TranscriptToolUiQuestionFlowPayload,
+    interaction?: TranscriptQuestionFlowInteraction,
+): HTMLElement {
     const card = document.createElement('div');
     card.className = TRANSCRIPT_QUESTION_FLOW_CARD_CLASS;
     const head = document.createElement('div');
@@ -200,6 +214,7 @@ export function buildTranscriptQuestionFlowCard(payload: TranscriptToolUiQuestio
     card.append(head);
     const steps = document.createElement('div');
     steps.className = 'theia-mobile-agent-question-flow-card-steps';
+    const interactive = !!interaction?.onSelect && !interaction.disabled;
     for (const [index, question] of payload.questions.entries()) {
         const step = document.createElement('div');
         step.className = 'theia-mobile-agent-question-flow-card-step';
@@ -221,9 +236,15 @@ export function buildTranscriptQuestionFlowCard(payload: TranscriptToolUiQuestio
         const options = document.createElement('div');
         options.className = 'theia-mobile-agent-question-flow-card-options';
         for (const option of question.options) {
-            const row = document.createElement('div');
-            row.className = 'theia-mobile-agent-question-flow-card-option';
             const selected = answer === option.label || answer === option.id;
+            const row = interactive && !selected
+                ? document.createElement('button')
+                : document.createElement('div');
+            row.className = TRANSCRIPT_QUESTION_FLOW_OPTION_CLASS;
+            if (interactive && !selected) {
+                row.classList.add('theia-mod-interactive');
+                (row as HTMLButtonElement).type = 'button';
+            }
             if (selected) {
                 row.classList.add('theia-mod-selected');
             }
@@ -234,6 +255,18 @@ export function buildTranscriptQuestionFlowCard(payload: TranscriptToolUiQuestio
             label.className = 'theia-mobile-agent-question-flow-card-option-label';
             label.textContent = option.label;
             row.append(marker, label);
+            if (interactive && !selected && interaction?.onSelect) {
+                const onSelect = interaction.onSelect;
+                row.addEventListener('click', event => {
+                    event.stopPropagation();
+                    onSelect({
+                        questionId: question.id,
+                        questionText: question.question,
+                        optionId: option.id,
+                        optionLabel: option.label,
+                    });
+                });
+            }
             options.append(row);
         }
         step.append(options);
@@ -319,7 +352,10 @@ export function buildTranscriptDiffCardFromExtracted(
     return details;
 }
 
-export function buildTranscriptToolUiPayloadElement(payload: TranscriptToolUiPayload): HTMLElement {
+export function buildTranscriptToolUiPayloadElement(
+    payload: TranscriptToolUiPayload,
+    interaction?: TranscriptQuestionFlowInteraction,
+): HTMLElement {
     switch (payload.kind) {
         case 'code_block':
             return buildTranscriptCodeBlockCard(payload);
@@ -330,7 +366,7 @@ export function buildTranscriptToolUiPayloadElement(payload: TranscriptToolUiPay
         case 'option_list':
             return buildTranscriptOptionListCard(payload);
         case 'question_flow':
-            return buildTranscriptQuestionFlowCard(payload);
+            return buildTranscriptQuestionFlowCard(payload, interaction);
     }
 }
 

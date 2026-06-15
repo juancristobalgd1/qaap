@@ -45,6 +45,7 @@ import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-l
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapWorkHubDiffDelegate, QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
+import { QaapWorkHubTranscriptDeepLinkDelegate, QaapWorkHubTranscriptDeepLinkService } from './qaap-work-hub-transcript-deeplink-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
@@ -149,7 +150,7 @@ const GETTING_STARTED_WIDGET_COMMAND = 'getting.started.widget';
  * edge swipes and backdrop; main editor tabs in a horizontally scrollable tab row.
  */
 @injectable()
-export class MobileOneColumnShellContribution implements FrontendApplicationContribution, CommandContribution, QaapWorkHubDiffDelegate {
+export class MobileOneColumnShellContribution implements FrontendApplicationContribution, CommandContribution, QaapWorkHubDiffDelegate, QaapWorkHubTranscriptDeepLinkDelegate {
 
     @inject(ApplicationShell)
     protected readonly shell: ApplicationShell;
@@ -222,6 +223,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     @inject(QaapWorkHubDiffService)
     protected readonly workHubDiff: QaapWorkHubDiffService;
+
+    @inject(QaapWorkHubTranscriptDeepLinkService)
+    protected readonly transcriptDeepLink: QaapWorkHubTranscriptDeepLinkService;
 
     @inject(QaapCommitMessageAi) @optional()
     protected readonly commitMessageAi?: QaapCommitMessageAi;
@@ -407,6 +411,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 },
                 onShowAgentsHub: () => { void this.hubNavigation.openMobileWorkHubLanding('tasks'); },
                 onShowRoutinesHub: () => { void this.hubNavigation.openMobileWorkHubLanding('routines'); },
+                onShowMissionControlHub: () => { void this.hubNavigation.openMobileWorkHubMissionControl(); },
                 onHubLandingViewChanged: () => {
                     this.syncMobileHubPrimaryBottomChrome();
                     this.refreshBottomBar();
@@ -625,6 +630,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     onStart(_app: FrontendApplication): void {
         this.workHubDiff.setDelegate(this);
+        this.transcriptDeepLink.setDelegate(this);
         this.landing.syncFromStorage();
         installMobileWorkHubBootGuard();
         switch (resolveInitialLandingBodyClass(this.mobileMq?.matches === true)) {
@@ -679,6 +685,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     onStop(_app: FrontendApplication): void {
         this.workHubDiff.setDelegate(undefined);
+        this.transcriptDeepLink.setDelegate(undefined);
         this.mobileMq?.removeEventListener('change', this.onMediaChange);
         window.removeEventListener('resize', this.onWindowResize);
         window.removeEventListener(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT, this.onDismissProjectsPanelEvent);
@@ -1388,6 +1395,22 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             return;
         }
         await this.openProjectScopedDiffView(projectId);
+    }
+
+    async openConversationById(conversationId: string): Promise<void> {
+        if (!this.mobileActive) {
+            return;
+        }
+        this.landingLeftThisSession = true;
+        document.body.classList.remove('theia-mobile-mod-landing');
+        this.ensureProjectsPanel(false);
+        const panel = this.projectsPanel;
+        if (!panel) {
+            return;
+        }
+        await panel.show();
+        await panel.openConversationById(conversationId);
+        this.refreshBottomBar();
     }
 
     /** Working-changes review inside the active workspace sheet (not the cross-project Work Hub tab). */

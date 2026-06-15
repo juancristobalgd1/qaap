@@ -11,6 +11,7 @@ import {
     type QaapAgentContextUsage,
 } from './qaap-agent-context-usage';
 import { resolveMessagePreviewText } from './qaap-agent-message-content';
+import type { QaapTranscriptSystemSegmentKind } from './qaap-agent-transcript-segments';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-tool-approval-rules';
 import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encoding';
 import { Disposable } from '@theia/core/lib/common/disposable';
@@ -84,11 +85,49 @@ export interface QaapAgentConversationSummaryDTO {
     readonly contextWindowSize?: number;
     readonly contextUsageEstimated?: boolean;
     readonly estimatedContextTokens?: number;
+    /** Active or terminal goal-loop phase for list badges. */
+    readonly goalLoopPhase?: QaapAgentGoalLoopPhase;
+    readonly goalLoopIteration?: number;
+    readonly goalLoopMaxIterations?: number;
+    readonly goalLoopStopReason?: string;
+}
+
+export type QaapAgentGoalLoopPhase =
+    | 'executing'
+    | 'verifying'
+    | 'evaluating'
+    | 'completed'
+    | 'blocked'
+    | 'cancelled';
+
+export interface QaapAgentGoalLoopStateDTO {
+    readonly phase: QaapAgentGoalLoopPhase;
+    readonly goal: string;
+    readonly startedAt: number;
+    readonly updatedAt: number;
+    readonly iteration: number;
+    readonly budget: {
+        readonly maxIterations: number;
+        readonly maxDurationMs: number;
+        readonly maxEvaluatorCalls?: number;
+    };
+    readonly verify: {
+        readonly enabled: boolean;
+        readonly extraCommands?: ReadonlyArray<string>;
+    };
+    readonly anchorUserMessageId: string;
+    readonly stopReason?: string;
+    readonly evaluatorCalls?: number;
 }
 
 export type QaapAgentMessageSegmentDTO =
     | { readonly type: 'text'; readonly content: string }
     | { readonly type: 'thinking'; readonly content: string }
+    | {
+        readonly type: 'system';
+        readonly kind: QaapTranscriptSystemSegmentKind;
+        readonly detail?: string;
+    }
     | {
         readonly type: 'tool';
         readonly toolUseId: string;
@@ -155,6 +194,7 @@ export interface QaapAgentConversationDTO {
     readonly contextUsage?: QaapAgentContextUsage;
     readonly contextWindowSize?: number;
     readonly contextUsageEstimated?: boolean;
+    readonly goalLoop?: QaapAgentGoalLoopStateDTO;
 }
 
 function resolveEffectiveConversationStatus(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO['status'] {
@@ -243,6 +283,12 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ...(conv.contextUsageEstimated
             ? { estimatedContextTokens: estimateConversationTokensFromMessages(conv.messages, conv.contextPreamble) }
             : {}),
+        ...(conv.goalLoop ? {
+            goalLoopPhase: conv.goalLoop.phase,
+            goalLoopIteration: conv.goalLoop.iteration,
+            goalLoopMaxIterations: conv.goalLoop.budget.maxIterations,
+            ...(conv.goalLoop.stopReason ? { goalLoopStopReason: conv.goalLoop.stopReason } : {}),
+        } : {}),
     };
 }
 
@@ -459,4 +505,58 @@ export async function deleteConversation(id: string): Promise<void> {
     if (!response.ok && response.status !== 404) {
         throw new Error(response.statusText);
     }
+}
+
+export interface QaapStartGoalLoopBody {
+    readonly goal: string;
+    readonly budget?: { readonly maxIterations?: number; readonly maxDurationMs?: number };
+    readonly verify?: { readonly enabled?: boolean; readonly extraCommands?: ReadonlyArray<string> };
+    readonly initialPrompt?: string;
+}
+
+export async function startGoalLoop(conversationId: string, body: QaapStartGoalLoopBody): Promise<QaapAgentGoalLoopStateDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/goal-loop/start`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    const payload = await response.json() as { goalLoop: QaapAgentGoalLoopStateDTO };
+    return payload.goalLoop;
+}
+
+export async function cancelGoalLoop(conversationId: string, reason?: string): Promise<QaapAgentGoalLoopStateDTO | undefined> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/goal-loop/cancel`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reason ? { reason } : {}),
+    });
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    const payload = await response.json() as { goalLoop?: QaapAgentGoalLoopStateDTO };
+    return payload.goalLoop;
+}
+
+export async function fetchGoalLoopStatus(conversationId: string): Promise<QaapAgentGoalLoopStateDTO | undefined> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/goal-loop`, {
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    const payload = await response.json() as { goalLoop?: QaapAgentGoalLoopStateDTO };
+    return payload.goalLoop;
+}
+
+export function isGoalLoopPhaseActive(phase: QaapAgentGoalLoopPhase | undefined): boolean {
+    return phase === 'executing' || phase === 'verifying' || phase === 'evaluating';
+}
+
+export function isGoalLoopBlocked(phase: QaapAgentGoalLoopPhase | undefined): boolean {
+    return phase === 'blocked';
 }

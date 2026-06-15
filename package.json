@@ -72,6 +72,7 @@
     "compute-references": "node scripts/compile-references.js",
     "qaap:drift-report": "node scripts/qaap-upstream-drift-report.js",
     "qaap:drift-check": "node scripts/qaap-drift-check.js",
+    "qaap:gh-default": "bash scripts/qaap-ensure-gh-default.sh",
     "qaap:local:browser": "node scripts/qaap-local-browser-sample.mjs",
     "qaap:local:browser:restart": "node scripts/qaap-restart-browser.mjs",
     "qaap:local:browser:rebuild": "node scripts/qaap-restart-browser.mjs --build",

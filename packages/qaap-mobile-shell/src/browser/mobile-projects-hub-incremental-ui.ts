@@ -41,9 +41,6 @@ export interface MobileProjectsHubIncrementalPatchHost extends MobileProjectsHub
     collectTasksInboxGroups(
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }>;
-    collectChatHubGroups(
-        projects: MobileProjectEntry[],
-    ): Array<{ project: MobileProjectEntry; summaries: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO[] }>;
     collectReviewGroups(
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }>;
@@ -86,25 +83,6 @@ export class MobileProjectsHubIncrementalUi {
             if (this.host.shouldUseAgentsHubLanding()) {
                 return false;
             }
-            if (this.host.tasksHubSurface === 'chat') {
-                const groups = this.host.collectChatHubGroups(projects);
-                const items = groups.map(group => ({
-                    project: group.project,
-                    items: group.summaries.map(summary => ({
-                        kind: 'conversation' as const,
-                        project: group.project,
-                        summary,
-                        sortAt: summary.updatedAt,
-                        priority: 0,
-                    })),
-                }));
-                const inboxRoot = this.findInboxRoot('chat-inbox');
-                if (this.tryPatchInbox('chat-inbox', inboxRoot, items)) {
-                    this.host.renderSubtitle();
-                    return true;
-                }
-                return false;
-            }
             const groups = this.host.collectTasksInboxGroups(projects);
             const inboxRoot = this.findInboxRoot('tasks-inbox');
             const teamRoot = this.host.scroll.querySelector<HTMLElement>(
@@ -116,25 +94,6 @@ export class MobileProjectsHubIncrementalUi {
             const teamPatched = !teamEmbedded || this.tryPatchTeamSection(teamRoot!);
             if (inboxPatched && teamPatched && (hasInbox || teamEmbedded)) {
                 this.host.updateTasksAttentionChrome();
-                this.host.renderSubtitle();
-                return true;
-            }
-            return false;
-        }
-        if (this.host.hubView === 'chat') {
-            const groups = this.host.collectChatHubGroups(projects);
-            const items = groups.map(group => ({
-                project: group.project,
-                items: group.summaries.map(summary => ({
-                    kind: 'conversation' as const,
-                    project: group.project,
-                    summary,
-                    sortAt: summary.updatedAt,
-                    priority: 0,
-                })),
-            }));
-            const inboxRoot = this.findInboxRoot('chat-inbox');
-            if (this.tryPatchInbox('chat-inbox', inboxRoot, items)) {
                 this.host.renderSubtitle();
                 return true;
             }

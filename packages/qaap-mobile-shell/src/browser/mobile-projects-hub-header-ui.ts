@@ -30,6 +30,7 @@ export interface MobileProjectsHubHeaderHost {
     isProjectDetailView(): boolean;
     isProjectDiffView(): boolean;
     shouldUseAgentsHubLanding(): boolean;
+    shouldUseMissionControlLanding(): boolean;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
@@ -83,10 +84,6 @@ export class MobileProjectsHubHeaderUi {
             this.host.titleEl.textContent = nls.localize('qaap/diff/reviewLabel', 'Working changes');
             return;
         }
-        if (this.host.hubView === 'chat') {
-            this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/chatTitle', 'Chat');
-            return;
-        }
         if (this.host.hubView === 'tasks') {
             if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject && this.host.transcriptOpenSummary) {
                 this.host.titleEl.textContent = this.host.transcriptHeaderUi.resolveTranscriptHeaderTitle(
@@ -94,9 +91,11 @@ export class MobileProjectsHubHeaderUi {
                     this.host.transcriptOpenSummary,
                 );
             } else {
-                this.host.titleEl.textContent = this.host.shouldUseAgentsHubLanding()
-                    ? nls.localize('qaap/mobileBottomBar/hubAgents', 'Agents')
-                    : nls.localize('qaap/mobileProjects/tasksHubTitle', 'Tasks');
+                this.host.titleEl.textContent = this.host.shouldUseMissionControlLanding()
+                    ? nls.localize('qaap/workMissionControl/title', 'Agent work to PR')
+                    : this.host.shouldUseAgentsHubLanding()
+                        ? nls.localize('qaap/mobileBottomBar/hubAgents', 'Agents')
+                        : nls.localize('qaap/mobileProjects/tasksHubTitle', 'Tasks');
             }
             this.host.updateTasksAttentionChrome();
             return;
@@ -113,12 +112,6 @@ export class MobileProjectsHubHeaderUi {
         }
         if (this.host.hubView === 'routines') {
             this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/routinesTitle', 'Routines');
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'home') {
-            this.host.titleEl.textContent = this.host.buildHomeGreeting();
-            this.host.titleAttentionEl.hidden = true;
-            this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
             return;
         }
         this.host.titleAttentionEl.hidden = true;

@@ -10,6 +10,8 @@ import {
     markMobileProjectReadmeForOpen,
     markMobileProjectsPanelDismiss,
 } from './mobile-projects-open';
+import { isQaapCloudOnboarding } from '../common/qaap-cloud-onboarding';
+import { QAAP_WORK_HUB_ADD_REPOSITORY_COMMAND } from '../common/qaap-work-hub-commands';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
 import type { TranscriptWorkspaceSurfacesCache } from './qaap-transcript-workspace-surfaces-cache';
@@ -159,6 +161,8 @@ export class MobileProjectsProjectNavigationUi {
             if (project.github || project.uri) {
                 openedViaReload = true;
                 await this.host.projectsService.openInCurrentWindowAsync(project);
+            } else if (isQaapCloudOnboarding()) {
+                await this.host.commands.executeCommand(QAAP_WORK_HUB_ADD_REPOSITORY_COMMAND);
             } else {
                 const openFolder = WorkspaceCommands.OPEN_FOLDER.id;
                 if (this.host.commands.getCommand(openFolder)) {

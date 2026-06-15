@@ -7,10 +7,12 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
+    patchStickyComposerChangesPill,
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
+import { readQaapCounterPushDisplayText } from './qaap-counter-push-dom';
 
 describe('qaap-sticky-composer-activity-stack', () => {
 
@@ -44,8 +46,10 @@ describe('qaap-sticky-composer-activity-stack', () => {
             const pill = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-changes-pill');
             expect(pill).to.exist;
             expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-label')?.textContent).to.equal('Changes');
-            expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+5');
-            expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('-1');
+            const addedBadge = pill!.querySelector<HTMLElement>('[data-qaap-diff-stat-added]');
+            const removedBadge = pill!.querySelector<HTMLElement>('[data-qaap-diff-stat-removed]');
+            expect(addedBadge && readQaapCounterPushDisplayText(addedBadge)).to.equal('+5');
+            expect(removedBadge && readQaapCounterPushDisplayText(removedBadge)).to.equal('-1');
             expect(host!.querySelector('.theia-mobile-sticky-composer-changed-file-row')).to.equal(null);
 
             pill!.click();
@@ -134,6 +138,82 @@ describe('qaap-sticky-composer-activity-stack', () => {
             document.body.append(host!);
 
             expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
+        });
+
+        it('shows the Changes pill while a file-change tool is in flight before stats land', () => {
+            const host = renderStickyComposerChangesPill({
+                pendingFileChanges: true,
+                agentWorking: true,
+                onStop: () => undefined,
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+
+            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.exist;
+            expect(host!.querySelector(`[data-qaap-diff-stat-added]`)).to.equal(null);
+            expect(host!.querySelector('.theia-mobile-sticky-composer-activity-stop')?.textContent).to.equal('Stop');
+        });
+
+        it('patches diff stats in place for counter push animation', async () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 5, removed: 1 },
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+
+            const patched = patchStickyComposerChangesPill(host!, {
+                diffStats: { added: 12, removed: 3 },
+                onReview: () => undefined,
+            });
+            expect(patched).to.equal(true);
+            await new Promise(resolve => window.setTimeout(resolve, 400));
+            const addedBadge = host!.querySelector<HTMLElement>('[data-qaap-diff-stat-added]');
+            const removedBadge = host!.querySelector<HTMLElement>('[data-qaap-diff-stat-removed]');
+            expect(addedBadge && readQaapCounterPushDisplayText(addedBadge)).to.equal('+12');
+            expect(removedBadge && readQaapCounterPushDisplayText(removedBadge)).to.equal('-3');
+        });
+
+        it('renders Cursor-style flat +N/−N counters on the Changes pill', () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 434, removed: 44 },
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+
+            const added = host!.querySelector<HTMLElement>('[data-qaap-diff-stat-added]');
+            const removed = host!.querySelector<HTMLElement>('[data-qaap-diff-stat-removed]');
+            expect(added?.classList.contains('qaap-counter-push-stat')).to.equal(true);
+            expect(removed?.classList.contains('qaap-counter-push-stat')).to.equal(true);
+            expect(added && readQaapCounterPushDisplayText(added)).to.equal('+434');
+            expect(removed && readQaapCounterPushDisplayText(removed)).to.equal('-44');
+            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill-label')?.textContent).to.equal('Changes');
+        });
+
+        it('updates both counters when lines are added then removed', async () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 10, removed: 0 },
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+            expect(host!.querySelector('[data-qaap-diff-stat-removed]')).to.equal(null);
+
+            patchStickyComposerChangesPill(host!, {
+                diffStats: { added: 25, removed: 3 },
+                onReview: () => undefined,
+            });
+            await new Promise(resolve => window.setTimeout(resolve, 400));
+            const addedBadge = host!.querySelector<HTMLElement>('[data-qaap-diff-stat-added]');
+            const removedBadge = host!.querySelector<HTMLElement>('[data-qaap-diff-stat-removed]');
+            expect(addedBadge && readQaapCounterPushDisplayText(addedBadge)).to.equal('+25');
+            expect(removedBadge && readQaapCounterPushDisplayText(removedBadge)).to.equal('-3');
+
+            patchStickyComposerChangesPill(host!, {
+                diffStats: { added: 18, removed: 8 },
+                onReview: () => undefined,
+            });
+            await new Promise(resolve => window.setTimeout(resolve, 400));
+            expect(addedBadge && readQaapCounterPushDisplayText(addedBadge)).to.equal('+18');
+            expect(removedBadge && readQaapCounterPushDisplayText(removedBadge)).to.equal('-8');
         });
     });
 

@@ -11,6 +11,8 @@ export type QaapAgentTaskState =
     | 'queued'
     /** The process is still running on the VPS. */
     | 'running'
+    /** Waiting for a free slot in the same repo cwd — not spawned yet. */
+    | 'queued'
     /** Finished with exit code 0. */
     | 'completed'
     /** Finished with a non-zero exit code or failed to start. */

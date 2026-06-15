@@ -3,19 +3,34 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
-import { createHmac, timingSafeEqual } from 'crypto';
 import {
     QAAP_GITHUB_API_PATH,
     type QaapGithubPullRequestSummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { fetchGithubPullRequestFiles } from './qaap-github-api';
+import {
+    githubCommentTriggersAgent,
+    isLikelyQaapAckComment,
+    stripQaapMentionFromPrompt,
+} from '../common/qaap-github-agent-trigger';
+import { verifyGithubWebhookSignature } from '../common/qaap-github-webhook-signature';
+import { readGithubWebhookPayload, useQaapJsonBodyParser } from './qaap-express-json-middleware';
+import {
+    QaapGithubAgentTriggerBridge,
+    type QaapGithubAgentTriggerRequest,
+} from './qaap-github-agent-trigger-bridge';
+import { fetchGithubPullRequestFiles, postGithubIssueComment } from './qaap-github-api';
 import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 
 const SSE_HEARTBEAT_MS = 25_000;
+
+interface GithubWebhookRepository {
+    owner?: { login?: string };
+    name?: string;
+}
 
 interface GithubWebhookPullRequest {
     number: number;
@@ -32,13 +47,27 @@ interface GithubWebhookPullRequest {
     mergeable?: boolean | null;
 }
 
+interface GithubWebhookIssue {
+    number: number;
+    title?: string;
+    body?: string;
+    html_url?: string;
+    labels?: Array<{ name?: string }>;
+}
+
+interface GithubWebhookComment {
+    id: number;
+    body?: string;
+    html_url?: string;
+    user?: { login?: string | null } | null;
+}
+
 interface GithubWebhookBody {
     action?: string;
     pull_request?: GithubWebhookPullRequest;
-    repository?: {
-        owner?: { login?: string };
-        name?: string;
-    };
+    issue?: GithubWebhookIssue;
+    comment?: GithubWebhookComment;
+    repository?: GithubWebhookRepository;
 }
 
 /** GitHub webhooks + SSE inbox stream for the Work Hub (lives in mobile-shell so browser apps always load it). */
@@ -51,7 +80,11 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
 
+    @inject(QaapGithubAgentTriggerBridge) @optional()
+    protected readonly agentTrigger?: QaapGithubAgentTriggerBridge;
+
     configure(app: Application): void {
+        useQaapJsonBodyParser(app);
         app.post(`${QAAP_GITHUB_API_PATH}/webhook`, (req, res) => {
             void this.handleWebhook(req, res);
         });
@@ -66,15 +99,28 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
             res.status(401).json({ error: 'Invalid webhook signature.' });
             return;
         }
+        const event = req.header('x-github-event')?.trim() ?? '';
         const body = (req.body ?? {}) as GithubWebhookBody;
-        if (!body.pull_request || !body.repository?.owner?.login || !body.repository.name) {
-            res.status(202).json({ ok: true, ignored: true });
+        if (event === 'issue_comment') {
+            await this.handleIssueCommentWebhook(body, res);
             return;
         }
+        if (event === 'issues') {
+            await this.handleIssuesWebhook(body, res);
+            return;
+        }
+        if (body.pull_request && body.repository?.owner?.login && body.repository.name) {
+            await this.handlePullRequestWebhook(body, res);
+            return;
+        }
+        res.status(202).json({ ok: true, ignored: true });
+    }
+
+    protected async handlePullRequestWebhook(body: GithubWebhookBody, res: Response): Promise<void> {
         const action = body.action ?? 'unknown';
-        const owner = body.repository.owner.login;
-        const repo = body.repository.name;
-        const pull = body.pull_request;
+        const owner = body.repository!.owner!.login!;
+        const repo = body.repository!.name!;
+        const pull = body.pull_request!;
         const stored = this.sessions.getAnySession();
         let filesPreview: QaapGithubPullRequestSummary['filesPreview'] = [];
         if (stored && pull.state === 'open') {
@@ -105,20 +151,142 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
         res.status(202).json({ ok: true });
     }
 
-    protected verifyWebhookSignature(req: Request, secret: string): boolean {
-        const signature = req.header('x-hub-signature-256');
-        if (!signature?.startsWith('sha256=')) {
-            return false;
+    protected async handleIssueCommentWebhook(body: GithubWebhookBody, res: Response): Promise<void> {
+        const owner = body.repository?.owner?.login;
+        const repo = body.repository?.name;
+        const issue = body.issue;
+        const comment = body.comment;
+        if (!owner || !repo || !issue?.number || !comment) {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
         }
-        const payload = typeof req.body === 'string'
-            ? req.body
-            : JSON.stringify(req.body ?? {});
-        const expected = `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
+        if (body.action !== 'created') {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
+        }
+        if (isLikelyQaapAckComment(comment.body, comment.user?.login ?? undefined)) {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
+        }
+        if (!githubCommentTriggersAgent({
+            body: comment.body,
+            issueLabels: issue.labels,
+        })) {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
+        }
+        const prompt = stripQaapMentionFromPrompt(comment.body ?? '');
+        if (!prompt) {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
+        }
+        await this.dispatchAgentTrigger({
+            owner,
+            repo,
+            issueNumber: issue.number,
+            commentId: comment.id,
+            commentAuthor: comment.user?.login ?? undefined,
+            prompt,
+            htmlUrl: comment.html_url ?? issue.html_url,
+        }, res);
+    }
+
+    protected async handleIssuesWebhook(body: GithubWebhookBody, res: Response): Promise<void> {
+        const owner = body.repository?.owner?.login;
+        const repo = body.repository?.name;
+        const issue = body.issue;
+        if (!owner || !repo || !issue?.number) {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
+        }
+        if (body.action !== 'opened' && body.action !== 'labeled') {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
+        }
+        if (!githubCommentTriggersAgent({
+            body: issue.body,
+            issueLabels: issue.labels,
+        })) {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
+        }
+        const prompt = stripQaapMentionFromPrompt(issue.body ?? issue.title ?? '');
+        if (!prompt) {
+            res.status(202).json({ ok: true, ignored: true });
+            return;
+        }
+        await this.dispatchAgentTrigger({
+            owner,
+            repo,
+            issueNumber: issue.number,
+            prompt,
+            htmlUrl: issue.html_url,
+        }, res);
+    }
+
+    protected async dispatchAgentTrigger(
+        request: QaapGithubAgentTriggerRequest,
+        res: Response,
+    ): Promise<void> {
+        const session = this.sessions.getAnySession();
+        if (!this.agentTrigger) {
+            if (session) {
+                await this.postAckComment(request, session.accessToken, {
+                    ok: false,
+                    error: 'Qaap cloud workspace is not loaded on this server.',
+                });
+            }
+            res.status(503).json({ ok: false, error: 'Agent trigger bridge unavailable.' });
+            return;
+        }
+        const result = await this.agentTrigger.triggerFromGithubComment(request);
+        this.hub.publishAgentTriggered({
+            owner: request.owner,
+            repo: request.repo,
+            issueNumber: request.issueNumber,
+            conversationId: result.conversationId,
+            ok: result.ok,
+            error: result.error,
+        });
+        if (session) {
+            await this.postAckComment(request, session.accessToken, result);
+        }
+        res.status(result.ok ? 202 : 422).json(result);
+    }
+
+    protected async postAckComment(
+        request: QaapGithubAgentTriggerRequest,
+        accessToken: string,
+        result: { ok: boolean; conversationId?: string; workHubUrl?: string; error?: string },
+    ): Promise<void> {
+        const body = result.ok
+            ? [
+                'Qaap started a task on this thread.',
+                result.workHubUrl ? `[Open in Qaap](${result.workHubUrl})` : undefined,
+                result.conversationId ? `(conversation \`${result.conversationId}\`)` : undefined,
+            ].filter(Boolean).join(' ')
+            : result.error?.includes('not linked')
+                ? 'This repository is not linked to Qaap yet. Open Qaap, sign in with GitHub, and add this repository first.'
+                : `Qaap could not start a task: ${result.error ?? 'unknown error'}`;
         try {
-            return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+            await postGithubIssueComment(
+                accessToken,
+                request.owner,
+                request.repo,
+                request.issueNumber,
+                body,
+            );
         } catch {
-            return false;
+            /* ack failure must not fail the webhook */
         }
+    }
+
+    protected verifyWebhookSignature(req: Request, secret: string): boolean {
+        return verifyGithubWebhookSignature(
+            readGithubWebhookPayload(req),
+            secret,
+            req.header('x-hub-signature-256'),
+        );
     }
 
     protected handleInboxStream(req: Request, res: Response): void {

@@ -66,6 +66,8 @@ import {
 import { planConversationRewind } from '../common/qaap-agent-conversation-rewind';
 import type { QaapParallelRunVariantStats } from '../common/qaap-parallel-run';
 import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
+import type { QaapAgentGoalLoopState } from '../common/qaap-agent-goal-loop';
+import { markConversationTaskForRichPush } from '../common/qaap-agent-task-conversation-registry';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
@@ -104,6 +106,14 @@ export class QaapAgentConversationStore {
 
     @inject(QaapAgentTaskRunner)
     protected readonly taskRunner: QaapAgentTaskRunner;
+
+    protected readonly onTurnSettledEmitter = new Emitter<{
+        readonly conversationId: string;
+        readonly conv: QaapAgentConversation;
+        readonly userMessageId: string;
+    }>();
+    /** Fired after an agent turn settles — consumed by {@link QaapGoalLoopRunner}. */
+    readonly onTurnSettled = this.onTurnSettledEmitter.event;
 
     protected readonly conversations = new Map<string, QaapAgentConversation>();
     /** Reverse index: task id → conversation turn metadata so we can route output/completion. */
@@ -155,6 +165,16 @@ export class QaapAgentConversationStore {
             .map(toConversationSummary);
     }
 
+    /** Best-effort cwd for a GitHub repo from existing conversations. */
+    findCwdForGithubRepo(owner: string, repo: string): string | undefined {
+        for (const conv of this.conversations.values()) {
+            if (this.cwdMatchesGithubRepo(conv.cwd, owner, repo)) {
+                return conv.cwd;
+            }
+        }
+        return undefined;
+    }
+
     listAllGroupedByCwd(): QaapAgentConversationCwdGroup[] {
         const buckets = new Map<string, QaapAgentConversation[]>();
         for (const conv of this.conversations.values()) {
@@ -183,11 +203,86 @@ export class QaapAgentConversationStore {
         return this.conversations.get(id);
     }
 
+    /** Persist backend goal-loop state and notify SSE/WebSocket subscribers. */
+    patchGoalLoop(id: string, goalLoop: QaapAgentGoalLoopState | undefined): QaapAgentConversation {
+        const conv = this.conversations.get(id);
+        if (!conv) {
+            throw new Error('Conversation not found.');
+        }
+        const next: QaapAgentConversation = {
+            ...conv,
+            goalLoop,
+            updatedAt: Date.now(),
+        };
+        this.conversations.set(id, next);
+        if (goalLoop) {
+            this.fire({ type: 'goal_loop', conversationId: id, goalLoop });
+        }
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        void this.persist();
+        return next;
+    }
+
+    /** Record GitHub evidence comment idempotency markers on a conversation. */
+    patchGithubEvidencePosted(
+        id: string,
+        patch: { readonly taskId?: string; readonly goalLoop?: boolean },
+    ): QaapAgentConversation {
+        const conv = this.conversations.get(id);
+        if (!conv) {
+            throw new Error('Conversation not found.');
+        }
+        let githubEvidence = conv.githubEvidence;
+        let githubEvidencePostedTaskIds = conv.githubEvidencePostedTaskIds;
+        if (patch.taskId) {
+            if (githubEvidence) {
+                const posted = githubEvidence.postedTaskIds ?? [];
+                if (!posted.includes(patch.taskId)) {
+                    githubEvidence = {
+                        ...githubEvidence,
+                        postedTaskIds: [...posted, patch.taskId],
+                    };
+                }
+            } else {
+                const posted = githubEvidencePostedTaskIds ?? [];
+                if (!posted.includes(patch.taskId)) {
+                    githubEvidencePostedTaskIds = [...posted, patch.taskId];
+                }
+            }
+        }
+        if (patch.goalLoop && githubEvidence && !githubEvidence.goalLoopPosted) {
+            githubEvidence = { ...githubEvidence, goalLoopPosted: true };
+        }
+        const next: QaapAgentConversation = {
+            ...conv,
+            ...(githubEvidence ? { githubEvidence } : {}),
+            ...(githubEvidencePostedTaskIds ? { githubEvidencePostedTaskIds } : {}),
+            updatedAt: Date.now(),
+        };
+        this.conversations.set(id, next);
+        void this.persist();
+        return next;
+    }
+
     /** Running turn task id for a conversation, if any. */
     getActiveTaskIdForConversation(conversationId: string): string | undefined {
         for (const [taskId, ref] of this.taskToConversation) {
             if (ref.conversationId === conversationId) {
                 return taskId;
+            }
+        }
+        return undefined;
+    }
+
+    /** Resolve a running or recent turn task back to its conversation thread. */
+    findConversationIdForTask(taskId: string): string | undefined {
+        const active = this.taskToConversation.get(taskId);
+        if (active) {
+            return active.conversationId;
+        }
+        for (const conv of this.conversations.values()) {
+            if (conv.messages.some(message => message.taskId === taskId)) {
+                return conv.id;
             }
         }
         return undefined;
@@ -223,6 +318,7 @@ export class QaapAgentConversationStore {
             ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
             ...(request.approvalPolicyId ? { approvalPolicyId: request.approvalPolicyId } : {}),
             ...(request.toolApprovalRules ? { toolApprovalRules: request.toolApprovalRules } : {}),
+            ...(request.githubEvidence ? { githubEvidence: request.githubEvidence } : {}),
             ...(() => {
                 const agentModel = request.agentModel ?? request.qaiqModel;
                 return agentModel && agentSupportsModelPicker(agentId)
@@ -568,6 +664,7 @@ export class QaapAgentConversationStore {
             if (task.state === 'running') {
                 return; // only react when the turn settles
             }
+            markConversationTaskForRichPush(task.id);
             this.taskToConversation.delete(task.id);
             void this.applyTaskOutcome(ref.conversationId, ref.userMessageId, ref.agentMessageId, task, ref.startSha);
             return;
@@ -689,6 +786,10 @@ export class QaapAgentConversationStore {
         } catch {
             this.teamSynthesisTriggeredForLeader.delete(leaderTaskId);
         }
+    }
+
+    protected emitTurnSettled(conversationId: string, conv: QaapAgentConversation, userMessageId: string): void {
+        this.onTurnSettledEmitter.fire({ conversationId, conv, userMessageId });
     }
 
     protected finishLeaderTurnAndMaybeSynthesize(
@@ -848,6 +949,7 @@ export class QaapAgentConversationStore {
             const next: QaapAgentConversation = { ...finalized, status: 'idle', updatedAt: Date.now() };
             this.publishFinalizedAgentMessage(conversationId, next, agentMessageId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, next);
+            void this.emitTurnSettled(conversationId, next, userMessageId);
             return;
         }
         const detail = await this.taskRunner.detail(task.id);
@@ -883,6 +985,7 @@ export class QaapAgentConversationStore {
             const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
             this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, finalized);
+            void this.emitTurnSettled(conversationId, finalized, userMessageId);
             return;
         }
         let withReply: QaapAgentConversation;
@@ -938,6 +1041,7 @@ export class QaapAgentConversationStore {
         this.modelFallbackTriedByUserMessage.delete(userMessageId);
         this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, withReply);
         this.maybeAutoContinueIncompleteTurn(conversationId, withReply, userMessageId);
+        void this.emitTurnSettled(conversationId, withReply, userMessageId);
     }
 
     /**

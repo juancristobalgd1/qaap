@@ -161,6 +161,12 @@ export class MobileProjectsTranscriptMessagesToolUi {
             }
             return this.createTranscriptToolWindow(segment, options);
         }
+        if (segment.type === 'system') {
+            const block = document.createElement('div');
+            block.className = `theia-mobile-agent-transcript-system-line theia-mod-${segment.kind}`;
+            block.textContent = segment.detail ?? '';
+            return block;
+        }
         const block = document.createElement('div');
         block.className = 'theia-mobile-agent-transcript-content';
         this.renderTranscriptRichContent(block, segment.content ?? '', {

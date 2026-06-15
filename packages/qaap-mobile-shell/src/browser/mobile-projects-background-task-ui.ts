@@ -11,6 +11,7 @@ import {
     conversationToSummary,
     createConversation,
     getConversation,
+    startGoalLoop,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
@@ -97,6 +98,8 @@ export class MobileProjectsBackgroundTaskUi {
             /** Run the task in a fresh isolated git worktree instead of the project's working tree. */
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            /** When true, start a backend goal loop instead of a single agent turn. */
+            runUntilDone?: boolean;
         } = {},
     ): Promise<void> {
         const cwd = await this.ensureInlineComposerCwd(project);
@@ -116,7 +119,9 @@ export class MobileProjectsBackgroundTaskUi {
             }
             this.applyTaskStartedToProject(cwd, draft, summary.id);
             MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/taskStarted', 'Task started'),
+                options.runUntilDone
+                    ? nls.localize('qaap/mobileProjects/goalLoopStarted', 'Running until done')
+                    : nls.localize('qaap/mobileProjects/taskStarted', 'Task started'),
                 { kind: 'success', duration: 1400 }
             );
         } catch (error) {
@@ -143,6 +148,7 @@ export class MobileProjectsBackgroundTaskUi {
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            runUntilDone?: boolean;
         },
     ): Promise<QaapAgentConversationSummaryDTO> {
         const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);
@@ -164,11 +170,10 @@ export class MobileProjectsBackgroundTaskUi {
             text: draft,
             variables: options.variables,
         });
-        const conversation = await createConversation({
+        const sharedCreate = {
             cwd,
             agent,
             title: draft,
-            message,
             interactionModeId: options.modeId,
             approvalPolicyId,
             ...(useWorktree ? { worktree: true } : {}),
@@ -179,6 +184,24 @@ export class MobileProjectsBackgroundTaskUi {
                 : options.autoApprove === true
                     ? { autoApprove: true }
                     : {}),
+        };
+        if (options.runUntilDone) {
+            if (options.autoApprove === false) {
+                throw new Error('Run until done requires auto-approve (YOLO).');
+            }
+            const conversation = await createConversation(sharedCreate);
+            await startGoalLoop(conversation.id, {
+                goal: draft.trim(),
+                initialPrompt: message,
+            });
+            const full = await getConversation(conversation.id);
+            const summary = conversationToSummary(full);
+            this.host.conversations?.recordSnapshot(summary);
+            return summary;
+        }
+        const conversation = await createConversation({
+            ...sharedCreate,
+            message,
         });
         const summary = conversationToSummary(conversation);
         this.host.conversations?.recordSnapshot(summary);

@@ -26,7 +26,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
             if (segment.type === 'thinking' && segment.content.trim()) {
                 if (includeThinkingSteps) {
                     items.push({
-                        label: nls.localize('qaap/mobileProjects/transcriptActivityPlanning', 'Planning next steps'),
+                        label: nls.localize('qaap/mobileProjects/transcriptActivityPlanning', 'Planning next moves'),
                         state: 'thinking',
                     });
                 }
@@ -99,7 +99,9 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         for (const segment of segments) {
             const texts = segment.type === 'tool'
                 ? [segment.args, segment.result ?? '']
-                : [segment.content];
+                : segment.type === 'system'
+                    ? []
+                    : [segment.content];
             for (const text of texts) {
                 const parsed = parseDiffStatsFromText(this.contentUi.cleanTranscriptDisplayText(text));
                 if (parsed) {

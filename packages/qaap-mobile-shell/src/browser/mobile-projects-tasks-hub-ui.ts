@@ -36,6 +36,8 @@ export interface MobileProjectsTasksHubHost {
     titleAttentionEl: HTMLElement;
 
     shouldUseAgentsHubLanding(): boolean;
+    shouldUseMissionControlLanding(): boolean;
+    missionControlUi: import('./mobile-projects-mission-control-ui').MobileProjectsMissionControlUi;
     isTasksHubView(): boolean;
     renderAgentsHubExecutionShell(): void;
     teardownAgentsHubExecutionShell(): void;
@@ -55,13 +57,9 @@ export interface MobileProjectsTasksHubHost {
         parentIds?: ReadonlySet<string>,
     ): HTMLElement;
     openWorkHubSessionsSidebar(): void;
-    collectChatHubGroups(
-        projects: MobileProjectEntry[],
-    ): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }>;
     collectTasksInboxGroups(
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }>;
-    createChatEmptyState(): HTMLElement;
     createInboxProjectGroup(project: MobileProjectEntry, items: MobileWorkHubInboxItem[]): HTMLElement;
     renderList(): void;
     getFilteredTeamHubState(): {
@@ -226,7 +224,29 @@ export class MobileProjectsTasksHubUi {
     }
 
     updateTasksAttentionChrome(): void {
-        if (!this.host.homeMode || !this.host.hubQueryUi.isTasksHubView() || this.host.tasksHubSurface === 'chat' || this.host.shouldUseAgentsHubLanding()) {
+        if (!this.host.homeMode || !this.host.hubQueryUi.isTasksHubView()) {
+            this.host.titleAttentionEl.hidden = true;
+            this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
+            return;
+        }
+        if (this.host.shouldUseMissionControlLanding()) {
+            const needsYou = this.host.missionControlUi.countByLane('needs-you');
+            if (needsYou <= 0) {
+                this.host.titleAttentionEl.hidden = true;
+                this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
+                return;
+            }
+            this.host.titleAttentionEl.hidden = false;
+            this.host.titleAttentionEl.setAttribute('aria-hidden', 'false');
+            this.host.titleAttentionEl.textContent = String(needsYou);
+            this.host.titleAttentionEl.title = nls.localize(
+                'qaap/workMissionControl/needsYouTitle',
+                '{0} need your attention',
+                String(needsYou),
+            );
+            return;
+        }
+        if (this.host.shouldUseAgentsHubLanding()) {
             this.host.titleAttentionEl.hidden = true;
             this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
             return;
@@ -328,6 +348,16 @@ export class MobileProjectsTasksHubUi {
     }
 
     renderTasksHubView(projects: MobileProjectEntry[]): void {
+        if (this.host.shouldUseMissionControlLanding()) {
+            void projects;
+            if (this.host.agentsHubShellActive) {
+                this.host.teardownAgentsHubExecutionShell();
+            }
+            this.host.missionControlUi.renderFullView();
+            this.updateTasksAttentionChrome();
+            this.host.renderSubtitle();
+            return;
+        }
         if (this.host.shouldUseAgentsHubLanding()) {
             void projects;
             this.host.renderAgentsHubExecutionShell();
@@ -338,41 +368,6 @@ export class MobileProjectsTasksHubUi {
         }
         const root = document.createElement('div');
         root.className = 'theia-mobile-tasks-hub-root';
-        if (this.host.tasksHubSurface === 'chat') {
-            const groups = this.host.collectChatHubGroups(projects);
-            if (groups.length === 0) {
-                root.append(this.host.createChatEmptyState());
-            } else {
-                const host = document.createElement('div');
-                host.className = 'theia-mobile-projects-chats-inbox theia-mod-local-chat';
-                for (const group of groups) {
-                    const items: MobileWorkHubInboxItem[] = group.summaries.map(summary => ({
-                        kind: 'conversation',
-                        project: group.project,
-                        summary,
-                        sortAt: summary.updatedAt,
-                        priority: 0,
-                    }));
-                    host.append(this.host.createInboxProjectGroup(group.project, items));
-                }
-                root.append(host);
-            }
-            this.host.hubIncrementalUi.rememberRenderedStructure('chat-inbox', groups.map(group => ({
-                project: group.project,
-                items: group.summaries.map(summary => ({
-                    kind: 'conversation' as const,
-                    project: group.project,
-                    summary,
-                    sortAt: summary.updatedAt,
-                    priority: 0,
-                })),
-            })));
-            this.host.scroll.append(root);
-            this.updateTasksAttentionChrome();
-            this.host.renderSubtitle();
-            return;
-        }
-
         const groups = this.host.collectTasksInboxGroups(projects);
         const teamRendered = this.appendTasksHubTeamSection(root);
 

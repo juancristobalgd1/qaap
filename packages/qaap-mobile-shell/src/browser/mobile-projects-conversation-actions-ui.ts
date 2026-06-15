@@ -10,12 +10,17 @@ import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { ChatRequestModel, ChatService, ChatSession } from '@theia/ai-chat';
 import {
     cancelConversation,
+    cancelGoalLoop,
     conversationToSummary,
     deleteConversation,
     forkConversation,
+    getConversation,
     isConversationAutoApproveEnabled,
+    isGoalLoopBlocked,
+    isGoalLoopPhaseActive,
     renameConversation,
     retryConversation,
+    startGoalLoop,
     updateConversation,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
@@ -232,7 +237,12 @@ export class MobileProjectsConversationActionsUi {
                     await this.host.chatService?.cancelRequest(session.id, request.id);
                 }
             } else {
-                await cancelConversation(summary.id);
+                const live = this.host.conversations?.findSummaryById(summary.id) ?? summary;
+                if (isGoalLoopPhaseActive(live.goalLoopPhase)) {
+                    await cancelGoalLoop(summary.id);
+                } else {
+                    await cancelConversation(summary.id);
+                }
             }
         } catch (error) {
             this.host.messageService?.error(nls.localize(
@@ -248,6 +258,11 @@ export class MobileProjectsConversationActionsUi {
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        const live = this.host.conversations?.findSummaryById(summary.id) ?? summary;
+        if (isGoalLoopBlocked(live.goalLoopPhase)) {
+            await this.onRetryGoalLoop(project, summary);
+            return;
+        }
         try {
             const retried = await retryConversation(summary.id);
             this.host.conversations?.recordSnapshot(conversationToSummary(retried));
@@ -268,6 +283,41 @@ export class MobileProjectsConversationActionsUi {
                 'qaap/mobileProjects/retryTaskFailed',
                 'Could not retry: {0}',
                 error instanceof Error ? error.message : String(error)
+            ));
+        }
+    }
+
+    async onRetryGoalLoop(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        this.host.cardMenuUi.closeCardMenu();
+        try {
+            const full = await getConversation(summary.id);
+            const goal = full.goalLoop?.goal?.trim() || full.title.trim();
+            if (!goal) {
+                throw new Error('Goal loop has no goal to retry.');
+            }
+            await startGoalLoop(summary.id, { goal, initialPrompt: goal });
+            const refreshed = await getConversation(summary.id);
+            const next = conversationToSummary(refreshed);
+            this.host.conversations?.recordSnapshot(next);
+            this.host.applyTaskStartedToProject(refreshed.cwd, goal, refreshed.id);
+            if (this.host.isWatchingOpenTranscript(summary.id)) {
+                const chatHost = this.host.resolveActiveTranscriptChatHost();
+                if (chatHost) {
+                    this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, next, chatHost);
+                }
+            }
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/goalLoopRetried', 'Goal loop restarted'),
+                { kind: 'success', duration: 1400 },
+            );
+        } catch (error) {
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/goalLoopRetryFailed',
+                'Could not restart goal loop: {0}',
+                error instanceof Error ? error.message : String(error),
             ));
         }
     }

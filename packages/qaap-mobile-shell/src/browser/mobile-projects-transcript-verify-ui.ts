@@ -6,6 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationSummaryDTO,
+    isGoalLoopPhaseActive,
     postConversationMessage,
 } from '../common/qaap-agent-conversation-client';
 import {
@@ -483,7 +484,8 @@ export class MobileProjectsTranscriptVerifyUi {
         if (prev === 'streaming' && status !== 'streaming'
             && !this.host.verifyRunning
             && this.host.transcriptOpenSummaryId === summary.id
-            && this.isAutoVerifyEnabled(summary.cwd)) {
+            && this.isAutoVerifyEnabled(summary.cwd)
+            && !isGoalLoopPhaseActive(summary.goalLoopPhase)) {
             void this.runVerifyChecks(project, summary, true);
         }
     }

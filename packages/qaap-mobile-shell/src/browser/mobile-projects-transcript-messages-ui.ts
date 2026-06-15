@@ -168,11 +168,74 @@ export class MobileProjectsTranscriptMessagesUi {
      * diff stats can be extracted — the call itself is still proof the agent modified files here.
      */
     hasComposerFileChangeToolCalls(conv: QaapAgentConversationDTO | undefined): boolean {
-        return this.resolveComposerConversationSegments(conv, { allTurns: true }).some(segment =>
-            segment.type === 'tool'
-            // 'todowrite' / 'todo_write' track the agent's task list, not workspace files.
-            && !segment.name.toLowerCase().includes('todo')
-            && !!this.resolversUi.resolveTranscriptFileChangeKind(segment.name));
+        return this.countComposerFileChangeToolCalls(conv) > 0;
+    }
+
+    countComposerFileChangeToolCalls(conv: QaapAgentConversationDTO | undefined): number {
+        let count = 0;
+        for (const segment of this.resolveComposerConversationSegments(conv, { allTurns: true })) {
+            if (segment.type !== 'tool' || segment.name.toLowerCase().includes('todo')) {
+                continue;
+            }
+            if (this.isComposerFileChangeToolSegment(segment.name)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** Compact signal for streaming tool writes — drives immediate git refresh when a file edit lands. */
+    buildComposerFileChangeToolSignal(conv: QaapAgentConversationDTO | undefined): string {
+        if (!conv) {
+            return '';
+        }
+        const parts: string[] = [];
+        for (const segment of this.resolveComposerConversationSegments(conv, { allTurns: true })) {
+            if (segment.type !== 'tool' || segment.name.toLowerCase().includes('todo')) {
+                continue;
+            }
+            if (!this.isComposerFileChangeToolSegment(segment.name)) {
+                continue;
+            }
+            parts.push(`${segment.name}|${segment.finished ? 1 : 0}|${(segment.result ?? '').length}`);
+        }
+        return parts.join(';');
+    }
+
+    resolveComposerChangedFilesFromToolCalls(
+        conv: QaapAgentConversationDTO | undefined,
+    ): Array<{ readonly path: string; readonly kind: 'edited' | 'created'; readonly added?: number; readonly removed?: number }> {
+        if (!conv) {
+            return [];
+        }
+        const byPath = new Map<string, { readonly path: string; readonly kind: 'edited' | 'created' }>();
+        for (const segment of this.resolveComposerConversationSegments(conv, { allTurns: true })) {
+            if (segment.type !== 'tool' || segment.name.toLowerCase().includes('todo')) {
+                continue;
+            }
+            const kind = this.resolveComposerFileChangeToolKind(segment.name);
+            if (!kind) {
+                continue;
+            }
+            const path = this.resolversUi.extractTranscriptToolPath(segment.args);
+            if (!path) {
+                continue;
+            }
+            byPath.set(path, {
+                path,
+                kind: kind === 'created' ? 'created' : 'edited',
+            });
+        }
+        return [...byPath.values()];
+    }
+
+    protected isComposerFileChangeToolSegment(toolName: string): boolean {
+        return !!this.resolveComposerFileChangeToolKind(toolName);
+    }
+
+    protected resolveComposerFileChangeToolKind(toolName: string): 'edited' | 'created' | undefined {
+        return this.resolversUi.resolveTranscriptFileChangeKind(toolName)
+            ?? (this.resolversUi.resolveTranscriptToolKind(toolName) === 'editing' ? 'edited' : undefined);
     }
 
     /**

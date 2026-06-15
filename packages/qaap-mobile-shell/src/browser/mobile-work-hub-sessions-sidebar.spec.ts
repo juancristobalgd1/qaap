@@ -67,7 +67,6 @@ describe('mobile-work-hub-sessions-sidebar', () => {
                 renderCalls++;
                 host.append(document.createElement('div'));
             },
-            onNewChat: () => undefined,
             onClose: () => undefined,
         });
         document.body.append(sidebar.node);
@@ -89,7 +88,6 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             },
             shouldSkipSessionListRefresh: () => renderCalls > 0,
             rememberSessionListFingerprint: () => undefined,
-            onNewChat: () => undefined,
             onClose: () => undefined,
         });
         document.body.append(sidebar.node);
@@ -108,7 +106,6 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             },
             shouldSkipSessionListRefresh: () => skipEnabled,
             rememberSessionListFingerprint: () => undefined,
-            onNewChat: () => undefined,
             onClose: () => undefined,
         });
         document.body.append(sidebar.node);

@@ -4,11 +4,21 @@
 // *****************************************************************************
 
 import { type ClaudeStreamUsageLike, type QaapAgentContextUsage, usageFromClaudeStream } from './qaap-agent-context-usage';
+import {
+    isQaiqContextSummarizedSystemSubtype,
+    isTranscriptContextSummarizedUserText,
+    type QaapTranscriptSystemSegmentKind,
+} from './qaap-agent-transcript-segments';
 
 /** One renderable block in a QAIQ / Claude Code stream-json transcript. */
 export type QaapAgentMessageSegment =
     | { readonly type: 'text'; readonly content: string }
     | { readonly type: 'thinking'; readonly content: string }
+    | {
+        readonly type: 'system';
+        readonly kind: QaapTranscriptSystemSegmentKind;
+        readonly detail?: string;
+    }
     | {
         readonly type: 'tool';
         readonly toolUseId: string;
@@ -70,6 +80,8 @@ export class QaapQaiqStreamAccumulator {
 
     protected buffer = '';
     protected segments: QaapAgentMessageSegment[] = [];
+    /** Cursor-style system lines (context compaction) emitted outside transcript blocks. */
+    protected readonly systemSegments: Array<Extract<QaapAgentMessageSegment, { type: 'system' }>> = [];
     /** Ordered assistant content blocks accumulated from timestamped snapshots. */
     protected transcriptBlocks: ContentBlock[] = [];
     protected readonly toolResults = new Map<string, ToolResultState>();
@@ -132,6 +144,10 @@ export class QaapQaiqStreamAccumulator {
         }
         const type = envelope.type;
         if (type === 'system') {
+            this.handleSystemEnvelope(envelope);
+            return;
+        }
+        if (type === 'user' && this.handleContextSummarizedUserEnvelope(envelope)) {
             return;
         }
         if (type === 'stream_event') {
@@ -162,6 +178,71 @@ export class QaapQaiqStreamAccumulator {
         if (parsed) {
             this.turnUsage = parsed;
         }
+    }
+
+    protected handleSystemEnvelope(envelope: StreamMessageEnvelope): void {
+        const subtype = typeof (envelope as { subtype?: unknown }).subtype === 'string'
+            ? (envelope as { subtype: string }).subtype
+            : undefined;
+        if (!isQaiqContextSummarizedSystemSubtype(subtype)) {
+            return;
+        }
+        const detail = typeof (envelope as { summary?: unknown }).summary === 'string'
+            ? (envelope as { summary: string }).summary
+            : typeof (envelope as { message?: { readonly content?: unknown } }).message?.content === 'string'
+                ? (envelope as { message: { content: string } }).message.content
+                : undefined;
+        this.pushSystemSegment('context_summarized', detail);
+    }
+
+    protected handleContextSummarizedUserEnvelope(envelope: StreamMessageEnvelope): boolean {
+        const raw = envelope.message?.content;
+        const blocks = typeof raw === 'string' ? [{ text: raw }] : raw;
+        if (!Array.isArray(blocks)) {
+            return false;
+        }
+        for (const block of blocks) {
+            const text = typeof block === 'object' && block !== null && typeof block.text === 'string'
+                ? block.text
+                : '';
+            if (isTranscriptContextSummarizedUserText(text)) {
+                this.pushSystemSegment('context_summarized', text.trim());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected pushSystemSegment(kind: QaapTranscriptSystemSegmentKind, detail?: string): void {
+        const normalizedDetail = detail?.replace(/\s+/g, ' ').trim();
+        const last = this.systemSegments[this.systemSegments.length - 1];
+        if (last?.kind === kind && (last.detail ?? '') === (normalizedDetail ?? '')) {
+            return;
+        }
+        this.systemSegments.push({
+            type: 'system',
+            kind,
+            ...(normalizedDetail ? { detail: normalizedDetail } : {}),
+        });
+        this.rebuildSegments();
+    }
+
+    protected mergeSystemSegments(segments: QaapAgentMessageSegment[]): QaapAgentMessageSegment[] {
+        if (this.systemSegments.length === 0) {
+            return segments;
+        }
+        if (segments.length === 0) {
+            return [...this.systemSegments];
+        }
+        let insertAt = 0;
+        while (insertAt < segments.length && segments[insertAt]?.type === 'thinking') {
+            insertAt++;
+        }
+        return [
+            ...segments.slice(0, insertAt),
+            ...this.systemSegments,
+            ...segments.slice(insertAt),
+        ];
     }
 
     protected handleStreamEvent(envelope: StreamMessageEnvelope): void {
@@ -475,7 +556,7 @@ export class QaapQaiqStreamAccumulator {
             segments.push(this.buildToolSegment(live.id, live.name, live.args.trim() || '{}'));
         }
 
-        this.segments = dedupeAgentMessageTextSegments(segments);
+        this.segments = this.mergeSystemSegments(dedupeAgentMessageTextSegments(segments));
         this.toolsById.clear();
         for (let index = 0; index < this.segments.length; index++) {
             const segment = this.segments[index];
@@ -660,7 +741,8 @@ export function isQaiqStreamSystemInitEnvelope(value: unknown): boolean {
     if (typeof value !== 'object' || value === null) {
         return false;
     }
-    return (value as StreamMessageEnvelope).type === 'system';
+    const envelope = value as StreamMessageEnvelope & { subtype?: string };
+    return envelope.type === 'system' && envelope.subtype === 'init';
 }
 
 /** NDJSON envelopes that carry session metadata, not user-visible assistant text. */

@@ -55,6 +55,9 @@ function segmentText(segment: QaapAgentMessageSegmentDTO): string {
     if (segment.type === 'tool') {
         return `${segment.args}\n${segment.result ?? ''}`;
     }
+    if (segment.type === 'system') {
+        return segment.detail ?? '';
+    }
     return segment.content;
 }
 
