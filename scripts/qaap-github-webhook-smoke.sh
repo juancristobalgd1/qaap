@@ -9,7 +9,7 @@ cd "$ROOT"
 read_env() {
     local key="$1"
     if [[ -f .env ]]; then
-        grep -E "^${key}=" .env | tail -1 | cut -d= -f2- | tr -d \"'"'"' ' | tr -d '\r' || true
+        grep -E "^${key}=" .env | tail -1 | cut -d= -f2- | sed 's/[[:space:]"'\''\r]//g'
     fi
 }
 
@@ -31,18 +31,19 @@ fail() {
     exit 1
 }
 
-PAYLOAD="$(node -e "
-console.log(JSON.stringify({
-  action: 'created',
-  comment: {
-    id: Number(process.env.COMMENT_ID),
-    body: '@qaap smoke test — ignore',
-    html_url: 'https://github.com/${OWNER}/${REPO}/issues/${ISSUE}#issuecomment-smoke',
-    user: { login: 'qaap-smoke-bot' },
-  },
-  issue: { number: Number(process.env.ISSUE) },
-  repository: { owner: { login: process.env.OWNER }, name: process.env.REPO },
-}));
+PAYLOAD="$(python3 -c "
+import json, os
+print(json.dumps({
+    'action': 'created',
+    'comment': {
+        'id': int(os.environ['COMMENT_ID']),
+        'body': '@qaap smoke test — ignore',
+        'html_url': f\"https://github.com/{os.environ['OWNER']}/{os.environ['REPO']}/issues/{os.environ['ISSUE']}#issuecomment-smoke\",
+        'user': {'login': 'qaap-smoke-bot'},
+    },
+    'issue': {'number': int(os.environ['ISSUE'])},
+    'repository': {'owner': {'login': os.environ['OWNER']}, 'name': os.environ['REPO']},
+}))
 " COMMENT_ID="$COMMENT_ID" ISSUE="$ISSUE" OWNER="$OWNER" REPO="$REPO")"
 
 CURL_HEADERS=(-H "Content-Type: application/json" -H "X-GitHub-Event: issue_comment")
@@ -50,7 +51,7 @@ CURL_HEADERS=(-H "Content-Type: application/json" -H "X-GitHub-Event: issue_comm
 if [[ -n "$SECRET" ]]; then
     SIG="sha256=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')"
     CURL_HEADERS+=(-H "X-Hub-Signature-256: $SIG")
-    echo "qaap-github-webhook-smoke: POST $WEBHOOK_URL (signed)"
+    echo "qaap-github-webhook-smoke: POST $WEBHOOK_URL signed"
 else
     echo "qaap-github-webhook-smoke: warning — QAAP_GITHUB_WEBHOOK_SECRET unset; sending unsigned payload" >&2
     echo "qaap-github-webhook-smoke: POST $WEBHOOK_URL"
