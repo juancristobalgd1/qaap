@@ -175,6 +175,9 @@ export class MobileShellWorkHubBootstrapController {
     /** Close restored IDE editor tabs so the Work Hub surface can take the main area after reload. */
     async collapseIdeMainAreaForWorkHub(): Promise<void> {
         const widgets = [...toArray(this.shell.mainPanel.widgets())];
+        if (widgets.length === 0) {
+            return;
+        }
         for (const widget of widgets) {
             await this.shell.closeWidget(widget.id, { save: false });
         }
@@ -195,7 +198,6 @@ export class MobileShellWorkHubBootstrapController {
                 return;
             }
             document.body.classList.remove('theia-mobile-mod-landing');
-            this.host.refreshProjectBootstrapFromWorkspace();
             const existingPanel = this.host.getProjectsPanel();
             if (existingPanel && !existingPanel.isHomeMode()) {
                 existingPanel.hide();
@@ -218,8 +220,26 @@ export class MobileShellWorkHubBootstrapController {
                 this.host.disposeProjectsPanelForDesktopIde();
                 return;
             }
-            this.host.ensureDesktopWorkHubSessionsSidebarOpen();
+            await this.host.releaseMobileWorkHubBootGuardWhenReady();
             markPreferAgentsSurface();
+            void this.finishAgentsSurfaceBootstrap(epoch, panel);
+        } finally {
+            if (epoch === this.sessionState.agentsBootstrapEpoch) {
+                this.sessionState.agentsBootstrapStarted = false;
+            }
+        }
+    }
+
+    /** Non-blocking chrome refresh after the composer is visible (TTI path). */
+    protected finishAgentsSurfaceBootstrap(epoch: number, panel: MobileProjectsPanel): void {
+        void (async () => {
+            if (!this.shouldContinueAgentsBootstrap(epoch)) {
+                panel.hide();
+                this.host.disposeProjectsPanelForDesktopIde();
+                return;
+            }
+            this.host.refreshProjectBootstrapFromWorkspace();
+            this.host.ensureDesktopWorkHubSessionsSidebarOpen();
             await this.host.collapseMobileSideSheets();
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 panel.hide();
@@ -229,12 +249,7 @@ export class MobileShellWorkHubBootstrapController {
             this.host.syncMobileHubPrimaryBottomChrome();
             this.host.refreshBottomBar();
             this.host.refreshWorkbenchTopBar();
-            await this.host.releaseMobileWorkHubBootGuardWhenReady();
-        } finally {
-            if (epoch === this.sessionState.agentsBootstrapEpoch) {
-                this.sessionState.agentsBootstrapStarted = false;
-            }
-        }
+        })();
     }
 
     /**

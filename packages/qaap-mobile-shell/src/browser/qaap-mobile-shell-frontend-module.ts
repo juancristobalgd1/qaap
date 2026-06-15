@@ -77,12 +77,15 @@ import { QaapQaiqBashToolRenderer } from './qaap-qaiq-bash-tool-renderer';
 import { QaapQaiqGenericToolRenderer } from './qaap-qaiq-generic-tool-renderer';
 import { QaapMarkdownPartRenderer } from './qaap-markdown-part-renderer';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
+import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
+import { QaapTerminalFrontendContribution } from './qaap-terminal-frontend-contribution';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapDiffReviewContribution } from './qaap-diff-review-contribution';
 import { QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
 import { QaapPushNotificationContribution } from './qaap-push-notification-contribution';
 import { QaapAgentCompletionContribution } from './qaap-agent-completion-contribution';
+import { QaapAgentDevPreviewAutopilotContribution } from './qaap-agent-dev-preview-autopilot-contribution';
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapMobileAppPreferenceContribution } from './qaap-mobile-app-preferences';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
@@ -139,6 +142,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(ShellLayoutTransformer).toService(QaapShellLayoutRestoreContribution);
     bind(QaapDesktopTerminalLayoutContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapDesktopTerminalLayoutContribution);
+    bind(QaapTerminalFrontendContribution).toSelf().inSingletonScope();
+    rebind(TerminalFrontendContribution).toService(QaapTerminalFrontendContribution);
     bind(MobileOnboardingTutorialContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileOnboardingTutorialContribution);
     bind(CommandContribution).toService(MobileOnboardingTutorialContribution);
@@ -236,6 +241,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapAgentCompletionContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentCompletionContribution);
+    bind(QaapAgentDevPreviewAutopilotContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapAgentDevPreviewAutopilotContribution);
 
     bind(QaapMobileAppTesterContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapMobileAppTesterContribution);

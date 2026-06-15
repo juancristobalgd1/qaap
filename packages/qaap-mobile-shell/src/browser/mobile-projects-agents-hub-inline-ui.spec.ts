@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from './mobile-projects-types';
 import {
     MobileProjectsAgentsHubInlineUi,
     type MobileProjectsAgentsHubInlineHost,
@@ -161,5 +162,113 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         ui.refreshWorkHubConversationChrome();
         expect(scheduleCalls).to.equal(1);
         expect(refreshCalls).to.equal(0);
+    });
+
+    it('openAgentsHubInlineTranscript mounts execution shell instead of rebuilding hub list', async () => {
+        let renderListCalls = 0;
+        const project = {
+            id: 'proj-1',
+            name: 'demo',
+            status: 'working',
+            isCurrent: true,
+        } as MobileProjectEntry;
+        const host = createHost({
+            projects: [project],
+            agentsHubSelectedProjectId: project.id,
+            projectsService: {
+                getProjectCwd: () => '/tmp/demo',
+            } as unknown as MobileProjectsAgentsHubInlineHost['projectsService'],
+            renderList: () => { renderListCalls++; },
+            executionSurfaceTabsUi: {
+                setExecutionSurfaceTab: () => undefined,
+                showOnlyExecutionSurfaceTab: () => undefined,
+                mountTranscriptSurfaceTab: () => undefined,
+                buildTranscriptTabStrip: () => document.createElement('div'),
+                refreshExecutionSurfaceTabStripState: () => undefined,
+                syncExecutionSurfaceChrome: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
+            transcriptComposerUi: {
+                refreshTranscriptComposerAgents: async () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
+            transcriptStickyComposerUi: {
+                flushTranscriptComposerDraft: () => undefined,
+                flushTranscriptComposerPrefs: async () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
+            transcriptLiveUi: {
+                scheduleTranscriptConversationRefresh: () => undefined,
+                refreshOpenTranscriptConversation: async () => undefined,
+                stopTranscriptLiveWatch: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptMessagesUi: {
+                renderTranscriptMessages: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptMessagesUi'],
+            stickyComposerRenderUi: {
+                renderStickyComposer: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['stickyComposerRenderUi'],
+            transcriptSheetUi: {
+                closeTranscriptSheet: () => undefined,
+                summaryToTranscriptPlaceholder: (summary: QaapAgentConversationSummaryDTO) => ({
+                    id: summary.id,
+                    cwd: summary.cwd,
+                    agentId: summary.agentId,
+                    title: summary.title,
+                    status: summary.status,
+                    createdAt: summary.createdAt,
+                    updatedAt: summary.updatedAt,
+                    messages: [],
+                }),
+                createTranscriptSheetSurfaceHosts: () => ({
+                    planHost: document.createElement('div'),
+                    reviewHost: document.createElement('div'),
+                    previewHost: document.createElement('div'),
+                    filesHost: document.createElement('div'),
+                    terminalHost: document.createElement('div'),
+                }),
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
+        });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        let renderShellCalls = 0;
+        ui.renderAgentsHubExecutionShell = () => {
+            renderShellCalls++;
+            host.agentsHubShellActive = true;
+            const chatHost = document.createElement('div');
+            host.agentsHubInlineChatHost = chatHost;
+            host.transcriptChatHost = chatHost;
+            host.scroll.append(chatHost);
+        };
+        await ui.openAgentsHubInlineTranscript(project, {
+            ...openSummary(),
+            status: 'failed',
+        });
+        expect(renderListCalls).to.equal(0);
+        expect(renderShellCalls).to.equal(1);
+        expect(host.agentsHubInlineChatHost?.parentElement).to.equal(host.scroll);
+    });
+
+    it('closeAgentsHubSession skips hub list rebuild while switching inline transcripts', () => {
+        let renderListCalls = 0;
+        const host = createHost({
+            replacingTranscriptSheet: true,
+            agentsHubInlineActive: true,
+            agentsHubShellActive: true,
+            transcriptOpenSummaryId: 'conv-a',
+            agentsHubInlineChatHost: document.createElement('div'),
+            renderList: () => { renderListCalls++; },
+            executionSurfaceTabsUi: {
+                closeExecutionTabOverflowMenu: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
+            transcriptComposerUi: {
+                closeTranscriptComposerSheets: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
+            transcriptLiveUi: {
+                stopTranscriptLiveWatch: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptUi: {
+                disposeList: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptUi'],
+        });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.closeAgentsHubSession();
+        expect(renderListCalls).to.equal(0);
     });
 });

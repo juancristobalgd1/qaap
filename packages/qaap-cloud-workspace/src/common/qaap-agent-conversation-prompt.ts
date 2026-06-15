@@ -124,7 +124,12 @@ export function buildConversationAgentPrompt(options: BuildConversationAgentProm
         ? partitionConversationHistory(history)
         : { compressed: [], recent: [...history] };
 
-    const lines: string[] = ['You are continuing an ongoing conversation.'];
+    const lines: string[] = [
+        'You are continuing an ongoing conversation.',
+        'Make minimal, targeted edits only — do not regenerate or replace the whole project.',
+        'Honor stack and scope constraints from earlier user messages (e.g. vanilla HTML vs a framework).',
+        'When the user asks what changed earlier, summarize from the transcript below.',
+    ];
     if (compress && compressed.length > 0) {
         lines.push('Earlier context (compressed):', '');
         lines.push(...formatTranscriptLines(compressed, true));

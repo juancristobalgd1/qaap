@@ -9,29 +9,24 @@ import { buildQaapDevPreviewUrl, parseQaapDevPreviewPort, resolveDevPreviewPubli
 const DEV_SERVER_COMMAND_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\b(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev|remix\s+dev)\b|\bnpx\s+vite\b|\bnpx\s+next\b/i;
 const DEV_URL_IN_TEXT_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(?:\/[^\s`*)\]]*)?/i;
 const PORT_HINT_RE = /\b(?:port(?:o|)?|puerto)\s+(\d{2,5})\b/i;
-/** Common Vite/Next dev ports. Static bootstrap (8080) is probed only when explicitly hinted. */
-const DEFAULT_VITE_PROBE_PORTS = [5173, 5174, 5175, 5176, 3000, 3001, 4173];
+/** Common dev ports (Vite/Next) plus Qaap static bootstrap (8080). */
+const DEFAULT_VITE_PROBE_PORTS = [5173, 5174, 5175, 5176, 3000, 3001, 4173, 8080];
 
-const DEV_PREVIEW_INTENT_RE = /\b(?:dev\s+server|live\s+preview|in-ide\s+preview|run\s+(?:the\s+)?(?:app|project)|build\s+and\s+run|run\s+locally|start\s+(?:the\s+)?(?:dev|app|server)|launch\s+(?:the\s+)?(?:app|project|server)|preview\s+(?:the\s+)?(?:app|project)|show\s+(?:me\s+)?(?:the\s+)?app|boot(?:s|ed)\s+cleanly|figure\s+out\s+how\s+to\s+build|levanta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|inicia(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|arranca(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|ejecuta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|corre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|muestra(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview|vista\s+previa)|vista\s+previa|servidor\s+de\s+desarrollo|abre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview))\b/i;
+const DEV_PREVIEW_INTENT_RE = /\b(?:dev\s+server|live\s+preview|in-ide\s+preview|run\s+(?:the\s+)?(?:app|project)|build\s+and\s+run|run\s+locally|start\s+(?:the\s+)?(?:dev|app|server)|launch\s+(?:the\s+)?(?:app|project|server)|preview\s+(?:the\s+)?(?:app|project|page)|show\s+(?:me\s+)?(?:the\s+)?(?:app|preview)|boot(?:s|ed)\s+cleanly|figure\s+out\s+how\s+to\s+build|open\s+(?:the\s+)?preview|lanza(?:r)?(?:\s+autom[aá]ticamente)?\s+(?:el\s+)?servidor|abre(?:r)?\s+(?:la\s+)?(?:preview|vista\s+previa)|mu[eé]str(?:ame|ar)\s+(?:la\s+)?(?:preview|vista\s+previa)|verifica(?:r)?\s+que\s+(?:la\s+)?p[aá]gina|levanta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|inicia(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|arranca(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|ejecuta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|corre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|muestra(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview|vista\s+previa)|vista\s+previa|servidor\s+de\s+desarrollo|abre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview))\b/i;
 
 /** True when user text asks to run or preview the app locally. */
 export function messageRequestsDevPreview(text: string | undefined): boolean {
     return !!text?.trim() && DEV_PREVIEW_INTENT_RE.test(text);
 }
 
-function findLastUserMessageContent(conv: QaapAgentConversationDTO): string | undefined {
-    for (let index = conv.messages.length - 1; index >= 0; index -= 1) {
-        const message = conv.messages[index];
-        if (message.role === 'user') {
-            return message.content;
-        }
-    }
-    return undefined;
+/** True when any user turn in the conversation asked to run or preview the app. */
+export function conversationEverRequestedDevPreview(conv: QaapAgentConversationDTO): boolean {
+    return conv.messages.some(message => message.role === 'user' && messageRequestsDevPreview(message.content));
 }
 
-/** Whether the active conversation turn asked Qaap to run or preview the app. */
+/** Whether this conversation should drive dev-preview bootstrap (any turn may have asked). */
 export function conversationRequestsDevPreview(conv: QaapAgentConversationDTO): boolean {
-    return messageRequestsDevPreview(findLastUserMessageContent(conv));
+    return conversationEverRequestedDevPreview(conv);
 }
 
 /** Parses localhost URLs or explicit port hints from agent / tool text. */

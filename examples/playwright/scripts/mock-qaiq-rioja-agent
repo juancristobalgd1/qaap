@@ -71,6 +71,64 @@ PROMPT="${PROMPT%\'}"
 
 emit_json '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"mock-rioja","tools":["Write","Bash"],"model":"mock/qaiq-rioja"}'
 
+VANILLA_MODE=0
+if printf '%s' "$PROMPT" | grep -Eiq 'vanilla|html \+ css|html\+css|sin frameworks|sin dependencias|no frameworks|no dependencies|no bundler|no npm'; then
+    VANILLA_MODE=1
+fi
+
+if [[ "$VANILLA_MODE" -eq 1 ]]; then
+    emit_assistant_thinking 'Voy a crear una landing page Rioja con HTML y CSS vanilla, sin frameworks ni npm.'
+    emit_assistant_text 'Perfecto. Escribiré index.html y styles.css. Qaap servirá la preview estática en el puerto 8080.'
+
+    cat > index.html <<'HTML'
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vinos Rioja</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <h1>Vinos Rioja</h1>
+    <p>Tradición, terroir y elegancia en cada copa.</p>
+    <a class="cta" href="#contacto">Reserva tu cata</a>
+  </header>
+  <section id="variedades">
+    <h2>Variedades</h2>
+    <ul>
+      <li>Tempranillo</li>
+      <li>Garnacha</li>
+      <li>Graciano</li>
+    </ul>
+  </section>
+  <section id="contacto">
+    <h2>Contacto</h2>
+    <p>info@vinosrioja.example</p>
+  </section>
+</body>
+</html>
+HTML
+
+    emit_tool_use "tu-write-html" "Write" '{"file_path":"index.html"}'
+    emit_tool_result "tu-write-html" "Wrote index.html"
+
+    cat > styles.css <<'CSS'
+body { font-family: Georgia, serif; margin: 0; color: #1a1210; background: #f7f1e8; }
+.hero { padding: 4rem 2rem; background: #6b1f2b; color: #f7f1e8; text-align: center; }
+.cta { display: inline-block; margin-top: 1rem; padding: 0.75rem 1.5rem; background: #c9a962; color: #1a1210; text-decoration: none; border-radius: 999px; }
+section { padding: 2rem; max-width: 48rem; margin: 0 auto; }
+CSS
+
+    emit_tool_use "tu-write-css" "Write" '{"file_path":"styles.css"}'
+    emit_tool_result "tu-write-css" "Wrote styles.css"
+
+    emit_assistant_text 'Listo. Archivos estáticos creados. Preview disponible en http://127.0.0.1:8080/ cuando Qaap arranque el servidor estático.'
+    emit_result 'Landing Rioja vanilla creada (index.html + styles.css). Preview estática en puerto 8080.'
+    exit 0
+fi
+
 emit_assistant_thinking 'Voy a crear una landing page moderna sobre vinos Rioja con Vite.'
 emit_assistant_text 'Perfecto. Voy a generar la estructura del proyecto, escribir los archivos y ejecutar npm install.'
 

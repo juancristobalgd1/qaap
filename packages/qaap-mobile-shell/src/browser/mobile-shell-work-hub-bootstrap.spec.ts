@@ -92,6 +92,9 @@ describe('mobile-shell-work-hub-bootstrap', () => {
                 node: document.createElement('div'),
                 getHubView: () => 'tasks',
                 preferComposerSurface: () => undefined,
+                isAgentsHubExecutionSurfaceReady: () => false,
+                isAgentsHubShellActive: () => false,
+                ensureAgentsHubExecutionShellRendered: () => undefined,
             }) as unknown as MobileProjectsPanel,
             appendProjectsPanelToShell: () => { calls.push('appendProjectsPanelToShell'); },
             disposeProjectsPanelForDesktopIde: () => { calls.push('disposeProjectsPanelForDesktopIde'); },
@@ -139,6 +142,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         expect(controller.tryBootstrapMobileAgentsChat()).to.equal(true);
         expect(sessionState.landingLeftThisSession).to.equal(true);
         await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+        expect(host.calls).to.include('releaseMobileWorkHubBootGuardWhenReady');
         expect(host.calls).to.include('refreshProjectBootstrapFromWorkspace');
     });
 

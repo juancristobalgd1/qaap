@@ -501,11 +501,7 @@ export class MobileProjectsAgentsHubInlineUi {
             return;
         }
         if (!this.host.agentsHubInlineExecutionRoot?.isConnected) {
-            if (this.host.visible) {
-                this.host.renderList();
-            } else {
-                this.renderAgentsHubExecutionShell();
-            }
+            this.renderAgentsHubExecutionShell();
         }
         const chatHost = this.host.agentsHubInlineChatHost;
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
@@ -561,7 +557,9 @@ export class MobileProjectsAgentsHubInlineUi {
         if (this.host.visible) {
             this.host.renderHeader();
             this.host.renderSubtitle();
-            this.host.renderList();
+            if (!this.host.replacingTranscriptSheet) {
+                this.host.renderList();
+            }
         }
         if (!this.host.replacingTranscriptSheet) {
             this.host.notifyWorkspaceHubBottomBarRefresh();

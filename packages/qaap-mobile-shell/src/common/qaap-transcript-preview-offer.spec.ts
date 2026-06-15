@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
 import {
     conversationAwaitingDevPreview,
+    conversationEverRequestedDevPreview,
     conversationHasActiveDevServerRun,
     conversationHasActiveShellRun,
     conversationMayAutoOpenTranscriptPreview,
@@ -43,7 +44,38 @@ describe('qaap-transcript-preview-offer', () => {
         expect(messageRequestsDevPreview('levanta la app')).to.equal(true);
         expect(messageRequestsDevPreview('Inicia el servidor de desarrollo y dime el puerto')).to.equal(true);
         expect(messageRequestsDevPreview('Launch the app so I can preview it')).to.equal(true);
+        expect(messageRequestsDevPreview('Lanza automáticamente el servidor y abre la preview')).to.equal(true);
+        expect(messageRequestsDevPreview('Muéstrame la preview cuando esté lista')).to.equal(true);
         expect(messageRequestsDevPreview('refactor the auth module')).to.equal(false);
+    });
+
+    it('conversationEverRequestedDevPreview scans all user turns', () => {
+        const conv: QaapAgentConversationDTO = {
+            id: 'c5',
+            cwd: '/repo',
+            agentId: 'qaiq',
+            title: 'Landing',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 3,
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'Crea una landing y lanza el servidor. Abre la preview.',
+                createdAt: 1,
+            }, {
+                id: 'a1',
+                role: 'agent',
+                content: 'Done.',
+                createdAt: 2,
+            }, {
+                id: 'u2',
+                role: 'user',
+                content: 'Añade una sección FAQ.',
+                createdAt: 3,
+            }],
+        };
+        expect(conversationEverRequestedDevPreview(conv)).to.equal(true);
     });
 
     it('conversationRequestsDevPreview reads the latest user turn', () => {

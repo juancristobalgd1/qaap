@@ -155,7 +155,7 @@ export class MobileShellLandingController {
         }
     }
 
-    /** Lift the boot guard only once Work Hub landing or the Agents chat shell is actually visible. */
+    /** Lift the boot guard once Work Hub landing or the Agents chat shell is actually visible. */
     releaseMobileWorkHubBootGuard(): void {
         const panel = this.host.getProjectsPanel();
         const agentsReady = panel?.isVisible() === true
@@ -172,9 +172,7 @@ export class MobileShellLandingController {
     async releaseMobileWorkHubBootGuardWhenReady(): Promise<void> {
         if (typeof window !== 'undefined') {
             await new Promise<void>(resolve => {
-                window.requestAnimationFrame(() => {
-                    window.requestAnimationFrame(() => resolve());
-                });
+                window.requestAnimationFrame(() => resolve());
             });
         }
         this.releaseMobileWorkHubBootGuard();

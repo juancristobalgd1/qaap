@@ -53,6 +53,19 @@ describe('buildConversationAgentPrompt', () => {
         expect(prompt).not.to.include('Earlier context (compressed)');
     });
 
+    it('adds incremental-edit rules for multi-turn prompts', () => {
+        const prompt = buildConversationAgentPrompt({
+            history: [
+                message({ role: 'user', content: 'Create landing page' }),
+                message({ role: 'agent', content: 'Done' }),
+            ],
+            latestUserContent: 'Add FAQ section',
+            contextWindowSize: 128_000,
+        });
+        expect(prompt).to.include('minimal, targeted edits');
+        expect(prompt).to.include('vanilla HTML');
+    });
+
     it('compresses older turns when the estimated prompt exceeds the threshold', () => {
         const longBody = 'x'.repeat(VPS_PROMPT_COMPRESSED_MESSAGE_MAX_CHARS + 200);
         const history: QaapAgentMessage[] = [];

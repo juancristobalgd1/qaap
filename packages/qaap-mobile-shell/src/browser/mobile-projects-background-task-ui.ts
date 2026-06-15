@@ -51,6 +51,7 @@ export interface MobileProjectsBackgroundTaskHost {
     activeTasks?: MobileProjectsActiveTasks;
     sessionsSidebar?: MobileWorkHubSessionsSidebar;
     delegate: { onProjectsChanged?: () => void };
+    projectBootstrap?: import('./qaap-project-bootstrap-service').QaapProjectBootstrapService;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     transcriptLiveUi: import('./mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
     shouldUseAgentsHubLanding(): boolean;
@@ -113,6 +114,7 @@ export class MobileProjectsBackgroundTaskUi {
                 const full: QaapAgentConversationDTO = await getConversation(summary.id);
                 this.host.transcriptLiveUi.onTranscriptUserMessageSubmitted(draft, full);
                 this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
+                void this.host.projectBootstrap?.refreshFromCurrentWorkspace();
             }
             this.applyTaskStartedToProject(cwd, draft, summary.id);
             MobileSnackbar.show(

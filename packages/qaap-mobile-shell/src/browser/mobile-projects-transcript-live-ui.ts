@@ -918,10 +918,12 @@ export class MobileProjectsTranscriptLiveUi {
         }
         if (!this.host.transcriptScheduleRefresh) {
             this.scheduleTranscriptConversationRefresh(context.project, context.summary, context.chatHost);
+            void this.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
         const liveStatus = this.host.transcriptLastConv?.status ?? context.summary.status;
         if (liveStatus !== 'streaming') {
+            void this.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
         this.host.transcriptScheduleRefresh();

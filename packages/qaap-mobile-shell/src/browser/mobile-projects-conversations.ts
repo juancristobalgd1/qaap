@@ -379,6 +379,17 @@ export class MobileProjectsConversations {
         return undefined;
     }
 
+    /** All VPS conversation summaries (newest first per cwd bucket). */
+    listAllSummaries(): QaapAgentConversationSummaryDTO[] {
+        const byId = new Map<string, QaapAgentConversationSummaryDTO>();
+        for (const list of this.byCwd.values()) {
+            for (const summary of list) {
+                byId.set(summary.id, summary);
+            }
+        }
+        return sortConversations([...byId.values()]);
+    }
+
     /** Optimistic update after deleting a conversation before SSE/storage refresh catches up. */
     removeSnapshot(conversationId: string, cwd: string, source?: QaapAgentConversationSummaryDTO['source']): void {
         const map = source === 'theia-chat' ? this.theiaByCwd : this.byCwd;
