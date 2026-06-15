@@ -1,0 +1,91 @@
+# Deploy Qaap to the production VPS over SSH (Docker Compose rebuild).
+# One-time setup: doc/qaap-vps-deployment.md → "Automated deploy"
+name: Qaap VPS deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Git branch to deploy on the VPS
+        required: false
+        default: master
+        type: string
+      no_cache:
+        description: Rebuild Docker image without cache
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**/*.md'
+      - 'doc/**'
+      - 'logo/**'
+      - '.github/**'
+      - 'examples/playwright/**'
+
+concurrency:
+  group: qaap-vps-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    if: github.repository == 'juancristobalgd1/qaap'
+
+    steps:
+      - name: Skip when VPS secrets are not configured
+        id: ready
+        run: |
+          if [ -z "${{ secrets.QAAP_VPS_HOST }}" ] || [ -z "${{ secrets.QAAP_VPS_SSH_KEY }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping VPS deploy: set QAAP_VPS_HOST and QAAP_VPS_SSH_KEY (see doc/qaap-vps-deployment.md)."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy over SSH
+        if: steps.ready.outputs.configured == 'true'
+        uses: appleboy/ssh-action@b140cb124ffeedc1fe14e67e378e01f3299a2def # v1.2.2
+        with:
+          host: ${{ secrets.QAAP_VPS_HOST }}
+          username: ${{ secrets.QAAP_VPS_USER }}
+          key: ${{ secrets.QAAP_VPS_SSH_KEY }}
+          port: ${{ secrets.QAAP_VPS_SSH_PORT }}
+          command_timeout: 80m
+          script: |
+            set -euo pipefail
+            REPO_DIR="${{ secrets.QAAP_VPS_REPO_DIR || '/opt/qaap' }}"
+            BRANCH="${{ github.event.inputs.branch || 'master' }}"
+            NO_CACHE_FLAG=""
+            if [ "${{ github.event.inputs.no_cache }}" = "true" ]; then
+              NO_CACHE_FLAG="--no-cache"
+            fi
+            cd "$REPO_DIR"
+            git fetch origin
+            git checkout "$BRANCH"
+            git pull --ff-only origin "$BRANCH"
+            ./scripts/qaap-vps-update.sh --branch "$BRANCH" $NO_CACHE_FLAG
+
+      - name: Verify public endpoint
+        if: steps.ready.outputs.configured == 'true'
+        env:
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+        run: |
+          if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
+            echo "QAAP_VPS_PUBLIC_URL not set — skip HTTP check"
+            exit 0
+          fi
+          for attempt in $(seq 1 24); do
+            if curl -fsS -o /dev/null "$QAAP_VPS_PUBLIC_URL"; then
+              echo "OK: $QAAP_VPS_PUBLIC_URL"
+              exit 0
+            fi
+            echo "waiting for $QAAP_VPS_PUBLIC_URL ($attempt/24)..."
+            sleep 10
+          done
+          echo "Health check failed for $QAAP_VPS_PUBLIC_URL" >&2
+          exit 1
