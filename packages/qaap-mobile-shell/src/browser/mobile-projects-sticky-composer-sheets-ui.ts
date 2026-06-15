@@ -833,7 +833,7 @@ export class MobileProjectsStickyComposerSheetsUi {
                 )
                 : nls.localize(
                     'qaap/mobileProjects/stickyComposerNoAgents',
-                    'No agents are available. Install a VPS agent CLI on PATH (qaiq, codex, claude) or set QAAP_AGENT_COMMAND, then restart the backend.',
+                    'No agents are available. Install QAIQ (default) on PATH or set QAAP_AGENT_COMMAND, then restart the backend.',
                 );
             chrome.list.append(hint);
         }

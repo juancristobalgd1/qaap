@@ -62,6 +62,8 @@ import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contr
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QaapProjectBootstrapContribution } from './qaap-project-bootstrap-contribution';
+import { QaapProjectScaffoldContribution } from './qaap-project-scaffold-contribution';
+import { QaapProjectScaffoldService } from './qaap-project-scaffold-service';
 import { MobileTouchScrollContribution } from './mobile-touch-scroll-contribution';
 import { QaapBootstrapVariableContribution } from './qaap-bootstrap-variable-contribution';
 import { createQaapScmWidgetContainer } from './qaap-scm-tree-widget';
@@ -189,6 +191,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapProjectBootstrapContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapProjectBootstrapContribution);
+    bind(QaapProjectScaffoldService).toSelf().inSingletonScope();
+    bind(QaapProjectScaffoldContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapProjectScaffoldContribution);
 
     bindToolProvider(QaapBootstrapStatusTool, bind);
     bindToolProvider(QaapBootstrapInstallTool, bind);

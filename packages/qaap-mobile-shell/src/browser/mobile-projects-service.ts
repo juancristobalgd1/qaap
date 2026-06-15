@@ -45,6 +45,10 @@ import {
 } from './mobile-projects-open';
 import { MobileSnackbar } from './mobile-snackbar';
 import {
+    markQaapProjectScaffoldOnOpen,
+} from '../common/qaap-project-scaffold-pending';
+import { QAAP_VITE_SCAFFOLD_TEMPLATE_ID } from '../common/qaap-project-scaffold-templates';
+import {
     mergeSessionMaps,
     patchLocalProjectSession,
     readLocalProjectSessions,
@@ -76,6 +80,7 @@ export class MobileProjectsService {
 
     protected filter: MobileProjectFilter = 'all';
     protected hubView: MobileProjectsHubView = 'tasks';
+    protected lastCreatedGithubProjectId: string | undefined;
 
     protected readHiddenProjectIds(): Set<string> {
         if (typeof localStorage === 'undefined') {
@@ -286,7 +291,10 @@ export class MobileProjectsService {
         );
         try {
             const result = await createQaapGithubRepository({ name, private: true });
-            this.registerGithubWorkspaceProject(result.repository, new URI(result.workspaceUri));
+            const workspaceUri = new URI(result.workspaceUri);
+            this.lastCreatedGithubProjectId = `custom:${workspaceUri.toString()}`;
+            this.registerGithubWorkspaceProject(result.repository, workspaceUri);
+            markQaapProjectScaffoldOnOpen(QAAP_VITE_SCAFFOLD_TEMPLATE_ID);
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/repoCreated', 'Created {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }
@@ -345,6 +353,16 @@ export class MobileProjectsService {
     /** Profile of the currently signed-in GitHub user, when known. */
     getConnectedUser(): QaapAuthUser | undefined {
         return readQaapAuthUser();
+    }
+
+    /** Consumes the project id registered by the most recent createGithubProject call. */
+    resolveLastCreatedProject(projects: readonly MobileProjectEntry[]): MobileProjectEntry | undefined {
+        const id = this.lastCreatedGithubProjectId;
+        this.lastCreatedGithubProjectId = undefined;
+        if (!id) {
+            return undefined;
+        }
+        return projects.find(project => project.id === id);
     }
 
     /** Public access to the list of GitHub repositories visible to the signed-in user. */

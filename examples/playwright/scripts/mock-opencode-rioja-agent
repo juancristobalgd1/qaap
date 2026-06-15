@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# Mock OpenCode agent for E2E Rioja landing-page flow evaluation.
+# Simulates: scaffold Vite app, write Rioja content, npm install, report port 5173.
+set -euo pipefail
+
+emit_json() {
+    printf '%s\n' "$1"
+}
+
+emit_tool() {
+    local id="$1" tool="$2" status="$3" input="$4" output="${5:-}"
+    local state
+    if [[ -n "$output" ]]; then
+        state=$(printf '{"status":"%s","output":%s}' "$status" "$(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<<"$output")")
+    else
+        state=$(printf '{"status":"%s"}' "$status")
+    fi
+    emit_json "$(printf '{"type":"tool_use","part":{"id":"%s","type":"tool","tool":"%s","input":%s,"state":%s}}' "$id" "$tool" "$input" "$state")"
+}
+
+if [[ "${1:-}" == "models" ]]; then
+    echo 'mock-model'
+    exit 0
+fi
+
+if [[ "${1:-}" != "run" ]]; then
+    echo "mock-opencode: unsupported invocation: $*" >&2
+    exit 1
+fi
+
+# Prompt is the last quoted argument.
+PROMPT="${*##* }"
+PROMPT="${PROMPT#\'}"
+PROMPT="${PROMPT%\'}"
+
+emit_json '{"type":"reasoning","part":{"text":"Voy a crear una landing page moderna sobre vinos Rioja con Vite."}}'
+
+mkdir -p src
+
+cat > package.json <<'PKG'
+{
+  "name": "rioja-wines-landing",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}
+PKG
+
+emit_tool "t1" "Write" "completed" '{"file_path":"package.json"}'
+
+cat > index.html <<'HTML'
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vinos Rioja — Tierra, tradición y elegancia</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header class="hero">
+    <nav class="nav">
+      <span class="logo">Rioja</span>
+      <a href="#bodegas">Bodegas</a>
+      <a href="#variedades">Variedades</a>
+      <a href="#visita">Visita</a>
+    </nav>
+    <div class="hero-content">
+      <p class="eyebrow">Denominación de Origen Calificada</p>
+      <h1>El alma del vino español</h1>
+      <p class="lead">Descubre la elegancia de los vinos Rioja: tempranillo, garnacha y siglos de tradición en cada copa.</p>
+      <button class="cta">Explorar cosechas</button>
+    </div>
+  </header>
+  <main>
+    <section id="bodegas" class="section">
+      <h2>Bodegas emblemáticas</h2>
+      <div class="cards">
+        <article class="card"><h3>Marqués de Riscal</h3><p>Arquitectura vanguardista y reservas con carácter.</p></article>
+        <article class="card"><h3>La Rioja Alta</h3><p>Gran Reserva y taninos sedosos de referencia mundial.</p></article>
+        <article class="card"><h3>Muga</h3><p>Barricas de roble francés y estilo clásico riojano.</p></article>
+      </div>
+    </section>
+    <section id="variedades" class="section alt">
+      <h2>Variedades autóctonas</h2>
+      <ul class="varieties">
+        <li><strong>Tempranillo</strong> — cuerpo, fruta roja y longevidad.</li>
+        <li><strong>Garnacha</strong> — calidez mediterránea y notas especiadas.</li>
+        <li><strong>Graciano</strong> — acidez viva y estructura para guarda.</li>
+      </ul>
+    </section>
+    <section id="visita" class="section cta-section">
+      <h2>Planifica tu ruta del vino</h2>
+      <p>Haró, Logroño y Laguardia te esperan entre viñedos y catas guiadas.</p>
+    </section>
+  </main>
+  <footer><p>© 2026 Vinos Rioja — Hecho con pasión en La Rioja</p></footer>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
+HTML
+
+emit_tool "t2" "Write" "completed" '{"file_path":"index.html"}'
+
+cat > src/style.css <<'CSS'
+:root {
+  --wine: #6b1f2b;
+  --gold: #c9a962;
+  --cream: #f7f1e8;
+  --ink: #1a1210;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Georgia, 'Times New Roman', serif; color: var(--ink); background: var(--cream); }
+.nav { display: flex; gap: 1.5rem; align-items: center; padding: 1rem 2rem; }
+.logo { font-weight: 700; color: var(--gold); letter-spacing: 0.15em; }
+.nav a { color: var(--cream); text-decoration: none; opacity: 0.9; }
+.hero {
+  min-height: 72vh;
+  background: linear-gradient(135deg, var(--wine) 0%, #3d0f18 60%, #1a1210 100%);
+  color: var(--cream);
+}
+.hero-content { padding: 4rem 2rem; max-width: 720px; }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.2em; font-size: 0.75rem; color: var(--gold); }
+.hero h1 { font-size: clamp(2.5rem, 6vw, 4rem); margin: 1rem 0; }
+.lead { font-size: 1.15rem; line-height: 1.6; opacity: 0.92; }
+.cta {
+  margin-top: 2rem; padding: 0.85rem 1.75rem; border: none; border-radius: 999px;
+  background: var(--gold); color: var(--ink); font-weight: 600; cursor: pointer;
+}
+.section { padding: 4rem 2rem; max-width: 960px; margin: 0 auto; }
+.section.alt { background: #efe6d8; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-top: 1.5rem; }
+.card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+.varieties { margin-top: 1rem; line-height: 2; }
+.cta-section { text-align: center; }
+footer { text-align: center; padding: 2rem; font-size: 0.9rem; opacity: 0.7; }
+CSS
+
+cat > src/main.js <<'JS'
+document.querySelector('.cta')?.addEventListener('click', () => {
+  document.getElementById('bodegas')?.scrollIntoView({ behavior: 'smooth' });
+});
+JS
+
+emit_tool "t3" "Write" "completed" '{"file_path":"src/style.css"}'
+emit_tool "t4" "Write" "completed" '{"file_path":"src/main.js"}'
+
+INSTALL_OUT=""
+if command -v npm >/dev/null 2>&1; then
+    INSTALL_OUT=$(npm install --no-fund --no-audit 2>&1 || true)
+    emit_tool "t5" "Bash" "completed" '{"command":"npm install"}' "$INSTALL_OUT"
+else
+    emit_tool "t5" "Bash" "error" '{"command":"npm install"}' "npm not found"
+fi
+
+emit_json '{"type":"text","part":{"text":"He creado una landing page moderna sobre vinos Rioja con Vite. Los archivos principales son index.html, src/style.css y src/main.js. Las dependencias están instaladas. El servidor de desarrollo escuchará en http://127.0.0.1:5173 cuando Qaap lo levante."}}'
+
+exit 0

@@ -39,7 +39,7 @@ export const OPENCODE_AGENT_ID = 'opencode';
 export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;
 
 /** Composer / Work Hub default when no per-project agent is stored. */
-export const QAAP_COMPOSER_DEFAULT_AGENT_ID = OPENCODE_AGENT_ID;
+export const QAAP_COMPOSER_DEFAULT_AGENT_ID = QAIQ_AGENT_ID;
 
 /** UI/storage id before the QAIQ rename; still accepted when resolving selection. */
 export const LEGACY_OPENCLAUDE_AGENT_ID = 'openclaude';

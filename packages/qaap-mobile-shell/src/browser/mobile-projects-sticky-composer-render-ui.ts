@@ -52,6 +52,11 @@ import type { MobileProjectEntry, MobileProjectFilter } from './mobile-projects-
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import { MobileSnackbar } from './mobile-snackbar';
+import {
+    isVpsAgentBackendConfigured,
+    localizeNoVpsAgentConfiguredBanner,
+    localizeNoVpsAgentConfiguredMessage,
+} from '../common/qaap-agent-availability';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 
@@ -103,6 +108,7 @@ stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-u
 isProjectDetailView(): boolean;
 projectsService: MobileProjectsService;
 transcriptComposerSendRefresh: (() => void) | undefined;
+activeTasks?: import('./mobile-projects-active-tasks').MobileProjectsActiveTasks;
 }
 
 export class MobileProjectsStickyComposerRenderUi {
@@ -128,6 +134,13 @@ export class MobileProjectsStickyComposerRenderUi {
 
     renderStickyComposer(): void {
         this.host.stickyComposerContextUsageDispose.dispose();
+        if (typeof sessionStorage !== 'undefined') {
+            const pendingDraft = sessionStorage.getItem('qaap.mobileProjects.pendingStickyComposerDraft')?.trim();
+            if (pendingDraft && !this.host.stickyComposerDraft.trim()) {
+                this.host.stickyComposerDraft = pendingDraft;
+                sessionStorage.removeItem('qaap.mobileProjects.pendingStickyComposerDraft');
+            }
+        }
         const filtered = this.host.hubQueryUi.applySearch(this.host.hubQueryUi.applyFilter(this.host.projects, this.host.filter));
         const project = this.host.composerHeaderUi.resolveStickyComposerProject(filtered);
         if (this.host.agentsHubShellActive) {
@@ -183,7 +196,8 @@ export class MobileProjectsStickyComposerRenderUi {
         const isChatSurface = false;
         const canRunTask = !!project && (!!cwd || !!project.github);
         const canRunChat = !!this.host.chatService && !!project;
-        const canSubmit = isChatSurface ? canRunChat : canRunTask;
+        const agentConfigured = isVpsAgentBackendConfigured(this.host.activeTasks?.isAgentConfigured());
+        const canSubmit = (isChatSurface ? canRunChat : canRunTask) && agentConfigured;
         const pinnedId = this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project);
         const modes = resolveStickyComposerModes(pinnedId, this.host.chatAgentService);
         this.host.stickyComposerModeId = reconcileComposerModeId(
@@ -246,6 +260,9 @@ export class MobileProjectsStickyComposerRenderUi {
                 }
                 : undefined,
             canSubmit,
+            statusNotice: !agentConfigured && canRunTask
+                ? localizeNoVpsAgentConfiguredBanner()
+                : undefined,
             onAttach: anchor => { void this.host.stickyComposerContextUi.onStickyComposerAttach(project, anchor); },
             onOpenAgentSheet: isChatSurface
                 ? () => { /* Chat is Coder-only */ }
@@ -294,6 +311,10 @@ export class MobileProjectsStickyComposerRenderUi {
             onSubmitBlocked: () => {
                 if (this.host.stickyComposerContextUi.hasPendingComposerAttachments()) {
                     this.host.stickyComposerContextUi.notifyPendingComposerAttachments();
+                    return;
+                }
+                if (!agentConfigured && canRunTask) {
+                    MobileSnackbar.show(localizeNoVpsAgentConfiguredMessage(), { kind: 'warning', duration: 4200 });
                     return;
                 }
                 if (isChatSurface && !this.host.chatService) {

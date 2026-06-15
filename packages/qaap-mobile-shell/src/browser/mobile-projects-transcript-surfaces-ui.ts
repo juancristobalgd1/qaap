@@ -601,8 +601,13 @@ export class MobileProjectsTranscriptSurfacesUi {
 
         this.stopTranscriptPreviewTabProbe();
         const readyUrl = normalizePreviewUrlForSameOrigin(probe.previewUrl);
+        const conv = this.host.transcriptLastConv;
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
-            this.stageTranscriptPreviewReadyUrl(readyUrl);
+            if (conversationMayAutoOpenTranscriptPreview(conv, { probeReady: true })) {
+                void this.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(readyUrl);
+            } else {
+                this.stageTranscriptPreviewReadyUrl(readyUrl);
+            }
             if (latestProject.previewUrl !== readyUrl) {
                 const updatedProject = { ...latestProject, previewUrl: readyUrl };
                 this.host.projects = this.host.projects.map(candidate => candidate.id === updatedProject.id
@@ -801,7 +806,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                     ? updatedProject
                     : this.host.transcriptOpenProject;
                 void this.host.projectsService.recordProjectPreviewUrl(updatedProject, normalized).catch(() => undefined);
-                if (!conversationMayAutoOpenTranscriptPreview(conv)) {
+                if (!conversationMayAutoOpenTranscriptPreview(conv, { probeReady: true })) {
                     this.stageTranscriptPreviewReadyUrl(normalized);
                 } else if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
                     const host = this.executionPreviewHost();
@@ -887,9 +892,17 @@ export class MobileProjectsTranscriptSurfacesUi {
         const loading = this.isTranscriptPreviewWaiting(conv);
         button.disabled = loading;
         button.classList.toggle('theia-mod-loading', loading);
-        const label = loading
-            ? nls.localize('qaap/mobileProjects/previewLoading', 'Cargando...')
-            : nls.localize('qaap/mobileProjects/previewButton', 'Vista previa');
+        const bootstrap = this.host.projectBootstrap?.getStateSnapshot();
+        let label = nls.localize('qaap/mobileProjects/previewButton', 'Vista previa');
+        if (loading) {
+            if (bootstrap?.phase === 'installing') {
+                label = nls.localize('qaap/mobileProjects/previewInstalling', 'Instalando dependencias…');
+            } else if (bootstrap?.phase === 'starting') {
+                label = nls.localize('qaap/mobileProjects/previewStarting', 'Arrancando servidor…');
+            } else {
+                label = nls.localize('qaap/mobileProjects/previewLoading', 'Cargando…');
+            }
+        }
         button.title = label;
         button.setAttribute('aria-label', label);
         if (loading) {

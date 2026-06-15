@@ -6226,6 +6226,17 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   cursor: pointer;
 }
 
+.theia-mobile-projects-sticky-composer-agent-notice {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--q-accent, #e58e40) 35%, transparent);
+  background: color-mix(in srgb, var(--q-accent, #e58e40) 10%, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .theia-mobile-projects-sticky-composer-card {
   display: flex;
   flex-direction: column;
