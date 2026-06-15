@@ -244,6 +244,15 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.workHub.renderTeamSectionInTranscript(host, conv);
         this.workHub.renderInlineApproval(host, conv);
         this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+        if (conv.status === 'streaming') {
+            for (const row of messageHost.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-streaming')) {
+                this.artifactsUi.ensureTranscriptStreamStallWatch(row);
+            }
+            const activityRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+            if (activityRow) {
+                this.artifactsUi.ensureTranscriptStreamStallWatch(activityRow);
+            }
+        }
     }
 
     /**

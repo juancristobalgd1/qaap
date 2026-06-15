@@ -54,6 +54,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             transcriptLastFingerprint: undefined,
             transcriptLastConv: undefined,
             transcriptLastSseDeltaAt: undefined,
+            transcriptLastStreamProgressAt: undefined,
             transcriptChatHost: undefined,
             transcriptPlanHost: undefined,
             transcriptReviewHost: undefined,

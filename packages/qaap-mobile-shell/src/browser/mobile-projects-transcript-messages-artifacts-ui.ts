@@ -8,13 +8,13 @@ import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
 import { excerptTranscriptThought, extractTranscriptDiffCard, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, formatTranscriptThoughtDuration, isTranscriptAgentThinkingPhase, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars } from '../common/qaap-transcript-stream-status';
+import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, formatTranscriptThoughtDuration, isTranscriptAgentThinkingPhase, isTranscriptStreamStalled, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars } from '../common/qaap-transcript-stream-status';
 import { isPendingTranscriptToolSegment } from '../common/qaap-transcript-approval-inline';
 import { buildTranscriptApprovalCard, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
 import { buildTranscriptDiffCardFromExtracted, buildTranscriptToolUiPayloadElement } from './qaap-transcript-rich-content-ui';
 import { resolveTranscriptToolUiPayloadFromSegment } from '../common/qaap-transcript-tool-ui-payloads';
-import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
@@ -25,6 +25,7 @@ export interface TranscriptActivityTimelineOptions {
     readonly maxVisibleItems?: number;
     readonly variant?: 'inline' | 'plan';
     readonly streaming?: boolean;
+    readonly stalled?: boolean;
 }
 
 interface TranscriptActivityTimelineItem {
@@ -157,6 +158,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             body.append(this.toolUi.createTranscriptAgentFailureDialog(error));
         }
         row.append(body);
+        if (options?.streaming) {
+            this.ensureTranscriptStreamStallWatch(row);
+        }
         return row;
     }
 
@@ -229,12 +233,128 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     /** In-place activity timeline refresh — append steps and toggle the active marker during SSE. */
+    protected resolveTranscriptStreamStalled(conv?: QaapAgentConversationDTO): boolean {
+        return isTranscriptStreamStalled(
+            this.host.transcriptLastStreamProgressAt,
+            conv?.status === 'streaming',
+        );
+    }
+
+    protected resolveTranscriptStreamStallLabel(): string {
+        return nls.localize(
+            'qaap/mobileProjects/transcriptStreamStalled',
+            'Taking longer than expected',
+        );
+    }
+
+    protected resolveTranscriptActivityItemsForDisplay(
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        options?: { readonly stalled?: boolean; readonly includeThinkingSteps?: boolean },
+    ): readonly TranscriptActivityTimelineItem[] {
+        const items = this.resolversUi.resolveTranscriptActivityItems(
+            [...segments],
+            options?.includeThinkingSteps ?? true,
+        );
+        if (!options?.stalled || items.length === 0) {
+            return items;
+        }
+        const activeIndex = items.findIndex(item => item.state === 'running' || item.state === 'thinking');
+        if (activeIndex < 0) {
+            return items;
+        }
+        const stallLabel = this.resolveTranscriptStreamStallLabel();
+        return items.map((item, index) => index === activeIndex
+            ? { ...item, label: stallLabel }
+            : item);
+    }
+
+    ensureTranscriptStreamStallWatch(row: HTMLElement): void {
+        if (row.dataset.transcriptStallWatch === '1') {
+            return;
+        }
+        row.dataset.transcriptStallWatch = '1';
+        const timer = window.setInterval(() => {
+            if (!row.isConnected) {
+                window.clearInterval(timer);
+                row.removeAttribute('data-transcript-stall-watch');
+                return;
+            }
+            if (!row.classList.contains('theia-mod-streaming')) {
+                window.clearInterval(timer);
+                row.removeAttribute('data-transcript-stall-watch');
+                row.classList.remove('theia-mod-stream-stalled');
+                return;
+            }
+            const conv = this.host.transcriptLastConv;
+            if (!conv || conv.status !== 'streaming') {
+                return;
+            }
+            this.syncTranscriptStreamStallChrome(row, conv);
+        }, 1000);
+    }
+
+    syncTranscriptStreamStallChrome(row: HTMLElement, conv: QaapAgentConversationDTO): void {
+        const stalled = this.resolveTranscriptStreamStalled(conv);
+        row.classList.toggle('theia-mod-stream-stalled', stalled);
+        const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
+        if (segmentsBody) {
+            const timeline = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
+            if (timeline) {
+                timeline.classList.toggle('theia-mod-stalled', stalled);
+                const items = this.resolveTranscriptActivityItemsForDisplay(
+                    this.resolveTranscriptRowSegments(conv, row),
+                    { stalled },
+                );
+                this.syncTranscriptActivityTimelineElement(timeline, items, { streaming: true, stalled });
+            }
+            const streamLine = segmentsBody.querySelector('.theia-mobile-agent-stream-line');
+            if (streamLine) {
+                this.syncTranscriptStreamingActivityLine(streamLine, conv, stalled);
+            }
+        }
+        if (row.hasAttribute(TRANSCRIPT_ACTIVITY_ROW_ATTR)) {
+            const line = row.querySelector('.theia-mobile-agent-stream-line');
+            if (line) {
+                this.syncTranscriptStreamingActivityLine(line, conv, stalled);
+            }
+            row.classList.toggle('theia-mod-stream-stalled', stalled);
+        }
+    }
+
+    protected resolveTranscriptRowSegments(conv: QaapAgentConversationDTO, row: HTMLElement): QaapAgentMessageSegmentDTO[] {
+        const messageId = row.getAttribute(TRANSCRIPT_MESSAGE_ID_ATTR);
+        if (messageId) {
+            const message = conv.messages.find(entry => entry.id === messageId);
+            if (message?.segments?.length) {
+                return [...message.segments];
+            }
+        }
+        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
+        return lastAgent?.segments ? [...lastAgent.segments] : [];
+    }
+
+    protected syncTranscriptStreamingActivityLine(
+        line: Element,
+        conv: QaapAgentConversationDTO,
+        stalled: boolean,
+    ): void {
+        const state = this.resolveTranscriptStreamingActivity(conv, { stalled });
+        line.className = `theia-mobile-agent-stream-line theia-mod-${state.kind}`;
+        const label = line.querySelector('.theia-mobile-agent-stream-label');
+        if (label) {
+            label.textContent = `${state.title}…`;
+            label.classList.toggle('theia-mod-shimmer', !stalled && (state.kind === 'planning' || state.kind === 'thinking'));
+            label.classList.toggle('theia-mod-stall', stalled);
+        }
+    }
+
     patchStreamingActivityTimeline(
         row: HTMLElement,
         nextSegments: readonly QaapAgentMessageSegmentDTO[],
         conv?: QaapAgentConversationDTO,
     ): boolean {
-        const items = this.resolversUi.resolveTranscriptActivityItems([...nextSegments]);
+        const stalled = this.resolveTranscriptStreamStalled(conv);
+        const items = this.resolveTranscriptActivityItemsForDisplay([...nextSegments], { stalled });
         if (items.length === 0) {
             this.patchStreamingThoughtBrief(row, nextSegments, conv, true);
             return true;
@@ -245,7 +365,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         let timeline = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
         if (!timeline) {
-            const created = this.createTranscriptActivityTimeline([...nextSegments], { streaming: true });
+            const created = this.createTranscriptActivityTimeline([...nextSegments], { streaming: true, stalled });
             if (!created) {
                 return false;
             }
@@ -257,7 +377,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             }
             timeline = created;
         } else {
-            this.syncTranscriptActivityTimelineElement(timeline, items, { streaming: true });
+            this.syncTranscriptActivityTimelineElement(timeline, items, { streaming: true, stalled });
         }
         this.patchStreamingThoughtBrief(row, nextSegments, conv, true);
         return true;
@@ -437,9 +557,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (!li) {
                 li = document.createElement('li');
                 li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${isActive ? ' theia-mod-active' : ''}`;
+                const label = this.createTranscriptActivityLabel(item.label, isActive && !!options?.streaming && !options?.stalled);
+                if (isActive && options?.stalled) {
+                    label.classList.add('theia-mod-stall');
+                }
                 li.append(
                     this.createTranscriptActivityIcon(item.state, isActive),
-                    this.createTranscriptActivityLabel(item.label, isActive),
+                    label,
                 );
                 list.append(li);
                 return;
@@ -448,7 +572,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             const label = li.querySelector<HTMLElement>('.theia-mobile-agent-activity-label');
             if (label) {
                 label.textContent = item.label;
-                label.classList.toggle('theia-mod-shimmer', isActive && !!options?.streaming);
+                const shimmer = isActive && !!options?.streaming && !options?.stalled;
+                label.classList.toggle('theia-mod-shimmer', shimmer);
+                label.classList.toggle('theia-mod-stall', isActive && !!options?.stalled);
             }
             const icon = li.querySelector('.theia-mobile-agent-activity-icon');
             if (icon) {
@@ -1087,7 +1213,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segments: QaapAgentMessageSegmentDTO[],
         options?: TranscriptActivityTimelineOptions & { readonly includeThinkingSteps?: boolean },
     ): HTMLElement | undefined {
-        const items = this.resolversUi.resolveTranscriptActivityItems(segments, options?.includeThinkingSteps ?? true);
+        const items = this.resolveTranscriptActivityItemsForDisplay(segments, {
+            stalled: options?.stalled,
+            includeThinkingSteps: options?.includeThinkingSteps ?? true,
+        });
         if (items.length === 0) {
             return undefined;
         }
@@ -1101,6 +1230,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         );
         const limit = options?.maxVisibleItems ?? 8;
         const visibleItems = limit > 0 ? items.slice(-limit) : items;
+        timeline.classList.toggle('theia-mod-stalled', !!options?.stalled);
         timeline.append(this.createTranscriptPremiumHead(
             'codicon-checklist',
             variant === 'plan'
@@ -1396,7 +1526,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const row = document.createElement('div');
         row.setAttribute(TRANSCRIPT_ACTIVITY_ROW_ATTR, 'true');
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent theia-mod-streaming theia-mobile-agent-activity';
-        const state = this.resolveTranscriptStreamingActivity(conv);
+        const stalled = this.resolveTranscriptStreamStalled(conv);
+        const state = this.resolveTranscriptStreamingActivity(conv, { stalled });
 
         // A single, live "thinking/acting" line — minimalist, with an animated dot and a shimmering
         // label that reflects what the agent is doing right now.
@@ -1408,12 +1539,18 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-stream-label';
         label.textContent = `${state.title}…`;
+        label.classList.toggle('theia-mod-shimmer', !stalled && (state.kind === 'planning' || state.kind === 'thinking'));
+        label.classList.toggle('theia-mod-stall', stalled);
         line.append(dot, label);
         const meta = this.createTranscriptStreamMeta(conv);
         if (meta) {
             line.append(meta);
         }
         row.append(line);
+        if (conv.status === 'streaming') {
+            row.classList.toggle('theia-mod-stream-stalled', stalled);
+            this.ensureTranscriptStreamStallWatch(row);
+        }
         return row;
     }
 
@@ -1454,7 +1591,20 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return meta;
     }
 
-    resolveTranscriptStreamingActivity(conv: QaapAgentConversationDTO): { kind: string; title: string; detail: string } {
+    resolveTranscriptStreamingActivity(
+        conv: QaapAgentConversationDTO,
+        options?: { readonly stalled?: boolean },
+    ): { kind: string; title: string; detail: string } {
+        if (options?.stalled) {
+            return {
+                kind: 'stall',
+                title: this.resolveTranscriptStreamStallLabel(),
+                detail: nls.localize(
+                    'qaap/mobileProjects/transcriptStreamStalledDetail',
+                    'The agent is still working in the background.',
+                ),
+            };
+        }
         const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
         const segments = lastAgent?.segments ?? [];
         const activeTool = [...segments].reverse().find((segment): segment is Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> =>
@@ -1475,17 +1625,18 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 detail: nls.localize('qaap/mobileProjects/transcriptActivityWritingDetail', 'Composing the next visible update.'),
             };
         }
+        const planningTitle = nls.localize('qaap/mobileProjects/transcriptActivityPlanningMoves', 'Planning next moves');
         const hasThinking = segments.some(segment => segment.type === 'thinking' && segment.content.trim().length > 0);
         if (hasThinking) {
             return {
-                kind: 'thinking',
-                title: nls.localize('qaap/mobileProjects/transcriptActivityThinking', 'Thinking'),
+                kind: 'planning',
+                title: planningTitle,
                 detail: nls.localize('qaap/mobileProjects/transcriptActivityThinkingDetail', 'Planning the next step before changing anything.'),
             };
         }
         return {
-            kind: 'starting',
-            title: nls.localize('qaap/mobileProjects/transcriptActivityStarting', 'Starting the turn'),
+            kind: 'planning',
+            title: planningTitle,
             detail: nls.localize('qaap/mobileProjects/transcriptActivityStartingDetail', 'Preparing context and selecting the next action.'),
         };
     }

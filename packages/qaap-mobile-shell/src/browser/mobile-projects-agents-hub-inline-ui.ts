@@ -56,6 +56,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptLastFingerprint: string | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     transcriptLastSseDeltaAt: number | undefined;
+    transcriptLastStreamProgressAt: number | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptPlanHost: HTMLElement | undefined;
     transcriptReviewHost: HTMLElement | undefined;
@@ -489,6 +490,8 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.transcriptLastConv = undefined;
             this.host.transcriptLastFingerprint = undefined;
             this.host.transcriptLastSseDeltaAt = undefined;
+            this.host.transcriptLastStreamProgressAt = undefined;
+            this.host.transcriptLastStreamProgressAt = undefined;
             this.syncAgentsHubInlineExecutionHeader(project, summary);
             this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, connectedChatHost);

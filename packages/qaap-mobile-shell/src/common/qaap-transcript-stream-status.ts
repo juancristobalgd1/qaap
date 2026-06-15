@@ -104,3 +104,17 @@ export function formatTranscriptThoughtDuration(elapsedMs: number): string {
     }
     return formatTranscriptStreamElapsed(elapsedMs);
 }
+
+/** Cursor switches from "Planning next moves" to this after ~15s without visible progress. */
+export const TRANSCRIPT_STREAM_STALL_MS = 15_000;
+
+export function isTranscriptStreamStalled(
+    lastProgressAtMs: number | undefined,
+    streaming: boolean,
+    now = Date.now(),
+): boolean {
+    if (!streaming || lastProgressAtMs === undefined) {
+        return false;
+    }
+    return now - lastProgressAtMs >= TRANSCRIPT_STREAM_STALL_MS;
+}

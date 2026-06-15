@@ -77,6 +77,7 @@ export interface MobileProjectsTranscriptSheetHost {
     transcriptFollowUpQueue: TranscriptFollowUpQueue;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     transcriptLastSseDeltaAt: number | undefined;
+    transcriptLastStreamProgressAt: number | undefined;
     transcriptHeaderSubtitle: HTMLElement | undefined;
     transcriptPreviewRequestRunning: boolean;
     transcriptPreviewRequestPending: boolean;
@@ -329,6 +330,7 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptLastFingerprint = undefined;
         this.host.transcriptLastConv = undefined;
         this.host.transcriptLastSseDeltaAt = undefined;
+        this.host.transcriptLastStreamProgressAt = undefined;
         this.host.transcriptChatHost = undefined;
         this.host.transcriptChatInputHost = undefined;
         this.host.transcriptTabStrip = undefined;

@@ -37,6 +37,7 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptLastRenderedConversationId: string | undefined;
     transcriptLastRenderedMessageId: string | undefined;
     transcriptLastFingerprint: string | undefined;
+    transcriptLastStreamProgressAt: number | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptComposerDraft: string;
     transcriptComposerHost: HTMLElement | undefined;

@@ -52,6 +52,7 @@ import {
     buildConversationTranscriptFingerprint,
     mergeConversationTranscriptFingerprint,
     shouldForceTranscriptRenderOnStatusSettle,
+    transcriptFingerprintChanged,
     TRANSCRIPT_TOOL_USE_ID_ATTR,
 } from '../common/qaap-transcript-incremental-update';
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
@@ -81,6 +82,7 @@ export interface MobileProjectsTranscriptLiveHost {
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     transcriptLastFingerprint: string | undefined;
+    transcriptLastStreamProgressAt: number | undefined;
     transcriptLastSseDeltaAt: number | undefined;
     transcriptLastStatus: QaapAgentConversationSummaryDTO['status'] | undefined;
     transcriptScheduleRefresh: (() => void) | undefined;
@@ -342,6 +344,13 @@ export class MobileProjectsTranscriptLiveUi {
         this.host.executionSurfaceTabsUi.syncPlanTabDuringStreaming();
         this.host.transcriptLastConv = next;
         this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, next);
+        if (next.status === 'streaming') {
+            if (!prevConv || prevConv.status !== 'streaming' || transcriptFingerprintChanged(prevConv, next)) {
+                this.host.transcriptLastStreamProgressAt = Date.now();
+            }
+        } else {
+            this.host.transcriptLastStreamProgressAt = undefined;
+        }
         if (conversationUsesInteractiveApprovals(next) && this.host.transcriptApprovalRefreshTimer === undefined) {
             this.syncTranscriptPendingApproval(next);
         }
@@ -671,7 +680,12 @@ export class MobileProjectsTranscriptLiveUi {
                 getLastConv: () => this.host.transcriptLastConv,
                 setLastConv: conv => { this.host.transcriptLastConv = conv; },
                 getLastSseDeltaAt: () => this.host.transcriptLastSseDeltaAt,
-                setLastSseDeltaAt: at => { this.host.transcriptLastSseDeltaAt = at; },
+                setLastSseDeltaAt: at => {
+                    this.host.transcriptLastSseDeltaAt = at;
+                    if (at !== undefined) {
+                        this.host.transcriptLastStreamProgressAt = at;
+                    }
+                },
                 findSummaryById: id => this.host.conversations?.findSummaryById(id),
                 refreshConversation: options => this.refreshOpenTranscriptConversation(options),
                 renderConversation: conv => {
@@ -996,10 +1010,14 @@ export class MobileProjectsTranscriptLiveUi {
                 }
                 if (full.status !== 'streaming' && !this.host.transcriptPreviewRequestPending) {
                     this.host.transcriptLastSseDeltaAt = undefined;
+                    this.host.transcriptLastStreamProgressAt = undefined;
                 }
                 return;
             }
             this.host.transcriptLastFingerprint = fingerprint;
+            if (full.status === 'streaming') {
+                this.host.transcriptLastStreamProgressAt = Date.now();
+            }
             this.host.transcriptMessagesUi.renderTranscriptMessages(activeChatHost, full);
             if (conversationUsesInteractiveApprovals(full)) {
                 this.syncTranscriptPendingApproval(full);
@@ -1016,6 +1034,7 @@ export class MobileProjectsTranscriptLiveUi {
             this.host.handleTranscriptStatusForAutoVerify(activeProject, activeSummary, full.status);
             if (full.status !== 'streaming') {
                 this.host.transcriptLastSseDeltaAt = undefined;
+                this.host.transcriptLastStreamProgressAt = undefined;
                 this.syncTranscriptConversationSettledChrome();
             } else {
                 this.host.transcriptLastStatus = full.status;

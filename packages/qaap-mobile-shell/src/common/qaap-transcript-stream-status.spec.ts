@@ -9,6 +9,7 @@ import {
     formatTranscriptStreamTokens,
     formatTranscriptThoughtDuration,
     isTranscriptAgentThinkingPhase,
+    isTranscriptStreamStalled,
     resolveTranscriptTurnStartMs,
     resolveTranscriptTurnStreamChars,
 } from './qaap-transcript-stream-status';
@@ -69,5 +70,14 @@ describe('qaap-transcript-stream-status', () => {
         expect(formatTranscriptThoughtDuration(400)).to.equal('1s');
         expect(formatTranscriptThoughtDuration(2_400)).to.equal('2s');
         expect(formatTranscriptThoughtDuration(90_000)).to.equal('1m 30s');
+    });
+
+    it('detects stream stalls after the Cursor-style grace window', () => {
+        const now = 20_000;
+        expect(isTranscriptStreamStalled(0, true, now)).to.equal(true);
+        expect(isTranscriptStreamStalled(4_000, true, now)).to.equal(true);
+        expect(isTranscriptStreamStalled(6_000, true, now)).to.equal(false);
+        expect(isTranscriptStreamStalled(6_000, false, now)).to.equal(false);
+        expect(isTranscriptStreamStalled(undefined, true, now)).to.equal(false);
     });
 });
