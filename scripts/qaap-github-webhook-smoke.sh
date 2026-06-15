@@ -19,8 +19,8 @@ PUBLIC_URL="${QAAP_OAUTH_PUBLIC_URL:-$(read_env QAAP_OAUTH_PUBLIC_URL)}"
 PUBLIC_URL="${PUBLIC_URL:-http://127.0.0.1:${THEIA_PORT}}"
 SECRET="${QAAP_GITHUB_WEBHOOK_SECRET:-$(read_env QAAP_GITHUB_WEBHOOK_SECRET)}"
 
-OWNER="${QAAP_WEBHOOK_SMOKE_OWNER:-qaap-smoke}"
-REPO="${QAAP_WEBHOOK_SMOKE_REPO:-sandbox}"
+OWNER="${QAAP_WEBHOOK_SMOKE_OWNER:-juancristobalgd1}"
+REPO="${QAAP_WEBHOOK_SMOKE_REPO:-qaap}"
 ISSUE="${QAAP_WEBHOOK_SMOKE_ISSUE:-1}"
 COMMENT_ID="${QAAP_WEBHOOK_SMOKE_COMMENT_ID:-$(date +%s)}"
 
@@ -37,7 +37,7 @@ print(json.dumps({
     'action': 'created',
     'comment': {
         'id': int(os.environ['COMMENT_ID']),
-        'body': '@qaap smoke test — ignore',
+        'body': '@qaap smoke test - ignore',
         'html_url': f\"https://github.com/{os.environ['OWNER']}/{os.environ['REPO']}/issues/{os.environ['ISSUE']}#issuecomment-smoke\",
         'user': {'login': 'qaap-smoke-bot'},
     },
