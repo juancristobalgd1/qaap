@@ -107,6 +107,12 @@ function renderStickyComposerStreamingSection(options: StickyComposerActivitySta
     const activity = options.streamingActivity!;
     const section = document.createElement('div');
     section.className = 'theia-mobile-sticky-composer-activity-section theia-mod-streaming';
+    if (activity.stalled) {
+        section.classList.add('theia-mod-stalled');
+    }
+
+    const rowHost = document.createElement('div');
+    rowHost.className = 'theia-mobile-sticky-composer-streaming-row';
 
     const row = document.createElement('button');
     row.type = 'button';
@@ -130,7 +136,20 @@ function renderStickyComposerStreamingSection(options: StickyComposerActivitySta
         options.onStreamingActivityClick?.();
     });
 
-    section.append(row);
+    rowHost.append(row);
+    if (activity.stalled && options.onStop) {
+        const stopBtn = document.createElement('button');
+        stopBtn.type = 'button';
+        stopBtn.className = 'theia-mobile-sticky-composer-activity-stop';
+        stopBtn.textContent = nls.localize('qaap/mobileProjects/stickyComposerStop', 'Stop');
+        stopBtn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            options.onStop?.();
+        });
+        rowHost.append(stopBtn);
+    }
+    section.append(rowHost);
     return section;
 }
 

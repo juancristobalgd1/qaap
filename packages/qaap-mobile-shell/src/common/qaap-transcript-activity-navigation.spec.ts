@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveTranscriptActivityNavigationItems } from './qaap-transcript-activity-navigation';
+import { groupTranscriptActivityNavigationItems, resolveTranscriptActivityNavigationItems } from './qaap-transcript-activity-navigation';
 
 const deps = {
     localizeActivityLabel: (label: string) => label,
@@ -41,5 +41,35 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(items[0]?.navigate).to.equal('file');
         expect(items[0]?.filePath).to.equal('src/a.ts');
         expect(items[1]?.navigate).to.equal('terminal');
+    });
+
+    it('groups consecutive finished reads into a single timeline row', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: true, toolUseId: '1' },
+            { type: 'tool', name: 'read_file', args: '{"path":"src/b.ts"}', finished: true, toolUseId: '2' },
+            { type: 'tool', name: 'read_file', args: '{"path":"src/c.ts"}', finished: true, toolUseId: '3' },
+            { type: 'tool', name: 'bash', args: '{"command":"npm test"}', finished: true, toolUseId: '4' },
+        ], deps, false);
+        const grouped = groupTranscriptActivityNavigationItems(items);
+        expect(grouped).to.have.length(2);
+        expect(grouped[0]?.grouped).to.equal(true);
+        expect(grouped[0]?.groupCount).to.equal(3);
+        expect(grouped[0]?.label).to.equal('Read 3 files');
+        expect(grouped[0]?.navigate).to.equal('file');
+        expect(grouped[0]?.filePath).to.equal('src/c.ts');
+        expect(grouped[1]?.label).to.equal('Running: bash');
+    });
+
+    it('keeps running tools ungrouped while collapsing prior finished reads', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: true, toolUseId: '1' },
+            { type: 'tool', name: 'read_file', args: '{"path":"src/b.ts"}', finished: true, toolUseId: '2' },
+            { type: 'tool', name: 'read_file', args: '{"path":"src/c.ts"}', finished: false, toolUseId: '3' },
+        ], deps, false);
+        const grouped = groupTranscriptActivityNavigationItems(items);
+        expect(grouped).to.have.length(2);
+        expect(grouped[0]?.grouped).to.equal(true);
+        expect(grouped[0]?.groupCount).to.equal(2);
+        expect(grouped[1]?.state).to.equal('running');
     });
 });

@@ -16933,6 +16933,25 @@ body > .theia-mobile-transcript-files-menu {
   min-height: 0;
 }
 
+.theia-mobile-agent-activity-item.theia-mod-enter {
+  animation: theia-mobile-agent-activity-item-enter 220ms ease-out;
+}
+
+@keyframes theia-mobile-agent-activity-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.theia-mobile-agent-activity-item.theia-mod-grouped .theia-mobile-agent-activity-label {
+  font-weight: 500;
+}
+
 .theia-mobile-agent-activity-icon {
   flex: none;
   width: 16px;
@@ -16963,6 +16982,20 @@ body > .theia-mobile-transcript-files-menu {
 .theia-mobile-agent-activity-icon.theia-mod-done.codicon {
   font-size: 13px;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 58%, transparent);
+}
+
+.theia-mobile-agent-activity-icon.theia-mod-kind.codicon {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 64%, transparent);
+}
+
+.theia-mobile-agent-activity-icon.theia-mod-kind.theia-mod-running.codicon {
+  color: color-mix(in srgb, var(--theia-foreground) 72%, var(--theia-descriptionForeground));
+}
+
+.theia-mobile-agent-activity-icon.theia-mod-thinking.codicon {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 62%, transparent);
 }
 
 .theia-mobile-agent-activity-icon.theia-mod-pending {
@@ -17082,6 +17115,22 @@ body > .theia-mobile-transcript-files-menu {
 
 .theia-mobile-sticky-composer-activity-section.theia-mod-streaming {
   padding: 0 10px 8px;
+}
+
+.theia-mobile-sticky-composer-streaming-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.theia-mobile-sticky-composer-streaming-row .theia-mobile-sticky-composer-streaming-activity {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.theia-mobile-sticky-composer-activity-section.theia-mod-streaming.theia-mod-stalled .theia-mobile-sticky-composer-streaming-activity {
+  border-color: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 35%, var(--theia-panel-border));
 }
 
 .theia-mobile-sticky-composer-streaming-activity {

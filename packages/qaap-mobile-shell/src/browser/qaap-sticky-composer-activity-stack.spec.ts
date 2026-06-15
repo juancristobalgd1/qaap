@@ -175,5 +175,22 @@ describe('qaap-sticky-composer-activity-stack', () => {
             row.click();
             expect(clicked).to.equal(true);
         });
+
+        it('renders Stop beside the streaming row when the stream is stalled', () => {
+            let stopped = false;
+            const stack = renderStickyComposerActivityStack({
+                streamingActivity: {
+                    kind: 'stall',
+                    title: 'Taking longer than expected',
+                    stalled: true,
+                },
+                onStop: () => { stopped = true; },
+            });
+            document.body.append(stack!);
+            const stopBtn = stack!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-activity-stop');
+            expect(stopBtn).to.exist;
+            stopBtn!.click();
+            expect(stopped).to.equal(true);
+        });
     });
 });
