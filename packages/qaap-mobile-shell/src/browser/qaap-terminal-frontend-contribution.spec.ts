@@ -9,12 +9,13 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 describe('qaap-defer-terminal-layout-init', () => {
 
     let shouldDeferTerminalLayoutInit: () => boolean;
+    let shouldDeferWorkHubIdeLayoutInit: () => boolean;
     let disableJSDOM: (() => void) | undefined;
 
     before(() => {
         disableJSDOM = enableJSDOM();
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        shouldDeferTerminalLayoutInit = require('./qaap-defer-terminal-layout-init').shouldDeferTerminalLayoutInit;
+        ({ shouldDeferTerminalLayoutInit, shouldDeferWorkHubIdeLayoutInit } = require('./qaap-defer-terminal-layout-init'));
     });
 
     after(() => {
@@ -35,5 +36,6 @@ describe('qaap-defer-terminal-layout-init', () => {
         });
         window.location.hash = '#/tmp/qaap-ws';
         expect(shouldDeferTerminalLayoutInit()).to.equal(true);
+        expect(shouldDeferWorkHubIdeLayoutInit()).to.equal(true);
     });
 });

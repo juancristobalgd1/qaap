@@ -69,6 +69,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     transcriptSurfacesUi: MobileProjectsTranscriptSurfacesUi;
     projectDetailUi: MobileProjectsProjectDetailUi;
 
+    ensureAgentsHubExecutionShellRendered(): void;
     appendTranscriptHeaderActions(header: HTMLElement, title: HTMLElement): HTMLButtonElement;
     renderHeader(): void;
     renderSubtitle(): void;
@@ -214,6 +215,9 @@ export class MobileProjectsExecutionSurfaceTabsUi {
                 this.host.renderHeader();
                 this.host.renderSubtitle();
             }
+        }
+        if (this.host.agentsHubShellActive && tab !== 'messages') {
+            this.host.ensureAgentsHubExecutionShellRendered();
         }
         this.showOnlyExecutionSurfaceTab(tab);
         this.mountExecutionSurfaceTabContent(project, summary, tab);

@@ -84,6 +84,8 @@ import {
     setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
+    setMobileWorkHubHideIdeSidePanels,
+    syncMobileWorkHubHideIdeSidePanelsFromComposerHeader,
 } from './mobile-projects-open';
 import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
@@ -554,6 +556,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             onMediaChange: () => this.onMediaChange(),
             scheduleSnapAndUiRefresh: () => this.scheduleSnapAndUiRefresh(),
             collapseMobileSideSheets: () => this.collapseMobileSideSheets(),
+            settleMobileSidePanelsCollapsed: () => this.settleMobileSidePanelsCollapsed(),
             ensureWelcomeInMainArea: () => this.ensureWelcomeInMainArea(),
             ensureDesktopSidePanelSizes: () => this.ensureDesktopSidePanelSizes(),
             createProjectsPanel: homeMode => this.createProjectsPanel(homeMode),
@@ -1329,6 +1332,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     protected async prepareSideSheetOpen(side: 'left' | 'right'): Promise<void> {
         const other: 'left' | 'right' = side === 'left' ? 'right' : 'left';
+        setMobileWorkHubHideIdeSidePanels(false);
         this.hideProjectsPanel();
         this.hidePullRequestPanel();
         if (this.shell.isExpanded(other)) {
@@ -1559,6 +1563,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.hidePullRequestPanel();
         if (this.isMobileExploreSheetVisible()) {
             await this.collapseMobileSidePanels();
+            syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
             this.scheduleSnapAndUiRefresh();
             return;
         }

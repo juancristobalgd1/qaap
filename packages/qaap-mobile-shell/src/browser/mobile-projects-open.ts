@@ -214,11 +214,34 @@ export function setMobileWorkHubHideBottomChrome(hidden: boolean): void {
 /** Tasks/Chat hub header with composer surface toggle — hide duplicate account control in top bars. */
 export const QAAP_MOBILE_WORKHUB_COMPOSER_HEADER_BODY_CLASS = 'theia-mobile-mod-workhub-composer-header';
 
+/**
+ * While Work Hub is primary, keep restored IDE side/bottom panels hidden until the user opens
+ * an explicit side sheet (Explorer, Chat, etc.).
+ */
+export const QAAP_MOBILE_WORKHUB_HIDE_IDE_SIDE_PANELS_BODY_CLASS = 'theia-mobile-mod-workhub-hide-ide-side-panels';
+
+export function setMobileWorkHubHideIdeSidePanels(hidden: boolean): void {
+    if (typeof document === 'undefined') {
+        return;
+    }
+    document.body.classList.toggle(QAAP_MOBILE_WORKHUB_HIDE_IDE_SIDE_PANELS_BODY_CLASS, hidden);
+}
+
+export function syncMobileWorkHubHideIdeSidePanelsFromComposerHeader(): void {
+    if (typeof document === 'undefined') {
+        return;
+    }
+    const hide = document.body.classList.contains(QAAP_MOBILE_WORKHUB_COMPOSER_HEADER_BODY_CLASS)
+        && !peekPreferDesktopIde();
+    setMobileWorkHubHideIdeSidePanels(hide);
+}
+
 export function setMobileWorkHubComposerHeaderChrome(visible: boolean): void {
     if (typeof document === 'undefined') {
         return;
     }
     document.body.classList.toggle(QAAP_MOBILE_WORKHUB_COMPOSER_HEADER_BODY_CLASS, visible);
+    setMobileWorkHubHideIdeSidePanels(visible && !peekPreferDesktopIde());
 }
 
 /** Full-screen agent transcript (mockup chat-active): hide hub landing chrome and hub bottom bar. */

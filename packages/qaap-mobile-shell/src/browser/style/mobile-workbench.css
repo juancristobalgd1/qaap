@@ -3154,6 +3154,45 @@ body.theia-mobile-mod-workhub-composer-header
   pointer-events: none !important;
 }
 
+/* Work Hub primary surface: hide restored IDE side/bottom panels (Explorer flash on boot). */
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell.theia-mod-mobile-one-column
+  #theia-left-content-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell.theia-mod-mobile-one-column
+  #theia-right-content-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell.theia-mod-mobile-one-column
+  #theia-bottom-content-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell.theia-mod-mobile-one-column
+  #theia-bottom-split-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell.theia-mod-mobile-one-column
+  #theia-left-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden),
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell.theia-mod-mobile-one-column
+  #theia-right-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell:not(.theia-mod-mobile-one-column)
+  #theia-left-content-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell:not(.theia-mod-mobile-one-column)
+  #theia-right-content-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell:not(.theia-mod-mobile-one-column)
+  #theia-bottom-content-panel,
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide)
+  #theia-app-shell:not(.theia-mod-mobile-one-column)
+  #theia-bottom-split-panel {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* Agents hub bootstrap: no slide-in over the (hidden) IDE — avoids a “double view” flash. */
 #theia-app-shell.theia-mod-mobile-one-column
   .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-visible,
@@ -8782,6 +8821,44 @@ body.theia-mobile-mod-landing
   .theia-mobile-project-detail-panel.theia-mobile-transcript-files-host,
 .theia-mobile-projects.theia-mod-project-detail.theia-mod-project-surface-tools
   .theia-mobile-project-detail-panel.theia-mobile-transcript-terminal-host {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-projects-scroll,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools .theia-mobile-projects-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden !important;
+  padding-bottom: 0;
+}
+
+.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-preview,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-preview,
+.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-plan,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-plan,
+.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-review,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-review,
+.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-files-host,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-files-host,
+.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-terminal-host,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools
+  .theia-mobile-agents-hub-inline-execution > .theia-mobile-transcript-terminal-host {
   flex: 1 1 auto;
   min-height: 0;
 }

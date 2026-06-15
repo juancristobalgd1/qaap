@@ -34,6 +34,7 @@
             // Pre-hide IDE chrome while the Work Hub / Agents surface mounts.
             if (hasWorkspace || dismiss || preferAgents) {
                 document.body.classList.add('theia-mobile-mod-workhub-composer-header');
+                document.body.classList.add('theia-mobile-mod-workhub-hide-ide-side-panels');
             }
             // Boot guard: hide the IDE shell until the Work Hub mounts so it never flashes first.
             // Mobile and desktop both boot into the hub; the IDE is only shown after an explicit
@@ -46,13 +47,25 @@
                     'background:#f5f5f5!important;background:var(--q-bg,var(--qaap-bg,#f5f5f5))!important}',
                     'html.theia-mobile-workhub-boot #theia-app-shell,',
                     'html.theia-mobile-workhub-boot #theia-top-panel,',
+                    'html.theia-mobile-workhub-boot #theia-left-content-panel,',
+                    'html.theia-mobile-workhub-boot #theia-right-content-panel,',
+                    'html.theia-mobile-workhub-boot #theia-bottom-content-panel,',
+                    'html.theia-mobile-workhub-boot #theia-bottom-split-panel,',
                     'html.theia-mobile-workhub-boot .theia-mobile-workbench-top-bar,',
                     'html.theia-mobile-workhub-boot .theia-mobile-bottom-chrome-host,',
                     'html.theia-mobile-workhub-boot #theia-statusBar,',
                     'html.theia-mobile-workhub-boot .theia-mobile-bottom-bar,',
                     'html.theia-mobile-workhub-boot #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,',
                     'body.theia-mobile-mod-workhub-composer-header #theia-main-content-panel,',
-                    'body.theia-mobile-mod-workhub-composer-header #theia-top-panel{',
+                    'body.theia-mobile-mod-workhub-composer-header #theia-top-panel,',
+                    'body.theia-mobile-mod-workhub-composer-header #theia-left-content-panel,',
+                    'body.theia-mobile-mod-workhub-composer-header #theia-right-content-panel,',
+                    'body.theia-mobile-mod-workhub-composer-header #theia-bottom-content-panel,',
+                    'body.theia-mobile-mod-workhub-composer-header #theia-bottom-split-panel,',
+                    'body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-left-content-panel,',
+                    'body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-right-content-panel,',
+                    'body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-bottom-content-panel,',
+                    'body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-bottom-split-panel{',
                     'visibility:hidden!important;pointer-events:none!important}'
                 ].join('');
                 (document.head || document.documentElement).appendChild(style);

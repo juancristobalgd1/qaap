@@ -15,6 +15,7 @@ import {
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
 import { EXPLORER_VIEW_CONTAINER_ID } from '@theia/navigator/lib/browser/navigator-widget-factory';
 import { FILE_NAVIGATOR_ID, FileNavigatorWidget } from '@theia/navigator/lib/browser/navigator-widget';
+import { shouldDeferWorkHubIdeLayoutInit } from './qaap-defer-terminal-layout-init';
 
 /**
  * Ensures the Explorer (file tree) is registered in the left activity strip. On desktop it is
@@ -25,10 +26,16 @@ import { FILE_NAVIGATOR_ID, FileNavigatorWidget } from '@theia/navigator/lib/bro
 export class QaapFileNavigatorContribution extends FileNavigatorContribution {
 
     override async initializeLayout(_app: FrontendApplication): Promise<void> {
+        if (shouldDeferWorkHubIdeLayoutInit()) {
+            return;
+        }
         await this.ensureExplorerInLeftPanel(this.shouldActivateExplorerOnStartup());
     }
 
     onDidInitializeLayout(_app: FrontendApplication): void {
+        if (shouldDeferWorkHubIdeLayoutInit()) {
+            return;
+        }
         const activate = this.shouldActivateExplorerOnStartup();
         void (async () => {
             if (!matchesMobileOneColumnLayout()) {

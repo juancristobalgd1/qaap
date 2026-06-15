@@ -112,6 +112,8 @@ export class MobileProjectsAgentsHubInlineUi {
 
     constructor(protected readonly host: MobileProjectsAgentsHubInlineHost) { }
 
+    protected agentsHubExecutionHeaderProjectId: string | undefined;
+
     shouldPreserveAgentsHubInlineTranscriptShell(): boolean {
         return this.host.hubView === 'tasks'
             && this.shouldUseAgentsHubLanding()
@@ -119,6 +121,18 @@ export class MobileProjectsAgentsHubInlineUi {
             && !!this.host.transcriptOpenSummaryId
             && !!this.host.agentsHubInlineExecutionRoot?.isConnected
             && this.host.agentsHubInlineExecutionRoot.parentElement === this.host.scroll;
+    }
+
+    /** Keep Plan/Preview/Files surfaces mounted while a non-chat execution tab is active. */
+    shouldPreserveAgentsHubToolSurface(): boolean {
+        if (this.host.hubView !== 'tasks' || !this.shouldUseAgentsHubLanding() || !this.host.agentsHubShellActive) {
+            return false;
+        }
+        const project = this.resolveAgentsHubShellProject();
+        if (!project || !this.host.agentsHubInlineExecutionRoot?.isConnected) {
+            return false;
+        }
+        return this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) !== 'messages';
     }
 
     /** SSE ticks while a transcript is open should not rebuild the whole Work Hub list. */
@@ -382,8 +396,12 @@ export class MobileProjectsAgentsHubInlineUi {
         summary: QaapAgentConversationSummaryDTO,
     ): void {
         const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project);
+        const projectChanged = this.agentsHubExecutionHeaderProjectId !== project.id;
+        this.agentsHubExecutionHeaderProjectId = project.id;
         const existingStrip = this.host.agentsHubInlineTabStrip;
-        if (existingStrip?.isConnected && this.host.transcriptOpenSummaryId === summary.id) {
+        if (existingStrip?.isConnected
+            && !projectChanged
+            && this.host.transcriptOpenSummaryId === summary.id) {
             this.host.executionSurfaceTabsUi.refreshExecutionSurfaceTabStripState(existingStrip, activeTab);
             this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
             if (activeTab !== 'messages') {
@@ -419,6 +437,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.detachTranscriptReviewWidget();
         this.host.transcriptReviewHost = undefined;
         this.host.transcriptPreviewHost = undefined;
+        this.agentsHubExecutionHeaderProjectId = undefined;
         this.host.disposeTranscriptEmbeddedPreview();
         this.host.transcriptFilesHost = undefined;
         this.host.transcriptTerminalHost = undefined;
@@ -446,6 +465,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptPreviewHost = undefined;
         this.host.transcriptFilesHost = undefined;
         this.host.transcriptTerminalHost = undefined;
+        this.agentsHubExecutionHeaderProjectId = undefined;
     }
 
     async openAgentsHubInlineTranscript(

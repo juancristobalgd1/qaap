@@ -13,6 +13,7 @@ import {
     markPreferAgentsSurface,
     peekPreferDesktopIde,
     setMobileWorkHubComposerHeaderChrome,
+    syncMobileWorkHubHideIdeSidePanelsFromComposerHeader,
     shouldBootstrapMobileAgentsChat,
     shouldPreferWorkHubAgentsLayout,
     shouldSkipMobileProjectsLanding,
@@ -32,6 +33,7 @@ export interface MobileShellWorkHubBootstrapHost {
     onMediaChange(): void;
     scheduleSnapAndUiRefresh(): void;
     collapseMobileSideSheets(): Promise<void>;
+    settleMobileSidePanelsCollapsed(): void;
     ensureWelcomeInMainArea(): Promise<void>;
     ensureDesktopSidePanelSizes(): Promise<void>;
     createProjectsPanel(homeMode: boolean): MobileProjectsPanel;
@@ -89,7 +91,7 @@ export class MobileShellWorkHubBootstrapController {
         }
         this.host.onMediaChange();
         if (this.host.isMobileActive()) {
-            await this.host.collapseMobileSideSheets();
+            void this.host.collapseMobileSideSheets();
             if (!peekPreferDesktopIde()) {
                 this.host.applyMobileProjectsPanelDismissAfterReload();
                 if (!this.tryBootstrapMobileAgentsChat() && !this.host.getProjectsPanel()?.isVisible()) {
@@ -157,7 +159,7 @@ export class MobileShellWorkHubBootstrapController {
                 setMobileWorkHubComposerHeaderChrome(true);
                 this.host.syncMobileHubPrimaryBottomChrome();
                 this.host.refreshBottomBar();
-                void this.host.releaseMobileWorkHubBootGuardWhenReady();
+                void this.prepareWorkHubIdePanelsHidden().then(() => this.host.releaseMobileWorkHubBootGuardWhenReady());
                 return true;
             }
         }
@@ -220,6 +222,7 @@ export class MobileShellWorkHubBootstrapController {
                 this.host.disposeProjectsPanelForDesktopIde();
                 return;
             }
+            await this.prepareWorkHubIdePanelsHidden();
             await this.host.releaseMobileWorkHubBootGuardWhenReady();
             markPreferAgentsSurface();
             void this.finishAgentsSurfaceBootstrap(epoch, panel);
@@ -228,6 +231,12 @@ export class MobileShellWorkHubBootstrapController {
                 this.sessionState.agentsBootstrapStarted = false;
             }
         }
+    }
+
+    /** Collapse restored IDE side sheets before revealing Work Hub (avoids Explorer flash). */
+    protected async prepareWorkHubIdePanelsHidden(): Promise<void> {
+        await this.host.collapseMobileSideSheets();
+        this.host.settleMobileSidePanelsCollapsed();
     }
 
     /** Non-blocking chrome refresh after the composer is visible (TTI path). */
@@ -241,6 +250,8 @@ export class MobileShellWorkHubBootstrapController {
             this.host.refreshProjectBootstrapFromWorkspace();
             this.host.ensureDesktopWorkHubSessionsSidebarOpen();
             await this.host.collapseMobileSideSheets();
+            this.host.settleMobileSidePanelsCollapsed();
+            syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
             if (!this.shouldContinueAgentsBootstrap(epoch)) {
                 panel.hide();
                 this.host.disposeProjectsPanelForDesktopIde();

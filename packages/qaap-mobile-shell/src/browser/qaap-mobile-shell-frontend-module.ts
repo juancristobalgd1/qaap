@@ -25,6 +25,7 @@ import { PreferenceContribution } from '@theia/core/lib/common/preferences/prefe
 import { QaapChatPreferencesContribution } from './qaap-chat-preferences-contribution';
 import { WidgetFactory } from '@theia/core/lib/browser/widget-manager';
 import { SCM_WIDGET_FACTORY_ID } from '@theia/scm/lib/browser/scm-contribution';
+import { ScmContribution } from '@theia/scm/lib/browser/scm-contribution';
 import { ScmWidget } from '@theia/scm/lib/browser/scm-widget';
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import { ChatViewTreeWidget } from '@theia/ai-chat-ui/lib/browser/chat-tree-view/chat-view-tree-widget';
@@ -96,6 +97,7 @@ import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigato
 import { QaapAiChatMobileContribution } from './qaap-ai-chat-mobile-contribution';
 import { QaapOutlineMobileContribution } from './qaap-outline-mobile-contribution';
 import { QaapMemoryInspectorMobileContribution } from './qaap-memory-inspector-mobile-contribution';
+import { QaapScmContribution } from './qaap-scm-contribution';
 import { QaapFileNavigatorContribution } from './qaap-file-navigator-contribution';
 import { createQaapFileNavigatorWidget } from './qaap-navigator-widget-factory';
 import { QaapVsxExtensionsMobileContribution } from './qaap-vsx-extensions-mobile-contribution';
@@ -132,6 +134,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
         id: SCM_WIDGET_FACTORY_ID,
         createWidget: () => createQaapScmWidgetContainer(container).get(ScmWidget)
     })).inSingletonScope();
+    bind(QaapScmContribution).toSelf().inSingletonScope();
+    rebind(ScmContribution).toService(QaapScmContribution);
     bind(MobileProjectsService).toSelf().inSingletonScope();
     bind(MobileProjectsReadmeContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileProjectsReadmeContribution);

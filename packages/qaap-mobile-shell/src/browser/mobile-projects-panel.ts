@@ -1840,6 +1840,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.agentsHubInlineUi.shouldPreserveAgentsHubInlineTranscriptShell();
     }
 
+    protected shouldPreserveAgentsHubToolSurface(): boolean {
+        return this.agentsHubInlineUi.shouldPreserveAgentsHubToolSurface();
+    }
+
     protected shouldSkipFullRenderListOnConversationTick(): boolean {
         return this.agentsHubInlineUi.shouldSkipFullRenderListOnConversationTick();
     }

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
@@ -20,6 +21,7 @@ import {
     type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
+import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import { resolveTranscriptWorkspaceCwd } from '../common/qaap-transcript-workspace-cwd';
 import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
 import {
@@ -159,11 +161,69 @@ export class MobileProjectsTranscriptSurfacesUi {
     protected transcriptPreviewProbeReadyUrl: string | undefined;
     protected transcriptPreviewMountedUrl: string | undefined;
     protected transcriptPreviewLastSyncedUrl: string | undefined;
+    protected transcriptPreviewProjectId: string | undefined;
 
     constructor(
         protected readonly host: MobileProjectsTranscriptSurfacesHost,
         protected readonly transcriptHistoryUi: MobileProjectsTranscriptHistoryUi,
     ) { }
+
+    /** Open transcript, or the Agents hub idle shell when no session is selected yet. */
+    protected matchesActivePreviewSummary(summary: QaapAgentConversationSummaryDTO): boolean {
+        if (this.host.transcriptOpenSummaryId === summary.id) {
+            return true;
+        }
+        return this.host.agentsHubShellActive
+            && !this.host.transcriptOpenSummaryId
+            && isAgentsHubIdleConversationSummary(summary);
+    }
+
+    protected pathsEqual(left: string | undefined, right: string | undefined): boolean {
+        if (!left || !right) {
+            return false;
+        }
+        const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+        return normalize(left) === normalize(right);
+    }
+
+    /** Bootstrap dev server belongs to the workspace root of this hub project card. */
+    protected bootstrapAppliesToProject(project: MobileProjectEntry): boolean {
+        const bootstrap = this.host.projectBootstrap;
+        if (!bootstrap?.descriptor) {
+            return project.isCurrent === true;
+        }
+        const projectCwd = this.host.projectsService.getProjectCwd(project)
+            ?? this.host.preparedCwdByProjectId.get(project.id);
+        const bootstrapRoot = FileUri.fsPath(bootstrap.descriptor.rootUri);
+        if (projectCwd) {
+            return this.pathsEqual(projectCwd, bootstrapRoot);
+        }
+        return project.isCurrent === true;
+    }
+
+    protected bootstrapPreviewUrlForProject(project: MobileProjectEntry): string | undefined {
+        const bootstrap = this.host.projectBootstrap;
+        if (!bootstrap || bootstrap.phase !== 'running' || !bootstrap.previewUrl) {
+            return undefined;
+        }
+        if (!this.bootstrapAppliesToProject(project)) {
+            return undefined;
+        }
+        return normalizePreviewUrlForSameOrigin(bootstrap.previewUrl);
+    }
+
+    /** Drop cached iframe state when the user switches hub projects on the Preview tab. */
+    protected ensurePreviewProjectContext(project: MobileProjectEntry): void {
+        if (this.transcriptPreviewProjectId === project.id) {
+            return;
+        }
+        this.transcriptPreviewProjectId = project.id;
+        this.transcriptPreviewMountedUrl = undefined;
+        this.transcriptPreviewLastSyncedUrl = undefined;
+        this.transcriptPreviewProbeReadyUrl = undefined;
+        this.stopTranscriptPreviewTabProbe();
+        this.disposeTranscriptEmbeddedPreview();
+    }
 
     mountProjectDetailSurfaceTab(
         project: MobileProjectEntry,
@@ -532,8 +592,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         return raw ? normalizePreviewUrlForSameOrigin(raw) : undefined;
     }
 
-    mountTranscriptEmbeddedPreview(host: HTMLElement, previewUrl: string): void {
+    mountTranscriptEmbeddedPreview(host: HTMLElement, previewUrl: string, project: MobileProjectEntry): void {
         const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
+        this.transcriptPreviewProjectId = project.id;
         if (this.host.transcriptEmbeddedPreview) {
             this.clearTranscriptEmptyPreviewChrome();
             const root = this.host.transcriptEmbeddedPreview.root;
@@ -577,10 +638,16 @@ export class MobileProjectsTranscriptSurfacesUi {
     ): Promise<void> {
         const port = extractDevPreviewPortFromUrl(candidateUrl);
         if (port === undefined) {
+            if (!this.matchesActivePreviewSummary(summary) || !host.isConnected) {
+                return;
+            }
+            this.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject);
             return;
         }
         const probe = await probeQaapDevPreviewPort(port);
-        if (this.host.transcriptOpenSummaryId !== summary.id || !host.isConnected) {
+        if (!this.matchesActivePreviewSummary(summary)
+            || !host.isConnected
+            || this.transcriptPreviewProjectId !== project.id) {
             return;
         }
         if (!probe.ready) {
@@ -647,7 +714,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             this.disposeTranscriptEmbeddedPreview();
             host.replaceChildren();
         }
-        this.mountTranscriptEmbeddedPreview(host, readyUrl);
+        this.mountTranscriptEmbeddedPreview(host, readyUrl, latestProject);
     }
 
     protected shouldKeepTranscriptPreviewTabProbe(
@@ -655,7 +722,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         summary: QaapAgentConversationSummaryDTO,
         conv: QaapAgentConversationDTO,
     ): boolean {
-        if (this.host.transcriptOpenSummaryId !== summary.id) {
+        if (!this.matchesActivePreviewSummary(summary)) {
             return false;
         }
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview'
@@ -673,7 +740,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     ): Promise<void> {
         const conv = this.host.transcriptLastConv;
         const host = this.executionPreviewHost();
-        if (!conv || !host?.isConnected || this.host.transcriptOpenSummaryId !== summary.id) {
+        if (!conv || !host?.isConnected || !this.matchesActivePreviewSummary(summary)) {
             return;
         }
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
@@ -689,7 +756,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         const bootstrapUrl = this.host.projectBootstrap?.phase === 'running'
-            ? this.host.projectBootstrap.previewUrl
+            ? this.bootstrapPreviewUrlForProject(latestProject)
             : undefined;
         if (bootstrapUrl) {
             void this.tryMountVerifiedTranscriptPreview(
@@ -702,7 +769,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         const discovered = await this.discoverProjectDevPreviewUrl(latestProject);
-        if (!discovered || !host.isConnected || this.host.transcriptOpenSummaryId !== summary.id) {
+        if (!discovered || !host.isConnected || !this.matchesActivePreviewSummary(summary)) {
             return;
         }
         const updatedProject = { ...latestProject, previewUrl: discovered };
@@ -717,14 +784,37 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (!host) {
             return;
         }
+        this.ensurePreviewProjectContext(project);
 
         const conv = this.host.transcriptLastConv;
         const latestProject = this.host.projects.find(candidate => candidate.id === project.id) ?? project;
         const candidateUrl = this.resolveTranscriptPreviewUrl(latestProject, conv);
         if (candidateUrl) {
+            const port = extractDevPreviewPortFromUrl(candidateUrl);
+            if (port === undefined) {
+                this.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject);
+                return;
+            }
             void this.tryMountVerifiedTranscriptPreview(host, project, summary, latestProject, candidateUrl);
             return;
         }
+
+        void this.refreshTranscriptPreviewProject(latestProject, summary).then(refreshed => {
+            if (this.transcriptPreviewProjectId !== project.id || !host.isConnected) {
+                return;
+            }
+            if (this.host.executionSurfaceTabsUi.activeExecutionTab(refreshed) !== 'preview') {
+                return;
+            }
+            const hydratedUrl = this.resolveTranscriptPreviewUrl(refreshed, this.host.transcriptLastConv);
+            if (!hydratedUrl) {
+                return;
+            }
+            this.host.projects = this.host.projects.map(candidate => candidate.id === refreshed.id
+                ? refreshed
+                : candidate);
+            this.renderPreviewTab(refreshed, summary);
+        });
 
         this.transcriptPreviewMountedUrl = undefined;
         this.transcriptPreviewLastSyncedUrl = undefined;
@@ -780,7 +870,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
         const conv = this.host.transcriptLastConv;
-        if (!conv || this.host.transcriptOpenSummaryId !== summary.id) {
+        if (!conv || !this.matchesActivePreviewSummary(summary)) {
             return;
         }
         try {
@@ -910,7 +1000,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             if (previewUrl) {
                 void this.ensureTranscriptPreviewServing(latestProject, summary, previewUrl);
             }
-            if (!previewUrl || this.host.transcriptOpenSummaryId !== summary.id || this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
+            if (!previewUrl || !this.matchesActivePreviewSummary(summary) || this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
                 return;
             }
             this.host.projects = this.host.projects.map(candidate => candidate.id === latestProject.id
@@ -960,7 +1050,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 previewUrlHint: previewUrl,
                 portHint: port,
             });
-            if (!readyUrl || this.host.transcriptOpenSummaryId !== summary.id) {
+            if (!readyUrl || !this.matchesActivePreviewSummary(summary)) {
                 return;
             }
             if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
@@ -1455,7 +1545,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             this.host.transcriptPreviewRequestPending = false;
         }
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview'
-            && (this.host.transcriptOpenSummaryId === summary.id || this.host.projectDetailSurfaceTargets)) {
+            && (this.matchesActivePreviewSummary(summary) || this.host.projectDetailSurfaceTargets)) {
             const candidateUrl = this.resolveTranscriptPreviewUrl(latestProject, conv);
             if (candidateUrl === this.transcriptPreviewLastSyncedUrl
                 && this.transcriptPreviewMountedUrl === candidateUrl
@@ -1555,12 +1645,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.transcriptPreviewProbeReadyUrl = normalizePreviewUrlForSameOrigin(readyUrl);
     }
 
-    /** Preview URL of the bootstrap-managed dev server, when it is up. */
-    protected bootstrapRunningPreviewUrl(): string | undefined {
-        const bootstrap = this.host.projectBootstrap;
-        return bootstrap?.phase === 'running' && bootstrap.previewUrl
-            ? normalizePreviewUrlForSameOrigin(bootstrap.previewUrl)
-            : undefined;
+    /** Preview URL of the bootstrap-managed dev server, when it is up for this project. */
+    protected bootstrapRunningPreviewUrl(project: MobileProjectEntry): string | undefined {
+        return this.bootstrapPreviewUrlForProject(project);
     }
 
     /** True while the bootstrap is installing / starting / serving the dev server. */
@@ -1579,25 +1666,27 @@ export class MobileProjectsTranscriptSurfacesUi {
                 return normalizePreviewUrlForSameOrigin(fromConversation);
             }
             if (this.host.transcriptPreviewRequestPending && conv.status === 'streaming') {
-                return this.transcriptPreviewProbeReadyUrl ?? this.bootstrapRunningPreviewUrl();
+                return this.transcriptPreviewProbeReadyUrl ?? this.bootstrapRunningPreviewUrl(project);
             }
             if (conv.status === 'streaming' && conversationShouldWatchDevPreview(conv, window.location.origin)) {
-                return this.bootstrapRunningPreviewUrl()
+                return this.bootstrapRunningPreviewUrl(project)
                     ?? this.transcriptPreviewProbeReadyUrl
-                    ?? this.transcriptPreviewMountedUrl
+                    ?? (this.transcriptPreviewProjectId === project.id ? this.transcriptPreviewMountedUrl : undefined)
                     ?? undefined;
             }
         }
         if (this.host.transcriptPreviewRequestPending && conv?.status === 'streaming') {
             return undefined;
         }
-        // The bootstrap keeps the dev server alive across agent turns; bind it even when the
-        // conversation is no longer streaming and the transcript never printed a URL.
-        const bootstrapUrl = this.bootstrapRunningPreviewUrl();
+        const storedUrl = project.previewUrl ? normalizePreviewUrlForSameOrigin(project.previewUrl) : undefined;
+        if (storedUrl) {
+            return storedUrl;
+        }
+        const bootstrapUrl = this.bootstrapRunningPreviewUrl(project);
         if (bootstrapUrl) {
             return bootstrapUrl;
         }
-        return project.previewUrl ? normalizePreviewUrlForSameOrigin(project.previewUrl) : undefined;
+        return undefined;
     }
 
     async requestTranscriptPreview(
@@ -1614,9 +1703,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
 
         const bootstrap = this.host.projectBootstrap;
-        if (bootstrap) {
+        if (bootstrap && this.bootstrapAppliesToProject(project)) {
             void ensureTranscriptDevPreview(bootstrap).then(readyUrl => {
-                if (!readyUrl || this.host.transcriptOpenSummaryId !== summary.id) {
+                if (!readyUrl || !this.matchesActivePreviewSummary(summary)) {
                     return;
                 }
                 if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
@@ -1662,7 +1751,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
         } finally {
             this.host.transcriptPreviewRequestRunning = false;
-            if (this.host.transcriptOpenSummaryId === summary.id) {
+            if (this.matchesActivePreviewSummary(summary) && this.transcriptPreviewProjectId === project.id) {
                 this.renderPreviewTab(project, summary);
             }
         }

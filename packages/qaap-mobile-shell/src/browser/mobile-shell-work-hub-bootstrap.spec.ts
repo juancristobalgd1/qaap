@@ -81,6 +81,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
             onMediaChange: () => { calls.push('onMediaChange'); },
             scheduleSnapAndUiRefresh: () => { calls.push('scheduleSnapAndUiRefresh'); },
             collapseMobileSideSheets: async () => { calls.push('collapseMobileSideSheets'); },
+            settleMobileSidePanelsCollapsed: () => { calls.push('settleMobileSidePanelsCollapsed'); },
             ensureWelcomeInMainArea: async () => { calls.push('ensureWelcomeInMainArea'); },
             ensureDesktopSidePanelSizes: async () => { calls.push('ensureDesktopSidePanelSizes'); },
             createProjectsPanel: homeMode => ({
@@ -142,6 +143,8 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         expect(controller.tryBootstrapMobileAgentsChat()).to.equal(true);
         expect(sessionState.landingLeftThisSession).to.equal(true);
         await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+        expect(host.calls).to.include('collapseMobileSideSheets');
+        expect(host.calls).to.include('settleMobileSidePanelsCollapsed');
         expect(host.calls).to.include('releaseMobileWorkHubBootGuardWhenReady');
         expect(host.calls).to.include('refreshProjectBootstrapFromWorkspace');
     });

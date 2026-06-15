@@ -10,6 +10,7 @@ import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-exe
 export interface MobileProjectsHubRenderHost {
     root: HTMLElement;
     hubView: MobileProjectsHubView;
+    agentsHubShellActive: boolean;
     transcriptSheet: HTMLElement | undefined;
     transcriptOpenProject: MobileProjectEntry | undefined;
     sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
@@ -17,6 +18,7 @@ export interface MobileProjectsHubRenderHost {
     isProjectDiffView(): boolean;
     shouldUseAgentsHubLanding(): boolean;
     isProjectDetailView(): boolean;
+    resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     renderHeader(): void;
@@ -45,13 +47,21 @@ export class MobileProjectsHubRenderUi {
         this.host.root.classList.toggle('theia-mod-project-detail', this.host.isProjectDetailView());
         const detailProject = this.host.projectNavigationUi.resolveSelectedProject();
         const detailTab = detailProject ? this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(detailProject) : 'messages';
+        const agentsShellProject = this.host.agentsHubShellActive
+            ? this.host.resolveAgentsHubShellProject()
+            : undefined;
+        const agentsShellTab = agentsShellProject
+            ? this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(agentsShellProject)
+            : 'messages';
         this.host.root.classList.toggle(
             'theia-mod-project-surface-chat',
-            this.host.isProjectDetailView() && detailTab === 'messages',
+            (this.host.isProjectDetailView() && detailTab === 'messages')
+            || (!!agentsShellProject && agentsShellTab === 'messages'),
         );
         this.host.root.classList.toggle(
             'theia-mod-project-surface-tools',
-            this.host.isProjectDetailView() && detailTab !== 'messages',
+            (this.host.isProjectDetailView() && detailTab !== 'messages')
+            || (!!agentsShellProject && agentsShellTab !== 'messages'),
         );
         this.host.renderHeader();
         this.host.renderSubtitle();
