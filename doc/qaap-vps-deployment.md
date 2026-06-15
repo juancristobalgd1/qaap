@@ -86,6 +86,43 @@ docker compose up --build -d
 docker compose logs -f theia
 ```
 
+## Automated deploy (GitHub Actions + Cursor)
+
+One-time setup on your laptop:
+
+```bash
+./scripts/qaap-vps-setup-deploy-key.sh ~/.ssh/qaap-vps-deploy
+```
+
+Follow the printed steps:
+
+1. **VPS** — append the generated **public** key to `~/.ssh/authorized_keys` on the server.
+2. **GitHub** — add repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Example |
+|--------|---------|
+| `QAAP_VPS_HOST` | `178.105.136.93` |
+| `QAAP_VPS_USER` | `root` |
+| `QAAP_VPS_SSH_KEY` | contents of `~/.ssh/qaap-vps-deploy` (private key) |
+| `QAAP_VPS_SSH_PORT` | `22` (optional) |
+| `QAAP_VPS_REPO_DIR` | `/opt/qaap` (optional) |
+| `QAAP_VPS_PUBLIC_URL` | `http://178.105.136.93:4873` (optional health check) |
+
+3. **Cursor Cloud Agent** (optional) — same `QAAP_VPS_HOST` + `QAAP_VPS_SSH_KEY` as agent secrets so chat can run `./scripts/qaap-vps-remote-update.sh`.
+
+After secrets exist:
+
+- Every push to **`master`** (except docs-only) runs **Actions → Qaap VPS deploy**.
+- Manual run: **Actions → Qaap VPS deploy → Run workflow** (pick branch / `--no-cache`).
+
+Remote update from your machine:
+
+```bash
+export QAAP_VPS_HOST=178.105.136.93
+export QAAP_VPS_SSH_KEY_FILE=~/.ssh/qaap-vps-deploy
+./scripts/qaap-vps-remote-update.sh
+```
+
 ## What the image includes
 
 The runtime stage of `Dockerfile` installs:

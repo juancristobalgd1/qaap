@@ -75,6 +75,8 @@
     "qaap:local:browser": "node scripts/qaap-local-browser-sample.mjs",
     "qaap:local:browser:restart": "node scripts/qaap-restart-browser.mjs",
     "qaap:local:browser:rebuild": "node scripts/qaap-restart-browser.mjs --build",
+    "qaap:vps:remote-update": "bash scripts/qaap-vps-remote-update.sh",
+    "qaap:vps:setup-key": "bash scripts/qaap-vps-setup-deploy-key.sh",
     "docs": "rimraf gh-pages/ && npm run docs:packages && npm run docs:merge",
     "docs:packages": "node scripts/generate-typedoc-per-package.js",
     "docs:merge": "node scripts/merge-package-typedocs.js",
