@@ -17065,6 +17065,47 @@ body > .theia-mobile-transcript-files-menu {
   overflow-wrap: anywhere;
 }
 
+.theia-mobile-agent-activity-item.theia-mod-clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  margin: 0 -6px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.theia-mobile-agent-activity-item.theia-mod-clickable:hover .theia-mobile-agent-activity-label,
+.theia-mobile-agent-activity-item.theia-mod-clickable:focus-visible .theia-mobile-agent-activity-label {
+  color: var(--theia-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.theia-mobile-sticky-composer-activity-section.theia-mod-streaming {
+  padding: 0 10px 8px;
+}
+
+.theia-mobile-sticky-composer-streaming-activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-panel-border) 55%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theia-editorWidget-background) 55%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theia-mobile-sticky-composer-streaming-activity:hover,
+.theia-mobile-sticky-composer-streaming-activity:focus-visible {
+  border-color: color-mix(in srgb, var(--theia-focusBorder) 55%, var(--theia-panel-border));
+  outline: none;
+}
+
 /* Collapsible changed-files card (details/summary). */
 .theia-mobile-agent-changed-files {
   padding: 0;

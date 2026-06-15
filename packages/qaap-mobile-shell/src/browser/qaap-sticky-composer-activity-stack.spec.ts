@@ -158,5 +158,22 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(stack!.querySelector('.theia-mobile-sticky-composer-activity-section.theia-mod-queue')).to.exist;
             expect(stack!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.equal(null);
         });
+
+        it('renders a live streaming row that mirrors transcript activity', () => {
+            let clicked = false;
+            const stack = renderStickyComposerActivityStack({
+                streamingActivity: {
+                    kind: 'reading',
+                    title: 'Read package.json',
+                    detail: 'Calling read_file',
+                },
+                onStreamingActivityClick: () => { clicked = true; },
+            });
+            expect(stack).to.exist;
+            const row = stack!.querySelector('.theia-mobile-sticky-composer-streaming-activity') as HTMLButtonElement;
+            expect(row).to.exist;
+            row.click();
+            expect(clicked).to.equal(true);
+        });
     });
 });

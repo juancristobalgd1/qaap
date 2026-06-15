@@ -6,6 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { extractToolArgFilePath } from '../common/qaap-agent-conversation-list-metrics';
 import { formatToolActivityLabel, parseDiffStatsFromText } from '../common/qaap-agent-conversation-list-metrics';
+import { resolveTranscriptActivityNavigationItems, type TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
@@ -20,30 +21,15 @@ export class MobileProjectsTranscriptMessagesResolversUi {
     resolveTranscriptActivityItems(
         segments: QaapAgentMessageSegmentDTO[],
         includeThinkingSteps = true,
-    ): Array<{ readonly label: string; readonly state: 'done' | 'running' | 'thinking' }> {
-        const items: Array<{ readonly label: string; readonly state: 'done' | 'running' | 'thinking' }> = [];
-        for (const segment of segments) {
-            if (segment.type === 'thinking' && segment.content.trim()) {
-                if (includeThinkingSteps) {
-                    items.push({
-                        label: nls.localize('qaap/mobileProjects/transcriptActivityPlanning', 'Planning next steps'),
-                        state: 'thinking',
-                    });
-                }
-            } else if (segment.type === 'tool') {
-                items.push({
-                    label: this.host.projectRowsUi.localizeActivityLabel(formatToolActivityLabel(segment.name, segment.args)),
-                    state: segment.finished ? 'done' : 'running',
-                });
-            }
-        }
-        if (segments.some(segment => segment.type === 'text' && segment.content.trim())) {
-            items.push({
-                label: nls.localize('qaap/mobileProjects/transcriptActivityResponseReady', 'Writing response'),
-                state: 'done',
-            });
-        }
-        return items;
+    ): TranscriptActivityNavigationItem[] {
+        return resolveTranscriptActivityNavigationItems(segments, {
+            localizeActivityLabel: label => this.host.projectRowsUi.localizeActivityLabel(label),
+            formatToolActivityLabel,
+            localizePlanningLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityPlanning', 'Planning next steps'),
+            localizeWritingLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityResponseReady', 'Writing response'),
+            extractToolPath: args => this.extractTranscriptToolPath(args),
+            resolveToolKind: name => this.resolveTranscriptToolKind(name),
+        }, includeThinkingSteps);
     }
 
 

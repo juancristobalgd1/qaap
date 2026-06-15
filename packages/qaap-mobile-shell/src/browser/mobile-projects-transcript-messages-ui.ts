@@ -132,8 +132,19 @@ export class MobileProjectsTranscriptMessagesUi {
     resolveTranscriptActivityItems(
         segments: QaapAgentMessageSegmentDTO[],
         includeThinkingSteps = true,
-    ): Array<{ readonly label: string; readonly state: 'done' | 'running' | 'thinking' }> {
+    ): import('../common/qaap-transcript-activity-navigation').TranscriptActivityNavigationItem[] {
         return this.resolversUi.resolveTranscriptActivityItems(segments, includeThinkingSteps);
+    }
+
+    resolveTranscriptStreamingActivity(
+        conv: QaapAgentConversationDTO,
+        options?: { readonly stalled?: boolean },
+    ): { kind: string; title: string; detail: string } {
+        return this.artifactsUi.resolveTranscriptStreamingActivity(conv, options);
+    }
+
+    scrollTranscriptStreamingTraceIntoView(options?: { readonly expandTimeline?: boolean }): void {
+        this.artifactsUi.scrollTranscriptStreamingTraceIntoView(options);
     }
 
     createTranscriptActivityTimeline(
