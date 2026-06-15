@@ -16,6 +16,7 @@ import {
     stripQaapMentionFromPrompt,
 } from '../common/qaap-github-agent-trigger';
 import { verifyGithubWebhookSignature } from '../common/qaap-github-webhook-signature';
+import { readGithubWebhookPayload } from './qaap-express-json-middleware';
 import {
     QaapGithubAgentTriggerBridge,
     type QaapGithubAgentTriggerRequest,
@@ -280,10 +281,11 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
     }
 
     protected verifyWebhookSignature(req: Request, secret: string): boolean {
-        const payload = typeof req.body === 'string'
-            ? req.body
-            : JSON.stringify(req.body ?? {});
-        return verifyGithubWebhookSignature(payload, secret, req.header('x-hub-signature-256'));
+        return verifyGithubWebhookSignature(
+            readGithubWebhookPayload(req),
+            secret,
+            req.header('x-hub-signature-256'),
+        );
     }
 
     protected handleInboxStream(req: Request, res: Response): void {

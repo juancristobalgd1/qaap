@@ -5,7 +5,6 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
-import { json } from 'body-parser';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { spawn } from 'child_process';
@@ -37,6 +36,7 @@ import {
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
+import { useQaapJsonBodyParser } from './qaap-express-json-middleware';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -71,7 +71,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     protected readonly workspaceServer: WorkspaceServer;
 
     configure(app: Application): void {
-        app.use(json());
+        useQaapJsonBodyParser(app);
         app.get(QAAP_GITHUB_OAUTH_START_PATH, (req, res) => this.handleOAuthStart(req, res));
         app.get(QAAP_GITHUB_OAUTH_CALLBACK_PATH, (req, res) => this.handleOAuthCallback(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/config`, (req, res) => this.handleAuthConfig(req, res));

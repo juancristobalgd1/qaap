@@ -43,7 +43,7 @@ print(json.dumps({
     },
     'issue': {'number': int(os.environ['ISSUE'])},
     'repository': {'owner': {'login': os.environ['OWNER']}, 'name': os.environ['REPO']},
-}))
+}, separators=(',', ':')))
 ")"
 
 CURL_HEADERS=(-H "Content-Type: application/json" -H "X-GitHub-Event: issue_comment")
