@@ -137,6 +137,20 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
         });
 
+        it('shows the Changes pill while a file-change tool is in flight before stats land', () => {
+            const host = renderStickyComposerChangesPill({
+                pendingFileChanges: true,
+                agentWorking: true,
+                onStop: () => undefined,
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+
+            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.exist;
+            expect(host!.querySelector(`[data-qaap-diff-stat-added]`)).to.equal(null);
+            expect(host!.querySelector('.theia-mobile-sticky-composer-activity-stop')?.textContent).to.equal('Stop');
+        });
+
         it('patches diff stats in place for counter push animation', async () => {
             const host = renderStickyComposerChangesPill({
                 diffStats: { added: 5, removed: 1 },

@@ -36,6 +36,8 @@ export interface StickyComposerActivityStackOptions {
     /** When set, a commit split-button (primary action + options menu) renders beside the Changes pill. */
     onCommitAction?: (action: QaapGitCommitWorkflowAction) => void;
     commitBusy?: boolean;
+    /** Show the Changes pill before per-file rows or diff stats are parsed (in-flight file tools). */
+    pendingFileChanges?: boolean;
 }
 
 interface StickyComposerCommitMenuOption {
@@ -67,7 +69,7 @@ function stickyComposerCommitMenuOptions(): StickyComposerCommitMenuOption[] {
 export function renderStickyComposerChangesPill(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
     const hasFiles = (options.changedFiles?.length ?? 0) > 0;
     const hasStats = !!options.diffStats && ((options.diffStats.added ?? 0) > 0 || (options.diffStats.removed ?? 0) > 0);
-    if (!hasFiles && !hasStats) {
+    if (!hasFiles && !hasStats && !options.pendingFileChanges) {
         return undefined;
     }
     const host = document.createElement('div');
@@ -91,8 +93,8 @@ export function patchStickyComposerChangesPill(
     const stats = options.diffStats;
     const fileCount = files.length > 0
         ? files.length
-        : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
-    pill.setAttribute('aria-label', buildChangesPillAriaLabel(fileCount, stats));
+        : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 || options.pendingFileChanges ? 1 : 0);
+    pill.setAttribute('aria-label', buildChangesPillAriaLabel(fileCount, stats, options.pendingFileChanges));
     syncDiffStatsInline(pill, stats, true);
     return true;
 }
@@ -325,7 +327,11 @@ function syncAnimatedDiffStatBadge(
 function buildChangesPillAriaLabel(
     fileCount: number,
     stats: { readonly added?: number; readonly removed?: number } | undefined,
+    pendingFileChanges?: boolean,
 ): string {
+    if (pendingFileChanges && fileCount <= 0 && (stats?.added ?? 0) <= 0 && (stats?.removed ?? 0) <= 0) {
+        return nls.localize('qaap/mobileProjects/stickyComposerChangesPillPending', 'Review file changes in progress');
+    }
     const added = stats?.added ?? 0;
     const removed = stats?.removed ?? 0;
     if (fileCount === 1) {
@@ -364,7 +370,7 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
         pill.className = 'theia-mobile-sticky-composer-changes-pill';
         pill.setAttribute(
             'aria-label',
-            buildChangesPillAriaLabel(fileCount, stats),
+            buildChangesPillAriaLabel(fileCount, stats, options.pendingFileChanges),
         );
         const label = document.createElement('span');
         label.className = 'theia-mobile-sticky-composer-changes-pill-label';
