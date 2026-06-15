@@ -7,6 +7,21 @@
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { MOBILE_HORIZONTAL_SCROLL_SELECTOR } from './mobile-horizontal-touch-scroll';
 
+/** Applied during active vertical touch pan to promote the scroll layer (see qaap-mobile-touch-scroll.css). */
+export const MOBILE_SCROLL_GPU_COMPOSITOR_CLASS = 'theia-mod-touch-scrolling';
+
+/**
+ * Scroll hosts that must not receive compositor transform — sticky descendants
+ * (e.g. Work Hub row heads) break when the scroller is promoted to its own layer.
+ */
+export const MOBILE_SCROLL_COMPOSITOR_EXCLUDED_SELECTORS = [
+    '.theia-mobile-projects-scroll',
+] as const;
+
+export function isMobileScrollCompositorExcluded(element: HTMLElement): boolean {
+    return MOBILE_SCROLL_COMPOSITOR_EXCLUDED_SELECTORS.some(selector => element.matches(selector));
+}
+
 /** Elements that must keep horizontal pan only (see qaap-mobile-touch-scroll.css). */
 const HORIZONTAL_STRIP_SELECTOR =
     '.lm-TabBar-content-container, .lm-DockPanel-tabBar[data-orientation="horizontal"], ' +
@@ -42,6 +57,13 @@ export function installMobileVerticalTouchScroll(element: HTMLElement): Disposab
 
     const canScroll = (): boolean => element.scrollHeight > element.clientHeight + 1;
 
+    const setCompositorScrolling = (active: boolean): void => {
+        if (isMobileScrollCompositorExcluded(element)) {
+            return;
+        }
+        element.classList.toggle(MOBILE_SCROLL_GPU_COMPOSITOR_CLASS, active);
+    };
+
     const onTouchStart = (event: TouchEvent): void => {
         if (event.touches.length !== 1 || !canScroll() || isInsideHorizontalScrollHost(event.target)) {
             tracking = false;
@@ -53,6 +75,7 @@ export function installMobileVerticalTouchScroll(element: HTMLElement): Disposab
         scrollTop = element.scrollTop;
         axisLocked = false;
         lockToVertical = false;
+        setCompositorScrolling(true);
     };
 
     const onTouchMove = (event: TouchEvent): void => {
@@ -82,6 +105,7 @@ export function installMobileVerticalTouchScroll(element: HTMLElement): Disposab
         tracking = false;
         axisLocked = false;
         lockToVertical = false;
+        setCompositorScrolling(false);
     };
 
     element.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -94,6 +118,7 @@ export function installMobileVerticalTouchScroll(element: HTMLElement): Disposab
         element.removeEventListener('touchmove', onTouchMove);
         element.removeEventListener('touchend', stop);
         element.removeEventListener('touchcancel', stop);
+        setCompositorScrolling(false);
         delete element.dataset.theiaMobileScrollY;
     });
 }
