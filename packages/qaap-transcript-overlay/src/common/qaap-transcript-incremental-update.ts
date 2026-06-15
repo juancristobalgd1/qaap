@@ -235,6 +235,9 @@ export const TRANSCRIPT_ACTIVITY_ROW_ATTR = 'data-transcript-activity-row';
 /** Inline Cursor-style execution timeline inside an agent message row. */
 export const TRANSCRIPT_ACTIVITY_TIMELINE_ATTR = 'data-transcript-activity-timeline';
 
+/** Collapsible thought header above the inline execution trace. */
+export const TRANSCRIPT_THOUGHT_BRIEF_ATTR = 'data-transcript-thought-brief';
+
 function segmentToolFingerprint(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): string {
     return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}:${segment.name}`;
 }

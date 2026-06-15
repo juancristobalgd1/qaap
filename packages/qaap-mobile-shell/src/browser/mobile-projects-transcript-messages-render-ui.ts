@@ -492,11 +492,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
         }
         if (appendText) {
-            if (!this.artifactsUi.appendStreamingAgentTextSegment(existingRow, nextSegments)) {
+            if (!this.artifactsUi.appendStreamingAgentTextSegment(existingRow, nextSegments, conv)) {
                 return false;
             }
         }
-        this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments);
+        this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments, conv);
         return true;
     }
 

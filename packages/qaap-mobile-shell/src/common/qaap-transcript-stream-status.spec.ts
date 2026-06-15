@@ -7,6 +7,8 @@ import { expect } from 'chai';
 import {
     formatTranscriptStreamElapsed,
     formatTranscriptStreamTokens,
+    formatTranscriptThoughtDuration,
+    isTranscriptAgentThinkingPhase,
     resolveTranscriptTurnStartMs,
     resolveTranscriptTurnStreamChars,
 } from './qaap-transcript-stream-status';
@@ -53,5 +55,19 @@ describe('qaap-transcript-stream-status', () => {
             { role: 'agent', createdAt: 2, content: 'abc' },
         ])).to.equal(3);
         expect(resolveTranscriptTurnStreamChars([{ role: 'user', content: 'hi' }])).to.equal(0);
+    });
+
+    it('detects the live thinking phase before tools or answer text', () => {
+        expect(isTranscriptAgentThinkingPhase([], true)).to.equal(true);
+        expect(isTranscriptAgentThinkingPhase([{ type: 'thinking', content: 'plan' }], true)).to.equal(true);
+        expect(isTranscriptAgentThinkingPhase([{ type: 'tool' }], true)).to.equal(false);
+        expect(isTranscriptAgentThinkingPhase([{ type: 'text', content: 'hi' }], true)).to.equal(false);
+        expect(isTranscriptAgentThinkingPhase([{ type: 'thinking', content: 'plan' }], false)).to.equal(false);
+    });
+
+    it('formats short thought durations in seconds', () => {
+        expect(formatTranscriptThoughtDuration(400)).to.equal('1s');
+        expect(formatTranscriptThoughtDuration(2_400)).to.equal('2s');
+        expect(formatTranscriptThoughtDuration(90_000)).to.equal('1m 30s');
     });
 });
