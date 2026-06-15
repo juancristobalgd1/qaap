@@ -9,14 +9,11 @@ import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
 import { QaapGithubInboxEndpoint } from './qaap-github-inbox-endpoint';
 import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
-import { QaapExpressJsonBodyContribution } from './qaap-express-json-middleware';
 import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 
 export default new ContainerModule(bind => {
-    bind(QaapExpressJsonBodyContribution).toSelf().inSingletonScope();
-    bind(BackendApplicationContribution).toService(QaapExpressJsonBodyContribution);
     bind(QaapGithubSessionStore).toSelf().inSingletonScope();
     bind(QaapGithubInboxHub).toSelf().inSingletonScope();
     bind(QaapGithubInboxEndpoint).toSelf().inSingletonScope();

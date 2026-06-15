@@ -16,7 +16,7 @@ import {
     stripQaapMentionFromPrompt,
 } from '../common/qaap-github-agent-trigger';
 import { verifyGithubWebhookSignature } from '../common/qaap-github-webhook-signature';
-import { readGithubWebhookPayload } from './qaap-express-json-middleware';
+import { readGithubWebhookPayload, useQaapJsonBodyParser } from './qaap-express-json-middleware';
 import {
     QaapGithubAgentTriggerBridge,
     type QaapGithubAgentTriggerRequest,
@@ -84,6 +84,7 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
     protected readonly agentTrigger?: QaapGithubAgentTriggerBridge;
 
     configure(app: Application): void {
+        useQaapJsonBodyParser(app);
         app.post(`${QAAP_GITHUB_API_PATH}/webhook`, (req, res) => {
             void this.handleWebhook(req, res);
         });

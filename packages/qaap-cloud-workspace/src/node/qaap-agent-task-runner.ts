@@ -324,7 +324,9 @@ export class QaapAgentTaskRunner {
 
     @postConstruct()
     protected init(): void {
-        this.detectAgents();
+        // Docker/VPS: @postConstruct can run while PATH is still settling; defer the first probe
+        // and re-probe in bindHelperApiUrl before agent tasks and health checks rely on agents[].
+        setImmediate(() => this.detectAgents());
         this.ensureHelperCli();
         void this.restoreFromDisk();
     }
@@ -379,10 +381,17 @@ export class QaapAgentTaskRunner {
     /** Called by the backend application once the HTTP server is listening on `port`. */
     bindHelperApiUrl(port: number): void {
         this.helperApiUrl = `http://127.0.0.1:${port}/qaap/api/agent-tasks`;
+        if (!this.isAgentConfigured()) {
+            this.detectAgents({ force: true });
+        }
     }
 
     /** Probe each known agent's binary on PATH once at startup. */
-    protected detectAgents(): void {
+    protected detectAgents(options?: { force?: boolean }): void {
+        if (!options?.force && this.detectedAgents.size > 0) {
+            return;
+        }
+        this.detectedAgents.clear();
         for (const candidate of AGENT_CANDIDATES) {
             if (this.isCandidateAvailable(candidate)) {
                 this.detectedAgents.set(candidate.id, candidate);
@@ -556,8 +565,12 @@ export class QaapAgentTaskRunner {
 
     protected isOnPath(bin: string): boolean {
         const cmd = process.platform === 'win32' ? 'where' : 'which';
+        const env: NodeJS.ProcessEnv = {
+            ...process.env,
+            PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        };
         try {
-            return spawnSync(cmd, [bin], { stdio: 'ignore' }).status === 0;
+            return spawnSync(cmd, [bin], { stdio: 'ignore', env }).status === 0;
         } catch {
             return false;
         }
