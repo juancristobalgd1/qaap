@@ -15608,9 +15608,9 @@ body > .theia-mobile-transcript-files-menu {
  */
 .theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty {
   position: sticky;
-  bottom: -8px;
+  bottom: -16px;
   z-index: 7;
-  margin-bottom: -8px;
+  margin-bottom: -16px;
   padding-bottom: 0;
   pointer-events: none;
 }
