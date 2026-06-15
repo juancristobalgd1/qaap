@@ -14,6 +14,11 @@ import {
     excerptTranscriptToolError,
     type TranscriptActivityStepState,
 } from './qaap-transcript-activity-step-state';
+import {
+    hasActiveTranscriptToolSegment,
+    isTranscriptShortTextPreamble,
+    resolveTranscriptAgentTextChars,
+} from './qaap-transcript-stream-status';
 
 export type { TranscriptActivityStepState };
 
@@ -112,6 +117,22 @@ function resolveToolStepLabel(
     return baseLabel;
 }
 
+function resolveWritingStepState(
+    segments: readonly QaapAgentMessageSegmentDTO[],
+    options: TranscriptActivityNavigationOptions | undefined,
+): TranscriptActivityStepState {
+    if (!options?.streaming) {
+        return 'success';
+    }
+    if (hasActiveTranscriptToolSegment(segments, options.pendingToolUseIds)) {
+        return 'waiting';
+    }
+    if (isTranscriptShortTextPreamble(segments)) {
+        return 'waiting';
+    }
+    return 'streaming';
+}
+
 export function resolveTranscriptActivityNavigationItems(
     segments: readonly QaapAgentMessageSegmentDTO[],
     deps: TranscriptActivityNavigationDeps,
@@ -170,10 +191,16 @@ export function resolveTranscriptActivityNavigationItems(
         });
         previousFailed = state === 'error';
     }
-    if (segments.some(segment => segment.type === 'text' && segment.content.trim())) {
+    const textChars = resolveTranscriptAgentTextChars(segments);
+    if (options?.streaming && isTranscriptShortTextPreamble(segments)) {
+        items.push({
+            label: deps.localizePlanningLabel(),
+            state: 'running',
+        });
+    } else if (textChars > 0) {
         items.push({
             label: deps.localizeWritingLabel(),
-            state: options?.streaming ? 'streaming' : 'success',
+            state: resolveWritingStepState(segments, options),
             durationMs: undefined,
         });
     }

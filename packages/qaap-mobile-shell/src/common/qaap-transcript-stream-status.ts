@@ -99,6 +99,39 @@ export function isTranscriptAgentThinkingPhase(
 /** Cursor-style trace phases for progressive disclosure in the transcript. */
 export type TranscriptTraceDisplayPhase = 'thinking' | 'acting' | 'writing' | 'settled';
 
+/** Short agent preambles ("I'll…") before tools run are not treated as the answer phase. */
+export const TRANSCRIPT_TEXT_PREAMBLE_MAX_CHARS = 40;
+
+export function resolveTranscriptAgentTextChars(segments: readonly ThinkingPhaseSegment[]): number {
+    let total = 0;
+    for (const segment of segments) {
+        if (segment.type === 'text') {
+            total += segment.content?.trim().length ?? 0;
+        }
+    }
+    return total;
+}
+
+export function isTranscriptShortTextPreamble(segments: readonly ThinkingPhaseSegment[]): boolean {
+    const chars = resolveTranscriptAgentTextChars(segments);
+    if (chars <= 0 || chars >= TRANSCRIPT_TEXT_PREAMBLE_MAX_CHARS) {
+        return false;
+    }
+    return !segments.some(segment => segment.type === 'tool');
+}
+
+export function hasActiveTranscriptToolSegment(
+    segments: readonly ThinkingPhaseSegment[],
+    pendingToolUseIds?: ReadonlySet<string>,
+): boolean {
+    if (pendingToolUseIds && pendingToolUseIds.size > 0) {
+        return true;
+    }
+    return segments.some(segment =>
+        segment.type === 'tool'
+        && !(segment as { readonly finished?: boolean }).finished);
+}
+
 export function resolveTranscriptTraceDisplayPhase(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
@@ -108,6 +141,12 @@ export function resolveTranscriptTraceDisplayPhase(
     }
     if (isTranscriptAgentThinkingPhase(segments, streaming)) {
         return 'thinking';
+    }
+    if (hasActiveTranscriptToolSegment(segments)) {
+        return 'acting';
+    }
+    if (isTranscriptShortTextPreamble(segments)) {
+        return 'acting';
     }
     if (segments.some(segment => segment.type === 'text' && (segment.content?.trim() ?? '').length > 0)) {
         return 'writing';

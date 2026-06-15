@@ -8,7 +8,7 @@ import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { excerptTranscriptThought, extractTranscriptDiffCard, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, formatTranscriptThoughtDuration, isTranscriptAgentThinkingPhase, isTranscriptStreamStalled, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
+import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, formatTranscriptThoughtDuration, hasActiveTranscriptToolSegment, isTranscriptAgentThinkingPhase, isTranscriptStreamStalled, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
 import { groupTranscriptActivityNavigationItems } from '../common/qaap-transcript-activity-navigation';
@@ -757,6 +757,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             thinkingActive,
             streaming,
             turnStartMs,
+            segments: [...segments],
         });
     }
 
@@ -768,6 +769,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             readonly thinkingActive: boolean;
             readonly streaming: boolean;
             readonly turnStartMs: number | undefined;
+            readonly segments?: readonly QaapAgentMessageSegmentDTO[];
         },
     ): void {
         title.classList.remove('theia-mod-shimmer');
@@ -804,6 +806,14 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             return;
         }
         block.removeAttribute('data-thought-live-timer');
+        if (options.streaming && options.segments?.length) {
+            const activity = resolveTranscriptStreamingActivityFromSegments(options.segments);
+            if (activity.kind !== 'writing' || hasActiveTranscriptToolSegment(options.segments)) {
+                title.classList.add('theia-mod-shimmer');
+                title.textContent = activity.title;
+                return;
+            }
+        }
         if (options.thinking) {
             const frozenMs = block.dataset.thoughtDurationMs ? Number(block.dataset.thoughtDurationMs) : undefined;
             if (options.streaming && frozenMs !== undefined && Number.isFinite(frozenMs)) {
@@ -1192,6 +1202,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             thinkingActive,
             streaming,
             turnStartMs,
+            segments: [...segments],
         });
         return block;
     }

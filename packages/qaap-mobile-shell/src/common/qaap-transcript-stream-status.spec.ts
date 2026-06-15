@@ -96,12 +96,19 @@ describe('qaap-transcript-stream-status', () => {
         expect(resolveTranscriptTraceDisplayPhase([{ type: 'tool' }], true)).to.equal('acting');
         expect(shouldExpandTranscriptInlineTimeline([{ type: 'tool' }], true)).to.equal(true);
         expect(resolveTranscriptTraceDisplayPhase([
+            { type: 'text', content: "I'll" },
+        ], true)).to.equal('acting');
+        expect(resolveTranscriptTraceDisplayPhase([
+            { type: 'text', content: "I'll" },
             { type: 'tool' },
-            { type: 'text', content: 'done' },
+        ], true)).to.equal('acting');
+        expect(resolveTranscriptTraceDisplayPhase([
+            { type: 'tool', finished: true } as { type: string; content?: string; finished?: boolean },
+            { type: 'text', content: 'Here is the full answer with enough detail to continue streaming.' },
         ], true)).to.equal('writing');
         expect(shouldExpandTranscriptInlineTimeline([
-            { type: 'tool' },
-            { type: 'text', content: 'done' },
+            { type: 'tool', finished: true } as { type: string; content?: string; finished?: boolean },
+            { type: 'text', content: 'Here is the full answer with enough detail to continue streaming.' },
         ], true)).to.equal(false);
         expect(resolveTranscriptTraceDisplayPhase([{ type: 'tool' }], false)).to.equal('settled');
     });

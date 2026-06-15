@@ -124,4 +124,22 @@ describe('qaap-transcript-activity-navigation', () => {
         ], deps, false, { streaming: true });
         expect(items.at(-1)?.state).to.equal('streaming');
     });
+
+    it('prefers planning or active tools over a short text preamble while streaming', () => {
+        const preamble = resolveTranscriptActivityNavigationItems([
+            { type: 'text', content: "I'll" },
+        ], deps, false, { streaming: true });
+        expect(preamble).to.have.length(1);
+        expect(preamble[0]?.label).to.equal('Planning next steps');
+        expect(preamble[0]?.state).to.equal('running');
+
+        const withTool = resolveTranscriptActivityNavigationItems([
+            { type: 'text', content: "I'll" },
+            { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: false, toolUseId: '1' },
+        ], deps, false, { streaming: true });
+        expect(withTool).to.have.length(2);
+        expect(withTool[0]?.state).to.equal('running');
+        expect(withTool[1]?.label).to.equal('Writing response');
+        expect(withTool[1]?.state).to.equal('waiting');
+    });
 });
