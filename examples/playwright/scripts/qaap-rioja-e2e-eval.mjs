@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 /**
- * E2E evaluación: proyecto vacío → agente crea landing Rioja → install → preview.
+ * E2E evaluación: proyecto vacío → agente QAIQ crea landing Rioja → install → preview.
  *
  * Requiere:
  *   - Browser app compilado y servidor en QAAP_BASE_URL (default http://127.0.0.1:3000)
- *   - Mock opencode en PATH (scripts/mock-opencode-rioja-agent)
+ *   - Mock QAIQ en PATH como `qaiq` (scripts/mock-qaiq-rioja-agent)
+ *
+ * Arranque típico del backend con mock:
+ *   export PATH="$(pwd)/examples/playwright/scripts:$PATH"
+ *   ln -sf "$(pwd)/examples/playwright/scripts/mock-qaiq-rioja-agent" /tmp/qaiq-mock-bin/qaiq
+ *   export PATH="/tmp/qaiq-mock-bin:$PATH"
+ *   npm run start:browser
  */
 import { chromium } from 'playwright';
 import * as fs from 'fs';
@@ -16,7 +22,46 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = process.env.QAAP_BASE_URL ?? 'http://127.0.0.1:3000';
 const OUT_DIR = path.join(process.cwd(), 'test-results', 'qaap-rioja-e2e');
 const MOBILE = { width: 375, height: 812 };
-const MOCK_OPENCODE = path.join(__dirname, 'mock-opencode-rioja-agent');
+const MOCK_QAIQ = path.join(__dirname, 'mock-qaiq-rioja-agent');
+const MOCK_QAIQ_BIN_DIR = path.join(OUT_DIR, 'mock-qaiq-bin');
+
+function resolveMockQaiqPath() {
+    try {
+        const resolved = fs.realpathSync(MOCK_QAIQ);
+        if (fs.existsSync(resolved)) {
+            return resolved;
+        }
+    } catch {
+        // fall through
+    }
+    return MOCK_QAIQ;
+}
+
+function ensureMockQaiqSymlink() {
+    fs.mkdirSync(MOCK_QAIQ_BIN_DIR, { recursive: true });
+    const linkPath = path.join(MOCK_QAIQ_BIN_DIR, 'qaiq');
+    const target = resolveMockQaiqPath();
+    try {
+        if (fs.existsSync(linkPath)) {
+            fs.unlinkSync(linkPath);
+        }
+        fs.symlinkSync(target, linkPath);
+    } catch (err) {
+        return { ok: false, linkPath, target, error: String(err) };
+    }
+    return { ok: true, linkPath, target };
+}
+
+function detectQaiqOnPath() {
+    const which = process.env.PATH?.split(path.delimiter).some(dir => {
+        try {
+            return fs.existsSync(path.join(dir, 'qaiq'));
+        } catch {
+            return false;
+        }
+    });
+    return { onPath: !!which, pathEnv: process.env.PATH ?? '' };
+}
 
 const PROMPT = 'Crea una landing page moderna sobre vinos Rioja con Vite. Incluye hero, secciones de bodegas y variedades, y estilos elegantes.';
 const PREVIEW_PROMPT = 'levanta la app y muéstrame la vista previa';
@@ -140,8 +185,12 @@ async function main() {
     const workspace = createEmptyWorkspace();
     const wsPath = workspace.replace(/\\/g, '/');
 
+    const mockLink = ensureMockQaiqSymlink();
+    const qaiqPath = detectQaiqOnPath();
+
     const metrics = {
         workspace,
+        mockQaiq: { script: resolveMockQaiqPath(), symlink: mockLink, qaiqOnPath: qaiqPath },
         phases: {},
         files: {},
         conversation: {},
@@ -151,9 +200,16 @@ async function main() {
     };
 
     const t0 = now();
-    console.log('\n=== Qaap Rioja E2E Eval ===');
+    console.log('\n=== Qaap Rioja E2E Eval (QAIQ) ===');
     console.log(`Workspace vacío: ${workspace}`);
-    console.log(`Mock opencode: ${MOCK_OPENCODE}`);
+    console.log(`Mock QAIQ: ${resolveMockQaiqPath()}`);
+    console.log(`Symlink: ${mockLink.linkPath} -> ${mockLink.target}`);
+    if (!qaiqPath.onPath) {
+        console.warn('\n⚠️  `qaiq` no está en PATH. Reinicia el backend con:');
+        console.warn(`   export PATH="${MOCK_QAIQ_BIN_DIR}:$PATH"`);
+        console.warn('   npm run start:browser\n');
+        metrics.errors.push('qaiq not on PATH — backend must be started with mock bin dir prepended');
+    }
 
     const browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({
@@ -249,7 +305,8 @@ async function main() {
 
         const success = metrics.files.exists?.['index.html']
             && metrics.files.mentionsRioja
-            && metrics.preview.probeReady;
+            && metrics.preview.probeReady
+            && (metrics.conversation.agentId === 'qaiq' || metrics.conversation.agentId === undefined);
         process.exitCode = success ? 0 : 1;
     } catch (err) {
         metrics.errors.push(String(err));
