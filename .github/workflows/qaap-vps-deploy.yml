@@ -49,7 +49,7 @@ jobs:
 
       - name: Deploy over SSH
         if: steps.ready.outputs.configured == 'true'
-        uses: appleboy/ssh-action@b140cb124ffeedc1fe14e67e378e01f3299a2def # v1.2.2
+        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
         with:
           host: ${{ secrets.QAAP_VPS_HOST }}
           username: ${{ secrets.QAAP_VPS_USER }}
