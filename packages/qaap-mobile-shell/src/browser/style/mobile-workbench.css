@@ -5543,17 +5543,36 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   letter-spacing: 0;
 }
 
-.qaap-counter-push-viewport {
+.qaap-counter-push-viewport,
+.qaap-counter-push-digit-viewport {
   display: inline-block;
   position: relative;
   height: 1.2em;
   line-height: 1.2;
   overflow: hidden;
   vertical-align: middle;
+}
+
+.qaap-counter-push-viewport {
   min-width: 2ch;
 }
 
-.qaap-counter-push-number {
+.qaap-counter-push-digits {
+  display: inline-flex;
+  align-items: center;
+}
+
+.qaap-counter-push-digit-col {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.qaap-counter-push-prefix {
+  flex: 0 0 auto;
+}
+
+.qaap-counter-push-number,
+.qaap-counter-push-digit {
   display: block;
   line-height: 1.2;
   white-space: nowrap;
@@ -5563,7 +5582,9 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .qaap-counter-push-viewport .qaap-counter-push-number.qaap-mod-exiting,
-.qaap-counter-push-viewport .qaap-counter-push-number.qaap-mod-entering {
+.qaap-counter-push-viewport .qaap-counter-push-number.qaap-mod-entering,
+.qaap-counter-push-digit-viewport .qaap-counter-push-digit.qaap-mod-exiting,
+.qaap-counter-push-digit-viewport .qaap-counter-push-digit.qaap-mod-entering {
   position: absolute;
   left: 0;
   top: 0;
@@ -5573,11 +5594,12 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-sticky-composer-activity-inline-stats .qaap-counter-push-stat,
 .theia-mobile-sticky-composer-changed-file-stats .qaap-counter-push-stat {
-  overflow: hidden;
+  overflow: visible;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .qaap-counter-push-number {
+  .qaap-counter-push-number,
+  .qaap-counter-push-digit {
     transition: none;
   }
 }
@@ -6440,13 +6462,23 @@ button.theia-mobile-agent-question-flow-card-option {
 }
 
 .theia-mobile-sticky-composer-changes-pill-host {
+  contain: layout style;
   flex: 0 0 auto;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   min-width: 0;
   width: 100%;
   padding: 0 2px;
   pointer-events: auto;
+}
+
+.theia-mobile-sticky-composer-changes-pill .theia-mobile-sticky-composer-activity-inline-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 3.25em;
+  min-height: 15px;
 }
 
 /* Inner column uses gap: 0 — explicit air between pill and codex card (not overlap). */
@@ -6512,6 +6544,58 @@ button.theia-mobile-agent-question-flow-card-option {
 
 .theia-mobile-sticky-composer-changes-pill-label {
   flex: 0 0 auto;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 88%, var(--theia-foreground));
+  font-weight: 500;
+}
+
+/* Changes pill — Cursor-style flat +N/−N (colored text on the pill, no chip backgrounds). */
+.theia-mobile-sticky-composer-changes-pill .theia-mobile-sticky-composer-activity-inline-stats {
+  gap: 6px;
+  margin-left: 0;
+  min-width: 0;
+}
+
+.theia-mobile-sticky-composer-changes-pill .qaap-counter-push-stat,
+.theia-mobile-sticky-composer-changes-pill .theia-mobile-agent-diff-stat {
+  display: inline-flex;
+  align-items: center;
+  min-height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  font-family: var(--theia-code-font-family, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  color: inherit;
+}
+
+.theia-mobile-sticky-composer-changes-pill .qaap-counter-push-stat.theia-mod-added,
+.theia-mobile-sticky-composer-changes-pill .theia-mobile-agent-diff-stat.theia-mod-added,
+.theia-mobile-sticky-composer-changes-pill .qaap-counter-push-stat.theia-mod-added .qaap-counter-push-prefix,
+.theia-mobile-sticky-composer-changes-pill .qaap-counter-push-stat.theia-mod-added .qaap-counter-push-digit {
+  color: color-mix(in srgb, var(--theia-charts-green, #3fb950) 90%, var(--theia-foreground));
+  background: transparent;
+  border-color: transparent;
+}
+
+.theia-mobile-sticky-composer-changes-pill .qaap-counter-push-stat.theia-mod-removed,
+.theia-mobile-sticky-composer-changes-pill .theia-mobile-agent-diff-stat.theia-mod-removed,
+.theia-mobile-sticky-composer-changes-pill .qaap-counter-push-stat.theia-mod-removed .qaap-counter-push-prefix,
+.theia-mobile-sticky-composer-changes-pill .qaap-counter-push-stat.theia-mod-removed .qaap-counter-push-digit {
+  color: color-mix(in srgb, var(--theia-errorForeground, #f85149) 88%, var(--theia-foreground));
+  background: transparent;
+  border-color: transparent;
+}
+
+.theia-mobile-sticky-composer-changes-pill .qaap-counter-push-digit-viewport {
+  height: 1.2em;
+  min-width: 0.62em;
+  color: inherit;
 }
 
 /* Commit split-button — same glass pill language as the Changes pill. */
@@ -6668,6 +6752,8 @@ button.theia-mobile-agent-question-flow-card-option {
 .theia-mobile-sticky-composer-changes-pill .theia-mobile-sticky-composer-activity-inline-stats {
   margin-left: 0;
 }
+
+/* Scoped above: flat Cursor-style counters inside .theia-mobile-sticky-composer-changes-pill */
 
 .theia-mobile-sticky-composer-activity-section.theia-mod-files .theia-mobile-projects-sticky-composer-context-strip.theia-mod-changed-files {
   margin: 0;

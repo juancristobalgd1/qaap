@@ -1,0 +1,18 @@
+Pega este prompt en Chat para probar el pill Changes (+N verde / −N rojo, sin fondo):
+
+---
+En este workspace, en orden:
+
+1. Crea demo-changes-pill.txt con 20 líneas numeradas (línea 1 … línea 20).
+2. Añade 8 líneas al final (líneas 21–28).
+3. Borra las líneas 10–15 del archivo.
+4. Elimina las 5 últimas líneas.
+5. Borra demo-changes-pill.txt por completo.
+
+Usa solo herramientas de edición de archivos. No hagas commit.
+---
+
+Qué observar:
+- Paso 1–2: +N sube (animación hacia arriba).
+- Paso 3–4: +N baja y −N aparece/sube (animación hacia abajo en decrementos).
+- Paso 5: contadores bajan a cero.

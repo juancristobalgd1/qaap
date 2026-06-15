@@ -184,6 +184,24 @@ export class MobileProjectsTranscriptMessagesUi {
         return count;
     }
 
+    /** Compact signal for streaming tool writes — drives immediate git refresh when a file edit lands. */
+    buildComposerFileChangeToolSignal(conv: QaapAgentConversationDTO | undefined): string {
+        if (!conv) {
+            return '';
+        }
+        const parts: string[] = [];
+        for (const segment of this.resolveComposerConversationSegments(conv, { allTurns: true })) {
+            if (segment.type !== 'tool' || segment.name.toLowerCase().includes('todo')) {
+                continue;
+            }
+            if (!this.isComposerFileChangeToolSegment(segment.name)) {
+                continue;
+            }
+            parts.push(`${segment.name}|${segment.finished ? 1 : 0}|${(segment.result ?? '').length}`);
+        }
+        return parts.join(';');
+    }
+
     resolveComposerChangedFilesFromToolCalls(
         conv: QaapAgentConversationDTO | undefined,
     ): Array<{ readonly path: string; readonly kind: 'edited' | 'created'; readonly added?: number; readonly removed?: number }> {

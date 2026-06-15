@@ -154,6 +154,7 @@ export class MobileProjectsTranscriptLiveUi {
     protected sseRenderTimer: number | undefined;
     protected lastMountedApprovalId: string | undefined;
     protected transcriptComposerActivityTimer: number | undefined;
+    protected transcriptComposerActivityRafId = 0;
     protected transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
     protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
     protected transcriptPreviewPollMisses = 0;
@@ -265,6 +266,10 @@ export class MobileProjectsTranscriptLiveUi {
         if (this.sseRenderTimer !== undefined) {
             window.clearTimeout(this.sseRenderTimer);
             this.sseRenderTimer = undefined;
+        }
+        if (this.transcriptComposerActivityRafId) {
+            cancelAnimationFrame(this.transcriptComposerActivityRafId);
+            this.transcriptComposerActivityRafId = 0;
         }
         this.transcriptComposerActivityIdleHandle?.cancel();
         this.transcriptComposerActivityIdleHandle = undefined;
@@ -401,6 +406,27 @@ export class MobileProjectsTranscriptLiveUi {
         if (!isTranscriptDocumentVisible()) {
             return;
         }
+        if (conv.status === 'streaming') {
+            if (this.transcriptComposerActivityTimer !== undefined) {
+                window.clearTimeout(this.transcriptComposerActivityTimer);
+                this.transcriptComposerActivityTimer = undefined;
+            }
+            this.transcriptComposerActivityIdleHandle?.cancel();
+            this.transcriptComposerActivityIdleHandle = undefined;
+            if (!this.transcriptComposerActivityRafId) {
+                this.transcriptComposerActivityRafId = requestAnimationFrame(() => {
+                    this.transcriptComposerActivityRafId = 0;
+                    if (!isTranscriptDocumentVisible()) {
+                        return;
+                    }
+                    const latest = this.host.transcriptLastConv;
+                    if (latest?.id === conv.id && latest.status === 'streaming') {
+                        this.host.transcriptStickyComposerUi.refreshTranscriptComposerActivityIfNeeded(latest);
+                    }
+                });
+            }
+            return;
+        }
         if (this.transcriptComposerActivityTimer !== undefined) {
             return;
         }
@@ -424,6 +450,10 @@ export class MobileProjectsTranscriptLiveUi {
         if (this.transcriptComposerActivityTimer !== undefined) {
             window.clearTimeout(this.transcriptComposerActivityTimer);
             this.transcriptComposerActivityTimer = undefined;
+        }
+        if (this.transcriptComposerActivityRafId) {
+            cancelAnimationFrame(this.transcriptComposerActivityRafId);
+            this.transcriptComposerActivityRafId = 0;
         }
         this.transcriptComposerActivityIdleHandle?.cancel();
         this.transcriptComposerActivityIdleHandle = undefined;

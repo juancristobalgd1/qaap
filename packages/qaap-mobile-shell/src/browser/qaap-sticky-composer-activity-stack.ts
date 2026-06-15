@@ -95,7 +95,7 @@ export function patchStickyComposerChangesPill(
         ? files.length
         : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 || options.pendingFileChanges ? 1 : 0);
     pill.setAttribute('aria-label', buildChangesPillAriaLabel(fileCount, stats, options.pendingFileChanges));
-    syncDiffStatsInline(pill, stats, true);
+    syncDiffStatsInline(pill, stats, true, options.pendingFileChanges);
     return true;
 }
 
@@ -269,10 +269,14 @@ function syncDiffStatsInline(
     host: HTMLElement,
     stats: { readonly added?: number; readonly removed?: number } | undefined,
     animate: boolean,
+    pendingFileChanges?: boolean,
 ): void {
     const added = stats?.added ?? 0;
     const removed = stats?.removed ?? 0;
     if (added <= 0 && removed <= 0) {
+        if (pendingFileChanges) {
+            return;
+        }
         host.querySelector('.theia-mobile-sticky-composer-activity-inline-stats')?.remove();
         return;
     }
@@ -376,7 +380,7 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
         label.className = 'theia-mobile-sticky-composer-changes-pill-label';
         label.textContent = nls.localize('qaap/diff/changes', 'Changes');
         pill.append(label);
-        syncDiffStatsInline(pill, stats, false);
+        syncDiffStatsInline(pill, stats, false, options.pendingFileChanges);
         pill.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();
