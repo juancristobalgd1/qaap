@@ -367,6 +367,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         row.classList.remove('theia-mod-streaming');
         this.contentUi.settleTranscriptStreamingContent(row);
+        const segments = this.resolveTranscriptAgentSegments(conv, lastAgent);
+        if (segments?.length) {
+            this.artifactsUi.finalizeStreamingAgentTrace(row, segments, conv);
+        }
     }
 
     tryPatchStreamingTranscriptVirtual(
@@ -491,7 +495,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             if (prevSegments.length === nextSegments.length) {
                 if (!this.artifactsUi.patchStreamingAgentToolSegments(existingRow, prevSegments, nextSegments, conv)) {
-                    return false;
+                    if (existingRow.classList.contains('theia-mod-streaming')) {
+                        this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments, conv);
+                    } else {
+                        return false;
+                    }
                 }
             }
         }

@@ -10,8 +10,11 @@ import {
     formatTranscriptThoughtDuration,
     isTranscriptAgentThinkingPhase,
     isTranscriptStreamStalled,
+    resolveTranscriptTraceDisplayPhase,
     resolveTranscriptTurnStartMs,
     resolveTranscriptTurnStreamChars,
+    shouldExpandTranscriptInlineTimeline,
+    shouldShowTranscriptInlineTimeline,
 } from './qaap-transcript-stream-status';
 
 describe('qaap-transcript-stream-status', () => {
@@ -79,5 +82,22 @@ describe('qaap-transcript-stream-status', () => {
         expect(isTranscriptStreamStalled(6_000, true, now)).to.equal(false);
         expect(isTranscriptStreamStalled(6_000, false, now)).to.equal(false);
         expect(isTranscriptStreamStalled(undefined, true, now)).to.equal(false);
+    });
+
+    it('resolves trace display phases for progressive disclosure', () => {
+        expect(resolveTranscriptTraceDisplayPhase([], true)).to.equal('thinking');
+        expect(resolveTranscriptTraceDisplayPhase([{ type: 'thinking', content: 'plan' }], true)).to.equal('thinking');
+        expect(shouldShowTranscriptInlineTimeline([{ type: 'thinking', content: 'plan' }], true)).to.equal(false);
+        expect(resolveTranscriptTraceDisplayPhase([{ type: 'tool' }], true)).to.equal('acting');
+        expect(shouldExpandTranscriptInlineTimeline([{ type: 'tool' }], true)).to.equal(true);
+        expect(resolveTranscriptTraceDisplayPhase([
+            { type: 'tool' },
+            { type: 'text', content: 'done' },
+        ], true)).to.equal('writing');
+        expect(shouldExpandTranscriptInlineTimeline([
+            { type: 'tool' },
+            { type: 'text', content: 'done' },
+        ], true)).to.equal(false);
+        expect(resolveTranscriptTraceDisplayPhase([{ type: 'tool' }], false)).to.equal('settled');
     });
 });

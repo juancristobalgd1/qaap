@@ -96,6 +96,41 @@ export function isTranscriptAgentThinkingPhase(
     return true;
 }
 
+/** Cursor-style trace phases for progressive disclosure in the transcript. */
+export type TranscriptTraceDisplayPhase = 'thinking' | 'acting' | 'writing' | 'settled';
+
+export function resolveTranscriptTraceDisplayPhase(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+): TranscriptTraceDisplayPhase {
+    if (!streaming) {
+        return 'settled';
+    }
+    if (isTranscriptAgentThinkingPhase(segments, streaming)) {
+        return 'thinking';
+    }
+    if (segments.some(segment => segment.type === 'text' && (segment.content?.trim() ?? '').length > 0)) {
+        return 'writing';
+    }
+    return 'acting';
+}
+
+/** Inline timeline is redundant with the live thought brief during thinking-only streaming. */
+export function shouldShowTranscriptInlineTimeline(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+): boolean {
+    return resolveTranscriptTraceDisplayPhase(segments, streaming) !== 'thinking';
+}
+
+/** Expanded checklist while tools run; collapsed once the answer streams or the turn settles. */
+export function shouldExpandTranscriptInlineTimeline(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+): boolean {
+    return resolveTranscriptTraceDisplayPhase(segments, streaming) === 'acting';
+}
+
 /** Short duration label for thought headers — Cursor uses seconds for brief thinks. */
 export function formatTranscriptThoughtDuration(elapsedMs: number): string {
     const totalSeconds = Math.max(1, Math.round(elapsedMs / 1000));
