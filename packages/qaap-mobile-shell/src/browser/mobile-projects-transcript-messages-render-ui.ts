@@ -130,7 +130,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     buildTranscriptVirtualFooter(conv: QaapAgentConversationDTO): HTMLElement[] {
         const footers: HTMLElement[] = [];
         if (conv.status === 'streaming' && conv.messages.at(-1)?.role === 'user') {
-            footers.push(this.artifactsUi.createTranscriptStreamingActivityRow(conv));
+            const row = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
+            if (row) {
+                footers.push(row);
+            }
         }
         return footers;
     }
@@ -212,7 +215,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             if (last?.role === 'agent') {
                 messageHost.lastElementChild?.classList.add('theia-mod-streaming');
             } else {
-                messageHost.append(this.artifactsUi.createTranscriptStreamingActivityRow(conv));
+                const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
+                if (activityRow) {
+                    messageHost.append(activityRow);
+                }
             }
         }
         scrollElementToEnd(messageHost);
@@ -530,7 +536,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
         });
         if (conv.status === 'streaming' && conv.messages.at(-1)?.role === 'user') {
-            messageHost.append(this.artifactsUi.createTranscriptStreamingActivityRow(conv));
+            const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
+            if (activityRow) {
+                messageHost.append(activityRow);
+            }
         }
     }
 

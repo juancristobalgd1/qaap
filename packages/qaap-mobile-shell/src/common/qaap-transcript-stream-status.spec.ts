@@ -9,12 +9,17 @@ import {
     formatTranscriptStreamTokens,
     formatTranscriptThoughtDuration,
     isTranscriptAgentThinkingPhase,
+    isTranscriptSimpleQaTurn,
     isTranscriptStreamStalled,
+    isTranscriptThinkingGracePeriod,
     resolveTranscriptTraceDisplayPhase,
     resolveTranscriptTurnStartMs,
     resolveTranscriptTurnStreamChars,
     shouldExpandTranscriptInlineTimeline,
     shouldShowTranscriptInlineTimeline,
+    shouldShowTranscriptStreamingActivity,
+    shouldShowTranscriptThoughtBrief,
+    TRANSCRIPT_THINKING_UI_GRACE_MS,
 } from './qaap-transcript-stream-status';
 
 describe('qaap-transcript-stream-status', () => {
@@ -99,5 +104,29 @@ describe('qaap-transcript-stream-status', () => {
             { type: 'text', content: 'done' },
         ], true)).to.equal(false);
         expect(resolveTranscriptTraceDisplayPhase([{ type: 'tool' }], false)).to.equal('settled');
+    });
+
+    it('hides thinking chrome during the grace window and for simple Q&A turns', () => {
+        expect(isTranscriptThinkingGracePeriod([], true, 500)).to.equal(true);
+        expect(isTranscriptThinkingGracePeriod([], true, TRANSCRIPT_THINKING_UI_GRACE_MS)).to.equal(false);
+        expect(shouldShowTranscriptStreamingActivity([], true, { turnElapsedMs: 500 })).to.equal(false);
+        expect(shouldShowTranscriptStreamingActivity([], true, { turnElapsedMs: TRANSCRIPT_THINKING_UI_GRACE_MS })).to.equal(true);
+
+        const simple = [
+            { type: 'thinking', content: 'short plan' },
+            { type: 'text', content: 'It validates tokens.' },
+        ] as const;
+        expect(isTranscriptSimpleQaTurn(simple, { userPromptChars: 40 })).to.equal(true);
+        expect(shouldShowTranscriptThoughtBrief(simple, false, { userPromptChars: 40 })).to.equal(false);
+        expect(shouldShowTranscriptStreamingActivity(simple, true, {
+            turnElapsedMs: 5_000,
+            userPromptChars: 40,
+        })).to.equal(false);
+
+        const complex = [
+            { type: 'thinking', content: 'x'.repeat(200) },
+            { type: 'text', content: 'answer' },
+        ] as const;
+        expect(shouldShowTranscriptThoughtBrief(complex, false)).to.equal(true);
     });
 });
