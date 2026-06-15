@@ -3642,7 +3642,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   justify-content: flex-start;
   min-height: 0;
   padding-top: 4px;
-  padding-bottom: 2px;
+  padding-bottom: 0;
 }
 
 .theia-mobile-agents-hub-landing-hero {
@@ -15597,20 +15597,21 @@ body > .theia-mobile-transcript-files-menu {
   justify-content: flex-start;
   flex: 1 1 auto;
   min-height: 0;
-  padding-bottom: 2px;
+  padding-bottom: 0;
 }
 
 /*
  * Floating empty-state quick actions (ChatGPT-style): the scroll area already reserves the floating
  * composer's height as padding-bottom, so `margin-top: auto` parks these just above the composer.
  * `position: sticky` keeps them pinned there when there is enough content (e.g. embedded recents)
- * to scroll behind them; the small offset is just a breathing gap above the composer.
+ * to scroll behind them; a slight negative offset tucks them toward the composer lip.
  */
 .theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty {
   position: sticky;
-  bottom: 8px;
+  bottom: -8px;
   z-index: 7;
-  margin-bottom: 8px;
+  margin-bottom: -8px;
+  padding-bottom: 0;
   pointer-events: none;
 }
 
