@@ -5544,20 +5544,36 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .qaap-counter-push-viewport {
-  display: inline-grid;
-  grid-template: 1fr / auto;
-  overflow: hidden;
-  vertical-align: bottom;
+  display: inline-block;
+  position: relative;
+  height: 1.2em;
   line-height: 1.2;
+  overflow: hidden;
+  vertical-align: middle;
+  min-width: 2ch;
 }
 
 .qaap-counter-push-number {
-  grid-area: 1 / 1;
   display: block;
   line-height: 1.2;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
   transition: transform 260ms cubic-bezier(.2, .8, .2, 1);
   will-change: transform;
+}
+
+.qaap-counter-push-viewport .qaap-counter-push-number.qaap-mod-exiting,
+.qaap-counter-push-viewport .qaap-counter-push-number.qaap-mod-entering {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: max-content;
+  min-width: 100%;
+}
+
+.theia-mobile-sticky-composer-activity-inline-stats .qaap-counter-push-stat,
+.theia-mobile-sticky-composer-changed-file-stats .qaap-counter-push-stat {
+  overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -42,6 +42,15 @@ function clearCounterLayers(viewport: HTMLElement, keep?: HTMLElement): void {
     }
 }
 
+function scheduleCounterPushFrame(callback: FrameRequestCallback): void {
+    const schedule = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (cb: FrameRequestCallback): number => window.setTimeout(() => cb(Date.now()), 0);
+    schedule(() => {
+        schedule(callback);
+    });
+}
+
 export function mountQaapCounterPush(options: {
     readonly value: number;
     readonly format: (value: number) => string;
@@ -118,11 +127,7 @@ export function mountQaapCounterPush(options: {
         oldNumber.style.transform = 'translate3d(0, 0, 0)';
         viewport.append(newNumber);
 
-        const scheduleFrame = typeof requestAnimationFrame === 'function'
-            ? requestAnimationFrame
-            : (callback: FrameRequestCallback): number => window.setTimeout(() => callback(Date.now()), 0);
-
-        scheduleFrame(() => {
+        scheduleCounterPushFrame(() => {
             oldNumber.style.transform = `translate3d(0, ${to}, 0)`;
             newNumber.style.transform = 'translate3d(0, 0, 0)';
         });
@@ -145,7 +150,7 @@ export function mountQaapCounterPush(options: {
             }
             finish();
         }, { once: true });
-        window.setTimeout(finish, QAAP_COUNTER_PUSH_TRANSITION_MS + 64);
+        window.setTimeout(finish, QAAP_COUNTER_PUSH_TRANSITION_MS + 80);
     };
 
     const handle: QaapCounterPushHandle = {
