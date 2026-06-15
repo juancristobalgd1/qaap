@@ -42,6 +42,7 @@ import {
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
 import {
     formatQaiqModelProviderLabel,
+    filterQaiqModelsWithConfiguredCredentials,
     groupQaiqModelsByProvider,
     listQaiqModelsFromPreferences,
     listQaiqModelsFromRegisteredLanguageModels,
@@ -672,14 +673,21 @@ export class MobileProjectsStickyComposerSheetsUi {
     }
     async resolveModelsForAgentPicker(agentId: string): Promise<QaapQaiqModelOption[]> {
         if (agentUsesSettingsModelCatalog(agentId)) {
+            const readPref = this.host.readPreference;
             const fromWorkspace = this.host.stickyComposerQaiqModels ?? [];
-            const fromPreferences = this.host.readPreference
-                ? listQaiqModelsFromPreferences(this.host.readPreference)
+            const fromPreferences = readPref
+                ? listQaiqModelsFromPreferences(readPref)
                 : [];
             const registered = this.host.getRegisteredLanguageModels
-                ? listQaiqModelsFromRegisteredLanguageModels(await this.host.getRegisteredLanguageModels())
+                ? listQaiqModelsFromRegisteredLanguageModels(
+                    await this.host.getRegisteredLanguageModels(),
+                    readPref,
+                )
                 : [];
-            return mergeQaiqModelOptions(registered, fromWorkspace, fromPreferences);
+            const merged = mergeQaiqModelOptions(registered, fromWorkspace, fromPreferences);
+            return readPref
+                ? filterQaiqModelsWithConfiguredCredentials(merged, readPref)
+                : merged;
         }
         try {
             return await fetchAgentModelsForAgent(agentId);

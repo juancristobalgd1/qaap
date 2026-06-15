@@ -5,6 +5,7 @@ import {
     vendorHasByokCredential,
 } from './qaap-qaiq-byok-provider-registry';
 import {
+    filterQaiqModelsWithConfiguredCredentials,
     groupQaiqModelsByProvider,
     isQaiqByokLanguageModelId,
     listQaiqModelsFromPreferences,
@@ -82,8 +83,21 @@ describe('listQaiqModelsFromPreferences', () => {
         expect(models.some(m => m.vendor === 'huggingface')).to.be.true;
     });
 
-    it('returns explicitly configured models even without an API key', () => {
+    it('does not return models from explicit lists without an API key', () => {
         const models = listQaiqModelsFromPreferences(key => {
+            if (key === 'ai-features.openrouter.openrouterModels') {
+                return ['nvidia/nemotron-3-super-120b-a12b:free'];
+            }
+            return undefined;
+        });
+        expect(models.some(m => m.vendor === 'openrouter')).to.be.false;
+    });
+
+    it('returns explicit models when the provider API key is configured', () => {
+        const models = listQaiqModelsFromPreferences(key => {
+            if (key === 'ai-features.openrouter.openrouterApiKey') {
+                return 'sk-test';
+            }
             if (key === 'ai-features.openrouter.openrouterModels') {
                 return ['nvidia/nemotron-3-super-120b-a12b:free'];
             }
@@ -135,7 +149,25 @@ describe('listQaiqModelsFromPreferences', () => {
         }, 'gemini')).to.be.true;
     });
 
-    it('maps registered language models from AI Configuration', () => {
+    it('maps registered language models only when the provider has credentials', () => {
+        const readPref = (key: string): unknown => {
+            if (key === 'ai-features.anthropic.AnthropicApiKey') {
+                return 'sk-ant';
+            }
+            return undefined;
+        };
+        const models = listQaiqModelsFromRegisteredLanguageModels([
+            { id: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron free' },
+            { id: 'anthropic/claude-opus-4-7', name: 'Claude Opus 4.7' },
+            { id: 'copilot/gpt-4o', name: 'Copilot' },
+        ], readPref);
+        expect(models).to.have.length(1);
+        expect(models.some(m => m.vendor === 'anthropic')).to.be.true;
+        expect(models.some(m => m.vendor === 'openrouter')).to.be.false;
+        expect(isQaiqByokLanguageModelId('copilot/gpt-4o')).to.be.false;
+    });
+
+    it('includes every registered model when no credential reader is provided', () => {
         const models = listQaiqModelsFromRegisteredLanguageModels([
             { id: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron free' },
             { id: 'anthropic/claude-opus-4-7', name: 'Claude Opus 4.7' },
@@ -144,7 +176,21 @@ describe('listQaiqModelsFromPreferences', () => {
         expect(models).to.have.length(2);
         expect(models.some(m => m.vendor === 'openrouter')).to.be.true;
         expect(models.some(m => m.vendor === 'anthropic')).to.be.true;
-        expect(isQaiqByokLanguageModelId('copilot/gpt-4o')).to.be.false;
+    });
+
+    it('filters merged model lists by configured credentials', () => {
+        const readPref = (key: string): unknown => {
+            if (key === 'ai-features.nvidia.nvidiaApiKey') {
+                return 'nvapi-test';
+            }
+            return undefined;
+        };
+        const filtered = filterQaiqModelsWithConfiguredCredentials([
+            { vendor: 'openrouter', provider: 'openai', modelId: 'a', label: 'a' },
+            { vendor: 'nvidia', provider: 'openai', modelId: 'b', label: 'b' },
+        ], readPref);
+        expect(filtered).to.have.length(1);
+        expect(filtered[0]?.vendor).to.equal('nvidia');
     });
 
     it('groups models by vendor', () => {

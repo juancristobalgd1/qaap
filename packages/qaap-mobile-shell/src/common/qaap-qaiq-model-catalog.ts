@@ -8,6 +8,7 @@ import {
     listByokModelsFromDescriptor,
     parseTheiaLanguageModelId,
     QAAP_QAIQ_BYOK_PROVIDERS,
+    vendorHasByokCredential,
     type QaapPreferenceReader,
 } from './qaap-qaiq-byok-provider-registry';
 
@@ -49,9 +50,20 @@ export function mergeQaiqModelOptions(
     return [...deduped.values()];
 }
 
-/** Mirrors AI Configuration: every registered BYOK language model in the workbench. */
+/** Keep only models whose BYOK vendor has a configured credential in AI Features. */
+export function filterQaiqModelsWithConfiguredCredentials(
+    models: readonly QaapQaiqModelOption[],
+    readPref: QaapPreferenceReader,
+    readEnv?: (key: string) => string | undefined,
+): QaapQaiqModelOption[] {
+    return models.filter(model => vendorHasByokCredential(readPref, model.vendor, readEnv));
+}
+
+/** Mirrors AI Configuration: registered BYOK language models with a configured credential. */
 export function listQaiqModelsFromRegisteredLanguageModels(
     models: ReadonlyArray<{ readonly id: string; readonly name?: string }>,
+    readPref?: QaapPreferenceReader,
+    readEnv?: (key: string) => string | undefined,
 ): QaapQaiqModelOption[] {
     const deduped = new Map<string, QaapQaiqModelOption>();
     for (const model of models) {
@@ -60,6 +72,9 @@ export function listQaiqModelsFromRegisteredLanguageModels(
         }
         const binding = parseTheiaLanguageModelId(model.id);
         if (!binding) {
+            continue;
+        }
+        if (readPref && !vendorHasByokCredential(readPref, binding.vendor, readEnv)) {
             continue;
         }
         const key = qaiqModelOptionKey(binding);
@@ -89,17 +104,16 @@ export function listQaiqModelsFromPreferences(
 
     const aliases = readPref('ai-features.languageModelAliases') as AliasMap | undefined;
     if (aliases && typeof aliases === 'object') {
-        for (const key of ALIAS_KEYS) {
-            const binding = parseTheiaLanguageModelId(aliases[key]?.selectedModel);
-            if (binding) {
+        const addAlias = (binding: QaapQaiqModelOption | undefined): void => {
+            if (binding && vendorHasByokCredential(readPref, binding.vendor, readEnv)) {
                 add(binding);
             }
+        };
+        for (const key of ALIAS_KEYS) {
+            addAlias(parseTheiaLanguageModelId(aliases[key]?.selectedModel));
         }
         for (const entry of Object.values(aliases)) {
-            const binding = parseTheiaLanguageModelId(entry?.selectedModel);
-            if (binding) {
-                add(binding);
-            }
+            addAlias(parseTheiaLanguageModelId(entry?.selectedModel));
         }
     }
 

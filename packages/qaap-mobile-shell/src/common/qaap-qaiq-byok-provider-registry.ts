@@ -272,15 +272,6 @@ export function listByokModelsFromDescriptor(
     descriptor: QaapQaiqByokProviderDescriptor,
     readEnv?: (key: string) => string | undefined,
 ): QaapQaiqModelOption[] {
-    const explicitIds = listExplicitByokModelIds(readPref, descriptor);
-    if (explicitIds.length > 0) {
-        return explicitIds.map(modelId => ({
-            vendor: descriptor.vendor,
-            provider: descriptor.provider,
-            modelId,
-            label: modelId,
-        }));
-    }
     if (!providerHasByokCredentialOrEnv(readPref, descriptor, readEnv)) {
         return [];
     }
