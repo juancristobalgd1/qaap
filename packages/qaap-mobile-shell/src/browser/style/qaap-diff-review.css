@@ -37,6 +37,11 @@
     font-size: 12px;
 }
 
+.qaap-diff-add .qaap-counter-push-viewport,
+.qaap-diff-del .qaap-counter-push-viewport {
+    vertical-align: baseline;
+}
+
 .qaap-diff-review-stats {
     display: inline-flex;
     align-items: center;

@@ -19,6 +19,9 @@ export function getQaapAgentLoadingPhrases(): readonly string[] {
 
 export const QAAP_AGENT_LOADING_PHRASE_CYCLE_MS = 3000;
 
+/** Stable phrase list for shimmer cycling (avoid re-creating arrays each React render). */
+export const QAAP_AGENT_LOADING_PHRASES: readonly string[] = getQaapAgentLoadingPhrases();
+
 export function resolveQaapAgentLoadingPhraseIndex(index: number, phraseCount: number): number {
     if (phraseCount <= 0) {
         return 0;

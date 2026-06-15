@@ -149,7 +149,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
                 onReview: () => undefined,
             });
             expect(patched).to.equal(true);
-            await new Promise(resolve => window.setTimeout(resolve, 320));
+            await new Promise(resolve => window.setTimeout(resolve, 400));
             expect(host!.querySelector(`[data-qaap-diff-stat-added] .qaap-counter-push-number`)?.textContent).to.equal('+12');
             expect(host!.querySelector(`[data-qaap-diff-stat-removed] .qaap-counter-push-number`)?.textContent).to.equal('-3');
         });

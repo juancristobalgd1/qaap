@@ -22,6 +22,7 @@ import {
 } from '../common/qaap-git-review';
 import { middleTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import { QaapDiffAddCounter, QaapDiffDelCounter } from './qaap-counter-push';
 
 /** Git extension commands used by the bulk review actions. */
 const GIT_STAGE_ALL = 'git.stageAll';
@@ -448,8 +449,8 @@ export class QaapDiffReviewWidget extends ReactWidget {
                         <i className={`${codicon('folder')} qaap-agent-changes-summary-icon`} aria-hidden='true' />
                         <span className='qaap-agent-changes-summary-label'>{summaryLabel}</span>
                         <span className='qaap-agent-changes-summary-stats'>
-                            <span className='qaap-diff-add'>+{totals.adds}</span>
-                            <span className='qaap-diff-del'>−{totals.dels}</span>
+                            <QaapDiffAddCounter value={totals.adds} />
+                            <QaapDiffDelCounter value={totals.dels} />
                         </span>
                     </span>
                     {this.renderAgentBulkActions(bulkDisabled)}
@@ -916,9 +917,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
                             ? nls.localize('qaap/diff/oneFile', '1 file')
                             : nls.localize('qaap/diff/nFiles', '{0} files', count)}
                         {' · '}
-                        <span className='qaap-diff-add'>+{totals.adds}</span>
+                        <QaapDiffAddCounter value={totals.adds} />
                         {' '}
-                        <span className='qaap-diff-del'>−{totals.dels}</span>
+                        <QaapDiffDelCounter value={totals.dels} />
                     </span>
                     <span className='qaap-diff-review-spacer' />
                     {this.workHubEmbed && this.renderToolbarActions(count)}

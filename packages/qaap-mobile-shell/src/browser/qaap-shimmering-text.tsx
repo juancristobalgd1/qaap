@@ -6,7 +6,7 @@
 
 import * as React from '@theia/core/shared/react';
 import {
-    getQaapAgentLoadingPhrases,
+    QAAP_AGENT_LOADING_PHRASES,
     QAAP_AGENT_LOADING_PHRASE_CYCLE_MS,
     resolveQaapAgentLoadingPhraseIndex,
 } from '../common/qaap-agent-loading-phrases';
@@ -22,29 +22,30 @@ export interface QaapShimmeringTextProps {
 export const QaapShimmeringText: React.FunctionComponent<QaapShimmeringTextProps> = ({
     text,
     cycle = false,
-    phrases = getQaapAgentLoadingPhrases(),
+    phrases,
     cycleIntervalMs = QAAP_AGENT_LOADING_PHRASE_CYCLE_MS,
     className = '',
 }) => {
+    const cyclePhrases = phrases ?? QAAP_AGENT_LOADING_PHRASES;
     const [phraseIndex, setPhraseIndex] = React.useState(0);
     const [visible, setVisible] = React.useState(true);
     const resolvedText = cycle
-        ? phrases[resolveQaapAgentLoadingPhraseIndex(phraseIndex, phrases.length)] ?? text ?? ''
+        ? cyclePhrases[resolveQaapAgentLoadingPhraseIndex(phraseIndex, cyclePhrases.length)] ?? text ?? ''
         : text ?? '';
 
     React.useEffect(() => {
-        if (!cycle || phrases.length <= 1) {
+        if (!cycle || cyclePhrases.length <= 1) {
             return;
         }
         const interval = window.setInterval(() => {
             setVisible(false);
             window.setTimeout(() => {
-                setPhraseIndex(previous => resolveQaapAgentLoadingPhraseIndex(previous + 1, phrases.length));
+                setPhraseIndex(previous => resolveQaapAgentLoadingPhraseIndex(previous + 1, cyclePhrases.length));
                 setVisible(true);
             }, 150);
         }, cycleIntervalMs);
         return () => window.clearInterval(interval);
-    }, [cycle, cycleIntervalMs, phrases]);
+    }, [cycle, cycleIntervalMs, cyclePhrases]);
 
     React.useEffect(() => {
         if (!cycle) {

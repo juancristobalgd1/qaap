@@ -5544,26 +5544,20 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .qaap-counter-push-viewport {
-  position: relative;
-  display: inline-block;
+  display: inline-grid;
+  grid-template: 1fr / auto;
   overflow: hidden;
-  height: 1.2em;
-  min-width: 1.5ch;
   vertical-align: bottom;
+  line-height: 1.2;
 }
 
 .qaap-counter-push-number {
-  display: grid;
-  place-items: center;
+  grid-area: 1 / 1;
+  display: block;
   line-height: 1.2;
   white-space: nowrap;
   transition: transform 260ms cubic-bezier(.2, .8, .2, 1);
   will-change: transform;
-}
-
-.qaap-counter-push-number.qaap-mod-layer {
-  position: absolute;
-  inset: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -20101,4 +20095,11 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer-card.theia-mod-code
 /* Collapsed shell rows: hide the green exit-code chip; keep it only on failure. */
 .theia-mobile-agent-shell-window:not([open]) .theia-mobile-agent-shell-exit-code:not(.theia-mod-failed) {
   display: none;
+}
+
+/* Agent loading shimmer — mobile transcript surfaces (loads after product-theme overrides). */
+.theia-mobile-agent-stream-line .qaap-shimmering-text-phrase,
+.theia-mobile-agent-planning-line .qaap-shimmering-text-phrase,
+.theia-mobile-transcript-preview-loading .qaap-shimmering-text-phrase {
+  animation: qaap-shimmering-text-gradient 2.4s ease-in-out infinite;
 }

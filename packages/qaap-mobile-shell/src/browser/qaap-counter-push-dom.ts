@@ -20,12 +20,26 @@ interface CounterPushState {
     locked: boolean;
     pending?: { readonly value: number; readonly animate: boolean };
     viewport: HTMLElement;
+    format: (value: number) => string;
 }
 
 const counterPushHandles = new WeakMap<HTMLElement, QaapCounterPushHandle>();
 
 export function resolveQaapCounterPushHandle(host: HTMLElement): QaapCounterPushHandle | undefined {
     return counterPushHandles.get(host);
+}
+
+function getActiveCounterLayer(viewport: HTMLElement): HTMLElement | undefined {
+    const layers = viewport.querySelectorAll<HTMLElement>('.qaap-counter-push-number');
+    return layers.item(layers.length - 1) ?? undefined;
+}
+
+function clearCounterLayers(viewport: HTMLElement, keep?: HTMLElement): void {
+    for (const layer of viewport.querySelectorAll<HTMLElement>('.qaap-counter-push-number')) {
+        if (layer !== keep) {
+            layer.remove();
+        }
+    }
 }
 
 export function mountQaapCounterPush(options: {
@@ -49,15 +63,16 @@ export function mountQaapCounterPush(options: {
         value: options.value,
         locked: false,
         viewport,
+        format: options.format,
     };
 
     const renderInstant = (nextValue: number): void => {
         state.value = nextValue;
-        const layer = viewport.querySelector('.qaap-counter-push-number');
-        if (layer instanceof HTMLElement) {
-            layer.textContent = options.format(nextValue);
-            layer.style.transform = '';
-        }
+        clearCounterLayers(viewport);
+        const layer = document.createElement('span');
+        layer.className = 'qaap-counter-push-number';
+        layer.textContent = state.format(nextValue);
+        viewport.append(layer);
     };
 
     const flushPending = (): void => {
@@ -83,8 +98,8 @@ export function mountQaapCounterPush(options: {
             return;
         }
 
-        const oldNumber = viewport.querySelector('.qaap-counter-push-number');
-        if (!(oldNumber instanceof HTMLElement)) {
+        const oldNumber = getActiveCounterLayer(viewport);
+        if (!oldNumber) {
             renderInstant(nextValue);
             flushPending();
             return;
@@ -96,10 +111,11 @@ export function mountQaapCounterPush(options: {
         const to = direction === 'up' ? '-100%' : '100%';
 
         const newNumber = document.createElement('span');
-        newNumber.className = 'qaap-counter-push-number qaap-mod-layer';
-        newNumber.textContent = options.format(nextValue);
-        newNumber.style.transform = `translateY(${from})`;
-        oldNumber.style.transform = 'translateY(0)';
+        newNumber.className = 'qaap-counter-push-number qaap-mod-entering';
+        newNumber.textContent = state.format(nextValue);
+        newNumber.style.transform = `translate3d(0, ${from}, 0)`;
+        oldNumber.classList.add('qaap-mod-exiting');
+        oldNumber.style.transform = 'translate3d(0, 0, 0)';
         viewport.append(newNumber);
 
         const scheduleFrame = typeof requestAnimationFrame === 'function'
@@ -107,21 +123,29 @@ export function mountQaapCounterPush(options: {
             : (callback: FrameRequestCallback): number => window.setTimeout(() => callback(Date.now()), 0);
 
         scheduleFrame(() => {
-            oldNumber.style.transform = `translateY(${to})`;
-            newNumber.style.transform = 'translateY(0)';
+            oldNumber.style.transform = `translate3d(0, ${to}, 0)`;
+            newNumber.style.transform = 'translate3d(0, 0, 0)';
         });
 
         const finish = (): void => {
+            if (!state.locked) {
+                return;
+            }
             oldNumber.remove();
-            newNumber.classList.remove('qaap-mod-layer');
+            newNumber.classList.remove('qaap-mod-entering');
             newNumber.removeAttribute('style');
             state.value = nextValue;
             state.locked = false;
             flushPending();
         };
 
-        newNumber.addEventListener('transitionend', finish, { once: true });
-        window.setTimeout(finish, QAAP_COUNTER_PUSH_TRANSITION_MS + 48);
+        newNumber.addEventListener('transitionend', event => {
+            if (event.propertyName !== 'transform') {
+                return;
+            }
+            finish();
+        }, { once: true });
+        window.setTimeout(finish, QAAP_COUNTER_PUSH_TRANSITION_MS + 64);
     };
 
     const handle: QaapCounterPushHandle = {

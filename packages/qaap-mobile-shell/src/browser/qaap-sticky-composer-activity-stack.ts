@@ -81,20 +81,12 @@ export function patchStickyComposerChangesPill(
     host: HTMLElement,
     options: StickyComposerActivityStackOptions,
 ): boolean {
+    const row = host.querySelector<HTMLElement>('.theia-mobile-sticky-composer-changes-pill-row');
     const pill = host.querySelector<HTMLElement>('.theia-mobile-sticky-composer-changes-pill');
-    if (!pill) {
+    if (!row || !pill) {
         return false;
     }
-    const hasCommit = !!host.querySelector('.theia-mobile-sticky-composer-commit-group');
-    const wantsCommit = !!options.onCommitAction;
-    if (hasCommit !== wantsCommit) {
-        return false;
-    }
-    const hasStop = !!host.querySelector('.theia-mobile-sticky-composer-activity-stop');
-    const wantsStop = !!(options.agentWorking && options.onStop);
-    if (hasStop !== wantsStop) {
-        return false;
-    }
+    syncStickyComposerChangesPillRow(row, options);
     const files = options.changedFiles ?? [];
     const stats = options.diffStats;
     const fileCount = files.length > 0
@@ -102,14 +94,59 @@ export function patchStickyComposerChangesPill(
         : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
     pill.setAttribute('aria-label', buildChangesPillAriaLabel(fileCount, stats));
     syncDiffStatsInline(pill, stats, true);
-    const commitGroup = host.querySelector<HTMLElement>('.theia-mobile-sticky-composer-commit-group');
-    if (commitGroup) {
-        commitGroup.classList.toggle('theia-mod-busy', !!options.commitBusy);
-        commitGroup.querySelectorAll('button').forEach(button => {
-            button.disabled = !!options.commitBusy;
-        });
-    }
     return true;
+}
+
+function syncStickyComposerChangesPillRow(row: HTMLElement, options: StickyComposerActivityStackOptions): void {
+    syncChangesPillCommitGroup(row, options);
+    syncChangesPillStopButton(row, options);
+}
+
+function syncChangesPillStopButton(row: HTMLElement, options: StickyComposerActivityStackOptions): void {
+    const wantsStop = !!(options.agentWorking && options.onStop);
+    const existing = row.querySelector('.theia-mobile-sticky-composer-activity-stop');
+    if (!wantsStop) {
+        existing?.remove();
+        return;
+    }
+    if (existing) {
+        return;
+    }
+    const stopBtn = document.createElement('button');
+    stopBtn.type = 'button';
+    stopBtn.className = 'theia-mobile-sticky-composer-activity-stop';
+    stopBtn.title = nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run');
+    stopBtn.setAttribute('aria-label', stopBtn.title);
+    stopBtn.textContent = nls.localize('qaap/mobileProjects/stickyComposerFilesStop', 'Stop');
+    stopBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        options.onStop?.();
+    });
+    row.append(stopBtn);
+}
+
+function syncChangesPillCommitGroup(row: HTMLElement, options: StickyComposerActivityStackOptions): void {
+    const wantsCommit = !!options.onCommitAction;
+    let group = row.querySelector<HTMLElement>('.theia-mobile-sticky-composer-commit-group');
+    if (!wantsCommit) {
+        group?.remove();
+        return;
+    }
+    if (!group) {
+        group = renderChangesCommitGroup(options);
+        const stop = row.querySelector('.theia-mobile-sticky-composer-activity-stop');
+        if (stop) {
+            row.insertBefore(group, stop);
+        } else {
+            row.append(group);
+        }
+        return;
+    }
+    group.classList.toggle('theia-mod-busy', !!options.commitBusy);
+    group.querySelectorAll('button').forEach(button => {
+        button.disabled = !!options.commitBusy;
+    });
 }
 
 export function renderStickyComposerActivityStack(options: StickyComposerActivityStackOptions): HTMLElement | undefined {

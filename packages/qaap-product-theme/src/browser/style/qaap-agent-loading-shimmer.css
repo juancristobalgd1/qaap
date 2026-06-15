@@ -11,22 +11,40 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
-  background: linear-gradient(
-    100deg,
-    var(--theia-descriptionForeground) 0%,
-    var(--theia-foreground) 50%,
-    var(--theia-descriptionForeground) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: qaap-shimmering-text-gradient 2.1s linear infinite;
+  vertical-align: baseline;
 }
 
-.qaap-shimmering-text-phrase {
-  display: inline-block;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+/* Cursor-style sweep: narrow bright band across muted base text */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .qaap-shimmering-text-phrase {
+    display: inline-block;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    background-color: transparent;
+    background-image: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--theia-descriptionForeground) 96%, transparent) 0%,
+      color-mix(in srgb, var(--theia-descriptionForeground) 96%, transparent) 36%,
+      color-mix(in srgb, var(--theia-foreground) 88%, #ffffff 12%) 50%,
+      color-mix(in srgb, var(--theia-descriptionForeground) 96%, transparent) 64%,
+      color-mix(in srgb, var(--theia-descriptionForeground) 96%, transparent) 100%
+    );
+    background-size: 300% 100%;
+    background-position: 100% center;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: qaap-shimmering-text-gradient 2.4s ease-in-out infinite;
+    transition: opacity 0.28s ease, transform 0.28s ease;
+  }
+}
+
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .qaap-shimmering-text-phrase {
+    display: inline-block;
+    color: var(--theia-descriptionForeground);
+    transition: opacity 0.28s ease, transform 0.28s ease;
+  }
 }
 
 .qaap-shimmering-text-phrase.qaap-mod-visible {
@@ -36,55 +54,47 @@
 
 .qaap-shimmering-text-phrase.qaap-mod-hidden {
   opacity: 0;
-  transform: translateY(-10px);
+  transform: translateY(-8px);
 }
 
 @keyframes qaap-shimmering-text-gradient {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% { background-position: 100% center; }
+  100% { background-position: 0% center; }
 }
 
-.theia-ChatContentInProgress.qaap-mod-shimmer {
-  color: transparent;
-  white-space: nowrap;
+/* Upstream chat header paints disabled color + animated "..." dots — disable for shimmer hosts */
+.theia-ChatNodeHeader .theia-ChatContentInProgress.qaap-mod-shimmer {
+  color: inherit;
 }
 
-.theia-ChatContentInProgress.qaap-mod-shimmer::after {
-  content: none;
-  animation: none;
+.theia-ChatNodeHeader .theia-ChatContentInProgress.qaap-mod-shimmer::after {
+  content: none !important;
+  animation: none !important;
+  width: 0 !important;
+  display: none !important;
 }
 
-.theia-ChatInput-StatusBar.pending .theia-ChatInput-StatusText {
-  background: linear-gradient(
-    100deg,
-    var(--theia-descriptionForeground) 0%,
-    var(--theia-foreground) 50%,
-    var(--theia-descriptionForeground) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: qaap-shimmering-text-gradient 2.1s linear infinite;
+.theia-ChatInput-StatusBar.pending .theia-ChatInput-StatusText.qaap-shimmering-text {
+  color: inherit;
 }
 
-.delegation-status .qaap-shimmering-text,
+.delegation-status-text.qaap-mod-shimmer,
 .delegation-response-placeholder .theia-ChatContentInProgress.qaap-mod-shimmer {
   max-width: min(100%, 36ch);
   font-size: inherit;
   font-weight: inherit;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .qaap-shimmering-text,
-  .theia-ChatInput-StatusBar.pending .theia-ChatInput-StatusText {
-    animation: none;
-    -webkit-text-fill-color: var(--theia-descriptionForeground);
-    color: var(--theia-descriptionForeground);
-    background: none;
-  }
+.delegation-status-text.qaap-mod-shimmer .qaap-shimmering-text {
+  font-weight: inherit;
+}
 
+@media (prefers-reduced-motion: reduce) {
   .qaap-shimmering-text-phrase {
+    animation: none !important;
+    -webkit-text-fill-color: var(--theia-descriptionForeground) !important;
+    color: var(--theia-descriptionForeground) !important;
+    background: none !important;
     transition: none;
   }
 }

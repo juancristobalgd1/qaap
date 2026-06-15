@@ -5,7 +5,7 @@
 // *****************************************************************************
 
 import {
-    getQaapAgentLoadingPhrases,
+    QAAP_AGENT_LOADING_PHRASES,
     QAAP_AGENT_LOADING_PHRASE_CYCLE_MS,
     resolveQaapAgentLoadingPhraseIndex,
 } from '../common/qaap-agent-loading-phrases';
@@ -45,7 +45,7 @@ export interface QaapShimmeringTextDomHandle {
 }
 
 export function mountQaapShimmeringText(options: QaapShimmeringTextDomOptions): QaapShimmeringTextDomHandle {
-    const phrases = options.phrases ?? getQaapAgentLoadingPhrases();
+    const phrases = options.phrases ?? QAAP_AGENT_LOADING_PHRASES;
     const cycleIntervalMs = options.cycleIntervalMs ?? QAAP_AGENT_LOADING_PHRASE_CYCLE_MS;
     let cycle = options.cycle ?? false;
     let phraseIndex = 0;
