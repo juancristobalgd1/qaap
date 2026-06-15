@@ -244,6 +244,15 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.workHub.renderTeamSectionInTranscript(host, conv);
         this.workHub.renderInlineApproval(host, conv);
         this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+        if (conv.status === 'streaming') {
+            for (const row of messageHost.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-streaming')) {
+                this.artifactsUi.ensureTranscriptStreamStallWatch(row);
+            }
+            const activityRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+            if (activityRow) {
+                this.artifactsUi.ensureTranscriptStreamStallWatch(activityRow);
+            }
+        }
     }
 
     /**
@@ -358,6 +367,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         row.classList.remove('theia-mod-streaming');
         this.contentUi.settleTranscriptStreamingContent(row);
+        const segments = this.resolveTranscriptAgentSegments(conv, lastAgent);
+        if (segments?.length) {
+            this.artifactsUi.finalizeStreamingAgentTrace(row, segments, conv);
+        }
     }
 
     tryPatchStreamingTranscriptVirtual(
@@ -482,7 +495,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             if (prevSegments.length === nextSegments.length) {
                 if (!this.artifactsUi.patchStreamingAgentToolSegments(existingRow, prevSegments, nextSegments, conv)) {
-                    return false;
+                    if (existingRow.classList.contains('theia-mod-streaming')) {
+                        this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments, conv);
+                    } else {
+                        return false;
+                    }
                 }
             }
         }
@@ -492,10 +509,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
         }
         if (appendText) {
-            if (!this.artifactsUi.appendStreamingAgentTextSegment(existingRow, nextSegments)) {
+            if (!this.artifactsUi.appendStreamingAgentTextSegment(existingRow, nextSegments, conv)) {
                 return false;
             }
         }
+        this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments, conv);
         return true;
     }
 

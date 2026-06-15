@@ -17,7 +17,7 @@ import { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
-import { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
+import { MobileProjectsTranscriptMessagesArtifactsUi, type TranscriptActivityTimelineOptions } from './mobile-projects-transcript-messages-artifacts-ui';
 import { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-transcript-messages-render-ui';
 import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
@@ -37,6 +37,7 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptLastRenderedConversationId: string | undefined;
     transcriptLastRenderedMessageId: string | undefined;
     transcriptLastFingerprint: string | undefined;
+    transcriptLastStreamProgressAt: number | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptComposerDraft: string;
     transcriptComposerHost: HTMLElement | undefined;
@@ -131,8 +132,26 @@ export class MobileProjectsTranscriptMessagesUi {
     resolveTranscriptActivityItems(
         segments: QaapAgentMessageSegmentDTO[],
         includeThinkingSteps = true,
-    ): Array<{ readonly label: string; readonly state: 'done' | 'running' | 'thinking' }> {
+    ): import('../common/qaap-transcript-activity-navigation').TranscriptActivityNavigationItem[] {
         return this.resolversUi.resolveTranscriptActivityItems(segments, includeThinkingSteps);
+    }
+
+    resolveTranscriptStreamingActivity(
+        conv: QaapAgentConversationDTO,
+        options?: { readonly stalled?: boolean },
+    ): { kind: string; title: string; detail: string } {
+        return this.artifactsUi.resolveTranscriptStreamingActivity(conv, options);
+    }
+
+    scrollTranscriptStreamingTraceIntoView(options?: { readonly expandTimeline?: boolean }): void {
+        this.artifactsUi.scrollTranscriptStreamingTraceIntoView(options);
+    }
+
+    createTranscriptActivityTimeline(
+        segments: QaapAgentMessageSegmentDTO[],
+        options?: TranscriptActivityTimelineOptions & { readonly includeThinkingSteps?: boolean },
+    ): HTMLElement | undefined {
+        return this.artifactsUi.createTranscriptActivityTimeline(segments, options);
     }
 
     cleanTranscriptDisplayText(content: string | undefined | null): string {

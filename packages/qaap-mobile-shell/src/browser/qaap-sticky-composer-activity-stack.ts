@@ -27,6 +27,13 @@ export interface StickyComposerActivityStackOptions {
     filesExpanded?: boolean;
     onFilesExpandedChange?: (expanded: boolean) => void;
     agentWorking?: boolean;
+    streamingActivity?: {
+        readonly kind: string;
+        readonly title: string;
+        readonly detail?: string;
+        readonly stalled?: boolean;
+    };
+    onStreamingActivityClick?: () => void;
     onStop?: () => void;
     onUndoAll?: () => void;
     onKeepAll?: () => void;
@@ -76,16 +83,74 @@ export function renderStickyComposerChangesPill(options: StickyComposerActivityS
 }
 
 export function renderStickyComposerActivityStack(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
+    const streamingSection = options.streamingActivity
+        ? renderStickyComposerStreamingSection(options)
+        : undefined;
     const queueSection = options.queueEntries?.length
         ? renderStickyComposerQueueSection(options)
         : undefined;
-    if (!queueSection) {
+    if (!streamingSection && !queueSection) {
         return undefined;
     }
     const stack = document.createElement('div');
     stack.className = 'theia-mobile-sticky-composer-activity-stack';
-    stack.append(queueSection);
+    if (streamingSection) {
+        stack.append(streamingSection);
+    }
+    if (queueSection) {
+        stack.append(queueSection);
+    }
     return stack;
+}
+
+function renderStickyComposerStreamingSection(options: StickyComposerActivityStackOptions): HTMLElement {
+    const activity = options.streamingActivity!;
+    const section = document.createElement('div');
+    section.className = 'theia-mobile-sticky-composer-activity-section theia-mod-streaming';
+    if (activity.stalled) {
+        section.classList.add('theia-mod-stalled');
+    }
+
+    const rowHost = document.createElement('div');
+    rowHost.className = 'theia-mobile-sticky-composer-streaming-row';
+
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `theia-mobile-sticky-composer-streaming-activity theia-mobile-agent-stream-line theia-mod-${activity.kind}`;
+    row.title = activity.detail ?? activity.title;
+
+    const dot = document.createElement('span');
+    dot.className = 'theia-mobile-agent-stream-dot';
+    dot.setAttribute('aria-hidden', 'true');
+
+    const label = document.createElement('span');
+    label.className = 'theia-mobile-agent-stream-label';
+    label.textContent = `${activity.title}…`;
+    label.classList.toggle('theia-mod-shimmer', !activity.stalled && (activity.kind === 'planning' || activity.kind === 'thinking'));
+    label.classList.toggle('theia-mod-stall', !!activity.stalled);
+
+    row.append(dot, label);
+    row.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        options.onStreamingActivityClick?.();
+    });
+
+    rowHost.append(row);
+    if (activity.stalled && options.onStop) {
+        const stopBtn = document.createElement('button');
+        stopBtn.type = 'button';
+        stopBtn.className = 'theia-mobile-sticky-composer-activity-stop';
+        stopBtn.textContent = nls.localize('qaap/mobileProjects/stickyComposerStop', 'Stop');
+        stopBtn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            options.onStop?.();
+        });
+        rowHost.append(stopBtn);
+    }
+    section.append(rowHost);
+    return section;
 }
 
 function renderStickyComposerQueueSection(options: StickyComposerActivityStackOptions): HTMLElement {

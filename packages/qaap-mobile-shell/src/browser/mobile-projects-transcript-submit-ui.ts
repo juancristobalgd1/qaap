@@ -42,6 +42,7 @@ export interface MobileProjectsTranscriptSubmitHost {
     transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     transcriptLastFingerprint: string | undefined;
+    transcriptLastStreamProgressAt: number | undefined;
     transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     transcriptComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     transcriptComposerAgentModel: QaapCreateAgentTaskQaiqModel | undefined;
@@ -100,6 +101,7 @@ export class MobileProjectsTranscriptSubmitUi {
             return;
         }
         this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptLastStreamProgressAt = Date.now();
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
     }
 

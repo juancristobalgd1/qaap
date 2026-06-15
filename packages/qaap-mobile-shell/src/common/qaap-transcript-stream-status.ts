@@ -73,3 +73,83 @@ export function formatTranscriptStreamTokens(chars: number): string | undefined 
     const rounded = thousands >= 10 ? Math.round(thousands).toString() : (Math.round(thousands * 10) / 10).toFixed(1);
     return `~${rounded}k tokens`;
 }
+
+type ThinkingPhaseSegment = Readonly<{ readonly type: string; readonly content?: string }>;
+
+/**
+ * Cursor-style thinking phase: streaming turn with no tool calls or answer text yet.
+ * Once tools or text appear, the thought brief switches to a settled duration label.
+ */
+export function isTranscriptAgentThinkingPhase(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+): boolean {
+    if (!streaming) {
+        return false;
+    }
+    if (segments.some(segment => segment.type === 'text' && (segment.content?.trim() ?? '').length > 0)) {
+        return false;
+    }
+    if (segments.some(segment => segment.type === 'tool')) {
+        return false;
+    }
+    return true;
+}
+
+/** Cursor-style trace phases for progressive disclosure in the transcript. */
+export type TranscriptTraceDisplayPhase = 'thinking' | 'acting' | 'writing' | 'settled';
+
+export function resolveTranscriptTraceDisplayPhase(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+): TranscriptTraceDisplayPhase {
+    if (!streaming) {
+        return 'settled';
+    }
+    if (isTranscriptAgentThinkingPhase(segments, streaming)) {
+        return 'thinking';
+    }
+    if (segments.some(segment => segment.type === 'text' && (segment.content?.trim() ?? '').length > 0)) {
+        return 'writing';
+    }
+    return 'acting';
+}
+
+/** Inline timeline is redundant with the live thought brief during thinking-only streaming. */
+export function shouldShowTranscriptInlineTimeline(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+): boolean {
+    return resolveTranscriptTraceDisplayPhase(segments, streaming) !== 'thinking';
+}
+
+/** Expanded checklist while tools run; collapsed once the answer streams or the turn settles. */
+export function shouldExpandTranscriptInlineTimeline(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+): boolean {
+    return resolveTranscriptTraceDisplayPhase(segments, streaming) === 'acting';
+}
+
+/** Short duration label for thought headers — Cursor uses seconds for brief thinks. */
+export function formatTranscriptThoughtDuration(elapsedMs: number): string {
+    const totalSeconds = Math.max(1, Math.round(elapsedMs / 1000));
+    if (totalSeconds < 60) {
+        return `${totalSeconds}s`;
+    }
+    return formatTranscriptStreamElapsed(elapsedMs);
+}
+
+/** Cursor switches from "Planning next moves" to this after ~15s without visible progress. */
+export const TRANSCRIPT_STREAM_STALL_MS = 15_000;
+
+export function isTranscriptStreamStalled(
+    lastProgressAtMs: number | undefined,
+    streaming: boolean,
+    now = Date.now(),
+): boolean {
+    if (!streaming || lastProgressAtMs === undefined) {
+        return false;
+    }
+    return now - lastProgressAtMs >= TRANSCRIPT_STREAM_STALL_MS;
+}
