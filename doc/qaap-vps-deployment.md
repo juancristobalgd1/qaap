@@ -56,6 +56,36 @@ docker compose logs -f theia   # wait for "Configuration directory URI"
 
 Open `http://<your-vps-ip>:4873`.
 
+## Updating an existing VPS
+
+After new commits land on GitHub:
+
+```bash
+cd /opt/qaap
+./scripts/qaap-vps-update.sh
+```
+
+Deploy a feature branch (e.g. before merge to `master`):
+
+```bash
+./scripts/qaap-vps-update.sh --branch cursor/agent-trace-cursor-parity-ae9f
+```
+
+Force Docker to re-resolve `latest` CLI pins:
+
+```bash
+./scripts/qaap-vps-update.sh --no-cache
+```
+
+Manual equivalent:
+
+```bash
+git fetch origin
+git checkout master && git pull --ff-only origin master
+docker compose up --build -d
+docker compose logs -f theia
+```
+
 ## What the image includes
 
 The runtime stage of `Dockerfile` installs:
