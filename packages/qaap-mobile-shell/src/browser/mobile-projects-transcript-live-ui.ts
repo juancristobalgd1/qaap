@@ -339,6 +339,7 @@ export class MobileProjectsTranscriptLiveUi {
         }
         const prevConv = this.host.transcriptLastConv;
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, next);
+        this.host.executionSurfaceTabsUi.syncPlanTabDuringStreaming();
         this.host.transcriptLastConv = next;
         this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, next);
         if (conversationUsesInteractiveApprovals(next) && this.host.transcriptApprovalRefreshTimer === undefined) {

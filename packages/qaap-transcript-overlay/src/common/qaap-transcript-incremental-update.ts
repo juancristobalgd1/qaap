@@ -232,6 +232,9 @@ export const TRANSCRIPT_TOOL_USE_ID_ATTR = 'data-transcript-tool-use-id';
 /** Marks the live “thinking/acting” placeholder row while the agent has not replied yet. */
 export const TRANSCRIPT_ACTIVITY_ROW_ATTR = 'data-transcript-activity-row';
 
+/** Inline Cursor-style execution timeline inside an agent message row. */
+export const TRANSCRIPT_ACTIVITY_TIMELINE_ATTR = 'data-transcript-activity-timeline';
+
 function segmentToolFingerprint(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): string {
     return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}:${segment.name}`;
 }

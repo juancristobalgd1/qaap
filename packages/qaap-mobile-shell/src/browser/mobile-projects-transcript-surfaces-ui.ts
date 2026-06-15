@@ -314,28 +314,18 @@ export class MobileProjectsTranscriptSurfacesUi {
         bar.style.width = `${Math.round(ratio * 100)}%`;
         progress.append(bar);
 
-        const list = document.createElement('div');
-        for (const item of items) {
-            const row = document.createElement('div');
-            row.className = 'theia-mobile-transcript-plan-step';
-            if (item.state === 'done') {
-                row.classList.add('theia-mod-done');
-            }
-            const dot = document.createElement('span');
-            dot.className = 'theia-mobile-transcript-plan-dot';
-            if (item.state === 'done') {
-                dot.classList.add('theia-mod-done');
-            } else if (item.state === 'running' || item.state === 'thinking') {
-                dot.classList.add('theia-mod-current');
-            }
-            const text = document.createElement('span');
-            text.className = 'theia-mobile-transcript-plan-text';
-            text.textContent = item.label;
-            row.append(dot, text);
-            list.append(row);
+        const timeline = this.host.transcriptMessagesUi.createTranscriptActivityTimeline(segments, {
+            variant: 'plan',
+            maxVisibleItems: 0,
+        });
+        if (timeline) {
+            timeline.classList.add('theia-mobile-transcript-plan-trace');
         }
 
-        host.append(head, progress, list);
+        host.append(head, progress);
+        if (timeline) {
+            host.append(timeline);
+        }
     }
 
     latestAgentSegments(conv: QaapAgentConversationDTO | undefined): QaapAgentMessageSegmentDTO[] | undefined {

@@ -665,4 +665,12 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             this.syncExecutionSurfaceChrome(this.host.transcriptOpenProject);
         }
     }
+
+    syncPlanTabDuringStreaming(): void {
+        const project = this.host.transcriptOpenProject;
+        if (!project || this.activeExecutionTab(project) !== 'plan') {
+            return;
+        }
+        this.host.transcriptSurfacesUi.renderPlanTab(this.host.transcriptPlanHost, this.host.transcriptLastConv);
+    }
 }

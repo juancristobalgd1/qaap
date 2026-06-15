@@ -496,6 +496,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 return false;
             }
         }
+        this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments);
         return true;
     }
 

@@ -16828,6 +16828,15 @@ body > .theia-mobile-transcript-files-menu {
   box-shadow: none;
 }
 
+.theia-mobile-agent-activity-timeline.theia-mod-inline {
+  margin: 2px 0 12px;
+}
+
+.theia-mobile-transcript-plan-trace.theia-mobile-agent-activity-timeline {
+  margin-top: 14px;
+  border-radius: 14px;
+}
+
 .theia-mobile-agent-activity-list {
   list-style: none;
   margin: 0;
