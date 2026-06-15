@@ -353,8 +353,6 @@
   padding: 0 4px 0 8px;
   border-radius: 8px;
   background: transparent;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 44px;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-priority {
@@ -615,13 +613,13 @@
   flex-direction: column;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-project-group
+.theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed)
   .theia-mobile-projects-chats-list,
-.theia-mobile-work-hub-sessions-sidebar-project-group
+.theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed)
   .theia-mobile-work-hub-sessions-sidebar-projects-list {
-  max-height: var(--qaap-sessions-sidebar-list-height, 1200px);
+  max-height: none;
   opacity: 1;
-  overflow: hidden;
+  overflow: visible;
   transform: translateY(0);
   transform-origin: top;
   transition:
@@ -637,9 +635,15 @@
   .theia-mobile-work-hub-sessions-sidebar-projects-list {
   max-height: 0;
   opacity: 0;
+  overflow: hidden;
   transform: translateY(-4px);
   padding-top: 0;
   padding-bottom: 0;
+  transition:
+    max-height 180ms var(--qaap-sessions-sidebar-motion-easing),
+    opacity 140ms var(--qaap-sessions-sidebar-motion-easing),
+    padding 180ms var(--qaap-sessions-sidebar-motion-easing),
+    transform 180ms var(--qaap-sessions-sidebar-motion-easing);
 }
 
 button.theia-mod-sessions-sidebar-accordion.theia-mobile-tasks-inbox-section-head {
