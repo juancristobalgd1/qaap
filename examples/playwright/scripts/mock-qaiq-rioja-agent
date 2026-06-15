@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# Mock QAIQ agent for E2E Rioja landing-page flow evaluation.
+# Emits Claude/QAIQ --output-format stream-json NDJSON consumed by QaapQaiqStreamAccumulator.
+# Simulates: scaffold Vite app, write Rioja content, npm install, report port 5173.
+set -euo pipefail
+
+TS=1
+
+emit_json() {
+    printf '%s\n' "$1"
+}
+
+bump_ts() {
+    TS=$((TS + 1))
+}
+
+json_escape() {
+    python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<<"$1"
+}
+
+emit_assistant_text() {
+    local text="$1"
+    bump_ts
+    emit_json "$(printf '{"type":"assistant","timestamp_ms":%s,"message":{"content":[{"type":"text","text":%s}]}}' "$TS" "$(json_escape "$text")")"
+}
+
+emit_assistant_thinking() {
+    local text="$1"
+    bump_ts
+    emit_json "$(printf '{"type":"assistant","timestamp_ms":%s,"message":{"content":[{"type":"thinking","thinking":%s}]}}' "$TS" "$(json_escape "$text")")"
+}
+
+emit_tool_use() {
+    local id="$1" name="$2" input="$3"
+    bump_ts
+    emit_json "$(printf '{"type":"assistant","timestamp_ms":%s,"message":{"content":[{"type":"tool_use","id":"%s","name":"%s","input":%s}]}}' "$TS" "$id" "$name" "$input")"
+}
+
+emit_tool_result() {
+    local id="$1" content="$2" is_error="${3:-false}"
+    if [[ "$is_error" == "true" ]]; then
+        emit_json "$(printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"%s","content":%s,"is_error":true}]}}' "$id" "$(json_escape "$content")")"
+    else
+        emit_json "$(printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"%s","content":%s}]}}' "$id" "$(json_escape "$content")")"
+    fi
+}
+
+emit_result() {
+    local text="$1"
+    emit_json "$(printf '{"type":"result","subtype":"success","is_error":false,"result":%s}' "$(json_escape "$text")")"
+}
+
+if [[ "${1:-}" == "--version" ]]; then
+    echo 'mock-qaiq-rioja-agent 1.0.0'
+    exit 0
+fi
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    echo 'mock QAIQ agent for Rioja E2E eval'
+    exit 0
+fi
+
+if [[ "${1:-}" != "--print" ]]; then
+    echo "mock-qaiq-rioja-agent: unsupported invocation: $*" >&2
+    exit 1
+fi
+
+PROMPT="${@: -1}"
+PROMPT="${PROMPT#\'}"
+PROMPT="${PROMPT%\'}"
+
+emit_json '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"mock-rioja","tools":["Write","Bash"],"model":"mock/qaiq-rioja"}'
+
+emit_assistant_thinking 'Voy a crear una landing page moderna sobre vinos Rioja con Vite.'
+emit_assistant_text 'Perfecto. Voy a generar la estructura del proyecto, escribir los archivos y ejecutar npm install.'
+
+mkdir -p src
+
+cat > package.json <<'PKG'
+{
+  "name": "rioja-wines-landing",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}
+PKG
+
+emit_tool_use "tu-write-pkg" "Write" '{"file_path":"package.json"}'
+emit_tool_result "tu-write-pkg" "Wrote package.json"
+
+cat > index.html <<'HTML'
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vinos Rioja — Tierra, tradición y elegancia</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header class="hero">
+    <nav class="nav">
+      <span class="logo">Rioja</span>
+      <a href="#bodegas">Bodegas</a>
+      <a href="#variedades">Variedades</a>
+      <a href="#visita">Visita</a>
+    </nav>
+    <div class="hero-content">
+      <p class="eyebrow">Denominación de Origen Calificada</p>
+      <h1>El alma del vino español</h1>
+      <p class="lead">Descubre la elegancia de los vinos Rioja: tempranillo, garnacha y siglos de tradición en cada copa.</p>
+      <button class="cta">Explorar cosechas</button>
+    </div>
+  </header>
+  <main>
+    <section id="bodegas" class="section">
+      <h2>Bodegas emblemáticas</h2>
+      <div class="cards">
+        <article class="card"><h3>Marqués de Riscal</h3><p>Arquitectura vanguardista y reservas con carácter.</p></article>
+        <article class="card"><h3>La Rioja Alta</h3><p>Gran Reserva y taninos sedosos de referencia mundial.</p></article>
+        <article class="card"><h3>Muga</h3><p>Barricas de roble francés y estilo clásico riojano.</p></article>
+      </div>
+    </section>
+    <section id="variedades" class="section alt">
+      <h2>Variedades autóctonas</h2>
+      <ul class="varieties">
+        <li><strong>Tempranillo</strong> — cuerpo, fruta roja y longevidad.</li>
+        <li><strong>Garnacha</strong> — calidez mediterránea y notas especiadas.</li>
+        <li><strong>Graciano</strong> — acidez viva y estructura para guarda.</li>
+      </ul>
+    </section>
+    <section id="visita" class="section cta-section">
+      <h2>Planifica tu ruta del vino</h2>
+      <p>Haró, Logroño y Laguardia te esperan entre viñedos y catas guiadas.</p>
+    </section>
+  </main>
+  <footer><p>© 2026 Vinos Rioja — Hecho con pasión en La Rioja</p></footer>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
+HTML
+
+emit_tool_use "tu-write-html" "Write" '{"file_path":"index.html"}'
+emit_tool_result "tu-write-html" "Wrote index.html"
+
+cat > src/style.css <<'CSS'
+:root {
+  --wine: #6b1f2b;
+  --gold: #c9a962;
+  --cream: #f7f1e8;
+  --ink: #1a1210;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Georgia, 'Times New Roman', serif; color: var(--ink); background: var(--cream); }
+.nav { display: flex; gap: 1.5rem; align-items: center; padding: 1rem 2rem; }
+.logo { font-weight: 700; color: var(--gold); letter-spacing: 0.15em; }
+.nav a { color: var(--cream); text-decoration: none; opacity: 0.9; }
+.hero {
+  min-height: 72vh;
+  background: linear-gradient(135deg, var(--wine) 0%, #3d0f18 60%, #1a1210 100%);
+  color: var(--cream);
+}
+.hero-content { padding: 4rem 2rem; max-width: 720px; }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.2em; font-size: 0.75rem; color: var(--gold); }
+.hero h1 { font-size: clamp(2.5rem, 6vw, 4rem); margin: 1rem 0; }
+.lead { font-size: 1.15rem; line-height: 1.6; opacity: 0.92; }
+.cta {
+  margin-top: 2rem; padding: 0.85rem 1.75rem; border: none; border-radius: 999px;
+  background: var(--gold); color: var(--ink); font-weight: 600; cursor: pointer;
+}
+.section { padding: 4rem 2rem; max-width: 960px; margin: 0 auto; }
+.section.alt { background: #efe6d8; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-top: 1.5rem; }
+.card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+.varieties { margin-top: 1rem; line-height: 2; }
+.cta-section { text-align: center; }
+footer { text-align: center; padding: 2rem; font-size: 0.9rem; opacity: 0.7; }
+CSS
+
+cat > src/main.js <<'JS'
+document.querySelector('.cta')?.addEventListener('click', () => {
+  document.getElementById('bodegas')?.scrollIntoView({ behavior: 'smooth' });
+});
+JS
+
+emit_tool_use "tu-write-css" "Write" '{"file_path":"src/style.css"}'
+emit_tool_result "tu-write-css" "Wrote src/style.css"
+emit_tool_use "tu-write-js" "Write" '{"file_path":"src/main.js"}'
+emit_tool_result "tu-write-js" "Wrote src/main.js"
+
+INSTALL_OUT=""
+if command -v npm >/dev/null 2>&1; then
+    INSTALL_OUT=$(npm install --no-fund --no-audit 2>&1 || true)
+    emit_tool_use "tu-bash-install" "Bash" '{"command":"npm install"}'
+    emit_tool_result "tu-bash-install" "$INSTALL_OUT"
+else
+    emit_tool_use "tu-bash-install" "Bash" '{"command":"npm install"}'
+    emit_tool_result "tu-bash-install" "npm not found" "true"
+fi
+
+FINAL_TEXT='He creado una landing page moderna sobre vinos Rioja con Vite. Los archivos principales son index.html, src/style.css y src/main.js. Las dependencias están instaladas. El servidor de desarrollo escuchará en http://127.0.0.1:5173 cuando Qaap lo levante.'
+emit_assistant_text "$FINAL_TEXT"
+emit_result "$FINAL_TEXT"
+
+exit 0
