@@ -293,6 +293,7 @@ export class MobileProjectsPanelLifecycleUi {
         this.host.chatServiceDispose.dispose();
         if (this.host.activeTasks) {
             this.host.activeTasksDispose = this.host.activeTasks.onDidChange(() => {
+                this.host.stickyComposerRenderUi.renderStickyComposer();
                 if (this.host.visible && this.host.transcriptSheet && this.host.transcriptChatHost && this.host.transcriptLastConv) {
                     this.host.ensureOverlayUi().team.renderTeamSection(this.host.transcriptChatHost, this.host.transcriptLastConv);
                 }

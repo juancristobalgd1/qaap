@@ -182,4 +182,24 @@ describe('qaap-transcript-preview-offer', () => {
         expect(conversationMayAutoOpenTranscriptPreview({ ...base, status: 'idle' })).to.equal(true);
         expect(conversationMayAutoOpenTranscriptPreview(undefined)).to.equal(false);
     });
+
+    it('conversationMayAutoOpenTranscriptPreview opens during streaming when probe is ready', () => {
+        const conv: QaapAgentConversationDTO = {
+            id: 'c5',
+            cwd: '/repo',
+            agentId: 'qaiq',
+            title: 'Preview',
+            status: 'streaming',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'levanta la app',
+                createdAt: 1,
+            }],
+        };
+        expect(conversationMayAutoOpenTranscriptPreview(conv, { probeReady: true })).to.equal(true);
+        expect(conversationMayAutoOpenTranscriptPreview(conv)).to.equal(false);
+    });
 });

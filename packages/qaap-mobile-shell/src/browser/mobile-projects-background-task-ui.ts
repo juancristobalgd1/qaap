@@ -38,6 +38,10 @@ import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { QaapBackgroundContextProvider } from './qaap-background-context-provider';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import { MobileSnackbar } from './mobile-snackbar';
+import {
+    isVpsAgentBackendConfigured,
+    localizeNoVpsAgentConfiguredMessage,
+} from '../common/qaap-agent-availability';
 
 export interface MobileProjectsBackgroundTaskHost {
     projects: MobileProjectEntry[];
@@ -99,6 +103,9 @@ export class MobileProjectsBackgroundTaskUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
         } = {},
     ): Promise<void> {
+        if (!this.ensureVpsAgentBackendReady()) {
+            return;
+        }
         const cwd = await this.ensureInlineComposerCwd(project);
         if (!cwd) {
             return;
@@ -145,6 +152,9 @@ export class MobileProjectsBackgroundTaskUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
         },
     ): Promise<QaapAgentConversationSummaryDTO> {
+        if (!this.ensureVpsAgentBackendReady()) {
+            throw new Error(localizeNoVpsAgentConfiguredMessage());
+        }
         const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);
         if (useWorktree && options.worktree !== true) {
             MobileSnackbar.show(
@@ -273,5 +283,14 @@ export class MobileProjectsBackgroundTaskUi {
                 }
             }
         }, 1400);
+    }
+
+    protected ensureVpsAgentBackendReady(): boolean {
+        const configured = this.host.activeTasks?.isAgentConfigured() ?? false;
+        if (isVpsAgentBackendConfigured(configured)) {
+            return true;
+        }
+        MobileSnackbar.show(localizeNoVpsAgentConfiguredMessage(), { kind: 'warning', duration: 4200 });
+        return false;
     }
 }

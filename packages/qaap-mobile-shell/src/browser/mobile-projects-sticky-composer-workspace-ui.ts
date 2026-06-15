@@ -413,6 +413,10 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         this.host.projects = nextProjects;
         this.host.render();
         this.host.delegate.onProjectsChanged?.();
+        const created = this.host.projectsService.resolveLastCreatedProject(nextProjects);
+        if (created) {
+            await this.host.projectsService.openInCurrentWindowAsync(created);
+        }
     }
     openComposerWorkspaceBranchSheet(
         project: MobileProjectEntry,

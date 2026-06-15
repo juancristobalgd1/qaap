@@ -89,6 +89,7 @@ export class MobileProjectsStickyComposerColumnUi {
             readonly onOpen: (anchor: HTMLButtonElement) => void;
         };
         transcriptOverlay?: boolean;
+        statusNotice?: string;
     }): HTMLElement {
         const column = document.createElement('div');
         column.className = 'theia-mobile-projects-sticky-composer-column';
@@ -391,6 +392,13 @@ export class MobileProjectsStickyComposerColumnUi {
         card.className = 'theia-mobile-projects-sticky-composer-card theia-mod-codex';
         if (options.changesPill) {
             wrap.append(options.changesPill);
+        }
+        if (options.statusNotice?.trim()) {
+            const notice = document.createElement('div');
+            notice.className = 'theia-mobile-projects-sticky-composer-agent-notice';
+            notice.setAttribute('role', 'status');
+            notice.textContent = options.statusNotice.trim();
+            wrap.append(notice);
         }
         if (contextItems.length > 0) {
             card.classList.add('theia-mod-has-context');

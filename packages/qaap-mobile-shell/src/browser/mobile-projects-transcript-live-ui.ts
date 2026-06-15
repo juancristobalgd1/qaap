@@ -489,7 +489,7 @@ export class MobileProjectsTranscriptLiveUi {
         if (this.transcriptPreviewOfferAnnouncedUrl === normalized) {
             return;
         }
-        if (!conversationMayAutoOpenTranscriptPreview(conv)) {
+        if (!conversationMayAutoOpenTranscriptPreview(conv, { probeReady: true })) {
             this.host.stageTranscriptPreviewReadyUrl(normalized);
             return;
         }

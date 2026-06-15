@@ -239,17 +239,26 @@ export function conversationShouldKickoffDevPreviewBootstrap(conv: QaapAgentConv
     return conversationShouldProbeDefaultDevPreviewPorts(conv);
 }
 
+export interface TranscriptPreviewAutoOpenOptions {
+    /** When true, a live dev-preview probe succeeded for this conversation turn. */
+    readonly probeReady?: boolean;
+}
+
 /**
  * True when the UI may auto-switch to Preview and mount the iframe.
  *
- * Never auto-open mid-turn: the agent may still be installing dependencies or fixing the
- * build, and pending approval prompts must stay visible in the transcript. While streaming,
- * the ready URL is staged ("Preview ready" offer) and the preview opens automatically once
- * the turn settles (see `finalizeTranscriptDevPreviewAfterSettle`).
+ * By default never auto-open mid-turn so approval prompts stay visible. When {@link TranscriptPreviewAutoOpenOptions.probeReady}
+ * is set and the user asked for preview, open as soon as the proxied port responds even if the agent is still streaming.
  */
-export function conversationMayAutoOpenTranscriptPreview(conv: QaapAgentConversationDTO | undefined): boolean {
+export function conversationMayAutoOpenTranscriptPreview(
+    conv: QaapAgentConversationDTO | undefined,
+    options?: TranscriptPreviewAutoOpenOptions,
+): boolean {
     if (!conv) {
         return false;
+    }
+    if (options?.probeReady && conversationRequestsDevPreview(conv)) {
+        return true;
     }
     return conv.status !== 'streaming';
 }
