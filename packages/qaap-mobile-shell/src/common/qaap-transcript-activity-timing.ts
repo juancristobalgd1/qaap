@@ -118,9 +118,38 @@ export class TranscriptActivityTimingStore {
     }
 }
 
-export function formatTranscriptActivityStepMeta(durationMs: number | undefined): string | undefined {
-    if (durationMs === undefined || !Number.isFinite(durationMs)) {
+export function formatTranscriptActivityStepMeta(
+    durationMs: number | undefined,
+    timestampMs?: number,
+    now = Date.now(),
+): string | undefined {
+    const parts: string[] = [];
+    if (durationMs !== undefined && Number.isFinite(durationMs)) {
+        parts.push(formatTranscriptActivityStepDuration(durationMs));
+    }
+    const relative = formatTranscriptActivityStepRelativeTime(timestampMs, now);
+    if (relative) {
+        parts.push(relative);
+    }
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+
+/** Compact relative stamp for settled steps — "just now", "2m ago". */
+export function formatTranscriptActivityStepRelativeTime(
+    timestampMs: number | undefined,
+    now = Date.now(),
+): string | undefined {
+    if (timestampMs === undefined || !Number.isFinite(timestampMs)) {
         return undefined;
     }
-    return formatTranscriptActivityStepDuration(durationMs);
+    const delta = Math.max(0, now - timestampMs);
+    if (delta < 45_000) {
+        return 'just now';
+    }
+    if (delta < 3_600_000) {
+        const minutes = Math.max(1, Math.round(delta / 60_000));
+        return `${minutes}m ago`;
+    }
+    const hours = Math.max(1, Math.round(delta / 3_600_000));
+    return `${hours}h ago`;
 }

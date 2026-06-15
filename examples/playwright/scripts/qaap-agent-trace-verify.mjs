@@ -94,14 +94,22 @@ async function injectTraceHarness(page) {
               <span class="theia-mobile-agent-activity-timeline-summary-count">3</span>
             </summary>
             <ol class="theia-mobile-agent-activity-list">
-              <li class="theia-mobile-agent-activity-item theia-mod-success theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="file" data-verify="read">
+              <li class="theia-mobile-agent-activity-item theia-mod-success theia-mod-timeline-history theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="file" data-verify="read">
                 <span class="theia-mobile-agent-activity-icon theia-mod-success codicon codicon-check"></span>
                 <div class="theia-mobile-agent-activity-copy">
                   <span class="theia-mobile-agent-activity-label">Read README.md</span>
                   <span class="theia-mobile-agent-activity-meta">1.2s</span>
                 </div>
               </li>
-              <li class="theia-mobile-agent-activity-item theia-mod-error theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="terminal" data-verify="error">
+              <li class="theia-mobile-agent-activity-item theia-mod-success theia-mod-timeline-recent theia-mod-clickable" role="button" tabindex="0" data-verify="mcp">
+                <span class="theia-mobile-agent-activity-icon theia-mod-kind theia-mod-success codicon codicon-server-process"></span>
+                <div class="theia-mobile-agent-activity-copy">
+                  <span class="theia-mobile-agent-activity-label">Called notion search</span>
+                  <span class="theia-mobile-agent-activity-mcp-badge">MCP</span>
+                  <span class="theia-mobile-agent-activity-meta">0.8s</span>
+                </div>
+              </li>
+              <li class="theia-mobile-agent-activity-item theia-mod-error theia-mod-timeline-recent theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-action="terminal" data-verify="error">
                 <span class="theia-mobile-agent-activity-icon theia-mod-error codicon codicon-error"></span>
                 <div class="theia-mobile-agent-activity-copy">
                   <span class="theia-mobile-agent-activity-label">Failed: Port 3000 already in use</span>
@@ -109,13 +117,45 @@ async function injectTraceHarness(page) {
                   <span class="theia-mobile-agent-activity-error-detail">Agent terminated existing process</span>
                 </div>
               </li>
-              <li class="theia-mobile-agent-activity-item theia-mod-running theia-mod-active theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-active="true" data-transcript-activity-action="file" data-verify="edit">
+              <li class="theia-mobile-agent-activity-item theia-mod-success theia-mod-timeline-recent" data-verify="edited-row">
+                <div class="theia-mobile-agent-activity-copy">
+                  <span class="theia-mobile-agent-activity-row">
+                    <span class="theia-mobile-agent-activity-verb">Edited</span>
+                    <span class="theia-mobile-agent-activity-detail"> mobile-workbench.css</span>
+                    <span class="theia-mobile-agent-activity-diff-stats">
+                      <span class="theia-mobile-agent-activity-diff-add">+10</span>
+                      <span class="theia-mobile-agent-activity-diff-remove">−4</span>
+                    </span>
+                  </span>
+                </div>
+              </li>
+              <li class="theia-mobile-agent-activity-item theia-mod-running theia-mod-active theia-mod-timeline-current theia-mod-clickable" role="button" tabindex="0" data-transcript-activity-active="true" data-transcript-activity-action="file" data-verify="edit">
                 <span class="theia-mobile-agent-activity-icon theia-mod-active theia-mod-pulse"><span class="codicon codicon-arrow-small-right"></span></span>
                 <div class="theia-mobile-agent-activity-copy">
                   <span class="theia-mobile-agent-activity-label theia-mod-shimmer">Editing src/app.ts</span>
                 </div>
               </li>
             </ol>
+          </details>
+          <details class="theia-mobile-agent-tool-pill theia-mod-terminal theia-mod-done" open data-verify="terminal-pill">
+            <summary class="theia-mobile-agent-tool-pill-summary">
+              <span class="theia-mobile-agent-tool-pill-chevron codicon codicon-chevron-right"></span>
+              <span class="theia-mobile-agent-tool-pill-verb">Ran</span>
+              <span class="theia-mobile-agent-tool-pill-label">npm test</span>
+            </summary>
+            <div class="theia-mobile-agent-tool-pill-body">
+              <div class="theia-mobile-agent-pill-terminal">
+                <div class="theia-mobile-agent-shell-command-block">
+                  <div class="theia-mobile-agent-shell-command"><span class="theia-mobile-agent-shell-prompt">$</span><code>npm test</code></div>
+                </div>
+                <pre class="theia-mobile-agent-shell-output">PASS 1 test</pre>
+              </div>
+            </div>
+          </details>
+          <details class="theia-mobile-agent-tool-pill theia-mod-mcp theia-mod-done" open data-verify="mcp-pill">
+            <summary class="theia-mobile-agent-tool-pill-summary">
+              <span class="theia-mobile-agent-tool-pill-badge theia-mod-mcp">MCP</span>
+            </summary>
           </details>
           <div class="theia-mobile-agent-transcript-content theia-mod-markdown"><p>Respuesta en streaming…</p></div>
         </div>
@@ -271,6 +311,13 @@ async function evaluateParityChecklist(page) {
         checklist['P-10'] = !!document.querySelector('.theia-mobile-agent-activity-timeline.theia-mod-collapsed-history, .theia-mobile-agent-activity-timeline.theia-mod-collapsible');
         checklist['P-11'] = !!document.querySelector('.theia-mobile-agent-activity-list.theia-mod-virtualized, .theia-mobile-agent-activity-item.theia-mod-history-gap');
         checklist['P-12'] = !!document.querySelector('[data-transcript-activity-active="true"]');
+        checklist['P-13'] = !!document.querySelector('.theia-mobile-agent-activity-item.theia-mod-timeline-current')
+            && !!document.querySelector('.theia-mobile-agent-activity-item.theia-mod-timeline-recent, .theia-mobile-agent-activity-item.theia-mod-timeline-history');
+        checklist['P-14'] = !!document.querySelector('.theia-mobile-agent-pill-terminal .theia-mobile-agent-shell-output');
+        checklist['P-15'] = !!document.querySelector('.theia-mobile-agent-tool-pill-badge.theia-mod-mcp')
+            && !!document.querySelector('.theia-mobile-agent-activity-mcp-badge');
+        checklist['P-16'] = !!document.querySelector('.theia-mobile-agent-activity-item.theia-mod-timeline-current.theia-mod-active');
+        checklist['P-18'] = !!document.querySelector('.theia-mobile-agent-activity-diff-add, .theia-mobile-agent-activity-diff-remove');
         const passed = Object.values(checklist).filter(Boolean).length;
         return { checklist, passed, total: Object.keys(checklist).length };
     });

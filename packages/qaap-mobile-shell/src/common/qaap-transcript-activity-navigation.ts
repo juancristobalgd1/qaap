@@ -7,8 +7,13 @@ import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import {
     classifyTranscriptToolActivityKind,
+    extractTranscriptDiffCard,
     type QaapTranscriptToolActivityKind,
 } from './qaap-agent-transcript-segments';
+import {
+    resolveTranscriptCursorTraceLabel,
+    splitTranscriptCursorGroupedLabel,
+} from './qaap-transcript-cursor-trace-label';
 import {
     detectTranscriptToolRetryHint,
     excerptTranscriptToolError,
@@ -38,6 +43,12 @@ export interface TranscriptActivityNavigationItem {
     readonly timestamp?: number;
     readonly errorSummary?: string;
     readonly retryHint?: boolean;
+    /** Cursor-style row parts — verb emphasis + muted tail tags. */
+    readonly verb?: string;
+    readonly detail?: string;
+    readonly tail?: string;
+    readonly editAdded?: number;
+    readonly editRemoved?: number;
 }
 
 export interface TranscriptActivityNavigationDeps {
@@ -47,6 +58,7 @@ export interface TranscriptActivityNavigationDeps {
     readonly localizeWritingLabel: () => string;
     readonly localizeFailedLabel: (detail: string) => string;
     readonly extractToolPath: (argsJson: string) => string | undefined;
+    readonly extractToolCommand?: (argsJson: string) => string | undefined;
     readonly resolveToolKind: (toolName: string) => string;
     readonly isToolResultFailed: (result?: string) => boolean;
     readonly resolveStepDurationMs?: (
@@ -177,6 +189,14 @@ export function resolveTranscriptActivityNavigationItems(
             : undefined;
         const state = resolveToolStepState(segment, options, deps, previousFailed);
         const baseLabel = deps.localizeActivityLabel(deps.formatToolActivityLabel(segment.name, segment.args));
+        const command = deps.extractToolCommand?.(segment.args);
+        const cursorParts = resolveTranscriptCursorTraceLabel(segment.name, segment.args, {
+            path: filePath,
+            command,
+        });
+        const diffCard = kind === 'editing' && segment.result?.trim()
+            ? extractTranscriptDiffCard(segment.result)
+            : undefined;
         items.push({
             label: resolveToolStepLabel(baseLabel, state, errorSummary, deps),
             state,
@@ -188,6 +208,11 @@ export function resolveTranscriptActivityNavigationItems(
             timestamp: deps.resolveStepTimestamp?.(segmentIndex, segment),
             errorSummary,
             retryHint: detectTranscriptToolRetryHint(segment.result),
+            verb: cursorParts.verb,
+            detail: cursorParts.detail,
+            tail: cursorParts.tail,
+            editAdded: diffCard?.added,
+            editRemoved: diffCard?.removed,
         });
         previousFailed = state === 'error';
     }
@@ -195,11 +220,15 @@ export function resolveTranscriptActivityNavigationItems(
     if (options?.streaming && isTranscriptShortTextPreamble(segments)) {
         items.push({
             label: deps.localizePlanningLabel(),
+            verb: 'Planning',
+            detail: 'next moves',
             state: 'running',
         });
     } else if (textChars > 0) {
         items.push({
             label: deps.localizeWritingLabel(),
+            verb: 'Writing',
+            detail: 'response',
             state: resolveWritingStepState(segments, options),
             durationMs: undefined,
         });
@@ -211,7 +240,6 @@ const GROUPABLE_TOOL_KINDS = new Set<QaapTranscriptToolActivityKind>([
     'reading',
     'searching',
     'terminal',
-    'editing',
 ]);
 
 function formatGroupedActivityLabel(kind: QaapTranscriptToolActivityKind, count: number): string {
@@ -307,6 +335,7 @@ export function groupTranscriptActivityNavigationItems(
                 .filter((segmentIndex): segmentIndex is number => segmentIndex !== undefined),
             durationMs: resolveGroupedDurationMs(slice),
             timestamp: slice[slice.length - 1]?.timestamp,
+            ...splitTranscriptCursorGroupedLabel(kind, slice.length),
             ...navigation,
         });
         index = end;

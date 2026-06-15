@@ -10,7 +10,32 @@ export interface QaapTranscriptActivitySegment {
     readonly name?: string;
 }
 
-export type QaapTranscriptToolActivityKind = 'reading' | 'searching' | 'terminal' | 'editing' | 'tool';
+export type QaapTranscriptToolActivityKind = 'reading' | 'searching' | 'terminal' | 'editing' | 'mcp' | 'tool';
+
+/** True when a tool name denotes an MCP server invocation (Codex `mcp_tool_call`, Cursor `CallMcpTool`, …). */
+export function isTranscriptMcpTool(toolName: string): boolean {
+    const name = toolName.toLowerCase().replace(/\s+/g, '_');
+    return name.includes('mcp')
+        || name === 'callmcptool'
+        || name.startsWith('mcp_')
+        || name.endsWith('_mcp');
+}
+
+/** Short MCP server label from common tool-arg shapes (`server`, `mcp_server`, …). */
+export function extractTranscriptMcpServerLabel(argsJson: string): string | undefined {
+    try {
+        const args = JSON.parse(argsJson) as Record<string, unknown>;
+        const server = [args.server, args.server_name, args.mcp_server, args.mcpServer]
+            .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+        if (!server) {
+            return undefined;
+        }
+        const clean = server.trim();
+        return clean.length > 24 ? `${clean.slice(0, 21)}…` : clean;
+    } catch {
+        return undefined;
+    }
+}
 
 export interface QaapTranscriptActivityStats {
     readonly fileReads: number;
@@ -22,6 +47,9 @@ export interface QaapTranscriptActivityStats {
 
 /** Classifies a tool name into a coarse activity bucket for transcript meta stats. */
 export function classifyTranscriptToolActivityKind(toolName: string): QaapTranscriptToolActivityKind {
+    if (isTranscriptMcpTool(toolName)) {
+        return 'mcp';
+    }
     const name = toolName.toLowerCase();
     if (name.includes('bash') || name.includes('shell') || name.includes('terminal') || name.includes('run_')) {
         return 'terminal';
@@ -131,6 +159,8 @@ export function shouldRenderTranscriptToolSegmentInline(options: {
     readonly activityTimelineShown: boolean;
     readonly finished: boolean;
     readonly resultFailed: boolean;
+    readonly toolKind?: QaapTranscriptToolActivityKind;
+    readonly hasToolOutput?: boolean;
 }): boolean {
     if (!options.activityTimelineShown) {
         return true;
@@ -138,7 +168,13 @@ export function shouldRenderTranscriptToolSegmentInline(options: {
     if (!options.finished) {
         return true;
     }
-    return options.resultFailed;
+    if (options.resultFailed) {
+        return true;
+    }
+    if (options.toolKind === 'terminal' && options.hasToolOutput) {
+        return true;
+    }
+    return false;
 }
 
 /** Expand tool/shell panels while running or when a failed result needs attention. */
@@ -289,6 +325,8 @@ export function resolveTranscriptToolRowParts(
             return { verb: 'Searched', detail: file ?? 'workspace' };
         case 'terminal':
             return { verb: 'Ran', detail: options?.command ? excerptTranscriptToolCommand(options.command) : 'command' };
+        case 'mcp':
+            return { verb: 'Called', detail: (toolName || 'MCP').replace(/_/g, ' ') };
         case 'editing':
             return { verb: 'Edited', detail: file ?? 'file' };
         default:
@@ -400,6 +438,8 @@ function resolveTranscriptToolPillLabel(
             return file ? `Search ${file}` : 'Search';
         case 'terminal':
             return 'Run command';
+        case 'mcp':
+            return 'MCP tool';
         case 'editing':
             return file ? `Edit ${file}` : 'Edit file';
         default:

@@ -36,7 +36,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         return resolveTranscriptActivityNavigationItems(segments, {
             localizeActivityLabel: label => this.host.projectRowsUi.localizeActivityLabel(label),
             formatToolActivityLabel,
-            localizePlanningLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityPlanning', 'Planning next steps'),
+            localizePlanningLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityPlanningMoves', 'Planning next moves'),
             localizeWritingLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityResponseReady', 'Writing response'),
             localizeFailedLabel: detail => nls.localize(
                 'qaap/mobileProjects/transcriptActivityFailed',
@@ -44,6 +44,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
                 detail,
             ),
             extractToolPath: args => this.extractTranscriptToolPath(args),
+            extractToolCommand: args => this.extractTranscriptToolCommand(args),
             resolveToolKind: name => this.resolveTranscriptToolKind(name),
             isToolResultFailed: result => this.transcriptToolResultFailed(result),
             resolveStepDurationMs: options?.resolveStepDurationMs,
@@ -278,7 +279,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         if (this.isTranscriptPureReadTool(segment.name)) {
             return false;
         }
-        return kind === 'searching' || kind === 'editing' || kind === 'tool';
+        return kind === 'searching' || kind === 'editing' || kind === 'tool' || kind === 'terminal' || kind === 'mcp';
     }
 
 
@@ -291,6 +292,9 @@ export class MobileProjectsTranscriptMessagesResolversUi {
 
     resolveTranscriptToolKind(toolName: string | undefined): string {
         const name = (toolName ?? 'tool').toLowerCase();
+        if (name.includes('mcp') || name === 'callmcptool' || name.startsWith('mcp_')) {
+            return 'mcp';
+        }
         if (name.includes('bash') || name.includes('shell') || name.includes('terminal') || name.includes('run_')) {
             return 'terminal';
         }

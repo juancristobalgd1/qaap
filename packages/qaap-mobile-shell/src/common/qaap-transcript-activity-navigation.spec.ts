@@ -27,6 +27,9 @@ const deps = {
         if (toolName.includes('read')) {
             return 'reading';
         }
+        if (toolName.includes('edit')) {
+            return 'editing';
+        }
         return 'tool';
     },
     isToolResultFailed: (result?: string) => /\berror\b/i.test(result ?? ''),
@@ -115,6 +118,20 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(grouped[0]?.grouped).to.equal(true);
         expect(grouped[0]?.groupCount).to.equal(2);
         expect(grouped[1]?.state).to.equal('running');
+    });
+
+    it('keeps consecutive edits separate with diff stats for cursor trace rows', () => {
+        const diff = '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-old\n+new\n+also';
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'tool', name: 'edit_file', args: '{"path":"foo.ts"}', finished: true, toolUseId: '1', result: diff },
+            { type: 'tool', name: 'edit_file', args: '{"path":"bar.ts"}', finished: true, toolUseId: '2', result: diff },
+        ], deps, false);
+        const grouped = groupTranscriptActivityNavigationItems(items);
+        expect(grouped).to.have.length(2);
+        expect(grouped[0]?.verb).to.equal('Edited');
+        expect(grouped[0]?.detail).to.equal('foo.ts');
+        expect(grouped[0]?.editAdded).to.be.greaterThan(0);
+        expect(grouped[0]?.editRemoved).to.be.greaterThan(0);
     });
 
     it('uses streaming state for the writing step while the turn is live', () => {

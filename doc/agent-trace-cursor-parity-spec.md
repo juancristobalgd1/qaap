@@ -59,7 +59,7 @@ Cada acción del agente es un **Step**: Pensando, Analizando proyecto, Leyendo a
 | 2 | Acciones recientes | Colapsables, resumen visible, detalle bajo demanda |
 | 3 | Historial antiguo | Compactado, alta densidad, bajo consumo visual |
 
-**Estado Qaap:** fases `thinking → acting → writing → settled` en `qaap-transcript-stream-status.ts`. Pendiente: separación visual explícita nivel 2 vs 3.
+**Estado Qaap:** fases `thinking → acting → writing → settled` en `qaap-transcript-stream-status.ts`. Clases `theia-mod-timeline-current|recent|history` en `qaap-transcript-timeline-tier.ts` + `mobile-workbench.css`.
 
 ---
 
@@ -211,3 +211,9 @@ Paridad funcional: timeline, tool calls, diffs, logs, estados. Adaptar layout/de
 | P-10 | Colapso 20+ inteligente | ✅ P1 |
 | P-11 | Virtualización timeline | ✅ P2 |
 | P-12 | Scroll al step activo | ✅ P2 |
+| P-13 | Jerarquía visual 3 niveles (current / recent / history) | ✅ |
+| P-14 | Logs de terminal inline en tool pills (comando + stdout clamped, auto-expand) | ✅ |
+| P-15 | Badges MCP en pills y timeline | ✅ |
+| P-16 | Animaciones pulidas (enter, glow current step, pulse running pill) | ✅ |
+| P-17 | Trace plano estilo Cursor (Thought + Explored + filas verb/detail + Waiting for shell) | ✅ |
+| P-18 | Filas Edited con stats +N −N inline en el trace (sin agrupar edits) | ✅ |

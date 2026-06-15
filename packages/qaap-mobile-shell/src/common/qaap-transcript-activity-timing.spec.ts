@@ -8,7 +8,7 @@ import {
     formatTranscriptActivityStepDuration,
     excerptTranscriptToolError,
 } from './qaap-transcript-activity-step-state';
-import { TranscriptActivityTimingStore } from './qaap-transcript-activity-timing';
+import { TranscriptActivityTimingStore, formatTranscriptActivityStepMeta, formatTranscriptActivityStepRelativeTime } from './qaap-transcript-activity-timing';
 
 describe('qaap-transcript-activity-step-state', () => {
 
@@ -50,5 +50,12 @@ describe('qaap-transcript-activity-timing', () => {
         store.observe('msg-2', [segment], 9000);
         expect(store.resolveDurationMs('msg-2', 0, segment)).to.equal(3500);
         expect(store.resolveTimestamp('msg-2', 0, segment)).to.equal(4500);
+    });
+
+    it('joins duration and relative timestamps in step meta', () => {
+        const now = 600_000;
+        expect(formatTranscriptActivityStepMeta(2400, 570_000, now)).to.equal('2.4s · just now');
+        expect(formatTranscriptActivityStepRelativeTime(570_000, now)).to.equal('just now');
+        expect(formatTranscriptActivityStepRelativeTime(420_000, now)).to.equal('3m ago');
     });
 });

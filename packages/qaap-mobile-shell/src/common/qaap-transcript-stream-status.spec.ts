@@ -110,6 +110,7 @@ describe('qaap-transcript-stream-status', () => {
             { type: 'tool', finished: true } as { type: string; content?: string; finished?: boolean },
             { type: 'text', content: 'Here is the full answer with enough detail to continue streaming.' },
         ], true)).to.equal(false);
+        expect(shouldExpandTranscriptInlineTimeline([{ type: 'tool' }], false)).to.equal(false);
         expect(resolveTranscriptTraceDisplayPhase([{ type: 'tool' }], false)).to.equal('settled');
     });
 

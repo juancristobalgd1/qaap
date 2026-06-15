@@ -297,7 +297,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
 
     createTranscriptToolResultBody(
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
-        _kind: string,
+        kind: string,
         options?: { readonly streaming?: boolean },
     ): HTMLElement {
         if (isTranscriptTodoTool(segment.name)) {
@@ -305,6 +305,9 @@ export class MobileProjectsTranscriptMessagesToolUi {
             if (checklist) {
                 return checklist;
             }
+        }
+        if (kind === 'terminal' || this.resolversUi.isTranscriptShellTool(segment.name)) {
+            return this.createTranscriptToolPillTerminalBody(segment, options);
         }
         const text = this.resolversUi.formatTranscriptToolResult(segment.result!);
         if (options?.streaming && !segment.finished) {
@@ -371,6 +374,42 @@ export class MobileProjectsTranscriptMessagesToolUi {
         pre.className = TRANSCRIPT_TOOL_RESULT_STREAM_CLASS;
         pre.textContent = text;
         return pre;
+    }
+
+    /** Shell command + clamped stdout inside a tool pill (Cursor-style inline terminal logs). */
+    createTranscriptToolPillTerminalBody(
+        segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+        options?: { readonly streaming?: boolean },
+    ): HTMLElement {
+        const wrap = document.createElement('div');
+        wrap.className = 'theia-mobile-agent-pill-terminal';
+        const command = this.resolversUi.extractTranscriptToolCommand(segment.args);
+        if (command) {
+            const commandBlock = document.createElement('div');
+            commandBlock.className = 'theia-mobile-agent-shell-command-block';
+            const commandLine = document.createElement('div');
+            commandLine.className = 'theia-mobile-agent-shell-command';
+            const prompt = document.createElement('span');
+            prompt.className = 'theia-mobile-agent-shell-prompt';
+            prompt.textContent = '$';
+            const commandText = document.createElement('code');
+            commandText.textContent = command;
+            commandLine.append(prompt, commandText);
+            commandBlock.append(commandLine);
+            wrap.append(commandBlock);
+        }
+        if (segment.result?.trim()) {
+            const text = this.resolversUi.formatTranscriptToolResult(segment.result);
+            if (options?.streaming && !segment.finished) {
+                wrap.append(this.createTranscriptToolResultStreamBody(text));
+            } else {
+                const pre = document.createElement('pre');
+                pre.className = 'theia-mobile-agent-shell-output';
+                pre.textContent = text;
+                wrap.append(this.createTranscriptClampedBlock(pre, text.split('\n').length, 6));
+            }
+        }
+        return wrap;
     }
 
     /** Patch a running tool's stdout in place — skips code-view rebuild while output grows. */
@@ -519,6 +558,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
             case 'searching': return 'codicon-search';
             case 'editing': return 'codicon-edit';
             case 'terminal': return 'codicon-terminal';
+            case 'mcp': return 'codicon-server-process';
             default: return 'codicon-tools';
         }
     }
@@ -531,6 +571,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
             case 'searching': return nls.localize('qaap/mobileProjects/transcriptToolSearched', 'Searched');
             case 'editing': return nls.localize('qaap/mobileProjects/transcriptToolEdited', 'Edited');
             case 'terminal': return nls.localize('qaap/mobileProjects/transcriptToolRan', 'Ran');
+            case 'mcp': return nls.localize('qaap/mobileProjects/transcriptToolMcp', 'Called');
             default: return (toolName ?? 'tool').replace(/_/g, ' ');
         }
     }
@@ -573,6 +614,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
         finished: boolean;
         failed: boolean;
         copyFrom?: () => string;
+        mcpServer?: string;
     }): HTMLElement {
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-tool-pill-summary';
@@ -589,6 +631,9 @@ export class MobileProjectsTranscriptMessagesToolUi {
         label.className = 'theia-mobile-agent-tool-pill-label';
         label.textContent = options.label;
         summary.append(chevron, icon, verb, label);
+        if (options.kind === 'mcp') {
+            summary.append(this.createTranscriptMcpBadge(options.mcpServer));
+        }
         this.appendTranscriptToolPillSummaryTail(summary, {
             finished: options.finished,
             failed: options.failed,
@@ -597,14 +642,27 @@ export class MobileProjectsTranscriptMessagesToolUi {
         return summary;
     }
 
+    createTranscriptMcpBadge(server?: string): HTMLElement {
+        const badge = document.createElement('span');
+        badge.className = 'theia-mobile-agent-tool-pill-badge theia-mod-mcp';
+        badge.textContent = server ? `MCP · ${server}` : 'MCP';
+        if (server) {
+            badge.setAttribute('title', server);
+        }
+        badge.setAttribute('aria-label', nls.localize('qaap/mobileProjects/transcriptMcpBadge', 'MCP tool'));
+        return badge;
+    }
+
     syncTranscriptToolPillSummary(
         summary: HTMLElement,
         options: {
+            kind?: string;
             verb: string;
             label: string;
             finished: boolean;
             failed: boolean;
             copyFrom?: () => string;
+            mcpServer?: string;
         },
     ): void {
         const verb = summary.querySelector('.theia-mobile-agent-tool-pill-verb');
@@ -614,6 +672,11 @@ export class MobileProjectsTranscriptMessagesToolUi {
         const labelEl = summary.querySelector('.theia-mobile-agent-tool-pill-label');
         if (labelEl) {
             labelEl.textContent = options.label;
+        }
+        summary.querySelector('.theia-mobile-agent-tool-pill-badge.theia-mod-mcp')?.remove();
+        if (options.kind === 'mcp') {
+            const label = summary.querySelector('.theia-mobile-agent-tool-pill-label');
+            label?.after(this.createTranscriptMcpBadge(options.mcpServer));
         }
         summary.querySelector('.theia-mobile-agent-shell-tail')?.remove();
         this.appendTranscriptToolPillSummaryTail(summary, {

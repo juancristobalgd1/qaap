@@ -219,6 +219,9 @@ function classifyCodexToolName(itemType: string, item: CodexStreamItem): string 
     if (itemType === 'command_execution' || itemType === 'shell_command') {
         return 'Bash';
     }
+    if (itemType === 'mcp_tool_call') {
+        return 'mcp_tool_call';
+    }
     if (itemType === 'file_change' || itemType === 'apply_patch') {
         return 'Edit';
     }

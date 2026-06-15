@@ -162,11 +162,14 @@ export function shouldShowTranscriptInlineTimeline(
     return resolveTranscriptTraceDisplayPhase(segments, streaming) !== 'thinking';
 }
 
-/** Expanded checklist while tools run; collapsed once the answer streams or the turn settles. */
+/** Expanded checklist while tools run; collapsed once settled (Cursor keeps summary visible). */
 export function shouldExpandTranscriptInlineTimeline(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
 ): boolean {
+    if (!streaming) {
+        return false;
+    }
     return resolveTranscriptTraceDisplayPhase(segments, streaming) === 'acting';
 }
 

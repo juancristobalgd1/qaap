@@ -9,7 +9,9 @@ import {
     excerptTranscriptThought,
     extractInlineDiffPreview,
     extractTranscriptDiffCard,
+    extractTranscriptMcpServerLabel,
     hasTranscriptActivityTimeline,
+    isTranscriptMcpTool,
     isTranscriptThoughtExcerptTruncated,
     isTranscriptTodoTool,
     parseTranscriptTodoChecklist,
@@ -72,6 +74,16 @@ describe('shouldRenderTranscriptToolSegmentInline', () => {
             resultFailed: false,
         })).to.equal(false);
     });
+
+    it('keeps finished terminal output inline when the timeline is shown', () => {
+        expect(shouldRenderTranscriptToolSegmentInline({
+            activityTimelineShown: true,
+            finished: true,
+            resultFailed: false,
+            toolKind: 'terminal',
+            hasToolOutput: true,
+        })).to.equal(true);
+    });
 });
 
 describe('shouldOpenTranscriptToolDetails', () => {
@@ -106,6 +118,24 @@ describe('classifyTranscriptToolActivityKind', () => {
         expect(classifyTranscriptToolActivityKind('todo_write')).to.equal('tool');
         expect(classifyTranscriptToolActivityKind('TodoWrite')).to.equal('tool');
         expect(classifyTranscriptToolActivityKind('custom_tool')).to.equal('tool');
+        expect(classifyTranscriptToolActivityKind('mcp_tool_call')).to.equal('mcp');
+        expect(classifyTranscriptToolActivityKind('CallMcpTool')).to.equal('mcp');
+    });
+});
+
+describe('isTranscriptMcpTool', () => {
+    it('detects MCP tool names', () => {
+        expect(isTranscriptMcpTool('mcp_tool_call')).to.equal(true);
+        expect(isTranscriptMcpTool('CallMcpTool')).to.equal(true);
+        expect(isTranscriptMcpTool('Read')).to.equal(false);
+    });
+});
+
+describe('extractTranscriptMcpServerLabel', () => {
+    it('reads server from common arg keys', () => {
+        expect(extractTranscriptMcpServerLabel(JSON.stringify({ server: 'notion' }))).to.equal('notion');
+        expect(extractTranscriptMcpServerLabel(JSON.stringify({ mcp_server: 'github' }))).to.equal('github');
+        expect(extractTranscriptMcpServerLabel('{}')).to.equal(undefined);
     });
 });
 
