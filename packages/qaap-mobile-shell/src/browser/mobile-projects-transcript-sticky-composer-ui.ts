@@ -27,7 +27,7 @@ import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
-import { isTranscriptStreamStalled } from '../common/qaap-transcript-stream-status';
+import { isTranscriptStreamStalled, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, shouldShowTranscriptStreamingActivity } from '../common/qaap-transcript-stream-status';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
     resolveChatModelContextUsageBreakdown,
@@ -689,14 +689,19 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (!this.isTranscriptStickyComposerAgentWorking()) {
             return undefined;
         }
-        const last = conv.messages.at(-1);
-        if (!last || last.role !== 'agent') {
-            return undefined;
-        }
         const stalled = isTranscriptStreamStalled(
             this.host.transcriptLastStreamProgressAt,
             conv.status === 'streaming',
         );
+        const last = conv.messages.at(-1);
+        const segments = last?.role === 'agent' ? (last.segments ?? []) : [];
+        if (!shouldShowTranscriptStreamingActivity(segments, true, {
+            turnElapsedMs: resolveTranscriptTurnElapsedMs(resolveTranscriptTurnStartMs(conv.messages)),
+            userPromptChars: resolveLastUserPromptChars(conv.messages),
+            stalled,
+        })) {
+            return undefined;
+        }
         const activity = this.host.transcriptMessagesUi.resolveTranscriptStreamingActivity(conv, { stalled });
         return {
             kind: activity.kind,

@@ -143,6 +143,155 @@ export function formatTranscriptThoughtDuration(elapsedMs: number): string {
 /** Cursor switches from "Planning next moves" to this after ~15s without visible progress. */
 export const TRANSCRIPT_STREAM_STALL_MS = 15_000;
 
+/** Hide "Thinking for…" / planning chrome until the turn has been thinking-only this long. */
+export const TRANSCRIPT_THINKING_UI_GRACE_MS = 2_000;
+
+/** Turns with at most this much internal reasoning and no tools are treated as simple Q&A. */
+export const TRANSCRIPT_SIMPLE_THINKING_MAX_CHARS = 160;
+
+/** User prompts longer than this are never classified as simple Q&A. */
+export const TRANSCRIPT_SIMPLE_USER_PROMPT_MAX_CHARS = 220;
+
+export function resolveTranscriptTurnElapsedMs(
+    turnStartMs: number | undefined,
+    now = Date.now(),
+): number | undefined {
+    if (turnStartMs === undefined) {
+        return undefined;
+    }
+    return Math.max(0, now - turnStartMs);
+}
+
+export function resolveLastUserPromptChars(
+    messages: readonly StreamStatusMessage[],
+): number | undefined {
+    for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index];
+        if (message.role === 'user') {
+            const length = message.content?.trim().length ?? 0;
+            return length > 0 ? length : undefined;
+        }
+    }
+    return undefined;
+}
+
+function resolveTranscriptThinkingChars(segments: readonly ThinkingPhaseSegment[]): number {
+    let total = 0;
+    for (const segment of segments) {
+        if (segment.type === 'thinking') {
+            total += segment.content?.trim().length ?? 0;
+        }
+    }
+    return total;
+}
+
+/**
+ * Cursor-style simple turn: direct answer, no tools, little or no visible reasoning.
+ * These turns skip thought briefs and planning chrome so "¿Qué hace X?" feels instant.
+ */
+export function isTranscriptSimpleQaTurn(
+    segments: readonly ThinkingPhaseSegment[],
+    options?: { readonly userPromptChars?: number },
+): boolean {
+    if (segments.some(segment => segment.type === 'tool')) {
+        return false;
+    }
+    if (!segments.some(segment => segment.type === 'text' && (segment.content?.trim() ?? '').length > 0)) {
+        return false;
+    }
+    if (resolveTranscriptThinkingChars(segments) > TRANSCRIPT_SIMPLE_THINKING_MAX_CHARS) {
+        return false;
+    }
+    const userChars = options?.userPromptChars;
+    if (userChars !== undefined && userChars > TRANSCRIPT_SIMPLE_USER_PROMPT_MAX_CHARS) {
+        return false;
+    }
+    return true;
+}
+
+/** True while a streaming turn is still in the thinking-only grace window. */
+export function isTranscriptThinkingGracePeriod(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+    turnElapsedMs: number | undefined,
+): boolean {
+    if (!isTranscriptAgentThinkingPhase(segments, streaming)) {
+        return false;
+    }
+    if (turnElapsedMs === undefined) {
+        return true;
+    }
+    return turnElapsedMs < TRANSCRIPT_THINKING_UI_GRACE_MS;
+}
+
+/** Whether the thought brief block should render for this turn. */
+export function shouldShowTranscriptThoughtBrief(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+    options?: {
+        readonly turnElapsedMs?: number;
+        readonly userPromptChars?: number;
+        readonly hasActivityStats?: boolean;
+        readonly thinkingContent?: string;
+    },
+): boolean {
+    if (!streaming) {
+        if (isTranscriptSimpleQaTurn(segments, { userPromptChars: options?.userPromptChars })) {
+            return false;
+        }
+        if (options?.hasActivityStats) {
+            return true;
+        }
+        const thinkingLength = options?.thinkingContent?.trim().length
+            ?? resolveTranscriptThinkingChars(segments);
+        return thinkingLength > TRANSCRIPT_SIMPLE_THINKING_MAX_CHARS;
+    }
+    if (isTranscriptThinkingGracePeriod(segments, streaming, options?.turnElapsedMs)) {
+        return false;
+    }
+    if (isTranscriptAgentThinkingPhase(segments, streaming)) {
+        return true;
+    }
+    if (options?.hasActivityStats) {
+        return true;
+    }
+    const thinkingLength = options?.thinkingContent?.trim().length
+        ?? resolveTranscriptThinkingChars(segments);
+    return thinkingLength > 0;
+}
+
+/** Whether transcript footer / composer should show planning or writing chrome. */
+export function shouldShowTranscriptStreamingActivity(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+    options?: {
+        readonly turnElapsedMs?: number;
+        readonly userPromptChars?: number;
+        readonly stalled?: boolean;
+    },
+): boolean {
+    if (!streaming) {
+        return false;
+    }
+    if (options?.stalled) {
+        return true;
+    }
+    const hasActiveTool = segments.some(segment =>
+        segment.type === 'tool'
+        && !(segment as { readonly finished?: boolean }).finished);
+    if (hasActiveTool) {
+        return true;
+    }
+    if (isTranscriptSimpleQaTurn(segments, { userPromptChars: options?.userPromptChars })
+        && segments.some(segment => segment.type === 'text' && (segment.content?.trim() ?? '').length > 0)) {
+        return false;
+    }
+    if (isTranscriptThinkingGracePeriod(segments, streaming, options?.turnElapsedMs)) {
+        return false;
+    }
+    return true;
+}
+
 export function isTranscriptStreamStalled(
     lastProgressAtMs: number | undefined,
     streaming: boolean,

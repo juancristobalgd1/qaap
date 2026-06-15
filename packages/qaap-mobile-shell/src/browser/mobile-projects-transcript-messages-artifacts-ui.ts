@@ -8,7 +8,7 @@ import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { excerptTranscriptThought, extractTranscriptDiffCard, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, formatTranscriptThoughtDuration, isTranscriptAgentThinkingPhase, isTranscriptStreamStalled, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline } from '../common/qaap-transcript-stream-status';
+import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, formatTranscriptThoughtDuration, isTranscriptAgentThinkingPhase, isTranscriptStreamStalled, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import type { TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
 import { groupTranscriptActivityNavigationItems } from '../common/qaap-transcript-activity-navigation';
@@ -178,6 +178,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
         if (!segmentsBody) {
             return;
+        }
+        if (!shouldShowTranscriptThoughtBrief(segments, false, {
+            userPromptChars: resolveLastUserPromptChars(conv.messages),
+            hasActivityStats: hasTranscriptActivityStats(resolveTranscriptActivityStats(segments)),
+            thinkingContent: resolveTranscriptThinkingContent(segments),
+        })) {
+            segmentsBody.querySelector(`[${TRANSCRIPT_THOUGHT_BRIEF_ATTR}]`)?.remove();
         }
         const timeline = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
         if (timeline) {
@@ -481,6 +488,23 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         conv: QaapAgentConversationDTO,
         stalled: boolean,
     ): void {
+        const ownerRow = line.closest<HTMLElement>('.theia-mobile-agent-transcript-msg');
+        const segments = ownerRow
+            ? this.resolveTranscriptRowSegments(conv, ownerRow)
+            : [...(conv.messages.at(-1)?.role === 'agent' ? conv.messages.at(-1)?.segments ?? [] : [])];
+        const turnStartMs = resolveTranscriptTurnStartMs(conv.messages);
+        const show = shouldShowTranscriptStreamingActivity(segments, true, {
+            turnElapsedMs: resolveTranscriptTurnElapsedMs(turnStartMs),
+            userPromptChars: resolveLastUserPromptChars(conv.messages),
+            stalled,
+        });
+        const host = line.closest<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`) ?? line.parentElement;
+        if (host instanceof HTMLElement) {
+            host.hidden = !show;
+        }
+        if (!show) {
+            return;
+        }
         const state = this.resolveTranscriptStreamingActivity(conv, { stalled });
         line.className = `theia-mobile-agent-stream-line theia-mod-${state.kind}`;
         const label = line.querySelector('.theia-mobile-agent-stream-label');
@@ -549,14 +573,26 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!segmentsBody) {
             return false;
         }
-        const thinkingActive = isTranscriptAgentThinkingPhase(segments, streaming);
         const thinking = resolveTranscriptThinkingContent([...segments]);
         const stats = resolveTranscriptActivityStats([...segments]);
         const hasStats = hasTranscriptActivityStats(stats);
-        if (!thinking && !hasStats && !thinkingActive) {
+        const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
+        const showBrief = shouldShowTranscriptThoughtBrief(segments, streaming, {
+            turnElapsedMs: resolveTranscriptTurnElapsedMs(turnStartMs),
+            userPromptChars: conv ? resolveLastUserPromptChars(conv.messages) : undefined,
+            hasActivityStats: hasStats,
+            thinkingContent: thinking,
+        });
+        let brief = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_THOUGHT_BRIEF_ATTR}]`);
+        if (!showBrief) {
+            brief?.remove();
             return true;
         }
-        let brief = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_THOUGHT_BRIEF_ATTR}]`);
+        const thinkingActive = isTranscriptAgentThinkingPhase(segments, streaming);
+        if (!thinking && !hasStats && !thinkingActive) {
+            brief?.remove();
+            return true;
+        }
         if (!brief) {
             const created = this.createTranscriptThoughtBriefBlock([...segments], { streaming, conv });
             if (!created) {
@@ -959,10 +995,16 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const stats = resolveTranscriptActivityStats(segments);
         const hasStats = hasTranscriptActivityStats(stats);
         const streaming = !!options?.streaming;
-        const thinkingActive = isTranscriptAgentThinkingPhase(segments, streaming);
-        if (!thinking && !hasStats && !thinkingActive) {
+        const turnStartMs = options?.conv ? resolveTranscriptTurnStartMs(options.conv.messages) : undefined;
+        if (!shouldShowTranscriptThoughtBrief(segments, streaming, {
+            turnElapsedMs: resolveTranscriptTurnElapsedMs(turnStartMs),
+            userPromptChars: options?.conv ? resolveLastUserPromptChars(options.conv.messages) : undefined,
+            hasActivityStats: hasStats,
+            thinkingContent: thinking,
+        })) {
             return undefined;
         }
+        const thinkingActive = isTranscriptAgentThinkingPhase(segments, streaming);
 
         const block = document.createElement('details');
         block.className = 'theia-mobile-agent-thought-brief';
@@ -1004,7 +1046,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             block.append(bodyWrap);
         }
 
-        const turnStartMs = options?.conv ? resolveTranscriptTurnStartMs(options.conv.messages) : undefined;
         this.refreshTranscriptThoughtBriefTitle(title, block, {
             thinking,
             thinkingActive,
@@ -1770,11 +1811,21 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return details;
     }
 
-    createTranscriptStreamingActivityRow(conv: QaapAgentConversationDTO): HTMLElement {
+    createTranscriptStreamingActivityRow(conv: QaapAgentConversationDTO): HTMLElement | undefined {
+        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
+        const segments = lastAgent?.segments ?? [];
+        const turnStartMs = resolveTranscriptTurnStartMs(conv.messages);
+        const stalled = this.resolveTranscriptStreamStalled(conv);
+        if (!shouldShowTranscriptStreamingActivity(segments, true, {
+            turnElapsedMs: resolveTranscriptTurnElapsedMs(turnStartMs),
+            userPromptChars: resolveLastUserPromptChars(conv.messages),
+            stalled,
+        })) {
+            return undefined;
+        }
         const row = document.createElement('div');
         row.setAttribute(TRANSCRIPT_ACTIVITY_ROW_ATTR, 'true');
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent theia-mod-streaming theia-mobile-agent-activity';
-        const stalled = this.resolveTranscriptStreamStalled(conv);
         const state = this.resolveTranscriptStreamingActivity(conv, { stalled });
 
         // A single, live "thinking/acting" line — minimalist, with an animated dot and a shimmering
