@@ -16,7 +16,7 @@ import {
     shouldShowTranscriptScrollFab,
     type TranscriptScrollFabMode,
 } from '../common/qaap-transcript-active-step';
-import { resolveScrollBehavior } from '../common/qaap-prefers-reduced-motion';
+import { resolveScrollBehavior, scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
 
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_BUTTON_CLASS = 'theia-mobile-agent-transcript-scroll-to-bottom';
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_ACTIVE_STEP_CLASS = 'theia-mod-active-step';
@@ -50,9 +50,20 @@ function readComposerLiftPx(mountHost: HTMLElement): number {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/** Scroll to the transcript tail; re-apply after layout settles (streaming / smooth scroll). */
 function scrollTranscriptToEnd(scroller: HTMLElement): void {
-    const top = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-    scroller.scrollTo({ top, behavior: resolveScrollBehavior('smooth') });
+    const behavior = resolveScrollBehavior('smooth');
+    scrollElementToEnd(scroller, behavior);
+    const snapToEnd = (): void => {
+        scrollElementToEnd(scroller, 'auto');
+    };
+    if ('onscrollend' in scroller) {
+        scroller.addEventListener('scrollend', snapToEnd, { once: true });
+    }
+    window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(snapToEnd);
+    });
+    window.setTimeout(snapToEnd, 480);
 }
 
 function readTranscriptScrollToBottomState(scroller: HTMLElement, mountHost: HTMLElement): TranscriptScrollToBottomState {
@@ -316,11 +327,7 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         if (clickMode === 'active-step') {
             const streamingRow = findTranscriptStreamingAgentRow(scroller);
             if (streamingRow) {
-                resolveTranscriptActiveStepScrollTarget(streamingRow)
-                    .scrollIntoView({ block: 'nearest', behavior: resolveScrollBehavior('smooth') });
-                const resync = (): void => onScrollerScroll();
-                window.setTimeout(resync, 450);
-                return;
+                resolveTranscriptActiveStepScrollTarget(streamingRow);
             }
         }
         scrollTranscriptToEnd(scroller);
@@ -328,7 +335,7 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         if ('onscrollend' in scroller) {
             scroller.addEventListener('scrollend', resync, { once: true });
         }
-        window.setTimeout(resync, 450);
+        window.setTimeout(resync, 480);
     });
 
     const mutationObserver = new MutationObserver(resolveAndBindScroller);
