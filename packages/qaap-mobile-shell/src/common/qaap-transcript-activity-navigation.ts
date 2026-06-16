@@ -49,6 +49,10 @@ export interface TranscriptActivityNavigationItem {
     readonly tail?: string;
     readonly editAdded?: number;
     readonly editRemoved?: number;
+    /** Nested child-agent trace metadata (stream-json parent_tool_use_id). */
+    readonly parentToolUseId?: string;
+    readonly nestDepth?: number;
+    readonly subagentRoot?: boolean;
 }
 
 export interface TranscriptActivityNavigationDeps {
@@ -213,6 +217,7 @@ export function resolveTranscriptActivityNavigationItems(
             tail: cursorParts.tail,
             editAdded: diffCard?.added,
             editRemoved: diffCard?.removed,
+            parentToolUseId: segment.parentToolUseId,
         });
         previousFailed = state === 'error';
     }

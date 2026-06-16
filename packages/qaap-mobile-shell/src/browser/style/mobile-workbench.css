@@ -17036,7 +17036,7 @@ body > .theia-mobile-transcript-files-menu {
   border-top: none;
 }
 
-/* Cursor-style thought header — flat, always-visible body (no card chrome). */
+/* Cursor-style thought header — collapsible summary line (no card chrome). */
 .theia-mobile-agent-thought-brief {
   padding: 2px 0 6px;
   border: none;
@@ -17045,14 +17045,24 @@ body > .theia-mobile-transcript-files-menu {
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat > summary,
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat > .theia-mobile-agent-thought-brief-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.theia-mobile-agent-thought-brief.theia-mod-cursor-flat > summary::-webkit-details-marker {
+  display: none;
+}
+
+.theia-mobile-agent-thought-brief.theia-mod-cursor-flat > summary::before {
   display: none;
 }
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-bottom: 4px;
+  display: none;
 }
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-title {
@@ -17062,8 +17072,21 @@ body > .theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-body-wrap {
-  margin-top: 0;
+  margin-top: 4px;
   padding-left: 0;
+  overflow: hidden;
+  animation: theia-mobile-agent-thought-body-enter 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes theia-mobile-agent-thought-body-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-body {
@@ -17752,8 +17775,29 @@ body > .theia-mobile-transcript-files-menu {
   transform: rotate(180deg);
 }
 
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace > .theia-mobile-agent-activity-list {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  padding: 0;
+  transition:
+    max-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease,
+    padding 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] > .theia-mobile-agent-activity-list {
+  max-height: min(2800px, 85vh);
+  opacity: 1;
   padding: 2px 0 4px 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace > .theia-mobile-agent-activity-list,
+  .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-body-wrap {
+    transition: none;
+    animation: none;
+  }
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item {
@@ -17808,6 +17852,30 @@ body > .theia-mobile-transcript-files-menu {
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-diff-remove {
   margin-left: 4px;
   color: var(--theia-errorForeground, #f14c4c);
+}
+
+.theia-mobile-agent-activity-item.theia-mod-nest-1 {
+  padding-left: 14px;
+}
+
+.theia-mobile-agent-activity-item.theia-mod-nest-2 {
+  padding-left: 26px;
+}
+
+.theia-mobile-agent-activity-item.theia-mod-nest-3 {
+  padding-left: 38px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-nest-1,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-nest-2,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-nest-3 {
+  border-left: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.25)) 55%, transparent);
+  margin-left: 2px;
+}
+
+.theia-mobile-agent-activity-item.theia-mod-subagent-root .theia-mobile-agent-activity-verb,
+.theia-mobile-agent-activity-item.theia-mod-subagent-root .theia-mobile-agent-activity-label {
+  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 72%, var(--theia-foreground));
 }
 
 .theia-mobile-agent-trace-status {

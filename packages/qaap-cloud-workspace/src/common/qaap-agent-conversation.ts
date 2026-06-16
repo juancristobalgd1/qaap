@@ -45,6 +45,7 @@ export type QaapAgentMessageSegment =
         readonly args: string;
         readonly finished: boolean;
         readonly result?: string;
+        readonly parentToolUseId?: string;
     };
 
 export interface QaapAgentMessage {

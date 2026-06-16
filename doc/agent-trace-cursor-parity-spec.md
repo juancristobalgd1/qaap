@@ -217,3 +217,7 @@ Paridad funcional: timeline, tool calls, diffs, logs, estados. Adaptar layout/de
 | P-16 | Animaciones pulidas (enter, glow current step, pulse running pill) | ✅ |
 | P-17 | Trace plano estilo Cursor (Thought + Explored + filas verb/detail + Waiting for shell) | ✅ |
 | P-18 | Filas Edited con stats +N −N inline en el trace (sin agrupar edits) | ✅ |
+| P-19 | Navegación ↑/↓ entre steps del timeline (teclado) | ✅ |
+| P-20 | Thought brief colapsable con duración congelada al settle | ✅ |
+| P-21 | Nested child-agent trace (parentToolUseId + indent) | ✅ |
+| P-22 | Virtualización timeline inline chat (>48 steps) | ✅ |

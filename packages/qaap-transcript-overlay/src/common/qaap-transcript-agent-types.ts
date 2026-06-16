@@ -115,6 +115,7 @@ export type QaapAgentMessageSegmentDTO =
         readonly args: string;
         readonly finished: boolean;
         readonly result?: string;
+        readonly parentToolUseId?: string;
     };
 
 export interface QaapAgentMessageDTO {

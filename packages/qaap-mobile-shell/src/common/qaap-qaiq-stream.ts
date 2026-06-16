@@ -16,6 +16,7 @@ export type QaapAgentMessageSegment =
         readonly args: string;
         readonly finished: boolean;
         readonly result?: string;
+        readonly parentToolUseId?: string;
     };
 
 interface ContentBlock {
@@ -34,6 +35,7 @@ interface ContentBlock {
 interface StreamMessageEnvelope {
     readonly type?: string;
     readonly timestamp_ms?: number;
+    readonly parent_tool_use_id?: string | null;
     readonly message?: {
         readonly content?: ContentBlock[] | string;
         readonly usage?: ClaudeStreamUsageLike;
@@ -78,6 +80,9 @@ export class QaapQaiqStreamAccumulator {
     /** When true, ignore assistant snapshots without {@code timestamp_ms} (buffered flushes). */
     protected sawTimestampedAssistant = false;
     protected readonly toolsById = new Map<string, number>();
+    /** Parent Agent/Task toolUseId keyed by child tool id (stream-json parent_tool_use_id). */
+    protected readonly toolParentById = new Map<string, string>();
+    protected activeEnvelopeParentToolUseId: string | undefined;
     /** In-flight tool_use blocks keyed by stream index — args grow via input_json_delta. */
     protected readonly liveToolsByIndex = new Map<number, { readonly id: string; readonly name: string; args: string }>();
     /** Latest usage reported for the in-flight turn (assistant snapshot or final result). */
@@ -131,6 +136,9 @@ export class QaapQaiqStreamAccumulator {
             return;
         }
         const type = envelope.type;
+        if (typeof envelope.parent_tool_use_id === 'string' && envelope.parent_tool_use_id.trim()) {
+            this.activeEnvelopeParentToolUseId = envelope.parent_tool_use_id.trim();
+        }
         if (type === 'system') {
             return;
         }
@@ -184,6 +192,9 @@ export class QaapQaiqStreamAccumulator {
                         ? JSON.stringify(block.input)
                         : '',
                 });
+                if (this.activeEnvelopeParentToolUseId) {
+                    this.toolParentById.set(block.id, this.activeEnvelopeParentToolUseId);
+                }
                 this.rebuildSegments();
             }
             return;
@@ -235,7 +246,7 @@ export class QaapQaiqStreamAccumulator {
             if (!Array.isArray(blocks)) {
                 return;
             }
-            this.ingestAssistantSnapshot(blocks);
+            this.ingestAssistantSnapshot(blocks, this.resolveEnvelopeParentToolUseId(envelope));
             this.liveText = '';
             this.liveThinking = '';
             this.rebuildSegments();
@@ -264,8 +275,18 @@ export class QaapQaiqStreamAccumulator {
         }
     }
 
+    protected resolveEnvelopeParentToolUseId(envelope: StreamMessageEnvelope): string | undefined {
+        if (typeof envelope.parent_tool_use_id === 'string' && envelope.parent_tool_use_id.trim()) {
+            return envelope.parent_tool_use_id.trim();
+        }
+        return this.activeEnvelopeParentToolUseId;
+    }
+
     /** Merge one assistant snapshot into the canonical block list (source of truth). */
-    protected ingestAssistantSnapshot(blocks: readonly ContentBlock[]): void {
+    protected ingestAssistantSnapshot(
+        blocks: readonly ContentBlock[],
+        parentToolUseId?: string,
+    ): void {
         for (const block of blocks) {
             switch (block.type) {
                 case 'text':
@@ -286,6 +307,9 @@ export class QaapQaiqStreamAccumulator {
                 case 'tool_use':
                 case 'server_tool_use':
                     if (block.id && block.name) {
+                        if (parentToolUseId) {
+                            this.toolParentById.set(block.id, parentToolUseId);
+                        }
                         this.upsertTranscriptToolBlock(block);
                     }
                     break;
@@ -487,6 +511,7 @@ export class QaapQaiqStreamAccumulator {
 
     protected buildToolSegment(toolUseId: string, name: string, args: string): QaapAgentMessageSegment {
         const normalizedName = normalizeQaiqToolName(name);
+        const parentToolUseId = this.toolParentById.get(toolUseId);
         const resultState = this.toolResults.get(toolUseId);
         if (resultState) {
             return {
@@ -496,9 +521,17 @@ export class QaapQaiqStreamAccumulator {
                 args,
                 finished: true,
                 result: resultState.isError ? `Error: ${resultState.result}` : resultState.result,
+                ...(parentToolUseId ? { parentToolUseId } : {}),
             };
         }
-        return { type: 'tool', toolUseId, name: normalizedName, args, finished: false };
+        return {
+            type: 'tool',
+            toolUseId,
+            name: normalizedName,
+            args,
+            finished: false,
+            ...(parentToolUseId ? { parentToolUseId } : {}),
+        };
     }
 }
 

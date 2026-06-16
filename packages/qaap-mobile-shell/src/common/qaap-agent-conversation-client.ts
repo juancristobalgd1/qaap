@@ -102,6 +102,8 @@ export type QaapAgentMessageSegmentDTO =
         /** Optional VPS timestamps for per-step duration in the execution timeline. */
         readonly startedAt?: number;
         readonly finishedAt?: number;
+        /** Parent Agent/Task toolUseId when this step ran inside a subagent (stream-json). */
+        readonly parentToolUseId?: string;
     };
 
 export interface QaapAgentMessageDTO {

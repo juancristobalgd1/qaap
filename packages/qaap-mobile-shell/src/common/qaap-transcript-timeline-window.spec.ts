@@ -32,4 +32,10 @@ describe('qaap-transcript-timeline-window', () => {
         expect(window.start).to.be.at.most(100);
         expect(window.end).to.be.above(100);
     });
+
+    it('virtualizes long inline cursor traces the same way as plan traces', () => {
+        const window = resolveTranscriptTimelineRenderWindow(64, { enabled: true, focusIndex: 60 });
+        expect(window.virtualized).to.equal(true);
+        expect(window.hiddenBefore).to.be.greaterThan(0);
+    });
 });

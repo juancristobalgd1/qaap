@@ -223,6 +223,26 @@ describe('QaapQaiqStreamAccumulator', () => {
         }
     });
 
+    it('preserves parent_tool_use_id on nested subagent tool steps', () => {
+        const acc = new QaapQaiqStreamAccumulator();
+        acc.push([
+            '{"type":"assistant","timestamp_ms":1,"message":{"content":[{"type":"tool_use","id":"agent-1","name":"Agent","input":{"prompt":"research"}}]}}',
+            '{"type":"assistant","timestamp_ms":2,"parent_tool_use_id":"agent-1","message":{"content":[{"type":"tool_use","id":"read-1","name":"Read","input":{"path":"a.ts"}}]}}',
+            '{"type":"user","parent_tool_use_id":"agent-1","message":{"content":[{"type":"tool_result","tool_use_id":"read-1","content":"ok"}]}}',
+        ].join('\n') + '\n');
+        const segments = acc.getSegments();
+        expect(segments).to.have.length(2);
+        expect(segments[0]).to.include({ type: 'tool', toolUseId: 'agent-1', name: 'Agent' });
+        expect(segments[1]).to.deep.include({
+            type: 'tool',
+            toolUseId: 'read-1',
+            name: 'Read',
+            parentToolUseId: 'agent-1',
+            finished: true,
+            result: 'ok',
+        });
+    });
+
     it('parses thinking and redacted_thinking blocks', () => {
         const acc = new QaapQaiqStreamAccumulator();
         acc.push([
