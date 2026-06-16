@@ -3682,7 +3682,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   min-height: 100%;
   justify-content: flex-start;
   padding-top: 0;
-  padding-bottom: 0;
+  padding-bottom: 24px;
 }
 
 .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) {
@@ -5265,6 +5265,15 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-projects-scroll {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/*
+ * Keep the last transcript items above the sticky composer action pills
+ * (Changes / Commit / Stop) so they never look clipped behind the input chrome.
+ */
+.theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agent-transcript {
+  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
 }
 
 .theia-mobile-projects-sticky-composer {
