@@ -32,13 +32,15 @@
             var dismiss = ss.getItem('qaap.mobileProjects.dismissPanel') === '1';
             var preferAgents = ss.getItem('qaap.mobileProjects.preferAgentsSurface') === '1';
             // Pre-hide IDE chrome while the Work Hub / Agents surface mounts.
-            if (hasWorkspace || dismiss || preferAgents) {
-                document.body.classList.add('theia-mobile-mod-workhub-composer-header');
-                document.body.classList.add('theia-mobile-mod-workhub-hide-ide-side-panels');
-            }
+            // Apply unconditionally: Work Hub is the default surface on every boot regardless of
+            // what sessionStorage contains (it may be empty after clearing cookies).
+            document.body.classList.add('theia-mobile-mod-workhub-composer-header');
+            document.body.classList.add('theia-mobile-mod-workhub-hide-ide-side-panels');
             // Boot guard: hide the IDE shell until the Work Hub mounts so it never flashes first.
-            // Mobile and desktop both boot into the hub; the IDE is only shown after an explicit
-            // in-session "Open IDE" action.
+            // This applies unconditionally — Work Hub is the default surface on every boot,
+            // even when sessionStorage is empty (e.g. after clearing cookies). The guard is
+            // lifted by the TypeScript shell once Work Hub or the Agents surface is ready, or
+            // by the 8-second safety timeout below.
             if (!document.getElementById('qaap-mobile-workhub-boot-styles')) {
                 var style = document.createElement('style');
                 style.id = 'qaap-mobile-workhub-boot-styles';
