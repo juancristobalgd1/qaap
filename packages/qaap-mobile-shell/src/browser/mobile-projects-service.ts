@@ -36,6 +36,7 @@ import {
     StoredMobileProject,
 } from './mobile-projects-types';
 import { normalizeWorkHubViewId } from '../common/qaap-work-hub-surfaces';
+import { isValidHubUserRepositoryProjectCandidate } from '../common/qaap-hub-project-eligibility';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import {
     clearMobileProjectReadmeOpenRequest,
@@ -644,13 +645,27 @@ export class MobileProjectsService {
             if (hiddenIds.has(stored.id) || seen.has(stored.id)) {
                 continue;
             }
+            const entry = this.storedToEntry(stored, pinnedIds);
+            if (!this.isBrowsableHubProject(entry)) {
+                continue;
+            }
             seen.add(stored.id);
-            entries.push(this.storedToEntry(stored, pinnedIds));
+            entries.push(entry);
         }
 
         return this.overlayActiveTasks(this.sortProjectsByRecent(
-            this.collapseCurrentWorkspaceDuplicates(entries)
+            this.collapseCurrentWorkspaceDuplicates(
+                entries.filter(project => this.isBrowsableHubProject(project)),
+            ),
         ));
+    }
+
+    /** Hide VPS infrastructure folders (e.g. `/workspace`) from hub project pickers. */
+    protected isBrowsableHubProject(project: MobileProjectEntry): boolean {
+        return isValidHubUserRepositoryProjectCandidate({
+            hasGithub: !!project.github,
+            filesystemPath: this.cwdFromFileUri(project.uri),
+        });
     }
 
     protected cachedSessionToEntry(
@@ -763,27 +778,26 @@ export class MobileProjectsService {
         const current = this.workspaceService.workspace;
         if (current) {
             const uri = current.resource;
-            if (!seen.has(uri.toString())) {
-                const name = this.labelProvider.getName(uri);
-                const id = `ws:${uri.toString()}`;
-                const now = new Date().toISOString();
-                entries.push(this.applySessionToEntry({
-                    id,
-                    name: this.resolveDisplayName(id, name),
-                    color: mobileProjectColorForName(name),
-                    branch: uri.path.base,
-                    status: 'working',
-                    task: nls.localize('qaap/mobileProjects/currentTask', 'Active workspace'),
-                    progress: 0.35,
-                    agents: [{ role: 'ai', color: '#3B6FA0' }],
-                    lastActive: nls.localize('qaap/mobileProjects/lastActiveNow', 'now'),
-                    lastActiveAt: now,
-                    tokens: '—',
-                    cost: '—',
-                    pinned: this.isPinned(id, pinnedIds, true),
-                    uri,
-                    isCurrent: true,
-                }, sessionMap.get(id)));
+            const id = `ws:${uri.toString()}`;
+            const candidate: MobileProjectEntry = {
+                id,
+                name: this.resolveDisplayName(id, this.labelProvider.getName(uri)),
+                color: mobileProjectColorForName(this.labelProvider.getName(uri)),
+                branch: uri.path.base,
+                status: 'working',
+                task: nls.localize('qaap/mobileProjects/currentTask', 'Active workspace'),
+                progress: 0.35,
+                agents: [{ role: 'ai', color: '#3B6FA0' }],
+                lastActive: nls.localize('qaap/mobileProjects/lastActiveNow', 'now'),
+                lastActiveAt: new Date().toISOString(),
+                tokens: '—',
+                cost: '—',
+                pinned: this.isPinned(id, pinnedIds, true),
+                uri,
+                isCurrent: true,
+            };
+            if (!seen.has(uri.toString()) && this.isBrowsableHubProject(candidate)) {
+                entries.push(this.applySessionToEntry(candidate, sessionMap.get(id)));
                 seen.add(uri.toString());
             }
         }
@@ -796,10 +810,9 @@ export class MobileProjectsService {
                 if (seen.has(key)) {
                     continue;
                 }
-                seen.add(key);
                 const name = this.labelProvider.getName(uri);
                 const id = `recent:${key}`;
-                entries.push(this.applySessionToEntry({
+                const candidate: MobileProjectEntry = {
                     id,
                     name: this.resolveDisplayName(id, name),
                     color: mobileProjectColorForName(name),
@@ -814,7 +827,12 @@ export class MobileProjectsService {
                     pinned: this.isPinned(id, pinnedIds, false),
                     uri,
                     isCurrent: false,
-                }, sessionMap.get(`ws:${key}`)));
+                };
+                if (!this.isBrowsableHubProject(candidate)) {
+                    continue;
+                }
+                seen.add(key);
+                entries.push(this.applySessionToEntry(candidate, sessionMap.get(`ws:${key}`)));
             }
         } catch {
             /* recent list optional */
@@ -830,11 +848,32 @@ export class MobileProjectsService {
             if (stored.uri) {
                 seen.add(stored.uri);
             }
-            entries.push(this.storedToEntry(stored, pinnedIds));
+            const entry = this.storedToEntry(stored, pinnedIds);
+            if (!this.isBrowsableHubProject(entry)) {
+                continue;
+            }
+            entries.push(entry);
+        }
+
+        const githubProjects = await this.loadGithubProjects(sessionMap, true);
+        for (const project of githubProjects) {
+            if (hiddenIds.has(project.id) || entries.some(entry => entry.id === project.id)) {
+                continue;
+            }
+            const uriKey = project.uri?.toString();
+            if (uriKey && seen.has(uriKey)) {
+                continue;
+            }
+            if (uriKey) {
+                seen.add(uriKey);
+            }
+            entries.push(project);
         }
 
         return this.overlayActiveTasks(this.sortProjectsByRecent(
-            this.collapseCurrentWorkspaceDuplicates(entries).filter(p => !hiddenIds.has(p.id))
+            this.collapseCurrentWorkspaceDuplicates(
+                entries.filter(project => this.isBrowsableHubProject(project)),
+            ).filter(p => !hiddenIds.has(p.id)),
         ));
     }
 
