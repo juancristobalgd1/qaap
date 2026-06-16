@@ -199,6 +199,43 @@ export interface PullToRefreshOptions {
 /** Fully hides the 36px indicator anchored at `top: 8px` in CSS. */
 const PULL_REFRESH_HIDDEN_OFFSET = 48;
 
+function isVerticallyScrollable(element: HTMLElement): boolean {
+    if (element.scrollHeight <= element.clientHeight + 1) {
+        return false;
+    }
+    const { overflowY } = window.getComputedStyle(element);
+    return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+}
+
+/**
+ * Returns the innermost vertically scrollable ancestor of `target` within
+ * `scroller`. Pull-to-refresh must only arm when this resolves to `scroller`
+ * itself — nested lists (e.g. the agent transcript) scroll independently while
+ * the outer host stays at `scrollTop === 0`, which otherwise shows the loader
+ * during normal upward scrolling.
+ */
+export function resolvePullRefreshScroller(
+    target: EventTarget | null,
+    scroller: HTMLElement,
+): HTMLElement {
+    let element: HTMLElement | undefined;
+    if (target instanceof HTMLElement) {
+        element = target;
+    } else if (target instanceof Node) {
+        element = target.parentElement ?? undefined;
+    }
+    while (element && scroller.contains(element)) {
+        if (isVerticallyScrollable(element)) {
+            return element;
+        }
+        if (element === scroller) {
+            break;
+        }
+        element = element.parentElement ?? undefined;
+    }
+    return scroller;
+}
+
 export function installMobilePullToRefresh(options: PullToRefreshOptions): Disposable {
     if (!hasCoarsePointer()) {
         return Disposable.NULL;
@@ -217,6 +254,7 @@ export function installMobilePullToRefresh(options: PullToRefreshOptions): Dispo
 
     let startY = 0;
     let trackedId: number | undefined;
+    let activeScroller: HTMLElement | undefined;
     let dragging = false;
     let refreshing = false;
     let armed = false;
@@ -284,8 +322,10 @@ export function installMobilePullToRefresh(options: PullToRefreshOptions): Dispo
         if (refreshing || ev.touches.length !== 1) {
             return;
         }
-        if (scroller.scrollTop > 0) {
+        activeScroller = resolvePullRefreshScroller(ev.target, scroller);
+        if (activeScroller !== scroller || scroller.scrollTop > 0) {
             trackedId = undefined;
+            activeScroller = undefined;
             return;
         }
         const touch = ev.touches[0];
@@ -296,7 +336,7 @@ export function installMobilePullToRefresh(options: PullToRefreshOptions): Dispo
     };
 
     const onTouchMove = (ev: TouchEvent): void => {
-        if (refreshing || trackedId === undefined) {
+        if (refreshing || trackedId === undefined || activeScroller !== scroller) {
             return;
         }
         const touch = Array.from(ev.touches).find(t => t.identifier === trackedId);
@@ -331,14 +371,17 @@ export function installMobilePullToRefresh(options: PullToRefreshOptions): Dispo
     const onTouchEnd = (): void => {
         if (refreshing || !dragging) {
             trackedId = undefined;
+            activeScroller = undefined;
             return;
         }
         trackedId = undefined;
+        activeScroller = undefined;
         settle(armed);
     };
 
     const onTouchCancel = (): void => {
         trackedId = undefined;
+        activeScroller = undefined;
         if (dragging) {
             settle(false);
         }
