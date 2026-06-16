@@ -10,6 +10,7 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { QuickInputService } from '@theia/core';
 import { AIVariableService, FrontendLanguageModelRegistry } from '@theia/ai-core';
+import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatService } from '@theia/ai-chat';
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
@@ -24,6 +25,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { expandComposerSkillSlashCommands } from '../common/qaap-composer-skill-submit';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -72,6 +74,7 @@ export interface MobileProjectsPanelFactoryDeps {
     chatAgentService: ChatAgentService;
     messageService: MessageService;
     variableService: AIVariableService;
+    skillService: SkillService;
     quickInputService: QuickInputService;
     fileUploadService: FileUploadService;
     fileService: FileService;
@@ -162,6 +165,7 @@ export class MobileProjectsPanelFactory {
                         workspaceService: deps.workspaceService,
                     },
                     handlers,
+                    deps.skillService,
                 ),
                 formatContextChip: item => resolveStickyComposerContextChip(item, deps.labelProvider),
                 resolveAttachmentPreview: item => resolveStickyComposerAttachmentPreview(
@@ -170,6 +174,11 @@ export class MobileProjectsPanelFactory {
                     deps.workspaceService,
                 ),
                 getComposerVariables: () => deps.variableService.getVariables(),
+                getComposerSkills: () => deps.skillService.getSkills(),
+                expandComposerDraftForSubmit: draft => expandComposerSkillSlashCommands(draft, {
+                    skillService: deps.skillService,
+                    fileService: deps.fileService,
+                }),
                 createDiffReviewWidget: () => deps.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID),
                 resolveVerifyChecks: cwd => resolveAgentVerifyChecksForCwd(cwd, deps.fileService),
                 openTranscriptFile: filePath => openTranscriptWorkspaceFile(

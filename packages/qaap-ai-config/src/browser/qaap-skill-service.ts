@@ -6,12 +6,66 @@
 
 import { injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
+import { Path } from '@theia/core/lib/common/path';
 import { DefaultSkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Skill } from '@theia/ai-core/lib/common/skill';
 
+/** Cursor / Claude Code / Codex skill folders (same layout as SKILL.md directories). */
+const QAAP_BUILTIN_SKILL_DIRECTORY_TILDES = [
+    '~/.cursor/skills',
+    '~/.cursor/skills-cursor',
+    '~/.claude/skills',
+    '~/.codex/skills',
+    '~/.agents/skills',
+] as const;
+
 @injectable()
 export class QaapSkillService extends DefaultSkillService {
+
+    protected getQaapBuiltinSkillDirectories(homePath: string): string[] {
+        return QAAP_BUILTIN_SKILL_DIRECTORY_TILDES.map(dir => Path.untildify(dir, homePath));
+    }
+
+    protected override async update(): Promise<void> {
+        await super.update();
+
+        const homeDirUri = await this.envVariablesServer.getHomeDirUri();
+        const homePath = new URI(homeDirUri).path.fsPath();
+        let changed = false;
+
+        for (const directoryPath of this.getQaapBuiltinSkillDirectories(homePath)) {
+            const directoryUri = URI.fromFilePath(directoryPath).toString();
+            if (this.watchedDirectories.has(directoryUri)) {
+                continue;
+            }
+            const before = this.skills.size;
+            const extraDisposables = new DisposableCollection();
+            const extraWatched = new Set<string>();
+            const extraParentWatchers = new Map<string, string>();
+            await this.processSkillDirectoryWithParentWatching(
+                directoryPath,
+                this.skills,
+                extraDisposables,
+                extraWatched,
+                extraParentWatchers,
+            );
+            for (const watched of extraWatched) {
+                this.watchedDirectories.add(watched);
+            }
+            for (const [parentUri, skillsPath] of extraParentWatchers) {
+                this.parentWatchers.set(parentUri, skillsPath);
+            }
+            this.toDispose.push(extraDisposables);
+            if (this.skills.size > before) {
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            this.onSkillsChangedEmitter.fire();
+        }
+    }
 
     protected override async processSkillDirectoryWithParentWatching(
         directoryPath: string,

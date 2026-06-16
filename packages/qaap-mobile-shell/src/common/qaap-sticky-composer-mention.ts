@@ -7,7 +7,7 @@ import type { AIVariable } from '@theia/ai-core';
 import { appendAgentBrandIcon } from './qaap-agent-branding';
 import { QaapAgentTaskAgentOption, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 
-export type StickyComposerTriggerChar = '@' | '#';
+export type StickyComposerTriggerChar = '@' | '#' | '/';
 
 /** @deprecated Use {@link StickyComposerTokenOption}. */
 export type StickyComposerMentionOption = StickyComposerTokenOption;
@@ -43,6 +43,18 @@ export function buildStickyComposerMentionOptions(
         });
     }
     return options;
+}
+
+export function buildStickyComposerSkillOptions(
+    skills: readonly { readonly name: string; readonly description?: string }[],
+): StickyComposerTokenOption[] {
+    return skills.map(skill => ({
+        id: skill.name,
+        label: skill.name,
+        trigger: '/',
+        insertBody: `${skill.name} `,
+        description: skill.description,
+    }));
 }
 
 export function buildStickyComposerVariableOptions(
@@ -92,7 +104,7 @@ export function findActiveComposerToken(
 ): { readonly start: number; readonly query: string; readonly trigger: StickyComposerTriggerChar } | undefined {
     const safeCaret = Math.max(0, Math.min(caret, value.length));
     let best: { readonly start: number; readonly query: string; readonly trigger: StickyComposerTriggerChar } | undefined;
-    for (const trigger of ['@', '#'] as const) {
+    for (const trigger of ['@', '#', '/'] as const) {
         const active = findActiveTokenQuery(value, safeCaret, trigger);
         if (active && (!best || active.start > best.start)) {
             best = { ...active, trigger };
@@ -162,6 +174,7 @@ export function attachStickyComposerMentionUi(options: {
     input: StickyComposerTextField;
     getMentionOptions: () => readonly StickyComposerTokenOption[];
     getVariableOptions?: () => readonly StickyComposerTokenOption[];
+    getSkillOptions?: () => readonly StickyComposerTokenOption[];
     onDraftChange: (value: string) => void;
     afterInputChange?: () => void;
     mentionButtonTitle: string;
@@ -172,6 +185,7 @@ export function attachStickyComposerMentionUi(options: {
         input,
         getMentionOptions,
         getVariableOptions,
+        getSkillOptions,
         onDraftChange,
         afterInputChange,
         mentionButtonTitle,
@@ -234,8 +248,15 @@ export function attachStickyComposerMentionUi(options: {
         setExpanded(false);
     };
 
-    const optionsForTrigger = (trigger: StickyComposerTriggerChar): readonly StickyComposerTokenOption[] =>
-        trigger === '@' ? getMentionOptions() : (getVariableOptions?.() ?? []);
+    const optionsForTrigger = (trigger: StickyComposerTriggerChar): readonly StickyComposerTokenOption[] => {
+        if (trigger === '@') {
+            return getMentionOptions();
+        }
+        if (trigger === '/') {
+            return getSkillOptions?.() ?? [];
+        }
+        return getVariableOptions?.() ?? [];
+    };
 
     const renderList = (): void => {
         list.replaceChildren();
@@ -264,6 +285,11 @@ export function attachStickyComposerMentionUi(options: {
             main.className = 'theia-mobile-projects-sticky-composer-mention-option-main';
             if (token.trigger === '@') {
                 appendAgentBrandIcon(main, token.id, 'sm');
+            } else if (token.trigger === '/') {
+                const icon = document.createElement('span');
+                icon.className = 'codicon codicon-book theia-mobile-projects-sticky-composer-mention-option-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                main.prepend(icon);
             }
             const label = document.createElement('span');
             label.className = 'theia-mobile-projects-sticky-composer-mention-option-label';
@@ -404,7 +430,9 @@ export function attachStickyComposerMentionUi(options: {
                 ev.stopPropagation();
                 const id = focused.dataset.tokenId;
                 const trigger = focused.dataset.tokenTrigger as StickyComposerTriggerChar | undefined;
-                const pool = trigger ? optionsForTrigger(trigger) : [...getMentionOptions(), ...(getVariableOptions?.() ?? [])];
+                const pool = trigger
+                    ? optionsForTrigger(trigger)
+                    : [...getMentionOptions(), ...(getVariableOptions?.() ?? []), ...(getSkillOptions?.() ?? [])];
                 const token = pool.find(entry => entry.id === id && entry.trigger === trigger);
                 if (token) {
                     commitToken(token);

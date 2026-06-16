@@ -10,6 +10,7 @@ import {
     attachStickyComposerMentionUi,
     type StickyComposerTokenOption,
 } from '../common/qaap-sticky-composer-mention';
+import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-composer-syntax-highlight';
 import {
     resolveAgentApprovalPolicyOption,
     type QaapAgentApprovalPolicyId,
@@ -80,6 +81,8 @@ export class MobileProjectsStickyComposerColumnUi {
         inputPlaceholder?: string;
         getMentionOptions?: () => readonly StickyComposerTokenOption[];
         getVariableOptions?: () => readonly StickyComposerTokenOption[];
+        getSkillOptions?: () => readonly StickyComposerTokenOption[];
+        getSkillNames?: () => readonly string[];
         onContextUsageBadgeMounted?: (badge: HTMLButtonElement) => void;
         onOpenContextUsageSheet?: (anchor: HTMLButtonElement) => void;
         showWorkspaceBar?: boolean;
@@ -347,12 +350,13 @@ export class MobileProjectsStickyComposerColumnUi {
             });
         });
 
-        if (options.getMentionOptions) {
+        if (options.getMentionOptions || options.getSkillOptions) {
             attachStickyComposerMentionUi({
                 inputWrap: inputPanel,
                 input,
-                getMentionOptions: options.getMentionOptions,
+                getMentionOptions: options.getMentionOptions ?? (() => []),
                 getVariableOptions: options.getVariableOptions,
+                getSkillOptions: options.getSkillOptions,
                 onDraftChange: value => {
                     options.setDraft(value);
                     updateSend();
@@ -360,6 +364,17 @@ export class MobileProjectsStickyComposerColumnUi {
                 afterInputChange: options.afterInputChange,
                 mentionButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerMention', 'Mention agent (@)'),
                 variableButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerVariable', 'Insert variable (#)'),
+            });
+        }
+
+        const inputEditor = document.createElement('div');
+        inputEditor.className = 'theia-mobile-projects-sticky-composer-input-editor';
+        inputEditor.append(input);
+        if (options.getSkillNames) {
+            attachStickyComposerSyntaxHighlight({
+                inputEditor,
+                input,
+                getSkillNames: options.getSkillNames,
             });
         }
 
@@ -430,7 +445,7 @@ export class MobileProjectsStickyComposerColumnUi {
         const controlsRight = document.createElement('div');
         controlsRight.className = 'theia-mobile-projects-sticky-composer-controls-right';
 
-        inputBody.append(input);
+        inputBody.append(inputEditor);
         controlsLeft.append(attachBtn);
         if (modeBtn) {
             controlsLeft.append(modeBtn);

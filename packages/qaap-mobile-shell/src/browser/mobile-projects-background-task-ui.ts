@@ -54,6 +54,7 @@ export interface MobileProjectsBackgroundTaskHost {
     projectBootstrap?: import('./qaap-project-bootstrap-service').QaapProjectBootstrapService;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     transcriptLiveUi: import('./mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
+    expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
     shouldUseAgentsHubLanding(): boolean;
     renderSubtitle(): void;
     renderList(): void;
@@ -189,7 +190,8 @@ export class MobileProjectsBackgroundTaskUi {
             );
         }
         const agent = await this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId ?? QAAP_COMPOSER_DEFAULT_AGENT_ID);
-        const message = applyBackendInteractionModeToPrompt(draft, options.modeId);
+        const expandedDraft = await this.host.expandComposerDraftForSubmit?.(draft) ?? draft;
+        const message = applyBackendInteractionModeToPrompt(expandedDraft, options.modeId);
         const agentModel = resolveAgentModelForSubmit(agent, cwd, options.agentModel);
         const approvalPolicyId = options.approvalPolicyId
             ?? reconcileAgentApprovalPolicyId(undefined, cwd);

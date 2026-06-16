@@ -13,7 +13,10 @@ import { ErrorChatResponseContentImpl, MarkdownChatResponseContentImpl, MutableC
 import { Agent, AgentService } from '@theia/ai-core';
 import { QAAP_AGENT_TASK_API_PATH } from '../common/qaap-agent-task-client';
 import { applyBackendInteractionModeToPrompt, QAAP_BACKEND_INTERACTION_MODES } from '../common/qaap-sticky-composer-mode';
+import { expandComposerSkillSlashCommands } from '../common/qaap-composer-skill-submit';
 import { reconcileAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
+import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
 import { QaapQaiqStreamAccumulator } from '../common/qaap-qaiq-stream';
 import { QaapQaiqChatStreamSync } from './qaap-qaiq-chat-stream-sync';
@@ -51,6 +54,12 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
 
     @inject(QaapBackgroundContextProvider)
     protected readonly backgroundContext: QaapBackgroundContextProvider;
+
+    @inject(SkillService)
+    protected readonly skillService: SkillService;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
 
     protected registered = false;
     /** Shared SSE connection reused across concurrent task streams. */
@@ -119,7 +128,11 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
 
     protected async invoke(request: MutableChatRequestModel): Promise<void> {
         const raw = this.stripMention(request.request.text);
-        const userPrompt = applyBackendInteractionModeToPrompt(raw, request.request.modeId);
+        const expanded = await expandComposerSkillSlashCommands(raw, {
+            skillService: this.skillService,
+            fileService: this.fileService,
+        });
+        const userPrompt = applyBackendInteractionModeToPrompt(expanded, request.request.modeId);
         if (!userPrompt) {
             request.response.response.addContent(new MarkdownChatResponseContentImpl(
                 'Please provide a prompt after `@qaiq`.'

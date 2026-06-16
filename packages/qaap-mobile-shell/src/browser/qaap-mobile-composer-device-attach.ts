@@ -30,6 +30,8 @@ export interface MobileComposerAttachHandlers {
     appendOptimistic(entry: StickyComposerContextEntry): void;
     finalizeOptimistic(id: string, request: AIVariableResolutionRequest): void;
     removeOptimistic(id: string): void;
+    /** Inserts `/skill-name` into the sticky composer draft (Cursor-style skill slash). */
+    insertComposerSkill?: (skillName: string) => void;
 }
 
 export interface MobileComposerDeviceAttachServices {

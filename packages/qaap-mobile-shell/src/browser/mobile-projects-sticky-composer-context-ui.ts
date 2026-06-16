@@ -6,7 +6,9 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { AIVariableResolutionRequest } from '@theia/ai-core';
 import {
+    applyStickyComposerToken,
     buildStickyComposerMentionOptions,
+    buildStickyComposerSkillOptions,
     buildStickyComposerVariableOptions,
     type StickyComposerTokenOption,
 } from '../common/qaap-sticky-composer-mention';
@@ -30,9 +32,12 @@ import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects
 export interface MobileProjectsStickyComposerContextHost {
 stickyComposerContext: StickyComposerContextEntry[];
 transcriptComposerContext: StickyComposerContextEntry[];
+stickyComposerDraft: string;
+transcriptComposerDraft: string;
 pickContextVariable?: (anchor: HTMLElement, handlers: MobileComposerAttachHandlers) => Promise<AIVariableResolutionRequest[]>;
 formatContextChip?: (item: AIVariableResolutionRequest) => StickyComposerContextChipView | undefined;
             getComposerVariables?: () => readonly import('@theia/ai-core').AIVariable[];
+            getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
 transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
 stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
 stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
@@ -59,6 +64,14 @@ export class MobileProjectsStickyComposerContextUi {
     }
     createStickyComposerAttachHandlers(): MobileComposerAttachHandlers {
         return {
+            insertComposerSkill: skillName => {
+                this.insertComposerSkillInDraft(
+                    skillName,
+                    () => this.host.stickyComposerDraft,
+                    value => { this.host.stickyComposerDraft = value; },
+                    () => { this.host.stickyComposerRenderUi.renderStickyComposer(); },
+                );
+            },
             appendOptimistic: entry => {
                 this.host.stickyComposerContext.push(entry);
                 this.host.stickyComposerRenderUi.renderStickyComposer();
@@ -95,6 +108,14 @@ export class MobileProjectsStickyComposerContextUi {
     }
     createTranscriptComposerAttachHandlers(): MobileComposerAttachHandlers {
         return {
+            insertComposerSkill: skillName => {
+                this.insertComposerSkillInDraft(
+                    skillName,
+                    () => this.host.transcriptComposerDraft,
+                    value => { this.host.transcriptComposerDraft = value; },
+                    () => { this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer(); },
+                );
+            },
             appendOptimistic: entry => {
                 this.host.transcriptComposerContext.push(entry);
                 this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
@@ -162,6 +183,26 @@ export class MobileProjectsStickyComposerContextUi {
     }
     resolveComposerVariableOptions(): StickyComposerTokenOption[] {
         return buildStickyComposerVariableOptions(this.host.getComposerVariables?.() ?? []);
+    }
+    resolveComposerSkillOptions(): StickyComposerTokenOption[] {
+        return buildStickyComposerSkillOptions(this.host.getComposerSkills?.() ?? []);
+    }
+    protected insertComposerSkillInDraft(
+        skillName: string,
+        getDraft: () => string,
+        setDraft: (value: string) => void,
+        rerender: () => void,
+    ): void {
+        const token = {
+            id: skillName,
+            label: skillName,
+            trigger: '/' as const,
+            insertBody: `${skillName} `,
+        };
+        const draft = getDraft();
+        const applied = applyStickyComposerToken(draft, draft.length, token);
+        setDraft(applied.value);
+        rerender();
     }
 }
 

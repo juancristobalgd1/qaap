@@ -88,6 +88,7 @@ chatAgentService?: ChatAgentService;
 conversations?: MobileProjectsConversations;
             readPreference?: (key: string) => unknown;
 getComposerVariables?: unknown;
+getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
 hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
 resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
 resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
@@ -336,6 +337,12 @@ export class MobileProjectsStickyComposerRenderUi {
             getMentionOptions: () => this.host.stickyComposerContextUi.resolveComposerMentionOptions(this.host.stickyComposerBackendAgents, isChatSurface),
             getVariableOptions: this.host.getComposerVariables
                 ? () => this.host.stickyComposerContextUi.resolveComposerVariableOptions()
+                : undefined,
+            getSkillOptions: this.host.getComposerSkills
+                ? () => this.host.stickyComposerContextUi.resolveComposerSkillOptions()
+                : undefined,
+            getSkillNames: this.host.getComposerSkills
+                ? () => this.host.getComposerSkills!().map(skill => skill.name)
                 : undefined,
             inputPlaceholder: isChatSurface
                 ? nls.localize('qaap/mobileProjects/stickyComposerNewChat', 'Message the workspace agent…')

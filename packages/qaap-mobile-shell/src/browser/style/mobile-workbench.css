@@ -7297,6 +7297,7 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .theia-mobile-pr
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .theia-mobile-projects-sticky-composer-attach-menu-item-label {
@@ -7311,10 +7312,142 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .theia-mobile-pr
   opacity: 0.9;
 }
 
+.theia-mobile-projects-sticky-composer-attach-menu-item.theia-mod-compact {
+  align-items: flex-start;
+  padding: 8px 12px;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-item.theia-mod-compact > .codicon {
+  margin-top: 2px;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-item.theia-mod-compact .theia-mobile-projects-sticky-composer-attach-menu-item-label {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-item.theia-mod-compact .theia-mobile-projects-sticky-composer-attach-menu-item-hint {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
 .theia-mobile-projects-sticky-composer-attach-menu-separator {
   height: 1px;
   margin: 4px 8px;
   background: var(--theia-panel-border, rgba(128, 128, 128, 0.22));
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-skills-view {
+  max-height: min(50vh, 320px);
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-skills-view .theia-mobile-projects-sticky-composer-attach-menu-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-back:hover,
+.theia-mobile-projects-sticky-composer-attach-menu-back:focus-visible {
+  background: var(--theia-menu-selectionBackground, var(--theia-list-hoverBackground));
+  outline: none;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-empty {
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-item.theia-mod-has-submenu {
+  padding-right: 8px;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-item-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  opacity: 0.72;
+}
+
+.theia-mobile-projects-sticky-composer-input-editor {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.theia-mobile-projects-sticky-composer-input-editor.theia-mod-syntax-highlight-host {
+  min-height: 26px;
+}
+
+.theia-mobile-projects-sticky-composer-input-highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+.theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-skill {
+  color: var(--q-accent, var(--qaap-accent, #C4924A));
+  font-weight: 500;
+}
+
+.theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input {
+  position: relative;
+  z-index: 1;
+  color: transparent;
+  caret-color: var(--theia-foreground);
+  -webkit-text-fill-color: transparent;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu-empty {
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-projects-sticky-composer-mention-option-icon {
+  flex: 0 0 auto;
+  opacity: 0.85;
 }
 
 .theia-mobile-projects-sticky-composer-mention {

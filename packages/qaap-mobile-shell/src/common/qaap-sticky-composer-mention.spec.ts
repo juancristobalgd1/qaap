@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     applyStickyComposerToken,
     buildStickyComposerMentionOptions,
+    buildStickyComposerSkillOptions,
     buildStickyComposerVariableOptions,
     filterTokenOptions,
     findActiveComposerToken,
@@ -16,9 +17,10 @@ import {
 
 describe('qaap-sticky-composer-mention', () => {
 
-    it('findActiveTokenQuery detects @ and # fragments at caret', () => {
+    it('findActiveTokenQuery detects @, #, and / fragments at caret', () => {
         expect(findActiveTokenQuery('hello @qai', 10, '@')).to.deep.equal({ start: 6, query: 'qai' });
         expect(findActiveTokenQuery('ctx #file', 9, '#')).to.deep.equal({ start: 4, query: 'file' });
+        expect(findActiveTokenQuery('run /react-doc', 14, '/')).to.deep.equal({ start: 4, query: 'react-doc' });
         expect(findActiveTokenQuery('foo@bar', 7, '@')).to.be.undefined;
         expect(findActiveTokenQuery('@codex run', 7, '@')).to.be.undefined;
         expect(findActiveTokenQuery('hello @qai, there', 11, '@')).to.be.undefined;
@@ -55,6 +57,19 @@ describe('qaap-sticky-composer-mention', () => {
         expect(filterTokenOptions(vars, 'work').map(o => o.id)).to.deep.equal(['workspace']);
     });
 
+    it('buildStickyComposerSkillOptions maps skills to slash tokens', () => {
+        const skills = buildStickyComposerSkillOptions([
+            { name: 'react-doctor', description: 'Scan React code' },
+        ]);
+        expect(skills).to.deep.equal([{
+            id: 'react-doctor',
+            label: 'react-doctor',
+            trigger: '/',
+            insertBody: 'react-doctor ',
+            description: 'Scan React code',
+        }]);
+    });
+
     it('applyStickyComposerToken replaces active fragment or inserts at caret', () => {
         const mention = { id: 'qaiq', label: 'QAIQ', trigger: '@' as const, insertBody: 'qaiq ' };
         expect(applyStickyComposerToken('fix @qa', 7, mention)).to.deep.equal({
@@ -65,6 +80,11 @@ describe('qaap-sticky-composer-mention', () => {
         expect(applyStickyComposerToken('see #wor', 8, variable)).to.deep.equal({
             value: 'see #workspace ',
             caret: 15,
+        });
+        const skill = { id: 'react-doctor', label: 'react-doctor', trigger: '/' as const, insertBody: 'react-doctor ' };
+        expect(applyStickyComposerToken('run /rea', 8, skill)).to.deep.equal({
+            value: 'run /react-doctor ',
+            caret: 18,
         });
     });
 });

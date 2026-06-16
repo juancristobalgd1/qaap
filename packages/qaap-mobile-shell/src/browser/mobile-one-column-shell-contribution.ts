@@ -30,6 +30,7 @@ import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
 import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { ChatService } from '@theia/ai-chat';
 import { AIVariableService, FrontendLanguageModelRegistry } from '@theia/ai-core';
+import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { QuickInputService } from '@theia/core';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
@@ -208,6 +209,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(AIVariableService)
     protected readonly variableService: AIVariableService;
 
+    @inject(SkillService)
+    protected readonly skillService: SkillService;
+
     @inject(QuickInputService)
     protected readonly quickInputService: QuickInputService;
 
@@ -368,6 +372,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 chatAgentService: this.chatAgentService,
                 messageService: this.messageService,
                 variableService: this.variableService,
+                skillService: this.skillService,
                 quickInputService: this.quickInputService,
                 fileUploadService: this.fileUploadService,
                 fileService: this.fileService,

@@ -68,6 +68,7 @@ export interface MobileProjectsTranscriptSubmitHost {
     ): Promise<QaapAgentConversationSummaryDTO>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
     applyTaskStartedToProject(cwd: string, title: string, taskId: string): void;
+    expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
 }
 
 /** Backend conversation submit with optimistic transcript rows and rollback on failure. */
@@ -224,7 +225,8 @@ export class MobileProjectsTranscriptSubmitUi {
         const agent = resolveExplicitAgentForSubmit(content, {
             pinnedChatAgentId: options.selectedAgentId ?? options.widget?.pinnedAgent?.id ?? summary.agentId,
         }) ?? options.selectedAgentId ?? summary.agentId;
-        const outbound = applyBackendInteractionModeToPrompt(content, options.modeId);
+        const expandedContent = await this.host.expandComposerDraftForSubmit?.(content) ?? content;
+        const outbound = applyBackendInteractionModeToPrompt(expandedContent, options.modeId);
         const pendingUserMessage = {
             id: `pending-user-${Date.now()}`,
             role: 'user' as const,

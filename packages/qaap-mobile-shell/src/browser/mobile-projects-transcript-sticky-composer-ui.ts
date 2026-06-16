@@ -172,6 +172,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     commands?: CommandRegistry;
     conversations?: MobileProjectsConversations;
     getComposerVariables?: unknown;
+    getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
     pickContextVariable?: (
         anchor: HTMLElement,
         handlers: MobileComposerAttachHandlers,
@@ -1284,6 +1285,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
             getMentionOptions: () => this.host.stickyComposerContextUi.resolveComposerMentionOptions(this.host.transcriptComposerBackendAgents, false),
             getVariableOptions: this.host.getComposerVariables
                 ? () => this.host.stickyComposerContextUi.resolveComposerVariableOptions()
+                : undefined,
+            getSkillOptions: this.host.getComposerSkills
+                ? () => this.host.stickyComposerContextUi.resolveComposerSkillOptions()
+                : undefined,
+            getSkillNames: this.host.getComposerSkills
+                ? () => this.host.getComposerSkills!().map(skill => skill.name)
                 : undefined,
             inputPlaceholder: isAgentsHubIdleConversationSummary(summary)
                 ? nls.localize('qaap/mobileProjects/stickyComposerNewTask', 'Delegate a task…')

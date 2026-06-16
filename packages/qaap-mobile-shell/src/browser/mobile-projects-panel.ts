@@ -339,6 +339,7 @@ export interface MobileProjectsPanelOptions {
     resolveAttachmentPreview?: (item: AIVariableResolutionRequest) => Promise<string | undefined>;
     /** Variables offered for `#` completion in the sticky composer (same pool as Agent chat). */
     getComposerVariables?: () => readonly AIVariable[];
+    getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
     chatService?: ChatService;
     chatAgentService?: ChatAgentService;
     messageService?: MessageService;
@@ -372,6 +373,8 @@ export interface MobileProjectsPanelOptions {
     openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
     /** Persistent dev-server orchestration for transcript Preview tab. */
     projectBootstrap?: QaapProjectBootstrapService;
+    /** Expands `/skill-name` slash tokens into inline skill instructions before VPS submit. */
+    expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
 }
 
 type WorkHubSearchTarget =
@@ -619,6 +622,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly formatContextChip: MobileProjectsPanelOptions['formatContextChip'];
     protected readonly resolveAttachmentPreview: MobileProjectsPanelOptions['resolveAttachmentPreview'];
     protected readonly getComposerVariables: MobileProjectsPanelOptions['getComposerVariables'];
+    protected readonly getComposerSkills: MobileProjectsPanelOptions['getComposerSkills'];
     protected readonly chatService: ChatService | undefined;
     protected readonly chatAgentService: ChatAgentService | undefined;
     protected readonly messageService: MessageService | undefined;
@@ -637,6 +641,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly openPreferencesSheet: MobileProjectsPanelOptions['openPreferencesSheet'];
     protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
+    protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
     protected activeTasksDispose: Disposable = Disposable.NULL;
     protected conversationsDispose: Disposable = Disposable.NULL;
     protected inboxStreamDispose: Disposable = Disposable.NULL;
@@ -701,6 +706,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.formatContextChip = options.formatContextChip;
         this.resolveAttachmentPreview = options.resolveAttachmentPreview;
         this.getComposerVariables = options.getComposerVariables;
+        this.getComposerSkills = options.getComposerSkills;
         this.chatService = options.chatService;
         this.chatAgentService = options.chatAgentService;
         this.messageService = options.messageService;
@@ -719,6 +725,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.openPreferencesSheet = options.openPreferencesSheet;
         this.openAiConfigurationSheet = options.openAiConfigurationSheet;
         this.projectBootstrap = options.projectBootstrap;
+        this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
         this.root = document.createElement('div');
         this.root.className = this.homeMode ? 'theia-mobile-projects theia-mod-home' : 'theia-mobile-projects';
         if (!this.homeMode) {
