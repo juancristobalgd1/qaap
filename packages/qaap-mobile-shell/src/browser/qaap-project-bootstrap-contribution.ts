@@ -17,7 +17,6 @@ import {
     QaapProjectBootstrapService,
 } from './qaap-project-bootstrap-service';
 import type {
-    QaapForwardedPort,
     QaapMonorepoFlavor,
     QaapProjectDescriptor,
 } from './qaap-project-bootstrap-types';
@@ -66,7 +65,6 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
     protected readonly commands: CommandRegistry | undefined;
 
     protected banner: HTMLElement | undefined;
-    protected portsFloater: HTMLElement | undefined;
     protected appPickerMenu: HTMLElement | undefined;
     protected pickerDismiss: (() => void) | undefined;
     /** Tracks the last phase we surfaced a snackbar for, so port-change re-renders do not re-toast. */
@@ -74,10 +72,9 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
     protected readonly toDispose = new DisposableCollection();
 
     onStart(): void {
+        // Tear down any floater left by an older bundle (HMR / cached frontend).
+        document.querySelectorAll('.qaap-project-bootstrap-ports.qaap-mod-floating').forEach(node => node.remove());
         this.toDispose.push(this.bootstrap.onStateChange(state => this.render(state)));
-        // Ports live in their own widget; updates fire independently from phase changes so the
-        // floater can appear/grow without re-rendering the banner.
-        this.toDispose.push(this.bootstrap.onForwardedPortsChanged(ports => this.renderPortsFloater(ports)));
     }
 
     onDidInitializeLayout(): void {
@@ -91,7 +88,6 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
     onStop(): void {
         this.closeAppPicker();
         this.removeBanner();
-        this.removePortsFloater();
         this.toDispose.dispose();
     }
 
@@ -117,10 +113,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                     ));
                 break;
             case 'running':
-                // Old behavior restored: once the preview is up the banner goes away and the user
-                // gets a transient toast confirming things are live. The persistent ports strip
-                // lives in its own floating widget (see {@link renderPortsFloater}) so additional
-                // dev URLs remain reachable without re-showing the banner.
+                // Once the preview is up the banner goes away and the user gets a transient toast.
                 this.removeBanner();
                 if (state.previewUrl) {
                     this.announce(state.phase, () =>
@@ -212,64 +205,6 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
             actions.appendChild(btn);
         }
         banner.appendChild(actions);
-    }
-
-    /**
-     * Maintains the floating ports widget. Created lazily the first time at least one port is
-     * detected, and torn down when the list goes back to empty. Lives independently from the
-     * bootstrap banner so it survives the banner closing on `running` and stays reachable for the
-     * entire dev-server lifetime.
-     */
-    protected renderPortsFloater(ports: QaapForwardedPort[]): void {
-        if (ports.length === 0) {
-            this.removePortsFloater();
-            return;
-        }
-        const host = this.ensurePortsFloater();
-        // Repaint contents fully: a fresh DOM keeps the implementation predictable and matches
-        // the (small) cardinality of port pills (rarely more than a handful).
-        host.replaceChildren();
-        const label = document.createElement('span');
-        label.className = 'qaap-project-bootstrap-ports-label';
-        label.textContent = nls.localize('qaap/projectBootstrap/portsLabel', 'Ports');
-        host.appendChild(label);
-        for (const port of ports) {
-            const pill = document.createElement('button');
-            pill.type = 'button';
-            pill.className = 'qaap-project-bootstrap-port-pill';
-            if (port.primary) { pill.classList.add('qaap-mod-primary'); }
-            if (port.previewOpen) { pill.classList.add('qaap-mod-open'); }
-            const dot = document.createElement('span');
-            dot.className = 'qaap-project-bootstrap-port-dot';
-            dot.setAttribute('aria-hidden', 'true');
-            const portText = document.createElement('span');
-            portText.className = 'qaap-project-bootstrap-port-number';
-            portText.textContent = String(port.port);
-            pill.append(dot, portText);
-            pill.title = port.url;
-            pill.addEventListener('click', evt => {
-                evt.stopPropagation();
-                MobileHaptics.fire(MobileHaptics.LIGHT);
-                void this.bootstrap.openForwardedPort(port);
-            });
-            host.appendChild(pill);
-        }
-    }
-
-    protected ensurePortsFloater(): HTMLElement {
-        if (this.portsFloater) {
-            return this.portsFloater;
-        }
-        const el = document.createElement('div');
-        el.className = 'qaap-project-bootstrap-ports qaap-mod-floating';
-        document.body.appendChild(el);
-        this.portsFloater = el;
-        return el;
-    }
-
-    protected removePortsFloater(): void {
-        this.portsFloater?.remove();
-        this.portsFloater = undefined;
     }
 
     /**

@@ -3093,7 +3093,6 @@ body.theia-mobile-mod-landing .theia-mobile-workbench-top-bar {
 /* Editor / workspace notifications must not appear above the projects landing. */
 body.theia-mobile-mod-landing .theia-notifications-overlay,
 body.theia-mobile-mod-landing .qaap-project-bootstrap-banner,
-body.theia-mobile-mod-landing .qaap-project-bootstrap-ports.qaap-mod-floating,
 body.theia-mobile-mod-landing .theia-mobile-snackbar {
   display: none !important;
   pointer-events: none !important;
@@ -3102,11 +3101,9 @@ body.theia-mobile-mod-landing .theia-mobile-snackbar {
 /* Agents chat is the primary surface — suppress IDE toasts (terminal restore, etc.). */
 body.theia-mobile-mod-workhub-composer-header .theia-notifications-overlay,
 body.theia-mobile-mod-workhub-composer-header .qaap-project-bootstrap-banner,
-body.theia-mobile-mod-workhub-composer-header .qaap-project-bootstrap-ports.qaap-mod-floating,
 body.theia-mobile-mod-workhub-composer-header .theia-mobile-snackbar,
 body.theia-mobile-mod-workhub-no-bottom-chrome .theia-notifications-overlay,
 body.theia-mobile-mod-workhub-no-bottom-chrome .qaap-project-bootstrap-banner,
-body.theia-mobile-mod-workhub-no-bottom-chrome .qaap-project-bootstrap-ports.qaap-mod-floating,
 body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-snackbar {
   display: none !important;
   pointer-events: none !important;

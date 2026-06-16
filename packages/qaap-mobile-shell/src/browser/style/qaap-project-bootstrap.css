@@ -239,119 +239,17 @@
     font-family: var(--theia-monospace-font-family, monospace);
 }
 
-/* Forwarded ports strip: a floating row of pills anchored to the bottom-right. Independent from
- * the bootstrap banner so it survives the banner closing on `running`, and stays visible for the
- * entire dev-server lifetime. Scrollable horizontally on narrow screens. */
-.qaap-project-bootstrap-ports.qaap-mod-floating {
-    position: fixed;
-    bottom: 36px;
-    right: 16px;
-    z-index: 9400;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    max-width: calc(100vw - 32px);
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: var(--theia-editorWidget-background, var(--theia-input-background));
-    border: 1px solid var(--theia-editorWidget-border, var(--theia-input-border, transparent));
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
-    overflow-x: auto;
-    scrollbar-width: thin;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    animation: qaap-project-bootstrap-floater-in 180ms ease-out;
-}
-
-@keyframes qaap-project-bootstrap-floater-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Narrow viewport: pin the floater above the full mobile bottom chrome. */
-@media (max-width: 767px), (pointer: coarse) {
-    .qaap-project-bootstrap-ports.qaap-mod-floating {
-        right: 12px;
-        left: 12px;
-        bottom: calc(
-            var(--theia-mobile-bottom-bar-height, 56px)
-            + var(--theia-mobile-status-chrome-height, 34px)
-            + var(--theia-mobile-keyboard-inset, 0px)
-            + 12px
-        );
-        max-width: none;
-        justify-content: flex-start;
-    }
-}
-
-.qaap-project-bootstrap-ports-label {
-    flex: 0 0 auto;
-    font-size: var(--theia-ui-font-size0, 11px);
-    color: var(--theia-descriptionForeground);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding-right: 2px;
-}
-
-.qaap-project-bootstrap-port-pill {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 22px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border: 1px solid var(--theia-input-border, var(--theia-contrastBorder, transparent));
-    background: transparent;
-    color: var(--theia-foreground);
-    font-size: var(--theia-ui-font-size0, 11px);
-    font-family: var(--theia-monospace-font-family, monospace);
-    cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.qaap-project-bootstrap-port-pill:hover {
-    background: var(--theia-list-hoverBackground);
-}
-
-.qaap-project-bootstrap-port-pill.qaap-mod-primary {
-    background: var(--theia-badge-background, rgba(127, 127, 127, 0.18));
-    border-color: transparent;
-}
-
-.qaap-project-bootstrap-port-pill.qaap-mod-open .qaap-project-bootstrap-port-dot {
-    background: var(--theia-charts-green, #6dbe45);
-}
-
-.qaap-project-bootstrap-port-dot {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--theia-descriptionForeground);
-}
-
-.qaap-project-bootstrap-port-pill.qaap-mod-primary .qaap-project-bootstrap-port-dot {
-    background: var(--theia-progressBar-background, var(--theia-focusBorder));
-}
-
-.qaap-project-bootstrap-port-number {
-    font-weight: 500;
-}
-
 /* Respect the user's reduced-motion preference (WCAG 2.3.3). The banner/picker entrance
  * animations and hover/visibility transitions are decorative, so they are removed. The
  * `codicon-loading` spinner is kept: it is essential feedback that work is in progress. */
 @media (prefers-reduced-motion: reduce) {
-    .qaap-project-bootstrap-banner,
-    .qaap-project-bootstrap-ports.qaap-mod-floating {
+    .qaap-project-bootstrap-banner {
         animation: none;
     }
 
     .qaap-project-bootstrap-action,
     .qaap-project-bootstrap-chip,
-    .qaap-project-bootstrap-picker,
-    .qaap-project-bootstrap-port-pill {
+    .qaap-project-bootstrap-picker {
         transition: none;
     }
 
