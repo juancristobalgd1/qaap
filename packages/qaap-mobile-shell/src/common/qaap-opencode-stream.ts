@@ -12,6 +12,7 @@ interface OpencodeToolPart {
     readonly tool?: string;
     readonly input?: Record<string, unknown>;
     readonly text?: string;
+    readonly parentID?: string;
     readonly state?: {
         readonly status?: string;
         readonly error?: string;
@@ -22,6 +23,8 @@ interface OpencodeToolPart {
 
 interface OpencodeStreamEvent {
     readonly type?: string;
+    readonly parentID?: string;
+    readonly parent_tool_use_id?: string;
     readonly part?: OpencodeToolPart;
 }
 
@@ -39,6 +42,8 @@ export class QaapOpencodeStreamAccumulator {
     protected buffer = '';
     protected segments: QaapAgentMessageSegment[] = [];
     protected readonly toolsById = new Map<string, number>();
+    protected readonly toolParentById = new Map<string, string>();
+    protected activeSubagentToolUseId: string | undefined;
     /** True when at least one line was a valid OpenCode JSON event. */
     protected jsonEvents = 0;
 
@@ -93,6 +98,10 @@ export class QaapOpencodeStreamAccumulator {
             return;
         }
         this.jsonEvents += 1;
+        const parentFromEvent = resolveOpencodeParentToolUseId(envelope.parent_tool_use_id ?? envelope.parentID);
+        if (parentFromEvent) {
+            this.activeSubagentToolUseId = parentFromEvent;
+        }
         switch (envelope.type) {
             case 'text':
                 if (envelope.part?.text?.trim()) {
@@ -122,6 +131,15 @@ export class QaapOpencodeStreamAccumulator {
         const status = part.state?.status;
         const finished = status === 'completed' || status === 'error' || status === undefined;
         const result = extractOpencodeToolResult(part.state);
+        const parentFromPart = resolveOpencodeParentToolUseId(part.parentID);
+        if (parentFromPart) {
+            this.toolParentById.set(toolUseId, parentFromPart);
+        }
+        if (isOpencodeSubagentSpawnTool(part.tool)) {
+            this.upsertTool(toolUseId, name, args, finished, result);
+            this.activeSubagentToolUseId = toolUseId;
+            return;
+        }
         this.upsertTool(toolUseId, name, args, finished, result);
     }
 
@@ -156,10 +174,30 @@ export class QaapOpencodeStreamAccumulator {
         finished: boolean,
         result?: string,
     ): void {
+        let parentToolUseId = this.toolParentById.get(toolUseId);
+        if (!parentToolUseId && this.activeSubagentToolUseId && this.activeSubagentToolUseId !== toolUseId) {
+            parentToolUseId = this.activeSubagentToolUseId;
+            this.toolParentById.set(toolUseId, parentToolUseId);
+        }
         const existingIndex = this.toolsById.get(toolUseId);
         const segment: QaapAgentMessageSegment = result !== undefined
-            ? { type: 'tool', toolUseId, name, args, finished, result }
-            : { type: 'tool', toolUseId, name, args, finished };
+            ? {
+                type: 'tool',
+                toolUseId,
+                name,
+                args,
+                finished,
+                result,
+                ...(parentToolUseId ? { parentToolUseId } : {}),
+            }
+            : {
+                type: 'tool',
+                toolUseId,
+                name,
+                args,
+                finished,
+                ...(parentToolUseId ? { parentToolUseId } : {}),
+            };
         if (existingIndex !== undefined) {
             this.segments[existingIndex] = segment;
             return;
@@ -277,6 +315,19 @@ export function parseOpencodeFormattedLog(log: string): { content: string; segme
         .filter(Boolean)
         .join('\n\n');
     return { content: display || log.trim(), segments };
+}
+
+function isOpencodeSubagentSpawnTool(tool: string): boolean {
+    const normalized = tool.trim().toLowerCase();
+    return normalized === 'task' || normalized === 'agent';
+}
+
+function resolveOpencodeParentToolUseId(value: string | undefined): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function classifyOpencodeFormattedToolLine(line: string): { name: string; args: string } {

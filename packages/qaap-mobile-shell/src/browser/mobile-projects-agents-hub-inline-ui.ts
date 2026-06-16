@@ -16,6 +16,7 @@ import {
 import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
+import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
@@ -275,6 +276,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptUserScrollPinDispose.dispose();
         this.host.transcriptUserScrollPinDispose = new DisposableCollection(
             attachTranscriptUserScrollPin(chatHost),
+            attachTranscriptActivityTimelineStickySummary(chatHost),
             attachTranscriptScrollToBottomButton(chatHost),
         );
         this.host.updateTasksAttentionChrome();

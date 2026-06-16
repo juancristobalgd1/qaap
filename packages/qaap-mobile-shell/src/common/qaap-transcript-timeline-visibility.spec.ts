@@ -47,4 +47,12 @@ describe('qaap-transcript-timeline-visibility', () => {
         expect(policy.visibleItems).to.have.length(4);
         expect(policy.visibleItems[0]?.label).to.equal('step-6');
     });
+
+    it('reveals the full trace when revealAll is set', () => {
+        const items = Array.from({ length: 24 }, (_, index) => item(`step-${index}`, 'success'));
+        const policy = resolveTranscriptTimelineVisibilityPolicy(items, { revealAll: true });
+        expect(policy.collapsed).to.equal(false);
+        expect(policy.visibleItems).to.have.length(24);
+        expect(policy.hiddenCount).to.equal(0);
+    });
 });

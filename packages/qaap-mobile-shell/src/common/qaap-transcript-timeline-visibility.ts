@@ -46,10 +46,14 @@ export function resolveTranscriptTimelineVisibilityPolicy(
     options?: {
         readonly threshold?: number;
         readonly maxVisibleItems?: number;
+        readonly revealAll?: boolean;
     },
 ): TranscriptTimelineVisibilityPolicy {
     const threshold = options?.threshold ?? TRANSCRIPT_TIMELINE_COLLAPSE_THRESHOLD;
     const maxVisibleItems = options?.maxVisibleItems ?? 0;
+    if (options?.revealAll) {
+        return { visibleItems: items, hiddenCount: 0, collapsed: false };
+    }
     if (items.length === 0) {
         return { visibleItems: items, hiddenCount: 0, collapsed: false };
     }

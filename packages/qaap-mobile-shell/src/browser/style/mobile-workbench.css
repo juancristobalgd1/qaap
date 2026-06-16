@@ -17749,6 +17749,64 @@ body > .theia-mobile-transcript-files-menu {
   list-style: none;
 }
 
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] > summary.theia-mobile-agent-activity-timeline-summary {
+  display: none;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace:not([open]) > .theia-mobile-agent-activity-timeline-open-panel {
+  display: none;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-open-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: visible;
+}
+
+.theia-mobile-agent-activity-timeline-sticky-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] .theia-mobile-agent-activity-timeline-sticky-bar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-sticky-summary-stuck .theia-mobile-agent-activity-timeline-sticky-bar {
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  background: color-mix(in srgb, var(--theia-editor-background, #0b0b0a) 94%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.28)) 55%, transparent);
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-collapsible.theia-mod-inline[open]:not(.theia-mod-cursor-trace) > summary {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--theia-editor-background, #0b0b0a);
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-collapsible.theia-mod-inline.theia-mod-sticky-summary-stuck:not(.theia-mod-cursor-trace) > summary {
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.28)) 55%, transparent);
+}
+
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace > summary::-webkit-details-marker {
   display: none;
 }
@@ -17775,7 +17833,7 @@ body > .theia-mobile-transcript-files-menu {
   transform: rotate(180deg);
 }
 
-.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace > .theia-mobile-agent-activity-list {
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-open-panel > .theia-mobile-agent-activity-list {
   overflow: hidden;
   max-height: 0;
   opacity: 0;
@@ -17786,14 +17844,14 @@ body > .theia-mobile-transcript-files-menu {
     padding 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] > .theia-mobile-agent-activity-list {
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] .theia-mobile-agent-activity-timeline-open-panel > .theia-mobile-agent-activity-list {
   max-height: min(2800px, 85vh);
   opacity: 1;
   padding: 2px 0 4px 10px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace > .theia-mobile-agent-activity-list,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-open-panel > .theia-mobile-agent-activity-list,
   .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-body-wrap {
     transition: none;
     animation: none;
@@ -17989,6 +18047,48 @@ body > .theia-mobile-transcript-files-menu {
   color: color-mix(in srgb, var(--theia-descriptionForeground) 68%, transparent);
   font-style: italic;
   font-weight: 450;
+}
+
+.theia-mobile-agent-activity-item.theia-mod-history-gap.theia-mod-clickable {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background-color 140ms ease;
+}
+
+.theia-mobile-agent-activity-item.theia-mod-history-gap.theia-mod-clickable:hover,
+.theia-mobile-agent-activity-item.theia-mod-history-gap.theia-mod-clickable:focus-visible {
+  background: color-mix(in srgb, var(--theia-list-hoverBackground, rgba(128, 128, 128, 0.12)) 88%, transparent);
+}
+
+.theia-mobile-agent-activity-item.theia-mod-history-gap.theia-mod-clickable:focus-visible {
+  outline: 1px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 1px;
+}
+
+.theia-mobile-agent-activity-timeline-reveal-steps {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 78%, transparent);
+  font: inherit;
+  font-style: italic;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+.theia-mobile-agent-activity-timeline-reveal-steps:hover,
+.theia-mobile-agent-activity-timeline-reveal-steps:focus-visible {
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-agent-activity-timeline-reveal-steps:focus-visible {
+  outline: 1px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .theia-mobile-agent-transcript-scroll-to-bottom.theia-mod-active-step {

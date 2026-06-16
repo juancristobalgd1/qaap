@@ -12,14 +12,20 @@ interface CodexStreamItem {
     readonly item_type?: string;
     readonly text?: string;
     readonly command?: string;
+    readonly tool?: string;
     readonly status?: string;
     readonly output?: string;
     readonly stdout?: string;
     readonly stderr?: string;
+    readonly prompt?: string;
+    readonly parent_id?: string;
+    readonly parent_tool_use_id?: string;
 }
 
 interface CodexStreamEvent {
     readonly type?: string;
+    readonly parent_id?: string;
+    readonly parent_tool_use_id?: string;
     readonly item?: CodexStreamItem;
     readonly msg?: {
         readonly type?: string;
@@ -36,6 +42,8 @@ export class QaapCodexStreamAccumulator {
     protected buffer = '';
     protected segments: QaapAgentMessageSegment[] = [];
     protected readonly itemsById = new Map<string, number>();
+    protected readonly toolParentById = new Map<string, string>();
+    protected activeParentToolUseId: string | undefined;
     protected jsonEvents = 0;
 
     push(chunk: string): readonly QaapAgentMessageSegment[] {
@@ -84,6 +92,7 @@ export class QaapCodexStreamAccumulator {
             return;
         }
         this.jsonEvents += 1;
+        this.captureParentContext(envelope);
         if (envelope.msg?.type === 'text' && envelope.msg.content?.trim()) {
             this.appendText(envelope.msg.content);
             return;
@@ -99,6 +108,7 @@ export class QaapCodexStreamAccumulator {
         }
         const itemType = item.type ?? item.item_type ?? '';
         const itemId = item.id ?? `codex-${this.segments.length}`;
+        this.captureParentContext(envelope, item);
         if (eventType === 'item.started' || (eventType === 'item.updated' && item.status === 'in_progress')) {
             this.consumeItemStarted(itemId, itemType, item);
             return;
@@ -108,7 +118,22 @@ export class QaapCodexStreamAccumulator {
         }
     }
 
+    protected captureParentContext(envelope: CodexStreamEvent, item?: CodexStreamItem): void {
+        const parentFromEvent = resolveCodexParentToolUseId(envelope.parent_tool_use_id ?? envelope.parent_id);
+        if (parentFromEvent) {
+            this.activeParentToolUseId = parentFromEvent;
+        }
+        const parentFromItem = resolveCodexParentToolUseId(item?.parent_tool_use_id ?? item?.parent_id);
+        if (parentFromItem) {
+            this.activeParentToolUseId = parentFromItem;
+        }
+    }
+
     protected consumeItemStarted(itemId: string, itemType: string, item: CodexStreamItem): void {
+        if (isCodexCollabItem(itemType)) {
+            this.consumeCollabItem(itemId, itemType, item, false);
+            return;
+        }
         if (isCodexReasoningItem(itemType)) {
             if (item.text?.trim()) {
                 this.appendThinking(item.text);
@@ -123,6 +148,10 @@ export class QaapCodexStreamAccumulator {
     }
 
     protected consumeItemCompleted(itemId: string, itemType: string, item: CodexStreamItem): void {
+        if (isCodexCollabItem(itemType)) {
+            this.consumeCollabItem(itemId, itemType, item, true);
+            return;
+        }
         if (isCodexMessageItem(itemType)) {
             if (item.text?.trim()) {
                 this.appendText(item.text);
@@ -167,6 +196,29 @@ export class QaapCodexStreamAccumulator {
         this.segments.push({ type: 'thinking', content: text });
     }
 
+    protected consumeCollabItem(
+        itemId: string,
+        itemType: string,
+        item: CodexStreamItem,
+        finished: boolean,
+    ): void {
+        const collabTool = (item.tool ?? itemType).toLowerCase();
+        const args = buildCodexToolArgs(itemType, item);
+        if (isCodexCollabSpawnTool(collabTool)) {
+            this.upsertTool(itemId, 'Agent', args, finished);
+            this.activeParentToolUseId = itemId;
+            return;
+        }
+        if (isCodexCollabCloseTool(collabTool)) {
+            this.upsertTool(itemId, 'Task', args, finished);
+            if (finished) {
+                this.activeParentToolUseId = undefined;
+            }
+            return;
+        }
+        this.upsertTool(itemId, 'Agent', args, finished);
+    }
+
     protected upsertTool(
         toolUseId: string,
         name: string,
@@ -174,10 +226,30 @@ export class QaapCodexStreamAccumulator {
         finished: boolean,
         result?: string,
     ): void {
+        let parentToolUseId = this.toolParentById.get(toolUseId);
+        if (!parentToolUseId && this.activeParentToolUseId && this.activeParentToolUseId !== toolUseId) {
+            parentToolUseId = this.activeParentToolUseId;
+            this.toolParentById.set(toolUseId, parentToolUseId);
+        }
         const existingIndex = this.itemsById.get(toolUseId);
         const segment: QaapAgentMessageSegment = result !== undefined
-            ? { type: 'tool', toolUseId, name, args, finished, result }
-            : { type: 'tool', toolUseId, name, args, finished };
+            ? {
+                type: 'tool',
+                toolUseId,
+                name,
+                args,
+                finished,
+                result,
+                ...(parentToolUseId ? { parentToolUseId } : {}),
+            }
+            : {
+                type: 'tool',
+                toolUseId,
+                name,
+                args,
+                finished,
+                ...(parentToolUseId ? { parentToolUseId } : {}),
+            };
         if (existingIndex !== undefined) {
             this.segments[existingIndex] = segment;
             return;
@@ -213,6 +285,26 @@ function isCodexToolItem(itemType: string): boolean {
         || itemType === 'mcp_tool_call'
         || itemType === 'web_search'
         || itemType === 'tool_call';
+}
+
+function isCodexCollabItem(itemType: string): boolean {
+    return itemType === 'collab_tool_call';
+}
+
+function isCodexCollabSpawnTool(tool: string): boolean {
+    return tool === 'spawn_agent' || tool.includes('spawn');
+}
+
+function isCodexCollabCloseTool(tool: string): boolean {
+    return tool === 'close_agent' || tool.includes('close');
+}
+
+function resolveCodexParentToolUseId(value: string | undefined): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function classifyCodexToolName(itemType: string, item: CodexStreamItem): string {

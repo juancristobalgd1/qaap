@@ -36,6 +36,32 @@ describe('QaapOpencodeStreamAccumulator', () => {
         acc.push('{"type":"reasoning","part":{"type":"reasoning","text":"plan step"}}\n');
         expect(acc.getSegments()).to.deep.equal([{ type: 'thinking', content: 'plan step' }]);
     });
+
+    it('nests child tools under an active task subagent', () => {
+        const acc = new QaapOpencodeStreamAccumulator();
+        acc.push([
+            '{"type":"tool_use","part":{"id":"task-1","type":"tool","tool":"task","input":{"description":"Review auth"},"state":{"status":"completed"}}}',
+            '{"type":"tool_use","part":{"id":"read-1","type":"tool","tool":"read","input":{"filePath":"auth.ts"},"parentID":"task-1","state":{"status":"completed","output":"ok"}}}',
+        ].join('\n') + '\n');
+        expect(acc.getSegments()).to.deep.equal([
+            {
+                type: 'tool',
+                toolUseId: 'task-1',
+                name: 'task',
+                args: '{"description":"Review auth"}',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                toolUseId: 'read-1',
+                name: 'Read',
+                args: '{"filePath":"auth.ts"}',
+                finished: true,
+                result: 'ok',
+                parentToolUseId: 'task-1',
+            },
+        ]);
+    });
 });
 
 describe('parseOpencodeFormattedLog', () => {
