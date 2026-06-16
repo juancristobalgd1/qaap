@@ -21,6 +21,8 @@ describe('qaap-sticky-composer-mention', () => {
         expect(findActiveTokenQuery('hello @qai', 10, '@')).to.deep.equal({ start: 6, query: 'qai' });
         expect(findActiveTokenQuery('ctx #file', 9, '#')).to.deep.equal({ start: 4, query: 'file' });
         expect(findActiveTokenQuery('run /react-doc', 14, '/')).to.deep.equal({ start: 4, query: 'react-doc' });
+        expect(findActiveTokenQuery('/', 1, '/')).to.deep.equal({ start: 0, query: '' });
+        expect(findActiveComposerToken('/', 1)).to.deep.equal({ start: 0, query: '', trigger: '/' });
         expect(findActiveTokenQuery('foo@bar', 7, '@')).to.be.undefined;
         expect(findActiveTokenQuery('@codex run', 7, '@')).to.be.undefined;
         expect(findActiveTokenQuery('hello @qai, there', 11, '@')).to.be.undefined;

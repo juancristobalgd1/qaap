@@ -9,7 +9,7 @@ import { CommandRegistry } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { QuickInputService } from '@theia/core';
-import { AIVariableService, FrontendLanguageModelRegistry } from '@theia/ai-core';
+import { AIVariableService, FrontendLanguageModelRegistry, PromptService } from '@theia/ai-core';
 import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatService } from '@theia/ai-chat';
@@ -75,6 +75,7 @@ export interface MobileProjectsPanelFactoryDeps {
     messageService: MessageService;
     variableService: AIVariableService;
     skillService: SkillService;
+    promptService: PromptService;
     quickInputService: QuickInputService;
     fileUploadService: FileUploadService;
     fileService: FileService;
@@ -175,6 +176,7 @@ export class MobileProjectsPanelFactory {
                 ),
                 getComposerVariables: () => deps.variableService.getVariables(),
                 getComposerSkills: () => deps.skillService.getSkills(),
+                getComposerSlashCommands: agentId => deps.promptService.getCommands(agentId),
                 expandComposerDraftForSubmit: draft => expandComposerSkillSlashCommands(draft, {
                     skillService: deps.skillService,
                     fileService: deps.fileService,

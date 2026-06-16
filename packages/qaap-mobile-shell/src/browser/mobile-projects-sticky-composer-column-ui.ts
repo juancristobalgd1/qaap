@@ -10,6 +10,7 @@ import {
     attachStickyComposerMentionUi,
     type StickyComposerTokenOption,
 } from '../common/qaap-sticky-composer-mention';
+import type { StickyComposerSlashSection } from '../common/qaap-sticky-composer-slash-menu';
 import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-composer-syntax-highlight';
 import {
     resolveAgentApprovalPolicyOption,
@@ -82,6 +83,8 @@ export class MobileProjectsStickyComposerColumnUi {
         getMentionOptions?: () => readonly StickyComposerTokenOption[];
         getVariableOptions?: () => readonly StickyComposerTokenOption[];
         getSkillOptions?: () => readonly StickyComposerTokenOption[];
+        getSlashMenuSections?: () => readonly StickyComposerSlashSection[];
+        onSlashModeSelect?: (modeId: string) => void;
         getSkillNames?: () => readonly string[];
         onContextUsageBadgeMounted?: (badge: HTMLButtonElement) => void;
         onOpenContextUsageSheet?: (anchor: HTMLButtonElement) => void;
@@ -350,13 +353,15 @@ export class MobileProjectsStickyComposerColumnUi {
             });
         });
 
-        if (options.getMentionOptions || options.getSkillOptions) {
+        if (options.getMentionOptions || options.getVariableOptions || options.getSkillOptions || options.getSlashMenuSections) {
             attachStickyComposerMentionUi({
                 inputWrap: inputPanel,
                 input,
                 getMentionOptions: options.getMentionOptions ?? (() => []),
                 getVariableOptions: options.getVariableOptions,
                 getSkillOptions: options.getSkillOptions,
+                getSlashMenuSections: options.getSlashMenuSections,
+                onSlashModeSelect: options.onSlashModeSelect,
                 onDraftChange: value => {
                     options.setDraft(value);
                     updateSend();

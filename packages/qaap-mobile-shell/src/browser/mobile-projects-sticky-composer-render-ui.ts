@@ -17,7 +17,9 @@ import {
     reconcileComposerModeId,
     resolveComposerModeLabel,
     resolveStickyComposerModes,
+    writeStoredComposerMode,
 } from '../common/qaap-sticky-composer-mode';
+import type { PromptFragment } from '@theia/ai-core';
 import {
     agentSupportsApprovalPolicy,
     reconcileAgentApprovalPolicyId,
@@ -89,6 +91,7 @@ conversations?: MobileProjectsConversations;
             readPreference?: (key: string) => unknown;
 getComposerVariables?: unknown;
 getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
+getComposerSlashCommands?: (agentId?: string) => readonly PromptFragment[];
 hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
 resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
 resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
@@ -341,6 +344,17 @@ export class MobileProjectsStickyComposerRenderUi {
             getSkillOptions: this.host.getComposerSkills
                 ? () => this.host.stickyComposerContextUi.resolveComposerSkillOptions()
                 : undefined,
+            getSlashMenuSections: () => this.host.stickyComposerContextUi.resolveComposerSlashMenuSections(
+                modes,
+                this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
+            ),
+            onSlashModeSelect: modeId => {
+                this.host.stickyComposerModeId = modeId;
+                if (cwd) {
+                    writeStoredComposerMode(cwd, modeId);
+                }
+                this.renderStickyComposer();
+            },
             getSkillNames: this.host.getComposerSkills
                 ? () => this.host.getComposerSkills!().map(skill => skill.name)
                 : undefined,

@@ -4,7 +4,8 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { AIVariableResolutionRequest } from '@theia/ai-core';
+import { AIVariableResolutionRequest, type PromptFragment } from '@theia/ai-core';
+import { ChatMode } from '@theia/ai-chat';
 import {
     applyStickyComposerToken,
     buildStickyComposerMentionOptions,
@@ -12,6 +13,7 @@ import {
     buildStickyComposerVariableOptions,
     type StickyComposerTokenOption,
 } from '../common/qaap-sticky-composer-mention';
+import { buildStickyComposerSlashSections, type StickyComposerSlashSection } from '../common/qaap-sticky-composer-slash-menu';
 import {
     resolveStickyComposerContextChip,
     resolveStickyComposerContextEntry,
@@ -38,6 +40,7 @@ pickContextVariable?: (anchor: HTMLElement, handlers: MobileComposerAttachHandle
 formatContextChip?: (item: AIVariableResolutionRequest) => StickyComposerContextChipView | undefined;
             getComposerVariables?: () => readonly import('@theia/ai-core').AIVariable[];
             getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
+            getComposerSlashCommands?: (agentId?: string) => readonly PromptFragment[];
 transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
 stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
 stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
@@ -186,6 +189,19 @@ export class MobileProjectsStickyComposerContextUi {
     }
     resolveComposerSkillOptions(): StickyComposerTokenOption[] {
         return buildStickyComposerSkillOptions(this.host.getComposerSkills?.() ?? []);
+    }
+    resolveComposerSlashMenuSections(
+        modes: readonly ChatMode[],
+        agentId?: string,
+    ): StickyComposerSlashSection[] {
+        return buildStickyComposerSlashSections({
+            skills: this.host.getComposerSkills?.() ?? [],
+            commands: (this.host.getComposerSlashCommands?.(agentId) ?? []).map(command => ({
+                commandName: command.commandName,
+                commandDescription: command.commandDescription,
+            })),
+            modes: modes.map(mode => ({ id: mode.id, name: mode.name })),
+        });
     }
     protected insertComposerSkillInDraft(
         skillName: string,

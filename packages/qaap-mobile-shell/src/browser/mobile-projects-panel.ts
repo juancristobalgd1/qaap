@@ -340,6 +340,7 @@ export interface MobileProjectsPanelOptions {
     /** Variables offered for `#` completion in the sticky composer (same pool as Agent chat). */
     getComposerVariables?: () => readonly AIVariable[];
     getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
+    getComposerSlashCommands?: (agentId?: string) => readonly import('@theia/ai-core').PromptFragment[];
     chatService?: ChatService;
     chatAgentService?: ChatAgentService;
     messageService?: MessageService;
@@ -623,6 +624,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly resolveAttachmentPreview: MobileProjectsPanelOptions['resolveAttachmentPreview'];
     protected readonly getComposerVariables: MobileProjectsPanelOptions['getComposerVariables'];
     protected readonly getComposerSkills: MobileProjectsPanelOptions['getComposerSkills'];
+    protected readonly getComposerSlashCommands: MobileProjectsPanelOptions['getComposerSlashCommands'];
     protected readonly chatService: ChatService | undefined;
     protected readonly chatAgentService: ChatAgentService | undefined;
     protected readonly messageService: MessageService | undefined;
@@ -707,6 +709,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.resolveAttachmentPreview = options.resolveAttachmentPreview;
         this.getComposerVariables = options.getComposerVariables;
         this.getComposerSkills = options.getComposerSkills;
+        this.getComposerSlashCommands = options.getComposerSlashCommands;
         this.chatService = options.chatService;
         this.chatAgentService = options.chatAgentService;
         this.messageService = options.messageService;

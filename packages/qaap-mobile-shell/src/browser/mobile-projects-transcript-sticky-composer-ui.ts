@@ -48,6 +48,7 @@ import {
     reconcileComposerModeId,
     resolveComposerModeLabel,
     resolveStickyComposerModes,
+    writeStoredComposerMode,
 } from '../common/qaap-sticky-composer-mode';
 import {
     agentSupportsApprovalPolicy,
@@ -173,6 +174,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     conversations?: MobileProjectsConversations;
     getComposerVariables?: unknown;
     getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
+    getComposerSlashCommands?: (agentId?: string) => readonly import('@theia/ai-core').PromptFragment[];
     pickContextVariable?: (
         anchor: HTMLElement,
         handlers: MobileComposerAttachHandlers,
@@ -1289,6 +1291,17 @@ export class MobileProjectsTranscriptStickyComposerUi {
             getSkillOptions: this.host.getComposerSkills
                 ? () => this.host.stickyComposerContextUi.resolveComposerSkillOptions()
                 : undefined,
+            getSlashMenuSections: () => this.host.stickyComposerContextUi.resolveComposerSlashMenuSections(
+                modes,
+                this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+            ),
+            onSlashModeSelect: modeId => {
+                this.host.transcriptComposerModeId = modeId;
+                if (cwd) {
+                    writeStoredComposerMode(cwd, modeId);
+                }
+                this.remountTranscriptStickyComposer();
+            },
             getSkillNames: this.host.getComposerSkills
                 ? () => this.host.getComposerSkills!().map(skill => skill.name)
                 : undefined,

@@ -6,6 +6,13 @@
 import type { AIVariable } from '@theia/ai-core';
 import { appendAgentBrandIcon } from './qaap-agent-branding';
 import { QaapAgentTaskAgentOption, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
+import {
+    filterStickyComposerSlashSections,
+    type StickyComposerSlashEntry,
+    type StickyComposerSlashSection,
+    removeActiveSlashToken,
+    renderStickyComposerSlashMenu,
+} from './qaap-sticky-composer-slash-menu';
 
 export type StickyComposerTriggerChar = '@' | '#' | '/';
 
@@ -175,6 +182,8 @@ export function attachStickyComposerMentionUi(options: {
     getMentionOptions: () => readonly StickyComposerTokenOption[];
     getVariableOptions?: () => readonly StickyComposerTokenOption[];
     getSkillOptions?: () => readonly StickyComposerTokenOption[];
+    getSlashMenuSections?: () => readonly StickyComposerSlashSection[];
+    onSlashModeSelect?: (modeId: string) => void;
     onDraftChange: (value: string) => void;
     afterInputChange?: () => void;
     mentionButtonTitle: string;
@@ -186,6 +195,8 @@ export function attachStickyComposerMentionUi(options: {
         getMentionOptions,
         getVariableOptions,
         getSkillOptions,
+        getSlashMenuSections,
+        onSlashModeSelect,
         onDraftChange,
         afterInputChange,
         mentionButtonTitle,
@@ -216,18 +227,42 @@ export function attachStickyComposerMentionUi(options: {
     }
 
     const popover = document.createElement('div');
-    popover.className = 'theia-mobile-projects-sticky-composer-mention-popover';
+    popover.className = 'theia-mobile-projects-sticky-composer-mention-popover theia-mod-floating';
     popover.hidden = true;
     popover.setAttribute('role', 'listbox');
 
     const list = document.createElement('div');
     list.className = 'theia-mobile-projects-sticky-composer-mention-list';
     popover.append(list);
-    inputWrap.append(popover);
+    document.body.append(popover);
 
     let dismissTimer: ReturnType<typeof setTimeout> | undefined;
     let pickingFromPopover = false;
     let forcedTrigger: StickyComposerTriggerChar | undefined;
+    const expandedSlashSections = new Set<string>();
+
+    const positionPopover = (): void => {
+        const rect = input.getBoundingClientRect();
+        const gap = 6;
+        const horizontalInset = 8;
+        const maxWidth = Math.max(0, window.innerWidth - horizontalInset * 2);
+        const width = Math.min(rect.width, maxWidth);
+        const left = Math.min(
+            Math.max(horizontalInset, rect.left),
+            window.innerWidth - width - horizontalInset,
+        );
+        popover.style.left = `${left}px`;
+        popover.style.width = `${width}px`;
+        popover.style.right = 'auto';
+        popover.style.top = 'auto';
+        popover.style.bottom = `${Math.max(gap, window.innerHeight - rect.top + gap)}px`;
+    };
+
+    const onViewportChange = (): void => {
+        if (!popover.hidden) {
+            positionPopover();
+        }
+    };
 
     const clearDismissTimer = (): void => {
         if (dismissTimer !== undefined) {
@@ -244,7 +279,11 @@ export function attachStickyComposerMentionUi(options: {
     const hide = (): void => {
         clearDismissTimer();
         popover.hidden = true;
+        popover.classList.remove('theia-mod-slash-menu');
+        inputWrap.classList.remove('theia-mod-mention-popover-open');
         forcedTrigger = undefined;
+        expandedSlashSections.clear();
+        list.className = 'theia-mobile-projects-sticky-composer-mention-list';
         setExpanded(false);
     };
 
@@ -256,6 +295,45 @@ export function attachStickyComposerMentionUi(options: {
             return getSkillOptions?.() ?? [];
         }
         return getVariableOptions?.() ?? [];
+    };
+
+    const commitSlashEntry = (entry: StickyComposerSlashEntry): void => {
+        if (entry.kind === 'mode' && entry.modeId) {
+            const caret = input.selectionStart ?? input.value.length;
+            const stripped = removeActiveSlashToken(input.value, caret);
+            input.value = stripped.value;
+            onDraftChange(stripped.value);
+            input.setSelectionRange(stripped.caret, stripped.caret);
+            onSlashModeSelect?.(entry.modeId);
+            afterInputChange?.();
+            hide();
+            input.focus();
+            return;
+        }
+        const token: StickyComposerTokenOption = {
+            id: entry.label,
+            label: entry.label,
+            trigger: '/',
+            insertBody: entry.insertBody ?? `${entry.label} `,
+            description: entry.description,
+        };
+        commitToken(token);
+    };
+
+    const renderSlashMenu = (query: string): number => {
+        popover.classList.add('theia-mod-slash-menu');
+        const sections = filterStickyComposerSlashSections(getSlashMenuSections?.() ?? [], query);
+        return renderStickyComposerSlashMenu({
+            list,
+            sections,
+            expandedSections: expandedSlashSections,
+            onToggleSection: sectionId => {
+                expandedSlashSections.add(sectionId);
+                renderList();
+            },
+            onSelectEntry: commitSlashEntry,
+            onPickStart: () => { pickingFromPopover = true; },
+        });
     };
 
     const renderList = (): void => {
@@ -273,6 +351,14 @@ export function attachStickyComposerMentionUi(options: {
         if (!active) {
             return;
         }
+        if (active.trigger === '/' && getSlashMenuSections) {
+            if (renderSlashMenu(active.query) === 0) {
+                return;
+            }
+            return;
+        }
+        popover.classList.remove('theia-mod-slash-menu');
+        list.className = 'theia-mobile-projects-sticky-composer-mention-list';
         const filtered = filterTokenOptions(optionsForTrigger(active.trigger), active.query);
         for (const token of filtered) {
             const btn = document.createElement('button');
@@ -320,7 +406,9 @@ export function attachStickyComposerMentionUi(options: {
             hide();
             return;
         }
+        positionPopover();
         popover.hidden = false;
+        inputWrap.classList.add('theia-mod-mention-popover-open');
         setExpanded(true);
     };
 
@@ -342,7 +430,9 @@ export function attachStickyComposerMentionUi(options: {
         renderList();
         if (!list.childElementCount) {
             hide();
+            return;
         }
+        positionPopover();
     };
 
     const insertTrigger = (trigger: StickyComposerTriggerChar): void => {
@@ -410,7 +500,11 @@ export function attachStickyComposerMentionUi(options: {
         if (popover.hidden) {
             return;
         }
-        const buttons = [...list.querySelectorAll<HTMLButtonElement>('.theia-mobile-projects-sticky-composer-mention-option')];
+        const buttons = [
+            ...list.querySelectorAll<HTMLButtonElement>(
+                '.theia-mobile-projects-sticky-composer-mention-option, .theia-mobile-projects-sticky-composer-slash-option',
+            ),
+        ];
         if (!buttons.length) {
             return;
         }
@@ -428,6 +522,16 @@ export function attachStickyComposerMentionUi(options: {
             if (focused) {
                 ev.preventDefault();
                 ev.stopPropagation();
+                const slashEntryId = focused.dataset.slashEntryId;
+                if (slashEntryId && getSlashMenuSections) {
+                    const entry = getSlashMenuSections()
+                        .flatMap(section => section.entries)
+                        .find(candidate => candidate.id === slashEntryId);
+                    if (entry) {
+                        commitSlashEntry(entry);
+                    }
+                    return;
+                }
                 const id = focused.dataset.tokenId;
                 const trigger = focused.dataset.tokenTrigger as StickyComposerTriggerChar | undefined;
                 const pool = trigger
@@ -444,6 +548,10 @@ export function attachStickyComposerMentionUi(options: {
     input.addEventListener('input', onInput);
     input.addEventListener('blur', onBlur);
     input.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onViewportChange, true);
+    window.visualViewport?.addEventListener('resize', onViewportChange);
+    window.visualViewport?.addEventListener('scroll', onViewportChange);
 
     return {
         mentionBtn,
@@ -456,6 +564,10 @@ export function attachStickyComposerMentionUi(options: {
             input.removeEventListener('input', onInput);
             input.removeEventListener('blur', onBlur);
             input.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('resize', onViewportChange);
+            window.removeEventListener('scroll', onViewportChange, true);
+            window.visualViewport?.removeEventListener('resize', onViewportChange);
+            window.visualViewport?.removeEventListener('scroll', onViewportChange);
             popover.remove();
         },
     };
