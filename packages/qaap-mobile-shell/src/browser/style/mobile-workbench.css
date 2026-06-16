@@ -19013,6 +19013,12 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer > .theia-mobile-pro
   line-height: 1.45;
   letter-spacing: -0.01em;
   field-sizing: content;
+  overflow-y: auto;
+  text-overflow: unset;
+  white-space: pre-wrap;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input::placeholder {
