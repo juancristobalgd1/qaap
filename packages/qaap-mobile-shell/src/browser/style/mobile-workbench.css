@@ -19080,7 +19080,6 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer-card .theia-mobile-
   min-width: 0;
 }
 
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-controls-row .theia-mobile-projects-sticky-composer-attach,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .theia-mobile-projects-sticky-composer-send,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-composer-improve-btn,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-chat-mic-btn-sticky {
@@ -19097,13 +19096,35 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer-card .theia-mobile-
   color: var(--theia-descriptionForeground);
 }
 
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-controls-row .theia-mobile-projects-sticky-composer-attach {
+  flex: 0 0 32px;
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  opacity: 1;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-attach .codicon,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-chat-mic-btn-sticky .codicon {
   font-size: 18px;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-attach:hover,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-attach:focus-visible,
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-attach:focus-visible {
+  opacity: 1;
+  color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+  outline: none;
+}
+
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-composer-improve-btn:hover,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-composer-improve-btn:focus-visible,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-chat-mic-btn-sticky:hover,
