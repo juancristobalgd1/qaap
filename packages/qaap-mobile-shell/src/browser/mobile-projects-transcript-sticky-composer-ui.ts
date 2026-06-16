@@ -28,7 +28,6 @@ import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
-import { isTranscriptStreamStalled, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, shouldShowTranscriptStreamingActivity } from '../common/qaap-transcript-stream-status';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
     resolveChatModelContextUsageBreakdown,
@@ -564,7 +563,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const activityFiles = this.resolveComposerActivityFilesForStack(project, summary, conv);
         void this.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
         const agentWorking = this.isTranscriptStickyComposerAgentWorking();
-        const streamingActivity = conv ? this.resolveComposerStreamingActivity(conv) : undefined;
         return {
             queueEntries: this.host.transcriptFollowUpQueue.peek(summary.id),
             queueExpanded: this.host.transcriptComposerQueueExpanded,
@@ -588,13 +586,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
             filesExpanded: this.peekTranscriptComposerChangedFilesExpanded(summary.id),
             onFilesExpandedChange: expanded => { this.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
             agentWorking,
-            streamingActivity,
-            onStreamingActivityClick: () => {
-                this.host.transcriptMessagesUi.scrollTranscriptStreamingTraceIntoView({ expandTimeline: true });
-                if (project) {
-                    this.host.executionSurfaceTabsUi.selectTranscriptTab('messages', project, summary);
-                }
-            },
             onStop: () => { void this.host.onCancelConversation(project, summary); },
             onReview: () => {
                 this.host.executionSurfaceTabsUi.selectTranscriptTab('review', project, summary);
@@ -687,34 +678,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
     }
 
-    protected resolveComposerStreamingActivity(
-        conv: QaapAgentConversationDTO,
-    ): StickyComposerActivityStackOptions['streamingActivity'] {
-        if (!this.isTranscriptStickyComposerAgentWorking()) {
-            return undefined;
-        }
-        const stalled = isTranscriptStreamStalled(
-            this.host.transcriptLastStreamProgressAt,
-            conv.status === 'streaming',
-        );
-        const last = conv.messages.at(-1);
-        const segments = last?.role === 'agent' ? (last.segments ?? []) : [];
-        if (!shouldShowTranscriptStreamingActivity(segments, true, {
-            turnElapsedMs: resolveTranscriptTurnElapsedMs(resolveTranscriptTurnStartMs(conv.messages)),
-            userPromptChars: resolveLastUserPromptChars(conv.messages),
-            stalled,
-        })) {
-            return undefined;
-        }
-        const activity = this.host.transcriptMessagesUi.resolveTranscriptStreamingActivity(conv, { stalled });
-        return {
-            kind: activity.kind,
-            title: activity.title,
-            detail: activity.detail,
-            stalled,
-        };
-    }
-
     buildTranscriptComposerActivityStack(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -738,8 +701,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const activityFiles = resolvedProject
             ? this.resolveComposerActivityFilesForStack(resolvedProject, summary, conv)
             : this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        const streamTitle = conv ? (this.resolveComposerStreamingActivity(conv)?.title ?? '') : '';
-        this.lastComposerActivityFingerprint = `${this.host.transcriptFollowUpQueue.size(summary.id)}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${streamTitle}|${conv?.status ?? summary.status}`;
+        this.lastComposerActivityFingerprint = `${this.host.transcriptFollowUpQueue.size(summary.id)}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${conv?.status ?? summary.status}`;
     }
 
     refreshComposerActivityStack(): void {
@@ -798,8 +760,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const activityFiles = project
             ? this.resolveComposerActivityFilesForStack(project, summary, conv)
             : this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        const streamTitle = this.resolveComposerStreamingActivity(conv)?.title ?? '';
-        const fingerprint = `${queueSize}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${streamTitle}|${conv.status}`;
+        const fingerprint = `${queueSize}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${conv.status}`;
         if (fingerprint === this.lastComposerActivityFingerprint) {
             this.host.transcriptComposerSendRefresh?.();
             return;

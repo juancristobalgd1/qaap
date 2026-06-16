@@ -158,39 +158,5 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(stack!.querySelector('.theia-mobile-sticky-composer-activity-section.theia-mod-queue')).to.exist;
             expect(stack!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.equal(null);
         });
-
-        it('renders a live streaming row that mirrors transcript activity', () => {
-            let clicked = false;
-            const stack = renderStickyComposerActivityStack({
-                streamingActivity: {
-                    kind: 'reading',
-                    title: 'Read package.json',
-                    detail: 'Calling read_file',
-                },
-                onStreamingActivityClick: () => { clicked = true; },
-            });
-            expect(stack).to.exist;
-            const row = stack!.querySelector('.theia-mobile-sticky-composer-streaming-activity') as HTMLButtonElement;
-            expect(row).to.exist;
-            row.click();
-            expect(clicked).to.equal(true);
-        });
-
-        it('renders Stop beside the streaming row when the stream is stalled', () => {
-            let stopped = false;
-            const stack = renderStickyComposerActivityStack({
-                streamingActivity: {
-                    kind: 'stall',
-                    title: 'Taking longer than expected',
-                    stalled: true,
-                },
-                onStop: () => { stopped = true; },
-            });
-            document.body.append(stack!);
-            const stopBtn = stack!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-activity-stop');
-            expect(stopBtn).to.exist;
-            stopBtn!.click();
-            expect(stopped).to.equal(true);
-        });
     });
 });
