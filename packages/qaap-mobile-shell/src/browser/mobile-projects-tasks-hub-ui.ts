@@ -10,6 +10,7 @@ import {
     QAAP_AGENTS_HUB_QUICK_ACTIONS,
     QAAP_AGENTS_HUB_RECENT_LIMIT,
 } from '../common/qaap-agents-hub-landing';
+import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 import { type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
@@ -150,7 +151,7 @@ export class MobileProjectsTasksHubUi {
             label.className = 'theia-mobile-agent-transcript-empty-action-label';
             label.textContent = nls.localize(action.labelKey, action.labelDefault);
             btn.append(iconWrap, label);
-            btn.addEventListener('click', () => {
+            bindStickyComposerControlClick(btn, () => {
                 this.applyComposerQuickActionPrompt(nls.localize(action.promptKey, action.promptDefault));
             });
             container.append(btn);

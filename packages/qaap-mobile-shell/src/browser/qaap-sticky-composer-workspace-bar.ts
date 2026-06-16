@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 
 export interface StickyComposerWorkspaceBarView {
     readonly projectName: string;
@@ -88,7 +89,7 @@ function createWorkspacePill(options: {
     chevron.setAttribute('aria-hidden', 'true');
 
     btn.append(icon, label, chevron);
-    btn.addEventListener('click', ev => {
+    bindStickyComposerControlClick(btn, ev => {
         ev.stopPropagation();
         options.onClick(btn);
     });

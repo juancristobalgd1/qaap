@@ -34,6 +34,7 @@ import {
 import type { StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 
 export interface MobileProjectsStickyComposerColumnHost {
 stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
@@ -130,7 +131,7 @@ export class MobileProjectsStickyComposerColumnUi {
         if (contextItems.length > 0) {
             attachBtn.classList.add('theia-mod-has-context');
         }
-        attachBtn.addEventListener('click', ev => {
+        bindStickyComposerControlClick(attachBtn, ev => {
             ev.stopPropagation();
             options.onAttach(attachBtn);
         });
@@ -150,7 +151,7 @@ export class MobileProjectsStickyComposerColumnUi {
             approvalBtn.setAttribute('aria-haspopup', 'dialog');
             populateApprovalPolicyToolbarButton(approvalBtn, approvalPolicy);
             const approvalButton = approvalBtn;
-            approvalBtn.addEventListener('click', ev => {
+            bindStickyComposerControlClick(approvalBtn, ev => {
                 this.openComposerControlSheet(ev, input, () => options.onOpenApprovalPolicySheet!(approvalButton));
             });
             controlsLeftItems.push(approvalBtn);
@@ -194,7 +195,7 @@ export class MobileProjectsStickyComposerColumnUi {
             modeBtn.innerHTML = `<span class="theia-mobile-projects-sticky-composer-mode-label">${modeLabel}</span>`
                 + '<span class="codicon codicon-chevron-down" aria-hidden="true"></span>';
             const modeButton = modeBtn;
-            modeBtn.addEventListener('click', ev => {
+            bindStickyComposerControlClick(modeBtn, ev => {
                 this.openComposerControlSheet(ev, input, () => options.onOpenModeSheet!(modeButton));
             });
         }
@@ -336,7 +337,7 @@ export class MobileProjectsStickyComposerColumnUi {
         updateSend();
         options.onSendControlMounted?.(updateSend);
 
-        improveBtn.addEventListener('click', ev => {
+        bindStickyComposerControlClick(improveBtn, ev => {
             ev.preventDefault();
             ev.stopPropagation();
             if (!options.onImprovePrompt) {
@@ -427,7 +428,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 submit();
             }
         });
-        sendBtn.addEventListener('click', ev => {
+        bindStickyComposerControlClick(sendBtn, ev => {
             ev.preventDefault();
             ev.stopPropagation();
             const has = input.value.trim().length > 0;
@@ -467,12 +468,12 @@ export class MobileProjectsStickyComposerColumnUi {
             controlsLeft.append(item);
         }
         if (!options.agentLocked) {
-            agentBtn.addEventListener('click', ev => {
+            bindStickyComposerControlClick(agentBtn, ev => {
                 this.openComposerControlSheet(ev, input, () => options.onOpenAgentSheet(agentBtn));
             });
         }
         if (options.onOpenContextUsageSheet) {
-            usageBadge.addEventListener('click', ev => {
+            bindStickyComposerControlClick(usageBadge, ev => {
                 this.openComposerControlSheet(ev, input, () => options.onOpenContextUsageSheet!(usageBadge));
             });
         }

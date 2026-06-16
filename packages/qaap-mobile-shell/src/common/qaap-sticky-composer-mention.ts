@@ -23,6 +23,7 @@ import {
     renderStickyComposerRemovePluginPicker,
     type StickyComposerPluginPickerMode,
 } from './qaap-sticky-composer-plugin-picker';
+import { bindStickyComposerControlClick } from './qaap-sticky-composer-control-click';
 
 export type StickyComposerTriggerChar = '@' | '#' | '/';
 
@@ -492,15 +493,15 @@ export function attachStickyComposerMentionUi(options: {
             hint.className = 'theia-mobile-projects-sticky-composer-mention-option-hint';
             hint.textContent = token.description?.trim() || `${token.trigger}${token.insertBody.trimEnd()}`;
             btn.append(main, hint);
-            btn.addEventListener('mousedown', ev => {
-                ev.preventDefault();
-                pickingFromPopover = true;
-            });
-            btn.addEventListener('click', ev => {
+            bindStickyComposerControlClick(btn, ev => {
                 ev.preventDefault();
                 ev.stopPropagation();
                 commitToken(token);
                 pickingFromPopover = false;
+            }, {
+                onPressStart: () => {
+                    pickingFromPopover = true;
+                },
             });
             list.append(btn);
         }
@@ -568,15 +569,17 @@ export function attachStickyComposerMentionUi(options: {
         }
     };
 
-    mentionBtn.addEventListener('click', ev => {
+    bindStickyComposerControlClick(mentionBtn, ev => {
         ev.stopPropagation();
         openTrigger('@');
     });
 
-    variableBtn?.addEventListener('click', ev => {
-        ev.stopPropagation();
-        openTrigger('#');
-    });
+    if (variableBtn) {
+        bindStickyComposerControlClick(variableBtn, ev => {
+            ev.stopPropagation();
+            openTrigger('#');
+        });
+    }
 
     const onInput = (): void => {
         forcedTrigger = undefined;

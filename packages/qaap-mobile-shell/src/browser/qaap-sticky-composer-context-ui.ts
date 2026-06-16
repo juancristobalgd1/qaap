@@ -14,6 +14,7 @@ import {
     isPendingComposerContextArg,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
+import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 
 export type StickyComposerAttachmentKind = 'image' | 'file' | 'context';
 
@@ -252,7 +253,7 @@ function createContextRemoveButton(onRemove: () => void): HTMLButtonElement {
     remove.className = 'theia-mobile-projects-sticky-composer-context-remove codicon codicon-close';
     remove.title = nls.localize('qaap/mobileProjects/stickyComposerContextRemove', 'Remove from context');
     remove.setAttribute('aria-label', remove.title);
-    remove.addEventListener('click', ev => {
+    bindStickyComposerControlClick(remove, ev => {
         ev.stopPropagation();
         onRemove();
     });
@@ -527,7 +528,7 @@ export function renderStickyComposerContextStrip(options: {
                 );
 
         toggle.append(chevron, text);
-        toggle.addEventListener('click', ev => {
+        bindStickyComposerControlClick(toggle, ev => {
             ev.preventDefault();
             ev.stopPropagation();
             attachmentsExpanded = !attachmentsExpanded;
@@ -556,7 +557,7 @@ export function renderStickyComposerContextStrip(options: {
     clearAll.type = 'button';
     clearAll.className = 'theia-mobile-projects-sticky-composer-context-clear-all';
     clearAll.textContent = nls.localize('qaap/mobileProjects/stickyComposerContextClear', 'Clear all');
-    clearAll.addEventListener('click', ev => {
+    bindStickyComposerControlClick(clearAll, ev => {
         ev.stopPropagation();
         options.onClearAll();
     });

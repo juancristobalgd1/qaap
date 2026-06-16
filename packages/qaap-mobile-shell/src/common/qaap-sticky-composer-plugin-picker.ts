@@ -7,6 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import type { QaapMcpMarketplacePlugin } from './qaap-mcp-plugin-marketplace-catalog';
 import { createMcpPluginIconElement } from './qaap-mcp-plugin-icons';
 import { resolveMcpMarketplacePlugin } from './qaap-mcp-plugin-install';
+import { bindStickyComposerControlClick } from './qaap-sticky-composer-control-click';
 
 export type StickyComposerPluginPickerMode = 'add-plugin' | 'remove-plugin';
 
@@ -45,8 +46,7 @@ function appendPickerHeader(list: HTMLElement, title: string, onBack: () => void
     backBtn.title = nls.localize('qaap/mobileProjects/slashPluginPickerBack', 'Back');
     backBtn.setAttribute('aria-label', backBtn.title);
     backBtn.innerHTML = '<span class="codicon codicon-arrow-left" aria-hidden="true"></span>';
-    backBtn.addEventListener('mousedown', ev => ev.preventDefault());
-    backBtn.addEventListener('click', ev => {
+    bindStickyComposerControlClick(backBtn, ev => {
         ev.preventDefault();
         ev.stopPropagation();
         onBack();
@@ -122,14 +122,14 @@ export function renderStickyComposerAddPluginPicker(options: RenderStickyCompose
 
         btn.append(icon, text, enterHint);
 
-        btn.addEventListener('mousedown', ev => {
-            ev.preventDefault();
-            onPickStart();
-        });
-        btn.addEventListener('click', ev => {
+        bindStickyComposerControlClick(btn, ev => {
             ev.preventDefault();
             ev.stopPropagation();
             onSelectPlugin(plugin);
+        }, {
+            onPressStart: () => {
+                onPickStart();
+            },
         });
         body.append(btn);
     }
@@ -143,8 +143,7 @@ export function renderStickyComposerAddPluginPicker(options: RenderStickyCompose
     browseBtn.type = 'button';
     browseBtn.className = 'theia-mobile-projects-sticky-composer-plugin-picker-browse';
     browseBtn.textContent = nls.localize('qaap/mobileProjects/slashPluginPickerBrowse', 'Browse Marketplace');
-    browseBtn.addEventListener('mousedown', ev => ev.preventDefault());
-    browseBtn.addEventListener('click', ev => {
+    bindStickyComposerControlClick(browseBtn, ev => {
         ev.preventDefault();
         ev.stopPropagation();
         onBrowseMarketplace();
@@ -218,14 +217,14 @@ export function renderStickyComposerRemovePluginPicker(options: RenderStickyComp
         text.append(titleRow, description);
         btn.append(icon, text);
 
-        btn.addEventListener('mousedown', ev => {
-            ev.preventDefault();
-            onPickStart();
-        });
-        btn.addEventListener('click', ev => {
+        bindStickyComposerControlClick(btn, ev => {
             ev.preventDefault();
             ev.stopPropagation();
             onRemoveSlug(slug);
+        }, {
+            onPressStart: () => {
+                onPickStart();
+            },
         });
         body.append(btn);
     }

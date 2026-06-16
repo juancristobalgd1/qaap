@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { bindStickyComposerControlClick } from './qaap-sticky-composer-control-click';
 
 export const SLASH_MENU_SECTION_VISIBLE_LIMIT = 3;
 
@@ -208,14 +209,14 @@ export function renderStickyComposerSlashMenu(options: RenderStickyComposerSlash
             }
 
             btn.append(icon, text);
-            btn.addEventListener('mousedown', ev => {
-                ev.preventDefault();
-                onPickStart();
-            });
-            btn.addEventListener('click', ev => {
+            bindStickyComposerControlClick(btn, ev => {
                 ev.preventDefault();
                 ev.stopPropagation();
                 onSelectEntry(entry);
+            }, {
+                onPressStart: () => {
+                    onPickStart();
+                },
             });
             sectionEl.append(btn);
             optionCount++;
@@ -230,8 +231,7 @@ export function renderStickyComposerSlashMenu(options: RenderStickyComposerSlash
                 'Show {0} more',
                 String(hiddenCount),
             );
-            moreBtn.addEventListener('mousedown', ev => ev.preventDefault());
-            moreBtn.addEventListener('click', ev => {
+            bindStickyComposerControlClick(moreBtn, ev => {
                 ev.preventDefault();
                 ev.stopPropagation();
                 onToggleSection(section.id);

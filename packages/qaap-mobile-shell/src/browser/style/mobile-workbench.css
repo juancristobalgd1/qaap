@@ -16416,7 +16416,7 @@ body > .theia-mobile-transcript-files-menu {
   line-height: 1.2;
   text-align: left;
   cursor: pointer;
-  touch-action: pan-x;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   transition: var(--qaap-mobile-state-transition);
 }
@@ -19759,6 +19759,13 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer-card .theia-mobile-
   justify-content: space-between;
   gap: 12px;
   padding: 4px 12px 6px;
+}
+
+.theia-mobile-projects-sticky-composer-controls-row button,
+.theia-mobile-projects-sticky-composer-input-actions button,
+.theia-mobile-projects-sticky-composer-toolbar button,
+button.theia-mobile-projects-sticky-composer-context-usage-btn {
+  touch-action: manipulation;
 }
 
 .theia-mobile-projects-sticky-composer-controls-left,
