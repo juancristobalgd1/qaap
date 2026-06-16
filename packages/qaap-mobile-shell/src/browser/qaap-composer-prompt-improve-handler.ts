@@ -51,7 +51,7 @@ function notifyImproveFailure(anchor: HTMLElement, message: string): void {
 }
 
 function resetImproveButton(context: StickyComposerImprovePromptContext): void {
-    context.improveBtn.classList.remove('theia-mod-loading', 'theia-mod-stop');
+    context.improveBtn.classList.remove('theia-mod-busy');
     context.input.classList.remove('qaap-composer-prompt-morphing');
 }
 
@@ -136,7 +136,7 @@ async function runStickyComposerImprovePrompt(
     setActiveRun({ runId, promptSnapshot, animationAbort });
 
     clearComposerImproveFeedback(context.improveBtn);
-    context.improveBtn.classList.add('theia-mod-loading', 'theia-mod-stop');
+    context.improveBtn.classList.add('theia-mod-busy');
     context.refreshControls();
 
     const isRunCancelled = (): boolean => runId !== getLatestGeneration();

@@ -279,11 +279,17 @@ export class MobileProjectsStickyComposerColumnUi {
         const cancelImproveLabel = nls.localize('qaap/composer/cancelImprovePrompt', 'Cancel prompt improvement');
         improveBtn.title = improveLabel;
         improveBtn.setAttribute('aria-label', improveLabel);
-        improveBtn.innerHTML = '<span class="codicon codicon-sparkle" aria-hidden="true"></span>';
+        const improveIcon = document.createElement('span');
+        improveIcon.className = 'codicon codicon-sparkle';
+        improveIcon.setAttribute('aria-hidden', 'true');
+        const improveBloom = document.createElement('div');
+        improveBloom.className = 'qaap-border-beam-bloom';
+        improveBloom.setAttribute('aria-hidden', 'true');
+        improveBtn.append(improveIcon, improveBloom);
 
         const updateSend = (): void => {
             const has = input.value.trim().length > 0;
-            const improving = improveBtn.classList.contains('theia-mod-loading');
+            const improving = improveBtn.classList.contains('theia-mod-busy');
             const working = options.isAgentWorking?.() ?? false;
             inputPanel.classList.toggle('theia-mod-agent-working', working);
             const showStop = working && !has;
@@ -307,11 +313,9 @@ export class MobileProjectsStickyComposerColumnUi {
             if (improving) {
                 improveBtn.title = cancelImproveLabel;
                 improveBtn.setAttribute('aria-label', cancelImproveLabel);
-                improveBtn.innerHTML = '<span class="codicon codicon-debug-stop" aria-hidden="true"></span>';
             } else {
                 improveBtn.title = improveLabel;
                 improveBtn.setAttribute('aria-label', improveLabel);
-                improveBtn.innerHTML = '<span class="codicon codicon-sparkle" aria-hidden="true"></span>';
             }
         };
         input.addEventListener('input', () => {
@@ -329,7 +333,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 return;
             }
             const has = input.value.trim().length > 0;
-            if (!has && !improveBtn.classList.contains('theia-mod-loading')) {
+            if (!has && !improveBtn.classList.contains('theia-mod-busy')) {
                 return;
             }
             options.onImprovePrompt({

@@ -1,4 +1,4 @@
-/* Improve-prompt control in the sticky composer. */
+/* Improve-prompt control — layout + prompt morph; border-beam lives in mobile-workbench.css. */
 
 .qaap-composer-improve-btn {
     display: inline-flex;
@@ -14,24 +14,22 @@
     border-radius: 999px;
     background: transparent;
     color: var(--theia-descriptionForeground);
-    opacity: 0.88;
+    opacity: 0.55;
     cursor: pointer;
     user-select: none;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     transition:
         color 160ms ease,
         opacity 160ms ease,
-        transform 160ms ease,
-        box-shadow 220ms ease;
+        background 160ms ease,
+        border-color 160ms ease;
 }
 
 .qaap-composer-improve-btn:hover,
 .qaap-composer-improve-btn:focus-visible {
-    color: var(--theia-foreground);
-    opacity: 1;
     outline: none;
 }
 
@@ -42,63 +40,20 @@
 }
 
 .qaap-composer-improve-btn .codicon {
-    transition: transform 220ms ease, filter 220ms ease;
+    position: relative;
+    z-index: 4;
 }
 
-.qaap-composer-improve-btn:not(:disabled):hover .codicon,
-.qaap-composer-improve-btn:not(:disabled):focus-visible .codicon {
-    transform: rotate(-8deg) scale(1.06);
-    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--theia-focusBorder) 55%, transparent));
-}
-
-.qaap-composer-improve-btn.theia-mod-loading {
-    color: var(--theia-focusBorder);
+.qaap-composer-improve-btn.theia-mod-has-text:not(:disabled):not(.theia-mod-busy) {
     opacity: 1;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--theia-focusBorder) 35%, transparent);
+    color: var(--theia-foreground);
 }
 
-.qaap-composer-improve-btn.theia-mod-loading.theia-mod-stop {
-    color: var(--theia-errorForeground, #f48771);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--theia-errorForeground, #f48771) 35%, transparent);
-}
-
-.qaap-composer-improve-btn.theia-mod-loading.theia-mod-stop::after {
-    display: none;
-}
-
-.qaap-composer-improve-btn.theia-mod-loading.theia-mod-stop .codicon {
-    animation: none;
-    filter: none;
-    transform: none;
-}
-
-.qaap-composer-improve-btn.theia-mod-loading::after {
-    content: '';
-    position: absolute;
-    inset: -40%;
-    background: linear-gradient(
-        115deg,
-        transparent 35%,
-        color-mix(in srgb, var(--theia-focusBorder) 28%, transparent) 50%,
-        transparent 65%
-    );
-    animation: qaap-composer-improve-shimmer 1.1s linear infinite;
-    pointer-events: none;
-}
-
-.qaap-composer-improve-btn.theia-mod-loading .codicon {
-    animation: qaap-composer-improve-spin 900ms linear infinite;
-    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--theia-focusBorder) 45%, transparent));
-}
-
-@keyframes qaap-composer-improve-shimmer {
-    from { transform: translateX(-35%); }
-    to { transform: translateX(35%); }
-}
-
-@keyframes qaap-composer-improve-spin {
-    from { transform: rotate(0deg) scale(1.02); }
-    to { transform: rotate(360deg) scale(1.02); }
+.qaap-composer-improve-btn.theia-mod-busy {
+    opacity: 1;
+    border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+    background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background));
+    color: var(--theia-foreground);
 }
 
 .theia-mobile-projects-sticky-composer-input.qaap-composer-prompt-morphing {
@@ -108,36 +63,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .qaap-composer-improve-btn.theia-mod-loading::after,
-    .qaap-composer-improve-btn.theia-mod-loading .codicon,
-    .qaap-composer-improve-btn:not(:disabled):hover .codicon,
-    .qaap-composer-improve-btn:not(:disabled):focus-visible .codicon {
-        animation: none;
-        transform: none;
-        filter: none;
-    }
-
     .theia-mobile-projects-sticky-composer-input.qaap-composer-prompt-morphing {
         opacity: 1;
         filter: none;
         transition: none;
     }
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex
-.theia-mobile-projects-sticky-composer-input-actions
-.qaap-composer-improve-btn {
-    flex: 0 0 30px;
-    width: 30px;
-    min-width: 30px;
-    max-width: 30px;
-    height: 30px;
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex
-.theia-mobile-projects-sticky-composer-input-actions
-.qaap-composer-improve-btn .codicon {
-    font-size: 16px;
 }
 
 .qaap-composer-improve-feedback {
@@ -157,5 +87,5 @@
 
 .qaap-composer-improve-feedback.theia-mod-info {
     color: var(--theia-foreground);
-    background: color-mix(in srgb, var(--theia-focusBorder) 12%, transparent);
+    background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 12%, transparent);
 }
