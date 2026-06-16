@@ -232,11 +232,13 @@
  * (Message transcripts also add fade bleed; chips are the bottom anchor so skip that extra pad.)
  */
 .theia-mobile-agent-transcript-real-chat > .theia-mobile-agent-transcript.theia-mod-empty-chat {
-  scroll-padding-bottom: calc(
-    max(var(--theia-mobile-projects-fab-lift, 0px), var(--qaap-transcript-composer-clear, 0px)) + 8px
+  scroll-padding-bottom: max(
+    var(--theia-mobile-projects-fab-lift, 0px),
+    var(--qaap-transcript-composer-clear, 0px)
   );
-  padding-bottom: calc(
-    max(var(--theia-mobile-projects-fab-lift, 0px), var(--qaap-transcript-composer-clear, 0px)) + 8px
+  padding-bottom: max(
+    var(--theia-mobile-projects-fab-lift, 0px),
+    var(--qaap-transcript-composer-clear, 0px)
   );
 }
 

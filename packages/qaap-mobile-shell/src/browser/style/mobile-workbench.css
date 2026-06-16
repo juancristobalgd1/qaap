@@ -15634,12 +15634,17 @@ body > .theia-mobile-transcript-files-menu {
  */
 .theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty {
   position: sticky;
-  bottom: 8px;
+  bottom: 0;
   z-index: 7;
   margin-top: auto;
   margin-bottom: 0;
   padding-bottom: 0;
   pointer-events: none;
+}
+
+.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript.theia-mod-empty-chat)
+  .theia-mobile-projects-scroll {
+  padding-bottom: 0;
 }
 
 .theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty-actions {
@@ -18666,8 +18671,8 @@ body.theia-mobile-mod-workhub-no-bottom-chrome
   .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat > .theia-mobile-agent-transcript.theia-mod-empty-chat,
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)
   .theia-mobile-agents-hub-inline-transcript > .theia-mobile-agent-transcript.theia-mod-empty-chat {
-  padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
-  scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
+  padding-bottom: var(--theia-mobile-projects-fab-lift, 0px);
+  scroll-padding-bottom: var(--theia-mobile-projects-fab-lift, 0px);
 }
 
 .theia-mobile-agent-transcript-chat-input {
