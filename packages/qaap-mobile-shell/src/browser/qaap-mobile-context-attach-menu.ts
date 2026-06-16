@@ -13,6 +13,7 @@ import {
 import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { FILE_VARIABLE } from '@theia/ai-core/lib/browser/file-variable-contribution';
 import { IMAGE_CONTEXT_VARIABLE } from '@theia/ai-chat/lib/common/image-context-variable';
+import { TASK_CONTEXT_VARIABLE } from '@theia/ai-chat/lib/browser/task-context-variable';
 import { QuickInputService, nls } from '@theia/core';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -34,9 +35,12 @@ import { resolveComposerProjectFileAttachment } from '../common/qaap-mobile-comp
 
 const QUERY_CONTEXT = { type: 'context-variable-picker' };
 
-const WORKSPACE_CONTEXT_VARIABLE_NAMES = new Set([
+const MOBILE_CONTEXT_ATTACH_EXCLUDED_VARIABLE_NAMES = new Set([
     FILE_VARIABLE.name,
     IMAGE_CONTEXT_VARIABLE.name,
+    TASK_CONTEXT_VARIABLE.name,
+    /** Keep in sync with `@theia/ai-editor` `EDITOR_CONTEXT_VARIABLE.name`. */
+    'editorContext',
 ]);
 
 export interface MobileContextAttachServices {
@@ -512,7 +516,7 @@ async function useGenericArgumentPicker(
 }
 
 function filterMobileContextVariables(variables: readonly AIContextVariable[]): AIContextVariable[] {
-    return variables.filter(variable => !WORKSPACE_CONTEXT_VARIABLE_NAMES.has(variable.name));
+    return variables.filter(variable => !MOBILE_CONTEXT_ATTACH_EXCLUDED_VARIABLE_NAMES.has(variable.name));
 }
 
 async function resolveDeviceAttachSelection(
