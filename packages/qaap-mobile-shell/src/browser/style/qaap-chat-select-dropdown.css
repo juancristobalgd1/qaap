@@ -30,3 +30,9 @@
 #theia-app-shell.theia-mod-mobile-one-column #select-component-container .theia-select-component-dropdown {
   z-index: 10900 !important;
 }
+
+/* Portaled select menus must stack above modal dialogs (Work Hub at 13050; transcript/sidebar at 2147483015). */
+body:has(.lm-Widget.dialogOverlay:not(.hidden)) #select-component-container,
+body:has(.lm-Widget.dialogOverlay:not(.hidden)) #select-component-container .theia-select-component-dropdown {
+  z-index: 2147483020 !important;
+}
