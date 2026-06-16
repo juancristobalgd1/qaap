@@ -30,6 +30,7 @@ import {
     type MobileMcpAttachOptions,
     renderMobileMcpAttachView,
 } from './qaap-mobile-mcp-attach-menu';
+import { resolveComposerProjectFileAttachment } from '../common/qaap-mobile-composer-project-file-attach';
 
 const QUERY_CONTEXT = { type: 'context-variable-picker' };
 
@@ -48,6 +49,7 @@ type MobileContextAttachMenuSelection =
     | { kind: 'device-upload' }
     | { kind: 'device-files' }
     | { kind: 'device-images' }
+    | { kind: 'project-file' }
     | { kind: 'skill'; skillName: string }
     | { kind: 'variable'; variable: AIContextVariable };
 
@@ -59,6 +61,13 @@ let activeDismiss: (() => void) | undefined;
 
 export function dismissMobileContextAttachMenu(): void {
     activeDismiss?.();
+}
+
+function canAttachProjectFile(attachServices?: MobileContextAttachServices): boolean {
+    if (!attachServices) {
+        return false;
+    }
+    return attachServices.workspaceService.opened && attachServices.workspaceService.tryGetRoots().length > 0;
 }
 
 function positionAttachMenu(menu: HTMLElement, anchor: HTMLElement): void {
@@ -247,8 +256,9 @@ function showContextAttachMenu(
     skills: readonly { readonly name: string; readonly description: string }[],
     includeSkillsPicker: boolean,
     mcpOptions?: MobileMcpAttachOptions,
+    includeProjectFile = false,
 ): Promise<MobileContextAttachMenuSelection | undefined> {
-    if (!includeDeviceAttach && !variables.length && !includeSkillsPicker && !mcpOptions) {
+    if (!includeDeviceAttach && !variables.length && !includeSkillsPicker && !mcpOptions && !includeProjectFile) {
         return Promise.resolve(undefined);
     }
     if (activeAnchor === anchor && activeMenu) {
@@ -294,9 +304,21 @@ function showContextAttachMenu(
                     ),
                     onSelect: () => finish({ kind: 'device-upload' }),
                 }));
-                if (variables.length > 0 || includeSkillsPicker || mcpOptions) {
+                if (variables.length > 0 || includeSkillsPicker || mcpOptions || includeProjectFile) {
                     menuBody.append(createAttachMenuSeparator());
                 }
+            }
+
+            if (includeProjectFile) {
+                menuBody.append(createAttachMenuItem({
+                    iconClasses: 'codicon codicon-file',
+                    label: nls.localizeByDefault('File'),
+                    hint: nls.localize(
+                        'qaap/mobileProjects/stickyComposerAttachProjectFileHint',
+                        'Search and attach a file from this workspace',
+                    ),
+                    onSelect: () => finish({ kind: 'project-file' }),
+                }));
             }
 
             if (includeSkillsPicker) {
@@ -325,7 +347,7 @@ function showContextAttachMenu(
                 }));
             }
 
-            if ((includeSkillsPicker || mcpOptions) && variables.length > 0) {
+            if ((includeProjectFile || includeSkillsPicker || mcpOptions) && variables.length > 0) {
                 menuBody.append(createAttachMenuSeparator());
             }
 
@@ -546,6 +568,7 @@ export async function pickMobileContextVariable(
         await skillService.ready;
     }
     const skills = skillService?.getSkills() ?? [];
+    const includeProjectFile = canAttachProjectFile(attachServices);
     const selected = await showContextAttachMenu(
         anchor,
         variables,
@@ -553,6 +576,7 @@ export async function pickMobileContextVariable(
         skills,
         !!skillService,
         mcpOptions,
+        includeProjectFile,
     );
     if (!selected) {
         return [];
@@ -570,6 +594,10 @@ export async function pickMobileContextVariable(
     }
     if (selected.kind === 'device-files' || selected.kind === 'device-images') {
         return resolveDeviceAttachSelection(selected, attachServices!, handlers);
+    }
+    if (selected.kind === 'project-file') {
+        const resolved = await resolveComposerProjectFileAttachment(variableService, FILE_VARIABLE);
+        return resolved ? [resolved] : [];
     }
     const resolved = await resolveVariableArguments(selected.variable, variableService, quickInputService);
     return resolved ? [resolved] : [];
