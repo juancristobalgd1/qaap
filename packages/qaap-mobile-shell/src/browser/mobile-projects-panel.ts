@@ -379,6 +379,11 @@ export interface MobileProjectsPanelOptions {
     projectBootstrap?: QaapProjectBootstrapService;
     /** Expands `/skill-name` slash tokens into inline skill instructions before VPS submit. */
     expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
+    /** Resolves attached files/images/context chips into the outbound VPS prompt. */
+    applyComposerAttachmentsToDraft?: (
+        draft: string,
+        variables?: import('@theia/ai-core').AIVariableResolutionRequest[],
+    ) => Promise<string>;
 }
 
 type WorkHubSearchTarget =
@@ -648,6 +653,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
     protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
+    protected readonly applyComposerAttachmentsToDraft: MobileProjectsPanelOptions['applyComposerAttachmentsToDraft'];
     protected activeTasksDispose: Disposable = Disposable.NULL;
     protected conversationsDispose: Disposable = Disposable.NULL;
     protected inboxStreamDispose: Disposable = Disposable.NULL;
@@ -734,6 +740,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.openAiConfigurationSheet = options.openAiConfigurationSheet;
         this.projectBootstrap = options.projectBootstrap;
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
+        this.applyComposerAttachmentsToDraft = options.applyComposerAttachmentsToDraft;
         this.root = document.createElement('div');
         this.root.className = this.homeMode ? 'theia-mobile-projects theia-mod-home' : 'theia-mobile-projects';
         if (!this.homeMode) {

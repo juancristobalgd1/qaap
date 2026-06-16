@@ -26,6 +26,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { applyComposerAttachmentsToPrompt } from '../common/qaap-composer-attachment-prompt';
 import { expandComposerSkillSlashCommands } from '../common/qaap-composer-skill-submit';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
@@ -191,6 +192,11 @@ export class MobileProjectsPanelFactory {
                     skillService: deps.skillService,
                     fileService: deps.fileService,
                 }),
+                applyComposerAttachmentsToDraft: (draft, variables) => applyComposerAttachmentsToPrompt(
+                    draft,
+                    variables,
+                    deps.variableService,
+                ),
                 createDiffReviewWidget: () => deps.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID),
                 resolveVerifyChecks: cwd => resolveAgentVerifyChecksForCwd(cwd, deps.fileService),
                 openTranscriptFile: filePath => openTranscriptWorkspaceFile(

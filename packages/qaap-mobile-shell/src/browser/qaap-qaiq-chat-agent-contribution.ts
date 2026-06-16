@@ -10,9 +10,10 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { ChatAgent, ChatAgentLocation } from '@theia/ai-chat/lib/common/chat-agents';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ErrorChatResponseContentImpl, MarkdownChatResponseContentImpl, MutableChatRequestModel } from '@theia/ai-chat/lib/common/chat-model';
-import { Agent, AgentService } from '@theia/ai-core';
+import { Agent, AgentService, ResolvedAIContextVariable } from '@theia/ai-core';
 import { QAAP_AGENT_TASK_API_PATH } from '../common/qaap-agent-task-client';
 import { applyBackendInteractionModeToPrompt, QAAP_BACKEND_INTERACTION_MODES } from '../common/qaap-sticky-composer-mode';
+import { applyResolvedAttachmentsToPrompt } from '../common/qaap-composer-attachment-prompt';
 import { expandComposerSkillSlashCommands } from '../common/qaap-composer-skill-submit';
 import { reconcileAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
 import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
@@ -132,7 +133,11 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
             skillService: this.skillService,
             fileService: this.fileService,
         });
-        const userPrompt = applyBackendInteractionModeToPrompt(expanded, request.request.modeId);
+        const withAttachments = applyResolvedAttachmentsToPrompt(
+            expanded,
+            request.context.variables.filter(ResolvedAIContextVariable.is),
+        );
+        const userPrompt = applyBackendInteractionModeToPrompt(withAttachments, request.request.modeId);
         if (!userPrompt) {
             request.response.response.addContent(new MarkdownChatResponseContentImpl(
                 'Please provide a prompt after `@qaiq`.'
