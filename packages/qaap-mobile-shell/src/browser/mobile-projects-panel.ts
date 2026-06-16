@@ -900,6 +900,37 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet();
     }
 
+    /** After creating a repo from Work Hub, land on Agents with that project selected (not repos drill-in). */
+    protected async activateAgentsHubProject(project: MobileProjectEntry): Promise<void> {
+        this.agentsHubSelectedProjectId = project.id;
+        this.expandedId = undefined;
+        this.soloExpanded = false;
+        this.agentsHubLegacyInbox = false;
+        this.projectNavigationUi.resetProjectDetailSurfaces();
+        this.transcriptSheetUi.closeTranscriptSheet();
+        const cwd = await this.projectsService.prepareProjectCwd(project);
+        if (cwd) {
+            this.preparedCwdByProjectId.set(project.id, cwd);
+        }
+        if (this.agentsHubInlineActive) {
+            this.agentsHubInlineUi.closeAgentsHubSession();
+        }
+        if (!this.homeMode) {
+            this.render();
+            this.syncLandingHubListChrome();
+            return;
+        }
+        if (this.hubView !== 'tasks') {
+            this.selectHubLandingView('tasks', undefined, { force: true });
+            return;
+        }
+        this.renderAgentsHubExecutionShell();
+        this.stickyComposerRenderUi.renderStickyComposer();
+        this.render();
+        this.syncLandingHubListChrome();
+        this.notifyWorkspaceHubBottomBarRefresh();
+    }
+
     protected async onOpenLocalWorkspaceFolder(): Promise<void> {
         await this.projectNavigationUi.openLocalWorkspaceFolder();
     }

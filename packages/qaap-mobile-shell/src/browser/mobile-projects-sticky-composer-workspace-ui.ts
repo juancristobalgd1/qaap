@@ -38,6 +38,7 @@ render(): void;
 renderAgentsHubExecutionShell(): void;
 openProject(project: MobileProjectEntry): Promise<void>;
 onNewClick(): Promise<void>;
+activateAgentsHubProject(project: MobileProjectEntry): Promise<void>;
 stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
 stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
 }
@@ -406,13 +407,35 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         return btn;
     }
     async onCreateNewProjectFromSheet(): Promise<void> {
+        const previousIds = new Set(this.host.projects.map(entry => entry.id));
         const nextProjects = await this.host.projectsService.createGithubProject();
         if (!nextProjects) {
             return;
         }
         this.host.projects = nextProjects;
-        this.host.render();
+        const created = this.resolveNewlyCreatedProject(previousIds, nextProjects);
+        if (created) {
+            await this.host.activateAgentsHubProject(created);
+        } else {
+            this.host.render();
+        }
         this.host.delegate.onProjectsChanged?.();
+    }
+
+    protected resolveNewlyCreatedProject(
+        previousIds: ReadonlySet<string>,
+        projects: MobileProjectEntry[],
+    ): MobileProjectEntry | undefined {
+        const fresh = projects.filter(entry => !previousIds.has(entry.id));
+        if (fresh.length === 1) {
+            return fresh[0];
+        }
+        if (fresh.length === 0) {
+            return undefined;
+        }
+        return [...fresh].sort((left, right) =>
+            (right.lastActiveAt ?? '').localeCompare(left.lastActiveAt ?? ''),
+        )[0];
     }
     openComposerWorkspaceBranchSheet(
         project: MobileProjectEntry,

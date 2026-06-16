@@ -3680,7 +3680,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript.theia-mod-empty-chat {
   flex: 1 1 auto;
   min-height: 100%;
-  justify-content: flex-end;
+  justify-content: flex-start;
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -15617,9 +15617,10 @@ body > .theia-mobile-transcript-files-menu {
 .theia-mobile-agent-transcript.theia-mod-empty-chat {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex: 1 1 auto;
   min-height: 0;
+  gap: 0;
   padding-bottom: 0;
 }
 
@@ -15628,17 +15629,15 @@ body > .theia-mobile-transcript-files-menu {
 }
 
 /*
- * Empty quick actions hug the sticky composer: clearance lives on the block margin, not list
- * padding (which would stack with composer fade padding and float the chips too high).
+ * Empty quick actions: list padding-bottom clears the floating composer; margin-top: auto + sticky
+ * keeps the chip row hugging that lip (do not also margin-bottom: fab-lift — that double-counts).
  */
 .theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty {
   position: sticky;
-  bottom: 0;
+  bottom: 8px;
   z-index: 7;
   margin-top: auto;
-  margin-bottom: calc(
-    max(var(--theia-mobile-projects-fab-lift, 0px), var(--qaap-transcript-composer-clear, 0px))
-  );
+  margin-bottom: 0;
   padding-bottom: 0;
   pointer-events: none;
 }
@@ -18662,13 +18661,13 @@ body.theia-mobile-mod-workhub-no-bottom-chrome
   );
 }
 
-/* Empty chat — chips sit on composer margin; skip list padding that would lift them. */
+/* Empty chat — composer clearance only (no fade stack); chips use sticky + list padding above. */
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)
   .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat > .theia-mobile-agent-transcript.theia-mod-empty-chat,
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)
   .theia-mobile-agents-hub-inline-transcript > .theia-mobile-agent-transcript.theia-mod-empty-chat {
-  padding-bottom: 0;
-  scroll-padding-bottom: 0;
+  padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
+  scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
 }
 
 .theia-mobile-agent-transcript-chat-input {

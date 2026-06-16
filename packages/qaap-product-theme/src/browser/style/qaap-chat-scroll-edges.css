@@ -228,12 +228,16 @@
 }
 
 /*
- * Empty chat — quick actions are the bottom anchor, not a message above composer clearance.
- * Skip the extra fade/bleed padding so the chip row sits just above the sticky composer.
+ * Empty chat — reserve only measured composer height so quick actions sit just above the lip.
+ * (Message transcripts also add fade bleed; chips are the bottom anchor so skip that extra pad.)
  */
 .theia-mobile-agent-transcript-real-chat > .theia-mobile-agent-transcript.theia-mod-empty-chat {
-  scroll-padding-bottom: 0;
-  padding-bottom: 0;
+  scroll-padding-bottom: calc(
+    max(var(--theia-mobile-projects-fab-lift, 0px), var(--qaap-transcript-composer-clear, 0px)) + 8px
+  );
+  padding-bottom: calc(
+    max(var(--theia-mobile-projects-fab-lift, 0px), var(--qaap-transcript-composer-clear, 0px)) + 8px
+  );
 }
 
 .theia-mobile-agent-transcript > .theia-mobile-agent-transcript-msg:first-child {
