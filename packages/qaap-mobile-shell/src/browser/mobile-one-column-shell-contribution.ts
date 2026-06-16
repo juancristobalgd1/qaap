@@ -73,6 +73,7 @@ import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { MobileWorkHubAiConfigurationSheet } from './mobile-work-hub-ai-configuration-sheet';
 import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-service';
+import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import {
     clearMobileWorkHubBootGuard,
     installMobileWorkHubBootGuard,
@@ -223,6 +224,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     @inject(PreferenceService)
     protected readonly preferenceService: PreferenceService;
+
+    @inject(MCPFrontendService) @optional()
+    protected readonly mcpFrontendService?: MCPFrontendService;
 
     @inject(FrontendLanguageModelRegistry) @optional()
     protected readonly languageModelRegistry?: FrontendLanguageModelRegistry;
@@ -390,6 +394,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 elementInspectorService: this.elementInspectorService,
                 clipboardService: this.clipboardService,
                 preferenceService: this.preferenceService,
+                mcpFrontendService: this.mcpFrontendService,
                 languageModelRegistry: this.languageModelRegistry,
                 commitMessageAi: this.commitMessageAi,
                 composerPromptImprover: this.composerPromptImprover,

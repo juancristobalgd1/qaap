@@ -84,7 +84,11 @@ export class MobileProjectsStickyComposerColumnUi {
         getVariableOptions?: () => readonly StickyComposerTokenOption[];
         getSkillOptions?: () => readonly StickyComposerTokenOption[];
         getSlashMenuSections?: () => readonly StickyComposerSlashSection[];
-        onSlashModeSelect?: (modeId: string) => void;
+        onSlashAction?: (actionId: import('../common/qaap-sticky-composer-slash-menu').StickyComposerSlashActionId, prompt: string) => void | Promise<void>;
+        getInstalledMcpServerSlugs?: () => readonly string[];
+        onInstallMcpPlugin?: (pluginId: string) => void | Promise<void>;
+        onRemoveMcpServer?: (slug: string) => void | Promise<void>;
+        onBrowseMcpMarketplace?: () => void | Promise<void>;
         getSkillNames?: () => readonly string[];
         onContextUsageBadgeMounted?: (badge: HTMLButtonElement) => void;
         onOpenContextUsageSheet?: (anchor: HTMLButtonElement) => void;
@@ -361,7 +365,11 @@ export class MobileProjectsStickyComposerColumnUi {
                 getVariableOptions: options.getVariableOptions,
                 getSkillOptions: options.getSkillOptions,
                 getSlashMenuSections: options.getSlashMenuSections,
-                onSlashModeSelect: options.onSlashModeSelect,
+                onSlashAction: options.onSlashAction,
+                getInstalledMcpServerSlugs: options.getInstalledMcpServerSlugs,
+                onInstallMcpPlugin: options.onInstallMcpPlugin,
+                onRemoveMcpServer: options.onRemoveMcpServer,
+                onBrowseMcpMarketplace: options.onBrowseMcpMarketplace,
                 onDraftChange: value => {
                     options.setDraft(value);
                     updateSend();

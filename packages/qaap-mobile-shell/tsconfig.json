@@ -25,6 +25,9 @@
       "path": "../ai-ide"
     },
     {
+      "path": "../ai-mcp"
+    },
+    {
       "path": "../core"
     },
     {

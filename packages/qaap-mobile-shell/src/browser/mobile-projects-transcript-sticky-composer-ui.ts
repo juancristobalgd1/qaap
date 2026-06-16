@@ -48,7 +48,6 @@ import {
     reconcileComposerModeId,
     resolveComposerModeLabel,
     resolveStickyComposerModes,
-    writeStoredComposerMode,
 } from '../common/qaap-sticky-composer-mode';
 import {
     agentSupportsApprovalPolicy,
@@ -1291,17 +1290,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
             getSkillOptions: this.host.getComposerSkills
                 ? () => this.host.stickyComposerContextUi.resolveComposerSkillOptions()
                 : undefined,
-            getSlashMenuSections: () => this.host.stickyComposerContextUi.resolveComposerSlashMenuSections(
-                modes,
-                this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
-            ),
-            onSlashModeSelect: modeId => {
-                this.host.transcriptComposerModeId = modeId;
-                if (cwd) {
-                    writeStoredComposerMode(cwd, modeId);
-                }
-                this.remountTranscriptStickyComposer();
-            },
+            getSlashMenuSections: () => this.host.stickyComposerContextUi.resolveComposerSlashMenuSections(),
+            onSlashAction: (actionId, prompt) => this.host.stickyComposerRenderUi.handleStickyComposerSlashAction(actionId, prompt),
+            getInstalledMcpServerSlugs: () => this.host.stickyComposerRenderUi.resolveInstalledMcpServerSlugs(),
+            onInstallMcpPlugin: pluginId => this.host.stickyComposerRenderUi.handleInstallMcpPlugin(pluginId),
+            onRemoveMcpServer: slug => this.host.stickyComposerRenderUi.handleRemoveMcpServer(slug),
+            onBrowseMcpMarketplace: () => this.host.stickyComposerRenderUi.handleBrowseMcpMarketplace(),
             getSkillNames: this.host.getComposerSkills
                 ? () => this.host.getComposerSkills!().map(skill => skill.name)
                 : undefined,

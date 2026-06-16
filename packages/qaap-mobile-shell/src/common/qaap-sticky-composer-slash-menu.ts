@@ -7,14 +7,16 @@ import { nls } from '@theia/core/lib/common/nls';
 
 export const SLASH_MENU_SECTION_VISIBLE_LIMIT = 3;
 
-export type StickyComposerSlashEntryKind = 'skill' | 'command' | 'mode';
+export type StickyComposerSlashActionId = 'fork' | 'new' | 'add-plugin' | 'remove-plugin';
+
+export type StickyComposerSlashEntryKind = 'skill' | 'action' | 'tool';
 
 export interface StickyComposerSlashEntry {
     readonly id: string;
     readonly kind: StickyComposerSlashEntryKind;
     readonly label: string;
     readonly insertBody?: string;
-    readonly modeId?: string;
+    readonly actionId?: StickyComposerSlashActionId;
     readonly description?: string;
 }
 
@@ -26,11 +28,35 @@ export interface StickyComposerSlashSection {
 
 export function buildStickyComposerSlashSections(input: {
     readonly skills: readonly { readonly name: string; readonly description?: string }[];
-    readonly commands: readonly { readonly commandName?: string; readonly commandDescription?: string }[];
-    readonly modes: readonly { readonly id: string; readonly name: string }[];
+    readonly canFork?: boolean;
+    readonly canManagePlugins?: boolean;
 }): StickyComposerSlashSection[] {
-    const skillNames = new Set(input.skills.map(skill => skill.name));
     const sections: StickyComposerSlashSection[] = [];
+
+    const actionEntries: StickyComposerSlashEntry[] = [];
+    if (input.canFork !== false) {
+        actionEntries.push({
+            id: 'action:fork',
+            kind: 'action',
+            label: 'fork',
+            actionId: 'fork',
+        });
+    }
+    actionEntries.push({
+        id: 'action:new',
+        kind: 'action',
+        label: 'new',
+        actionId: 'new',
+        description: nls.localize(
+            'qaap/mobileProjects/slashActionNewDescription',
+            'Start a new agent with the current prompt',
+        ),
+    });
+    sections.push({
+        id: 'actions',
+        title: nls.localize('qaap/mobileProjects/slashMenuActions', 'Actions'),
+        entries: actionEntries,
+    });
 
     if (input.skills.length > 0) {
         sections.push({
@@ -46,38 +72,24 @@ export function buildStickyComposerSlashSections(input: {
         });
     }
 
-    const commandEntries: StickyComposerSlashEntry[] = [];
-    for (const command of input.commands) {
-        const commandName = command.commandName?.trim();
-        if (!commandName || skillNames.has(commandName)) {
-            continue;
-        }
-        commandEntries.push({
-            id: `command:${commandName}`,
-            kind: 'command',
-            label: commandName,
-            insertBody: `${commandName} `,
-            description: command.commandDescription,
-        });
-    }
-    if (commandEntries.length > 0) {
+    if (input.canManagePlugins !== false) {
         sections.push({
-            id: 'commands',
-            title: nls.localize('qaap/mobileProjects/slashMenuCommands', 'Commands'),
-            entries: commandEntries,
-        });
-    }
-
-    if (input.modes.length > 0) {
-        sections.push({
-            id: 'modes',
-            title: nls.localize('qaap/mobileProjects/slashMenuModes', 'Modes'),
-            entries: input.modes.map(mode => ({
-                id: `mode:${mode.id}`,
-                kind: 'mode',
-                label: mode.name,
-                modeId: mode.id,
-            })),
+            id: 'tools',
+            title: nls.localize('qaap/mobileProjects/slashMenuTools', 'Tools'),
+            entries: [
+                {
+                    id: 'tool:add-plugin',
+                    kind: 'tool',
+                    label: 'add-plugin',
+                    actionId: 'add-plugin',
+                },
+                {
+                    id: 'tool:remove-plugin',
+                    kind: 'tool',
+                    label: 'remove-plugin',
+                    actionId: 'remove-plugin',
+                },
+            ],
         });
     }
 
@@ -106,18 +118,25 @@ export function filterStickyComposerSlashSections(
 
 function slashEntryIconClass(entry: StickyComposerSlashEntry): string {
     if (entry.kind === 'skill') {
-        return 'codicon codicon-sparkle';
+        return 'codicon codicon-book';
     }
-    if (entry.kind === 'command') {
-        return 'codicon codicon-zap';
+    if (entry.actionId === 'fork') {
+        return 'codicon codicon-repo-forked';
     }
-    if (entry.modeId === 'ask') {
-        return 'codicon codicon-comment-discussion theia-mod-slash-mode-ask';
+    if (entry.actionId === 'new') {
+        return 'codicon codicon-add';
     }
-    if (entry.modeId === 'plan') {
-        return 'codicon codicon-list-tree theia-mod-slash-mode-plan';
+    if (entry.actionId === 'add-plugin') {
+        return 'codicon codicon-plug';
     }
-    return 'codicon codicon-run-all theia-mod-slash-mode-agent';
+    if (entry.actionId === 'remove-plugin') {
+        return 'codicon codicon-trash';
+    }
+    return 'codicon codicon-tools';
+}
+
+export function resolveStickyComposerSlashEntryIcon(entry: StickyComposerSlashEntry): string {
+    return slashEntryIconClass(entry);
 }
 
 export interface RenderStickyComposerSlashMenuOptions {
@@ -162,6 +181,9 @@ export function renderStickyComposerSlashMenu(options: RenderStickyComposerSlash
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'theia-mobile-projects-sticky-composer-slash-option';
+            if (entry.description) {
+                btn.classList.add('theia-mod-has-description');
+            }
             btn.setAttribute('role', 'option');
             btn.dataset.slashEntryId = entry.id;
             btn.dataset.slashEntryKind = entry.kind;
@@ -170,11 +192,22 @@ export function renderStickyComposerSlashMenu(options: RenderStickyComposerSlash
             icon.className = `${slashEntryIconClass(entry)} theia-mobile-projects-sticky-composer-slash-option-icon`;
             icon.setAttribute('aria-hidden', 'true');
 
+            const text = document.createElement('span');
+            text.className = 'theia-mobile-projects-sticky-composer-slash-option-text';
+
             const label = document.createElement('span');
             label.className = 'theia-mobile-projects-sticky-composer-slash-option-label';
             label.textContent = entry.label;
+            text.append(label);
 
-            btn.append(icon, label);
+            if (entry.description) {
+                const hint = document.createElement('span');
+                hint.className = 'theia-mobile-projects-sticky-composer-slash-option-hint';
+                hint.textContent = entry.description;
+                text.append(hint);
+            }
+
+            btn.append(icon, text);
             btn.addEventListener('mousedown', ev => {
                 ev.preventDefault();
                 onPickStart();

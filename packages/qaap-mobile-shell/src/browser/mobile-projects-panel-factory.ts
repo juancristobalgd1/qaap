@@ -8,6 +8,7 @@ import { LabelProvider } from '@theia/core/lib/browser';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
+import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { QuickInputService } from '@theia/core';
 import { AIVariableService, FrontendLanguageModelRegistry, PromptService } from '@theia/ai-core';
 import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
@@ -43,6 +44,7 @@ import { resolveAgentVerifyChecksForCwd } from './qaap-agent-verify-checks-resol
 import { openTranscriptWorkspaceFile, createTranscriptFilesViewServices } from './qaap-transcript-file-open';
 import { createTranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
 import { pickMobileContextVariable } from './qaap-mobile-context-attach-menu';
+import { QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB } from '../common/mobile-work-hub-catalog';
 import { resolveStickyComposerAttachmentPreview } from './qaap-sticky-composer-attachment-preview';
 import { resolveStickyComposerContextChip } from './qaap-sticky-composer-context-ui';
 
@@ -89,6 +91,7 @@ export interface MobileProjectsPanelFactoryDeps {
     elementInspectorService: ElementInspectorService;
     clipboardService: ClipboardService;
     preferenceService: PreferenceService;
+    mcpFrontendService?: MCPFrontendService;
     languageModelRegistry?: FrontendLanguageModelRegistry;
     commitMessageAi?: QaapCommitMessageAi;
     composerPromptImprover?: QaapComposerPromptImprover;
@@ -167,6 +170,13 @@ export class MobileProjectsPanelFactory {
                     },
                     handlers,
                     deps.skillService,
+                    {
+                        preferenceService: deps.preferenceService,
+                        mcpFrontendService: deps.mcpFrontendService,
+                        openMcpSettings: () => delegate.openWorkHubAiConfigurationSheet(
+                            QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB,
+                        ),
+                    },
                 ),
                 formatContextChip: item => resolveStickyComposerContextChip(item, deps.labelProvider),
                 resolveAttachmentPreview: item => resolveStickyComposerAttachmentPreview(
@@ -208,6 +218,7 @@ export class MobileProjectsPanelFactory {
                 },
                 clipboard: deps.clipboardService,
                 readPreference: key => deps.preferenceService.get(key),
+                preferenceService: deps.preferenceService,
                 getRegisteredLanguageModels: deps.languageModelRegistry
                     ? () => deps.languageModelRegistry!.getLanguageModels()
                     : undefined,

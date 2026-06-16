@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatModel, ChatService } from '@theia/ai-chat';
@@ -17,9 +18,7 @@ import {
     reconcileComposerModeId,
     resolveComposerModeLabel,
     resolveStickyComposerModes,
-    writeStoredComposerMode,
 } from '../common/qaap-sticky-composer-mode';
-import type { PromptFragment } from '@theia/ai-core';
 import {
     agentSupportsApprovalPolicy,
     reconcileAgentApprovalPolicyId,
@@ -58,6 +57,17 @@ import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-trans
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
 import type { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
+import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import {
+    executeStickyComposerSlashAction,
+    openComposerMcpConfigurationSheet,
+} from '../common/qaap-sticky-composer-slash-actions';
+import type { StickyComposerSlashActionId } from '../common/qaap-sticky-composer-slash-menu';
+import {
+    installMcpMarketplacePlugin,
+    readInstalledMcpServerSlugs,
+    removeMcpServer,
+} from '../common/qaap-mcp-plugin-install';
 
 export interface MobileProjectsStickyComposerRenderHost {
 root: HTMLElement;
@@ -69,10 +79,19 @@ filter: MobileProjectFilter;
 homeMode: boolean;
 hubView: import('./mobile-projects-types').MobileProjectsHubView;
 agentsHubShellActive: boolean;
+agentsHubInlineActive: boolean;
 agentsHubInlineChatHost: HTMLElement | undefined;
 transcriptChatHost: HTMLElement | undefined;
+transcriptOpenProject: MobileProjectEntry | undefined;
+transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
+transcriptComposerDraft: string;
+openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
+closeAgentsHubSession(): void;
+onForkConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
 transcriptComposerMountKey: string | undefined;
 transcriptComposerHost: HTMLElement | undefined;
+transcriptComposerProject: MobileProjectEntry | undefined;
+transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
 stickyComposerContext: StickyComposerContextEntry[];
 stickyComposerFilesExpanded: boolean;
 stickyComposerDraft: string;
@@ -89,9 +108,9 @@ chatServiceSessionSummariesByProjectId: Map<string, QaapAgentConversationSummary
 chatAgentService?: ChatAgentService;
 conversations?: MobileProjectsConversations;
             readPreference?: (key: string) => unknown;
+            preferenceService?: PreferenceService;
 getComposerVariables?: unknown;
 getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
-getComposerSlashCommands?: (agentId?: string) => readonly PromptFragment[];
 hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
 resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
 resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
@@ -114,6 +133,79 @@ composerPromptImprover?: QaapComposerPromptImprover;
 
 export class MobileProjectsStickyComposerRenderUi {
     constructor(protected readonly host: MobileProjectsStickyComposerRenderHost) { }
+
+    handleStickyComposerSlashAction(actionId: StickyComposerSlashActionId, prompt: string): Promise<void> {
+        return executeStickyComposerSlashAction(actionId, prompt, {
+            forkConversation: async () => {
+                const project = this.host.transcriptOpenProject
+                    ?? this.host.transcriptComposerProject
+                    ?? this.host.resolveAgentsHubShellProject();
+                const summary = this.host.transcriptOpenSummary ?? this.host.transcriptComposerSummary;
+                if (project && summary) {
+                    await this.host.onForkConversation(project, summary);
+                }
+            },
+            startNewAgentWithPrompt: nextPrompt => {
+                if (
+                    this.host.agentsHubInlineActive
+                    && this.host.transcriptOpenSummary
+                    && !isAgentsHubIdleConversationSummary(this.host.transcriptOpenSummary)
+                ) {
+                    this.host.closeAgentsHubSession();
+                    this.host.transcriptComposerDraft = nextPrompt;
+                    this.renderStickyComposer();
+                    return;
+                }
+                if (
+                    this.host.transcriptComposerSummary
+                    && !isAgentsHubIdleConversationSummary(this.host.transcriptComposerSummary)
+                ) {
+                    this.host.transcriptComposerDraft = nextPrompt;
+                    this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+                    return;
+                }
+                this.host.stickyComposerDraft = nextPrompt;
+                this.renderStickyComposer();
+            },
+        });
+    }
+
+    resolveInstalledMcpServerSlugs(): readonly string[] {
+        if (!this.host.preferenceService) {
+            return [];
+        }
+        return [...readInstalledMcpServerSlugs(this.host.preferenceService)];
+    }
+
+    async handleInstallMcpPlugin(pluginId: string): Promise<void> {
+        if (!this.host.preferenceService) {
+            return;
+        }
+        const plugin = await installMcpMarketplacePlugin(pluginId, this.host.preferenceService);
+        if (plugin) {
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/mcpPluginInstalled', 'Added {0}', plugin.name),
+                { duration: 2400 },
+            );
+        }
+    }
+
+    async handleRemoveMcpServer(slug: string): Promise<void> {
+        if (!this.host.preferenceService) {
+            return;
+        }
+        const removed = await removeMcpServer(slug, this.host.preferenceService);
+        if (removed) {
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/mcpPluginRemoved', 'Removed {0}', slug),
+                { duration: 2400 },
+            );
+        }
+    }
+
+    handleBrowseMcpMarketplace(): Promise<void> | undefined {
+        return openComposerMcpConfigurationSheet(this.host.openAiConfigurationSheet);
+    }
 
     resolveProjectTheiaChatModel(project: MobileProjectEntry): ChatModel | undefined {
         if (!this.host.chatService) {
@@ -344,17 +436,12 @@ export class MobileProjectsStickyComposerRenderUi {
             getSkillOptions: this.host.getComposerSkills
                 ? () => this.host.stickyComposerContextUi.resolveComposerSkillOptions()
                 : undefined,
-            getSlashMenuSections: () => this.host.stickyComposerContextUi.resolveComposerSlashMenuSections(
-                modes,
-                this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
-            ),
-            onSlashModeSelect: modeId => {
-                this.host.stickyComposerModeId = modeId;
-                if (cwd) {
-                    writeStoredComposerMode(cwd, modeId);
-                }
-                this.renderStickyComposer();
-            },
+            getSlashMenuSections: () => this.host.stickyComposerContextUi.resolveComposerSlashMenuSections(),
+            onSlashAction: (actionId, prompt) => this.handleStickyComposerSlashAction(actionId, prompt),
+            getInstalledMcpServerSlugs: () => this.resolveInstalledMcpServerSlugs(),
+            onInstallMcpPlugin: pluginId => this.handleInstallMcpPlugin(pluginId),
+            onRemoveMcpServer: slug => this.handleRemoveMcpServer(slug),
+            onBrowseMcpMarketplace: () => this.handleBrowseMcpMarketplace(),
             getSkillNames: this.host.getComposerSkills
                 ? () => this.host.getComposerSkills!().map(skill => skill.name)
                 : undefined,

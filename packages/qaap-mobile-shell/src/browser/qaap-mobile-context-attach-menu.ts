@@ -26,6 +26,10 @@ import {
     type MobileComposerAttachHandlers,
 } from './qaap-mobile-composer-device-attach';
 import { MobileSnackbar } from './mobile-snackbar';
+import {
+    type MobileMcpAttachOptions,
+    renderMobileMcpAttachView,
+} from './qaap-mobile-mcp-attach-menu';
 
 const QUERY_CONTEXT = { type: 'context-variable-picker' };
 
@@ -242,8 +246,9 @@ function showContextAttachMenu(
     includeDeviceAttach: boolean,
     skills: readonly { readonly name: string; readonly description: string }[],
     includeSkillsPicker: boolean,
+    mcpOptions?: MobileMcpAttachOptions,
 ): Promise<MobileContextAttachMenuSelection | undefined> {
-    if (!includeDeviceAttach && !variables.length && !includeSkillsPicker) {
+    if (!includeDeviceAttach && !variables.length && !includeSkillsPicker && !mcpOptions) {
         return Promise.resolve(undefined);
     }
     if (activeAnchor === anchor && activeMenu) {
@@ -268,10 +273,12 @@ function showContextAttachMenu(
         };
 
         let showingSkills = false;
+        let showingMcp = false;
 
         const renderMainView = (): void => {
             showingSkills = false;
-            menu.classList.remove('theia-mod-skills-view');
+            showingMcp = false;
+            menu.classList.remove('theia-mod-skills-view', 'theia-mod-mcp-view');
             menuBody.replaceChildren();
 
             if (includeDeviceAttach) {
@@ -287,7 +294,7 @@ function showContextAttachMenu(
                     ),
                     onSelect: () => finish({ kind: 'device-upload' }),
                 }));
-                if (variables.length > 0 || includeSkillsPicker) {
+                if (variables.length > 0 || includeSkillsPicker || mcpOptions) {
                     menuBody.append(createAttachMenuSeparator());
                 }
             }
@@ -303,9 +310,23 @@ function showContextAttachMenu(
                     submenu: true,
                     onSelect: () => renderSkillsView(),
                 }));
-                if (variables.length > 0) {
-                    menuBody.append(createAttachMenuSeparator());
-                }
+            }
+
+            if (mcpOptions) {
+                menuBody.append(createAttachMenuItem({
+                    iconClasses: 'codicon codicon-plug',
+                    label: nls.localize('qaap/mobileProjects/stickyComposerAttachMcpServers', 'MCP Servers'),
+                    hint: nls.localize(
+                        'qaap/mobileProjects/stickyComposerAttachMcpServersHint',
+                        'Enable or disable MCP plugins for this agent',
+                    ),
+                    submenu: true,
+                    onSelect: () => renderMcpView(),
+                }));
+            }
+
+            if ((includeSkillsPicker || mcpOptions) && variables.length > 0) {
+                menuBody.append(createAttachMenuSeparator());
             }
 
             for (const variable of variables) {
@@ -319,8 +340,24 @@ function showContextAttachMenu(
             menu.focus();
         };
 
+        const renderMcpView = (): void => {
+            if (!mcpOptions) {
+                return;
+            }
+            showingMcp = true;
+            menu.classList.add('theia-mod-mcp-view');
+            renderMobileMcpAttachView({
+                menuBody,
+                mcpOptions,
+                onBack: () => renderMainView(),
+                onCloseMenu: () => finish(undefined),
+            });
+            menu.focus();
+        };
+
         const renderSkillsView = (): void => {
             showingSkills = true;
+            showingMcp = false;
             menu.classList.add('theia-mod-skills-view');
             menuBody.replaceChildren();
             menuBody.append(createAttachMenuBackButton(
@@ -366,6 +403,10 @@ function showContextAttachMenu(
         const onKeyDown = (event: KeyboardEvent): void => {
             if (event.key === 'Escape') {
                 event.preventDefault();
+                if (showingMcp) {
+                    renderMainView();
+                    return;
+                }
                 if (showingSkills) {
                     renderMainView();
                     return;
@@ -498,6 +539,7 @@ export async function pickMobileContextVariable(
     attachServices?: MobileContextAttachServices,
     handlers?: MobileComposerAttachHandlers,
     skillService?: SkillService,
+    mcpOptions?: MobileMcpAttachOptions,
 ): Promise<AIVariableResolutionRequest[]> {
     const variables = filterMobileContextVariables(variableService.getContextVariables());
     if (skillService) {
@@ -510,6 +552,7 @@ export async function pickMobileContextVariable(
         !!attachServices,
         skills,
         !!skillService,
+        mcpOptions,
     );
     if (!selected) {
         return [];

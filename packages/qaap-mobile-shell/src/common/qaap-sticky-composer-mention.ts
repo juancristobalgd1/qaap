@@ -8,11 +8,21 @@ import { appendAgentBrandIcon } from './qaap-agent-branding';
 import { QaapAgentTaskAgentOption, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 import {
     filterStickyComposerSlashSections,
+    type StickyComposerSlashActionId,
     type StickyComposerSlashEntry,
     type StickyComposerSlashSection,
     removeActiveSlashToken,
     renderStickyComposerSlashMenu,
 } from './qaap-sticky-composer-slash-menu';
+import {
+    filterMcpMarketplacePlugins,
+    QAAP_MCP_MARKETPLACE_PLUGINS,
+} from './qaap-mcp-plugin-marketplace-catalog';
+import {
+    renderStickyComposerAddPluginPicker,
+    renderStickyComposerRemovePluginPicker,
+    type StickyComposerPluginPickerMode,
+} from './qaap-sticky-composer-plugin-picker';
 
 export type StickyComposerTriggerChar = '@' | '#' | '/';
 
@@ -183,7 +193,11 @@ export function attachStickyComposerMentionUi(options: {
     getVariableOptions?: () => readonly StickyComposerTokenOption[];
     getSkillOptions?: () => readonly StickyComposerTokenOption[];
     getSlashMenuSections?: () => readonly StickyComposerSlashSection[];
-    onSlashModeSelect?: (modeId: string) => void;
+    onSlashAction?: (actionId: StickyComposerSlashActionId, prompt: string) => void | Promise<void>;
+    getInstalledMcpServerSlugs?: () => readonly string[];
+    onInstallMcpPlugin?: (pluginId: string) => void | Promise<void>;
+    onRemoveMcpServer?: (slug: string) => void | Promise<void>;
+    onBrowseMcpMarketplace?: () => void | Promise<void>;
     onDraftChange: (value: string) => void;
     afterInputChange?: () => void;
     mentionButtonTitle: string;
@@ -196,7 +210,11 @@ export function attachStickyComposerMentionUi(options: {
         getVariableOptions,
         getSkillOptions,
         getSlashMenuSections,
-        onSlashModeSelect,
+        onSlashAction,
+        getInstalledMcpServerSlugs,
+        onInstallMcpPlugin,
+        onRemoveMcpServer,
+        onBrowseMcpMarketplace,
         onDraftChange,
         afterInputChange,
         mentionButtonTitle,
@@ -240,6 +258,7 @@ export function attachStickyComposerMentionUi(options: {
     let pickingFromPopover = false;
     let forcedTrigger: StickyComposerTriggerChar | undefined;
     const expandedSlashSections = new Set<string>();
+    let slashPluginPanel: StickyComposerPluginPickerMode | undefined;
 
     const positionPopover = (): void => {
         const rect = input.getBoundingClientRect();
@@ -279,10 +298,11 @@ export function attachStickyComposerMentionUi(options: {
     const hide = (): void => {
         clearDismissTimer();
         popover.hidden = true;
-        popover.classList.remove('theia-mod-slash-menu');
+        popover.classList.remove('theia-mod-slash-menu', 'theia-mod-plugin-picker');
         inputWrap.classList.remove('theia-mod-mention-popover-open');
         forcedTrigger = undefined;
         expandedSlashSections.clear();
+        slashPluginPanel = undefined;
         list.className = 'theia-mobile-projects-sticky-composer-mention-list';
         setExpanded(false);
     };
@@ -298,29 +318,109 @@ export function attachStickyComposerMentionUi(options: {
     };
 
     const commitSlashEntry = (entry: StickyComposerSlashEntry): void => {
-        if (entry.kind === 'mode' && entry.modeId) {
-            const caret = input.selectionStart ?? input.value.length;
-            const stripped = removeActiveSlashToken(input.value, caret);
-            input.value = stripped.value;
-            onDraftChange(stripped.value);
-            input.setSelectionRange(stripped.caret, stripped.caret);
-            onSlashModeSelect?.(entry.modeId);
-            afterInputChange?.();
-            hide();
+        const caret = input.selectionStart ?? input.value.length;
+        const stripped = removeActiveSlashToken(input.value, caret);
+        if (entry.kind === 'skill') {
+            const token: StickyComposerTokenOption = {
+                id: entry.label,
+                label: entry.label,
+                trigger: '/',
+                insertBody: entry.insertBody ?? `${entry.label} `,
+                description: entry.description,
+            };
+            commitToken(token);
+            return;
+        }
+        if (entry.actionId === 'add-plugin' || entry.actionId === 'remove-plugin') {
+            slashPluginPanel = entry.actionId;
+            renderList();
+            positionPopover();
+            popover.hidden = false;
+            inputWrap.classList.add('theia-mod-mention-popover-open');
+            setExpanded(true);
             input.focus();
             return;
         }
-        const token: StickyComposerTokenOption = {
-            id: entry.label,
-            label: entry.label,
-            trigger: '/',
-            insertBody: entry.insertBody ?? `${entry.label} `,
-            description: entry.description,
-        };
-        commitToken(token);
+        if (entry.actionId) {
+            input.value = stripped.value;
+            onDraftChange(stripped.value);
+            input.setSelectionRange(stripped.caret, stripped.caret);
+            afterInputChange?.();
+            hide();
+            void onSlashAction?.(entry.actionId, stripped.value.trim());
+            input.focus();
+            return;
+        }
+        hide();
+        input.focus();
+    };
+
+    const finishPluginPicker = (): void => {
+        const caret = input.selectionStart ?? input.value.length;
+        const stripped = removeActiveSlashToken(input.value, caret);
+        input.value = stripped.value;
+        onDraftChange(stripped.value);
+        input.setSelectionRange(stripped.caret, stripped.caret);
+        afterInputChange?.();
+        hide();
+        input.focus();
+    };
+
+    const renderPluginPicker = (query: string): number => {
+        popover.classList.add('theia-mod-slash-menu', 'theia-mod-plugin-picker');
+        if (slashPluginPanel === 'add-plugin') {
+            const installed = new Set(getInstalledMcpServerSlugs?.() ?? []);
+            const plugins = filterMcpMarketplacePlugins(QAAP_MCP_MARKETPLACE_PLUGINS, query, installed);
+            return renderStickyComposerAddPluginPicker({
+                list,
+                plugins,
+                onBack: () => {
+                    slashPluginPanel = undefined;
+                    renderList();
+                    positionPopover();
+                },
+                onSelectPlugin: plugin => {
+                    pickingFromPopover = true;
+                    void Promise.resolve(onInstallMcpPlugin?.(plugin.id)).finally(() => {
+                        pickingFromPopover = false;
+                        finishPluginPicker();
+                    });
+                },
+                onBrowseMarketplace: () => {
+                    pickingFromPopover = true;
+                    void Promise.resolve(onBrowseMcpMarketplace?.()).finally(() => {
+                        pickingFromPopover = false;
+                        finishPluginPicker();
+                    });
+                },
+                onPickStart: () => { pickingFromPopover = true; },
+            });
+        }
+        if (slashPluginPanel === 'remove-plugin') {
+            const installed = [...(getInstalledMcpServerSlugs?.() ?? [])].sort();
+            return renderStickyComposerRemovePluginPicker({
+                list,
+                installedSlugs: installed,
+                onBack: () => {
+                    slashPluginPanel = undefined;
+                    renderList();
+                    positionPopover();
+                },
+                onRemoveSlug: slug => {
+                    pickingFromPopover = true;
+                    void Promise.resolve(onRemoveMcpServer?.(slug)).finally(() => {
+                        pickingFromPopover = false;
+                        finishPluginPicker();
+                    });
+                },
+                onPickStart: () => { pickingFromPopover = true; },
+            });
+        }
+        return 0;
     };
 
     const renderSlashMenu = (query: string): number => {
+        popover.classList.remove('theia-mod-plugin-picker');
         popover.classList.add('theia-mod-slash-menu');
         const sections = filterStickyComposerSlashSections(getSlashMenuSections?.() ?? [], query);
         return renderStickyComposerSlashMenu({
@@ -338,6 +438,13 @@ export function attachStickyComposerMentionUi(options: {
 
     const renderList = (): void => {
         list.replaceChildren();
+        if (slashPluginPanel) {
+            const caret = input.selectionStart ?? input.value.length;
+            const active = findActiveComposerToken(input.value, caret);
+            const query = active?.trigger === '/' ? active.query : '';
+            renderPluginPicker(query);
+            return;
+        }
         const caret = input.selectionStart ?? input.value.length;
         let active = findActiveComposerToken(input.value, caret);
         if (forcedTrigger) {
@@ -474,9 +581,11 @@ export function attachStickyComposerMentionUi(options: {
     const onInput = (): void => {
         forcedTrigger = undefined;
         const caret = input.selectionStart ?? input.value.length;
-        if (findActiveComposerToken(input.value, caret)) {
+        const active = findActiveComposerToken(input.value, caret);
+        if (active || slashPluginPanel) {
             show();
         } else {
+            slashPluginPanel = undefined;
             hide();
         }
     };
@@ -494,6 +603,12 @@ export function attachStickyComposerMentionUi(options: {
         if (ev.key === 'Escape' && !popover.hidden) {
             ev.preventDefault();
             ev.stopPropagation();
+            if (slashPluginPanel) {
+                slashPluginPanel = undefined;
+                renderList();
+                positionPopover();
+                return;
+            }
             hide();
             return;
         }
@@ -502,7 +617,9 @@ export function attachStickyComposerMentionUi(options: {
         }
         const buttons = [
             ...list.querySelectorAll<HTMLButtonElement>(
-                '.theia-mobile-projects-sticky-composer-mention-option, .theia-mobile-projects-sticky-composer-slash-option',
+                '.theia-mobile-projects-sticky-composer-mention-option, '
+                + '.theia-mobile-projects-sticky-composer-slash-option, '
+                + '.theia-mobile-projects-sticky-composer-plugin-picker-option',
             ),
         ];
         if (!buttons.length) {
@@ -522,6 +639,16 @@ export function attachStickyComposerMentionUi(options: {
             if (focused) {
                 ev.preventDefault();
                 ev.stopPropagation();
+                const pluginId = focused.dataset.pluginId;
+                if (pluginId) {
+                    focused.click();
+                    return;
+                }
+                const pluginSlug = focused.dataset.pluginSlug;
+                if (pluginSlug) {
+                    focused.click();
+                    return;
+                }
                 const slashEntryId = focused.dataset.slashEntryId;
                 if (slashEntryId && getSlashMenuSections) {
                     const entry = getSlashMenuSections()

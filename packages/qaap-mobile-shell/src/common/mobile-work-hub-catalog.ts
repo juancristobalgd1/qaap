@@ -9,6 +9,8 @@ export const QAAP_WORK_HUB_AI_FEATURES_COMMAND = 'ai-chat-ui.show-settings';
 export const QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND = 'aiConfiguration:open';
 /** Default tab when opening AI Configuration from the Work Hub account menu. */
 export const QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB = 'ai-agent-configuration-container-widget';
+/** MCP servers tab — used by composer slash Tools (add-plugin / remove-plugin). */
+export const QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB = 'ai-mcp-configuration-container-widget';
 
 export type WorkHubCatalogHubTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review' | 'diff';
 

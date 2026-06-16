@@ -12,6 +12,7 @@ import * as markdownit from '@theia/core/shared/markdown-it';
 import * as markdownitemoji from '@theia/core/shared/markdown-it-emoji';
 import type { QuickPick } from '@theia/core/lib/common/quick-pick-service';
 import { QuickInputService, QuickPickItem } from '@theia/core/lib/browser';
+import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { AIVariable, AIVariableResolutionRequest, GenericCapabilitySelections } from '@theia/ai-core';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatAgent, ChatService, ChatSession } from '@theia/ai-chat';
@@ -360,6 +361,8 @@ export interface MobileProjectsPanelOptions {
     clipboard?: ClipboardService;
     /** Reads AI provider settings (API keys + model lists) for the QAIQ model submenu. */
     readPreference?: (key: string) => unknown;
+    /** User preferences — MCP plugin install/remove from the composer slash menu. */
+    preferenceService?: PreferenceService;
     /** Registered BYOK language models from AI Configuration (same source as the agents UI). */
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
     /** Monaco quick input — Work Hub search opens as a top overlay instead of an inline field. */
@@ -636,6 +639,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly previewInspectorDeps: MobileProjectsPanelOptions['previewInspectorDeps'];
     protected readonly previewClipboard: MobileProjectsPanelOptions['clipboard'];
     protected readonly readPreference: MobileProjectsPanelOptions['readPreference'];
+    protected readonly preferenceService: PreferenceService | undefined;
     protected readonly getRegisteredLanguageModels: MobileProjectsPanelOptions['getRegisteredLanguageModels'];
     protected readonly quickInputService: QuickInputService | undefined;
     protected readonly commitMessageAi: MobileProjectsPanelOptions['commitMessageAi'];
@@ -721,6 +725,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.previewInspectorDeps = options.previewInspectorDeps;
         this.previewClipboard = options.clipboard;
         this.readPreference = options.readPreference;
+        this.preferenceService = options.preferenceService;
         this.getRegisteredLanguageModels = options.getRegisteredLanguageModels;
         this.quickInputService = options.quickInputService;
         this.commitMessageAi = options.commitMessageAi;
