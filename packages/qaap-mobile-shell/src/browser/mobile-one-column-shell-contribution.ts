@@ -44,6 +44,7 @@ import { QaapSidePanelHandler } from '@theia/qaap-shell/lib/browser/qaap-side-pa
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapWorkHubDiffDelegate, QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
@@ -228,6 +229,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(QaapCommitMessageAi) @optional()
     protected readonly commitMessageAi?: QaapCommitMessageAi;
 
+    @inject(QaapComposerPromptImprover) @optional()
+    protected readonly composerPromptImprover?: QaapComposerPromptImprover;
+
     @inject(QaapProjectBootstrapService)
     protected readonly projectBootstrap: QaapProjectBootstrapService;
 
@@ -379,6 +383,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 preferenceService: this.preferenceService,
                 languageModelRegistry: this.languageModelRegistry,
                 commitMessageAi: this.commitMessageAi,
+                composerPromptImprover: this.composerPromptImprover,
                 projectBootstrap: this.projectBootstrap,
                 activeTasks: this.activeTasks,
                 conversations: this.conversations,

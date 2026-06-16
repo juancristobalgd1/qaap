@@ -13,6 +13,10 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
+    buildImproveComposerPromptRequest,
+    extractImprovedComposerPromptFromAgentStdout,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
+import {
     isQaapAgentTaskFinished,
     type QaapAgentDescriptor,
     type QaapCreateAgentTaskQaiqModel,
@@ -1766,5 +1770,108 @@ export class QaapAgentTaskRunner {
         } catch {
             return false;
         }
+    }
+
+    /** One-shot prompt rewrite via the selected VPS agent/model (composer "Improve prompt"). */
+    async improveComposerPrompt(options: {
+        readonly prompt: string;
+        readonly agentId: string;
+        readonly agentModel?: QaapCreateAgentTaskQaiqModel;
+        readonly cwd?: string;
+    }): Promise<string> {
+        if (this.preferenceService) {
+            await this.preferenceService.ready;
+        }
+        const trimmed = options.prompt.trim();
+        if (!trimmed) {
+            throw new Error('Composer prompt is empty.');
+        }
+        const improveText = buildImproveComposerPromptRequest(trimmed);
+        const agentId = this.resolveAgentId(improveText, options.agentId);
+        this.assertQaiqConfigured(agentId);
+        const detected = this.detectedAgents.get(agentId);
+        if (!detected) {
+            throw new Error(`Agent "${agentId}" is not available for prompt improvement.`);
+        }
+        const vars = this.buildTemplateVars(agentId, options.agentModel, {
+            autoApprove: true,
+            approvalPolicyId: 'approve-for-me',
+        });
+        let template = detected.template
+            .replace(/--output-format\s+\S+/g, '')
+            .replace(/--include-partial-messages/g, '')
+            .replace(/--verbose/g, '');
+        const command = applyAgentApprovalPolicyToCommand(
+            this.applyTemplate(template, improveText, vars),
+            {
+                agentId,
+                approvalPolicyId: 'approve-for-me',
+                autoApprove: true,
+            },
+        );
+        const cwd = options.cwd?.trim() || process.cwd();
+        const task: QaapAgentTask = {
+            id: 'composer-improve-prompt',
+            title: 'Improve prompt',
+            command,
+            cwd,
+            state: 'running',
+            createdAt: Date.now(),
+            autoApprove: true,
+            ...(options.agentModel ? { agentModel: options.agentModel, qaiqModel: options.agentModel } : {}),
+        };
+        return this.runOneShotCommand(command, cwd, this.buildChildEnv(task), agentId);
+    }
+
+    protected runOneShotCommand(
+        command: string,
+        cwd: string,
+        env: NodeJS.ProcessEnv,
+        agentId?: string,
+        timeoutMs = 45_000,
+    ): Promise<string> {
+        return new Promise((resolve, reject) => {
+            let stdout = '';
+            let stderr = '';
+            let child: ChildProcess;
+            try {
+                child = spawn(command, {
+                    cwd,
+                    shell: true,
+                    env,
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                });
+            } catch (error) {
+                reject(error instanceof Error ? error : new Error(String(error)));
+                return;
+            }
+            const timer = setTimeout(() => {
+                child.kill('SIGTERM');
+                reject(new Error('Prompt improvement timed out.'));
+            }, timeoutMs);
+            child.stdout?.on('data', (chunk: Buffer | string) => {
+                stdout += String(chunk);
+            });
+            child.stderr?.on('data', (chunk: Buffer | string) => {
+                stderr += String(chunk);
+            });
+            child.on('error', error => {
+                clearTimeout(timer);
+                reject(error);
+            });
+            child.on('close', code => {
+                clearTimeout(timer);
+                if (code !== 0) {
+                    reject(new Error(stderr.trim() || stdout.trim() || `Agent exited with code ${code ?? 'unknown'}.`));
+                    return;
+                }
+                const improved = extractImprovedComposerPromptFromAgentStdout(agentId, stdout);
+                if (!improved) {
+                    reject(new Error('Agent returned an empty prompt.'));
+                    return;
+                }
+                resolve(improved);
+            });
+        });
     }
 }

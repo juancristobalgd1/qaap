@@ -20,6 +20,7 @@ import {
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     QAAP_PRIMARY_AGENT_ID,
+    readStoredAgentModel,
     resolveExplicitAgentForSubmit,
     type QaapAgentTaskAgentOption,
 } from '../common/qaap-agent-task-client';
@@ -78,6 +79,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
+import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 import { MobileSnackbar } from './mobile-snackbar';
 import {
@@ -165,6 +167,8 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     quickInputService?: QuickInputService;
     /** Generates commit messages automatically from the diff (Cursor-agents style). */
     commitMessageAi?: import('./qaap-commit-message-ai').QaapCommitMessageAi;
+    /** Rewrites composer drafts via the selected language model. */
+    composerPromptImprover?: import('./qaap-composer-prompt-improver').QaapComposerPromptImprover;
     /** Command registry for opening the Create-PR flow after a commit. */
     commands?: CommandRegistry;
     conversations?: MobileProjectsConversations;
@@ -1181,6 +1185,17 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 }
                 : undefined,
             canSubmit: true,
+            onImprovePrompt: this.host.composerPromptImprover
+                ? createStickyComposerImprovePromptHandler({
+                    improver: this.host.composerPromptImprover,
+                    resolveAgentId: () => this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+                    resolveAgentModel: () => readStoredAgentModel(
+                        cwd,
+                        this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+                    ),
+                    resolveCwd: () => cwd,
+                })
+                : undefined,
             isAgentWorking: () => this.isTranscriptStickyComposerAgentWorking(),
             onStop: () => { void this.host.onCancelConversation(project, summary); },
             onSendControlMounted: refresh => { this.host.transcriptComposerSendRefresh = refresh; },

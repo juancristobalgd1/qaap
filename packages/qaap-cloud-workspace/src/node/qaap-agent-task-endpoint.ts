@@ -15,6 +15,7 @@ import {
     type QaapAgentTaskListResponse,
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
+import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
 /** Keep SSE connections warm through proxies that idle-kill silent sockets. */
@@ -78,6 +79,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             } catch (error) {
                 res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
             }
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, (req, res) => {
+            void this.handleImprovePrompt(req, res);
         });
         app.post(QAAP_AGENT_TASK_API_PATH, (req, res) => {
             this.handleCreate(req, res);
@@ -160,6 +164,27 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             client.on('close', cleanup);
             client.on('error', cleanup);
         });
+    }
+
+    protected async handleImprovePrompt(req: Request, res: Response): Promise<void> {
+        const body = (req.body ?? {}) as Partial<QaapImproveComposerPromptRequestBody>;
+        const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+        const agentId = typeof body.agentId === 'string' ? body.agentId.trim() : '';
+        if (!prompt || !agentId) {
+            res.status(400).json({ error: '"prompt" and "agentId" are required.' });
+            return;
+        }
+        try {
+            const improved = await this.runner.improveComposerPrompt({
+                prompt,
+                agentId,
+                agentModel: body.agentModel,
+                cwd: typeof body.cwd === 'string' ? body.cwd.trim() : undefined,
+            });
+            res.json({ improved });
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     protected handleCreate(req: Request, res: Response): void {

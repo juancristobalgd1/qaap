@@ -54,6 +54,8 @@ import type { MobileProjectsConversations } from './mobile-projects-conversation
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
+import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
+import type { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 
 export interface MobileProjectsStickyComposerRenderHost {
 root: HTMLElement;
@@ -103,6 +105,7 @@ stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-u
 isProjectDetailView(): boolean;
 projectsService: MobileProjectsService;
 transcriptComposerSendRefresh: (() => void) | undefined;
+composerPromptImprover?: QaapComposerPromptImprover;
 }
 
 export class MobileProjectsStickyComposerRenderUi {
@@ -124,6 +127,21 @@ export class MobileProjectsStickyComposerRenderUi {
             }
         }
         return undefined;
+    }
+
+    protected createImprovePromptHandler(
+        cwd: string | undefined,
+        resolveAgentId: () => string,
+    ): ((context: import('./qaap-composer-prompt-improve-handler').StickyComposerImprovePromptContext) => void) | undefined {
+        if (!this.host.composerPromptImprover) {
+            return undefined;
+        }
+        return createStickyComposerImprovePromptHandler({
+            improver: this.host.composerPromptImprover,
+            resolveAgentId,
+            resolveAgentModel: () => readStoredAgentModel(cwd, resolveAgentId()),
+            resolveCwd: () => cwd,
+        });
     }
 
     renderStickyComposer(): void {
@@ -246,6 +264,10 @@ export class MobileProjectsStickyComposerRenderUi {
                 }
                 : undefined,
             canSubmit,
+            onImprovePrompt: this.createImprovePromptHandler(
+                cwd,
+                () => this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
+            ),
             onAttach: anchor => { void this.host.stickyComposerContextUi.onStickyComposerAttach(project, anchor); },
             onOpenAgentSheet: isChatSurface
                 ? () => { /* Chat is Coder-only */ }

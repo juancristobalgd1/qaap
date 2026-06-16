@@ -10,6 +10,7 @@ import '../../src/browser/style/qaap-mobile-touch-scroll.css';
 import '../../src/browser/style/qaap-empty-workbench-brand.css';
 import '../../src/browser/style/qaap-project-bootstrap.css';
 import '../../src/browser/style/qaap-chat-mic.css';
+import '../../src/browser/style/qaap-composer-prompt-improve.css';
 import '../../src/browser/style/qaap-chat-select-dropdown.css';
 import '../../src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
@@ -81,6 +82,7 @@ import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-l
 import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { QaapTerminalFrontendContribution } from './qaap-terminal-frontend-contribution';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapDiffReviewContribution } from './qaap-diff-review-contribution';
 import { QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
@@ -208,6 +210,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(AIVariableContribution).toService(QaapBootstrapVariableContribution);
 
     bind(QaapCommitMessageAi).toSelf().inSingletonScope();
+    bind(QaapComposerPromptImprover).toSelf().inSingletonScope();
     bind(QaapWorkHubDiffService).toSelf().inSingletonScope();
     bind(QaapDiffReviewWidget).toSelf();
     bind(WidgetFactory).toDynamicValue(({ container }) => ({

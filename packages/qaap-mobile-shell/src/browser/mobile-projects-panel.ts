@@ -364,6 +364,8 @@ export interface MobileProjectsPanelOptions {
     quickInputService?: QuickInputService;
     /** Generates commit messages automatically from the diff for the commit split-button. */
     commitMessageAi?: import('./qaap-commit-message-ai').QaapCommitMessageAi;
+    /** Rewrites composer drafts via the selected language model. */
+    composerPromptImprover?: import('./qaap-composer-prompt-improver').QaapComposerPromptImprover;
     /** Opens AI / Settings preferences inside the Work Hub instead of the IDE main area. */
     openPreferencesSheet?: (query?: string) => Promise<void>;
     /** Opens AI Configuration (agents, MCP, prompts) inside the Work Hub overlay. */
@@ -631,6 +633,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly getRegisteredLanguageModels: MobileProjectsPanelOptions['getRegisteredLanguageModels'];
     protected readonly quickInputService: QuickInputService | undefined;
     protected readonly commitMessageAi: MobileProjectsPanelOptions['commitMessageAi'];
+    protected readonly composerPromptImprover: MobileProjectsPanelOptions['composerPromptImprover'];
     protected readonly openPreferencesSheet: MobileProjectsPanelOptions['openPreferencesSheet'];
     protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
@@ -712,6 +715,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.getRegisteredLanguageModels = options.getRegisteredLanguageModels;
         this.quickInputService = options.quickInputService;
         this.commitMessageAi = options.commitMessageAi;
+        this.composerPromptImprover = options.composerPromptImprover;
         this.openPreferencesSheet = options.openPreferencesSheet;
         this.openAiConfigurationSheet = options.openAiConfigurationSheet;
         this.projectBootstrap = options.projectBootstrap;

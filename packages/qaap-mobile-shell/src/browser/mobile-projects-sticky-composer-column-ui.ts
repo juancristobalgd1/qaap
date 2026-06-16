@@ -76,6 +76,7 @@ export class MobileProjectsStickyComposerColumnUi {
         afterInputChange?: () => void;
         sendLabel?: string;
         onSendControlMounted?: (refresh: () => void) => void;
+        onImprovePrompt?: (context: import('./qaap-composer-prompt-improve-handler').StickyComposerImprovePromptContext) => void;
         inputPlaceholder?: string;
         getMentionOptions?: () => readonly StickyComposerTokenOption[];
         getVariableOptions?: () => readonly StickyComposerTokenOption[];
@@ -271,8 +272,18 @@ export class MobileProjectsStickyComposerColumnUi {
         sendBtn.setAttribute('aria-label', sendLabel);
         sendBtn.innerHTML = '<span class="codicon codicon-send" aria-hidden="true"></span>';
 
+        const improveBtn = document.createElement('button');
+        improveBtn.type = 'button';
+        improveBtn.className = 'qaap-composer-improve-btn';
+        const improveLabel = nls.localize('qaap/composer/improvePrompt', 'Improve prompt');
+        const cancelImproveLabel = nls.localize('qaap/composer/cancelImprovePrompt', 'Cancel prompt improvement');
+        improveBtn.title = improveLabel;
+        improveBtn.setAttribute('aria-label', improveLabel);
+        improveBtn.innerHTML = '<span class="codicon codicon-sparkle" aria-hidden="true"></span>';
+
         const updateSend = (): void => {
             const has = input.value.trim().length > 0;
+            const improving = improveBtn.classList.contains('theia-mod-loading');
             const working = options.isAgentWorking?.() ?? false;
             inputPanel.classList.toggle('theia-mod-agent-working', working);
             const showStop = working && !has;
@@ -291,6 +302,17 @@ export class MobileProjectsStickyComposerColumnUi {
                 sendBtn.setAttribute('aria-label', sendLabel);
                 sendBtn.innerHTML = '<span class="codicon codicon-send" aria-hidden="true"></span>';
             }
+            improveBtn.disabled = !has && !improving;
+            improveBtn.classList.toggle('theia-mod-has-text', has);
+            if (improving) {
+                improveBtn.title = cancelImproveLabel;
+                improveBtn.setAttribute('aria-label', cancelImproveLabel);
+                improveBtn.innerHTML = '<span class="codicon codicon-debug-stop" aria-hidden="true"></span>';
+            } else {
+                improveBtn.title = improveLabel;
+                improveBtn.setAttribute('aria-label', improveLabel);
+                improveBtn.innerHTML = '<span class="codicon codicon-sparkle" aria-hidden="true"></span>';
+            }
         };
         input.addEventListener('input', () => {
             options.setDraft(input.value);
@@ -299,6 +321,27 @@ export class MobileProjectsStickyComposerColumnUi {
         });
         updateSend();
         options.onSendControlMounted?.(updateSend);
+
+        improveBtn.addEventListener('click', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (!options.onImprovePrompt) {
+                return;
+            }
+            const has = input.value.trim().length > 0;
+            if (!has && !improveBtn.classList.contains('theia-mod-loading')) {
+                return;
+            }
+            options.onImprovePrompt({
+                input,
+                improveBtn,
+                getPrompt: () => input.value,
+                setDraft: value => {
+                    options.setDraft(value);
+                },
+                refreshControls: updateSend,
+            });
+        });
 
         if (options.getMentionOptions) {
             attachStickyComposerMentionUi({
@@ -346,6 +389,9 @@ export class MobileProjectsStickyComposerColumnUi {
 
         const inputActions = document.createElement('div');
         inputActions.className = 'theia-mobile-projects-sticky-composer-input-actions';
+        if (options.onImprovePrompt) {
+            inputActions.append(improveBtn);
+        }
         inputActions.append(sendBtn);
 
         const inputBody = document.createElement('div');

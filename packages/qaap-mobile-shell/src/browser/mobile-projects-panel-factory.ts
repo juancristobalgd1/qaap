@@ -35,6 +35,7 @@ import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { resolveAgentVerifyChecksForCwd } from './qaap-agent-verify-checks-resolver';
 import { openTranscriptWorkspaceFile, createTranscriptFilesViewServices } from './qaap-transcript-file-open';
@@ -86,6 +87,7 @@ export interface MobileProjectsPanelFactoryDeps {
     preferenceService: PreferenceService;
     languageModelRegistry?: FrontendLanguageModelRegistry;
     commitMessageAi?: QaapCommitMessageAi;
+    composerPromptImprover?: QaapComposerPromptImprover;
     projectBootstrap: QaapProjectBootstrapService;
     activeTasks: MobileProjectsActiveTasks;
     conversations: MobileProjectsConversations;
@@ -200,6 +202,7 @@ export class MobileProjectsPanelFactory {
                     : undefined,
                 quickInputService: deps.quickInputService,
                 commitMessageAi: deps.commitMessageAi,
+                composerPromptImprover: deps.composerPromptImprover,
                 openPreferencesSheet: query => delegate.openWorkHubPreferencesSheet(query),
                 openAiConfigurationSheet: tabId => delegate.openWorkHubAiConfigurationSheet(tabId),
                 projectBootstrap: deps.projectBootstrap,
