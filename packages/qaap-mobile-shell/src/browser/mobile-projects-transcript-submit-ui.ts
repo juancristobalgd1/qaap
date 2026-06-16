@@ -27,6 +27,7 @@ import {
     reconcileAgentToolApprovalRules,
     type QaapAgentToolApprovalRules,
 } from '../common/qaap-agent-tool-approval-rules';
+import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
 import { isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -71,6 +72,8 @@ export interface MobileProjectsTranscriptSubmitHost {
 
 /** Backend conversation submit with optimistic transcript rows and rollback on failure. */
 export class MobileProjectsTranscriptSubmitUi {
+
+    protected readonly submitInFlightByConversationId = new Set<string>();
 
     constructor(protected readonly host: MobileProjectsTranscriptSubmitHost) { }
 
@@ -131,11 +134,38 @@ export class MobileProjectsTranscriptSubmitUi {
         this.renderTranscriptSubmitMessages(chatHost, {
             ...baseConv,
             status: 'streaming',
-            messages: [...baseConv.messages, pendingUserMessage],
+            messages: appendOptimisticPendingUserMessage(baseConv.messages, pendingUserMessage),
         }, summary);
     }
 
     async submitTranscriptViaBackendConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        content: string,
+        options: {
+            selectedAgentId?: string;
+            modeId?: string;
+            autoApprove?: boolean;
+            approvalPolicyId?: string;
+            capabilityOverrides?: Record<string, boolean>;
+            genericCapabilitySelections?: GenericCapabilitySelections;
+            variables?: AIVariableResolutionRequest[];
+            widget?: AIChatInputWidget;
+            agentModel?: QaapCreateAgentTaskQaiqModel;
+        } = {},
+    ): Promise<void> {
+        if (this.submitInFlightByConversationId.has(summary.id)) {
+            return;
+        }
+        this.submitInFlightByConversationId.add(summary.id);
+        try {
+            await this.submitTranscriptViaBackendConversationInner(project, summary, content, options);
+        } finally {
+            this.submitInFlightByConversationId.delete(summary.id);
+        }
+    }
+
+    protected async submitTranscriptViaBackendConversationInner(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         content: string,
@@ -212,7 +242,7 @@ export class MobileProjectsTranscriptSubmitUi {
         const optimistic: QaapAgentConversationDTO = {
             ...base,
             status: 'streaming',
-            messages: [...base.messages, pendingUserMessage],
+            messages: appendOptimisticPendingUserMessage(base.messages, pendingUserMessage),
         };
         const activeChatHost = this.host.resolveActiveTranscriptChatHost();
         if (activeChatHost) {

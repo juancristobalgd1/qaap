@@ -363,16 +363,35 @@ export class MobileProjectsStickyComposerColumnUi {
             });
         }
 
+        let submitInFlight = false;
+        let lastSubmitAt = 0;
+        let lastSubmitDraft = '';
+        const submitCooldownMs = 600;
         const submit = (): void => {
             const draft = input.value.trim();
+            const now = Date.now();
             if (!draft || !options.canSubmit) {
-                options.onSubmitBlocked?.();
+                if (!submitInFlight) {
+                    options.onSubmitBlocked?.();
+                }
                 return;
             }
+            if (submitInFlight || (draft === lastSubmitDraft && now - lastSubmitAt < submitCooldownMs)) {
+                return;
+            }
+            submitInFlight = true;
+            lastSubmitAt = now;
+            lastSubmitDraft = draft;
             input.value = '';
             options.setDraft('');
             updateSend();
-            options.onSubmit(draft);
+            try {
+                options.onSubmit(draft);
+            } finally {
+                window.setTimeout(() => {
+                    submitInFlight = false;
+                }, submitCooldownMs);
+            }
         };
         input.addEventListener('keydown', ev => {
             if (ev.key === 'Enter' && !ev.shiftKey && !ev.defaultPrevented) {
@@ -382,6 +401,7 @@ export class MobileProjectsStickyComposerColumnUi {
         });
         sendBtn.addEventListener('click', ev => {
             ev.preventDefault();
+            ev.stopPropagation();
             const has = input.value.trim().length > 0;
             const working = options.isAgentWorking?.() ?? false;
             if (working && !has) {

@@ -13,6 +13,7 @@ import {
     buildAgentsHubIdleConversationSummary,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
 } from '../common/qaap-agents-hub-landing';
+import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -374,6 +375,15 @@ export class MobileProjectsAgentsHubInlineUi {
         if (!outbound) {
             return;
         }
+        const pendingUserMessage = {
+            id: `pending-user-${Date.now()}`,
+            role: 'user' as const,
+            content: outbound,
+            createdAt: Date.now(),
+        };
+        const cachedMessages = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv.messages
+            : [];
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, {
             id: summary.id,
             cwd: summary.cwd,
@@ -382,12 +392,7 @@ export class MobileProjectsAgentsHubInlineUi {
             status: 'streaming',
             createdAt: Date.now(),
             updatedAt: Date.now(),
-            messages: [{
-                id: `pending-user-${Date.now()}`,
-                role: 'user',
-                content: outbound,
-                createdAt: Date.now(),
-            }],
+            messages: appendOptimisticPendingUserMessage(cachedMessages, pendingUserMessage),
         });
     }
 

@@ -60,6 +60,8 @@ export interface MobileProjectsBackgroundTaskHost {
 }
 
 export class MobileProjectsBackgroundTaskUi {
+    protected readonly backgroundSubmitInFlightByProjectId = new Set<string>();
+
     constructor(protected readonly host: MobileProjectsBackgroundTaskHost) { }
 
     async ensureInlineComposerCwd(project: MobileProjectEntry): Promise<string | undefined> {
@@ -83,6 +85,35 @@ export class MobileProjectsBackgroundTaskUi {
         return cwd;
     }
     async submitBackgroundAgentTask(
+        project: MobileProjectEntry,
+        draft: string,
+        options: {
+            openConversation?: boolean;
+            forceVps?: boolean;
+            selectedAgentId?: string;
+            modeId?: string;
+            autoApprove?: boolean;
+            approvalPolicyId?: string;
+            capabilityOverrides?: Record<string, boolean>;
+            genericCapabilitySelections?: GenericCapabilitySelections;
+            variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
+            /** Run the task in a fresh isolated git worktree instead of the project's working tree. */
+            worktree?: boolean;
+            agentModel?: QaapCreateAgentTaskQaiqModel;
+        } = {},
+    ): Promise<void> {
+        if (this.backgroundSubmitInFlightByProjectId.has(project.id)) {
+            return;
+        }
+        this.backgroundSubmitInFlightByProjectId.add(project.id);
+        try {
+            await this.submitBackgroundAgentTaskInner(project, draft, options);
+        } finally {
+            this.backgroundSubmitInFlightByProjectId.delete(project.id);
+        }
+    }
+
+    protected async submitBackgroundAgentTaskInner(
         project: MobileProjectEntry,
         draft: string,
         options: {

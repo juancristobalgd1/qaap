@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
 import {
     applyConversationMessageDelta,
+    appendOptimisticPendingUserMessage,
     agentMessageDeltaChanged,
     canApplySseMessageDelta,
     shouldSkipStreamingTranscriptRefetch,
@@ -163,5 +164,41 @@ describe('applyConversationMessageDelta', () => {
         expect(next.messages).to.have.length(2);
         expect(next.messages[1]?.id).to.equal('user-real-1');
         expect(next.messages[1]?.content).to.equal('fix the bug');
+    });
+});
+
+describe('appendOptimisticPendingUserMessage', () => {
+    const pending = (content: string, id = 'pending-user-1'): { id: string; role: 'user'; content: string; createdAt: number } => ({
+        id,
+        role: 'user',
+        content,
+        createdAt: 20,
+    });
+
+    it('replaces a trailing pending-user row instead of stacking another', () => {
+        const messages = appendOptimisticPendingUserMessage(
+            [{ id: 'pending-user-old', role: 'user', content: 'hello', createdAt: 10 }],
+            pending('hello', 'pending-user-new'),
+        );
+        expect(messages).to.have.length(1);
+        expect(messages[0]?.id).to.equal('pending-user-new');
+    });
+
+    it('does not duplicate a settled user row with the same content', () => {
+        const messages = appendOptimisticPendingUserMessage(
+            [{ id: 'user-real', role: 'user', content: 'hello', createdAt: 10 }],
+            pending('hello'),
+        );
+        expect(messages).to.have.length(1);
+        expect(messages[0]?.id).to.equal('user-real');
+    });
+
+    it('appends when the outbound content is new', () => {
+        const messages = appendOptimisticPendingUserMessage(
+            [{ id: 'user-real', role: 'user', content: 'hello', createdAt: 10 }],
+            pending('follow up'),
+        );
+        expect(messages).to.have.length(2);
+        expect(messages[1]?.id).to.equal('pending-user-1');
     });
 });

@@ -77,6 +77,39 @@ export function agentMessageDeltaChanged(
     return agentMessageSnapshotFingerprint(previous) !== agentMessageSnapshotFingerprint(incoming);
 }
 
+/** Strip trailing optimistic user rows before painting another outbound bubble. */
+export function stripTrailingPendingUserMessages(
+    messages: readonly QaapAgentMessageDTO[],
+): QaapAgentMessageDTO[] {
+    let trimmed = [...messages];
+    while (trimmed.length > 0) {
+        const last = trimmed[trimmed.length - 1];
+        if (last?.role === 'user' && last.id.startsWith('pending-user-')) {
+            trimmed = trimmed.slice(0, -1);
+            continue;
+        }
+        break;
+    }
+    return trimmed;
+}
+
+/**
+ * Append (or replace) the optimistic pending-user row without duplicating a settled user turn.
+ * Guards against double-tap submits and SSE/refetch races that already committed the user message.
+ */
+export function appendOptimisticPendingUserMessage(
+    messages: readonly QaapAgentMessageDTO[],
+    pending: QaapAgentMessageDTO,
+): QaapAgentMessageDTO[] {
+    const trimmed = stripTrailingPendingUserMessages(messages);
+    const last = trimmed[trimmed.length - 1];
+    const outbound = pending.content ?? '';
+    if (last?.role === 'user' && !last.id.startsWith('pending-user-') && (last.content ?? '') === outbound) {
+        return trimmed;
+    }
+    return [...trimmed, pending];
+}
+
 /** Merge one live SSE message into the in-memory conversation snapshot. */
 export function applyConversationMessageDelta(
     conv: QaapAgentConversationDTO,
