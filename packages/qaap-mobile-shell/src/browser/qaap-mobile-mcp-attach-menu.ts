@@ -13,6 +13,7 @@ import {
     readInstalledMcpServerSlugs,
     resolveMcpMarketplacePlugin,
 } from '../common/qaap-mcp-plugin-install';
+import { createMcpPluginIconElement } from '../common/qaap-mcp-plugin-icons';
 
 export interface MobileMcpAttachOptions {
     readonly preferenceService: PreferenceService;
@@ -72,15 +73,10 @@ function filterMcpAttachRows(
 }
 
 function createMcpServerIcon(row: MobileMcpAttachServerRow): HTMLElement {
-    const icon = document.createElement('span');
-    icon.className = 'theia-mobile-mcp-attach-server-icon';
-    if (row.iconColor) {
-        icon.style.backgroundColor = row.iconColor;
-    } else {
-        icon.classList.add('theia-mod-generic');
-    }
-    icon.textContent = row.iconLetter;
-    icon.setAttribute('aria-hidden', 'true');
+    const icon = createMcpPluginIconElement(row.slug, 'theia-mobile-mcp-attach-server-icon', {
+        letter: row.iconLetter,
+        color: row.iconColor,
+    });
 
     const status = document.createElement('span');
     status.className = 'theia-mobile-mcp-attach-server-status';

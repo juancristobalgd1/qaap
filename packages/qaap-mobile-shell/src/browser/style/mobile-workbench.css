@@ -7416,6 +7416,25 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .theia-mobile-pr
   color: var(--theia-foreground);
 }
 
+.theia-mobile-mcp-attach-server-icon.theia-mod-branded {
+  background: #fff;
+  color: inherit;
+  padding: 2px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+body[data-theia-theme-mode="dark"] .theia-mobile-mcp-attach-server-icon.theia-mod-branded,
+body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
+  background: color-mix(in srgb, var(--theia-editor-background) 82%, #fff);
+}
+
+.theia-mobile-mcp-attach-server-icon.theia-mod-branded svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .theia-mobile-mcp-attach-server-status {
   position: absolute;
   right: -2px;
@@ -7918,6 +7937,25 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .theia-mobile-pr
 .theia-mobile-projects-sticky-composer-plugin-picker-icon.theia-mod-generic {
   background: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
   color: var(--theia-foreground);
+}
+
+.theia-mobile-projects-sticky-composer-plugin-picker-icon.theia-mod-branded {
+  background: #fff;
+  color: inherit;
+  padding: 2px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+body[data-theia-theme-mode="dark"] .theia-mobile-projects-sticky-composer-plugin-picker-icon.theia-mod-branded,
+body.qaap-theme-dark .theia-mobile-projects-sticky-composer-plugin-picker-icon.theia-mod-branded {
+  background: color-mix(in srgb, var(--theia-editor-background) 82%, #fff);
+}
+
+.theia-mobile-projects-sticky-composer-plugin-picker-icon.theia-mod-branded svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .theia-mobile-projects-sticky-composer-plugin-picker-option-text {
@@ -11112,6 +11150,11 @@ body.theia-mobile-mod-landing
   pointer-events: auto;
 }
 
+/* Modal dialogs from embedded Settings / AI Configuration must sit above the sheet (12960). */
+body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialogOverlay:not(.hidden) {
+  z-index: 13050 !important;
+}
+
 .theia-mobile-work-hub-preferences-backdrop {
   position: absolute;
   inset: 0;
@@ -11397,6 +11440,25 @@ body.theia-mobile-mod-landing
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.theia-mobile-work-hub-ai-config-embed #ai-mcp-configuration-container-widget .mcp-configuration-container {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  box-sizing: border-box;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .lm-Widget.dialogOverlay .mcp-dialog-form {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
 }
 
 .theia-mobile-work-hub-ai-config-embed .ai-configuration-widget-content {

@@ -10,6 +10,7 @@ import { MessageLoop } from '@lumino/messaging';
 import { Widget as LuminoWidget } from '@lumino/widgets';
 import { PreferencesWidget } from '@theia/preferences/lib/browser/views/preference-widget';
 import { PreferencesSearchbarWidget } from '@theia/preferences/lib/browser/views/preference-searchbar-widget';
+import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 
 /** Opens the same Settings widget as the IDE, embedded in the Work Hub overlay. */
 export class MobileWorkHubPreferencesSheet {
@@ -23,6 +24,9 @@ export class MobileWorkHubPreferencesSheet {
 
     protected readonly onKeyDown = (ev: KeyboardEvent): void => {
         if (ev.key === 'Escape' && this.visible) {
+            if (isWorkHubTheiaDialogOpen()) {
+                return;
+            }
             ev.stopPropagation();
             this.hide();
         }

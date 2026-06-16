@@ -5,6 +5,8 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapMcpMarketplacePlugin } from './qaap-mcp-plugin-marketplace-catalog';
+import { createMcpPluginIconElement } from './qaap-mcp-plugin-icons';
+import { resolveMcpMarketplacePlugin } from './qaap-mcp-plugin-install';
 
 export type StickyComposerPluginPickerMode = 'add-plugin' | 'remove-plugin';
 
@@ -26,12 +28,11 @@ export interface RenderStickyComposerRemovePluginPickerOptions {
 }
 
 function createPluginIcon(plugin: QaapMcpMarketplacePlugin): HTMLElement {
-    const icon = document.createElement('span');
-    icon.className = 'theia-mobile-projects-sticky-composer-plugin-picker-icon';
-    icon.style.backgroundColor = plugin.iconColor;
-    icon.textContent = plugin.iconLetter;
-    icon.setAttribute('aria-hidden', 'true');
-    return icon;
+    return createMcpPluginIconElement(
+        plugin.slug,
+        'theia-mobile-projects-sticky-composer-plugin-picker-icon',
+        { letter: plugin.iconLetter, color: plugin.iconColor },
+    );
 }
 
 function appendPickerHeader(list: HTMLElement, title: string, onBack: () => void): void {
@@ -185,10 +186,15 @@ export function renderStickyComposerRemovePluginPicker(options: RenderStickyComp
         btn.setAttribute('role', 'option');
         btn.dataset.pluginSlug = slug;
 
-        const icon = document.createElement('span');
-        icon.className = 'theia-mobile-projects-sticky-composer-plugin-picker-icon theia-mod-generic';
-        icon.textContent = slug.charAt(0).toUpperCase();
-        icon.setAttribute('aria-hidden', 'true');
+        const catalog = resolveMcpMarketplacePlugin(slug);
+        const icon = createMcpPluginIconElement(
+            slug,
+            'theia-mobile-projects-sticky-composer-plugin-picker-icon',
+            {
+                letter: catalog?.iconLetter ?? slug.charAt(0).toUpperCase(),
+                color: catalog?.iconColor,
+            },
+        );
 
         const text = document.createElement('span');
         text.className = 'theia-mobile-projects-sticky-composer-plugin-picker-option-text';

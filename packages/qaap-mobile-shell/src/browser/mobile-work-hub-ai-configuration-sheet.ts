@@ -10,6 +10,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MessageLoop } from '@lumino/messaging';
 import { Widget as LuminoWidget } from '@lumino/widgets';
 import { QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB } from '../common/mobile-work-hub-catalog';
+import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 
 /** Opens the AI Configuration view embedded in the Work Hub overlay. */
 export class MobileWorkHubAiConfigurationSheet {
@@ -23,6 +24,9 @@ export class MobileWorkHubAiConfigurationSheet {
 
     protected readonly onKeyDown = (ev: KeyboardEvent): void => {
         if (ev.key === 'Escape' && this.visible) {
+            if (isWorkHubTheiaDialogOpen()) {
+                return;
+            }
             ev.stopPropagation();
             this.hide();
         }
