@@ -6,6 +6,7 @@
 import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import {
     mergeSegmentTraceEvents,
+    hasActiveQaapTraceWork,
     type QaapTranscriptTraceEventDTO,
 } from './qaap-transcript-trace-model';
 
@@ -65,13 +66,31 @@ export function backfillAgentMessageTraceEvents(
     } else if (!options.streamingTail) {
         traceEvents = settleTraceEvents(existing);
     }
-    if (traceEventsEqual(traceEvents, existing)) {
+    let next: QaapAgentMessageDTO = { ...message, traceEvents };
+    if (!options.streamingTail) {
+        next = compactAgentMessageTraceStorage(next);
+    }
+    const changed = !traceEventsEqual(traceEvents, existing)
+        || (next.segments?.length ?? 0) !== (message.segments?.length ?? 0);
+    if (!changed) {
         return { message, changed: false };
     }
     return {
-        message: { ...message, traceEvents },
+        message: next,
         changed: true,
     };
+}
+
+/** Remove duplicate legacy segments once settled traceEvents are authoritative. */
+export function compactAgentMessageTraceStorage(message: QaapAgentMessageDTO): QaapAgentMessageDTO {
+    if (message.role !== 'agent' || !(message.traceEvents?.length ?? 0) || !message.segments?.length) {
+        return message;
+    }
+    if (hasActiveQaapTraceWork(message)) {
+        return message;
+    }
+    const { segments: _segments, ...withoutSegments } = message;
+    return withoutSegments;
 }
 
 export function backfillConversationTraceEvents(

@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     backfillAgentMessageTraceEvents,
     backfillConversationTraceEvents,
+    compactAgentMessageTraceStorage,
     settleTraceEvents,
 } from './qaap-transcript-trace-backfill';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
@@ -90,5 +91,18 @@ describe('qaap-transcript-trace-backfill', () => {
         const tail = conversation.messages[1];
         expect(old.traceEvents?.[0]?.type === 'assistant_text' && old.traceEvents[0].status).to.equal('completed');
         expect(tail.traceEvents?.[0]?.type === 'assistant_text' && tail.traceEvents[0].status).to.equal('streaming');
+    });
+
+    it('compactAgentMessageTraceStorage drops settled legacy segments', () => {
+        const compact = compactAgentMessageTraceStorage({
+            id: 'a1',
+            role: 'agent',
+            content: 'Done',
+            createdAt: 1,
+            segments: [{ type: 'text', content: 'Done' }],
+            traceEvents: [{ type: 'assistant_text', id: 'text-0', content: 'Done', status: 'completed' }],
+        });
+        expect(compact.segments).to.equal(undefined);
+        expect(compact.traceEvents).to.have.length(1);
     });
 });

@@ -97,6 +97,9 @@ export function compressAgentMessageWireDeltaForWire(delta: QaapAgentMessageWire
 }
 
 export function compressAgentMessageForWire(message: QaapAgentMessageDTO): QaapAgentMessageDTO {
+    if (message.traceEvents?.length) {
+        return message;
+    }
     if (!message.segments?.length) {
         return message;
     }

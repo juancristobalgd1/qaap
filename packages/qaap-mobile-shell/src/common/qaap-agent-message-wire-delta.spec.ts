@@ -7,6 +7,8 @@ import { expect } from 'chai';
 import {
     applyAgentMessageWireDelta,
     computeAgentMessageWireDelta,
+    toAgentMessageWirePayload,
+    toAgentMessageWireSnapshot,
     type QaapAgentMessageWireSnapshot,
 } from './qaap-agent-message-wire-delta';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
@@ -209,5 +211,33 @@ describe('applyAgentMessageWireDelta', () => {
             content: 'Hello',
             status: 'completed',
         });
+    });
+});
+
+describe('toAgentMessageWirePayload', () => {
+    it('omits segments when traceEvents are present', () => {
+        const payload = toAgentMessageWirePayload({
+            id: 'a1',
+            role: 'agent',
+            content: 'Done',
+            createdAt: 1,
+            segments: [{ type: 'text', content: 'Done' }],
+            traceEvents: [{ type: 'assistant_text', id: 'text-0', content: 'Done', status: 'completed' }],
+        });
+        expect(payload.segments).to.equal(undefined);
+        expect(payload.traceEvents).to.have.length(1);
+    });
+
+    it('toAgentMessageWireSnapshot prefers traceEvents for delta baselines', () => {
+        const snapshot = toAgentMessageWireSnapshot({
+            id: 'a1',
+            role: 'agent',
+            content: 'Done',
+            createdAt: 1,
+            segments: [{ type: 'text', content: 'Done' }],
+            traceEvents: [{ type: 'assistant_text', id: 'text-0', content: 'Done', status: 'streaming' }],
+        });
+        expect(snapshot.segments).to.equal(undefined);
+        expect(snapshot.traceEvents).to.have.length(1);
     });
 });

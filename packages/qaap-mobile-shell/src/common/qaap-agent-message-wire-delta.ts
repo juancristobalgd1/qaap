@@ -75,14 +75,52 @@ export interface QaapAgentMessageWireSnapshot {
 }
 
 function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageDTO {
-    return {
+    return toAgentMessageWirePayload({
         id: message.id,
         role: message.role,
         content: message.content,
         createdAt: message.createdAt,
-        ...(message.traceEvents ? { traceEvents: [...message.traceEvents] } : {}),
-        ...(message.segments ? { segments: [...message.segments] } : {}),
+        traceEvents: message.traceEvents,
+        segments: message.segments,
+    });
+}
+
+/** Drop legacy segments from live wire payloads when structured traceEvents are present. */
+export function toAgentMessageWirePayload(
+    message: Pick<QaapAgentMessageDTO, 'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments'>,
+): QaapAgentMessageDTO {
+    const base: QaapAgentMessageDTO = {
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt,
     };
+    if (message.traceEvents?.length) {
+        return { ...base, traceEvents: [...message.traceEvents] };
+    }
+    if (message.segments?.length) {
+        return { ...base, segments: [...message.segments] };
+    }
+    return base;
+}
+
+/** Snapshot for delta computation — traceEvents-only when structured trace is available. */
+export function toAgentMessageWireSnapshot(
+    message: Pick<QaapAgentMessageDTO, 'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments'>,
+): QaapAgentMessageWireSnapshot {
+    const snapshot: QaapAgentMessageWireSnapshot = {
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt,
+    };
+    if (message.traceEvents?.length) {
+        return { ...snapshot, traceEvents: [...message.traceEvents] };
+    }
+    if (message.segments?.length) {
+        return { ...snapshot, segments: [...message.segments] };
+    }
+    return snapshot;
 }
 
 function segmentFingerprint(segment: QaapAgentMessageSegmentDTO): string {

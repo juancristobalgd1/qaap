@@ -80,6 +80,8 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
     computeAgentMessageWireDelta,
+    toAgentMessageWirePayload,
+    toAgentMessageWireSnapshot,
     type QaapAgentMessageWireSnapshot,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
 import {
@@ -1487,14 +1489,7 @@ export class QaapAgentConversationStore {
         message: QaapAgentMessage,
         options?: { forceFullMessage?: boolean },
     ): void {
-        const snapshot: QaapAgentMessageWireSnapshot = {
-            id: message.id,
-            role: message.role,
-            content: message.content,
-            segments: message.segments,
-            traceEvents: message.traceEvents,
-            createdAt: message.createdAt,
-        };
+        const snapshot = toAgentMessageWireSnapshot(message);
         if (options?.forceFullMessage) {
             this.lastWireMessageById.set(message.id, snapshot);
             const wireMessage = {
@@ -1506,7 +1501,7 @@ export class QaapAgentConversationStore {
             this.stageWireMetricsBaseline(conversationId, message.id, wireMessage);
             this.fire({
                 ...wireMessage,
-                message: compressAgentMessageForWire(message),
+                message: compressAgentMessageForWire(toAgentMessageWirePayload(message)),
             });
             return;
         }
