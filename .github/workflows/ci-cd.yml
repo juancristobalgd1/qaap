@@ -83,9 +83,13 @@ jobs:
         shell: bash
         run: |
           npm ci
-          if [ ! -f node_modules/electron/dist/version ]; then
-            node node_modules/electron/install.js
+          ELECTRON_VERSION=$(node -p "require('./examples/electron/package.json').devDependencies.electron")
+          if ! node -e "require.resolve('electron/package.json')" >/dev/null 2>&1; then
+            npm install --no-save "electron@${ELECTRON_VERSION}" --workspace=@theia/example-electron
           fi
+          ELECTRON_INSTALL=$(node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")
+          node "${ELECTRON_INSTALL}"
+          node -e "const fs=require('fs');const p=require('path');const v=p.join(p.dirname(require.resolve('electron/package.json')),'dist','version');if(!fs.existsSync(v)){console.error('Missing electron binary:',v);process.exit(1)}"
           npm run build
           git status
           ./scripts/check_git_status.sh

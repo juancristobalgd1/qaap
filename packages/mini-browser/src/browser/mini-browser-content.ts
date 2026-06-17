@@ -498,9 +498,9 @@ export class MiniBrowserContent extends BaseWidget {
         if (location !== this.input.value) {
             this.setInput(location);
         }
-        void this.go(location, {
+        this.go(location, {
             preserveFocus: false
-        });
+        }).catch(() => undefined);
     }
 
     protected onUrlBarNavigateFailed(message: string): void {
