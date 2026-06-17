@@ -30,6 +30,7 @@ import {
     isClaudeCodeAgent,
     isQaiqAgent,
     resolveQaapAgentMentionToken,
+    usesAgUiCliTranscriptStream,
     usesStructuredAgentTranscript,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import {
@@ -46,6 +47,7 @@ import {
     type QaapAgentStreamAccumulator,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import { QaapQaiqStreamAccumulator } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-stream';
+import { QaapQaiqAgUiStreamEmitter } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-ag-ui-stream';
 import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
 import {
     buildAgentAutoContinuePrompt,
@@ -137,6 +139,8 @@ export class QaapAgentConversationStore {
     protected readonly modelFallbackTriedByUserMessage = new Map<string, Set<string>>();
     /** Per-task structured stdout parsers (QAIQ, Claude, Codex JSON, OpenCode, Antigravity). */
     protected readonly agentStreamByTaskId = new Map<string, QaapAgentStreamAccumulator>();
+    /** Per-task QAIQ/Claude stream-json → native AG-UI event emitters. */
+    protected readonly agUiStreamByTaskId = new Map<string, QaapQaiqAgUiStreamEmitter>();
     /** Last wire snapshot per agent message — drives incremental SSE deltas during streaming. */
     protected readonly lastWireMessageById = new Map<string, QaapAgentMessageWireSnapshot>();
     protected readonly agUiReducerByAgentMessageId = new Map<string, QaapAgUiTraceReducerState>();
@@ -753,8 +757,12 @@ export class QaapAgentConversationStore {
         if (!conv || !filtered) {
             return;
         }
-        const now = Date.now();
         const agentId = conv.agentId;
+        if (usesAgUiCliTranscriptStream(agentId)) {
+            this.applyAgUiTaskOutput(taskId, ref, filtered, agentId);
+            return;
+        }
+        const now = Date.now();
         const usesSegmentStream = usesStructuredAgentTranscript(agentId);
         let content: string;
         let segments: QaapAgentMessage['segments'];
@@ -822,6 +830,41 @@ export class QaapAgentConversationStore {
         this.schedulePersist();
     }
 
+    /** QAIQ / Claude stream-json → AG-UI reducer (traceEvents-only wire path). */
+    protected applyAgUiTaskOutput(
+        taskId: string,
+        ref: { conversationId: string; userMessageId: string; agentMessageId?: string },
+        chunk: string,
+        agentId: string,
+    ): void {
+        const usageStream = this.ensureAgentStream(taskId, agentId);
+        usageStream?.push(chunk);
+        const emitter = this.ensureAgUiStream(taskId);
+        const events = emitter.push(chunk);
+        if (events.length === 0) {
+            return;
+        }
+        let conv = this.conversations.get(ref.conversationId);
+        if (!conv) {
+            return;
+        }
+        for (const event of events) {
+            const next = this.applyAgUiTranscriptEvent(ref.conversationId, event);
+            if (next) {
+                conv = next;
+            }
+        }
+        const agentMessage = ref.agentMessageId
+            ? conv.messages.find(message => message.id === ref.agentMessageId)
+            : conv.messages[conv.messages.length - 1]?.role === 'agent'
+                ? conv.messages[conv.messages.length - 1]
+                : undefined;
+        if (agentMessage?.role === 'agent') {
+            ref.agentMessageId = agentMessage.id;
+            this.taskToConversation.set(taskId, ref);
+        }
+    }
+
     protected finalizeTurnContextUsage(conv: QaapAgentConversation, taskId: string, agentId: string): QaapAgentConversation {
         let next = conv;
         if (isQaiqAgent(agentId) || isClaudeCodeAgent(agentId)) {
@@ -856,6 +899,15 @@ export class QaapAgentConversationStore {
             }
         }
         return stream;
+    }
+
+    protected ensureAgUiStream(taskId: string): QaapQaiqAgUiStreamEmitter {
+        let emitter = this.agUiStreamByTaskId.get(taskId);
+        if (!emitter) {
+            emitter = new QaapQaiqAgUiStreamEmitter();
+            this.agUiStreamByTaskId.set(taskId, emitter);
+        }
+        return emitter;
     }
 
     protected parseStructuredLog(
@@ -902,6 +954,7 @@ export class QaapAgentConversationStore {
         }
         const usageFinalized = this.finalizeTurnContextUsage(convSnapshot, task.id, convSnapshot.agentId);
         this.agentStreamByTaskId.delete(task.id);
+        this.agUiStreamByTaskId.delete(task.id);
         const conv = this.conversations.get(conversationId);
         if (!conv) {
             return;
@@ -1204,16 +1257,23 @@ export class QaapAgentConversationStore {
                 return message;
             }
             let next = message;
-            const hadUnfinishedTool = message.segments?.some(
+            const hadUnfinishedTool = message.traceEvents?.some(event =>
+                event.type === 'tool_call'
+                && event.status !== 'completed'
+                && event.status !== 'failed'
+                && event.status !== 'cancelled',
+            ) || message.segments?.some(
                 segment => segment.type === 'tool' && !segment.finished,
             );
             if (hadUnfinishedTool) {
-                const finalizedSegments = finalizeUnfinishedAgentToolSegments(message.segments, interruptionReason);
+                const finalizedSegments = message.segments?.length
+                    ? finalizeUnfinishedAgentToolSegments(message.segments, interruptionReason)
+                    : undefined;
                 next = syncSettledTraceEventsOnMessage({
                     ...next,
-                    segments: finalizedSegments,
+                    ...(finalizedSegments ? { segments: finalizedSegments } : {}),
                 });
-            } else if (next.segments?.length) {
+            } else if (next.traceEvents?.length || next.segments?.length) {
                 next = syncSettledTraceEventsOnMessage(next);
             }
             return next;
@@ -1757,6 +1817,7 @@ export class QaapAgentConversationStore {
         for (const taskId of plan.taskIdsToCancel) {
             this.taskRunner.cancel(taskId);
             this.agentStreamByTaskId.delete(taskId);
+            this.agUiStreamByTaskId.delete(taskId);
             this.taskToConversation.delete(taskId);
         }
         let next: QaapAgentConversation = {

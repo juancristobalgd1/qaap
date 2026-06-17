@@ -406,6 +406,11 @@ export function usesStructuredAgentTranscript(agentId: string | undefined): bool
         || isAntigravityAgent(agentId);
 }
 
+/** CLI agents whose live stdout is mapped to native AG-UI events (stream-json). */
+export function usesAgUiCliTranscriptStream(agentId: string | undefined): boolean {
+    return isQaiqAgent(agentId) || isClaudeCodeAgent(agentId);
+}
+
 /**
  * Agent for a mobile/background submit: `@mention` in the draft wins, then the pinned chat agent.
  */
