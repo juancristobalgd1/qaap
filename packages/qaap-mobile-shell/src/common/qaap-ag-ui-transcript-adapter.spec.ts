@@ -119,4 +119,20 @@ describe('qaap-ag-ui-transcript-adapter', () => {
         });
         expect(delta.kind).to.equal('patch_trace_event');
     });
+
+    it('patchTraceToolCall keeps reducer identity for empty TOOL_CALL_ARGS deltas', () => {
+        let state = createQaapAgUiTraceReducer('agent-1');
+        ({ next: state } = reduceQaapAgUiTranscriptEvent(state, {
+            type: 'TOOL_CALL_START',
+            toolCallId: 'tool-1',
+            toolCallName: 'Read',
+        }, options));
+        const patched = reduceQaapAgUiTranscriptEvent(state, {
+            type: 'TOOL_CALL_ARGS',
+            toolCallId: 'tool-1',
+            delta: '',
+        }, options);
+        expect(patched.next).to.equal(state);
+        expect(patched.delta.kind).to.equal('noop');
+    });
 });

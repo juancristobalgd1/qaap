@@ -93,6 +93,12 @@ import {
     agentTurnHasRetryableEmptyOutput,
     resolveNextFallbackAgentModel,
 } from '../common/qaap-agent-model-fallback';
+import {
+    appendTraceCheckpointEvent,
+    appendTraceRunCancelledEvent,
+    agentMessageHasStructuredTrace,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 
 const STORE_DIR = path.join(os.homedir(), '.qaap', 'agent-conversations');
@@ -425,11 +431,24 @@ export class QaapAgentConversationStore {
             return undefined;
         }
         const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
+        const turnRef = lastUser?.taskId ? this.taskToConversation.get(lastUser.taskId) : undefined;
         if (lastUser?.taskId) {
             this.taskRunner.cancel(lastUser.taskId);
+            for (const subtask of collectSubtasksForLeader(lastUser.taskId, this.taskRunner.list())) {
+                if (subtask.state === 'running') {
+                    this.taskRunner.cancel(subtask.id);
+                }
+            }
         }
-        const next: QaapAgentConversation = { ...conv, status: 'idle', updatedAt: Date.now() };
+        const agentMessageId = turnRef?.agentMessageId
+            ?? (conv.messages[conv.messages.length - 1]?.role === 'agent'
+                ? conv.messages[conv.messages.length - 1].id
+                : undefined);
+        let next = this.appendRunCancelledTrace(conv, agentMessageId, 'Turn cancelled.');
+        next = this.finalizeStreamingAgentMessage(next, agentMessageId, 'Turn cancelled.');
+        next = { ...next, status: 'idle', updatedAt: Date.now() };
         this.conversations.set(id, next);
+        this.publishFinalizedAgentMessage(id, next, agentMessageId);
         this.fire({ type: 'updated', conversation: toConversationSummary(next) });
         void this.persist();
         return next;
@@ -737,6 +756,12 @@ export class QaapAgentConversationStore {
         if (!content && (!segments || segments.length === 0)) {
             return;
         }
+        const existingAgentMessage = ref.agentMessageId
+            ? conv.messages.find(message => message.id === ref.agentMessageId)
+            : undefined;
+        const traceEvents = usesSegmentStream && segments?.length
+            ? mergeSegmentTraceEvents(existingAgentMessage?.traceEvents, segments)
+            : undefined;
         let agentMessageId = ref.agentMessageId;
         let messages: QaapAgentMessage[];
         if (!agentMessageId) {
@@ -748,6 +773,7 @@ export class QaapAgentConversationStore {
                 role: 'agent',
                 content: content || '…',
                 segments,
+                ...(traceEvents ? { traceEvents } : {}),
                 createdAt: now,
             };
             messages = [...conv.messages, message];
@@ -758,6 +784,7 @@ export class QaapAgentConversationStore {
                     ...message,
                     content: usesSegmentStream ? (content || message.content) : `${message.content}${filtered}`,
                     segments: usesSegmentStream ? (segments ?? message.segments) : undefined,
+                    ...(usesSegmentStream && traceEvents ? { traceEvents } : {}),
                 }
                 : message
             );
@@ -851,7 +878,8 @@ export class QaapAgentConversationStore {
         };
         if (task.state === 'cancelled') {
             const cancelledReason = 'Turn cancelled.';
-            const finalized = this.finalizeStreamingAgentMessage(withUsageBaseline, agentMessageId, cancelledReason);
+            const withCancelledTrace = this.appendRunCancelledTrace(withUsageBaseline, agentMessageId, cancelledReason);
+            const finalized = this.finalizeStreamingAgentMessage(withCancelledTrace, agentMessageId, cancelledReason);
             const next: QaapAgentConversation = { ...finalized, status: 'idle', updatedAt: Date.now() };
             this.publishFinalizedAgentMessage(conversationId, next, agentMessageId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, next);
@@ -859,7 +887,12 @@ export class QaapAgentConversationStore {
         }
         const detail = await this.taskRunner.detail(task.id);
         const log = this.filterAgentLogChunk((detail?.log ?? '').trim());
-        const structuredParsed = log ? this.parseStructuredLog(conv.agentId, log) : undefined;
+        const streamingAgent = agentMessageId
+            ? withUsageBaseline.messages.find(message => message.id === agentMessageId)
+            : undefined;
+        const skipLogReparse = agentMessageHasStructuredTrace(streamingAgent)
+            || (usesStructuredAgentTranscript(conv.agentId) && (streamingAgent?.segments?.length ?? 0) > 0);
+        const structuredParsed = log && !skipLogReparse ? this.parseStructuredLog(conv.agentId, log) : undefined;
         if (task.state !== 'completed') {
             const agentMessage = agentMessageId
                 ? withUsageBaseline.messages.find(message => message.id === agentMessageId)
@@ -899,6 +932,9 @@ export class QaapAgentConversationStore {
                     ...message,
                     content: structuredParsed.content || message.content,
                     segments: structuredParsed.segments,
+                    traceEvents: structuredParsed.segments?.length
+                        ? mergeSegmentTraceEvents(message.traceEvents, structuredParsed.segments)
+                        : message.traceEvents,
                 }
                 : message
             );
@@ -912,7 +948,13 @@ export class QaapAgentConversationStore {
             if (structuredParsed?.segments?.length) {
                 const messages = reply.messages.map((message, index, all) => {
                     if (index === all.length - 1 && message.role === 'agent') {
-                        return { ...message, segments: structuredParsed.segments };
+                        return {
+                            ...message,
+                            segments: structuredParsed.segments,
+                            traceEvents: structuredParsed.segments?.length
+                        ? mergeSegmentTraceEvents(message.traceEvents, structuredParsed.segments)
+                        : message.traceEvents,
+                        };
                     }
                     return message;
                 });
@@ -935,6 +977,7 @@ export class QaapAgentConversationStore {
         );
         if (checkpoint) {
             withReply = { ...withReply, checkpoints: [...(withReply.checkpoints ?? []), checkpoint] };
+            withReply = this.appendCheckpointTrace(withReply, agentMessageId, checkpoint);
         }
         this.conversations.set(conversationId, withReply);
         const agentMessage = withReply.messages[withReply.messages.length - 1];
@@ -1121,18 +1164,56 @@ export class QaapAgentConversationStore {
             if (message.id !== agentMessageId || message.role !== 'agent') {
                 return message;
             }
+            let next = message;
             const hadUnfinishedTool = message.segments?.some(
                 segment => segment.type === 'tool' && !segment.finished,
             );
-            if (!hadUnfinishedTool) {
-                return message;
+            if (hadUnfinishedTool) {
+                const finalizedSegments = finalizeUnfinishedAgentToolSegments(message.segments, interruptionReason);
+                next = {
+                    ...next,
+                    segments: finalizedSegments,
+                    traceEvents: finalizedSegments
+                        ? mergeSegmentTraceEvents(next.traceEvents, finalizedSegments)
+                        : next.traceEvents,
+                };
             }
-            return {
-                ...message,
-                segments: finalizeUnfinishedAgentToolSegments(message.segments, interruptionReason),
-            };
+            return next;
         });
         return { ...conv, messages };
+    }
+
+    protected appendRunCancelledTrace(
+        conv: QaapAgentConversation,
+        agentMessageId: string | undefined,
+        reason: string,
+    ): QaapAgentConversation {
+        if (!agentMessageId) {
+            return conv;
+        }
+        return {
+            ...conv,
+            messages: conv.messages.map(message => message.id === agentMessageId && message.role === 'agent'
+                ? appendTraceRunCancelledEvent(message, { reason })
+                : message),
+        };
+    }
+
+    protected appendCheckpointTrace(
+        conv: QaapAgentConversation,
+        agentMessageId: string | undefined,
+        checkpoint: QaapConversationCheckpoint,
+    ): QaapAgentConversation {
+        const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
+        if (!targetId) {
+            return conv;
+        }
+        return {
+            ...conv,
+            messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
+                ? appendTraceCheckpointEvent(message, checkpoint)
+                : message),
+        };
     }
 
     protected publishFinalizedAgentMessage(

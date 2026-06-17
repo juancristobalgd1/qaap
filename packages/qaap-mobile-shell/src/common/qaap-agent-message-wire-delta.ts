@@ -116,7 +116,9 @@ function computeTraceEventPatch(
     if (previous.type !== incoming.type || previous.id !== incoming.id) {
         return undefined;
     }
-    if (previous.type === 'error' || incoming.type === 'error') {
+    if (previous.type === 'error' || incoming.type === 'error'
+        || previous.type === 'run_cancelled' || incoming.type === 'run_cancelled'
+        || previous.type === 'checkpoint' || incoming.type === 'checkpoint') {
         return undefined;
     }
     if (previous.type === 'tool_call' && incoming.type === 'tool_call') {
@@ -270,6 +272,8 @@ function patchTraceEventInPlace(
             };
         }
         case 'error':
+        case 'run_cancelled':
+        case 'checkpoint':
             return event;
         default: {
             const exhaustive: never = event;

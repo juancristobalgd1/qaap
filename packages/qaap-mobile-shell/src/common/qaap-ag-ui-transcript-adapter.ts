@@ -121,7 +121,7 @@ export function applyQaapAgUiEventToReducer(
         case 'TOOL_CALL_ARGS': {
             const toolCallId = readString(event, 'toolCallId', 'tool_call_id');
             const delta = readString(event, 'delta', 'args');
-            if (!toolCallId || delta === undefined) {
+            if (!toolCallId || delta === undefined || delta.length === 0) {
                 return state;
             }
             const mergedArgs = `${state.toolArgsById[toolCallId] ?? ''}${delta}`;
@@ -233,6 +233,35 @@ function readPatch(event: QaapAgUiEvent): readonly QaapJsonPatchOperation[] {
     ));
 }
 
+function patchTraceEvents(
+    events: readonly QaapTranscriptTraceEventDTO[],
+    match: (event: QaapTranscriptTraceEventDTO) => boolean,
+    patcher: (event: QaapTranscriptTraceEventDTO) => QaapTranscriptTraceEventDTO,
+): readonly QaapTranscriptTraceEventDTO[] {
+    let next: QaapTranscriptTraceEventDTO[] | undefined;
+    for (let index = 0; index < events.length; index++) {
+        const event = events[index];
+        if (!match(event)) {
+            if (next) {
+                next.push(event);
+            }
+            continue;
+        }
+        const patched = patcher(event);
+        if (patched === event) {
+            if (next) {
+                next.push(event);
+            }
+            continue;
+        }
+        if (!next) {
+            next = events.slice(0, index);
+        }
+        next.push(patched);
+    }
+    return next ?? events;
+}
+
 function appendTraceToolCall(
     state: QaapAgUiTraceReducerState,
     event: Extract<QaapTranscriptTraceEventDTO, { type: 'tool_call' }>,
@@ -254,23 +283,40 @@ function patchTraceToolCall(
         readonly status?: Extract<QaapTranscriptTraceEventDTO, { type: 'tool_call' }>['status'];
     },
 ): QaapAgUiTraceReducerState {
-    const toolArgsById = patch.args !== undefined
-        ? { ...state.toolArgsById, [toolCallId]: patch.args }
-        : patch.argsAppend !== undefined
-            ? { ...state.toolArgsById, [toolCallId]: `${state.toolArgsById[toolCallId] ?? ''}${patch.argsAppend}` }
-            : state.toolArgsById;
-    const traceEvents = state.traceEvents.map(event => {
-        if (event.type !== 'tool_call' || event.id !== toolCallId) {
-            return event;
-        }
-        return {
-            ...event,
-            ...(patch.args !== undefined ? { args: patch.args } : {}),
-            ...(patch.argsAppend !== undefined ? { args: `${event.args ?? ''}${patch.argsAppend}` } : {}),
-            ...(patch.result !== undefined ? { result: patch.result } : {}),
-            ...(patch.status ? { status: patch.status } : {}),
-        };
-    });
+    let toolArgsById = state.toolArgsById;
+    if (patch.args !== undefined) {
+        toolArgsById = { ...toolArgsById, [toolCallId]: patch.args };
+    } else if (patch.argsAppend !== undefined) {
+        toolArgsById = { ...toolArgsById, [toolCallId]: `${toolArgsById[toolCallId] ?? ''}${patch.argsAppend}` };
+    }
+    const traceEvents = patchTraceEvents(
+        state.traceEvents,
+        event => event.type === 'tool_call' && event.id === toolCallId,
+        event => {
+            if (event.type !== 'tool_call') {
+                return event;
+            }
+            const nextArgs = patch.args !== undefined
+                ? patch.args
+                : patch.argsAppend !== undefined
+                    ? `${event.args ?? ''}${patch.argsAppend}`
+                    : event.args;
+            const nextResult = patch.result !== undefined ? patch.result : event.result;
+            const nextStatus = patch.status ?? event.status;
+            if (nextArgs === event.args && nextResult === event.result && nextStatus === event.status) {
+                return event;
+            }
+            return {
+                ...event,
+                ...(patch.args !== undefined || patch.argsAppend !== undefined ? { args: nextArgs } : {}),
+                ...(patch.result !== undefined ? { result: nextResult } : {}),
+                ...(patch.status ? { status: nextStatus } : {}),
+            };
+        },
+    );
+    if (traceEvents === state.traceEvents && toolArgsById === state.toolArgsById) {
+        return state;
+    }
     return { ...state, traceEvents, toolArgsById };
 }
 
@@ -286,19 +332,28 @@ function patchTraceAssistantText(
     messageId: string,
     patch: { readonly contentAppend?: string; readonly status?: 'streaming' | 'completed' },
 ): QaapAgUiTraceReducerState {
-    const traceEvents = state.traceEvents.map(event => {
-        if (event.type !== 'assistant_text' || event.id !== messageId) {
-            return event;
-        }
-        return {
-            ...event,
-            ...(patch.contentAppend !== undefined
-                ? { content: `${event.content ?? ''}${patch.contentAppend}` }
-                : {}),
-            ...(patch.status ? { status: patch.status } : {}),
-        };
-    });
-    return { ...state, traceEvents };
+    const traceEvents = patchTraceEvents(
+        state.traceEvents,
+        event => event.type === 'assistant_text' && event.id === messageId,
+        event => {
+            if (event.type !== 'assistant_text') {
+                return event;
+            }
+            const nextContent = patch.contentAppend !== undefined
+                ? `${event.content ?? ''}${patch.contentAppend}`
+                : event.content;
+            const nextStatus = patch.status ?? event.status;
+            if (nextContent === event.content && nextStatus === event.status) {
+                return event;
+            }
+            return {
+                ...event,
+                ...(patch.contentAppend !== undefined ? { content: nextContent } : {}),
+                ...(patch.status ? { status: nextStatus } : {}),
+            };
+        },
+    );
+    return traceEvents === state.traceEvents ? state : { ...state, traceEvents };
 }
 
 function appendTraceThought(
@@ -313,19 +368,28 @@ function patchTraceThought(
     messageId: string,
     patch: { readonly contentAppend?: string; readonly status?: 'running' | 'completed' },
 ): QaapAgUiTraceReducerState {
-    const traceEvents = state.traceEvents.map(event => {
-        if (event.type !== 'thought' || event.id !== messageId) {
-            return event;
-        }
-        return {
-            ...event,
-            ...(patch.contentAppend !== undefined
-                ? { content: `${event.content ?? ''}${patch.contentAppend}` }
-                : {}),
-            ...(patch.status ? { status: patch.status } : {}),
-        };
-    });
-    return { ...state, traceEvents };
+    const traceEvents = patchTraceEvents(
+        state.traceEvents,
+        event => event.type === 'thought' && event.id === messageId,
+        event => {
+            if (event.type !== 'thought') {
+                return event;
+            }
+            const nextContent = patch.contentAppend !== undefined
+                ? `${event.content ?? ''}${patch.contentAppend}`
+                : event.content;
+            const nextStatus = patch.status ?? event.status;
+            if (nextContent === event.content && nextStatus === event.status) {
+                return event;
+            }
+            return {
+                ...event,
+                ...(patch.contentAppend !== undefined ? { content: nextContent } : {}),
+                ...(patch.status ? { status: nextStatus } : {}),
+            };
+        },
+    );
+    return traceEvents === state.traceEvents ? state : { ...state, traceEvents };
 }
 
 function appendTraceError(state: QaapAgUiTraceReducerState, message: string): QaapAgUiTraceReducerState {
@@ -400,5 +464,7 @@ function isQaapTranscriptTraceEvent(value: unknown): value is QaapTranscriptTrac
     return type === 'thought'
         || type === 'tool_call'
         || type === 'assistant_text'
-        || type === 'error';
+        || type === 'error'
+        || type === 'run_cancelled'
+        || type === 'checkpoint';
 }

@@ -1,0 +1,69 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { expect } from 'chai';
+import {
+    agentMessageHasStructuredTrace,
+    appendTraceCheckpointEvent,
+    appendTraceRunCancelledEvent,
+} from './qaap-transcript-trace-lifecycle';
+import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+
+const agentMessage = (partial: Partial<QaapAgentMessageDTO> = {}): QaapAgentMessageDTO => ({
+    id: 'agent-1',
+    role: 'agent',
+    content: '',
+    createdAt: 1,
+    ...partial,
+});
+
+describe('qaap-transcript-trace-lifecycle', () => {
+    it('appendTraceRunCancelledEvent cancels in-flight tools and appends run_cancelled', () => {
+        const next = appendTraceRunCancelledEvent(agentMessage({
+            traceEvents: [{
+                type: 'tool_call',
+                id: 'tool-1',
+                name: 'bash',
+                args: '{}',
+                status: 'running',
+            }],
+        }), { reason: 'Turn cancelled.' });
+        expect(next.traceEvents?.[0]).to.include({ status: 'cancelled' });
+        expect(next.traceEvents?.[1]).to.deep.include({
+            type: 'run_cancelled',
+            message: 'Turn cancelled.',
+        });
+    });
+
+    it('appendTraceCheckpointEvent appends a checkpoint row once', () => {
+        const checkpoint = {
+            id: 'ckpt-1',
+            messageId: 'user-1',
+            label: 'Fix bug',
+            commit: 'abc123',
+            ref: 'refs/qaap/checkpoints/x',
+            capturedAt: 99,
+            added: 3,
+            removed: 1,
+        };
+        const once = appendTraceCheckpointEvent(agentMessage(), checkpoint);
+        const twice = appendTraceCheckpointEvent(once, checkpoint);
+        expect(once.traceEvents).to.have.length(1);
+        expect(twice.traceEvents).to.have.length(1);
+        expect(once.traceEvents?.[0]).to.deep.include({
+            type: 'checkpoint',
+            label: 'Fix bug',
+            added: 3,
+            removed: 1,
+        });
+    });
+
+    it('agentMessageHasStructuredTrace is true when traceEvents exist', () => {
+        expect(agentMessageHasStructuredTrace(agentMessage({
+            traceEvents: [{ type: 'assistant_text', id: 't1', content: 'hi', status: 'completed' }],
+        }))).to.equal(true);
+        expect(agentMessageHasStructuredTrace(agentMessage())).to.equal(false);
+    });
+});

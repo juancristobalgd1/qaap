@@ -32,6 +32,11 @@ import {
 } from '../common/qaap-agent-message-wire-compress';
 import type { QaapAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
 import { normalizeAgentMessageContentForDisplay, resolveMessagePreviewText } from '../common/qaap-agent-message-content';
+import {
+    type QaapConversationChangeEvent,
+} from '../common/qaap-conversation-change';
+import { QaapThreadStore } from '../common/qaap-thread-store';
+import type { QaapThreadStoreUpsertResult } from '../common/qaap-thread-store';
 import { cwdMatchesProject, lookupByCwd, normalizeCwd } from './mobile-projects-active-tasks';
 
 const STREAM_URL = `${QAAP_AGENT_CONVERSATION_API_PATH}/stream`;
@@ -92,6 +97,8 @@ type ConversationServerEvent =
 export class MobileProjectsConversations {
 
     protected readonly byCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
+    /** Canonical per-thread summaries + lazy documents (AG-UI MessagesSnapshot path). */
+    readonly threadStore = new QaapThreadStore();
     /** E2E perf probe: survives server snapshot clears in {@link applyConversationGroups}. */
     protected readonly perfProbeByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected readonly theiaByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
@@ -111,6 +118,10 @@ export class MobileProjectsConversations {
     protected readonly onDidChangeEmitter = new Emitter<void>();
     /** Fires whenever conversation state on the server changes (any project). */
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
+
+    protected readonly onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
+    /** Fine-grained change metadata for selective hub / sidebar refresh. */
+    readonly onDidChangeDetail: Event<QaapConversationChangeEvent> = this.onDidChangeDetailEmitter.event;
 
     protected readonly onDidReceiveMessageEmitter = new Emitter<ConversationLiveMessageEvent>();
     /** Fires on each live SSE message chunk — includes structured segments for QAIQ/OpenCode. */
@@ -152,7 +163,7 @@ export class MobileProjectsConversations {
 
     /** E2E perf probe: simulate one live conversation tick without network I/O. */
     perfProbeFireDidChange(): void {
-        this.onDidChangeEmitter.fire();
+        this.emitConversationChange({ kind: 'updated' });
     }
 
     /** E2E perf probe: seed synthetic summaries for multi-agent hub scenarios. */
@@ -178,7 +189,7 @@ export class MobileProjectsConversations {
             }
             : summary);
         this.perfProbeByCwd.set(key, sortConversations(next));
-        this.onDidChangeEmitter.fire();
+        this.emitConversationChange({ kind: 'updated' });
     }
 
     protected primeFromAllInFlight: Promise<void> | undefined;
@@ -363,17 +374,21 @@ export class MobileProjectsConversations {
 
     /** Optimistic update after a synchronous POST returns, before SSE catches up. */
     recordSnapshot(conv: QaapAgentConversationSummaryDTO): void {
-        this.upsert(conv);
-        this.onDidChangeEmitter.fire();
+        const result = this.upsert(conv);
+        this.emitConversationChange({
+            kind: 'updated',
+            conversationId: conv.id,
+            cwd: conv.cwd,
+            changedFields: result.changedFields,
+            listOrderChanged: result.listOrderChanged,
+        });
     }
 
     /** Latest summary row for a conversation id (VPS or Theia-backed). */
     findSummaryById(id: string): QaapAgentConversationSummaryDTO | undefined {
-        for (const list of this.byCwd.values()) {
-            const found = list.find(c => c.id === id);
-            if (found) {
-                return found;
-            }
+        const fromStore = this.threadStore.findSummaryById(id);
+        if (fromStore) {
+            return fromStore;
         }
         for (const list of this.theiaByCwd.values()) {
             const found = list.find(c => c.id === id || c.sessionId === id);
@@ -397,19 +412,25 @@ export class MobileProjectsConversations {
 
     /** Optimistic update after deleting a conversation before SSE/storage refresh catches up. */
     removeSnapshot(conversationId: string, cwd: string, source?: QaapAgentConversationSummaryDTO['source']): void {
-        const map = source === 'theia-chat' ? this.theiaByCwd : this.byCwd;
-        const normalized = normalizeCwd(cwd);
-        const list = map.get(normalized);
-        if (!list) {
+        if (source === 'theia-chat') {
+            const map = this.theiaByCwd;
+            const normalized = normalizeCwd(cwd);
+            const list = map.get(normalized);
+            if (!list) {
+                return;
+            }
+            const next = list.filter(c => c.id !== conversationId && c.sessionId !== conversationId);
+            if (next.length === 0) {
+                map.delete(normalized);
+            } else {
+                map.set(normalized, next);
+            }
+            this.emitConversationChange({ kind: 'deleted', conversationId, cwd });
             return;
         }
-        const next = list.filter(c => c.id !== conversationId && c.sessionId !== conversationId);
-        if (next.length === 0) {
-            map.delete(normalized);
-        } else {
-            map.set(normalized, next);
-        }
-        this.onDidChangeEmitter.fire();
+        this.threadStore.removeSummary(conversationId, cwd);
+        this.syncByCwdBucket(cwd);
+        this.emitConversationChange({ kind: 'deleted', conversationId, cwd });
     }
 
     protected async primeFromAll(): Promise<void> {
@@ -424,15 +445,41 @@ export class MobileProjectsConversations {
     protected applyConversationGroups(
         groups: ReadonlyArray<{ readonly cwd: string; readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO> }>,
     ): void {
-        const next = new Map<string, QaapAgentConversationSummaryDTO[]>();
-        for (const group of groups) {
-            next.set(normalizeCwd(group.cwd), sortConversations([...group.conversations]));
-        }
+        this.threadStore.applySummarySnapshot(groups);
+        this.rebuildByCwdFromThreadStore();
+        this.emitConversationChange({ kind: 'snapshot' });
+    }
+
+    protected rebuildByCwdFromThreadStore(): void {
         this.byCwd.clear();
-        for (const [cwd, list] of next) {
+        for (const summary of this.threadStore.listAllSummaries()) {
+            const cwd = normalizeCwd(summary.cwd);
+            const list = this.threadStore.getSummariesForCwd(cwd);
             this.byCwd.set(cwd, list);
         }
+    }
+
+    protected emitConversationChange(event: QaapConversationChangeEvent): void {
+        this.lastConversationChange = event;
+        this.onDidChangeDetailEmitter.fire(event);
         this.onDidChangeEmitter.fire();
+    }
+
+    /** Latest typed change paired with the preceding `onDidChange` tick. */
+    peekLastConversationChange(): QaapConversationChangeEvent | undefined {
+        return this.lastConversationChange;
+    }
+
+    protected lastConversationChange: QaapConversationChangeEvent | undefined;
+
+    protected syncByCwdBucket(cwd: string): void {
+        const normalized = normalizeCwd(cwd);
+        const list = this.threadStore.getSummariesForCwd(normalized);
+        if (list.length === 0) {
+            this.byCwd.delete(normalized);
+        } else {
+            this.byCwd.set(normalized, list);
+        }
     }
 
     protected async cancelConversationLive(id: string): Promise<void> {
@@ -555,11 +602,18 @@ export class MobileProjectsConversations {
                 this.applyConversationGroups(payload.groups);
                 return;
             case 'created':
-            case 'updated':
-                this.upsert(payload.conversation);
+            case 'updated': {
+                const result = this.upsert(payload.conversation);
                 this.recordClientStreamMetrics(payload);
-                this.onDidChangeEmitter.fire();
+                this.emitConversationChange({
+                    kind: payload.type,
+                    conversationId: payload.conversation.id,
+                    cwd: payload.conversation.cwd,
+                    changedFields: result.changedFields,
+                    listOrderChanged: result.listOrderChanged,
+                });
                 return;
+            }
             case 'message':
                 void this.dispatchLiveMessage(payload);
                 return;
@@ -568,17 +622,13 @@ export class MobileProjectsConversations {
                 return;
             case 'deleted': {
                 const cwd = normalizeCwd(payload.cwd);
-                const list = this.byCwd.get(cwd);
-                if (!list) {
-                    return;
-                }
-                const next = list.filter(c => c.id !== payload.conversationId);
-                if (next.length === 0) {
-                    this.byCwd.delete(cwd);
-                } else {
-                    this.byCwd.set(cwd, next);
-                }
-                this.onDidChangeEmitter.fire();
+                this.threadStore.removeSummary(payload.conversationId, cwd);
+                this.syncByCwdBucket(cwd);
+                this.emitConversationChange({
+                    kind: 'deleted',
+                    conversationId: payload.conversationId,
+                    cwd: payload.cwd,
+                });
                 return;
             }
             case 'parallel-run':
@@ -700,10 +750,13 @@ export class MobileProjectsConversations {
     }
 
     protected refreshSummaryFromLiveMessage(payload: ConversationMessageEvent): void {
-        const list = lookupByCwd(this.byCwd, payload.cwd) ?? [];
-        const existing = list.find(c => c.id === payload.conversationId);
+        const existing = this.threadStore.findSummaryById(payload.conversationId);
         if (!existing) {
-            this.onDidChangeEmitter.fire();
+            this.emitConversationChange({
+                kind: 'message',
+                conversationId: payload.conversationId,
+                cwd: payload.cwd,
+            });
             return;
         }
         const updated: QaapAgentConversationSummaryDTO = {
@@ -715,17 +768,27 @@ export class MobileProjectsConversations {
             lastMessagePreview: excerpt(resolveMessagePreviewText(payload.message)),
             lastMessageRole: payload.message.role,
         };
-        this.upsert(updated);
-        this.onDidChangeEmitter.fire();
+        const result = this.upsert(updated);
+        this.emitConversationChange({
+            kind: 'message',
+            conversationId: payload.conversationId,
+            cwd: payload.cwd,
+            changedFields: result.changedFields,
+            listOrderChanged: result.listOrderChanged,
+        });
     }
 
     protected refreshSummaryFromLiveDelta(payload: ConversationMessageDeltaEvent): void {
-        const list = lookupByCwd(this.byCwd, payload.cwd) ?? [];
-        const existing = list.find(c => c.id === payload.conversationId);
+        const existing = this.threadStore.findSummaryById(payload.conversationId);
         if (!existing) {
-            this.onDidChangeEmitter.fire();
+            this.emitConversationChange({
+                kind: 'message_delta',
+                conversationId: payload.conversationId,
+                cwd: payload.cwd,
+            });
             return;
         }
+        this.threadStore.applyWireDelta(payload.conversationId, payload.messageId, payload.delta);
         const previewDelta = this.resolvePreviewDelta(payload.delta);
         const updated: QaapAgentConversationSummaryDTO = {
             ...existing,
@@ -734,8 +797,14 @@ export class MobileProjectsConversations {
                 ? { lastMessagePreview: excerpt(`${existing.lastMessagePreview ?? ''}${previewDelta}`) }
                 : {}),
         };
-        this.upsert(updated);
-        this.onDidChangeEmitter.fire();
+        const result = this.upsert(updated);
+        this.emitConversationChange({
+            kind: 'message_delta',
+            conversationId: payload.conversationId,
+            cwd: payload.cwd,
+            changedFields: result.changedFields,
+            listOrderChanged: result.listOrderChanged,
+        });
     }
 
     protected resolvePreviewDelta(delta: QaapAgentMessageWireDelta): string | undefined {
@@ -759,16 +828,10 @@ export class MobileProjectsConversations {
         }
     }
 
-    protected upsert(conv: QaapAgentConversationSummaryDTO): void {
-        const cwd = normalizeCwd(conv.cwd);
-        const list = [...(this.byCwd.get(cwd) ?? [])];
-        const index = list.findIndex(c => c.id === conv.id);
-        if (index >= 0) {
-            list[index] = conv;
-        } else {
-            list.unshift(conv);
-        }
-        this.byCwd.set(cwd, sortConversations(list));
+    protected upsert(conv: QaapAgentConversationSummaryDTO): QaapThreadStoreUpsertResult {
+        const result = this.threadStore.upsertSummary(conv);
+        this.syncByCwdBucket(conv.cwd);
+        return result;
     }
 
     protected getAllConversationBuckets(): Array<[string, QaapAgentConversationSummaryDTO[]]> {

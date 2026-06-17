@@ -38,6 +38,21 @@ export type QaapTranscriptTraceEventDTO =
         readonly id: string;
         readonly message: string;
         readonly startedAt?: number;
+    }
+    | {
+        readonly type: 'run_cancelled';
+        readonly id: string;
+        readonly message: string;
+        readonly startedAt?: number;
+    }
+    | {
+        readonly type: 'checkpoint';
+        readonly id: string;
+        readonly label: string;
+        readonly commit: string;
+        readonly capturedAt: number;
+        readonly added?: number;
+        readonly removed?: number;
     };
 
 export interface QaapTranscriptTrace {
@@ -95,6 +110,21 @@ export function hasActiveQaapTraceWork(message: QaapAgentMessageDTO): boolean {
         }
         return false;
     });
+}
+
+const LIFECYCLE_TRACE_EVENT_TYPES = new Set<QaapTranscriptTraceEventDTO['type']>([
+    'checkpoint',
+    'run_cancelled',
+    'error',
+]);
+
+/** Preserve AG-UI lifecycle rows while syncing segment-derived tool/thought/text events. */
+export function mergeSegmentTraceEvents(
+    existing: readonly QaapTranscriptTraceEventDTO[] | undefined,
+    segments: readonly QaapAgentMessageSegmentDTO[],
+): QaapTranscriptTraceEventDTO[] {
+    const lifecycle = (existing ?? []).filter(event => LIFECYCLE_TRACE_EVENT_TYPES.has(event.type));
+    return [...segmentsToTraceEvents(segments), ...lifecycle];
 }
 
 export function segmentsToTraceEvents(
@@ -155,6 +185,17 @@ export function traceEventsToSegments(
                 }];
             case 'error':
                 return [{ type: 'text', content: `Error: ${event.message}` }];
+            case 'run_cancelled':
+                return event.message.trim()
+                    ? [{ type: 'text', content: event.message }]
+                    : [];
+            case 'checkpoint':
+                return [{
+                    type: 'text',
+                    content: `Checkpoint: ${event.label}${event.added !== undefined || event.removed !== undefined
+                        ? ` (+${event.added ?? 0}/-${event.removed ?? 0})`
+                        : ''}`,
+                }];
             default: {
                 const exhaustive: never = event;
                 return exhaustive;
@@ -180,6 +221,10 @@ export function fingerprintQaapTraceEvent(event: QaapTranscriptTraceEventDTO): s
             ].join(':');
         case 'error':
             return `${event.type}:${event.id}:${event.message.length}`;
+        case 'run_cancelled':
+            return `${event.type}:${event.id}:${event.message.length}`;
+        case 'checkpoint':
+            return `${event.type}:${event.id}:${event.label}:${event.commit}`;
         default: {
             const exhaustive: never = event;
             return exhaustive;

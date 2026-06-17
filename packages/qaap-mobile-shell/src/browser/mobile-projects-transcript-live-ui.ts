@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     conversationToSummary,
     getConversation,
@@ -152,6 +153,7 @@ export class MobileProjectsTranscriptLiveUi {
     protected transcriptDevPreviewBootstrapConversationId: string | undefined;
     protected bootstrapPreviewListenerInitialized = false;
     protected pendingSseRenderConv: QaapAgentConversationDTO | undefined;
+    protected threadStoreSummaryDispose: Disposable = Disposable.NULL;
     protected sseRenderRafId = 0;
     protected sseRenderTimer: number | undefined;
     protected lastMountedApprovalId: string | undefined;
@@ -341,6 +343,43 @@ export class MobileProjectsTranscriptLiveUi {
         this.applyTranscriptSseRender(next, lastMessage);
     }
 
+    protected cacheTranscriptConversation(document: QaapAgentConversationDTO): void {
+        this.host.transcriptConversationCache.set(document.id, document);
+        this.host.conversations?.threadStore.setDocument(document);
+    }
+
+    protected bindOpenTranscriptThreadStore(conversationId: string): void {
+        this.threadStoreSummaryDispose.dispose();
+        const conversations = this.host.conversations;
+        if (!conversations) {
+            this.threadStoreSummaryDispose = Disposable.NULL;
+            return;
+        }
+        this.threadStoreSummaryDispose = conversations.threadStore.subscribe(
+            summary => {
+                if (!summary || this.host.transcriptOpenSummary?.id !== conversationId) {
+                    return;
+                }
+                this.host.transcriptOpenSummary = { ...this.host.transcriptOpenSummary, ...summary };
+                if (this.host.transcriptComposerSummary?.id === conversationId) {
+                    this.host.transcriptComposerSummary = { ...this.host.transcriptComposerSummary, ...summary };
+                }
+            },
+            snapshot => snapshot.summariesById.get(conversationId),
+            conversationId,
+        );
+    }
+
+    protected unbindOpenTranscriptThreadStore(): void {
+        this.threadStoreSummaryDispose.dispose();
+        this.threadStoreSummaryDispose = Disposable.NULL;
+    }
+
+    protected readCachedTranscriptConversation(conversationId: string): QaapAgentConversationDTO | undefined {
+        return this.host.conversations?.threadStore.getDocument(conversationId)
+            ?? this.host.transcriptConversationCache.get(conversationId);
+    }
+
     protected applyTranscriptSseRender(
         next: QaapAgentConversationDTO,
         eventMessage: QaapAgentMessageDTO,
@@ -353,7 +392,7 @@ export class MobileProjectsTranscriptLiveUi {
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, next);
         this.host.executionSurfaceTabsUi.syncPlanTabDuringStreaming();
         this.host.transcriptLastConv = next;
-        this.host.transcriptConversationCache.set(next.id, next);
+        this.cacheTranscriptConversation(next);
         this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, next);
         if (next.status === 'streaming') {
             if (!prevConv || prevConv.status !== 'streaming' || transcriptFingerprintChanged(prevConv, next)) {
@@ -945,6 +984,7 @@ export class MobileProjectsTranscriptLiveUi {
         );
         const controller = this.ensureTranscriptLiveController();
         controller.watch(summary.id);
+        this.bindOpenTranscriptThreadStore(summary.id);
         this.host.transcriptScheduleRefresh = controller.onScheduleRefresh;
         this.scheduleTranscriptApprovalRefresh();
     }
@@ -1013,6 +1053,12 @@ export class MobileProjectsTranscriptLiveUi {
             && !options?.forcePoll) {
             return;
         }
+        const localSnapshot = options?.forcePoll
+            ? this.readCachedTranscriptConversation(activeSummary.id)
+            : undefined;
+        if (localSnapshot && localSnapshot.messages.length > 0) {
+            this.host.transcriptLastConv = localSnapshot;
+        }
         try {
             const full = await this.resolveOpenTranscriptConversation(activeSummary);
             if (!full) {
@@ -1033,7 +1079,7 @@ export class MobileProjectsTranscriptLiveUi {
                 await this.host.syncTranscriptPreviewFromConversation(activeProject, activeSummary, full);
             }
             this.host.transcriptLastConv = full;
-            this.host.transcriptConversationCache.set(full.id, full);
+            this.cacheTranscriptConversation(full);
             const reconciledSummary = this.reconcileConversationListSummary(full);
             this.host.transcriptOpenSummary = reconciledSummary;
             if (this.host.transcriptComposerSummary?.id === full.id

@@ -7,6 +7,7 @@ import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, traceEventsToSegments } from '../common/qaap-transcript-trace-model';
+import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
 import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
 import {
     isTranscriptAgentTailStreaming,
@@ -62,7 +63,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     ): QaapAgentMessageSegmentDTO[] | undefined {
         const trace = resolveQaapTranscriptTrace(msg, {
             agentId: conv.agentId,
-            allowLegacyContentParse: true,
+            allowLegacyContentParse: !agentMessageHasStructuredTrace(msg),
         });
         if (trace.segments.length > 0) {
             return dedupeAgentMessageTextSegments([...trace.segments]);

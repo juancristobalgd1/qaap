@@ -4,14 +4,14 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, formatTranscriptThoughtDuration, isTranscriptAgentThinkingPhase, isTranscriptStreamStalled, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
-import { groupTranscriptActivityNavigationItems } from '../common/qaap-transcript-activity-navigation';
+import { groupTranscriptActivityNavigationItems, resolveTranscriptLifecycleActivityItems } from '../common/qaap-transcript-activity-navigation';
 import { isTranscriptActivityLiveState, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
 import { formatTranscriptActivityStepMeta, TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
 import {
@@ -460,19 +460,21 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             options?.conv,
             { stalled: options?.stalled, streaming: options?.streaming },
         );
+        const segmentItems = this.resolversUi.resolveTranscriptActivityItems(
+            [...segments],
+            options?.includeThinkingSteps ?? true,
+            {
+                stalled: options?.stalled,
+                streaming: rowContext.navigationOptions.streaming,
+                pendingToolUseIds: rowContext.navigationOptions.pendingToolUseIds,
+                messageCancelled: rowContext.navigationOptions.messageCancelled,
+                resolveStepDurationMs: rowContext.resolveDurationMs,
+                resolveStepTimestamp: rowContext.resolveTimestamp,
+            },
+        );
+        const lifecycleItems = resolveTranscriptLifecycleActivityItems(rowContext.message?.traceEvents);
         const items = annotateTranscriptActivityNestMetadata(
-            groupTranscriptActivityNavigationItems(this.resolversUi.resolveTranscriptActivityItems(
-                [...segments],
-                options?.includeThinkingSteps ?? true,
-                {
-                    stalled: options?.stalled,
-                    streaming: rowContext.navigationOptions.streaming,
-                    pendingToolUseIds: rowContext.navigationOptions.pendingToolUseIds,
-                    messageCancelled: rowContext.navigationOptions.messageCancelled,
-                    resolveStepDurationMs: rowContext.resolveDurationMs,
-                    resolveStepTimestamp: rowContext.resolveTimestamp,
-                },
-            )),
+            groupTranscriptActivityNavigationItems([...segmentItems, ...lifecycleItems]),
             segments,
         );
         if (!options?.stalled || items.length === 0) {
@@ -495,6 +497,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         options?: { readonly stalled?: boolean; readonly streaming?: boolean },
     ): {
         readonly navigationOptions: TranscriptActivityNavigationOptions;
+        readonly message: QaapAgentMessageDTO | undefined;
         readonly resolveDurationMs: (
             segmentIndex: number,
             segment: QaapAgentMessageSegmentDTO,
@@ -516,11 +519,14 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             : [...(conv?.messages ?? [])].reverse().find(entry => entry.role === 'agent');
         const pendingToolUseIds = this.resolvePendingTranscriptToolUseIds(conv, segments);
         return {
+            message,
             navigationOptions: {
                 streaming,
                 stalled: options?.stalled,
                 pendingToolUseIds,
-                messageCancelled: !!message?.error || conv?.status === 'failed',
+                messageCancelled: !!message?.error
+                    || conv?.status === 'failed'
+                    || (message?.traceEvents?.some(event => event.type === 'run_cancelled') ?? false),
             },
             resolveDurationMs: (segmentIndex, segment) => messageId
                 ? this.activityTiming.resolveDurationMs(messageId, segmentIndex, segment)

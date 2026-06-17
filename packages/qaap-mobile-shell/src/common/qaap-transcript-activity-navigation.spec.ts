@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { groupTranscriptActivityNavigationItems, resolveTranscriptActivityNavigationItems } from './qaap-transcript-activity-navigation';
+import { groupTranscriptActivityNavigationItems, resolveTranscriptActivityNavigationItems, resolveTranscriptLifecycleActivityItems } from './qaap-transcript-activity-navigation';
 
 const deps = {
     localizeActivityLabel: (label: string) => label,
@@ -120,6 +120,20 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(grouped[1]?.state).to.equal('running');
     });
 
+    it('groups three or more consecutive running terminal commands', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'tool', name: 'bash', args: '{"command":"npm test"}', finished: false, toolUseId: '1' },
+            { type: 'tool', name: 'bash', args: '{"command":"npm lint"}', finished: false, toolUseId: '2' },
+            { type: 'tool', name: 'bash', args: '{"command":"npm build"}', finished: false, toolUseId: '3' },
+        ], deps, false);
+        const grouped = groupTranscriptActivityNavigationItems(items);
+        expect(grouped).to.have.length(1);
+        expect(grouped[0]?.grouped).to.equal(true);
+        expect(grouped[0]?.groupCount).to.equal(3);
+        expect(grouped[0]?.state).to.equal('running');
+        expect(grouped[0]?.label).to.equal('Ran 3 commands');
+    });
+
     it('keeps consecutive edits separate with diff stats for cursor trace rows', () => {
         const diff = '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-old\n+new\n+also';
         const items = resolveTranscriptActivityNavigationItems([
@@ -158,5 +172,31 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(withTool[0]?.state).to.equal('running');
         expect(withTool[1]?.label).to.equal('Writing response');
         expect(withTool[1]?.state).to.equal('waiting');
+    });
+
+    it('resolveTranscriptLifecycleActivityItems maps checkpoint and run_cancelled rows', () => {
+        const items = resolveTranscriptLifecycleActivityItems([
+            {
+                type: 'checkpoint',
+                id: 'cp-1',
+                label: 'After refactor',
+                commit: 'abc123',
+                capturedAt: 100,
+                added: 3,
+                removed: 1,
+            },
+            {
+                type: 'run_cancelled',
+                id: 'cancel-1',
+                message: 'Turn cancelled.',
+                startedAt: 200,
+            },
+        ]);
+        expect(items).to.have.length(2);
+        expect(items[0]?.state).to.equal('success');
+        expect(items[0]?.label).to.include('Checkpoint: After refactor');
+        expect(items[0]?.label).to.include('+3/-1');
+        expect(items[1]?.state).to.equal('cancelled');
+        expect(items[1]?.label).to.equal('Turn cancelled.');
     });
 });

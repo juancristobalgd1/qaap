@@ -1,0 +1,64 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import type { QaapConversationCheckpointDTO } from './qaap-agent-conversation-client';
+import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
+
+export function appendTraceRunCancelledEvent(
+    message: QaapAgentMessageDTO,
+    options: { readonly id?: string; readonly reason?: string; readonly at?: number } = {},
+): QaapAgentMessageDTO {
+    const at = options.at ?? Date.now();
+    const cancelledTools = (message.traceEvents ?? []).map(event => {
+        if (event.type !== 'tool_call') {
+            return event;
+        }
+        if (event.status === 'completed' || event.status === 'failed' || event.status === 'cancelled') {
+            return event;
+        }
+        return { ...event, status: 'cancelled' as const, finishedAt: at };
+    });
+    const runCancelled: QaapTranscriptTraceEventDTO = {
+        type: 'run_cancelled',
+        id: options.id ?? `run-cancelled-${at}`,
+        message: options.reason ?? 'Turn cancelled.',
+        startedAt: at,
+    };
+    return {
+        ...message,
+        traceEvents: [...cancelledTools, runCancelled],
+    };
+}
+
+export function appendTraceCheckpointEvent(
+    message: QaapAgentMessageDTO,
+    checkpoint: QaapConversationCheckpointDTO,
+): QaapAgentMessageDTO {
+    const event: QaapTranscriptTraceEventDTO = {
+        type: 'checkpoint',
+        id: checkpoint.id,
+        label: checkpoint.label,
+        commit: checkpoint.commit,
+        capturedAt: checkpoint.capturedAt,
+        ...(checkpoint.added !== undefined ? { added: checkpoint.added } : {}),
+        ...(checkpoint.removed !== undefined ? { removed: checkpoint.removed } : {}),
+    };
+    const existing = message.traceEvents ?? [];
+    if (existing.some(entry => entry.type === 'checkpoint' && entry.id === checkpoint.id)) {
+        return message;
+    }
+    return {
+        ...message,
+        traceEvents: [...existing, event],
+    };
+}
+
+export function agentMessageHasStructuredTrace(message: QaapAgentMessageDTO | undefined): boolean {
+    if (!message) {
+        return false;
+    }
+    return (message.traceEvents?.length ?? 0) > 0;
+}

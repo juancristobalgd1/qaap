@@ -104,12 +104,13 @@ export class MobileProjectsConversationIndexUi {
         }
         const cwd = this.host.preparedCwdByProjectId.get(project.id)
             ?? this.host.projectsService.getProjectCwd(project);
-        let list = cwd ? this.host.conversations.getConversationsForCwd(cwd) : [];
+        const threadStore = this.host.conversations.threadStore;
+        let list = cwd ? threadStore.getSummariesForCwd(cwd) : [];
         if (list.length === 0) {
             list = this.host.conversations.findConversationsForProject(project);
         }
         // Parallel-run variants live in a tmpdir worktree but belong to this repo (parallelBaseCwd).
-        const variants = cwd ? this.host.conversations.getVariantsForBaseCwd(cwd) : [];
+        const variants = cwd ? threadStore.getVariantsForBaseCwd(cwd) : [];
         return this.mergeConversationSummaries(directChatSessions, [...list, ...variants]);
     }
 

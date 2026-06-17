@@ -122,7 +122,9 @@ export type QaapTranscriptTraceEventDTO =
     | { readonly type: 'thought'; readonly id: string; readonly content: string; readonly status: 'running' | 'completed' }
     | { readonly type: 'tool_call'; readonly id: string; readonly name: string; readonly args: string; readonly status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'; readonly result?: string; readonly parentId?: string }
     | { readonly type: 'assistant_text'; readonly id: string; readonly content: string; readonly status: 'streaming' | 'completed' }
-    | { readonly type: 'error'; readonly id: string; readonly message: string };
+    | { readonly type: 'error'; readonly id: string; readonly message: string }
+    | { readonly type: 'run_cancelled'; readonly id: string; readonly message: string; readonly startedAt?: number }
+    | { readonly type: 'checkpoint'; readonly id: string; readonly label: string; readonly commit: string; readonly capturedAt: number; readonly added?: number; readonly removed?: number };
 
 export interface QaapAgentMessageDTO {
     readonly id: string;

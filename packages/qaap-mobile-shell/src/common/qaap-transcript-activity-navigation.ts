@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
+import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 import {
     classifyTranscriptToolActivityKind,
     extractTranscriptDiffCard,
@@ -300,7 +301,42 @@ function resolveGroupedDurationMs(group: readonly TranscriptActivityNavigationIt
     return found ? total : undefined;
 }
 
+const GROUPABLE_RUNNING_KINDS = new Set<QaapTranscriptToolActivityKind>(['terminal']);
+const MIN_GROUPED_RUNNING_COUNT = 3;
+
 /** Collapse consecutive finished tool steps of the same kind (e.g. "Read 6 files"). */
+/** Timeline rows for AG-UI lifecycle events that are not represented as tool segments. */
+export function resolveTranscriptLifecycleActivityItems(
+    traceEvents: readonly QaapTranscriptTraceEventDTO[] | undefined,
+): TranscriptActivityNavigationItem[] {
+    if (!traceEvents?.length) {
+        return [];
+    }
+    return traceEvents.flatMap((event): TranscriptActivityNavigationItem[] => {
+        if (event.type === 'checkpoint') {
+            const stats = event.added !== undefined || event.removed !== undefined
+                ? `+${event.added ?? 0}/-${event.removed ?? 0}`
+                : undefined;
+            return [{
+                label: stats ? `Checkpoint: ${event.label} (${stats})` : `Checkpoint: ${event.label}`,
+                state: 'success',
+                verb: 'Checkpoint',
+                detail: event.label,
+                tail: stats,
+                timestamp: event.capturedAt,
+            }];
+        }
+        if (event.type === 'run_cancelled') {
+            return [{
+                label: event.message.trim() || 'Turn cancelled.',
+                state: 'cancelled',
+                timestamp: event.startedAt,
+            }];
+        }
+        return [];
+    });
+}
+
 export function groupTranscriptActivityNavigationItems(
     items: readonly TranscriptActivityNavigationItem[],
 ): TranscriptActivityNavigationItem[] {
@@ -309,7 +345,42 @@ export function groupTranscriptActivityNavigationItems(
     while (index < items.length) {
         const item = items[index]!;
         const kind = item.toolKind;
-        if (!kind || !GROUPABLE_TOOL_KINDS.has(kind) || item.state !== 'success') {
+        if (!kind) {
+            grouped.push(item);
+            index += 1;
+            continue;
+        }
+        if (GROUPABLE_RUNNING_KINDS.has(kind) && item.state === 'running') {
+            let end = index + 1;
+            while (end < items.length) {
+                const next = items[end]!;
+                if (next.toolKind !== kind || next.state !== 'running') {
+                    break;
+                }
+                end += 1;
+            }
+            const slice = items.slice(index, end);
+            if (slice.length >= MIN_GROUPED_RUNNING_COUNT) {
+                const navigation = resolveGroupedNavigationAnchor(slice);
+                grouped.push({
+                    label: formatGroupedActivityLabel(kind, slice.length),
+                    state: 'running',
+                    toolKind: kind,
+                    grouped: true,
+                    groupCount: slice.length,
+                    segmentIndices: slice
+                        .map(entry => entry.segmentIndex)
+                        .filter((segmentIndex): segmentIndex is number => segmentIndex !== undefined),
+                    durationMs: resolveGroupedDurationMs(slice),
+                    timestamp: slice[slice.length - 1]?.timestamp,
+                    ...splitTranscriptCursorGroupedLabel(kind, slice.length),
+                    ...navigation,
+                });
+                index = end;
+                continue;
+            }
+        }
+        if (!GROUPABLE_TOOL_KINDS.has(kind) || item.state !== 'success') {
             grouped.push(item);
             index += 1;
             continue;

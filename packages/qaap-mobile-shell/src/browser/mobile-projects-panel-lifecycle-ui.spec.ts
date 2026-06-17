@@ -117,6 +117,8 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             conversations: {
                 warmLiveTransport: () => undefined,
                 onDidChange: onDidChangeEmitter.event,
+                onDidChangeDetail: Event.None,
+                peekLastConversationChange: () => undefined,
                 onDidReceiveMessage: Event.None,
                 onDidReceiveParallelRun: Event.None,
                 onDidReconnectTransport: Event.None,
@@ -141,6 +143,8 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             conversations: {
                 warmLiveTransport: () => undefined,
                 onDidChange: onDidChangeEmitter.event,
+                onDidChangeDetail: Event.None,
+                peekLastConversationChange: () => undefined,
                 onDidReceiveMessage: Event.None,
                 onDidReceiveParallelRun: Event.None,
                 onDidReconnectTransport: Event.None,

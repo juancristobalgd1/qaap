@@ -73,8 +73,10 @@ function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapA
                 parts.push(`e:t:${event.id}:${event.status}:${event.args?.length ?? 0}:${event.result?.length ?? 0}`);
             } else if (event.type === 'thought' || event.type === 'assistant_text') {
                 parts.push(`e:${event.type}:${event.id}:${event.status}:${event.content?.length ?? 0}`);
-            } else {
-                parts.push(`e:error:${event.id}:${event.message?.length ?? 0}`);
+            } else if (event.type === 'error' || event.type === 'run_cancelled') {
+                parts.push(`e:${event.type}:${event.id}:${event.message.length}`);
+            } else if (event.type === 'checkpoint') {
+                parts.push(`e:checkpoint:${event.id}:${event.label}:${event.commit}`);
             }
         }
     }
