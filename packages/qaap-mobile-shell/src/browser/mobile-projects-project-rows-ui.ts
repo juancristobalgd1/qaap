@@ -922,6 +922,8 @@ export class MobileProjectsProjectRowsUi {
                 && summary.turnProgressCurrent !== undefined
                 && summary.turnProgressTotal > 0;
             host.className = 'theia-mobile-projects-task-progress';
+            host.classList.remove('theia-mod-indeterminate');
+            host.replaceChildren();
             if (!hasSteps) {
                 host.classList.add('theia-mod-indeterminate');
                 host.setAttribute('aria-label', nls.localize('qaap/mobileProjects/taskProgressWorking', 'Agent working'));
@@ -956,6 +958,53 @@ export class MobileProjectsProjectRowsUi {
             svg.append(track, fill);
             host.append(svg);
         }
+
+    /** In-place sidebar row refresh — preserves click handlers during SSE progress ticks. */
+    patchSidebarCompactTaskRow(
+        row: HTMLElement,
+        project: MobileProjectEntry,
+        task: MobileProjectTaskView,
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly isCurrent?: boolean },
+    ): boolean {
+        if (!row.classList.contains('theia-mod-sidebar-compact') || row.dataset.qaapConversationId !== summary.id) {
+            return false;
+        }
+        row.classList.toggle('theia-mod-current', !!options?.isCurrent);
+        const titleEl = row.querySelector<HTMLElement>('.theia-mobile-projects-task-title');
+        if (titleEl && titleEl.textContent !== task.title) {
+            titleEl.textContent = task.title;
+        }
+        const sinceEl = row.querySelector<HTMLElement>('.theia-mobile-projects-task-since');
+        if (sinceEl) {
+            const sinceText = this.formatTaskSince(task, summary);
+            if (sinceEl.textContent !== sinceText) {
+                sinceEl.textContent = sinceText;
+            }
+        }
+        const metaEl = row.querySelector<HTMLElement>('.theia-mobile-projects-task-foot.theia-mod-sidebar-compact-meta');
+        const sessionMeta = formatConversationComposerSessionMeta(summary, agentId => this.resolveConversationAgentLabel({
+            ...summary,
+            agentId,
+        }));
+        if (metaEl && sessionMeta && metaEl.textContent !== sessionMeta) {
+            metaEl.textContent = sessionMeta;
+        }
+        const isRunning = resolveQaapAgentTaskVisualStatus(
+            task,
+            summary,
+            this.host.conversationIndexUi.isConversationUnread(summary),
+        ).id === 'running';
+        let progressHost = row.querySelector<HTMLElement>('.theia-mobile-projects-task-progress');
+        const taskDot = row.querySelector<HTMLElement>('.theia-mobile-projects-task-dot, .theia-mobile-projects-task-progress');
+        if (isRunning && taskDot) {
+            if (!progressHost || !progressHost.classList.contains('theia-mobile-projects-task-progress')) {
+                return false;
+            }
+            this.renderConversationTurnProgress(progressHost, summary);
+        }
+        return true;
+    }
 
     formatTaskSince(task: MobileProjectTaskView, summary?: QaapAgentConversationSummaryDTO): string {
             const anchor = task.state === 'running'

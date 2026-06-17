@@ -119,6 +119,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
                 onDidChange: onDidChangeEmitter.event,
                 onDidReceiveMessage: Event.None,
                 onDidReceiveParallelRun: Event.None,
+                onDidReconnectTransport: Event.None,
             } as MobileProjectsPanelLifecycleHost['conversations'],
         });
         const ui = new MobileProjectsPanelLifecycleUi(host);
@@ -142,6 +143,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
                 onDidChange: onDidChangeEmitter.event,
                 onDidReceiveMessage: Event.None,
                 onDidReceiveParallelRun: Event.None,
+                onDidReconnectTransport: Event.None,
             } as MobileProjectsPanelLifecycleHost['conversations'],
         });
         const ui = new MobileProjectsPanelLifecycleUi(host);

@@ -17,7 +17,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import {
     buildWorkHubSessionsSidebarRowFingerprint,
-    buildWorkHubSessionsSidebarStructureFingerprint,
+    buildWorkHubSessionsSidebarVisibleStructureFingerprint,
     QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR,
     QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
     type WorkHubSessionsSidebarFingerprintInput,
@@ -26,6 +26,10 @@ import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visu
 
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT = 5;
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE = 15;
+/** Pause live sidebar sync while the user taps a row (prevents click loss). */
+const SESSIONS_SIDEBAR_INTERACTION_GUARD_MS = 900;
+/** Min interval between live sidebar refreshes during SSE (~4 fps). */
+const SESSIONS_SIDEBAR_STREAM_REFRESH_MS = 250;
 
 export interface MobileProjectsSessionsSidebarHost {
 sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
@@ -105,6 +109,9 @@ export class MobileProjectsSessionsSidebarUi {
     protected sessionsSidebarListFingerprint = '';
     protected sessionsSidebarOpeningConversationId: string | undefined;
     protected sessionsSidebarOpeningTimer: number | undefined;
+    protected sessionsSidebarInteractionUntil = 0;
+    protected sessionsSidebarLastStreamRefreshAt = 0;
+    protected sessionsSidebarInteractionBound = false;
 
     openWorkHubSessionsSidebar(): void {
         const sidebar = this.ensureWorkHubSessionsSidebar();
@@ -147,6 +154,8 @@ export class MobileProjectsSessionsSidebarUi {
                 shouldSkipSessionListRefresh: () => this.shouldSkipSessionsSidebarListRender(),
                 tryPatchSessionList: host => this.tryPatchSessionsSidebarList(host),
                 rememberSessionListFingerprint: host => this.rememberSessionsSidebarListFingerprint(host),
+                shouldDeferSessionListRefresh: () => this.shouldDeferSessionsSidebarListRefresh(),
+                onSessionListHostReady: host => this.bindSessionsSidebarInteractionGuard(host),
                 onNewChat: () => { void this.onWorkHubSessionsSidebarNewChat(); },
                 onClose: () => {
                     this.host.cardMenuUi.closeCardMenu();
@@ -192,30 +201,97 @@ export class MobileProjectsSessionsSidebarUi {
     }
 
     shouldSkipSessionsSidebarListRender(): boolean {
-        if (this.sessionsSidebarOpeningConversationId) {
-            return true;
-        }
         if (!this.sessionsSidebarListFingerprint) {
             return false;
         }
-        const next = buildWorkHubSessionsSidebarStructureFingerprint(this.buildSessionsSidebarFingerprintInput());
-        return next === this.sessionsSidebarListFingerprint;
+        if (this.sessionsSidebarOpeningConversationId) {
+            return true;
+        }
+        if (this.isSessionsSidebarInteractionGuardActive()) {
+            return true;
+        }
+        return false;
+    }
+
+    shouldDeferSessionsSidebarListRefresh(): boolean {
+        if (this.isSessionsSidebarInteractionGuardActive()) {
+            return true;
+        }
+        const now = Date.now();
+        if (now - this.sessionsSidebarLastStreamRefreshAt < SESSIONS_SIDEBAR_STREAM_REFRESH_MS) {
+            return true;
+        }
+        this.sessionsSidebarLastStreamRefreshAt = now;
+        return false;
+    }
+
+    protected isSessionsSidebarInteractionGuardActive(): boolean {
+        return Date.now() < this.sessionsSidebarInteractionUntil;
+    }
+
+    protected bindSessionsSidebarInteractionGuard(listHost: HTMLElement): void {
+        if (this.sessionsSidebarInteractionBound) {
+            return;
+        }
+        this.sessionsSidebarInteractionBound = true;
+        const arm = (): void => {
+            this.sessionsSidebarInteractionUntil = Date.now() + SESSIONS_SIDEBAR_INTERACTION_GUARD_MS;
+        };
+        listHost.addEventListener('pointerdown', arm, { capture: true });
+        listHost.addEventListener('touchstart', arm, { capture: true, passive: true });
+    }
+
+    protected buildSessionsSidebarStructureFingerprint(): string {
+        const projects = [...this.host.projects].sort((a, b) => this.host.compareChatInboxProjectOrder(a, b));
+        const query = this.host.query.trim().toLowerCase();
+        const pinnedGroups = this.collectSessionsSidebarPinnedGroups(projects, query);
+        const visibleProjectGroupIds: string[] = [];
+        for (const project of projects) {
+            let conversations = [...this.host.conversationIndexUi.conversationsForProject(project)]
+                .filter(summary => !this.isSessionsSidebarPinnedConversation(summary))
+                .sort((a, b) => this.host.conversationIndexUi.compareConversationOrder(a, b));
+            if (query) {
+                conversations = conversations.filter(c => this.host.hubQueryUi.conversationMatchesQuery(c, query));
+                if (conversations.length === 0) {
+                    continue;
+                }
+            } else if (conversations.length === 0) {
+                continue;
+            }
+            visibleProjectGroupIds.push(project.id);
+        }
+        const visibleSlots = this.collectSessionsSidebarConversationEntries().map(entry => ({
+            projectId: entry.project.id,
+            conversation: entry.summary,
+            pinned: entry.pinned,
+        }));
+        return buildWorkHubSessionsSidebarVisibleStructureFingerprint({
+            query,
+            transcriptOpenSummaryId: this.host.transcriptOpenSummaryId,
+            expandedProjectIds: this.host.sessionsSidebarExpandedProjectIds,
+            visibleConversationCountByProjectId: this.host.sessionsSidebarVisibleConversationCountByProjectId,
+            visibleProjectGroupIds,
+            pinnedSectionProjectIds: pinnedGroups.map(group => group.project.id),
+            visibleSlots,
+        });
     }
 
     rememberSessionsSidebarListFingerprint(listHost: HTMLElement): void {
-        const structure = buildWorkHubSessionsSidebarStructureFingerprint(
-            this.buildSessionsSidebarFingerprintInput(),
-        );
+        const structure = this.buildSessionsSidebarStructureFingerprint();
         this.sessionsSidebarListFingerprint = structure;
         listHost.setAttribute(QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR, structure);
         this.stampSessionsSidebarRowFingerprints(listHost);
     }
 
     tryPatchSessionsSidebarList(listHost: HTMLElement): boolean {
-        const structure = buildWorkHubSessionsSidebarStructureFingerprint(this.buildSessionsSidebarFingerprintInput());
+        if (this.isSessionsSidebarInteractionGuardActive()) {
+            return true;
+        }
+        const structure = this.buildSessionsSidebarStructureFingerprint();
         if (listHost.getAttribute(QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR) !== structure) {
             return false;
         }
+        let patchedAny = false;
         const entries = this.collectSessionsSidebarConversationEntries();
         for (const entry of entries) {
             const nextFingerprint = this.buildSidebarRowFingerprint(entry);
@@ -226,12 +302,27 @@ export class MobileProjectsSessionsSidebarUi {
                 return false;
             }
             if (existingRow.getAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR) === nextFingerprint) {
+                if (entry.summary.status === 'streaming') {
+                    const task = this.host.conversationIndexUi.summaryToTaskView(entry.summary);
+                    if (this.host.projectRowsUi.patchSidebarCompactTaskRow(existingRow, entry.project, task, entry.summary, {
+                        isCurrent: this.host.transcriptOpenSummaryId === entry.summary.id,
+                    })) {
+                        patchedAny = true;
+                    }
+                }
+                continue;
+            }
+            const task = this.host.conversationIndexUi.summaryToTaskView(entry.summary);
+            if (this.host.projectRowsUi.patchSidebarCompactTaskRow(existingRow, entry.project, task, entry.summary, {
+                isCurrent: this.host.transcriptOpenSummaryId === entry.summary.id,
+            })) {
+                existingRow.setAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, nextFingerprint);
+                patchedAny = true;
                 continue;
             }
             const parentIds = entry.parentIds;
             const activeInfo = this.host.conversationIndexUi.activeInfoForProject(entry.project);
-            const task = this.host.conversationIndexUi.summaryToTaskView(entry.summary);
-            const nextRow = this.host.createTaskItem(
+            const nextRow = this.host.projectRowsUi.createTaskItem(
                 entry.project,
                 task,
                 activeInfo,
@@ -247,9 +338,12 @@ export class MobileProjectsSessionsSidebarUi {
             );
             nextRow.setAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, nextFingerprint);
             existingRow.replaceWith(nextRow);
+            patchedAny = true;
         }
-        listHost.classList.add('theia-mod-live-sync');
-        window.requestAnimationFrame(() => listHost.classList.remove('theia-mod-live-sync'));
+        if (patchedAny) {
+            listHost.classList.add('theia-mod-live-sync');
+            window.requestAnimationFrame(() => listHost.classList.remove('theia-mod-live-sync'));
+        }
         return true;
     }
 
@@ -339,6 +433,7 @@ export class MobileProjectsSessionsSidebarUi {
     }
 
     protected beginSessionsSidebarConversationActivation(conversationId: string): void {
+        this.sessionsSidebarInteractionUntil = Date.now() + SESSIONS_SIDEBAR_INTERACTION_GUARD_MS;
         this.sessionsSidebarOpeningConversationId = conversationId;
         if (this.sessionsSidebarOpeningTimer !== undefined) {
             window.clearTimeout(this.sessionsSidebarOpeningTimer);
@@ -346,9 +441,7 @@ export class MobileProjectsSessionsSidebarUi {
         this.sessionsSidebarOpeningTimer = window.setTimeout(() => {
             this.sessionsSidebarOpeningConversationId = undefined;
             this.sessionsSidebarOpeningTimer = undefined;
-            this.resetSessionsSidebarListFingerprint();
-            this.host.sessionsSidebar?.refreshList({ force: true });
-        }, 360);
+        }, SESSIONS_SIDEBAR_INTERACTION_GUARD_MS);
     }
 
     scheduleWorkHubSessionsSidebarRefresh(): void {

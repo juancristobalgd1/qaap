@@ -170,6 +170,35 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(secondRow).to.equal(firstRow);
     });
 
+    it('runs tryPatch before shouldSkip so live progress can update without full rebuild', () => {
+        let renderCalls = 0;
+        let patchCalls = 0;
+        let allowPatch = false;
+        let skipAfterInitialRender = false;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                renderCalls++;
+                skipAfterInitialRender = true;
+                host.append(document.createElement('div'));
+            },
+            shouldSkipSessionListRefresh: () => skipAfterInitialRender,
+            tryPatchSessionList: () => {
+                patchCalls++;
+                return allowPatch;
+            },
+            rememberSessionListFingerprint: () => {
+                allowPatch = true;
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        sidebar.refreshList();
+        expect(renderCalls).to.equal(1);
+        expect(patchCalls).to.equal(2);
+    });
+
     it('patches rows in place when tryPatch succeeds', () => {
         let renderCalls = 0;
         let patchCalls = 0;

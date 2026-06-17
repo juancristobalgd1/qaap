@@ -58,6 +58,8 @@ export function buildWorkHubSessionsSidebarRowFingerprint(
     },
 ): string {
     const title = conversation.status === 'streaming' ? '' : conversation.title;
+    const turnCurrent = conversation.status === 'streaming' ? '' : (conversation.turnProgressCurrent ?? '');
+    const turnTotal = conversation.status === 'streaming' ? '' : (conversation.turnProgressTotal ?? '');
     return [
         conversation.id,
         conversation.status,
@@ -66,10 +68,50 @@ export function buildWorkHubSessionsSidebarRowFingerprint(
         options.pinned ? 1 : 0,
         options.isCurrent ? 1 : 0,
         options.visualStatusId,
-        conversation.turnProgressCurrent ?? '',
-        conversation.turnProgressTotal ?? '',
+        turnCurrent,
+        turnTotal,
         title,
     ].join(':');
+}
+
+export interface WorkHubSessionsSidebarVisibleStructureSlot {
+    readonly projectId: string;
+    readonly conversation: WorkHubSessionsSidebarConversationFingerprint;
+    readonly pinned: boolean;
+}
+
+/** Layout fingerprint from visible sidebar slots only (matches rendered DOM). */
+export function buildWorkHubSessionsSidebarVisibleStructureFingerprint(
+    options: {
+        readonly query: string;
+        readonly transcriptOpenSummaryId: string | undefined;
+        readonly expandedProjectIds: ReadonlySet<string>;
+        readonly visibleConversationCountByProjectId: ReadonlyMap<string, number>;
+        readonly visibleProjectGroupIds: readonly string[];
+        readonly pinnedSectionProjectIds: readonly string[];
+        readonly visibleSlots: readonly WorkHubSessionsSidebarVisibleStructureSlot[];
+    },
+): string {
+    const parts: string[] = [
+        `q:${options.query}`,
+        `o:${options.transcriptOpenSummaryId ?? ''}`,
+        `e:${[...options.expandedProjectIds].sort().join(',')}`,
+    ];
+    const visibleCounts = [...options.visibleConversationCountByProjectId.entries()]
+        .sort(([left], [right]) => left.localeCompare(right));
+    for (const [projectId, count] of visibleCounts) {
+        parts.push(`v:${projectId}=${count}`);
+    }
+    for (const projectId of options.pinnedSectionProjectIds) {
+        parts.push(`ps:${projectId}`);
+    }
+    for (const projectId of options.visibleProjectGroupIds) {
+        parts.push(`pg:${projectId}`);
+    }
+    for (const slot of options.visibleSlots) {
+        parts.push(`c:${buildWorkHubSessionsSidebarStructureSlot(slot.conversation, slot.pinned)}`);
+    }
+    return parts.join('|');
 }
 
 /**

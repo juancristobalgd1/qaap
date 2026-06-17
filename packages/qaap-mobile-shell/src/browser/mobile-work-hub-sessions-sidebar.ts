@@ -39,9 +39,13 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onAutomations?: () => void;
     /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
     shouldSkipSessionListRefresh?(): boolean;
+    /** Throttle/defer live sidebar sync during SSE (e.g. user tap guard). */
+    shouldDeferSessionListRefresh?(): boolean;
     /** In-place row patch when only live progress/title chrome changed. */
     tryPatchSessionList?(listHost: HTMLElement): boolean;
     rememberSessionListFingerprint?(listHost: HTMLElement): void;
+    /** Bind pointer guard on the list host once (prevents click loss during refresh). */
+    onSessionListHostReady?(listHost: HTMLElement): void;
 }
 
 /**
@@ -68,6 +72,7 @@ export class MobileWorkHubSessionsSidebar {
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
     protected refreshListRaf = 0;
+    protected refreshDeferTimer = 0;
 
     constructor(protected readonly delegate: MobileWorkHubSessionsSidebarDelegate) {
         this.root = document.createElement('aside');
@@ -159,6 +164,7 @@ export class MobileWorkHubSessionsSidebar {
         this.listHost = document.createElement('div');
         this.listHost.className = 'theia-mobile-work-hub-sessions-sidebar-list';
         this.scrollHost.append(this.listHost);
+        this.delegate.onSessionListHostReady?.(this.listHost);
 
         this.panel.append(head, nav, this.scrollHost, footer);
 
@@ -278,6 +284,10 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     scheduleRefreshList(): void {
+        if (this.delegate.shouldDeferSessionListRefresh?.()) {
+            this.scheduleDeferredRefresh();
+            return;
+        }
         if (this.refreshListRaf) {
             return;
         }
@@ -287,12 +297,26 @@ export class MobileWorkHubSessionsSidebar {
         });
     }
 
+    protected scheduleDeferredRefresh(): void {
+        if (this.refreshDeferTimer) {
+            return;
+        }
+        this.refreshDeferTimer = window.setTimeout(() => {
+            this.refreshDeferTimer = 0;
+            this.scheduleRefreshList();
+        }, 250);
+    }
+
     refreshList(options?: { force?: boolean }): void {
-        if (!options?.force && this.delegate.shouldSkipSessionListRefresh?.()) {
+        if (!options?.force && this.delegate.shouldDeferSessionListRefresh?.()) {
+            this.scheduleDeferredRefresh();
             return;
         }
         if (!options?.force && this.delegate.tryPatchSessionList?.(this.listHost)) {
             this.delegate.rememberSessionListFingerprint?.(this.listHost);
+            return;
+        }
+        if (!options?.force && this.delegate.shouldSkipSessionListRefresh?.()) {
             return;
         }
         const previousScrollTop = this.scrollHost.scrollTop;

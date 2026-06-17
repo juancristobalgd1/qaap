@@ -188,7 +188,7 @@ describe('qaap-work-hub-multi-agent scenarios', () => {
                     : conversation
             )),
         });
-        expect(afterStreamingTick).to.not.equal(before);
+        expect(afterStreamingTick).to.equal(before);
 
         const sidebarWhileTranscriptOpen = buildWorkHubSessionsSidebarFingerprint({
             ...input,
@@ -215,7 +215,7 @@ describe('qaap-work-hub-multi-agent scenarios', () => {
             return left.join('|') === updated.join('|');
         });
         expect(unrelatedProjectsUnchanged).to.be.true;
-        expect(sidebarWhileTranscriptOpen).to.not.equal(before);
+        expect(sidebarWhileTranscriptOpen).to.equal(before);
     });
 
     it('coalesces hub list rebuilds when many agents tick on multiple projects in one frame', () => {
