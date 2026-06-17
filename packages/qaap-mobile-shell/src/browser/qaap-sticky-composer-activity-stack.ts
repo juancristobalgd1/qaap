@@ -63,6 +63,68 @@ function stickyComposerCommitMenuOptions(): StickyComposerCommitMenuOption[] {
     ];
 }
 
+export function buildStickyComposerActivityStackFingerprint(options: StickyComposerActivityStackOptions): string {
+    const entries = options.queueEntries ?? [];
+    const drafts = entries.map(entry => entry.draft).join('\x00');
+    return [
+        entries.length,
+        options.queueExpanded ? 1 : 0,
+        drafts,
+    ].join('|');
+}
+
+/** In-place queue stack refresh — avoids replaceWith flicker during SSE ticks. */
+export function patchStickyComposerActivityStack(
+    stack: HTMLElement,
+    options: StickyComposerActivityStackOptions,
+): boolean {
+    if (!stack.classList.contains('theia-mobile-sticky-composer-activity-stack')) {
+        return false;
+    }
+    const entries = options.queueEntries ?? [];
+    if (!entries.length) {
+        return false;
+    }
+    const section = stack.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-queue');
+    if (!(section instanceof HTMLElement)) {
+        return false;
+    }
+    const head = section.querySelector<HTMLButtonElement>(':scope > .theia-mobile-sticky-composer-activity-head');
+    const body = section.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-activity-body.theia-mobile-sticky-composer-queue-list');
+    const chevron = head?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-activity-chevron');
+    const title = head?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-activity-title');
+    if (!head || !body || !chevron || !title) {
+        return false;
+    }
+    const items = Array.from(body.querySelectorAll<HTMLElement>(':scope > .theia-mobile-sticky-composer-queue-item'));
+    if (items.length !== entries.length) {
+        return false;
+    }
+    const expanded = options.queueExpanded ?? true;
+    head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    chevron.classList.toggle('theia-mod-collapsed', !expanded);
+    body.hidden = !expanded;
+    title.textContent = entries.length === 1
+        ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
+        : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
+    for (let index = 0; index < entries.length; index++) {
+        const item = items[index];
+        const textEl = item?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-queue-text');
+        if (!textEl) {
+            return false;
+        }
+        if (textEl.textContent !== entries[index].draft) {
+            textEl.textContent = entries[index].draft;
+        }
+        const expectedMoveUp = index > 0;
+        const hasMoveUp = !!item?.querySelector('.codicon-arrow-up');
+        if (hasMoveUp !== expectedMoveUp) {
+            return false;
+        }
+    }
+    return true;
+}
+
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
     const files = options.changedFiles ?? [];
     const stats = options.diffStats;

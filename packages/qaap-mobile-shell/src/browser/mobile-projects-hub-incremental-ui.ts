@@ -215,6 +215,16 @@ export class MobileProjectsHubIncrementalUi {
                 if (existingRow.getAttribute(QAAP_INBOX_ROW_FP_ATTR) === nextFingerprint) {
                     continue;
                 }
+                if (this.host.projectRowsUi.patchWorkHubTaskRow(
+                    existingRow,
+                    group.project,
+                    task,
+                    summary,
+                    { isCurrent: this.host.transcriptOpenSummaryId === summary.id },
+                )) {
+                    existingRow.setAttribute(QAAP_INBOX_ROW_FP_ATTR, nextFingerprint);
+                    continue;
+                }
                 const nextRow = this.host.projectRowsUi.createTaskItem(
                     group.project,
                     task,

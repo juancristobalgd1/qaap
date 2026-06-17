@@ -298,6 +298,7 @@ export class MobileProjectsStickyComposerColumnUi {
         improveBloom.setAttribute('aria-hidden', 'true');
         improveBtn.append(improveIcon, improveBloom);
 
+        let lastSendIcon: 'send' | 'stop' | undefined;
         const updateSend = (): void => {
             const has = input.value.trim().length > 0;
             const improving = improveBtn.classList.contains('theia-mod-busy');
@@ -308,16 +309,23 @@ export class MobileProjectsStickyComposerColumnUi {
             const stopLabel = options.stopLabel ?? nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run');
             sendBtn.classList.toggle('theia-mod-stop', showStop);
             sendBtn.classList.toggle('theia-mod-ready', !showStop && has && options.canSubmit);
+            const nextIcon: 'send' | 'stop' = showStop ? 'stop' : 'send';
             if (showStop) {
                 sendBtn.disabled = false;
                 sendBtn.title = stopLabel;
                 sendBtn.setAttribute('aria-label', stopLabel);
-                sendBtn.innerHTML = '<span class="codicon codicon-debug-stop" aria-hidden="true"></span>';
+                if (lastSendIcon !== nextIcon) {
+                    sendBtn.innerHTML = '<span class="codicon codicon-debug-stop" aria-hidden="true"></span>';
+                    lastSendIcon = nextIcon;
+                }
             } else {
                 sendBtn.disabled = !has || !options.canSubmit;
                 sendBtn.title = sendLabel;
                 sendBtn.setAttribute('aria-label', sendLabel);
-                sendBtn.innerHTML = '<span class="codicon codicon-send" aria-hidden="true"></span>';
+                if (lastSendIcon !== nextIcon) {
+                    sendBtn.innerHTML = '<span class="codicon codicon-send" aria-hidden="true"></span>';
+                    lastSendIcon = nextIcon;
+                }
             }
             improveBtn.disabled = !has && !improving;
             improveBtn.classList.toggle('theia-mod-has-text', has);

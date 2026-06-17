@@ -164,7 +164,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     }
 
     renderTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): void {
-        if (this.tryPatchStreamingTranscriptMessages(host, conv)) {
+        const conversationSwitched = this.host.transcriptLastRenderedConversationId !== undefined
+            && this.host.transcriptLastRenderedConversationId !== conv.id;
+        if (!conversationSwitched && this.tryPatchStreamingTranscriptMessages(host, conv)) {
             return;
         }
         if (isStreamingTranscriptTailUnchanged(this.host.transcriptLastConv, conv)) {

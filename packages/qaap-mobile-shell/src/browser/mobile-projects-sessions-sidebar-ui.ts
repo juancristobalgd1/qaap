@@ -79,6 +79,7 @@ visible: boolean;
     transcriptStickyComposerUi: import('./mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
 closeAgentsHubSession(): void;
+resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void;
 renderHeader(): void;
 renderSubtitle(): void;
 stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
@@ -866,6 +867,8 @@ export class MobileProjectsSessionsSidebarUi {
             }
             if (this.host.agentsHubInlineActive) {
                 this.host.closeAgentsHubSession();
+            } else {
+                this.host.resetAgentsHubIdleTranscriptShell(project);
             }
             const cwd = this.host.projectsService.getProjectCwd(project);
             const defaultAgent = (cwd ? readStoredAgent(cwd) : undefined)

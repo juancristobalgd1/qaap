@@ -7,7 +7,9 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
+    buildStickyComposerActivityStackFingerprint,
     buildStickyComposerChangesPillFingerprint,
+    patchStickyComposerActivityStack,
     patchStickyComposerChangesPillHost,
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
@@ -186,6 +188,29 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(stack).to.exist;
             expect(stack!.querySelector('.theia-mobile-sticky-composer-activity-section.theia-mod-queue')).to.exist;
             expect(stack!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.equal(null);
+        });
+
+        it('patchStickyComposerActivityStack updates queue text without replacing the stack node', () => {
+            const stack = renderStickyComposerActivityStack({
+                queueEntries: [{ draft: 'first follow up' }],
+                queueExpanded: true,
+            });
+            document.body.append(stack!);
+            const beforeFingerprint = buildStickyComposerActivityStackFingerprint({
+                queueEntries: [{ draft: 'first follow up' }],
+                queueExpanded: true,
+            });
+            const afterFingerprint = buildStickyComposerActivityStackFingerprint({
+                queueEntries: [{ draft: 'second follow up' }],
+                queueExpanded: true,
+            });
+            expect(beforeFingerprint).to.not.equal(afterFingerprint);
+
+            expect(patchStickyComposerActivityStack(stack!, {
+                queueEntries: [{ draft: 'second follow up' }],
+                queueExpanded: true,
+            })).to.equal(true);
+            expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-text')?.textContent).to.equal('second follow up');
         });
     });
 });

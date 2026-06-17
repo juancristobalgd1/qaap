@@ -174,6 +174,25 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(ui.shouldSkipFullRenderListOnConversationTick()).to.equal(false);
     });
 
+    it('skips full hub list rebuild when agents hub execution shell is mounted idle', () => {
+        const executionRoot = document.createElement('div');
+        const scroll = document.createElement('div');
+        scroll.append(executionRoot);
+        document.body.append(scroll);
+        try {
+            const ui = new MobileProjectsAgentsHubInlineUi(createHost({
+                hubView: 'tasks',
+                homeMode: true,
+                agentsHubShellActive: true,
+                agentsHubInlineExecutionRoot: executionRoot,
+                scroll,
+            }));
+            expect(ui.shouldSkipFullRenderListOnConversationTick()).to.equal(true);
+        } finally {
+            scroll.remove();
+        }
+    });
+
     it('schedules sidebar refresh instead of immediate rebuild during chrome refresh', () => {
         let scheduleCalls = 0;
         let refreshCalls = 0;
@@ -372,6 +391,55 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(rendered).to.equal(cached);
     });
 
+    it('openAgentsHubInlineTranscript no-ops when the same inline transcript is already open', async () => {
+        let stopLiveWatchCalls = 0;
+        let renderMessagesCalls = 0;
+        let renderShellCalls = 0;
+        const project = {
+            id: 'proj-1',
+            name: 'demo',
+            status: 'working',
+            isCurrent: true,
+        } as MobileProjectEntry;
+        const summary = openSummary();
+        const executionRoot = document.createElement('div');
+        const chatHost = document.createElement('div');
+        chatHost.textContent = 'stable transcript';
+        executionRoot.append(chatHost);
+        document.body.append(executionRoot);
+        try {
+            const host = createHost({
+                projects: [project],
+                agentsHubInlineActive: true,
+                agentsHubShellActive: true,
+                transcriptOpenSummaryId: summary.id,
+                transcriptOpenSummary: summary,
+                transcriptOpenProject: project,
+                agentsHubInlineExecutionRoot: executionRoot,
+                agentsHubInlineChatHost: chatHost,
+                transcriptLiveUi: {
+                    stopTranscriptLiveWatch: () => { stopLiveWatchCalls++; },
+                } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+                transcriptMessagesUi: {
+                    renderTranscriptMessages: () => { renderMessagesCalls++; },
+                } as unknown as MobileProjectsAgentsHubInlineHost['transcriptMessagesUi'],
+            });
+            const ui = new MobileProjectsAgentsHubInlineUi(host);
+            const originalRenderShell = ui.renderAgentsHubExecutionShell.bind(ui);
+            ui.renderAgentsHubExecutionShell = () => {
+                renderShellCalls++;
+                originalRenderShell();
+            };
+            await ui.openAgentsHubInlineTranscript(project, summary);
+            expect(stopLiveWatchCalls).to.equal(0);
+            expect(renderMessagesCalls).to.equal(0);
+            expect(renderShellCalls).to.equal(0);
+            expect(chatHost.textContent).to.equal('stable transcript');
+        } finally {
+            executionRoot.remove();
+        }
+    });
+
     it('closeAgentsHubSession skips hub list rebuild while switching inline transcripts', () => {
         let renderListCalls = 0;
         const host = createHost({
@@ -397,5 +465,66 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         const ui = new MobileProjectsAgentsHubInlineUi(host);
         ui.closeAgentsHubSession();
         expect(renderListCalls).to.equal(0);
+    });
+
+    it('resetAgentsHubIdleTranscriptShell clears idle cache and re-renders empty chat', () => {
+        const project = { id: 'proj-1', name: 'qaap' } as MobileProjectEntry;
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+        let rendered = false;
+        const host = createHost({
+            agentsHubShellActive: true,
+            agentsHubInlineChatHost: chatHost,
+            transcriptLastConv: {
+                id: '__qaap_agents_hub_idle__',
+                cwd: '/workspace',
+                agentId: 'codex',
+                status: 'streaming',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                messages: [{ id: 'u1', role: 'user', content: 'hello', createdAt: Date.now() }],
+            } as MobileProjectsAgentsHubInlineHost['transcriptLastConv'],
+            transcriptConversationCache: new Map([
+                ['__qaap_agents_hub_idle__', {
+                    id: '__qaap_agents_hub_idle__',
+                    cwd: '/workspace',
+                    agentId: 'codex',
+                    status: 'streaming',
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                    messages: [{ id: 'u1', role: 'user', content: 'hello', createdAt: Date.now() }],
+                } as NonNullable<MobileProjectsAgentsHubInlineHost['transcriptLastConv']>],
+            ]),
+            projectsService: {
+                getProjectCwd: () => '/workspace',
+            } as unknown as MobileProjectsAgentsHubInlineHost['projectsService'],
+            transcriptSheetUi: {
+                summaryToTranscriptPlaceholder: (summary: QaapAgentConversationSummaryDTO) => ({
+                    id: summary.id,
+                    cwd: summary.cwd,
+                    agentId: summary.agentId,
+                    title: summary.title,
+                    status: summary.status,
+                    createdAt: summary.createdAt,
+                    updatedAt: summary.updatedAt,
+                    messages: [],
+                }),
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
+            transcriptLiveUi: {
+                stopTranscriptLiveWatch: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptUi: {
+                disposeList: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptUi'],
+            transcriptMessagesUi: {
+                renderTranscriptMessages: () => { rendered = true; },
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptMessagesUi'],
+        });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.resetAgentsHubIdleTranscriptShell(project);
+        expect(host.transcriptLastConv).to.equal(undefined);
+        expect(host.transcriptConversationCache.has('__qaap_agents_hub_idle__')).to.equal(false);
+        expect(rendered).to.equal(true);
     });
 });

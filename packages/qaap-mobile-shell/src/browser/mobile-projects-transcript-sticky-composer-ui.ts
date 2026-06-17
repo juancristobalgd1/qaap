@@ -88,7 +88,9 @@ import {
 } from '../common/qaap-git-review';
 import {
     renderStickyComposerActivityStack,
+    buildStickyComposerActivityStackFingerprint,
     buildStickyComposerChangesPillFingerprint,
+    patchStickyComposerActivityStack,
     patchStickyComposerChangesPillHost,
     renderStickyComposerChangesPill,
     type StickyComposerActivityStackOptions,
@@ -213,6 +215,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
 
     protected lastComposerActivityFingerprint = '';
     protected lastComposerChangesPillFingerprint = '';
+    protected lastComposerActivityStackFingerprint = '';
     protected readonly composerActivityGitFilesByConversationId = new Map<string, StickyComposerChangedFileView[]>();
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
@@ -733,6 +736,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             ?? this.buildTranscriptComposerActivityOptions(resolvedProject ?? this.host.transcriptComposerProject!, summary);
         this.lastComposerActivityFingerprint = this.buildComposerActivityFingerprint(summary, options, activityFiles);
         this.lastComposerChangesPillFingerprint = buildStickyComposerChangesPillFingerprint(options);
+        this.lastComposerActivityStackFingerprint = buildStickyComposerActivityStackFingerprint(options);
     }
 
     refreshComposerActivityStack(): void {
@@ -767,13 +771,21 @@ export class MobileProjectsTranscriptStickyComposerUi {
             wrap.insertBefore(changesPill, card);
             this.lastComposerChangesPillFingerprint = pillFingerprint;
         }
+        const stackFingerprint = buildStickyComposerActivityStackFingerprint(activityOptions);
         const stack = renderStickyComposerActivityStack(activityOptions);
         const existing = card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
         if (!stack) {
             existing?.remove();
+            this.lastComposerActivityStackFingerprint = '';
             card.classList.remove('theia-mod-has-activity');
-        } else if (existing) {
-            existing.replaceWith(stack);
+        } else if (existing instanceof HTMLElement) {
+            if (stackFingerprint === this.lastComposerActivityStackFingerprint
+                || patchStickyComposerActivityStack(existing, activityOptions)) {
+                this.lastComposerActivityStackFingerprint = stackFingerprint;
+            } else {
+                existing.replaceWith(stack);
+                this.lastComposerActivityStackFingerprint = stackFingerprint;
+            }
             card.classList.add('theia-mod-has-activity');
         } else {
             const stage = card.querySelector(':scope > .theia-mobile-projects-sticky-composer-stage');

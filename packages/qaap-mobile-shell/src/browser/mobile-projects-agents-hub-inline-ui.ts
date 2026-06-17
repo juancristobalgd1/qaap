@@ -11,6 +11,7 @@ import {
 } from '../common/qaap-agent-conversation-client';
 import {
     buildAgentsHubIdleConversationSummary,
+    QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
 } from '../common/qaap-agents-hub-landing';
 import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
@@ -138,9 +139,21 @@ export class MobileProjectsAgentsHubInlineUi {
         return this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) !== 'messages';
     }
 
+    /** Keep the Agents Hub execution shell mounted during SSE ticks (idle or transcript open). */
+    shouldPreserveAgentsHubExecutionShell(): boolean {
+        return this.host.hubView === 'tasks'
+            && this.shouldUseAgentsHubLanding()
+            && this.host.agentsHubShellActive
+            && !!this.host.agentsHubInlineExecutionRoot?.isConnected
+            && this.host.agentsHubInlineExecutionRoot.parentElement === this.host.scroll;
+    }
+
     /** SSE ticks while a transcript is open should not rebuild the whole Work Hub list. */
     shouldSkipFullRenderListOnConversationTick(): boolean {
         if (this.host.transcriptSheet && this.host.transcriptOpenSummaryId) {
+            return true;
+        }
+        if (this.shouldPreserveAgentsHubExecutionShell()) {
             return true;
         }
         return this.host.hubView === 'tasks'
@@ -159,7 +172,6 @@ export class MobileProjectsAgentsHubInlineUi {
             const latest = this.host.conversationIndexUi.conversationsForProject(project).find(c => c.id === summary.id) ?? summary;
             const headerChanged = latest.status !== summary.status
                 || latest.title !== summary.title
-                || latest.updatedAt !== summary.updatedAt
                 || !!latest.priority !== !!summary.priority;
             this.host.transcriptOpenSummary = latest;
             if (headerChanged) {
@@ -505,10 +517,25 @@ export class MobileProjectsAgentsHubInlineUi {
         this.agentsHubExecutionHeaderProjectId = undefined;
     }
 
+    protected isSameInlineTranscriptOpen(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): boolean {
+        return this.host.agentsHubInlineActive
+            && this.host.agentsHubShellActive
+            && this.host.transcriptOpenSummaryId === summary.id
+            && this.host.transcriptOpenProject?.id === project.id
+            && !!this.host.agentsHubInlineExecutionRoot?.isConnected
+            && !!this.host.agentsHubInlineChatHost?.isConnected;
+    }
+
     async openAgentsHubInlineTranscript(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
+        if (this.isSameInlineTranscriptOpen(project, summary)) {
+            return;
+        }
         const previousProject = this.host.transcriptOpenProject;
         const previousSummary = this.host.transcriptOpenSummary;
         if (this.host.transcriptLastConv) {
@@ -576,6 +603,30 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.stickyComposerRenderUi.renderStickyComposer();
     }
 
+    /**
+     * Clears optimistic/streaming transcript DOM on the idle Agents Hub shell (no inline session open).
+     * Needed when "New agent" is tapped after an idle submit left a live activity row in the chat host.
+     */
+    resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void {
+        this.host.transcriptLiveUi.stopTranscriptLiveWatch();
+        this.host.transcriptLastConv = undefined;
+        this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptLastStreamProgressAt = undefined;
+        this.host.transcriptLastSseDeltaAt = undefined;
+        this.host.transcriptOpenSummaryId = undefined;
+        this.host.transcriptOpenSummary = undefined;
+        this.host.transcriptConversationCache.delete(QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID);
+        this.host.transcriptUi.disposeList();
+        const chatHost = this.host.agentsHubInlineChatHost;
+        if (chatHost?.isConnected && this.host.agentsHubShellActive) {
+            this.renderAgentsHubShellChat(
+                chatHost,
+                project,
+                this.resolveAgentsHubShellSummary(project),
+            );
+        }
+    }
+
     closeAgentsHubSession(): void {
         if (this.host.transcriptLastConv) {
             this.host.transcriptConversationCache.set(this.host.transcriptLastConv.id, this.host.transcriptLastConv);
@@ -615,6 +666,7 @@ export class MobileProjectsAgentsHubInlineUi {
         const chatHost = this.host.agentsHubInlineChatHost;
         const project = this.resolveAgentsHubShellProject();
         if (chatHost && project && this.host.agentsHubShellActive) {
+            this.host.transcriptConversationCache.delete(QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID);
             this.renderAgentsHubShellChat(chatHost, project, this.resolveAgentsHubShellSummary(project));
         } else if (chatHost) {
             chatHost.replaceChildren();

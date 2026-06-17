@@ -1910,6 +1910,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.agentsHubInlineUi.shouldPreserveAgentsHubInlineTranscriptShell();
     }
 
+    protected shouldPreserveAgentsHubExecutionShell(): boolean {
+        return this.agentsHubInlineUi.shouldPreserveAgentsHubExecutionShell();
+    }
+
     protected shouldPreserveAgentsHubToolSurface(): boolean {
         return this.agentsHubInlineUi.shouldPreserveAgentsHubToolSurface();
     }
@@ -1956,6 +1960,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     closeAgentsHubSession(): void {
         this.agentsHubInlineUi.closeAgentsHubSession();
+    }
+
+    resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void {
+        this.agentsHubInlineUi.resetAgentsHubIdleTranscriptShell(project);
     }
 
     findConversationSummaryById(id: string): QaapAgentConversationSummaryDTO | undefined {

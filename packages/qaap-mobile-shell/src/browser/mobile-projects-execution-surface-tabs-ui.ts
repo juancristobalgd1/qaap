@@ -16,6 +16,7 @@ import {
 import {
     appendExecutionSurfaceTabIcon,
     createExecutionSurfaceIconElement,
+    isQaapScmChangesIcon,
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '../common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome } from './qaap-execution-surface-header-chrome';
@@ -414,7 +415,12 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         selectBtn.dataset.tab = spec.id;
         selectBtn.title = spec.label;
         selectBtn.setAttribute('aria-label', `${spec.label}, ${nls.localize('qaap/mobileProjects/tabOverflow', 'Change view')}`);
-        symbol.replaceWith(createExecutionSurfaceIconElement(spec.icon, 'theia-mobile-transcript-tab-icon-select-symbol'));
+        const iconUnchanged = isQaapScmChangesIcon(spec.icon)
+            ? symbol.classList.contains(QAAP_SCM_CHANGES_ICON_CLASS)
+            : symbol.classList.contains('codicon') && symbol.classList.contains(spec.icon);
+        if (!iconUnchanged) {
+            symbol.replaceWith(createExecutionSurfaceIconElement(spec.icon, 'theia-mobile-transcript-tab-icon-select-symbol'));
+        }
         const triggerLabel = strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-label');
         if (triggerLabel) {
             triggerLabel.textContent = spec.label;

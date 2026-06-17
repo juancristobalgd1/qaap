@@ -25,6 +25,7 @@ export interface MobileProjectsRenderListHost {
     closeCardMenu(): void;
     shouldPreserveAgentsHubInlineTranscriptShell(): boolean;
     shouldPreserveAgentsHubToolSurface(): boolean;
+    shouldPreserveAgentsHubExecutionShell(): boolean;
     renderDiffHubView(): void;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     renderHomeHubView(): void;
@@ -61,7 +62,8 @@ export class MobileProjectsRenderListUi {
         this.host.projectDetailSurfaceTargets = undefined;
         this.host.projectDetailTabStrip = undefined;
         if (!this.host.shouldPreserveAgentsHubInlineTranscriptShell()
-            && !this.host.shouldPreserveAgentsHubToolSurface()) {
+            && !this.host.shouldPreserveAgentsHubToolSurface()
+            && !this.host.shouldPreserveAgentsHubExecutionShell()) {
             if (this.host.tryPatchHubListBeforeRebuild()) {
                 this.host.updateNewFabVisibility();
                 this.host.syncLandingHubListChrome();

@@ -148,6 +148,7 @@ describe('MobileProjectsHubIncrementalUi', () => {
                 isConversationUnread: () => false,
             } as never,
             projectRowsUi: {
+                patchWorkHubTaskRow: () => false,
                 createTaskItem: () => {
                     createCalls++;
                     const row = document.createElement('div');

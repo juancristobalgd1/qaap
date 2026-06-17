@@ -49,6 +49,9 @@ export class MobileProjectsTranscriptHeaderUi {
         project: MobileProjectEntry,
         summary?: QaapAgentConversationSummaryDTO,
     ): void {
+        if (this.patchActiveChatHeaderSubtitle(host, project, summary)) {
+            return;
+        }
         host.className = 'theia-mobile-projects-subtitle theia-mod-active-chat-context';
         host.hidden = false;
         host.replaceChildren();
@@ -65,6 +68,40 @@ export class MobileProjectsTranscriptHeaderUi {
                 nls.localize('qaap/mobileProjects/activityChipAria', 'Last activity'),
             ),
         );
+    }
+
+    /** Patch status/activity chips in place — avoids replaceChildren flicker during SSE. */
+    patchActiveChatHeaderSubtitle(
+        host: HTMLElement,
+        project: MobileProjectEntry,
+        summary?: QaapAgentConversationSummaryDTO,
+    ): boolean {
+        const chips = host.querySelectorAll<HTMLElement>('.theia-mobile-projects-active-chat-chip');
+        if (chips.length < 2) {
+            return false;
+        }
+        const statusChip = chips[0];
+        const activityChip = chips[1];
+        const statusIcon = statusChip.querySelector<HTMLElement>('.codicon');
+        const statusText = statusChip.querySelector<HTMLElement>('.theia-mobile-projects-active-chat-chip-text');
+        const activityText = activityChip.querySelector<HTMLElement>('.theia-mobile-projects-active-chat-chip-text');
+        if (!statusIcon || !statusText || !activityText) {
+            return false;
+        }
+        const statusLabel = this.activeChatStatusLabel(project, summary);
+        const activityLabel = this.activeChatActivityLabel(project, summary);
+        const statusModifier = this.activeChatStatusClass(project, summary);
+        statusChip.className = statusModifier
+            ? `theia-mobile-projects-active-chat-chip ${statusModifier}`
+            : 'theia-mobile-projects-active-chat-chip';
+        statusChip.title = `${nls.localize('qaap/mobileProjects/statusChipAria', 'Status')}: ${statusLabel}`;
+        statusIcon.className = `codicon ${this.activeChatStatusIcon(summary)}`;
+        statusText.textContent = statusLabel;
+        activityChip.title = `${nls.localize('qaap/mobileProjects/activityChipAria', 'Last activity')}: ${activityLabel}`;
+        activityText.textContent = activityLabel;
+        host.className = 'theia-mobile-projects-subtitle theia-mod-active-chat-context';
+        host.hidden = false;
+        return true;
     }
 
     createActiveChatContextChip(
@@ -131,7 +168,7 @@ export class MobileProjectsTranscriptHeaderUi {
                 status,
                 summary.priority ? '1' : '0',
                 summary.status ?? '',
-                String(summary.updatedAt ?? ''),
+                summary.activityLabel?.trim() ?? '',
             ].join('|');
             if (chromeKey !== this.lastExecutionChromeKey) {
                 this.lastExecutionChromeKey = chromeKey;
