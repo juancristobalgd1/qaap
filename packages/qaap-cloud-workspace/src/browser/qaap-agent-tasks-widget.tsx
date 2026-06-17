@@ -16,6 +16,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-client';
 import { filterVpsTaskSummaries } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-surfaces';
+import { isPreviewOnlyConversationChange } from '@theia/qaap-mobile-shell/lib/common/qaap-conversation-change';
 import {
     buildCreateAgentTaskBody,
     cancelAgentTask,
@@ -83,7 +84,12 @@ export class QaapAgentTasksWidget extends ReactWidget {
         this.activeTasks.start();
         this.conversations.start();
         this.streamDispose.push(this.activeTasks.onDidChange(() => this.update()));
-        this.streamDispose.push(this.conversations.onDidChange(() => this.update()));
+        this.streamDispose.push(this.conversations.onDidChangeDetail(event => {
+            if (isPreviewOnlyConversationChange(event)) {
+                return;
+            }
+            this.update();
+        }));
         void this.ensureProjectCwd().then(() => this.update());
     }
 

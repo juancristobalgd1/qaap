@@ -93,6 +93,15 @@ export function compactAgentMessageTraceStorage(message: QaapAgentMessageDTO): Q
     return withoutSegments;
 }
 
+/** Drop redundant segments when traceEvents are the live structured payload (streaming or settled). */
+export function preferTraceFirstAgentMessageStorage(message: QaapAgentMessageDTO): QaapAgentMessageDTO {
+    if (message.role !== 'agent' || !(message.traceEvents?.length ?? 0) || !message.segments?.length) {
+        return message;
+    }
+    const { segments: _segments, ...withoutSegments } = message;
+    return withoutSegments;
+}
+
 export function backfillConversationTraceEvents(
     conversation: QaapAgentConversationDTO,
 ): BackfillConversationTraceResult {

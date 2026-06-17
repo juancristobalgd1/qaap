@@ -32,8 +32,14 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
 
     onStart(): void {
         this.conversations.start();
-        this.conversations.onDidChange(() => {
-            void this.scanConversationSettlements();
+        this.conversations.onDidChangeDetail(event => {
+            if (event.kind === 'snapshot' || event.kind === 'created' || event.kind === 'deleted') {
+                void this.scanConversationSettlements();
+                return;
+            }
+            if (event.changedFields?.includes('status')) {
+                void this.scanConversationSettlements();
+            }
         });
     }
 

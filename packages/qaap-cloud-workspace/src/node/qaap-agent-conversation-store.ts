@@ -101,7 +101,7 @@ import {
     agentMessageHasStructuredTrace,
     syncSettledTraceEventsOnMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
-import { backfillConversationTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
+import { backfillConversationTraceEvents, preferTraceFirstAgentMessageStorage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
 import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
@@ -784,24 +784,24 @@ export class QaapAgentConversationStore {
             agentMessageId = randomUUID();
             ref.agentMessageId = agentMessageId;
             this.taskToConversation.set(taskId, ref);
-            const message: QaapAgentMessage = {
+            const message: QaapAgentMessage = preferTraceFirstAgentMessageStorage({
                 id: agentMessageId,
                 role: 'agent',
                 content: content || '…',
                 segments,
                 ...(traceEvents ? { traceEvents } : {}),
                 createdAt: now,
-            };
+            });
             messages = [...conv.messages, message];
             this.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, message);
         } else {
             messages = conv.messages.map(message => message.id === agentMessageId
-                ? {
+                ? preferTraceFirstAgentMessageStorage({
                     ...message,
                     content: usesSegmentStream ? (content || message.content) : `${message.content}${filtered}`,
                     segments: usesSegmentStream ? (segments ?? message.segments) : undefined,
                     ...(usesSegmentStream && traceEvents ? { traceEvents } : {}),
-                }
+                })
                 : message
             );
             const updated = messages.find(message => message.id === agentMessageId);
@@ -967,12 +967,12 @@ export class QaapAgentConversationStore {
         let withReply: QaapAgentConversation;
         if (agentMessageId && structuredParsed) {
             const messages = withUsageBaseline.messages.map(message => message.id === agentMessageId
-                ? {
+                ? syncSettledTraceEventsOnMessage({
                     ...message,
                     content: structuredParsed.content || message.content,
                     segments: structuredParsed.segments,
                     traceEvents: this.resolveStructuredParsedTraceEvents(message, structuredParsed),
-                }
+                })
                 : message
             );
             withReply = { ...withUsageBaseline, status: 'idle', updatedAt: Date.now(), messages };
@@ -989,11 +989,11 @@ export class QaapAgentConversationStore {
             if (structuredParsed?.segments?.length) {
                 const messages = reply.messages.map((message, index, all) => {
                     if (index === all.length - 1 && message.role === 'agent') {
-                        return {
+                        return syncSettledTraceEventsOnMessage({
                             ...message,
                             segments: structuredParsed.segments,
                             traceEvents: this.resolveStructuredParsedTraceEvents(message, structuredParsed),
-                        };
+                        });
                     }
                     return message;
                 });

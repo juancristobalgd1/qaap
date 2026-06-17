@@ -8,6 +8,7 @@ import {
     backfillAgentMessageTraceEvents,
     backfillConversationTraceEvents,
     compactAgentMessageTraceStorage,
+    preferTraceFirstAgentMessageStorage,
     settleTraceEvents,
 } from './qaap-transcript-trace-backfill';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
@@ -104,5 +105,18 @@ describe('qaap-transcript-trace-backfill', () => {
         });
         expect(compact.segments).to.equal(undefined);
         expect(compact.traceEvents).to.have.length(1);
+    });
+
+    it('preferTraceFirstAgentMessageStorage drops segments even during streaming tail', () => {
+        const compact = preferTraceFirstAgentMessageStorage({
+            id: 'a1',
+            role: 'agent',
+            content: 'Hi',
+            createdAt: 1,
+            segments: [{ type: 'text', content: 'Hi' }],
+            traceEvents: [{ type: 'assistant_text', id: 'text-0', content: 'Hi', status: 'streaming' }],
+        });
+        expect(compact.segments).to.equal(undefined);
+        expect(compact.traceEvents?.[0]?.type).to.equal('assistant_text');
     });
 });
