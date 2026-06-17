@@ -32,6 +32,29 @@ describe('application-package', function (): void {
         track.cleanupSync();
     });
 
+    let originalName: string | undefined;
+    let originalIcon: string | undefined;
+
+    beforeEach(() => {
+        originalName = process.env[IDE_APPLICATION_NAME_ENV];
+        originalIcon = process.env[IDE_APPLICATION_ICON_ENV];
+        delete process.env[IDE_APPLICATION_NAME_ENV];
+        delete process.env[IDE_APPLICATION_ICON_ENV];
+    });
+
+    afterEach(() => {
+        if (originalName !== undefined) {
+            process.env[IDE_APPLICATION_NAME_ENV] = originalName;
+        } else {
+            delete process.env[IDE_APPLICATION_NAME_ENV];
+        }
+        if (originalIcon !== undefined) {
+            process.env[IDE_APPLICATION_ICON_ENV] = originalIcon;
+        } else {
+            delete process.env[IDE_APPLICATION_ICON_ENV];
+        }
+    });
+
     it('should print warning if user set unknown target in package.json and use browser as a default value', function (): void {
         const warn = sandbox.stub(console, 'warn');
         const root = createProjectWithTarget('foo');
@@ -56,23 +79,13 @@ describe('application-package', function (): void {
     });
 
     it('should override application name from .env IDE_APPLICATION_NAME', function (): void {
-        const originalName = process.env[IDE_APPLICATION_NAME_ENV];
-        delete process.env[IDE_APPLICATION_NAME_ENV];
-        try {
-            const root = track.mkdirSync('env-app');
-            fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
-                theia: { frontend: { config: { applicationName: 'Pkg Name' } } }
-            }));
-            fs.writeFileSync(path.join(root, '.env'), 'IDE_APPLICATION_NAME=From Env\n');
-            const applicationPackage = new ApplicationPackage({ projectPath: root });
-            assert.strictEqual(applicationPackage.props.frontend.config.applicationName, 'From Env');
-        } finally {
-            if (originalName !== undefined) {
-                process.env[IDE_APPLICATION_NAME_ENV] = originalName;
-            } else {
-                delete process.env[IDE_APPLICATION_NAME_ENV];
-            }
-        }
+        const root = track.mkdirSync('env-app');
+        fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+            theia: { frontend: { config: { applicationName: 'Pkg Name' } } }
+        }));
+        fs.writeFileSync(path.join(root, '.env'), 'IDE_APPLICATION_NAME=From Env\n');
+        const applicationPackage = new ApplicationPackage({ projectPath: root });
+        assert.strictEqual(applicationPackage.props.frontend.config.applicationName, 'From Env');
     });
 
     it('should override application icon from .env IDE_APPLICATION_ICON', function (): void {
