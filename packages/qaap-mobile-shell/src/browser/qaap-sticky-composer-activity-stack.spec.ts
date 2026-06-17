@@ -7,6 +7,8 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
+    buildStickyComposerChangesPillFingerprint,
+    patchStickyComposerChangesPillHost,
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
     type StickyComposerChangedFileView,
@@ -134,6 +136,33 @@ describe('qaap-sticky-composer-activity-stack', () => {
             document.body.append(host!);
 
             expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
+        });
+
+        it('patchStickyComposerChangesPillHost updates stats without replacing the pill node', () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 648, removed: 384 },
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+            const pill = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-changes-pill');
+            expect(pill).to.exist;
+
+            const beforeFingerprint = buildStickyComposerChangesPillFingerprint({
+                diffStats: { added: 648, removed: 384 },
+                onReview: () => undefined,
+            });
+            const afterFingerprint = buildStickyComposerChangesPillFingerprint({
+                diffStats: { added: 650, removed: 384 },
+                onReview: () => undefined,
+            });
+            expect(beforeFingerprint).to.not.equal(afterFingerprint);
+
+            expect(patchStickyComposerChangesPillHost(host!, {
+                diffStats: { added: 650, removed: 384 },
+                onReview: () => undefined,
+            })).to.equal(true);
+            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.equal(pill);
+            expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+650');
         });
     });
 

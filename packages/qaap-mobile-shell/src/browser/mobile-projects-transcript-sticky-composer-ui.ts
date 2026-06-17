@@ -88,6 +88,8 @@ import {
 } from '../common/qaap-git-review';
 import {
     renderStickyComposerActivityStack,
+    buildStickyComposerChangesPillFingerprint,
+    patchStickyComposerChangesPillHost,
     renderStickyComposerChangesPill,
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
@@ -210,6 +212,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
 export class MobileProjectsTranscriptStickyComposerUi {
 
     protected lastComposerActivityFingerprint = '';
+    protected lastComposerChangesPillFingerprint = '';
     protected readonly composerActivityGitFilesByConversationId = new Map<string, StickyComposerChangedFileView[]>();
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
@@ -551,6 +554,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
             if (this.host.transcriptComposerSummary?.id !== summary.id) {
                 return;
             }
+            if (buildStickyComposerChangesPillFingerprint(this.buildTranscriptComposerActivityOptions(project, summary))
+                === this.lastComposerChangesPillFingerprint) {
+                return;
+            }
             this.refreshComposerActivityStack();
         } catch {
             // Git review is optional — composer still shows aggregate diff stats.
@@ -694,16 +701,38 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return renderStickyComposerChangesPill(this.buildTranscriptComposerActivityOptions(project, summary));
     }
 
+    protected buildComposerActivityFingerprint(
+        summary: QaapAgentConversationSummaryDTO,
+        activityOptions: StickyComposerActivityStackOptions,
+        activityFiles: {
+            readonly files: readonly StickyComposerChangedFileView[];
+            readonly stats?: { readonly added: number; readonly removed: number };
+        },
+    ): string {
+        const pathsKey = activityFiles.files.map(file => file.path).sort().join('\n');
+        return [
+            this.host.transcriptFollowUpQueue.size(summary.id),
+            pathsKey,
+            activityFiles.stats?.added ?? 0,
+            activityFiles.stats?.removed ?? 0,
+            activityOptions.agentWorking ? 1 : 0,
+        ].join('|');
+    }
+
     syncComposerActivityFingerprint(
         summary: QaapAgentConversationSummaryDTO,
         project?: MobileProjectEntry,
+        activityOptions?: StickyComposerActivityStackOptions,
     ): void {
         const conv = this.host.transcriptLastConv?.id === summary.id ? this.host.transcriptLastConv : undefined;
         const resolvedProject = project ?? this.host.transcriptComposerProject;
         const activityFiles = resolvedProject
             ? this.resolveComposerActivityFilesForStack(resolvedProject, summary, conv)
             : this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        this.lastComposerActivityFingerprint = `${this.host.transcriptFollowUpQueue.size(summary.id)}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${conv?.status ?? summary.status}`;
+        const options = activityOptions
+            ?? this.buildTranscriptComposerActivityOptions(resolvedProject ?? this.host.transcriptComposerProject!, summary);
+        this.lastComposerActivityFingerprint = this.buildComposerActivityFingerprint(summary, options, activityFiles);
+        this.lastComposerChangesPillFingerprint = buildStickyComposerChangesPillFingerprint(options);
     }
 
     refreshComposerActivityStack(): void {
@@ -719,16 +748,26 @@ export class MobileProjectsTranscriptStickyComposerUi {
             this.remountTranscriptStickyComposer();
             return;
         }
-        const changesPill = this.buildTranscriptComposerChangesPill(project, summary);
+        const activityOptions = this.buildTranscriptComposerActivityOptions(project, summary);
+        const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
+        const changesPill = renderStickyComposerChangesPill(activityOptions);
         const existingPill = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
         if (!changesPill) {
             existingPill?.remove();
-        } else if (existingPill) {
-            existingPill.replaceWith(changesPill);
+            this.lastComposerChangesPillFingerprint = '';
+        } else if (existingPill instanceof HTMLElement) {
+            if (pillFingerprint === this.lastComposerChangesPillFingerprint
+                || patchStickyComposerChangesPillHost(existingPill, activityOptions)) {
+                this.lastComposerChangesPillFingerprint = pillFingerprint;
+            } else {
+                existingPill.replaceWith(changesPill);
+                this.lastComposerChangesPillFingerprint = pillFingerprint;
+            }
         } else {
             wrap.insertBefore(changesPill, card);
+            this.lastComposerChangesPillFingerprint = pillFingerprint;
         }
-        const stack = this.buildTranscriptComposerActivityStack(project, summary);
+        const stack = renderStickyComposerActivityStack(activityOptions);
         const existing = card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
         if (!stack) {
             existing?.remove();
@@ -745,7 +784,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             }
             card.classList.add('theia-mod-has-activity');
         }
-        this.syncComposerActivityFingerprint(summary, project);
+        this.syncComposerActivityFingerprint(summary, project, activityOptions);
         this.host.composerHeaderUi.updateStickyComposerFabLift();
     }
 
@@ -755,23 +794,29 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         const summary = this.host.transcriptComposerSummary;
         const project = this.host.transcriptComposerProject;
-        if (!summary || summary.id !== conv.id || !this.host.transcriptComposerHost?.isConnected) {
+        if (!summary || summary.id !== conv.id || !project || !this.host.transcriptComposerHost?.isConnected) {
             return;
         }
-        const queueSize = this.host.transcriptFollowUpQueue.size(summary.id);
+        const activityOptions = this.buildTranscriptComposerActivityOptions(project, summary);
         const activityFiles = project
             ? this.resolveComposerActivityFilesForStack(project, summary, conv)
             : this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        const effectiveStatus = resolveTranscriptEffectiveStatus(conv);
-        const fingerprint = `${queueSize}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${effectiveStatus}`;
-        if (fingerprint === this.lastComposerActivityFingerprint) {
+        const fingerprint = this.buildComposerActivityFingerprint(summary, activityOptions, activityFiles);
+        const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
+        if (fingerprint === this.lastComposerActivityFingerprint
+            && pillFingerprint === this.lastComposerChangesPillFingerprint) {
             this.host.transcriptComposerSendRefresh?.();
             return;
         }
+        const previousFingerprint = this.lastComposerActivityFingerprint;
         this.lastComposerActivityFingerprint = fingerprint;
-        // Activity changed (new agent edits, turn finished) — drop the cached git snapshot so the
-        // Changes pill refetches instead of keeping a stale (possibly empty) file list.
-        this.composerActivityGitFilesByConversationId.delete(conv.id);
+        this.lastComposerChangesPillFingerprint = pillFingerprint;
+        const previousPaths = previousFingerprint.split('|')[1] ?? '';
+        const nextPaths = fingerprint.split('|')[1] ?? '';
+        if (nextPaths !== previousPaths) {
+            // New file paths only — invalidate git snapshot so counts stay accurate.
+            this.composerActivityGitFilesByConversationId.delete(conv.id);
+        }
         this.refreshComposerActivityStack();
         this.host.transcriptComposerSendRefresh?.();
     }

@@ -63,6 +63,87 @@ function stickyComposerCommitMenuOptions(): StickyComposerCommitMenuOption[] {
     ];
 }
 
+export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
+    const files = options.changedFiles ?? [];
+    const stats = options.diffStats;
+    const paths = files.map(file => file.path).sort().join('\n');
+    return [
+        files.length,
+        stats?.added ?? 0,
+        stats?.removed ?? 0,
+        paths,
+        options.agentWorking ? 1 : 0,
+        options.commitBusy ? 1 : 0,
+        options.onCommitAction ? 1 : 0,
+    ].join('|');
+}
+
+/** In-place Changes pill refresh — avoids replaceWith flicker during SSE/git snapshot ticks. */
+export function patchStickyComposerChangesPillHost(
+    host: HTMLElement,
+    options: StickyComposerActivityStackOptions,
+): boolean {
+    if (!host.classList.contains('theia-mobile-sticky-composer-changes-pill-host')) {
+        return false;
+    }
+    const section = host.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-changes-pill');
+    const row = section?.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-row');
+    if (!(row instanceof HTMLElement)) {
+        return false;
+    }
+    const files = options.changedFiles ?? [];
+    const stats = options.diffStats;
+    const fileCount = files.length > 0
+        ? files.length
+        : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
+    const hasCommitAction = !!options.onCommitAction;
+    const existingCommitGroup = row.querySelector(':scope > .theia-mobile-sticky-composer-commit-group');
+    if (!!existingCommitGroup !== hasCommitAction) {
+        return false;
+    }
+
+    const pill = row.querySelector<HTMLButtonElement>(':scope > .theia-mobile-sticky-composer-changes-pill');
+    if (options.onReview) {
+        if (!pill) {
+            return false;
+        }
+        pill.setAttribute('aria-label', buildChangesPillAriaLabel(fileCount, stats));
+        let statsInline = pill.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-activity-inline-stats');
+        if (!statsInline) {
+            statsInline = document.createElement('span');
+            statsInline.className = 'theia-mobile-sticky-composer-activity-inline-stats';
+            pill.append(statsInline);
+        }
+        statsInline.replaceChildren();
+        appendDiffStatsInline(statsInline, stats);
+    } else if (pill) {
+        return false;
+    }
+
+    if (hasCommitAction && existingCommitGroup instanceof HTMLElement) {
+        existingCommitGroup.classList.toggle('theia-mod-busy', !!options.commitBusy);
+        const commitBtn = existingCommitGroup.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-btn');
+        const menuBtn = existingCommitGroup.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-menu');
+        if (commitBtn) {
+            commitBtn.disabled = !!options.commitBusy;
+        }
+        if (menuBtn) {
+            menuBtn.disabled = !!options.commitBusy;
+        }
+    }
+
+    const existingStop = row.querySelector(':scope > .theia-mobile-sticky-composer-activity-stop');
+    if (options.agentWorking && options.onStop) {
+        if (!existingStop) {
+            return false;
+        }
+    } else if (existingStop) {
+        existingStop.remove();
+    }
+
+    return true;
+}
+
 export function renderStickyComposerChangesPill(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
     const hasFiles = (options.changedFiles?.length ?? 0) > 0;
     const hasStats = !!options.diffStats && ((options.diffStats.added ?? 0) > 0 || (options.diffStats.removed ?? 0) > 0);
