@@ -411,7 +411,8 @@ export function usesAgUiCliTranscriptStream(agentId: string | undefined): boolea
     return isQaiqAgent(agentId)
         || isClaudeCodeAgent(agentId)
         || isCodexAgent(agentId)
-        || isOpencodeAgent(agentId);
+        || isOpencodeAgent(agentId)
+        || isAntigravityAgent(agentId);
 }
 
 /**

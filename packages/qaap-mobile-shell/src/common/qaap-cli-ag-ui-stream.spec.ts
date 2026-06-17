@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { QaapAntigravityAgUiStreamEmitter } from './qaap-antigravity-ag-ui-stream';
 import { createAgUiCliStreamEmitter } from './qaap-cli-ag-ui-stream';
 import { QaapCodexAgUiStreamEmitter } from './qaap-codex-ag-ui-stream';
 import { QaapOpencodeAgUiStreamEmitter } from './qaap-opencode-ag-ui-stream';
@@ -15,6 +16,8 @@ describe('createAgUiCliStreamEmitter', () => {
         expect(createAgUiCliStreamEmitter('claude')).to.be.instanceOf(QaapQaiqAgUiStreamEmitter);
         expect(createAgUiCliStreamEmitter('codex')).to.be.instanceOf(QaapCodexAgUiStreamEmitter);
         expect(createAgUiCliStreamEmitter('opencode')).to.be.instanceOf(QaapOpencodeAgUiStreamEmitter);
+        expect(createAgUiCliStreamEmitter('antigravity')).to.be.instanceOf(QaapAntigravityAgUiStreamEmitter);
+        expect(createAgUiCliStreamEmitter('gemini')).to.be.instanceOf(QaapAntigravityAgUiStreamEmitter);
         expect(createAgUiCliStreamEmitter('shell')).to.equal(undefined);
     });
 });

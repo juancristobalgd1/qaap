@@ -5,11 +5,13 @@
 
 import type { QaapAgUiEvent } from './qaap-ag-ui-transcript-adapter';
 import {
+    isAntigravityAgent,
     isClaudeCodeAgent,
     isCodexAgent,
     isOpencodeAgent,
     isQaiqAgent,
 } from './qaap-agent-task-client';
+import { QaapAntigravityAgUiStreamEmitter } from './qaap-antigravity-ag-ui-stream';
 import { QaapCodexAgUiStreamEmitter } from './qaap-codex-ag-ui-stream';
 import { QaapOpencodeAgUiStreamEmitter } from './qaap-opencode-ag-ui-stream';
 import { QaapQaiqAgUiStreamEmitter } from './qaap-qaiq-ag-ui-stream';
@@ -28,6 +30,9 @@ export function createAgUiCliStreamEmitter(agentId: string | undefined): QaapCli
     }
     if (isOpencodeAgent(agentId)) {
         return new QaapOpencodeAgUiStreamEmitter();
+    }
+    if (isAntigravityAgent(agentId)) {
+        return new QaapAntigravityAgUiStreamEmitter();
     }
     return undefined;
 }
