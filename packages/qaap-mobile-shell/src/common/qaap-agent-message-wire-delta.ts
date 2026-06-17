@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
-import { usesStructuredAgentTranscript } from './qaap-agent-task-client';
+import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from './qaap-agent-task-client';
 import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encoding';
 import {
     fingerprintQaapTraceEvent,
@@ -259,109 +259,33 @@ function computeTraceEventsWireDelta(
     return tracePatch;
 }
 
-function patchTraceEventInPlace(
-    event: QaapTranscriptTraceEventDTO,
-    delta: TraceEventPatch,
-): QaapTranscriptTraceEventDTO {
-    if (event.id !== delta.eventId) {
-        return event;
+/** AG-UI CLI agents never emit segment wire ops — replace legacy segment snapshots instead. */
+function computeAgUiCliWireDeltaFallback(
+    previous: QaapAgentMessageWireSnapshot,
+    next: QaapAgentMessageWireSnapshot,
+): QaapAgentMessageWireDelta {
+    if ((previous.segments?.length ?? 0) > 0 || (next.segments?.length ?? 0) > 0) {
+        return { kind: 'replace', message: toWireMessage(next) };
     }
-    switch (event.type) {
-        case 'tool_call': {
-            const status = delta.status;
-            const nextStatus = status === 'pending'
-                || status === 'running'
-                || status === 'completed'
-                || status === 'failed'
-                || status === 'cancelled'
-                ? status
-                : event.status;
-            return {
-                ...event,
-                status: nextStatus,
-                ...(delta.argsAppend !== undefined
-                    ? { args: `${event.args ?? ''}${delta.argsAppend}` }
-                    : {}),
-                ...(delta.resultAppend !== undefined
-                    ? { result: `${event.result ?? ''}${delta.resultAppend}` }
-                    : {}),
-            };
-        }
-        case 'thought': {
-            const status = delta.status;
-            const nextStatus = status === 'running' || status === 'completed' ? status : event.status;
-            return {
-                ...event,
-                status: nextStatus,
-                ...(delta.contentAppend !== undefined
-                    ? { content: `${event.content ?? ''}${delta.contentAppend}` }
-                    : {}),
-            };
-        }
-        case 'assistant_text': {
-            const status = delta.status;
-            const nextStatus = status === 'streaming' || status === 'completed' ? status : event.status;
-            return {
-                ...event,
-                status: nextStatus,
-                ...(delta.contentAppend !== undefined
-                    ? { content: `${event.content ?? ''}${delta.contentAppend}` }
-                    : {}),
-            };
-        }
-        case 'error':
-        case 'run_cancelled':
-        case 'checkpoint':
-            return event;
-        default: {
-            const exhaustive: never = event;
-            return exhaustive;
-        }
+    const prevContent = previous.content ?? '';
+    const nextContent = next.content ?? '';
+    if (nextContent === prevContent) {
+        return { kind: 'noop' };
     }
+    if (nextContent.startsWith(prevContent) && nextContent.length > prevContent.length) {
+        return {
+            kind: 'append_content',
+            messageId: next.id,
+            text: nextContent.slice(prevContent.length),
+        };
+    }
+    return { kind: 'replace', message: toWireMessage(next) };
 }
 
-/** Smallest wire delta between two in-memory agent message snapshots. */
-export function computeAgentMessageWireDelta(
-    previous: QaapAgentMessageWireSnapshot | undefined,
+function computeStructuredSegmentWireDelta(
+    previous: QaapAgentMessageWireSnapshot,
     next: QaapAgentMessageWireSnapshot,
-    agentId: string,
 ): QaapAgentMessageWireDelta {
-    if (!previous) {
-        return { kind: 'message_start', message: toWireMessage(next) };
-    }
-    if (previous.id !== next.id || previous.role !== next.role) {
-        return { kind: 'replace', message: toWireMessage(next) };
-    }
-
-    const nextTraceEvents = next.traceEvents ?? [];
-    if (nextTraceEvents.length > 0) {
-        if ((previous.segments?.length ?? 0) > 0 && (previous.traceEvents?.length ?? 0) === 0) {
-            return { kind: 'replace', message: toWireMessage(next) };
-        }
-        const traceDelta = computeTraceEventsWireDelta(previous, next);
-        if (traceDelta) {
-            return traceDelta;
-        }
-        return { kind: 'replace', message: toWireMessage(next) };
-    }
-
-    const structured = usesStructuredAgentTranscript(agentId);
-    if (!structured) {
-        const prevContent = previous.content ?? '';
-        const nextContent = next.content ?? '';
-        if (nextContent === prevContent) {
-            return { kind: 'noop' };
-        }
-        if (nextContent.startsWith(prevContent) && nextContent.length > prevContent.length) {
-            return {
-                kind: 'append_content',
-                messageId: next.id,
-                text: nextContent.slice(prevContent.length),
-            };
-        }
-        return { kind: 'replace', message: toWireMessage(next) };
-    }
-
     const prevSegments = previous.segments ?? [];
     const nextSegments = next.segments ?? [];
     if (prevSegments.length === 0 && nextSegments.length > 0) {
@@ -474,6 +398,116 @@ export function computeAgentMessageWireDelta(
     }
 
     return { kind: 'noop' };
+}
+
+function patchTraceEventInPlace(
+    event: QaapTranscriptTraceEventDTO,
+    delta: TraceEventPatch,
+): QaapTranscriptTraceEventDTO {
+    if (event.id !== delta.eventId) {
+        return event;
+    }
+    switch (event.type) {
+        case 'tool_call': {
+            const status = delta.status;
+            const nextStatus = status === 'pending'
+                || status === 'running'
+                || status === 'completed'
+                || status === 'failed'
+                || status === 'cancelled'
+                ? status
+                : event.status;
+            return {
+                ...event,
+                status: nextStatus,
+                ...(delta.argsAppend !== undefined
+                    ? { args: `${event.args ?? ''}${delta.argsAppend}` }
+                    : {}),
+                ...(delta.resultAppend !== undefined
+                    ? { result: `${event.result ?? ''}${delta.resultAppend}` }
+                    : {}),
+            };
+        }
+        case 'thought': {
+            const status = delta.status;
+            const nextStatus = status === 'running' || status === 'completed' ? status : event.status;
+            return {
+                ...event,
+                status: nextStatus,
+                ...(delta.contentAppend !== undefined
+                    ? { content: `${event.content ?? ''}${delta.contentAppend}` }
+                    : {}),
+            };
+        }
+        case 'assistant_text': {
+            const status = delta.status;
+            const nextStatus = status === 'streaming' || status === 'completed' ? status : event.status;
+            return {
+                ...event,
+                status: nextStatus,
+                ...(delta.contentAppend !== undefined
+                    ? { content: `${event.content ?? ''}${delta.contentAppend}` }
+                    : {}),
+            };
+        }
+        case 'error':
+        case 'run_cancelled':
+        case 'checkpoint':
+            return event;
+        default: {
+            const exhaustive: never = event;
+            return exhaustive;
+        }
+    }
+}
+
+/** Smallest wire delta between two in-memory agent message snapshots. */
+export function computeAgentMessageWireDelta(
+    previous: QaapAgentMessageWireSnapshot | undefined,
+    next: QaapAgentMessageWireSnapshot,
+    agentId: string,
+): QaapAgentMessageWireDelta {
+    if (!previous) {
+        return { kind: 'message_start', message: toWireMessage(next) };
+    }
+    if (previous.id !== next.id || previous.role !== next.role) {
+        return { kind: 'replace', message: toWireMessage(next) };
+    }
+
+    const nextTraceEvents = next.traceEvents ?? [];
+    if (nextTraceEvents.length > 0) {
+        if ((previous.segments?.length ?? 0) > 0 && (previous.traceEvents?.length ?? 0) === 0) {
+            return { kind: 'replace', message: toWireMessage(next) };
+        }
+        const traceDelta = computeTraceEventsWireDelta(previous, next);
+        if (traceDelta) {
+            return traceDelta;
+        }
+        return { kind: 'replace', message: toWireMessage(next) };
+    }
+
+    if (usesAgUiCliTranscriptStream(agentId)) {
+        return computeAgUiCliWireDeltaFallback(previous, next);
+    }
+
+    const structured = usesStructuredAgentTranscript(agentId);
+    if (!structured) {
+        const prevContent = previous.content ?? '';
+        const nextContent = next.content ?? '';
+        if (nextContent === prevContent) {
+            return { kind: 'noop' };
+        }
+        if (nextContent.startsWith(prevContent) && nextContent.length > prevContent.length) {
+            return {
+                kind: 'append_content',
+                messageId: next.id,
+                text: nextContent.slice(prevContent.length),
+            };
+        }
+        return { kind: 'replace', message: toWireMessage(next) };
+    }
+
+    return computeStructuredSegmentWireDelta(previous, next);
 }
 
 /** Apply one wire delta onto an in-memory conversation snapshot. */

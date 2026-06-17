@@ -49,7 +49,7 @@ describe('computeAgentMessageWireDelta', () => {
         });
     });
 
-    it('appends structured text segment deltas', () => {
+    it('replaces segment-only snapshots for AG-UI CLI agents', () => {
         const prev = agentMessage({
             id: 'a1',
             segments: [{ type: 'text', content: 'Hel' }],
@@ -58,15 +58,14 @@ describe('computeAgentMessageWireDelta', () => {
             id: 'a1',
             segments: [{ type: 'text', content: 'Hello' }],
         });
-        expect(computeAgentMessageWireDelta(prev, next, 'qaiq')).to.deep.equal({
-            kind: 'append_segment_text',
-            messageId: 'a1',
-            segmentIndex: 0,
-            text: 'lo',
-        });
+        const delta = computeAgentMessageWireDelta(prev, next, 'qaiq');
+        expect(delta.kind).to.equal('replace');
+        if (delta.kind === 'replace') {
+            expect(delta.message.segments).to.deep.equal([{ type: 'text', content: 'Hello' }]);
+        }
     });
 
-    it('patches streaming tool results incrementally', () => {
+    it('replaces segment tool patches for AG-UI CLI agents', () => {
         const prev = agentMessage({
             id: 'a1',
             segments: [{
@@ -89,13 +88,8 @@ describe('computeAgentMessageWireDelta', () => {
                 result: 'line1\nline2',
             }],
         });
-        expect(computeAgentMessageWireDelta(prev, next, 'qaiq')).to.deep.equal({
-            kind: 'patch_tool',
-            messageId: 'a1',
-            toolUseId: 't1',
-            resultAppend: '\nline2',
-            finished: true,
-        });
+        const delta = computeAgentMessageWireDelta(prev, next, 'codex');
+        expect(delta.kind).to.equal('replace');
     });
 
     it('patches structured traceEvents incrementally when a tool settles', () => {
