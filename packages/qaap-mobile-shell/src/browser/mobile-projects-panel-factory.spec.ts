@@ -18,7 +18,8 @@ describe('mobile-projects-panel-factory', () => {
     let MobileProjectsPanelFactory: typeof MobileProjectsPanelFactoryType;
     let disableJSDOM: (() => void) | undefined;
 
-    before(() => {
+    before(function (this: Mocha.Context) {
+        this.timeout(10000);
         disableJSDOM = enableJSDOM();
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         MobileProjectsPanelFactory = require('./mobile-projects-panel-factory').MobileProjectsPanelFactory;

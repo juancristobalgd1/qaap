@@ -83,6 +83,9 @@ jobs:
         shell: bash
         run: |
           npm ci
+          if [ ! -f node_modules/electron/dist/version ]; then
+            node node_modules/electron/install.js
+          fi
           npm run build
           git status
           ./scripts/check_git_status.sh
