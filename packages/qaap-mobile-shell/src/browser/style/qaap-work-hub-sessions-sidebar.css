@@ -646,6 +646,16 @@
     transform 180ms var(--qaap-sessions-sidebar-motion-easing);
 }
 
+/* Live SSE row patches — skip accordion transitions that read as infinite flicker. */
+.theia-mobile-work-hub-sessions-sidebar-list.theia-mod-live-sync
+  .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed)
+  .theia-mobile-projects-chats-list,
+.theia-mobile-work-hub-sessions-sidebar-list.theia-mod-live-sync
+  .theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed)
+  .theia-mobile-work-hub-sessions-sidebar-projects-list {
+  transition: none;
+}
+
 button.theia-mod-sessions-sidebar-accordion.theia-mobile-tasks-inbox-section-head {
   display: flex;
   align-items: center;

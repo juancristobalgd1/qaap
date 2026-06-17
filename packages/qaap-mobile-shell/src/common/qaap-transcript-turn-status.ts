@@ -4,6 +4,15 @@
 // *****************************************************************************
 
 import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import { hasActiveQaapTraceWork } from './qaap-transcript-trace-model';
+
+export function hasUnfinishedAgentWork(conv: QaapAgentConversationDTO): boolean {
+    return conv.messages.some(message => message.role === 'agent' && hasUnfinishedAgentMessageWork(message));
+}
+
+export function hasUnfinishedAgentMessageWork(message: QaapAgentMessageDTO): boolean {
+    return hasActiveQaapTraceWork(message);
+}
 
 /**
  * True when the visible agent turn looks complete (tools done, answer or edits shown) even if the
@@ -11,6 +20,9 @@ import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from './qaap-agent
  * finished the turn.
  */
 export function isConversationTurnVisuallySettled(conv: QaapAgentConversationDTO): boolean {
+    if (hasUnfinishedAgentWork(conv)) {
+        return false;
+    }
     if (conv.status !== 'streaming') {
         return conv.status === 'idle';
     }
@@ -26,10 +38,7 @@ export function isAgentMessageVisuallySettled(message: QaapAgentMessageDTO): boo
         return false;
     }
     if (message.segments?.length) {
-        const hasUnfinishedTool = message.segments.some(
-            segment => segment.type === 'tool' && !segment.finished,
-        );
-        if (hasUnfinishedTool) {
+        if (hasUnfinishedAgentMessageWork(message)) {
             return false;
         }
         const hasFinishedTool = message.segments.some(
@@ -51,6 +60,9 @@ export function isAgentMessageVisuallySettled(message: QaapAgentMessageDTO): boo
 export function resolveTranscriptEffectiveStatus(
     conv: QaapAgentConversationDTO,
 ): QaapAgentConversationDTO['status'] {
+    if (hasUnfinishedAgentWork(conv)) {
+        return 'streaming';
+    }
     if (conv.status !== 'streaming') {
         return conv.status;
     }
@@ -62,7 +74,7 @@ export function resolveTranscriptEffectiveStatus(
  * instead of full settled rendering.
  */
 export function isTranscriptAgentTailStreaming(conv: QaapAgentConversationDTO): boolean {
-    if (conv.status !== 'streaming' || isConversationTurnVisuallySettled(conv)) {
+    if (resolveTranscriptEffectiveStatus(conv) !== 'streaming' || isConversationTurnVisuallySettled(conv)) {
         return false;
     }
     const last = conv.messages[conv.messages.length - 1];

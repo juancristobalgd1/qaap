@@ -74,7 +74,7 @@ export class MobileProjectsHubRenderUi {
         this.host.renderFilters();
         this.host.renderList();
         if (this.host.sessionsSidebar?.isVisible()) {
-            this.host.sessionsSidebar.refreshList();
+            this.host.sessionsSidebar.scheduleRefreshList();
         }
     }
 

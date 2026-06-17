@@ -12,17 +12,34 @@ import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR } from '../common/qaap-transcript-inc
 
 const TIMELINE_SELECTOR = `[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`;
 
+function resolveTranscriptTimelineScroller(mountHost: HTMLElement): HTMLElement | undefined {
+    const list = mountHost.querySelector<HTMLElement>(':scope > .theia-mobile-agent-transcript');
+    if (list) {
+        return list;
+    }
+    if (mountHost.classList.contains('theia-mobile-agent-transcript')) {
+        return mountHost;
+    }
+    return undefined;
+}
+
 /**
  * Pins the execution timeline summary while scrolling a long agent turn (Cursor parity).
  * Uses CSS `position: sticky` on the summary plus a stuck class for backdrop/shadow polish.
  */
 export function attachTranscriptActivityTimelineStickySummary(scroller: HTMLElement): Disposable {
     let raf = 0;
+    let boundScroller: HTMLElement | undefined;
+    let resizeObserver: ResizeObserver | undefined;
+    let mutationObserver: MutationObserver | undefined;
 
     const sync = (): void => {
         raf = 0;
-        const scrollerRect = scroller.getBoundingClientRect();
-        for (const timeline of scroller.querySelectorAll<HTMLElement>(TIMELINE_SELECTOR)) {
+        if (!boundScroller) {
+            return;
+        }
+        const scrollerRect = boundScroller.getBoundingClientRect();
+        for (const timeline of boundScroller.querySelectorAll<HTMLElement>(TIMELINE_SELECTOR)) {
             if (!(timeline instanceof HTMLDetailsElement) || !timeline.open) {
                 timeline.classList.remove(TRANSCRIPT_ACTIVITY_TIMELINE_STUCK_CLASS);
                 continue;
@@ -49,30 +66,59 @@ export function attachTranscriptActivityTimelineStickySummary(scroller: HTMLElem
         raf = requestAnimationFrame(sync);
     };
 
-    scroller.addEventListener('scroll', scheduleSync, { passive: true });
-    const resizeObserver = typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(scheduleSync)
-        : undefined;
-    resizeObserver?.observe(scroller);
-    const mutationObserver = new MutationObserver(scheduleSync);
-    mutationObserver.observe(scroller, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['open', 'class'],
-    });
+    const unbindScroller = (): void => {
+        if (boundScroller) {
+            boundScroller.removeEventListener('scroll', scheduleSync);
+            for (const timeline of boundScroller.querySelectorAll<HTMLElement>(TIMELINE_SELECTOR)) {
+                timeline.classList.remove(TRANSCRIPT_ACTIVITY_TIMELINE_STUCK_CLASS);
+            }
+        }
+        resizeObserver?.disconnect();
+        mutationObserver?.disconnect();
+        resizeObserver = undefined;
+        mutationObserver = undefined;
+        boundScroller = undefined;
+    };
 
-    scheduleSync();
+    const bindScroller = (nextScroller: HTMLElement | undefined): void => {
+        if (nextScroller === boundScroller) {
+            scheduleSync();
+            return;
+        }
+        unbindScroller();
+        boundScroller = nextScroller;
+        if (!boundScroller) {
+            return;
+        }
+        boundScroller.addEventListener('scroll', scheduleSync, { passive: true });
+        resizeObserver = typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(scheduleSync)
+            : undefined;
+        resizeObserver?.observe(boundScroller);
+        mutationObserver = new MutationObserver(scheduleSync);
+        mutationObserver.observe(boundScroller, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['open', 'class'],
+        });
+        scheduleSync();
+    };
+
+    const resolveAndBindScroller = (): void => {
+        bindScroller(resolveTranscriptTimelineScroller(scroller));
+    };
+
+    const hostMutationObserver = new MutationObserver(resolveAndBindScroller);
+    hostMutationObserver.observe(scroller, { childList: true, subtree: false });
+
+    resolveAndBindScroller();
 
     return Disposable.create(() => {
         if (raf) {
             cancelAnimationFrame(raf);
         }
-        scroller.removeEventListener('scroll', scheduleSync);
-        resizeObserver?.disconnect();
-        mutationObserver.disconnect();
-        for (const timeline of scroller.querySelectorAll<HTMLElement>(TIMELINE_SELECTOR)) {
-            timeline.classList.remove(TRANSCRIPT_ACTIVITY_TIMELINE_STUCK_CLASS);
-        }
+        hostMutationObserver.disconnect();
+        unbindScroller();
     });
 }

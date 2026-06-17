@@ -50,6 +50,31 @@ export async function expandAgentMessageWireDelta(
                 ...(resultAppend !== undefined ? { resultAppend } : {}),
             };
         }
+        case 'patch_trace_event': {
+            const contentAppend = await maybeDecompressWireText(delta.contentAppend, delta.contentAppendEncoding);
+            const argsAppend = await maybeDecompressWireText(delta.argsAppend, delta.argsAppendEncoding);
+            const resultAppend = await maybeDecompressWireText(delta.resultAppend, delta.resultAppendEncoding);
+            if (contentAppend === delta.contentAppend
+                && argsAppend === delta.argsAppend
+                && resultAppend === delta.resultAppend
+                && delta.contentAppendEncoding === undefined
+                && delta.argsAppendEncoding === undefined
+                && delta.resultAppendEncoding === undefined) {
+                return delta;
+            }
+            const {
+                contentAppendEncoding: _contentEnc,
+                argsAppendEncoding: _argsEnc,
+                resultAppendEncoding: _resultEnc,
+                ...rest
+            } = delta;
+            return {
+                ...rest,
+                ...(contentAppend !== undefined ? { contentAppend } : {}),
+                ...(argsAppend !== undefined ? { argsAppend } : {}),
+                ...(resultAppend !== undefined ? { resultAppend } : {}),
+            };
+        }
         case 'append_segment': {
             const segment = await expandAgentMessageSegment(delta.segment);
             if (segment === delta.segment) {

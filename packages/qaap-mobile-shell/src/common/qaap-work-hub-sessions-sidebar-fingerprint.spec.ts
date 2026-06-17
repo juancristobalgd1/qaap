@@ -6,6 +6,8 @@
 import { expect } from 'chai';
 import {
     buildWorkHubSessionsSidebarFingerprint,
+    buildWorkHubSessionsSidebarRowFingerprint,
+    buildWorkHubSessionsSidebarStructureFingerprint,
     type WorkHubSessionsSidebarFingerprintInput,
 } from './qaap-work-hub-sessions-sidebar-fingerprint';
 
@@ -49,6 +51,117 @@ describe('qaap-work-hub-sessions-sidebar-fingerprint', () => {
                     messageCount: 4,
                     priority: true,
                 }]
+                : [],
+        });
+        expect(after).to.not.equal(before);
+    });
+
+    it('does not change for volatile live counters when row order is stable', () => {
+        const before = buildWorkHubSessionsSidebarFingerprint(baseInput());
+        const after = buildWorkHubSessionsSidebarFingerprint({
+            ...baseInput(),
+            conversationsForProject: projectId => projectId === 'proj-a'
+                ? [{
+                    id: 'conv-1',
+                    status: 'streaming',
+                    title: 'Fix login',
+                    updatedAt: 999,
+                    messageCount: 99,
+                    priority: true,
+                }]
+                : [],
+        });
+        expect(after).to.equal(before);
+    });
+
+    it('does not change structure when streaming title or turn progress updates', () => {
+        const input = baseInput();
+        const before = buildWorkHubSessionsSidebarStructureFingerprint(input);
+        const after = buildWorkHubSessionsSidebarStructureFingerprint({
+            ...input,
+            conversationsForProject: projectId => projectId === 'proj-a'
+                ? [{
+                    id: 'conv-1',
+                    status: 'streaming',
+                    title: 'Renamed while streaming',
+                    updatedAt: 999,
+                    messageCount: 99,
+                    priority: true,
+                    turnProgressCurrent: 4,
+                    turnProgressTotal: 12,
+                }]
+                : [],
+        });
+        expect(after).to.equal(before);
+    });
+
+    it('changes row fingerprint when streaming turn progress advances', () => {
+        const summary = {
+            id: 'conv-1',
+            status: 'streaming' as const,
+            title: 'Fix login',
+            updatedAt: 100,
+            messageCount: 3,
+            turnProgressCurrent: 1,
+            turnProgressTotal: 4,
+        };
+        const before = buildWorkHubSessionsSidebarRowFingerprint(summary, {
+            pinned: true,
+            isCurrent: true,
+            visualStatusId: 'running',
+        });
+        const after = buildWorkHubSessionsSidebarRowFingerprint({
+            ...summary,
+            turnProgressCurrent: 2,
+        }, {
+            pinned: true,
+            isCurrent: true,
+            visualStatusId: 'running',
+        });
+        expect(after).to.not.equal(before);
+    });
+
+    it('changes when conversation order changes', () => {
+        const before = buildWorkHubSessionsSidebarFingerprint({
+            ...baseInput(),
+            conversationsForProject: projectId => projectId === 'proj-a'
+                ? [
+                    {
+                        id: 'conv-1',
+                        status: 'streaming',
+                        title: 'Fix login',
+                        updatedAt: 100,
+                        messageCount: 3,
+                    },
+                    {
+                        id: 'conv-2',
+                        status: 'idle',
+                        title: 'Review copy',
+                        updatedAt: 90,
+                        messageCount: 2,
+                    },
+                ]
+                : [],
+        });
+        const after = buildWorkHubSessionsSidebarFingerprint({
+            ...baseInput(),
+            conversationsForProject: projectId => projectId === 'proj-a'
+                ? [
+                    {
+                        id: 'conv-2',
+                        status: 'idle',
+                        title: 'Review copy',
+                        updatedAt: 90,
+                        messageCount: 2,
+                    },
+                    {
+                        id: 'conv-1',
+                        status: 'streaming',
+                        title: 'Fix login',
+                        updatedAt: 100,
+                        messageCount: 3,
+                    },
+                ]
                 : [],
         });
         expect(after).to.not.equal(before);

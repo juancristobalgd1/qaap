@@ -6,6 +6,11 @@
 import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import { usesStructuredAgentTranscript } from './qaap-agent-task-client';
 import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encoding';
+import {
+    fingerprintQaapTraceEvent,
+    fingerprintQaapTraceEvents,
+    type QaapTranscriptTraceEventDTO,
+} from './qaap-transcript-trace-model';
 
 /** Incremental wire ops for live agent transcript streaming (shared server + browser). */
 export type QaapAgentMessageWireDelta =
@@ -39,12 +44,32 @@ export type QaapAgentMessageWireDelta =
         readonly kind: 'append_segment';
         readonly messageId: string;
         readonly segment: QaapAgentMessageSegmentDTO;
+    }
+    | {
+        readonly kind: 'append_trace_event';
+        readonly messageId: string;
+        readonly event: QaapTranscriptTraceEventDTO;
+    }
+    | {
+        readonly kind: 'patch_trace_event';
+        readonly messageId: string;
+        readonly eventId: string;
+        readonly contentAppend?: string;
+        readonly contentAppendEncoding?: QaapAgentWireCompressionEncoding;
+        readonly argsAppend?: string;
+        readonly argsAppendEncoding?: QaapAgentWireCompressionEncoding;
+        readonly resultAppend?: string;
+        readonly resultAppendEncoding?: QaapAgentWireCompressionEncoding;
+        readonly status?: QaapTranscriptTraceEventDTO extends infer Event
+            ? Event extends { readonly status: infer Status } ? Status : never
+            : never;
     };
 
 export interface QaapAgentMessageWireSnapshot {
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;
+    readonly traceEvents?: QaapTranscriptTraceEventDTO[];
     readonly segments?: QaapAgentMessageSegmentDTO[];
     readonly createdAt: number;
 }
@@ -55,6 +80,7 @@ function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageD
         role: message.role,
         content: message.content,
         createdAt: message.createdAt,
+        ...(message.traceEvents ? { traceEvents: [...message.traceEvents] } : {}),
         ...(message.segments ? { segments: [...message.segments] } : {}),
     };
 }
@@ -73,6 +99,185 @@ function segmentsEqual(
     return segmentFingerprint(left) === segmentFingerprint(right);
 }
 
+function traceEventsEqual(
+    left: QaapTranscriptTraceEventDTO,
+    right: QaapTranscriptTraceEventDTO,
+): boolean {
+    return fingerprintQaapTraceEvent(left) === fingerprintQaapTraceEvent(right);
+}
+
+type TraceEventPatch = Extract<QaapAgentMessageWireDelta, { kind: 'patch_trace_event' }>;
+
+function computeTraceEventPatch(
+    previous: QaapTranscriptTraceEventDTO,
+    incoming: QaapTranscriptTraceEventDTO,
+    messageId: string,
+): TraceEventPatch | undefined {
+    if (previous.type !== incoming.type || previous.id !== incoming.id) {
+        return undefined;
+    }
+    if (previous.type === 'error' || incoming.type === 'error') {
+        return undefined;
+    }
+    if (previous.type === 'tool_call' && incoming.type === 'tool_call') {
+        if (previous.name !== incoming.name) {
+            return undefined;
+        }
+        const previousArgs = previous.args ?? '';
+        const incomingArgs = incoming.args ?? '';
+        const previousResult = previous.result ?? '';
+        const incomingResult = incoming.result ?? '';
+        const argsAppend = incomingArgs.startsWith(previousArgs) && incomingArgs.length > previousArgs.length
+            ? incomingArgs.slice(previousArgs.length)
+            : undefined;
+        const resultAppend = incomingResult.startsWith(previousResult) && incomingResult.length > previousResult.length
+            ? incomingResult.slice(previousResult.length)
+            : undefined;
+        const status = previous.status !== incoming.status ? incoming.status : undefined;
+        if (!argsAppend && !resultAppend && status === undefined) {
+            return undefined;
+        }
+        return {
+            kind: 'patch_trace_event',
+            messageId,
+            eventId: incoming.id,
+            ...(argsAppend ? { argsAppend } : {}),
+            ...(resultAppend ? { resultAppend } : {}),
+            ...(status ? { status } : {}),
+        };
+    }
+    if ((previous.type === 'thought' || previous.type === 'assistant_text')
+        && (incoming.type === 'thought' || incoming.type === 'assistant_text')) {
+        const previousContent = previous.content ?? '';
+        const incomingContent = incoming.content ?? '';
+        const contentAppend = incomingContent.startsWith(previousContent) && incomingContent.length > previousContent.length
+            ? incomingContent.slice(previousContent.length)
+            : undefined;
+        const status = previous.status !== incoming.status ? incoming.status : undefined;
+        if (!contentAppend && status === undefined) {
+            return undefined;
+        }
+        return {
+            kind: 'patch_trace_event',
+            messageId,
+            eventId: incoming.id,
+            ...(contentAppend ? { contentAppend } : {}),
+            ...(status ? { status } : {}),
+        };
+    }
+    return undefined;
+}
+
+function computeTraceEventsWireDelta(
+    previous: QaapAgentMessageWireSnapshot,
+    next: QaapAgentMessageWireSnapshot,
+): QaapAgentMessageWireDelta | undefined {
+    const prevEvents = previous.traceEvents ?? [];
+    const nextEvents = next.traceEvents ?? [];
+    if (fingerprintQaapTraceEvents(prevEvents) === fingerprintQaapTraceEvents(nextEvents)) {
+        return { kind: 'noop' };
+    }
+    if (prevEvents.length === 0 && nextEvents.length === 1) {
+        return {
+            kind: 'append_trace_event',
+            messageId: next.id,
+            event: nextEvents[0],
+        };
+    }
+    if (nextEvents.length === prevEvents.length + 1) {
+        for (let index = 0; index < prevEvents.length; index++) {
+            if (!traceEventsEqual(prevEvents[index], nextEvents[index])) {
+                return undefined;
+            }
+        }
+        return {
+            kind: 'append_trace_event',
+            messageId: next.id,
+            event: nextEvents[nextEvents.length - 1],
+        };
+    }
+    if (prevEvents.length !== nextEvents.length) {
+        return undefined;
+    }
+
+    let tracePatch: TraceEventPatch | undefined;
+    for (let index = 0; index < prevEvents.length; index++) {
+        const prev = prevEvents[index];
+        const incoming = nextEvents[index];
+        if (traceEventsEqual(prev, incoming)) {
+            continue;
+        }
+        const candidate = computeTraceEventPatch(prev, incoming, next.id);
+        if (!candidate) {
+            return undefined;
+        }
+        if (tracePatch) {
+            return undefined;
+        }
+        tracePatch = candidate;
+    }
+    return tracePatch;
+}
+
+function patchTraceEventInPlace(
+    event: QaapTranscriptTraceEventDTO,
+    delta: TraceEventPatch,
+): QaapTranscriptTraceEventDTO {
+    if (event.id !== delta.eventId) {
+        return event;
+    }
+    switch (event.type) {
+        case 'tool_call': {
+            const status = delta.status;
+            const nextStatus = status === 'pending'
+                || status === 'running'
+                || status === 'completed'
+                || status === 'failed'
+                || status === 'cancelled'
+                ? status
+                : event.status;
+            return {
+                ...event,
+                status: nextStatus,
+                ...(delta.argsAppend !== undefined
+                    ? { args: `${event.args ?? ''}${delta.argsAppend}` }
+                    : {}),
+                ...(delta.resultAppend !== undefined
+                    ? { result: `${event.result ?? ''}${delta.resultAppend}` }
+                    : {}),
+            };
+        }
+        case 'thought': {
+            const status = delta.status;
+            const nextStatus = status === 'running' || status === 'completed' ? status : event.status;
+            return {
+                ...event,
+                status: nextStatus,
+                ...(delta.contentAppend !== undefined
+                    ? { content: `${event.content ?? ''}${delta.contentAppend}` }
+                    : {}),
+            };
+        }
+        case 'assistant_text': {
+            const status = delta.status;
+            const nextStatus = status === 'streaming' || status === 'completed' ? status : event.status;
+            return {
+                ...event,
+                status: nextStatus,
+                ...(delta.contentAppend !== undefined
+                    ? { content: `${event.content ?? ''}${delta.contentAppend}` }
+                    : {}),
+            };
+        }
+        case 'error':
+            return event;
+        default: {
+            const exhaustive: never = event;
+            return exhaustive;
+        }
+    }
+}
+
 /** Smallest wire delta between two in-memory agent message snapshots. */
 export function computeAgentMessageWireDelta(
     previous: QaapAgentMessageWireSnapshot | undefined,
@@ -83,6 +288,18 @@ export function computeAgentMessageWireDelta(
         return { kind: 'message_start', message: toWireMessage(next) };
     }
     if (previous.id !== next.id || previous.role !== next.role) {
+        return { kind: 'replace', message: toWireMessage(next) };
+    }
+
+    const nextTraceEvents = next.traceEvents ?? [];
+    if (nextTraceEvents.length > 0) {
+        if ((previous.segments?.length ?? 0) > 0 && (previous.traceEvents?.length ?? 0) === 0) {
+            return { kind: 'replace', message: toWireMessage(next) };
+        }
+        const traceDelta = computeTraceEventsWireDelta(previous, next);
+        if (traceDelta) {
+            return traceDelta;
+        }
         return { kind: 'replace', message: toWireMessage(next) };
     }
 
@@ -265,6 +482,16 @@ export function applyAgentMessageWireDelta(
             return patchMessage(conv, delta.messageId, message => ({
                 ...message,
                 segments: [...(message.segments ?? []), delta.segment],
+            }));
+        case 'append_trace_event':
+            return patchMessage(conv, delta.messageId, message => ({
+                ...message,
+                traceEvents: [...(message.traceEvents ?? []), delta.event],
+            }));
+        case 'patch_trace_event':
+            return patchMessage(conv, delta.messageId, message => ({
+                ...message,
+                traceEvents: (message.traceEvents ?? []).map(event => patchTraceEventInPlace(event, delta)),
             }));
         default: {
             const exhaustive: never = delta;

@@ -115,6 +115,31 @@ describe('qaap-transcript-turn-status', () => {
         expect(isConversationTurnVisuallySettled(idle)).to.equal(true);
     });
 
+    it('resolveTranscriptEffectiveStatus keeps unfinished visible tools active even when backend reports idle', () => {
+        const idleWithRunningTool = conv({
+            status: 'idle',
+            messages: [
+                { id: 'u1', role: 'user', content: 'run tests', createdAt: 1 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: '',
+                    createdAt: 2,
+                    segments: [{
+                        type: 'tool',
+                        toolUseId: 't1',
+                        name: 'Bash',
+                        args: '{"command":"npm test"}',
+                        finished: false,
+                    }],
+                },
+            ],
+        });
+        expect(isConversationTurnVisuallySettled(idleWithRunningTool)).to.equal(false);
+        expect(resolveTranscriptEffectiveStatus(idleWithRunningTool)).to.equal('streaming');
+        expect(isTranscriptAgentTailStreaming(idleWithRunningTool)).to.equal(true);
+    });
+
     it('isTranscriptAgentTailStreaming stops once the turn is visually settled', () => {
         const userMessage = { id: 'u1', role: 'user' as const, content: 'explain api', createdAt: 5 };
         const streaming = conv({

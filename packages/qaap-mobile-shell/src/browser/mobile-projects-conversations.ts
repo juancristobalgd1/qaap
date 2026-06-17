@@ -106,6 +106,7 @@ export class MobileProjectsConversations {
     protected readonly streamMetrics = new QaapConversationStreamMetricsCollector('client');
     protected started = false;
     protected visibilityListenerInstalled = false;
+    protected transportWasDisconnected = false;
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
     /** Fires whenever conversation state on the server changes (any project). */
@@ -118,6 +119,10 @@ export class MobileProjectsConversations {
     protected readonly onDidReceiveParallelRunEmitter = new Emitter<ConversationParallelRunEvent>();
     /** Fires when parallel-run variant diff stats change on the VPS. */
     readonly onDidReceiveParallelRun: Event<ConversationParallelRunEvent> = this.onDidReceiveParallelRunEmitter.event;
+
+    protected readonly onDidReconnectTransportEmitter = new Emitter<void>();
+    /** Fires after WS/SSE reconnect — open transcript should refetch (MessagesSnapshot-style). */
+    readonly onDidReconnectTransport: Event<void> = this.onDidReconnectTransportEmitter.event;
 
     @inject(FileService)
     protected readonly fileService: FileService;
@@ -460,6 +465,10 @@ export class MobileProjectsConversations {
                 this.wsReconnectAttempt = 0;
                 this.transport = 'ws';
                 this.closeSse();
+                if (this.transportWasDisconnected) {
+                    this.transportWasDisconnected = false;
+                    this.onDidReconnectTransportEmitter.fire();
+                }
                 for (const list of this.byCwd.values()) {
                     for (const conversation of list) {
                         if (conversation.status === 'streaming') {
@@ -480,6 +489,7 @@ export class MobileProjectsConversations {
 
             socket.addEventListener('close', () => {
                 this.socket = undefined;
+                this.transportWasDisconnected = true;
                 if (this.transport === 'ws') {
                     this.transport = 'none';
                 }
@@ -515,8 +525,17 @@ export class MobileProjectsConversations {
             source.addEventListener('message_delta', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('deleted', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('parallel-run', ev => this.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('open', () => this.schedulePrimeFromAll());
-            source.addEventListener('error', () => this.scheduleSseReconnect());
+            source.addEventListener('open', () => {
+                if (this.transportWasDisconnected) {
+                    this.transportWasDisconnected = false;
+                    this.onDidReconnectTransportEmitter.fire();
+                }
+                this.schedulePrimeFromAll();
+            });
+            source.addEventListener('error', () => {
+                this.transportWasDisconnected = true;
+                this.scheduleSseReconnect();
+            });
         } catch {
             this.scheduleSseReconnect();
         }
@@ -729,6 +748,8 @@ export class MobileProjectsConversations {
                 return resolveMessagePreviewText(delta.message);
             case 'patch_tool':
             case 'append_segment':
+            case 'append_trace_event':
+            case 'patch_trace_event':
             case 'noop':
                 return undefined;
             default: {

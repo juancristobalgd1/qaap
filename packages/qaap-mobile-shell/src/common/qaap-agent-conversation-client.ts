@@ -15,6 +15,7 @@ import type { QaapAgentToolApprovalRules } from './qaap-agent-tool-approval-rule
 import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encoding';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { resolveTranscriptEffectiveStatus } from './qaap-transcript-turn-status';
+import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -110,6 +111,9 @@ export interface QaapAgentMessageDTO {
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;
+    /** Structured Codex/Cursor-style execution trace. Preferred over parsing content. */
+    readonly traceEvents?: QaapTranscriptTraceEventDTO[];
+    /** Legacy transport shape retained for existing VPS agents. Prefer traceEvents for new providers. */
     readonly segments?: QaapAgentMessageSegmentDTO[];
     readonly createdAt: number;
     readonly taskId?: string;
@@ -462,5 +466,24 @@ export async function deleteConversation(id: string): Promise<void> {
     });
     if (!response.ok && response.status !== 404) {
         throw new Error(response.statusText);
+    }
+}
+
+/** Push one AG-UI protocol event into a streaming conversation (traceEvents + wire deltas). */
+export async function postAgUiTranscriptEvent(
+    conversationId: string,
+    event: Readonly<Record<string, unknown>>,
+): Promise<void> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/ag-ui/events`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event }),
+        },
+    );
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
     }
 }

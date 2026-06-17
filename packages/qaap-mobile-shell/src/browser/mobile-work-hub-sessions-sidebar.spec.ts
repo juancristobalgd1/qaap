@@ -119,4 +119,84 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(renderCalls).to.equal(2);
     });
 
+    it('preserves scroll and focused conversation across list refresh', () => {
+        let label = 'First';
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                const spacer = document.createElement('div');
+                spacer.style.height = '400px';
+                const row = document.createElement('div');
+                row.dataset.qaapConversationId = 'conv-1';
+                const button = document.createElement('button');
+                button.textContent = label;
+                row.append(button);
+                host.append(spacer, row);
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        sidebar.getScrollElement().scrollTop = 120;
+        sidebar.node.querySelector<HTMLButtonElement>('[data-qaap-conversation-id="conv-1"] button')?.focus();
+
+        label = 'Updated';
+        sidebar.refreshList({ force: true });
+
+        expect(sidebar.getScrollElement().scrollTop).to.equal(120);
+        expect(document.activeElement?.textContent).to.equal('Updated');
+    });
+
+    it('does not touch DOM when refreshed markup is unchanged', () => {
+        let renderCalls = 0;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                renderCalls++;
+                const row = document.createElement('div');
+                row.dataset.qaapConversationId = 'conv-1';
+                row.textContent = 'Stable';
+                host.append(row);
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        const firstRow = sidebar.node.querySelector('[data-qaap-conversation-id="conv-1"]');
+        sidebar.refreshList();
+        const secondRow = sidebar.node.querySelector('[data-qaap-conversation-id="conv-1"]');
+
+        expect(renderCalls).to.equal(2);
+        expect(secondRow).to.equal(firstRow);
+    });
+
+    it('patches rows in place when tryPatch succeeds', () => {
+        let renderCalls = 0;
+        let patchCalls = 0;
+        let allowPatch = false;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => {
+                renderCalls++;
+                const row = document.createElement('div');
+                row.className = 'theia-mobile-projects-task-row';
+                row.dataset.qaapConversationId = 'conv-1';
+                row.textContent = 'Initial';
+                host.append(row);
+            },
+            tryPatchSessionList: () => {
+                patchCalls++;
+                return allowPatch;
+            },
+            rememberSessionListFingerprint: () => {
+                allowPatch = true;
+            },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.refreshList();
+        sidebar.refreshList();
+        expect(renderCalls).to.equal(1);
+        expect(patchCalls).to.equal(2);
+    });
 });

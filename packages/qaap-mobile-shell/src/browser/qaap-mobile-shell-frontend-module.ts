@@ -38,6 +38,7 @@ import {
     QaapBootstrapRunDevTool,
     QaapBootstrapStatusTool,
 } from './qaap-bootstrap-tool-providers';
+import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
@@ -205,6 +206,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bindToolProvider(QaapBootstrapInstallTool, bind);
     bindToolProvider(QaapBootstrapRunDevTool, bind);
     bindToolProvider(QaapBootstrapOpenPreviewTool, bind);
+
+    bind(QaapAgUiFrontendToolService).toSelf().inSingletonScope();
 
     bind(QaapBootstrapVariableContribution).toSelf().inSingletonScope();
     bind(AIVariableContribution).toService(QaapBootstrapVariableContribution);

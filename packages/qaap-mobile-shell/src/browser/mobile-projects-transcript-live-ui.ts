@@ -59,6 +59,7 @@ import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { scheduleTranscriptIdleWork, type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
+import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import {
@@ -74,6 +75,7 @@ import type { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
+import { QaapAgUiTranscriptLiveBridge } from './qaap-ag-ui-transcript-live-bridge';
 
 /** Panel surface for SSE live watch, debounced refetch, and inline approval refresh. */
 export interface MobileProjectsTranscriptLiveHost {
@@ -81,6 +83,7 @@ export interface MobileProjectsTranscriptLiveHost {
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
+    transcriptConversationCache: Map<string, QaapAgentConversationDTO>;
     transcriptLastFingerprint: string | undefined;
     transcriptLastStreamProgressAt: number | undefined;
     transcriptLastSseDeltaAt: number | undefined;
@@ -116,6 +119,7 @@ export interface MobileProjectsTranscriptLiveHost {
     beginTranscriptDevPreviewRequest(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
     stageTranscriptPreviewReadyUrl(readyUrl: string): void;
     projectBootstrap?: QaapProjectBootstrapService;
+    agUiFrontendTools?: import('./qaap-ag-ui-frontend-tool-service').QaapAgUiFrontendToolService;
     handleTranscriptStatusForAutoVerify(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -156,8 +160,10 @@ export class MobileProjectsTranscriptLiveUi {
     protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
     protected transcriptPreviewPollMisses = 0;
     protected visibilityResumeListenerInstalled = false;
+    protected readonly agUiLiveBridge: QaapAgUiTranscriptLiveBridge;
 
     constructor(protected readonly host: MobileProjectsTranscriptLiveHost) {
+        this.agUiLiveBridge = new QaapAgUiTranscriptLiveBridge(() => this.host.agUiFrontendTools);
         this.ensureBootstrapPreviewListener();
         this.ensureVisibilityResumeListener();
     }
@@ -194,6 +200,7 @@ export class MobileProjectsTranscriptLiveUi {
         if (!this.isActiveTranscriptConversation(event.conversationId)) {
             return;
         }
+        this.agUiLiveBridge.onLiveMessage(event);
         const message = this.resolveLiveSseMessage(event);
         if (!message) {
             // Wire delta against a message the local snapshot never received (e.g. its
@@ -212,6 +219,7 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         this.ensureTranscriptLiveController().markSseDeltaApplied();
+        this.agUiLiveBridge.afterMessageUpdated(event.conversationId, message);
         if (TRANSCRIPT_SSE_COALESCE_RAF) {
             this.pendingSseRenderConv = next;
             this.schedulePendingSseRender();
@@ -269,6 +277,7 @@ export class MobileProjectsTranscriptLiveUi {
         if (!isTranscriptDocumentVisible()) {
             return;
         }
+        recordTranscriptRenderMetric('sse_scheduled');
         const nearBottom = this.isActiveTranscriptNearBottom();
         const delayMs = resolveTranscriptStreamingCoalesceDelayMs(nearBottom);
         if (delayMs === 0) {
@@ -323,6 +332,7 @@ export class MobileProjectsTranscriptLiveUi {
         if (!next) {
             return;
         }
+        recordTranscriptRenderMetric('sse_flushed');
         this.pendingSseRenderConv = undefined;
         const lastMessage = next.messages.at(-1);
         if (!lastMessage) {
@@ -343,6 +353,7 @@ export class MobileProjectsTranscriptLiveUi {
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, next);
         this.host.executionSurfaceTabsUi.syncPlanTabDuringStreaming();
         this.host.transcriptLastConv = next;
+        this.host.transcriptConversationCache.set(next.id, next);
         this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, next);
         if (next.status === 'streaming') {
             if (!prevConv || prevConv.status !== 'streaming' || transcriptFingerprintChanged(prevConv, next)) {
@@ -942,15 +953,6 @@ export class MobileProjectsTranscriptLiveUi {
         chatHost: HTMLElement,
         summary: QaapAgentConversationSummaryDTO,
     ): void {
-        const messages: QaapAgentConversationDTO['messages'] = [];
-        if (summary.lastMessagePreview?.trim()) {
-            messages.push({
-                id: `${summary.id}:preview`,
-                role: summary.lastMessageRole ?? 'user',
-                content: summary.lastMessagePreview,
-                createdAt: summary.updatedAt,
-            });
-        }
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, {
             id: summary.id,
             cwd: summary.cwd,
@@ -959,7 +961,7 @@ export class MobileProjectsTranscriptLiveUi {
             status: summary.status,
             createdAt: summary.createdAt,
             updatedAt: summary.updatedAt,
-            messages,
+            messages: [],
         });
     }
 
@@ -1031,6 +1033,7 @@ export class MobileProjectsTranscriptLiveUi {
                 await this.host.syncTranscriptPreviewFromConversation(activeProject, activeSummary, full);
             }
             this.host.transcriptLastConv = full;
+            this.host.transcriptConversationCache.set(full.id, full);
             const reconciledSummary = this.reconcileConversationListSummary(full);
             this.host.transcriptOpenSummary = reconciledSummary;
             if (this.host.transcriptComposerSummary?.id === full.id

@@ -260,15 +260,6 @@ export class MobileProjectsTranscriptSheetUi {
     }
 
     summaryToTranscriptPlaceholder(summary: QaapAgentConversationSummaryDTO): QaapAgentConversationDTO {
-        const messages: QaapAgentConversationDTO['messages'] = [];
-        if (summary.lastMessagePreview?.trim()) {
-            messages.push({
-                id: `${summary.id}:preview`,
-                role: summary.lastMessageRole ?? 'user',
-                content: summary.lastMessagePreview,
-                createdAt: summary.updatedAt,
-            });
-        }
         return {
             id: summary.id,
             cwd: summary.cwd,
@@ -277,7 +268,7 @@ export class MobileProjectsTranscriptSheetUi {
             status: summary.status,
             createdAt: summary.createdAt,
             updatedAt: summary.updatedAt,
-            messages,
+            messages: [],
         };
     }
 

@@ -5,13 +5,13 @@
 
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
-import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
-import { QaapCliTranscriptParseWorkerClient } from './qaap-cli-transcript-parse-worker-client';
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
+import { resolveQaapTranscriptTrace, traceEventsToSegments } from '../common/qaap-transcript-trace-model';
 import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
-import { isTranscriptAgentTailStreaming } from '../common/qaap-transcript-turn-status';
+import { isTranscriptAgentTailStreaming, resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
+import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
@@ -56,29 +56,23 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         conv: QaapAgentConversationDTO,
         msg: QaapAgentMessageDTO,
     ): QaapAgentMessageSegmentDTO[] | undefined {
-        if (msg.segments && msg.segments.length > 0) {
-            return dedupeAgentMessageTextSegments(msg.segments);
+        const trace = resolveQaapTranscriptTrace(msg, {
+            agentId: conv.agentId,
+            allowLegacyContentParse: true,
+        });
+        if (trace.segments.length > 0) {
+            return dedupeAgentMessageTextSegments([...trace.segments]);
         }
-        if (msg.role !== 'agent' || !msg.content?.trim()) {
-            return undefined;
-        }
-        const cacheKey = msg.id ?? `${conv.id}:${msg.content.length}`;
-        const cached = QaapCliTranscriptParseWorkerClient.get().peekParsedSegments(cacheKey);
-        if (cached && cached.length > 0) {
-            return dedupeAgentMessageTextSegments([...cached]);
-        }
-        const parsed = parseAgentLogForTranscript(conv.agentId, msg.content);
-        return parsed.segments.length > 0 ? dedupeAgentMessageTextSegments(parsed.segments) : undefined;
+        return undefined;
     }
 
-    protected prefetchTranscriptAgentLogParses(conv: QaapAgentConversationDTO): void {
-        for (const msg of conv.messages) {
-            if (msg.segments?.length || msg.role !== 'agent' || !msg.content?.trim()) {
-                continue;
-            }
-            const cacheKey = msg.id ?? `${conv.id}:${msg.content.length}`;
-            QaapCliTranscriptParseWorkerClient.get().prefetch(conv.agentId, msg.content, cacheKey);
+    /** Derive legacy segments[] from traceEvents so incremental DOM patches can reuse segment logic. */
+    protected withDerivedTranscriptSegments(msg: QaapAgentMessageDTO): QaapAgentMessageDTO {
+        if (!msg.traceEvents?.length || msg.segments?.length) {
+            return msg;
         }
+        const segments = dedupeAgentMessageTextSegments(traceEventsToSegments(msg.traceEvents));
+        return segments.length ? { ...msg, segments } : msg;
     }
 
     createTranscriptMessageRowAtIndex(conv: QaapAgentConversationDTO, index: number): HTMLElement {
@@ -89,7 +83,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const deferHeavyContent = shouldDeferTranscriptRowHeavyContent({
             messageIndex: index,
             messageCount: normalized.messages.length,
-            conversationStreaming: normalized.status === 'streaming',
+            conversationStreaming: resolveTranscriptEffectiveStatus(normalized) === 'streaming',
         });
         const streamingTail = index === normalized.messages.length - 1
             && msg.role === 'agent'
@@ -130,7 +124,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     buildTranscriptVirtualFooter(conv: QaapAgentConversationDTO): HTMLElement[] {
         const footers: HTMLElement[] = [];
-        if (conv.status === 'streaming' && conv.messages.at(-1)?.role === 'user') {
+        if (resolveTranscriptEffectiveStatus(conv) === 'streaming' && conv.messages.at(-1)?.role === 'user') {
             const row = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
             if (row) {
                 footers.push(row);
@@ -154,7 +148,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return this.createTranscriptMessageRowAtIndex(current, index);
         });
 
-        const wasNearBottom = list.isNearBottom() || normalized.status === 'streaming';
+        const wasNearBottom = list.isNearBottom() || resolveTranscriptEffectiveStatus(normalized) === 'streaming';
         list.setItemCount(normalized.messages.length);
         list.setFooter(this.buildTranscriptVirtualFooter(normalized));
         this.host.transcriptLastRenderedConversationId = normalized.id;
@@ -170,13 +164,15 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return;
         }
         if (isStreamingTranscriptTailUnchanged(this.host.transcriptLastConv, conv)) {
+            recordTranscriptRenderMetric('render_skip_unchanged_tail');
             this.host.transcriptLastConv = conv;
             return;
         }
+        recordTranscriptRenderMetric('render_full');
         this.host.transcriptLastConv = conv;
-        this.prefetchTranscriptAgentLogParses(conv);
+        const shouldVirtualize = this.host.transcriptUi.shouldVirtualize(conv);
         const messageHost = this.resolveTranscriptMessageHost(host);
-        const isEmptyChat = conv.messages.length === 0 && conv.status !== 'streaming';
+        const isEmptyChat = conv.messages.length === 0 && resolveTranscriptEffectiveStatus(conv) !== 'streaming';
         if (isEmptyChat) {
             this.host.transcriptUi.disposeList();
             messageHost.classList.remove('theia-mod-virtual-scroll');
@@ -198,7 +194,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             );
             return;
         }
-        if (this.host.transcriptUi.shouldVirtualize(conv)) {
+        if (shouldVirtualize) {
             this.renderTranscriptMessagesVirtual(host, conv);
             return;
         }
@@ -212,7 +208,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
         const last = conv.messages[conv.messages.length - 1];
-        if (conv.status === 'streaming') {
+        if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
             if (last?.role === 'agent') {
                 messageHost.lastElementChild?.classList.add('theia-mod-streaming');
             } else {
@@ -252,7 +248,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.workHub.renderTeamSectionInTranscript(host, conv);
         this.workHub.renderInlineApproval(host, conv);
         this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
-        if (conv.status === 'streaming') {
+        if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
             for (const row of messageHost.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-streaming')) {
                 this.artifactsUi.ensureTranscriptStreamStallWatch(row);
             }
@@ -272,9 +268,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const patchKind = resolveStreamingTranscriptPatchKind(this.host.transcriptLastConv, conv);
         if (patchKind === 'none') {
             if (isStreamingTranscriptTailUnchanged(this.host.transcriptLastConv, conv)) {
+                recordTranscriptRenderMetric('render_skip_unchanged_tail');
                 this.host.transcriptLastConv = conv;
                 return true;
             }
+            recordTranscriptRenderMetric('render_patch_none');
             return false;
         }
         if (this.host.transcriptUi.shouldVirtualize(conv)) {
@@ -292,6 +290,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         );
 
         if (patchKind === 'activity-only') {
+            recordTranscriptRenderMetric('render_patch_activity');
             this.syncTranscriptActivityRow(messageHost, conv);
             this.host.transcriptLastConv = conv;
             this.host.transcriptLastRenderedConversationId = conv.id;
@@ -314,6 +313,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 `[${TRANSCRIPT_MESSAGE_ID_ATTR}="${CSS.escape(lastAgent.id)}"]`,
             );
             if (existing && this.tryPatchStreamingAgentTextContent(existing, prevLast, lastAgent, segments, conv)) {
+                recordTranscriptRenderMetric('render_patch_last_agent');
                 this.markTranscriptMessageRow(existing, lastAgent.id, isTranscriptAgentTailStreaming(conv));
                 this.removeTranscriptActivityRow(messageHost);
                 this.host.transcriptLastConv = conv;
@@ -340,6 +340,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.markTranscriptMessageRow(row, lastAgent.id, isTranscriptAgentTailStreaming(conv));
 
         if (patchKind === 'last-agent') {
+            recordTranscriptRenderMetric('render_patch_last_agent');
             const existing = messageHost.querySelector<HTMLElement>(
                 `[${TRANSCRIPT_MESSAGE_ID_ATTR}="${CSS.escape(lastAgent.id)}"]`,
             );
@@ -349,6 +350,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 messageHost.append(row);
             }
         } else {
+            recordTranscriptRenderMetric('render_patch_append');
             messageHost.append(row);
         }
 
@@ -462,7 +464,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         resolvedSegments: QaapAgentMessageSegmentDTO[] | undefined,
         conv?: QaapAgentConversationDTO,
     ): boolean {
-        if (canStreamPatchStdoutAgentContentOnly(prevMsg, nextMsg)) {
+        const prevComparable = prevMsg ? this.withDerivedTranscriptSegments(prevMsg) : undefined;
+        const nextComparable = this.withDerivedTranscriptSegments(nextMsg);
+        if (canStreamPatchStdoutAgentContentOnly(prevComparable, nextComparable)) {
             const contentEl = existingRow.querySelector<HTMLElement>('.theia-mobile-agent-transcript-content');
             if (!contentEl) {
                 return false;
@@ -474,14 +478,14 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             );
             return true;
         }
-        if (!prevMsg) {
+        if (!prevComparable) {
             return false;
         }
-        const nextSegments = nextMsg.segments ?? [];
-        const prevSegments = prevMsg.segments ?? [];
-        const segmentsInPlace = canStreamPatchAgentSegmentsInPlace(prevMsg, nextMsg);
-        const appendTool = canStreamPatchAgentAppendToolSegment(prevMsg, nextMsg);
-        const appendText = canStreamPatchAgentAppendTextSegment(prevMsg, nextMsg);
+        const nextSegments = nextComparable.segments ?? [];
+        const prevSegments = prevComparable.segments ?? [];
+        const segmentsInPlace = canStreamPatchAgentSegmentsInPlace(prevComparable, nextComparable);
+        const appendTool = canStreamPatchAgentAppendToolSegment(prevComparable, nextComparable);
+        const appendText = canStreamPatchAgentAppendTextSegment(prevComparable, nextComparable);
         if (!segmentsInPlace && !appendTool && !appendText) {
             return false;
         }
@@ -537,7 +541,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 this.contentUi.settleTranscriptStreamingContent(element);
             }
         });
-        if (conv.status === 'streaming' && conv.messages.at(-1)?.role === 'user') {
+        if (resolveTranscriptEffectiveStatus(conv) === 'streaming' && conv.messages.at(-1)?.role === 'user') {
             const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
             if (activityRow) {
                 messageHost.append(activityRow);

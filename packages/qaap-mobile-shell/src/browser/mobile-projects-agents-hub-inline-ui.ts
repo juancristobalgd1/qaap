@@ -57,6 +57,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptLastStatus: QaapAgentConversationSummaryDTO['status'] | undefined;
     transcriptLastFingerprint: string | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
+    transcriptConversationCache: Map<string, QaapAgentConversationDTO>;
     transcriptLastSseDeltaAt: number | undefined;
     transcriptLastStreamProgressAt: number | undefined;
     transcriptChatHost: HTMLElement | undefined;
@@ -363,7 +364,8 @@ export class MobileProjectsAgentsHubInlineUi {
             && this.host.transcriptLastConv
             && this.host.transcriptLastConv.id === activeSummary.id
             ? this.host.transcriptLastConv
-            : this.host.transcriptSheetUi.summaryToTranscriptPlaceholder(activeSummary);
+            : this.host.transcriptConversationCache.get(activeSummary.id)
+                ?? this.host.transcriptSheetUi.summaryToTranscriptPlaceholder(activeSummary);
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
     }
 
@@ -481,10 +483,14 @@ export class MobileProjectsAgentsHubInlineUi {
     ): Promise<void> {
         const previousProject = this.host.transcriptOpenProject;
         const previousSummary = this.host.transcriptOpenSummary;
+        if (this.host.transcriptLastConv) {
+            this.host.transcriptConversationCache.set(this.host.transcriptLastConv.id, this.host.transcriptLastConv);
+        }
         if (previousProject && previousSummary && previousSummary.id !== summary.id) {
             this.host.transcriptStickyComposerUi.flushTranscriptComposerDraft(previousSummary.id);
             await this.host.transcriptStickyComposerUi.flushTranscriptComposerPrefs(previousProject, previousSummary);
         }
+        const cachedTargetConversation = this.host.transcriptConversationCache.get(summary.id);
         if (this.host.agentsHubInlineActive) {
             this.host.replacingTranscriptSheet = true;
             this.closeAgentsHubSession();
@@ -501,6 +507,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptOpenSummary = summary;
         this.host.transcriptOpenProject = project;
         this.host.transcriptComposerSummary = summary;
+        this.host.transcriptLastConv = cachedTargetConversation;
         this.host.transcriptLastFingerprint = undefined;
         if (this.host.visible) {
             this.host.renderHeader();
@@ -514,7 +521,7 @@ export class MobileProjectsAgentsHubInlineUi {
         const connectedChatHost = this.host.agentsHubInlineChatHost;
         if (this.host.agentsHubInlineExecutionRoot?.isConnected && connectedChatHost?.isConnected) {
             this.host.transcriptLiveUi.stopTranscriptLiveWatch();
-            this.host.transcriptLastConv = undefined;
+            this.host.transcriptLastConv = cachedTargetConversation;
             this.host.transcriptLastFingerprint = undefined;
             this.host.transcriptLastSseDeltaAt = undefined;
             this.host.transcriptLastStreamProgressAt = undefined;
@@ -542,6 +549,9 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     closeAgentsHubSession(): void {
+        if (this.host.transcriptLastConv) {
+            this.host.transcriptConversationCache.set(this.host.transcriptLastConv.id, this.host.transcriptLastConv);
+        }
         this.host.executionSurfaceTabsUi.closeExecutionTabOverflowMenu();
         this.host.transcriptComposerUi.closeTranscriptComposerSheets();
         this.host.transcriptComposerHost = undefined;

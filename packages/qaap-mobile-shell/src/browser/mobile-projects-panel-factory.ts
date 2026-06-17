@@ -41,6 +41,7 @@ import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { resolveAgentVerifyChecksForCwd } from './qaap-agent-verify-checks-resolver';
 import { openTranscriptWorkspaceFile, createTranscriptFilesViewServices } from './qaap-transcript-file-open';
 import { createTranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
@@ -97,6 +98,7 @@ export interface MobileProjectsPanelFactoryDeps {
     commitMessageAi?: QaapCommitMessageAi;
     composerPromptImprover?: QaapComposerPromptImprover;
     projectBootstrap: QaapProjectBootstrapService;
+    agUiFrontendTools?: QaapAgUiFrontendToolService;
     activeTasks: MobileProjectsActiveTasks;
     conversations: MobileProjectsConversations;
     backgroundContext: QaapBackgroundContextProvider;
@@ -234,6 +236,7 @@ export class MobileProjectsPanelFactory {
                 openPreferencesSheet: query => delegate.openWorkHubPreferencesSheet(query),
                 openAiConfigurationSheet: tabId => delegate.openWorkHubAiConfigurationSheet(tabId),
                 projectBootstrap: deps.projectBootstrap,
+                agUiFrontendTools: deps.agUiFrontendTools,
             },
         );
     }

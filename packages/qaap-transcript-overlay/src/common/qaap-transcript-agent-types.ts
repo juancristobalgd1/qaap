@@ -118,10 +118,17 @@ export type QaapAgentMessageSegmentDTO =
         readonly parentToolUseId?: string;
     };
 
+export type QaapTranscriptTraceEventDTO =
+    | { readonly type: 'thought'; readonly id: string; readonly content: string; readonly status: 'running' | 'completed' }
+    | { readonly type: 'tool_call'; readonly id: string; readonly name: string; readonly args: string; readonly status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'; readonly result?: string; readonly parentId?: string }
+    | { readonly type: 'assistant_text'; readonly id: string; readonly content: string; readonly status: 'streaming' | 'completed' }
+    | { readonly type: 'error'; readonly id: string; readonly message: string };
+
 export interface QaapAgentMessageDTO {
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;
+    readonly traceEvents?: QaapTranscriptTraceEventDTO[];
     readonly segments?: QaapAgentMessageSegmentDTO[];
     readonly createdAt: number;
     readonly taskId?: string;

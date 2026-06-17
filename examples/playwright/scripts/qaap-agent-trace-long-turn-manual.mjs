@@ -11,6 +11,7 @@
  *   QAAP_WORKSPACE     default repo root (cwd)
  *   QAAP_HEADLESS      set to 0 for headed browser (recommended for manual QA)
  *   QAAP_SCREENSHOT_DIR  default $TMPDIR/qaap-agent-trace-long-turn
+ *   QAAP_STORAGE_STATE   optional Playwright storageState JSON (logged-in session cookies)
  */
 import { chromium } from 'playwright';
 import * as fs from 'fs';
@@ -22,7 +23,101 @@ const WORKSPACE = path.resolve(process.env.QAAP_WORKSPACE ?? process.cwd());
 const OUT_DIR = process.env.QAAP_SCREENSHOT_DIR
     ?? path.join(os.tmpdir(), 'qaap-agent-trace-long-turn');
 const HEADLESS = process.env.QAAP_HEADLESS !== '0';
+const STORAGE_STATE = process.env.QAAP_STORAGE_STATE;
 const MOBILE = { width: 390, height: 844 };
+const WORKSPACE_FORCE_RETRIES = 3;
+const NO_CONV_FAIL_FAST_MS = 180_000;
+
+function normalizeWorkspacePath(rawPath) {
+    let normalized = rawPath.replace(/\\/g, '/');
+    while (normalized.length > 1 && normalized.endsWith('/')) {
+        normalized = normalized.slice(0, -1);
+    }
+    return normalized;
+}
+
+function workspacePathsMatch(left, right) {
+    const a = normalizeWorkspacePath(left);
+    const b = normalizeWorkspacePath(right);
+    if (a === b) {
+        return true;
+    }
+    return a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+function buildWorkspaceLaunchUrl(base, workspacePath) {
+    const normalized = normalizeWorkspacePath(workspacePath);
+    const hashPath = normalized.startsWith('/') ? normalized : `/${normalized}`;
+    return `${base}#${encodeURI(hashPath)}`;
+}
+
+async function prepareWorkHubPlaywrightSession(page) {
+    await page.addInitScript(() => {
+        const clearKeys = [
+            'qaap.mobileProjects.homeVisible',
+            'qaap.mobileProjects.preferDesktopIde',
+            'qaap.mobileProjects.explicitDesktopIde',
+        ];
+        for (const key of clearKeys) {
+            sessionStorage.removeItem(key);
+        }
+        sessionStorage.setItem('qaap.mobileProjects.dismissPanel', '1');
+    });
+}
+
+async function decodeHashWorkspacePath(page) {
+    return page.evaluate(() => {
+        const hash = window.location.hash;
+        if (hash.length <= 1) {
+            return undefined;
+        }
+        try {
+            return decodeURI(hash.substring(1));
+        } catch {
+            return hash.substring(1);
+        }
+    });
+}
+
+async function ensureTargetWorkspace(page, targetWorkspace) {
+    const normalizedTarget = normalizeWorkspacePath(targetWorkspace);
+    let lastSeen;
+
+    for (let attempt = 0; attempt < WORKSPACE_FORCE_RETRIES; attempt += 1) {
+        const url = buildWorkspaceLaunchUrl(BASE, normalizedTarget);
+        if (attempt === 0) {
+            console.log(`Opening ${url}`);
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
+        } else {
+            console.log(`Re-forcing workspace (attempt ${attempt + 1}/${WORKSPACE_FORCE_RETRIES})…`);
+            await page.evaluate((workspacePath) => {
+                sessionStorage.setItem('qaap.mobileProjects.dismissPanel', '1');
+                sessionStorage.removeItem('qaap.mobileProjects.homeVisible');
+                const next = `${window.location.pathname}${window.location.search}#${encodeURI(workspacePath)}`;
+                window.location.replace(next);
+            }, normalizedTarget);
+            await page.waitForLoadState('domcontentloaded', { timeout: 120000 });
+        }
+
+        await page.waitForSelector('#theia-app-shell', { timeout: 60000 });
+        await page.waitForTimeout(2000);
+        await dismissTutorial(page);
+
+        const deadline = Date.now() + 45_000;
+        while (Date.now() < deadline) {
+            lastSeen = await decodeHashWorkspacePath(page);
+            if (lastSeen && workspacePathsMatch(lastSeen, normalizedTarget)) {
+                await page.waitForSelector('.theia-mobile-projects-sticky-composer-input', { timeout: 60000 }).catch(() => undefined);
+                return normalizedTarget;
+            }
+            await page.waitForTimeout(1000);
+        }
+    }
+
+    throw new Error(
+        `Could not open target workspace ${normalizedTarget} (last hash path: ${lastSeen ?? 'unknown'})`,
+    );
+}
 
 const LONG_TURN_PROMPT = [
     'Validación UI Agent Trace (solo lectura, no modifiques archivos):',
@@ -44,6 +139,41 @@ const MANUAL_CHECKLIST = [
     { id: 'LT-09', when: 'edits reales', check: 'Card details.theia-mobile-agent-changed-files (opcional si el turno edita)' },
 ];
 
+async function enablePageRenderMetrics(page) {
+    await page.evaluate(() => {
+        const root = globalThis;
+        const key = '__QAAP_TRANSCRIPT_RENDER_METRICS__';
+        if (!root[key]) {
+            root[key] = { enabled: false, counts: {} };
+        }
+        root[key].enabled = true;
+        root[key].counts = {
+            sse_scheduled: 0,
+            sse_flushed: 0,
+            render_full: 0,
+            render_patch_activity: 0,
+            render_patch_last_agent: 0,
+            render_patch_append: 0,
+            render_patch_none: 0,
+            render_skip_unchanged_tail: 0,
+            timeline_sync: 0,
+            timeline_sync_skipped: 0,
+            timeline_create: 0,
+            timeline_item_sync: 0,
+            timeline_item_sync_skipped: 0,
+        };
+    });
+}
+
+async function readPageRenderMetrics(page) {
+    return page.evaluate(() => {
+        const store = globalThis.__QAAP_TRANSCRIPT_RENDER_METRICS__;
+        if (!store?.enabled) {
+            return undefined;
+        }
+        return { ...store.counts };
+    });
+}
 async function waitForServer(page) {
     for (let i = 0; i < 60; i++) {
         try {
@@ -67,24 +197,33 @@ async function dismissTutorial(page) {
 }
 
 async function resolvePageWorkspaceCwd(page) {
-    return page.evaluate(() => {
-        const raw = window.location.hash.replace(/^#\/?/, '');
-        if (!raw) {
-            return undefined;
-        }
-        try {
-            return decodeURIComponent(raw);
-        } catch {
-            return raw;
-        }
-    });
+    return decodeHashWorkspacePath(page);
 }
 
-async function evaluateTraceMetrics(page, cwd) {
-    return page.evaluate(async (workspaceCwd) => {
-        const fetchList = async (queryCwd) => {
-            const url = queryCwd
-                ? `/qaap/api/agent-conversations?cwd=${encodeURIComponent(queryCwd)}`
+async function readShellDiagnostics(page) {
+    return page.evaluate(() => ({
+        loginActive: document.body.classList.contains('qaap-login-active'),
+        hash: window.location.hash,
+        composerVisible: !!document.querySelector('.theia-mobile-projects-sticky-composer-input'),
+        sendReady: !!document.querySelector('.theia-mobile-projects-sticky-composer-send.theia-mod-ready'),
+        sendEnabled: !!document.querySelector('.theia-mobile-projects-sticky-composer-send:not([disabled])'),
+        transcriptVisible: !!document.querySelector('.theia-mobile-agent-transcript-root.theia-mod-visible, .theia-mobile-agent-transcript-real-chat'),
+    }));
+}
+
+async function evaluateTraceMetrics(page, cwd, promptSubmittedAt) {
+    const queryCwd = cwd ? normalizeWorkspacePath(cwd) : undefined;
+    return page.evaluate(async ({ workspaceCwd, submittedAt }) => {
+        const normalize = (value) => {
+            let normalized = value.replace(/\\/g, '/');
+            while (normalized.length > 1 && normalized.endsWith('/')) {
+                normalized = normalized.slice(0, -1);
+            }
+            return normalized;
+        };
+        const fetchList = async (queryPath) => {
+            const url = queryPath
+                ? `/qaap/api/agent-conversations?cwd=${encodeURIComponent(queryPath)}`
                 : '/qaap/api/agent-conversations';
             const res = await fetch(url, { credentials: 'include' });
             if (!res.ok) {
@@ -93,16 +232,31 @@ async function evaluateTraceMetrics(page, cwd) {
             const body = await res.json();
             return { ok: true, conversations: body.conversations ?? [] };
         };
-        let list = workspaceCwd ? await fetchList(workspaceCwd) : { ok: false };
-        if (!list.ok || list.conversations.length === 0) {
-            list = await fetchList(undefined);
+        if (!workspaceCwd) {
+            return { phase: 'no-cwd' };
         }
+        let list = await fetchList(workspaceCwd);
         if (!list.ok) {
-            return { phase: 'api-error' };
+            return { phase: 'api-error', cwd: workspaceCwd, status: list.status };
         }
-        const latest = [...list.conversations].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+        let conversations = list.conversations;
+        if (conversations.length === 0) {
+            const all = await fetchList(undefined);
+            if (all.ok) {
+                const target = normalize(workspaceCwd);
+                conversations = all.conversations.filter(entry => normalize(entry.cwd ?? '') === target);
+            }
+        }
+        if (conversations.length === 0) {
+            return { phase: 'no-conv', cwd: workspaceCwd };
+        }
+        const targetNorm = normalize(workspaceCwd);
+        const sorted = [...conversations].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        const latest = submittedAt
+            ? sorted.find(entry => (entry.updatedAt ?? 0) >= submittedAt - 5000) ?? sorted[0]
+            : sorted[0];
         if (!latest?.id) {
-            return { phase: 'no-conv' };
+            return { phase: 'no-conv', cwd: workspaceCwd };
         }
         const detailRes = await fetch(`/qaap/api/agent-conversations/${encodeURIComponent(latest.id)}`, { credentials: 'include' });
         if (!detailRes.ok) {
@@ -132,11 +286,13 @@ async function evaluateTraceMetrics(page, cwd) {
             phase: conv.status === 'streaming' ? 'streaming' : 'idle',
             status: conv.status,
             conversationId: latest.id,
+            cwd: workspaceCwd,
+            conversationCwd: latest.cwd,
             toolCount: tools.length,
             nestedToolCount: nested.length,
             dom,
         };
-    }, cwd);
+    }, { workspaceCwd: queryCwd, submittedAt: promptSubmittedAt ?? 0 });
 }
 
 async function screenshotTrace(page, name) {
@@ -209,42 +365,71 @@ async function launchBrowser() {
     }
 }
 
+async function openPage(browser) {
+    if (STORAGE_STATE && fs.existsSync(STORAGE_STATE)) {
+        const context = await browser.newContext({ viewport: MOBILE, storageState: STORAGE_STATE });
+        return context.newPage();
+    }
+    return browser.newPage({ viewport: MOBILE });
+}
+
 async function main() {
     fs.mkdirSync(OUT_DIR, { recursive: true });
     printChecklist();
 
     const browser = await launchBrowser();
-    const page = await browser.newPage({ viewport: MOBILE });
+    const page = await openPage(browser);
     await waitForServer(page);
+    await prepareWorkHubPlaywrightSession(page);
 
-    const url = `${BASE}/#/${encodeURIComponent(WORKSPACE)}`;
-    console.log(`Opening ${url}`);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
-    await page.waitForSelector('#theia-app-shell', { timeout: 60000 });
-    await page.waitForTimeout(2000);
-    await dismissTutorial(page);
+    const cwd = await ensureTargetWorkspace(page, WORKSPACE);
+    await enablePageRenderMetrics(page);
 
-    const cwd = (await resolvePageWorkspaceCwd(page)) || WORKSPACE;
+    const preSubmitDiag = await readShellDiagnostics(page);
     console.log(`Workspace cwd: ${cwd}`);
+    if (preSubmitDiag.loginActive) {
+        throw new Error(
+            'Login gate activo — exporta sesión con Playwright (QAAP_STORAGE_STATE) o usa QAAP_HEADLESS=0 en un browser ya autenticado.',
+        );
+    }
     console.log('Sending long-turn prompt…\n');
 
     await submitLongTurnPrompt(page);
     await openLiveTranscriptIfNeeded(page);
     await page.waitForTimeout(2000);
 
-    if (cwd !== WORKSPACE && !cwd.endsWith(path.basename(WORKSPACE))) {
-        console.warn(`⚠ Workspace activo (${cwd}) ≠ QAAP_WORKSPACE (${WORKSPACE}). Valida en el browser correcto.`);
-    }
+    const promptSubmittedAt = Date.now();
+    let sawStreaming = false;
+    let noConvSince = promptSubmittedAt;
 
     const milestones = { tools20: false, tools48: false, nested: false };
     const deadline = Date.now() + 20 * 60 * 1000;
     let lastMetrics;
+    let baselineToolCount = 0;
 
     while (Date.now() < deadline) {
-        const metrics = await evaluateTraceMetrics(page, cwd);
+        const metrics = await evaluateTraceMetrics(page, cwd, promptSubmittedAt);
         lastMetrics = metrics;
         const tc = metrics.toolCount ?? 0;
+        if (metrics.phase === 'no-conv') {
+            if (Date.now() - noConvSince >= NO_CONV_FAIL_FAST_MS) {
+                const diag = await readShellDiagnostics(page);
+                throw new Error(
+                    `Sin conversación tras ${NO_CONV_FAIL_FAST_MS / 1000}s en ${cwd}. `
+                    + `Diag: ${JSON.stringify(diag)}. `
+                    + '¿Agente configurado y sesión autenticada?',
+                );
+            }
+        } else {
+            noConvSince = Date.now();
+        }
+        if (baselineToolCount === 0 && tc > 0 && Date.now() - promptSubmittedAt < 8000) {
+            baselineToolCount = tc;
+        }
         const dom = metrics.dom ?? {};
+        if (metrics.phase === 'streaming') {
+            sawStreaming = true;
+        }
         if (tc > 0 && (dom.stepCount ?? 0) === 0) {
             await openLiveTranscriptIfNeeded(page);
         }
@@ -259,6 +444,7 @@ async function main() {
             virtualized: dom.virtualized,
             nestIndent: dom.nestIndent,
             subagentRoot: dom.subagentRoot,
+            renderMetrics: await readPageRenderMetrics(page),
         }));
 
         if (tc >= 20 && !milestones.tools20) {
@@ -281,9 +467,17 @@ async function main() {
             console.log('\nTurn complete (≥50 tools). Final screenshot…');
             break;
         }
+        const graceElapsedMs = Date.now() - promptSubmittedAt;
+        const newToolsSinceSubmit = tc - baselineToolCount;
         if (metrics.phase === 'idle' && tc > 0 && metrics.status !== 'streaming') {
-            console.log('\nAgent idle — continue manual checks in browser, then close window.');
-            break;
+            if (!sawStreaming && graceElapsedMs < 120_000) {
+                // Still waiting for the new turn to start streaming.
+            } else if (newToolsSinceSubmit < 10 && graceElapsedMs < 180_000) {
+                // Prior idle conversation — keep polling until tools grow or timeout.
+            } else {
+                console.log('\nAgent idle — continue manual checks in browser, then close window.');
+                break;
+            }
         }
         await page.waitForTimeout(5000);
     }
@@ -292,9 +486,12 @@ async function main() {
     const report = {
         outDir: OUT_DIR,
         workspace: cwd,
+        requestedWorkspace: WORKSPACE,
+        preSubmitDiagnostics: preSubmitDiag,
         milestones,
         finalScreenshot: finalShot,
         lastMetrics,
+        renderMetrics: await readPageRenderMetrics(page),
         checklist: MANUAL_CHECKLIST,
     };
     fs.writeFileSync(path.join(OUT_DIR, 'long-turn-report.json'), JSON.stringify(report, null, 2));

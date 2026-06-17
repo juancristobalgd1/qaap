@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
+import { traceEventsToSegments, type QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 
 /** Denormalized list-row metrics derived from conversation messages (Work Hub / SSE). */
 export interface QaapAgentConversationListMetrics {
@@ -32,6 +33,7 @@ export interface QaapAgentConversationListMetricsInput {
         readonly role: 'user' | 'agent';
         readonly content: string;
         readonly createdAt: number;
+        readonly traceEvents?: ReadonlyArray<QaapTranscriptTraceEventDTO>;
         readonly segments?: ReadonlyArray<QaapAgentMessageSegment>;
     }>;
 }
@@ -331,7 +333,7 @@ function collectMessageTexts(
     if (content) {
         texts.push(content);
     }
-    for (const segment of message.segments ?? []) {
+    for (const segment of resolveMetricMessageSegments(message)) {
         if (segment.type === 'text' || segment.type === 'thinking') {
             const segmentText = segment.content?.trim() ?? '';
             if (segmentText) {
@@ -361,7 +363,7 @@ function resolveConversationTurnProgress(
         if (message.role !== 'agent') {
             continue;
         }
-        for (const segment of message.segments ?? []) {
+        for (const segment of resolveMetricMessageSegments(message)) {
             if (segment.type === 'tool') {
                 tools.push(segment.finished);
             }
@@ -378,9 +380,10 @@ function resolveConversationTurnProgress(
     if (!lastAgent) {
         return undefined;
     }
-    const hasThinking = lastAgent.segments?.some(segment =>
+    const lastAgentSegments = resolveMetricMessageSegments(lastAgent);
+    const hasThinking = lastAgentSegments.some(segment =>
         segment.type === 'thinking' && segment.content.trim().length > 0) ?? false;
-    const hasText = lastAgent.segments?.some(segment =>
+    const hasText = lastAgentSegments.some(segment =>
         segment.type === 'text' && segment.content.trim().length > 0) ?? false;
     let current = 1;
     if (hasText) {
@@ -398,24 +401,37 @@ function resolveStreamingActivityLabel(
     turnMessages: QaapAgentConversationListMetricsInput['messages'],
 ): string | undefined {
     const lastAgent = [...turnMessages].reverse().find(message => message.role === 'agent');
-    if (!lastAgent?.segments?.length) {
+    if (!lastAgent) {
         return undefined;
     }
-    const activeTool = [...lastAgent.segments]
+    const segments = resolveMetricMessageSegments(lastAgent);
+    if (segments.length === 0) {
+        return undefined;
+    }
+    const activeTool = [...segments]
         .reverse()
         .find((segment): segment is Extract<QaapAgentMessageSegment, { type: 'tool' }> =>
             segment.type === 'tool' && !segment.finished);
     if (activeTool) {
         return formatToolActivityLabel(activeTool.name, activeTool.args);
     }
-    const thinking = lastAgent.segments.some(segment =>
+    const thinking = segments.some(segment =>
         segment.type === 'thinking' && segment.content.trim().length > 0);
-    const hasText = lastAgent.segments.some(segment =>
+    const hasText = segments.some(segment =>
         segment.type === 'text' && segment.content.trim().length > 0);
     if (thinking && !hasText) {
         return 'Thinking';
     }
     return undefined;
+}
+
+function resolveMetricMessageSegments(
+    message: QaapAgentConversationListMetricsInput['messages'][number],
+): ReadonlyArray<QaapAgentMessageSegment> {
+    if (message.traceEvents?.length) {
+        return traceEventsToSegments(message.traceEvents) as QaapAgentMessageSegment[];
+    }
+    return message.segments ?? [];
 }
 
 function resolveLastTurnDurationMs(

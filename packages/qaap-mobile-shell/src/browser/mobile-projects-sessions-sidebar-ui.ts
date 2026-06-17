@@ -16,9 +16,13 @@ import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workb
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import {
-    buildWorkHubSessionsSidebarFingerprint,
+    buildWorkHubSessionsSidebarRowFingerprint,
+    buildWorkHubSessionsSidebarStructureFingerprint,
+    QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR,
+    QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
     type WorkHubSessionsSidebarFingerprintInput,
 } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
+import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT = 5;
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE = 15;
@@ -77,13 +81,30 @@ stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').Mo
 closeCurrentWorkspace(): Promise<void>;
 openConversationSummary(project: MobileProjectEntry, summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
 runCatalogAction(action: import('../common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
-onNewClick(): Promise<void>;
+    onNewClick(): Promise<void>;
+}
+
+interface SessionsSidebarConversationEntry {
+    readonly project: MobileProjectEntry;
+    readonly summary: QaapAgentConversationSummaryDTO;
+    readonly pinned: boolean;
+    readonly parentIds: ReadonlySet<string>;
+    readonly onActivate?: () => void;
+}
+
+function cssEscapeAttribute(value: string): string {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+        return CSS.escape(value);
+    }
+    return value.replace(/["\\]/g, '\\$&');
 }
 
 export class MobileProjectsSessionsSidebarUi {
     constructor(protected readonly host: MobileProjectsSessionsSidebarHost) { }
 
     protected sessionsSidebarListFingerprint = '';
+    protected sessionsSidebarOpeningConversationId: string | undefined;
+    protected sessionsSidebarOpeningTimer: number | undefined;
 
     openWorkHubSessionsSidebar(): void {
         const sidebar = this.ensureWorkHubSessionsSidebar();
@@ -124,7 +145,8 @@ export class MobileProjectsSessionsSidebarUi {
             this.host.sessionsSidebar = new MobileWorkHubSessionsSidebar({
                 renderSessionList: host => this.renderWorkHubSessionsSidebarList(host),
                 shouldSkipSessionListRefresh: () => this.shouldSkipSessionsSidebarListRender(),
-                rememberSessionListFingerprint: () => this.rememberSessionsSidebarListFingerprint(),
+                tryPatchSessionList: host => this.tryPatchSessionsSidebarList(host),
+                rememberSessionListFingerprint: host => this.rememberSessionsSidebarListFingerprint(host),
                 onNewChat: () => { void this.onWorkHubSessionsSidebarNewChat(); },
                 onClose: () => {
                     this.host.cardMenuUi.closeCardMenu();
@@ -170,21 +192,163 @@ export class MobileProjectsSessionsSidebarUi {
     }
 
     shouldSkipSessionsSidebarListRender(): boolean {
+        if (this.sessionsSidebarOpeningConversationId) {
+            return true;
+        }
         if (!this.sessionsSidebarListFingerprint) {
             return false;
         }
-        const next = buildWorkHubSessionsSidebarFingerprint(this.buildSessionsSidebarFingerprintInput());
+        const next = buildWorkHubSessionsSidebarStructureFingerprint(this.buildSessionsSidebarFingerprintInput());
         return next === this.sessionsSidebarListFingerprint;
     }
 
-    rememberSessionsSidebarListFingerprint(): void {
-        this.sessionsSidebarListFingerprint = buildWorkHubSessionsSidebarFingerprint(
+    rememberSessionsSidebarListFingerprint(listHost: HTMLElement): void {
+        const structure = buildWorkHubSessionsSidebarStructureFingerprint(
             this.buildSessionsSidebarFingerprintInput(),
         );
+        this.sessionsSidebarListFingerprint = structure;
+        listHost.setAttribute(QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR, structure);
+        this.stampSessionsSidebarRowFingerprints(listHost);
+    }
+
+    tryPatchSessionsSidebarList(listHost: HTMLElement): boolean {
+        const structure = buildWorkHubSessionsSidebarStructureFingerprint(this.buildSessionsSidebarFingerprintInput());
+        if (listHost.getAttribute(QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR) !== structure) {
+            return false;
+        }
+        const entries = this.collectSessionsSidebarConversationEntries();
+        for (const entry of entries) {
+            const nextFingerprint = this.buildSidebarRowFingerprint(entry);
+            const existingRow = listHost.querySelector<HTMLElement>(
+                `.theia-mobile-projects-task-row[data-qaap-conversation-id="${cssEscapeAttribute(entry.summary.id)}"]`,
+            );
+            if (!existingRow) {
+                return false;
+            }
+            if (existingRow.getAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR) === nextFingerprint) {
+                continue;
+            }
+            const parentIds = entry.parentIds;
+            const activeInfo = this.host.conversationIndexUi.activeInfoForProject(entry.project);
+            const task = this.host.conversationIndexUi.summaryToTaskView(entry.summary);
+            const nextRow = this.host.createTaskItem(
+                entry.project,
+                task,
+                activeInfo,
+                entry.summary,
+                parentIds,
+                {
+                    compact: true,
+                    onActivate: () => {
+                        this.beginSessionsSidebarConversationActivation(entry.summary.id);
+                        entry.onActivate?.();
+                    },
+                },
+            );
+            nextRow.setAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, nextFingerprint);
+            existingRow.replaceWith(nextRow);
+        }
+        listHost.classList.add('theia-mod-live-sync');
+        window.requestAnimationFrame(() => listHost.classList.remove('theia-mod-live-sync'));
+        return true;
+    }
+
+    protected stampSessionsSidebarRowFingerprints(listHost: HTMLElement): void {
+        for (const entry of this.collectSessionsSidebarConversationEntries()) {
+            const row = listHost.querySelector<HTMLElement>(
+                `.theia-mobile-projects-task-row[data-qaap-conversation-id="${cssEscapeAttribute(entry.summary.id)}"]`,
+            );
+            if (row) {
+                row.setAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, this.buildSidebarRowFingerprint(entry));
+            }
+        }
+    }
+
+    protected buildSidebarRowFingerprint(
+        entry: SessionsSidebarConversationEntry,
+    ): string {
+        const task = this.host.conversationIndexUi.summaryToTaskView(entry.summary);
+        const unread = this.host.conversationIndexUi.isConversationUnread(entry.summary);
+        const visualStatusId = resolveQaapAgentTaskVisualStatus(task, entry.summary, unread).id;
+        return buildWorkHubSessionsSidebarRowFingerprint(entry.summary, {
+            pinned: entry.pinned,
+            isCurrent: this.host.transcriptOpenSummaryId === entry.summary.id,
+            visualStatusId,
+        });
+    }
+
+    protected collectSessionsSidebarConversationEntries(): SessionsSidebarConversationEntry[] {
+        const projects = [...this.host.projects].sort((a, b) => this.host.compareChatInboxProjectOrder(a, b));
+        const query = this.host.query.trim().toLowerCase();
+        const bypassConversationLimit = query.length > 0;
+        const onActivate = (): void => {
+            this.host.sessionsSidebar?.hideForMobileOverlay();
+        };
+        const entries: SessionsSidebarConversationEntry[] = [];
+        const pinnedGroups = this.collectSessionsSidebarPinnedGroups(projects, query);
+        for (const { project, conversations } of pinnedGroups) {
+            const parentIds = this.collectParentIds(conversations);
+            const { visible } = this.resolveSessionsSidebarVisibleConversations(
+                project,
+                conversations,
+                bypassConversationLimit,
+            );
+            for (const summary of visible) {
+                entries.push({ project, summary, pinned: true, parentIds, onActivate });
+            }
+        }
+        for (const project of projects) {
+            let conversations = [...this.host.conversationIndexUi.conversationsForProject(project)]
+                .filter(summary => !this.isSessionsSidebarPinnedConversation(summary))
+                .sort((a, b) => this.host.conversationIndexUi.compareConversationOrder(a, b));
+            if (query) {
+                conversations = conversations.filter(c => this.host.hubQueryUi.conversationMatchesQuery(c, query));
+                if (conversations.length === 0) {
+                    continue;
+                }
+            } else if (conversations.length === 0) {
+                continue;
+            }
+            const parentIds = this.collectParentIds(conversations);
+            const { visible } = this.resolveSessionsSidebarVisibleConversations(
+                project,
+                conversations,
+                bypassConversationLimit,
+            );
+            for (const summary of visible) {
+                entries.push({ project, summary, pinned: false, parentIds, onActivate });
+            }
+        }
+        return entries;
+    }
+
+    protected collectParentIds(
+        conversations: readonly QaapAgentConversationSummaryDTO[],
+    ): ReadonlySet<string> {
+        const parentIds = new Set<string>();
+        for (const summary of conversations) {
+            if (summary.forkedFromId) {
+                parentIds.add(summary.forkedFromId);
+            }
+        }
+        return parentIds;
     }
 
     resetSessionsSidebarListFingerprint(): void {
         this.sessionsSidebarListFingerprint = '';
+    }
+
+    protected beginSessionsSidebarConversationActivation(conversationId: string): void {
+        this.sessionsSidebarOpeningConversationId = conversationId;
+        if (this.sessionsSidebarOpeningTimer !== undefined) {
+            window.clearTimeout(this.sessionsSidebarOpeningTimer);
+        }
+        this.sessionsSidebarOpeningTimer = window.setTimeout(() => {
+            this.sessionsSidebarOpeningConversationId = undefined;
+            this.sessionsSidebarOpeningTimer = undefined;
+            this.resetSessionsSidebarListFingerprint();
+            this.host.sessionsSidebar?.refreshList({ force: true });
+        }, 360);
     }
 
     scheduleWorkHubSessionsSidebarRefresh(): void {
@@ -373,7 +537,13 @@ export class MobileProjectsSessionsSidebarUi {
         }
         for (const summary of visible) {
             const task = this.host.conversationIndexUi.summaryToTaskView(summary);
-            listHost.append(this.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, { onActivate, compact: true }));
+            listHost.append(this.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
+                onActivate: () => {
+                    this.beginSessionsSidebarConversationActivation(summary.id);
+                    onActivate();
+                },
+                compact: true,
+            }));
         }
         if (bypassLimit) {
             return;

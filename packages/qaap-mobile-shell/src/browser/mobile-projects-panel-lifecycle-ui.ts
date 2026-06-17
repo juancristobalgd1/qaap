@@ -336,6 +336,9 @@ export class MobileProjectsPanelLifecycleUi {
                 this.host.conversations.onDidReceiveMessage(payload => {
                     this.host.transcriptLiveUi.handleTranscriptSseMessage(payload);
                 }),
+                this.host.conversations.onDidReconnectTransport(() => {
+                    void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
+                }),
                 this.host.conversations.onDidReceiveParallelRun(payload => {
                     this.host.ensureOverlayUi().parallel.applyParallelRunStats(payload.runId, payload.variants);
                 }),

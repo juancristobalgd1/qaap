@@ -202,6 +202,30 @@ describe('buildConversationListMetrics', () => {
         expect(metrics.turnProgressTotal).to.equal(1);
     });
 
+    it('derives streaming activity from traceEvents without segments', () => {
+        const metrics = buildConversationListMetrics({
+            status: 'streaming',
+            messages: [
+                { role: 'user', content: 'run tests', createdAt: 1000 },
+                {
+                    role: 'agent',
+                    content: '',
+                    createdAt: 1100,
+                    traceEvents: [{
+                        type: 'tool_call',
+                        id: 'tool-1',
+                        name: 'Bash',
+                        args: '{"command":"npm test"}',
+                        status: 'running',
+                    }],
+                },
+            ],
+        });
+        expect(metrics.activityLabel).to.equal('Running: npm test');
+        expect(metrics.turnProgressCurrent).to.equal(1);
+        expect(metrics.turnProgressTotal).to.equal(1);
+    });
+
     it('counts finished and active tools in the current turn', () => {
         const metrics = buildConversationListMetrics({
             status: 'streaming',

@@ -66,6 +66,21 @@ function scrollTranscriptToEnd(scroller: HTMLElement): void {
     window.setTimeout(snapToEnd, 480);
 }
 
+/** Scroll a live timeline step into the transcript viewport without jumping to the answer tail. */
+function scrollTranscriptElementIntoView(scroller: HTMLElement, target: HTMLElement): void {
+    const scrollerRect = scroller.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const topInset = Math.max(18, Math.round(scroller.clientHeight * 0.18));
+    const nextTop = Math.max(
+        0,
+        scroller.scrollTop + targetRect.top - scrollerRect.top - topInset,
+    );
+    scroller.scrollTo({
+        top: Math.min(nextTop, Math.max(0, scroller.scrollHeight - scroller.clientHeight)),
+        behavior: resolveScrollBehavior('smooth'),
+    });
+}
+
 function readTranscriptScrollToBottomState(scroller: HTMLElement, mountHost: HTMLElement): TranscriptScrollToBottomState {
     const hasConversationMessages = scroller.querySelector(TRANSCRIPT_CONVERSATION_MESSAGE_SELECTOR) !== null;
     const emptyChat = scroller.classList.contains('theia-mod-empty-chat')
@@ -327,7 +342,16 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         if (clickMode === 'active-step') {
             const streamingRow = findTranscriptStreamingAgentRow(scroller);
             if (streamingRow) {
-                resolveTranscriptActiveStepScrollTarget(streamingRow);
+                scrollTranscriptElementIntoView(
+                    scroller,
+                    resolveTranscriptActiveStepScrollTarget(streamingRow),
+                );
+                const resync = (): void => onScrollerScroll();
+                if ('onscrollend' in scroller) {
+                    scroller.addEventListener('scrollend', resync, { once: true });
+                }
+                window.setTimeout(resync, 480);
+                return;
             }
         }
         scrollTranscriptToEnd(scroller);

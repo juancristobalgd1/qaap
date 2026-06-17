@@ -377,6 +377,8 @@ export interface MobileProjectsPanelOptions {
     openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
     /** Persistent dev-server orchestration for transcript Preview tab. */
     projectBootstrap?: QaapProjectBootstrapService;
+    /** AG-UI frontend tool registry for live transcript tool execution. */
+    agUiFrontendTools?: import('./qaap-ag-ui-frontend-tool-service').QaapAgUiFrontendToolService;
     /** Expands `/skill-name` slash tokens into inline skill instructions before VPS submit. */
     expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
     /** Resolves attached files/images/context chips into the outbound VPS prompt. */
@@ -501,6 +503,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly sessionsSidebarVisibleConversationCountByProjectId = new Map<string, number>();
     protected sessionsSidebarAccordionDefaultsApplied = false;
     protected agentChatInputSession: ChatSession | undefined;
+    protected readonly transcriptConversationCache = new Map<string, QaapAgentConversationDTO>();
 
     /** Transcript overlay controller — state bag + `MobileProjectsTranscript*Ui` modules (Phase 3). */
     protected transcriptController!: TranscriptOverlayController;
@@ -652,6 +655,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly openPreferencesSheet: MobileProjectsPanelOptions['openPreferencesSheet'];
     protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
+    readonly agUiFrontendTools: MobileProjectsPanelOptions['agUiFrontendTools'];
     protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
     protected readonly applyComposerAttachmentsToDraft: MobileProjectsPanelOptions['applyComposerAttachmentsToDraft'];
     protected activeTasksDispose: Disposable = Disposable.NULL;
@@ -739,6 +743,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.openPreferencesSheet = options.openPreferencesSheet;
         this.openAiConfigurationSheet = options.openAiConfigurationSheet;
         this.projectBootstrap = options.projectBootstrap;
+        this.agUiFrontendTools = options.agUiFrontendTools;
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
         this.applyComposerAttachmentsToDraft = options.applyComposerAttachmentsToDraft;
         this.root = document.createElement('div');

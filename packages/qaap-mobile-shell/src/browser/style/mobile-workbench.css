@@ -17845,7 +17845,7 @@ body > .theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] .theia-mobile-agent-activity-timeline-open-panel > .theia-mobile-agent-activity-list {
-  max-height: min(2800px, 85vh);
+  max-height: 100000px;
   opacity: 1;
   padding: 2px 0 4px 10px;
 }
@@ -17861,7 +17861,8 @@ body > .theia-mobile-transcript-files-menu {
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item {
   gap: 0;
   padding: 3px 0;
-  transition: none;
+  border-radius: 4px;
+  transition: background-color 120ms ease;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-timeline-current,
@@ -17881,6 +17882,10 @@ body > .theia-mobile-transcript-files-menu {
   color: color-mix(in srgb, var(--theia-foreground) 78%, var(--theia-descriptionForeground));
 }
 
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-active .theia-mobile-agent-activity-row {
+  color: var(--theia-foreground);
+}
+
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-verb {
   font-weight: 600;
   color: color-mix(in srgb, var(--theia-foreground) 92%, var(--theia-descriptionForeground));
@@ -17893,6 +17898,14 @@ body > .theia-mobile-transcript-files-menu {
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-tail {
   color: color-mix(in srgb, var(--theia-descriptionForeground) 72%, transparent);
   font-size: 12px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-meta {
+  display: inline;
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 1.42;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 70%, transparent);
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-diff-stats {
@@ -17910,6 +17923,26 @@ body > .theia-mobile-transcript-files-menu {
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-diff-remove {
   margin-left: 4px;
   color: var(--theia-errorForeground, #f14c4c);
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-mcp-badge {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-clickable:hover,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-clickable:focus-visible {
+  background: color-mix(in srgb, var(--theia-list-hoverBackground, rgba(128, 128, 128, 0.12)) 62%, transparent);
+  outline: none;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-clickable:focus-visible {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 70%, transparent);
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item[aria-current="step"] {
+  background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
 }
 
 .theia-mobile-agent-activity-item.theia-mod-nest-1 {
@@ -18041,6 +18074,17 @@ body > .theia-mobile-transcript-files-menu {
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   overscroll-behavior-y: contain;
+}
+
+/* Cursor trace page-scroll model: timeline grows with transcript (no nested scroll cap). */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-list.theia-mod-virtualized,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] .theia-mobile-agent-activity-timeline-open-panel > .theia-mobile-agent-activity-list.theia-mod-virtualized {
+  max-height: none !important;
+  overflow: visible !important;
+  overflow-y: visible !important;
+  overscroll-behavior-y: auto;
+  touch-action: auto;
+  contain: none;
 }
 
 .theia-mobile-agent-activity-item.theia-mod-history-gap .theia-mobile-agent-activity-label {
@@ -18200,6 +18244,17 @@ body > .theia-mobile-transcript-files-menu {
 
 .theia-mobile-agent-activity-item.theia-mod-enter {
   animation: theia-mobile-agent-activity-item-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* During live SSE, skip enter animations — they read as flicker when steps append rapidly. */
+.theia-mobile-agent-activity-timeline.theia-mod-streaming .theia-mobile-agent-activity-item.theia-mod-enter {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-streaming .theia-mobile-agent-activity-item {
+  contain: layout style;
 }
 
 @keyframes theia-mobile-agent-activity-item-enter {

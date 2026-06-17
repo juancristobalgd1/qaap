@@ -52,6 +52,35 @@ export function compressAgentMessageWireDeltaForWire(delta: QaapAgentMessageWire
             }
             return changed ? next : delta;
         }
+        case 'patch_trace_event': {
+            let changed = false;
+            const next = { ...delta };
+            if (delta.contentAppend !== undefined) {
+                const contentAppend = maybeCompressWireText(delta.contentAppend);
+                next.contentAppend = contentAppend.value;
+                if (contentAppend.encoding) {
+                    next.contentAppendEncoding = contentAppend.encoding;
+                    changed = true;
+                }
+            }
+            if (delta.argsAppend !== undefined) {
+                const argsAppend = maybeCompressWireText(delta.argsAppend);
+                next.argsAppend = argsAppend.value;
+                if (argsAppend.encoding) {
+                    next.argsAppendEncoding = argsAppend.encoding;
+                    changed = true;
+                }
+            }
+            if (delta.resultAppend !== undefined) {
+                const resultAppend = maybeCompressWireText(delta.resultAppend);
+                next.resultAppend = resultAppend.value;
+                if (resultAppend.encoding) {
+                    next.resultAppendEncoding = resultAppend.encoding;
+                    changed = true;
+                }
+            }
+            return changed ? next : delta;
+        }
         case 'append_segment': {
             const segment = compressAgentMessageSegmentForWire(delta.segment);
             if (segment === delta.segment) {

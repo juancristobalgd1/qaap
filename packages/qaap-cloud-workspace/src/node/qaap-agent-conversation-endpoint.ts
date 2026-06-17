@@ -15,6 +15,7 @@ import {
     QaapAgentConversationListResponse,
     QaapCreateAgentConversationRequest,
     QaapPostAgentMessageRequest,
+    QaapPostAgUiTranscriptEventRequest,
     QaapUpdateAgentConversationRequest,
 } from '../common/qaap-agent-conversation';
 import {
@@ -23,6 +24,7 @@ import {
 } from '../common/qaap-agent-conversation-ws';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
+import type { QaapAgUiEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
 
 const SSE_HEARTBEAT_MS = 25_000;
 /** Ping interval for WebSocket connections — keeps the socket alive through proxies. */
@@ -70,6 +72,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/messages`, (req, res) => {
             this.handlePostMessage(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/ag-ui/events`, (req, res) => {
+            this.handlePostAgUiEvent(req, res);
         });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             this.handleUpdate(req, res);
@@ -283,6 +288,21 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             const message = error instanceof Error ? error.message : String(error);
             res.status(message === 'Conversation not found.' ? 404 : 400).json({ error: message });
         }
+    }
+
+    protected handlePostAgUiEvent(req: Request, res: Response): void {
+        const body = (req.body ?? {}) as Partial<QaapPostAgUiTranscriptEventRequest>;
+        const event = body.event;
+        if (!event || typeof event !== 'object' || typeof (event as { type?: unknown }).type !== 'string') {
+            res.status(400).json({ error: '"event" must be an AG-UI event object with a string "type".' });
+            return;
+        }
+        const conv = this.store.applyAgUiTranscriptEvent(req.params.id, event as QaapAgUiEvent);
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation not found.' });
+            return;
+        }
+        res.status(202).json({ ok: true, conversationId: conv.id, status: conv.status });
     }
 
     protected handleUpdate(req: Request, res: Response): void {

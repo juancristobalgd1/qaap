@@ -16,9 +16,33 @@ import {
 describe('mobile-projects-agents-hub-inline-ui', () => {
 
     let disableJSDOM: (() => void) | undefined;
+    let previousRequestAnimationFrame: typeof requestAnimationFrame | undefined;
+    let previousCancelAnimationFrame: typeof cancelAnimationFrame | undefined;
 
     before(() => {
         disableJSDOM = enableJSDOM();
+    });
+
+    beforeEach(() => {
+        previousRequestAnimationFrame = (global as unknown as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;
+        previousCancelAnimationFrame = (global as unknown as { cancelAnimationFrame?: typeof cancelAnimationFrame }).cancelAnimationFrame;
+        const raf = (callback: FrameRequestCallback): number => setTimeout(() => callback(performance.now()), 0) as unknown as number;
+        const caf = (handle: number): void => clearTimeout(handle);
+        (global as unknown as { requestAnimationFrame: typeof requestAnimationFrame }).requestAnimationFrame = raf;
+        (global as unknown as { cancelAnimationFrame: typeof cancelAnimationFrame }).cancelAnimationFrame = caf;
+        window.requestAnimationFrame = raf;
+        window.cancelAnimationFrame = caf;
+    });
+
+    afterEach(() => {
+        if (previousRequestAnimationFrame) {
+            (global as unknown as { requestAnimationFrame: typeof requestAnimationFrame }).requestAnimationFrame = previousRequestAnimationFrame;
+            window.requestAnimationFrame = previousRequestAnimationFrame;
+        }
+        if (previousCancelAnimationFrame) {
+            (global as unknown as { cancelAnimationFrame: typeof cancelAnimationFrame }).cancelAnimationFrame = previousCancelAnimationFrame;
+            window.cancelAnimationFrame = previousCancelAnimationFrame;
+        }
     });
 
     after(() => {
@@ -54,6 +78,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             transcriptLastStatus: undefined,
             transcriptLastFingerprint: undefined,
             transcriptLastConv: undefined,
+            transcriptConversationCache: new Map(),
             transcriptLastSseDeltaAt: undefined,
             transcriptLastStreamProgressAt: undefined,
             transcriptChatHost: undefined,
@@ -181,6 +206,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             renderList: () => { renderListCalls++; },
             executionSurfaceTabsUi: {
                 setExecutionSurfaceTab: () => undefined,
+                executionSurfaceTabForProject: () => 'messages',
                 showOnlyExecutionSurfaceTab: () => undefined,
                 mountTranscriptSurfaceTab: () => undefined,
                 buildTranscriptTabStrip: () => document.createElement('div'),
@@ -195,6 +221,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 flushTranscriptComposerPrefs: async () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
             transcriptLiveUi: {
+                ensureTranscriptConversationRefresh: () => undefined,
                 scheduleTranscriptConversationRefresh: () => undefined,
                 refreshOpenTranscriptConversation: async () => undefined,
                 stopTranscriptLiveWatch: () => undefined,
@@ -243,6 +270,106 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(renderListCalls).to.equal(0);
         expect(renderShellCalls).to.equal(1);
         expect(host.agentsHubInlineChatHost?.parentElement).to.equal(host.scroll);
+    });
+
+    it('reopens an inline transcript from the conversation cache instead of preview text', async () => {
+        let rendered: QaapAgentConversationSummaryDTO | import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
+        const project = {
+            id: 'proj-1',
+            name: 'demo',
+            status: 'working',
+            isCurrent: true,
+        } as MobileProjectEntry;
+        const cached = {
+            id: 'conv-open',
+            cwd: '/tmp/demo',
+            agentId: 'task',
+            title: 'Fix login',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 3,
+            messages: [{
+                id: 'agent-1',
+                role: 'agent' as const,
+                content: '',
+                createdAt: 2,
+                segments: [{
+                    type: 'thinking' as const,
+                    content: 'Exploring the project',
+                    startedAt: 2,
+                    finishedAt: undefined,
+                }],
+            }],
+        };
+        const host = createHost({
+            projects: [project],
+            agentsHubInlineExecutionRoot: document.createElement('div'),
+            agentsHubInlineChatHost: document.createElement('div'),
+            transcriptConversationCache: new Map([[cached.id, cached]]),
+            transcriptMessagesUi: {
+                renderTranscriptMessages: (_host: HTMLElement, conv: typeof cached) => { rendered = conv; },
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptMessagesUi'],
+            executionSurfaceTabsUi: {
+                setExecutionSurfaceTab: () => undefined,
+                executionSurfaceTabForProject: () => 'messages',
+                showOnlyExecutionSurfaceTab: () => undefined,
+                mountTranscriptSurfaceTab: () => undefined,
+                buildTranscriptTabStrip: () => document.createElement('div'),
+                refreshExecutionSurfaceTabStripState: () => undefined,
+                syncExecutionSurfaceChrome: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
+            transcriptComposerUi: {
+                refreshTranscriptComposerAgents: async () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
+            transcriptStickyComposerUi: {
+                flushTranscriptComposerDraft: () => undefined,
+                flushTranscriptComposerPrefs: async () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
+            transcriptLiveUi: {
+                ensureTranscriptConversationRefresh: () => undefined,
+                scheduleTranscriptConversationRefresh: () => undefined,
+                refreshOpenTranscriptConversation: async () => undefined,
+                stopTranscriptLiveWatch: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptSheetUi: {
+                closeTranscriptSheet: () => undefined,
+                summaryToTranscriptPlaceholder: (summary: QaapAgentConversationSummaryDTO) => ({
+                    id: summary.id,
+                    cwd: summary.cwd,
+                    agentId: summary.agentId,
+                    title: summary.title,
+                    status: summary.status,
+                    createdAt: summary.createdAt,
+                    updatedAt: summary.updatedAt,
+                    messages: [{
+                        id: 'preview',
+                        role: 'agent',
+                        content: summary.lastMessagePreview ?? '',
+                        createdAt: summary.updatedAt,
+                    }],
+                }),
+                createTranscriptSheetSurfaceHosts: () => ({
+                    planHost: document.createElement('div'),
+                    reviewHost: document.createElement('div'),
+                    previewHost: document.createElement('div'),
+                    filesHost: document.createElement('div'),
+                    terminalHost: document.createElement('div'),
+                }),
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
+            stickyComposerRenderUi: {
+                renderStickyComposer: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['stickyComposerRenderUi'],
+        });
+        host.agentsHubInlineExecutionRoot!.append(host.agentsHubInlineChatHost!);
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.syncAgentsHubInlineExecutionHeader = () => undefined;
+        await ui.openAgentsHubInlineTranscript(project, {
+            ...openSummary(),
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Let me explore. [thinking] raw preview must not render',
+        });
+
+        expect(rendered).to.equal(cached);
     });
 
     it('closeAgentsHubSession skips hub list rebuild while switching inline transcripts', () => {

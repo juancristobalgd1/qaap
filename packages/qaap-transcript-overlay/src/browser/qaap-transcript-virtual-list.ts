@@ -130,6 +130,14 @@ export class TranscriptVirtualList implements Disposable {
     }
 
     scrollToEnd(): void {
+        if (this.offsetsDirty || this.offsets.length !== this.sizes.length + 1) {
+            this.offsets = buildVirtualListOffsets(this.sizes, this.defaultItemHeight);
+            this.offsetsDirty = false;
+        }
+        const estimatedHeight = this.offsets[this.offsets.length - 1] ?? 0;
+        if (estimatedHeight > 0) {
+            this.spacer.style.height = `${estimatedHeight + this.footerHeight}px`;
+        }
         this.scrollHost.scrollTop = this.scrollHost.scrollHeight;
     }
 

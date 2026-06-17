@@ -94,6 +94,7 @@ import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-bro
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
 import { QaapWorkbenchHistoryNavWidget } from './qaap-workbench-top-bar-widgets';
 import {
@@ -245,6 +246,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     @inject(QaapProjectBootstrapService)
     protected readonly projectBootstrap: QaapProjectBootstrapService;
+
+    @inject(QaapAgUiFrontendToolService) @optional()
+    protected readonly agUiFrontendTools?: QaapAgUiFrontendToolService;
 
     @inject(QaapMiniBrowserOpenHandler)
     protected readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler;
@@ -399,6 +403,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 commitMessageAi: this.commitMessageAi,
                 composerPromptImprover: this.composerPromptImprover,
                 projectBootstrap: this.projectBootstrap,
+                agUiFrontendTools: this.agUiFrontendTools,
                 activeTasks: this.activeTasks,
                 conversations: this.conversations,
                 backgroundContext: this.backgroundContext,

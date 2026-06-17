@@ -762,7 +762,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const activityFiles = project
             ? this.resolveComposerActivityFilesForStack(project, summary, conv)
             : this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        const fingerprint = `${queueSize}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${conv.status}`;
+        const effectiveStatus = resolveTranscriptEffectiveStatus(conv);
+        const fingerprint = `${queueSize}|${activityFiles.files.map(file => file.path).join('\n')}|${activityFiles.stats?.added ?? 0}:${activityFiles.stats?.removed ?? 0}|${effectiveStatus}`;
         if (fingerprint === this.lastComposerActivityFingerprint) {
             this.host.transcriptComposerSendRefresh?.();
             return;

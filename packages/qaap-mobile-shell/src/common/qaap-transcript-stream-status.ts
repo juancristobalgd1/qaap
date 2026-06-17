@@ -136,14 +136,14 @@ export function resolveTranscriptTraceDisplayPhase(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
 ): TranscriptTraceDisplayPhase {
+    if (hasActiveTranscriptToolSegment(segments)) {
+        return 'acting';
+    }
     if (!streaming) {
         return 'settled';
     }
     if (isTranscriptAgentThinkingPhase(segments, streaming)) {
         return 'thinking';
-    }
-    if (hasActiveTranscriptToolSegment(segments)) {
-        return 'acting';
     }
     if (isTranscriptShortTextPreamble(segments)) {
         return 'acting';
@@ -167,9 +167,6 @@ export function shouldExpandTranscriptInlineTimeline(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
 ): boolean {
-    if (!streaming) {
-        return false;
-    }
     return resolveTranscriptTraceDisplayPhase(segments, streaming) === 'acting';
 }
 

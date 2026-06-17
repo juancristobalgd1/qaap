@@ -39,7 +39,9 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onAutomations?: () => void;
     /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
     shouldSkipSessionListRefresh?(): boolean;
-    rememberSessionListFingerprint?(): void;
+    /** In-place row patch when only live progress/title chrome changed. */
+    tryPatchSessionList?(listHost: HTMLElement): boolean;
+    rememberSessionListFingerprint?(listHost: HTMLElement): void;
 }
 
 /**
@@ -226,19 +228,14 @@ export class MobileWorkHubSessionsSidebar {
         }, 420);
     }
 
-    /** Re-apply after list paint so iOS fallback sees the final scroll height. */
+    /** Install iOS touch scroll fallback once per scroll host — avoid reinstall on every SSE tick. */
     protected ensureScrollTouchFallback(): void {
+        if (this.scrollHost.dataset.theiaMobileScrollY === 'true') {
+            return;
+        }
         this.scrollTouchDispose.dispose();
         delete this.scrollHost.dataset.theiaMobileScrollY;
         this.scrollTouchDispose = installMobileVerticalTouchScroll(this.scrollHost);
-        window.requestAnimationFrame(() => {
-            if (!this.visible) {
-                return;
-            }
-            this.scrollTouchDispose.dispose();
-            delete this.scrollHost.dataset.theiaMobileScrollY;
-            this.scrollTouchDispose = installMobileVerticalTouchScroll(this.scrollHost);
-        });
     }
 
     hide(): void {
@@ -247,6 +244,7 @@ export class MobileWorkHubSessionsSidebar {
         }
         dismissQaapAccountMenu();
         this.scrollTouchDispose.dispose();
+        delete this.scrollHost.dataset.theiaMobileScrollY;
         this.edgeSwipeDispose.dispose();
         this.resizeDispose.dispose();
         this.hideDismissHint();
@@ -293,9 +291,29 @@ export class MobileWorkHubSessionsSidebar {
         if (!options?.force && this.delegate.shouldSkipSessionListRefresh?.()) {
             return;
         }
-        this.listHost.replaceChildren();
-        this.delegate.renderSessionList(this.listHost);
-        this.delegate.rememberSessionListFingerprint?.();
+        if (!options?.force && this.delegate.tryPatchSessionList?.(this.listHost)) {
+            this.delegate.rememberSessionListFingerprint?.(this.listHost);
+            return;
+        }
+        const previousScrollTop = this.scrollHost.scrollTop;
+        const activeConversationId = this.listHost.contains(document.activeElement)
+            ? (document.activeElement?.closest<HTMLElement>('[data-qaap-conversation-id]')?.dataset.qaapConversationId)
+            : undefined;
+        const nextList = document.createElement('div');
+        nextList.className = this.listHost.className;
+        this.delegate.renderSessionList(nextList);
+        if (!options?.force && this.listHost.innerHTML === nextList.innerHTML) {
+            this.delegate.rememberSessionListFingerprint?.(this.listHost);
+            return;
+        }
+        this.listHost.replaceChildren(...Array.from(nextList.childNodes));
+        this.scrollHost.scrollTop = previousScrollTop;
+        if (activeConversationId) {
+            const nextFocus = this.listHost
+                .querySelector<HTMLElement>(`[data-qaap-conversation-id="${cssEscapeAttribute(activeConversationId)}"] button`);
+            nextFocus?.focus({ preventScroll: true });
+        }
+        this.delegate.rememberSessionListFingerprint?.(this.listHost);
         if (this.visible) {
             this.ensureScrollTouchFallback();
         }
@@ -452,6 +470,13 @@ export class MobileWorkHubSessionsSidebar {
         }
         return btn;
     }
+}
+
+function cssEscapeAttribute(value: string): string {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+        return CSS.escape(value);
+    }
+    return value.replace(/["\\]/g, '\\$&');
 }
 
 export function hasSeenSessionsSidebarDismissHint(): boolean {

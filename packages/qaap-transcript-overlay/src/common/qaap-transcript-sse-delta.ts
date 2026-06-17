@@ -9,6 +9,7 @@ import type {
     QaapAgentMessageDTO,
 } from './qaap-transcript-agent-types';
 import { fingerprintAgentSegments } from './qaap-transcript-incremental-update';
+import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-agent-types';
 
 export interface QaapTranscriptSseMessageEvent {
     readonly conversationId: string;
@@ -26,7 +27,7 @@ export function canApplySseMessageDelta(
         return false;
     }
     if (message.role === 'agent') {
-        return !!message.segments?.length || !!message.content?.trim();
+        return !!message.segments?.length || !!message.traceEvents?.length || !!message.content?.trim();
     }
     return !!message.content?.trim();
 }
@@ -62,8 +63,32 @@ export function shouldSkipStreamingTranscriptRefetch(
     return lastSseDeltaAt !== undefined && Date.now() - lastSseDeltaAt < graceMs;
 }
 
+function fingerprintTraceEvents(events: readonly QaapTranscriptTraceEventDTO[] | undefined): string {
+    return (events ?? []).map(event => {
+        switch (event.type) {
+            case 'thought':
+            case 'assistant_text':
+                return `${event.type}:${event.id}:${event.status}:${event.content.length}`;
+            case 'tool_call':
+                return [
+                    event.type,
+                    event.id,
+                    event.status,
+                    event.name,
+                    event.args.length,
+                    event.result?.length ?? 0,
+                    event.parentId ?? '',
+                ].join(':');
+            case 'error':
+                return `${event.type}:${event.id}:${event.message.length}`;
+            default:
+                return 'unknown';
+        }
+    }).join('|');
+}
+
 function agentMessageSnapshotFingerprint(message: QaapAgentMessageDTO): string {
-    return `${message.content ?? ''}|${fingerprintAgentSegments(message.segments ?? [])}`;
+    return `${message.content ?? ''}|${fingerprintAgentSegments(message.segments ?? [])}|${fingerprintTraceEvents(message.traceEvents)}`;
 }
 
 /** True when an SSE payload would change the in-memory agent/user row. */

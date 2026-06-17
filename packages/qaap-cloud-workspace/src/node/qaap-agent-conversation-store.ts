@@ -83,6 +83,12 @@ import {
     type QaapAgentMessageWireSnapshot,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
 import {
+    buildAgentMessageFromQaapAgUiReducer,
+    reduceQaapAgUiTranscriptEvent,
+    type QaapAgUiEvent,
+    type QaapAgUiTraceReducerState,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
+import {
     agentModelKey,
     agentTurnHasRetryableEmptyOutput,
     resolveNextFallbackAgentModel,
@@ -122,6 +128,7 @@ export class QaapAgentConversationStore {
     protected readonly agentStreamByTaskId = new Map<string, QaapAgentStreamAccumulator>();
     /** Last wire snapshot per agent message — drives incremental SSE deltas during streaming. */
     protected readonly lastWireMessageById = new Map<string, QaapAgentMessageWireSnapshot>();
+    protected readonly agUiReducerByAgentMessageId = new Map<string, QaapAgUiTraceReducerState>();
     protected sseBatcher!: QaapAgentConversationSseBatcher;
     protected persistTimer: ReturnType<typeof setTimeout> | undefined;
     protected readonly streamMetrics = new QaapConversationStreamMetricsCollector('server');
@@ -934,6 +941,7 @@ export class QaapAgentConversationStore {
         if (agentMessage) {
             this.fireAgentMessageWireUpdate(conversationId, withReply.cwd, withReply.agentId, agentMessage, { forceFullMessage: true });
             this.lastWireMessageById.delete(agentMessage.id);
+            this.clearAgUiReducer(agentMessage.id);
         }
         this.modelFallbackTriedByUserMessage.delete(userMessageId);
         this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, withReply);
@@ -1139,6 +1147,7 @@ export class QaapAgentConversationStore {
         if (agentMessage) {
             this.fireAgentMessageWireUpdate(conversationId, conv.cwd, conv.agentId, agentMessage, { forceFullMessage: true });
             this.lastWireMessageById.delete(agentMessage.id);
+            this.clearAgUiReducer(agentMessage.id);
         }
     }
 
@@ -1260,6 +1269,65 @@ export class QaapAgentConversationStore {
         this.sseBatcher.enqueue(event);
     }
 
+    /**
+     * Apply one AG-UI event onto the streaming tail agent message — emits incremental wire deltas
+     * (append/patch_trace_event) instead of full message replacements when possible.
+     */
+    applyAgUiTranscriptEvent(conversationId: string, event: QaapAgUiEvent): QaapAgentConversation | undefined {
+        const conv = this.conversations.get(conversationId);
+        if (!conv) {
+            return undefined;
+        }
+        const now = Date.now();
+        let agentMessageId = conv.messages[conv.messages.length - 1]?.role === 'agent'
+            ? conv.messages[conv.messages.length - 1].id
+            : undefined;
+        let messages = conv.messages;
+        if (!agentMessageId) {
+            agentMessageId = randomUUID();
+            const seed: QaapAgentMessage = {
+                id: agentMessageId,
+                role: 'agent',
+                content: '',
+                traceEvents: [],
+                createdAt: now,
+            };
+            messages = [...conv.messages, seed];
+            this.agUiReducerByAgentMessageId.delete(agentMessageId);
+        }
+        const previousReducer = this.agUiReducerByAgentMessageId.get(agentMessageId);
+        const { next: reducer } = reduceQaapAgUiTranscriptEvent(previousReducer, event, {
+            agentMessageId,
+            createdAt: messages.find(message => message.id === agentMessageId)?.createdAt ?? now,
+            agentId: conv.agentId,
+        });
+        this.agUiReducerByAgentMessageId.set(agentMessageId, reducer);
+        const agentMessage = buildAgentMessageFromQaapAgUiReducer(
+            reducer,
+            messages.find(message => message.id === agentMessageId)?.createdAt ?? now,
+        );
+        messages = messages.map(message => message.id === agentMessageId ? agentMessage : message);
+        const next: QaapAgentConversation = {
+            ...conv,
+            status: 'streaming',
+            updatedAt: now,
+            messages,
+            ...(totalTokensFromContextUsage(conv.contextUsage) === 0 ? { contextUsageEstimated: true } : {}),
+            contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
+        };
+        this.conversations.set(conversationId, next);
+        this.fireAgentMessageWireUpdate(conversationId, next.cwd, next.agentId, agentMessage);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        this.schedulePersist();
+        return next;
+    }
+
+    protected clearAgUiReducer(agentMessageId: string | undefined): void {
+        if (agentMessageId) {
+            this.agUiReducerByAgentMessageId.delete(agentMessageId);
+        }
+    }
+
     protected stageWireMetricsBaseline(
         conversationId: string,
         messageId: string,
@@ -1307,6 +1375,7 @@ export class QaapAgentConversationStore {
             role: message.role,
             content: message.content,
             segments: message.segments,
+            traceEvents: message.traceEvents,
             createdAt: message.createdAt,
         };
         if (options?.forceFullMessage) {

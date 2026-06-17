@@ -17,6 +17,7 @@ function agentMessage(partial: Partial<QaapAgentMessageDTO> & Pick<QaapAgentMess
         role: 'agent',
         content: partial.content ?? '',
         createdAt: partial.createdAt ?? 1,
+        ...(partial.traceEvents ? { traceEvents: [...partial.traceEvents] } : {}),
         ...(partial.segments ? { segments: [...partial.segments] } : {}),
     };
 }
@@ -94,6 +95,80 @@ describe('computeAgentMessageWireDelta', () => {
             finished: true,
         });
     });
+
+    it('patches structured traceEvents incrementally when a tool settles', () => {
+        const prev = agentMessage({
+            id: 'a1',
+            content: '',
+            traceEvents: [{
+                type: 'tool_call',
+                id: 'tool-1',
+                name: 'Bash',
+                args: '{}',
+                status: 'running',
+            }],
+        });
+        const next = agentMessage({
+            id: 'a1',
+            content: '',
+            traceEvents: [{
+                type: 'tool_call',
+                id: 'tool-1',
+                name: 'Bash',
+                args: '{}',
+                status: 'completed',
+                result: 'ok',
+            }],
+        });
+
+        expect(computeAgentMessageWireDelta(prev, next, 'qaiq')).to.deep.equal({
+            kind: 'patch_trace_event',
+            messageId: 'a1',
+            eventId: 'tool-1',
+            resultAppend: 'ok',
+            status: 'completed',
+        });
+    });
+
+    it('appends a new trace event without replacing the full message', () => {
+        const prev = agentMessage({
+            id: 'a1',
+            traceEvents: [{
+                type: 'tool_call',
+                id: 'tool-1',
+                name: 'Read',
+                args: '{}',
+                status: 'completed',
+                result: 'done',
+            }],
+        });
+        const next = agentMessage({
+            id: 'a1',
+            traceEvents: [
+                {
+                    type: 'tool_call',
+                    id: 'tool-1',
+                    name: 'Read',
+                    args: '{}',
+                    status: 'completed',
+                    result: 'done',
+                },
+                {
+                    type: 'tool_call',
+                    id: 'tool-2',
+                    name: 'Bash',
+                    args: 'ls',
+                    status: 'running',
+                },
+            ],
+        });
+
+        expect(computeAgentMessageWireDelta(prev, next, 'qaiq')).to.deep.equal({
+            kind: 'append_trace_event',
+            messageId: 'a1',
+            event: next.traceEvents?.[1],
+        });
+    });
 });
 
 describe('applyAgentMessageWireDelta', () => {
@@ -107,5 +182,32 @@ describe('applyAgentMessageWireDelta', () => {
             text: 'lo',
         });
         expect(patched?.content).to.equal('Hello');
+    });
+
+    it('applies patch_trace_event onto traceEvents', () => {
+        const conv = {
+            messages: [agentMessage({
+                id: 'a1',
+                traceEvents: [{
+                    type: 'assistant_text',
+                    id: 'text-1',
+                    content: 'Hel',
+                    status: 'streaming',
+                }],
+            }) as QaapAgentMessageDTO],
+        };
+        const patched = applyAgentMessageWireDelta(conv, {
+            kind: 'patch_trace_event',
+            messageId: 'a1',
+            eventId: 'text-1',
+            contentAppend: 'lo',
+            status: 'completed',
+        });
+        expect(patched?.traceEvents?.[0]).to.deep.equal({
+            type: 'assistant_text',
+            id: 'text-1',
+            content: 'Hello',
+            status: 'completed',
+        });
     });
 });

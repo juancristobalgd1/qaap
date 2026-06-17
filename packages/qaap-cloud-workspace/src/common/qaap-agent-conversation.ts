@@ -52,6 +52,8 @@ export interface QaapAgentMessage {
     readonly id: string;
     readonly role: QaapAgentMessageRole;
     readonly content: string;
+    /** Structured execution trace for AG-UI style providers. */
+    readonly traceEvents?: import('@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model').QaapTranscriptTraceEventDTO[];
     /** Present for agent turns driven by QAIQ stream-json. */
     readonly segments?: QaapAgentMessageSegment[];
     /** Epoch milliseconds. */
@@ -278,6 +280,11 @@ export interface QaapLinkConversationsByBranchRequest {
     readonly number: number;
     readonly branch: string;
     readonly title?: string;
+}
+
+/** POST body for `/agent-conversations/:id/ag-ui/events`. */
+export interface QaapPostAgUiTranscriptEventRequest {
+    readonly event: Readonly<Record<string, unknown>>;
 }
 
 /** Payload pushed over SSE when a conversation changes. */

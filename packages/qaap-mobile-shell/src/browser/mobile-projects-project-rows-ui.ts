@@ -570,6 +570,9 @@ export class MobileProjectsProjectRowsUi {
             if (compact) {
                 row.classList.add('theia-mod-sidebar-compact');
             }
+            if (summary) {
+                row.dataset.qaapConversationId = summary.id;
+            }
             if (summary && this.host.transcriptOpenSummaryId === summary.id) {
                 row.classList.add('theia-mod-current');
             }

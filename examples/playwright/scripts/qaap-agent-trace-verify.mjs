@@ -12,6 +12,7 @@ const BASE = process.env.QAAP_BASE_URL ?? 'http://127.0.0.1:3000';
 const OUT_DIR = process.env.QAAP_SCREENSHOT_DIR
     ?? path.join(os.tmpdir(), 'qaap-agent-trace-verify');
 const MOBILE = { width: 390, height: 844 };
+const HARNESS_ONLY = process.env.QAAP_TRACE_VERIFY_HARNESS_ONLY === '1';
 
 async function waitForServer(page) {
     for (let i = 0; i < 60; i++) {
@@ -107,6 +108,11 @@ async function injectTraceHarness(page) {
               <span class="theia-mobile-agent-activity-timeline-summary-label">Explored 2 files, 1 command</span>
               <span class="theia-mobile-agent-activity-timeline-summary-count">3</span>
             </summary>
+            <div class="theia-mobile-agent-activity-timeline-open-panel">
+            <button type="button" class="theia-mobile-agent-activity-timeline-sticky-bar" aria-expanded="true">
+              <span class="theia-mobile-agent-activity-timeline-summary-label">Explored 2 files, 1 command</span>
+              <span class="theia-mobile-agent-activity-timeline-summary-chevron codicon codicon-chevron-down" aria-hidden="true"></span>
+            </button>
             <ol class="theia-mobile-agent-activity-list theia-mod-virtualized">
               <li class="theia-mobile-agent-activity-item theia-mod-history-gap theia-mod-clickable" data-transcript-timeline-gap-position="before" role="button" tabindex="0" data-verify="history-gap">
                 <span class="theia-mobile-agent-activity-icon theia-mod-history-gap codicon codicon-ellipsis" aria-hidden="true"></span>
@@ -161,6 +167,7 @@ async function injectTraceHarness(page) {
                 </div>
               </li>
             </ol>
+            </div>
           </details>
           <details class="theia-mobile-agent-tool-pill theia-mod-terminal theia-mod-done" open data-verify="terminal-pill">
             <summary class="theia-mobile-agent-tool-pill-summary">
@@ -221,6 +228,9 @@ async function injectTraceHarness(page) {
             hasHistoryGap: false,
             hasVirtualizedTimeline: false,
             hasDiffStatsInline: false,
+            hasCursorTraceMetaInline: false,
+            hasMcpTimelineBadge: false,
+            hasCursorTracePageScrollModel: false,
             hasNestIndent: false,
             stateClasses: [],
         };
@@ -235,6 +245,13 @@ async function injectTraceHarness(page) {
         results.hasHistoryGap = !!document.querySelector('.theia-mobile-agent-activity-item.theia-mod-history-gap');
         results.hasVirtualizedTimeline = !!document.querySelector('.theia-mobile-agent-activity-list.theia-mod-virtualized');
         results.hasDiffStatsInline = !!document.querySelector('.theia-mobile-agent-activity-diff-add, .theia-mobile-agent-activity-diff-remove');
+        results.hasCursorTraceMetaInline = !!document.querySelector('.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-meta');
+        results.hasMcpTimelineBadge = !!document.querySelector('.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-mcp-badge');
+        const cursorTraceList = document.querySelector('.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-list.theia-mod-virtualized');
+        if (cursorTraceList instanceof HTMLElement) {
+            const style = getComputedStyle(cursorTraceList);
+            results.hasCursorTracePageScrollModel = style.overflowY === 'visible' && style.maxHeight === 'none';
+        }
         results.hasNestIndent = !!document.querySelector('.theia-mod-nest-1, .theia-mod-subagent-root');
         results.timelineClickable = document.querySelectorAll('.theia-mobile-agent-activity-item.theia-mod-clickable').length;
         results.stateClasses = [...new Set(
@@ -508,6 +525,29 @@ async function main() {
     });
     report.shots.push(await screenshot(page, '01-harness-timeline'));
 
+    if (HARNESS_ONLY) {
+        fs.writeFileSync(path.join(OUT_DIR, 'report.json'), JSON.stringify(report, null, 2));
+        console.log(JSON.stringify(report, null, 2));
+        await browser.close();
+        const failed = !harness.hasCollapsibleTimeline
+            || !harness.hasComposerStream
+            || !harness.hasErrorStep
+            || !harness.hasStepDurationMeta
+            || !harness.hasCursorTraceMetaInline
+            || !harness.hasMcpTimelineBadge
+            || !harness.hasCursorTracePageScrollModel
+            || !harness.hasActivityCopyLayout
+            || !harness.hasChangedFilesCard
+            || !harness.hasHistoryGap
+            || !harness.hasVirtualizedTimeline
+            || harness.timelineClickable < 3
+            || !harness.hasActiveStepMarker;
+        if (failed) {
+            process.exit(1);
+        }
+        return;
+    }
+
     // 2) Work Hub + optional live agent (best-effort — depends on backend agent)
     await page.evaluate(() => document.querySelector('.qaap-agent-trace-verify-overlay')?.remove());
     await page.goto(`${BASE}/#/${encodeURIComponent(workspace)}`, { waitUntil: 'domcontentloaded' });
@@ -551,6 +591,9 @@ async function main() {
         || !harness.hasComposerStream
         || !harness.hasErrorStep
         || !harness.hasStepDurationMeta
+        || !harness.hasCursorTraceMetaInline
+        || !harness.hasMcpTimelineBadge
+        || !harness.hasCursorTracePageScrollModel
         || !harness.hasActivityCopyLayout
         || !harness.hasChangedFilesCard
         || !harness.hasHistoryGap

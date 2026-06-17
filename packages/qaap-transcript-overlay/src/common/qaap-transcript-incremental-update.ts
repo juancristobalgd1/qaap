@@ -30,6 +30,9 @@ function structuredAgentMessageChanged(
     if (!prev || !next || prev.id !== next.id) {
         return false;
     }
+    if ((prev.traceEvents?.length ?? 0) > 0 || (next.traceEvents?.length ?? 0) > 0) {
+        return fingerprintTranscriptMessage(prev) !== fingerprintTranscriptMessage(next);
+    }
     if (fingerprintAgentSegments(prev.segments ?? []) !== fingerprintAgentSegments(next.segments ?? [])) {
         return true;
     }
@@ -64,6 +67,17 @@ function fingerprintConversationHeader(conv: QaapAgentConversationDTO): string {
 
 function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapAgentMessageDTO): void {
     parts.push(message.id ?? '', String(message.content?.length ?? 0));
+    if (message.traceEvents?.length) {
+        for (const event of message.traceEvents) {
+            if (event.type === 'tool_call') {
+                parts.push(`e:t:${event.id}:${event.status}:${event.args?.length ?? 0}:${event.result?.length ?? 0}`);
+            } else if (event.type === 'thought' || event.type === 'assistant_text') {
+                parts.push(`e:${event.type}:${event.id}:${event.status}:${event.content?.length ?? 0}`);
+            } else {
+                parts.push(`e:error:${event.id}:${event.message?.length ?? 0}`);
+            }
+        }
+    }
     if (message.segments?.length) {
         for (const segment of message.segments) {
             if (segment.type === 'tool') {
@@ -195,7 +209,7 @@ export function resolveStreamingTranscriptPatchKind(
 }
 
 function hasRenderableSegments(message: QaapAgentMessageDTO | undefined): boolean {
-    return !!message?.segments?.length;
+    return !!(message?.segments?.length || message?.traceEvents?.length);
 }
 
 /** True when a streaming SSE tick did not change the visible tail of the transcript. */
