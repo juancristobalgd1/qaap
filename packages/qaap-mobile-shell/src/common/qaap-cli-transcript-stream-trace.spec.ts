@@ -5,7 +5,11 @@
 
 import { expect } from 'chai';
 import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
-import { getAccumulatorTraceEvents, mergeAccumulatorTraceEvents } from './qaap-cli-transcript-stream';
+import {
+    getAccumulatorTraceEvents,
+    mergeAccumulatorTraceEvents,
+    resolveAgentTranscriptTraceWithLegacyContent,
+} from './qaap-cli-transcript-stream';
 import { QaapQaiqStreamAccumulator } from './qaap-qaiq-stream';
 
 describe('qaap-cli-transcript-stream trace', () => {
@@ -33,5 +37,16 @@ describe('qaap-cli-transcript-stream trace', () => {
             },
         ], acc);
         expect(merged.at(-1)).to.deep.include({ type: 'checkpoint', id: 'cp-1' });
+    });
+
+    it('resolveAgentTranscriptTraceWithLegacyContent parses content-only agent logs', () => {
+        const trace = resolveAgentTranscriptTraceWithLegacyContent('codex', {
+            id: 'a1',
+            role: 'agent',
+            content: '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Hi"}}\n',
+            createdAt: 1,
+        });
+        expect(trace.source).to.equal('legacy-content');
+        expect(trace.segments).to.deep.equal([{ type: 'text', content: 'Hi' }]);
     });
 });

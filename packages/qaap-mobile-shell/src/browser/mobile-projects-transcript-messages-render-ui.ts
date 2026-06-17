@@ -5,10 +5,9 @@
 
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
-import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
+import { resolveAgentTranscriptTraceWithLegacyContent } from '../common/qaap-cli-transcript-stream';
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
-import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
-import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
+import { traceEventsToSegments } from '../common/qaap-transcript-trace-model';
 import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
 import {
     isTranscriptAgentTailStreaming,
@@ -62,26 +61,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         conv: QaapAgentConversationDTO,
         msg: QaapAgentMessageDTO,
     ): QaapAgentMessageSegmentDTO[] | undefined {
-        let trace: QaapTranscriptTrace = resolveQaapTranscriptTrace(msg);
-        if (
-            trace.segments.length === 0
-            && !agentMessageHasStructuredTrace(msg)
-            && msg.role === 'agent'
-            && msg.content?.trim()
-        ) {
-            const parsed = parseAgentLogForTranscript(conv.agentId, msg.content);
-            if (parsed.segments.length > 0) {
-                trace = {
-                    source: 'legacy-content',
-                    events: parsed.traceEvents.length > 0
-                        ? parsed.traceEvents
-                        : segmentsToTraceEvents(parsed.segments),
-                    segments: parsed.segments,
-                };
-            }
-        }
-        if (trace.segments.length > 0) {
-            return dedupeAgentMessageTextSegments([...trace.segments]);
+        const segments = resolveAgentTranscriptTraceWithLegacyContent(conv.agentId, msg).segments;
+        if (segments.length > 0) {
+            return dedupeAgentMessageTextSegments([...segments]);
         }
         return undefined;
     }

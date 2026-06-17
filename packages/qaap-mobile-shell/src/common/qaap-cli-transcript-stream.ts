@@ -13,11 +13,14 @@ import {
     isQaiqAgent,
 } from './qaap-agent-task-client';
 import { detectAgentFailureKind, localizeAgentFailureMessage } from './qaap-agent-failure-message';
+import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { QaapQaiqStreamAccumulator } from './qaap-qaiq-stream';
 import {
     mergeStreamTraceEvents,
+    resolveQaapTranscriptTrace,
     segmentsToTraceEvents,
+    type QaapTranscriptTrace,
     type QaapTranscriptTraceEventDTO,
 } from './qaap-transcript-trace-model';
 
@@ -144,4 +147,29 @@ export function resolveAgentLogDisplayText(agentId: string | undefined, log: str
         return localizeAgentFailureMessage(failureKind);
     }
     return parseAgentLogForTranscript(agentId, trimmed).content.trim();
+}
+
+/** Resolve trace rows for historical agent messages that only persisted raw {@link QaapAgentMessageDTO.content}. */
+export function resolveAgentTranscriptTraceWithLegacyContent(
+    agentId: string | undefined,
+    message: QaapAgentMessageDTO,
+): QaapTranscriptTrace {
+    const trace = resolveQaapTranscriptTrace(message);
+    if (trace.segments.length > 0) {
+        return trace;
+    }
+    if (message.role !== 'agent' || !message.content?.trim() || !agentId) {
+        return trace;
+    }
+    const parsed = parseAgentLogForTranscript(agentId, message.content);
+    if (parsed.segments.length === 0 && parsed.traceEvents.length === 0) {
+        return trace;
+    }
+    return {
+        source: 'legacy-content',
+        events: parsed.traceEvents.length > 0
+            ? parsed.traceEvents
+            : segmentsToTraceEvents(parsed.segments),
+        segments: parsed.segments,
+    };
 }
