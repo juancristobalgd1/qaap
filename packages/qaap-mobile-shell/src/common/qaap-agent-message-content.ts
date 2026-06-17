@@ -5,7 +5,12 @@
 
 import { QAAP_PRIMARY_AGENT_ID } from './qaap-agent-task-client';
 import { parseAgentLogForTranscript } from './qaap-cli-transcript-stream';
+import {
+    extractComposerAttachmentImagePaths,
+    stripComposerAttachmentPreamble,
+} from './qaap-composer-attachment-prompt';
 import { isQaiqStreamMetadataEnvelope } from './qaap-qaiq-stream';
+import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 
 interface AgentContentBlock {
     readonly type?: string;
@@ -52,6 +57,60 @@ type MessagePreviewLike = {
         readonly content?: string;
     }>;
 };
+
+
+export interface TranscriptUserMessageView {
+    readonly displayText: string;
+    readonly imagePreviews: readonly QaapTranscriptUserImagePreview[];
+}
+
+function basenameFromWorkspacePath(path: string): string {
+    const normalized = path.trim();
+    const slash = normalized.lastIndexOf('/');
+    return slash >= 0 ? normalized.slice(slash + 1) : normalized;
+}
+
+/**
+ * Resolves transcript user-row copy and image previews. Optimistic pending rows keep client
+ * previews; persisted rows parse attachment preamble metadata out of {@link content}.
+ */
+export function resolveTranscriptUserMessageView(
+    message: MessagePreviewLike & {
+        readonly id?: string;
+        readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
+    } | undefined,
+): TranscriptUserMessageView {
+    const raw = resolveMessagePreviewText(message);
+    if (message?.optimisticImagePreviews?.length) {
+        return {
+            displayText: stripComposerAttachmentPreamble(raw),
+            imagePreviews: message.optimisticImagePreviews,
+        };
+    }
+    const imagePaths = extractComposerAttachmentImagePaths(raw);
+    if (imagePaths.length === 0) {
+        return { displayText: raw, imagePreviews: [] };
+    }
+    return {
+        displayText: stripComposerAttachmentPreamble(raw),
+        imagePreviews: imagePaths.map(path => ({
+            src: '',
+            fileName: basenameFromWorkspacePath(path),
+            wsRelativePath: path,
+        })),
+    };
+}
+
+/**
+ * Pending-user rows may carry the resolved attachment preamble in {@link content}; show only the
+ * typed draft when optimistic image previews are painted separately.
+ * @deprecated Prefer {@link resolveTranscriptUserMessageView}.
+ */
+export function resolveOptimisticPendingUserDisplayText(
+    message: MessagePreviewLike & { readonly id?: string; readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[] } | undefined,
+): string {
+    return resolveTranscriptUserMessageView(message).displayText;
+}
 
 /** Plain preview text for list rows — never throws when {@link content} is missing. */
 export function resolveMessagePreviewText(message: MessagePreviewLike | undefined): string {

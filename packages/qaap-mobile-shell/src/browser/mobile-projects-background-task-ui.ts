@@ -14,6 +14,7 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
+import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
 import {
     extractBackendAgentMention,
@@ -66,6 +67,7 @@ export interface MobileProjectsBackgroundTaskHost {
         summary: QaapAgentConversationSummaryDTO,
         outbound: string,
         agentId?: string,
+        imagePreviews?: readonly QaapTranscriptUserImagePreview[],
     ): void;
 }
 
@@ -115,6 +117,7 @@ export class MobileProjectsBackgroundTaskUi {
             /** Run the task in a fresh isolated git worktree instead of the project's working tree. */
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            imagePreviews?: readonly QaapTranscriptUserImagePreview[];
         } = {},
     ): Promise<void> {
         if (this.backgroundSubmitInFlightByProjectId.has(project.id)) {
@@ -144,6 +147,7 @@ export class MobileProjectsBackgroundTaskUi {
             /** Run the task in a fresh isolated git worktree instead of the project's working tree. */
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            imagePreviews?: readonly QaapTranscriptUserImagePreview[];
         } = {},
     ): Promise<void> {
         const cwd = await this.ensureInlineComposerCwd(project);
@@ -152,7 +156,7 @@ export class MobileProjectsBackgroundTaskUi {
         }
         try {
             const { summary, outbound } = await this.createProjectChatSession(project, cwd, draft, options);
-            this.host.seedTranscriptOptimisticSubmit(summary, outbound, options.selectedAgentId);
+            this.host.seedTranscriptOptimisticSubmit(summary, outbound, options.selectedAgentId, options.imagePreviews);
             const wantsDevPreview = messageRequestsDevPreview(draft);
             if (wantsDevPreview || (options.openConversation ?? true)) {
                 await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);

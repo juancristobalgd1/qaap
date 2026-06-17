@@ -56,6 +56,9 @@ export interface MobileProjectsTranscriptMessagesHost {
     projectsService: MobileProjectsService;
     projects: MobileProjectEntry[];
     projectBootstrap?: import('./qaap-project-bootstrap-service').QaapProjectBootstrapService;
+    resolveAttachmentPreview?: (
+        item: import('@theia/ai-core').AIVariableResolutionRequest,
+    ) => Promise<string | undefined>;
 
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;

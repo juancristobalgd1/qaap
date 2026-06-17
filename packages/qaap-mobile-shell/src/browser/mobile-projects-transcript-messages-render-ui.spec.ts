@@ -147,4 +147,66 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(messageHost.querySelector(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)).to.equal(null);
         expect(messageHost.querySelector('.theia-mobile-agent-stream-line')).to.equal(null);
     });
+
+    it('renders optimistic image previews in pending user rows', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const conv: QaapAgentConversationDTO = {
+            id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
+            cwd: '/workspace',
+            agentId: 'codex',
+            title: 'shot',
+            status: 'streaming',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: [{
+                id: 'pending-user-1',
+                role: 'user',
+                content: '',
+                createdAt: Date.now(),
+            optimisticImagePreviews: [{ src: 'data:image/png;base64,ZmFrZQ==', fileName: 'shot.png' }],
+            }],
+        };
+        renderUi.renderTranscriptMessages(chatHost, conv);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const img = messageHost.querySelector<HTMLImageElement>('.theia-mobile-agent-transcript-user-attachment-image');
+        expect(img?.src).to.contain('data:image/png;base64,ZmFrZQ==');
+        expect(messageHost.querySelector('.theia-mobile-agent-transcript-user-attachment-title')?.textContent).to.equal('shot.png');
+    });
+
+    it('renders optimistic SVG previews in pending user rows', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const conv: QaapAgentConversationDTO = {
+            id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
+            cwd: '/workspace',
+            agentId: 'codex',
+            title: 'svg',
+            status: 'streaming',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: [{
+                id: 'pending-user-2',
+                role: 'user',
+                content: '',
+                createdAt: Date.now(),
+                optimisticImagePreviews: [{
+                    src: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+                    fileName: 'huggingface-color.svg',
+                }],
+            }],
+        };
+        renderUi.renderTranscriptMessages(chatHost, conv);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const img = messageHost.querySelector<HTMLImageElement>('.theia-mobile-agent-transcript-user-attachment-image');
+        expect(img?.src).to.contain('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=');
+        expect(messageHost.querySelector('.theia-mobile-agent-transcript-user-attachment-title')?.textContent)
+            .to.equal('huggingface-color.svg');
+    });
 });

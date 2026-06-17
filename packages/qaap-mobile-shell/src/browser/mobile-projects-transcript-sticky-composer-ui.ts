@@ -66,6 +66,7 @@ import {
 } from '../common/qaap-transcript-follow-up-queue';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
+import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
 import {
     composerContextRequests,
     disposeComposerContextEntries,
@@ -182,6 +183,9 @@ export interface MobileProjectsTranscriptStickyComposerHost {
         anchor: HTMLElement,
         handlers: MobileComposerAttachHandlers,
     ) => Promise<import('@theia/ai-core').AIVariableResolutionRequest[]>;
+    resolveAttachmentPreview?: (
+        item: import('@theia/ai-core').AIVariableResolutionRequest,
+    ) => Promise<string | undefined>;
     transcriptComposerUi: MobileProjectsTranscriptComposerUi;
 
     onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
@@ -1232,119 +1236,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     this.host.stickyComposerContextUi.notifyPendingComposerAttachments();
                     return;
                 }
-                const resolvedPinnedId = this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary);
-                const selectedAgentId = resolveExplicitAgentForSubmit(draft, {
-                    pinnedChatAgentId: resolvedPinnedId,
-                }) ?? resolvedPinnedId;
-                const requests = composerContextRequests(this.host.transcriptComposerContext);
-                const variables = requests.length > 0 ? requests : undefined;
-                const modeId = this.host.transcriptComposerModeId;
-                const autoApprove = resolveComposerAutoApprove(
+                void this.submitTranscriptComposerDraft(draft, project, summary, chatHost, {
+                    resolvedPinnedId: this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
                     showApprovalPolicy,
-                    this.host.transcriptComposerApprovalPolicyId,
-                    summary.cwd,
-                );
-                disposeComposerContextEntries(this.host.transcriptComposerContext);
-                this.host.transcriptComposerContext = [];
-                const clearComposerDraft = (): void => {
-                    clearConversationComposerDraft(summary.id);
-                    this.host.transcriptComposerDraft = '';
-                };
-                if (this.isTranscriptStickyComposerAgentWorking() && !isAgentsHubIdleConversationSummary(summary)) {
-                    const queued = this.enqueueTranscriptFollowUp(summary.id, {
-                        draft,
-                        selectedAgentId,
-                        modeId,
-                        autoApprove,
-                        approvalPolicyId: reconcileAgentApprovalPolicyId(
-                            this.host.transcriptComposerApprovalPolicyId,
-                            summary.cwd,
-                        ),
-                    });
-                    if (queued) {
-                        clearComposerDraft();
-                        this.refreshComposerActivityStack();
-                        const input = this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
-                        if (input instanceof HTMLTextAreaElement) {
-                            input.value = '';
-                        }
-                        this.host.transcriptComposerSendRefresh?.();
-                    }
-                    return;
-                }
-                clearComposerDraft();
-                if (isAgentsHubIdleConversationSummary(summary)) {
-                    const activeChatHost = this.resolveComposerTranscriptChatHost(chatHost);
-                    if (activeChatHost) {
-                        this.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId);
-                    }
-                    this.host.transcriptComposerSendRefresh?.();
-                    void (async () => {
-                        try {
-                            await this.host.submitBackgroundAgentTask(project, draft, {
-                                openConversation: true,
-                                forceVps: true,
-                                selectedAgentId,
-                                modeId,
-                                variables,
-                                autoApprove,
-                                worktree: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree',
-                                approvalPolicyId: reconcileAgentApprovalPolicyId(
-                                    this.host.transcriptComposerApprovalPolicyId,
-                                    summary.cwd,
-                                ),
-                                agentModel: this.host.transcriptComposerAgentModel,
-                            });
-                        } catch {
-                            /* submitBackgroundAgentTask surfaces errors */
-                        } finally {
-                            this.host.stickyComposerRenderUi.renderStickyComposer();
-                        }
-                    })();
-                    return;
-                }
-                clearComposerDraft();
-                const activeChatHost = this.resolveComposerTranscriptChatHost(chatHost);
-                if (activeChatHost && !isLegacyTheiaChat) {
-                    this.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId);
-                }
-                void (async () => {
-                    try {
-                        if (isLegacyTheiaChat) {
-                            await this.host.submitBackgroundAgentTask(project, draft, {
-                                openConversation: true,
-                                forceVps: true,
-                                selectedAgentId: QAAP_PRIMARY_AGENT_ID,
-                                modeId,
-                                variables,
-                                autoApprove,
-                                approvalPolicyId: reconcileAgentApprovalPolicyId(
-                                    this.host.transcriptComposerApprovalPolicyId,
-                                    summary.cwd,
-                                ),
-                            });
-                        } else {
-                            await this.host.submitTranscriptViaBackendConversation(project, summary, draft, {
-                                selectedAgentId,
-                                modeId,
-                                variables,
-                                autoApprove,
-                                approvalPolicyId: reconcileAgentApprovalPolicyId(
-                                    this.host.transcriptComposerApprovalPolicyId,
-                                    summary.cwd,
-                                ),
-                                agentModel: this.host.transcriptComposerAgentModel,
-                            });
-                        }
-                    } catch (error) {
-                        const detail = error instanceof Error ? error.message : String(error);
-                        this.host.messageService?.error(nls.localize(
-                            'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail
-                        ));
-                    } finally {
-                        this.remountTranscriptStickyComposer();
-                    }
-                })();
+                    isLegacyTheiaChat,
+                });
             },
             getMentionOptions: () => this.host.stickyComposerContextUi.resolveComposerMentionOptions(this.host.transcriptComposerBackendAgents, false),
             getVariableOptions: this.host.getComposerVariables
@@ -1425,6 +1321,134 @@ export class MobileProjectsTranscriptStickyComposerUi {
         this.syncComposerActivityFingerprint(summary, project);
         if (this.host.transcriptLastConv?.id === summary.id) {
             this.host.transcriptLiveUi.syncTranscriptPendingApproval(this.host.transcriptLastConv);
+        }
+    }
+
+    protected async submitTranscriptComposerDraft(
+        draft: string,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        chatHost: HTMLElement,
+        options: {
+            readonly resolvedPinnedId: string;
+            readonly showApprovalPolicy: boolean;
+            readonly isLegacyTheiaChat: boolean;
+        },
+    ): Promise<void> {
+        const contextSnapshot = [...this.host.transcriptComposerContext];
+        const selectedAgentId = resolveExplicitAgentForSubmit(draft, {
+            pinnedChatAgentId: options.resolvedPinnedId,
+        }) ?? options.resolvedPinnedId;
+        const requests = composerContextRequests(contextSnapshot);
+        const variables = requests.length > 0 ? requests : undefined;
+        const imagePreviews = await collectComposerImagePreviews(
+            contextSnapshot,
+            this.host.resolveAttachmentPreview,
+        );
+        const modeId = this.host.transcriptComposerModeId;
+        const autoApprove = resolveComposerAutoApprove(
+            options.showApprovalPolicy,
+            this.host.transcriptComposerApprovalPolicyId,
+            summary.cwd,
+        );
+        disposeComposerContextEntries(this.host.transcriptComposerContext);
+        this.host.transcriptComposerContext = [];
+        const clearComposerDraft = (): void => {
+            clearConversationComposerDraft(summary.id);
+            this.host.transcriptComposerDraft = '';
+        };
+        if (this.isTranscriptStickyComposerAgentWorking() && !isAgentsHubIdleConversationSummary(summary)) {
+            const queued = this.enqueueTranscriptFollowUp(summary.id, {
+                draft,
+                selectedAgentId,
+                modeId,
+                autoApprove,
+                approvalPolicyId: reconcileAgentApprovalPolicyId(
+                    this.host.transcriptComposerApprovalPolicyId,
+                    summary.cwd,
+                ),
+            });
+            if (queued) {
+                clearComposerDraft();
+                this.refreshComposerActivityStack();
+                const input = this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
+                if (input instanceof HTMLTextAreaElement) {
+                    input.value = '';
+                }
+                this.host.transcriptComposerSendRefresh?.();
+            }
+            return;
+        }
+        clearComposerDraft();
+        if (isAgentsHubIdleConversationSummary(summary)) {
+            const activeChatHost = this.resolveComposerTranscriptChatHost(chatHost);
+            if (activeChatHost) {
+                this.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
+            }
+            this.host.transcriptComposerSendRefresh?.();
+            try {
+                await this.host.submitBackgroundAgentTask(project, draft, {
+                    openConversation: true,
+                    forceVps: true,
+                    selectedAgentId,
+                    modeId,
+                    variables,
+                    autoApprove,
+                    worktree: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree',
+                    approvalPolicyId: reconcileAgentApprovalPolicyId(
+                        this.host.transcriptComposerApprovalPolicyId,
+                        summary.cwd,
+                    ),
+                    agentModel: this.host.transcriptComposerAgentModel,
+                    imagePreviews,
+                });
+            } catch {
+                /* submitBackgroundAgentTask surfaces errors */
+            } finally {
+                this.host.stickyComposerRenderUi.renderStickyComposer();
+            }
+            return;
+        }
+        const activeChatHost = this.resolveComposerTranscriptChatHost(chatHost);
+        if (activeChatHost && !options.isLegacyTheiaChat) {
+            this.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
+        }
+        try {
+            if (options.isLegacyTheiaChat) {
+                await this.host.submitBackgroundAgentTask(project, draft, {
+                    openConversation: true,
+                    forceVps: true,
+                    selectedAgentId: QAAP_PRIMARY_AGENT_ID,
+                    modeId,
+                    variables,
+                    autoApprove,
+                    approvalPolicyId: reconcileAgentApprovalPolicyId(
+                        this.host.transcriptComposerApprovalPolicyId,
+                        summary.cwd,
+                    ),
+                    imagePreviews,
+                });
+            } else {
+                await this.host.submitTranscriptViaBackendConversation(project, summary, draft, {
+                    selectedAgentId,
+                    modeId,
+                    variables,
+                    autoApprove,
+                    approvalPolicyId: reconcileAgentApprovalPolicyId(
+                        this.host.transcriptComposerApprovalPolicyId,
+                        summary.cwd,
+                    ),
+                    agentModel: this.host.transcriptComposerAgentModel,
+                    imagePreviews,
+                });
+            }
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail
+            ));
+        } finally {
+            this.remountTranscriptStickyComposer();
         }
     }
 

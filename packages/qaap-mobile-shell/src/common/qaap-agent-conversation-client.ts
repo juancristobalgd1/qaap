@@ -16,6 +16,7 @@ import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encodin
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { resolveTranscriptEffectiveStatus } from './qaap-transcript-turn-status';
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
+import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -118,6 +119,8 @@ export interface QaapAgentMessageDTO {
     readonly createdAt: number;
     readonly taskId?: string;
     readonly error?: string;
+    /** Client-only attachment previews for optimistic pending-user rows (never sent to VPS). */
+    readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
 }
 
 /** A per-turn working-tree snapshot (Timeline / rollback). Mirrors the backend checkpoint. */

@@ -28,6 +28,7 @@ import {
     type QaapAgentToolApprovalRules,
 } from '../common/qaap-agent-tool-approval-rules';
 import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
+import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -72,6 +73,7 @@ export interface MobileProjectsTranscriptSubmitHost {
         summary: QaapAgentConversationSummaryDTO,
         outbound: string,
         agentId?: string,
+        imagePreviews?: readonly QaapTranscriptUserImagePreview[],
     ): void;
     expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
     applyComposerAttachmentsToDraft?: (
@@ -125,6 +127,7 @@ export class MobileProjectsTranscriptSubmitUi {
     protected renderInstantSubmitOptimistic(
         summary: QaapAgentConversationSummaryDTO,
         pendingUserMessage: QaapAgentConversationDTO['messages'][number],
+        imagePreviews?: readonly QaapTranscriptUserImagePreview[],
     ): void {
         const cached = this.host.transcriptLastConv;
         const chatHost = this.host.resolveActiveTranscriptChatHost();
@@ -141,10 +144,13 @@ export class MobileProjectsTranscriptSubmitUi {
             updatedAt: Date.now(),
             messages: [],
         };
+        const pending = imagePreviews?.length
+            ? { ...pendingUserMessage, optimisticImagePreviews: imagePreviews }
+            : pendingUserMessage;
         this.renderTranscriptSubmitMessages(chatHost, {
             ...baseConv,
             status: 'streaming',
-            messages: appendOptimisticPendingUserMessage(baseConv.messages, pendingUserMessage),
+            messages: appendOptimisticPendingUserMessage(baseConv.messages, pending),
         }, summary);
     }
 
@@ -162,6 +168,7 @@ export class MobileProjectsTranscriptSubmitUi {
             variables?: AIVariableResolutionRequest[];
             widget?: AIChatInputWidget;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            imagePreviews?: readonly QaapTranscriptUserImagePreview[];
         } = {},
     ): Promise<void> {
         if (this.submitInFlightByConversationId.has(summary.id)) {
@@ -189,6 +196,7 @@ export class MobileProjectsTranscriptSubmitUi {
             variables?: AIVariableResolutionRequest[];
             widget?: AIChatInputWidget;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            imagePreviews?: readonly QaapTranscriptUserImagePreview[];
         } = {},
     ): Promise<void> {
         if (this.host.transcriptHeaderUi.isPendingNewChatSummary(summary)) {
@@ -200,7 +208,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 role: 'user',
                 content,
                 createdAt: Date.now(),
-            });
+            }, options.imagePreviews);
             const { summary: created, outbound } = await this.host.createProjectChatSession(project, summary.cwd, content, {
                 selectedAgentId: options.selectedAgentId,
                 modeId: options.modeId,
@@ -209,7 +217,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 variables: options.variables,
                 agentModel: options.agentModel ?? this.resolveTranscriptSubmitAgentModel(pendingAgent, summary),
             });
-            this.host.seedTranscriptOptimisticSubmit(created, outbound, pendingAgent);
+            this.host.seedTranscriptOptimisticSubmit(created, outbound, pendingAgent, options.imagePreviews);
             this.host.transcriptOpenSummaryId = created.id;
             this.host.transcriptOpenSummary = created;
             this.host.transcriptComposerSummary = created;
@@ -246,10 +254,11 @@ export class MobileProjectsTranscriptSubmitUi {
             role: 'user' as const,
             content: outbound,
             createdAt: Date.now(),
+            ...(options.imagePreviews?.length ? { optimisticImagePreviews: options.imagePreviews } : {}),
         };
         // Zero perceived latency: paint the user bubble + activity skeleton from the cached
         // conversation before the GET/POST round-trips; the server render below reconciles.
-        this.renderInstantSubmitOptimistic(summary, pendingUserMessage);
+        this.renderInstantSubmitOptimistic(summary, pendingUserMessage, options.imagePreviews);
         let base = await getConversation(summary.id);
         if (base.status === 'streaming' && isConversationTurnVisuallySettled(base)) {
             await cancelConversation(summary.id);

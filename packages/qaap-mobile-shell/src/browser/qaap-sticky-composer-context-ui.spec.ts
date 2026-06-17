@@ -12,6 +12,7 @@ import {
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
 import {
+    collectComposerImagePreviews,
     renderStickyComposerContextStrip,
     resolveStickyComposerContextChip,
     resolveStickyComposerContextEntry,
@@ -164,6 +165,31 @@ describe('qaap-sticky-composer-context-ui', () => {
         const fromEntry = resolveStickyComposerContextEntry(entry);
         const fromRequest = resolveStickyComposerContextChip(request);
         expect(fromEntry).to.deep.equal(fromRequest);
+    });
+
+    it('collectComposerImagePreviews returns preview metadata for image attachments', async () => {
+        const request = ImageContextVariable.createRequest({
+            name: 'shot.png',
+            mimeType: 'image/png',
+            data: btoa('ok'),
+        });
+        const entry: StickyComposerContextEntry = {
+            id: 'img-1',
+            request,
+            localPreviewSrc: 'blob:local-preview',
+        };
+        expect(await collectComposerImagePreviews([entry])).to.deep.equal([
+            { src: 'data:image/png;base64,b2s=', fileName: 'shot.png' },
+        ]);
+    });
+
+    it('collectComposerImagePreviews resolves path-based workspace SVG previews on submit', async () => {
+        const request = ImageContextVariable.createPathBasedRequest('assets/logo.svg', 'logo.svg');
+        const entry: StickyComposerContextEntry = { id: 'svg-1', request };
+        const resolvePreview = async (): Promise<string> => 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=';
+        expect(await collectComposerImagePreviews([entry], resolvePreview)).to.deep.equal([
+            { src: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=', fileName: 'logo.svg' },
+        ]);
     });
 
     describe('renderStickyComposerContextStrip', () => {

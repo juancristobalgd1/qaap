@@ -14,6 +14,43 @@ import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-va
 const ATTACHMENT_PREAMBLE_HEADER = 'The user attached the following context with this message. Use it to answer; do not claim nothing was provided.';
 const ATTACHMENT_SECTION_SEPARATOR = '\n\n---\n\n';
 
+const IMAGE_CONTEXT_HEADER_PATTERN = /^### imageContext:\s*(.+)$/gm;
+const WORKSPACE_IMAGE_ATTACHED_PATTERN = /^Workspace image attached:\s*([^\s(]+)/gm;
+
+export function extractComposerAttachmentImagePaths(content: string): string[] {
+    const paths = new Set<string>();
+    for (const match of content.matchAll(IMAGE_CONTEXT_HEADER_PATTERN)) {
+        const path = match[1]?.trim();
+        if (path) {
+            paths.add(path);
+        }
+    }
+    for (const match of content.matchAll(WORKSPACE_IMAGE_ATTACHED_PATTERN)) {
+        const path = match[1]?.trim();
+        if (path) {
+            paths.add(path);
+        }
+    }
+    return [...paths];
+}
+
+/** Returns only the typed user draft, omitting composer attachment preamble blocks. */
+export function stripComposerAttachmentPreamble(content: string): string {
+    if (!content.includes(ATTACHMENT_PREAMBLE_HEADER)
+        && extractComposerAttachmentImagePaths(content).length === 0) {
+        return content;
+    }
+    const separatorIndex = content.lastIndexOf(ATTACHMENT_SECTION_SEPARATOR);
+    if (separatorIndex >= 0) {
+        return content.slice(separatorIndex + ATTACHMENT_SECTION_SEPARATOR.length).trim();
+    }
+    if (content.includes(ATTACHMENT_PREAMBLE_HEADER)
+        || extractComposerAttachmentImagePaths(content).length > 0) {
+        return '';
+    }
+    return content;
+}
+
 /** Meta variables that summarize other context — never inline as attachments. */
 const META_CONTEXT_VARIABLE_NAMES = new Set(['contextSummary', 'contextDetails']);
 

@@ -6,6 +6,7 @@
 
 import { AIVariableResolutionRequest } from '@theia/ai-core';
 import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
+import { resolveImageAttachmentMimeType } from './qaap-sticky-composer-attachment-utils';
 
 export function blobToBase64(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -21,9 +22,10 @@ export function blobToBase64(blob: Blob): Promise<string> {
 
 export async function createImageContextFromDeviceFile(file: File): Promise<AIVariableResolutionRequest> {
     const base64Data = await blobToBase64(file);
+    const fileName = file.name || `image-${Date.now()}.png`;
     return ImageContextVariable.createRequest({
         data: base64Data,
-        name: file.name || `image-${Date.now()}.png`,
-        mimeType: file.type || 'application/octet-stream',
+        name: fileName,
+        mimeType: resolveImageAttachmentMimeType(fileName, file.type),
     });
 }

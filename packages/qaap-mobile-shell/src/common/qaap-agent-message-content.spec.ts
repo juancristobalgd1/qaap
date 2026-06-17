@@ -4,7 +4,15 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { normalizeAgentMessageContentForDisplay, resolveMessagePreviewText } from './qaap-agent-message-content';
+import {
+    normalizeAgentMessageContentForDisplay,
+    resolveMessagePreviewText,
+    resolveOptimisticPendingUserDisplayText,
+    resolveTranscriptUserMessageView,
+} from './qaap-agent-message-content';
+import { applyResolvedAttachmentsToPrompt } from './qaap-composer-attachment-prompt';
+import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
+import type { ResolvedAIContextVariable } from '@theia/ai-core';
 
 describe('normalizeAgentMessageContentForDisplay', () => {
     it('extracts text from Responses-style user messages', () => {
@@ -86,5 +94,73 @@ describe('resolveMessagePreviewText', () => {
         expect(resolveMessagePreviewText({
             segments: [{ type: 'thinking', content: 'plan' }],
         })).to.equal('');
+    });
+});
+
+describe('resolveOptimisticPendingUserDisplayText', () => {
+    const imageResolved: ResolvedAIContextVariable = {
+        ...ImageContextVariable.createRequest({
+            wsRelativePath: 'assets/logo.png',
+            name: 'logo.png',
+            data: 'aGVsbG8=',
+            mimeType: 'image/png',
+        }),
+        value: 'assets/logo.png',
+        contextValue: 'assets/logo.png',
+    };
+
+    it('shows only the typed draft when attachment preamble is present', () => {
+        const content = applyResolvedAttachmentsToPrompt('Describe this screenshot', [imageResolved]);
+        expect(resolveOptimisticPendingUserDisplayText({
+            id: 'pending-user-1',
+            optimisticImagePreviews: [{ src: 'data:image/png;base64,eA==', fileName: 'logo.png' }],
+            content,
+        })).to.equal('Describe this screenshot');
+    });
+
+    it('returns empty text for image-only optimistic submits', () => {
+        const content = applyResolvedAttachmentsToPrompt('', [imageResolved]);
+        expect(resolveOptimisticPendingUserDisplayText({
+            id: 'pending-user-1',
+            optimisticImagePreviews: [{ src: 'data:image/png;base64,eA==', fileName: 'logo.png' }],
+            content,
+        })).to.equal('');
+    });
+});
+
+describe('resolveTranscriptUserMessageView', () => {
+    const imageResolved: ResolvedAIContextVariable = {
+        ...ImageContextVariable.createRequest({
+            wsRelativePath: 'huggingface-color.svg',
+            name: 'huggingface-color.svg',
+            data: 'aGVsbG8=',
+            mimeType: 'image/svg+xml',
+        }),
+        value: 'huggingface-color.svg',
+        contextValue: 'huggingface-color.svg',
+    };
+
+    it('parses persisted attachment preamble into preview cards and typed draft', () => {
+        const content = applyResolvedAttachmentsToPrompt('qwqq', [imageResolved]);
+        expect(resolveTranscriptUserMessageView({ content })).to.deep.equal({
+            displayText: 'qwqq',
+            imagePreviews: [{
+                src: '',
+                fileName: 'huggingface-color.svg',
+                wsRelativePath: 'huggingface-color.svg',
+            }],
+        });
+    });
+
+    it('returns image-only view when the persisted row has no typed draft', () => {
+        const content = applyResolvedAttachmentsToPrompt('', [imageResolved]);
+        expect(resolveTranscriptUserMessageView({ content })).to.deep.equal({
+            displayText: '',
+            imagePreviews: [{
+                src: '',
+                fileName: 'huggingface-color.svg',
+                wsRelativePath: 'huggingface-color.svg',
+            }],
+        });
     });
 });

@@ -6,6 +6,7 @@
 import type {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
+    QaapTranscriptUserImagePreview,
 } from '../common/qaap-transcript-agent-types';
 import type { MobileProjectEntry } from '../common/qaap-transcript-project-entry';
 
@@ -32,5 +33,6 @@ export interface WorkHubTranscriptBridge {
         summary: QaapAgentConversationSummaryDTO,
         draft: string,
         selectedAgentId: string,
+        imagePreviews?: readonly QaapTranscriptUserImagePreview[],
     ): void;
 }

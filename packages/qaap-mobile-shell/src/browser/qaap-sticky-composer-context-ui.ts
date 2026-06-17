@@ -14,6 +14,7 @@ import {
     isPendingComposerContextArg,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
+import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 
 export type StickyComposerAttachmentKind = 'image' | 'file' | 'context';
@@ -61,6 +62,28 @@ export function resolveStickyComposerContextEntry(
         view.pending = true;
     }
     return view;
+}
+
+/** Snapshot attachment previews from composer context before submit clears entries. */
+export async function collectComposerImagePreviews(
+    entries: readonly StickyComposerContextEntry[],
+    resolvePreview?: (item: AIVariableResolutionRequest) => Promise<string | undefined>,
+): Promise<QaapTranscriptUserImagePreview[]> {
+    const previews: QaapTranscriptUserImagePreview[] = [];
+    for (const entry of entries) {
+        const view = resolveStickyComposerContextEntry(entry);
+        if (view.attachmentKind !== 'image') {
+            continue;
+        }
+        let src = view.previewSrc;
+        if (!src && resolvePreview) {
+            src = await resolvePreview(entry.request);
+        }
+        if (src) {
+            previews.push({ src, fileName: view.title });
+        }
+    }
+    return previews;
 }
 
 export function resolveStickyComposerContextChip(

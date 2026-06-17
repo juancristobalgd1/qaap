@@ -133,6 +133,14 @@ export interface QaapAgentMessageDTO {
     readonly createdAt: number;
     readonly taskId?: string;
     readonly error?: string;
+    /** Client-only attachment previews for optimistic pending-user rows (never sent to VPS). */
+    readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
+}
+
+export interface QaapTranscriptUserImagePreview {
+    readonly src: string;
+    readonly fileName: string;
+    readonly wsRelativePath?: string;
 }
 
 export interface QaapConversationCheckpointDTO {

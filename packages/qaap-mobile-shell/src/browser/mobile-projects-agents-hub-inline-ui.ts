@@ -15,6 +15,7 @@ import {
     QAAP_AGENTS_HUB_LANDING_ENABLED,
 } from '../common/qaap-agents-hub-landing';
 import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
+import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
@@ -385,6 +386,7 @@ export class MobileProjectsAgentsHubInlineUi {
         summary: QaapAgentConversationSummaryDTO,
         outbound: string,
         agentId?: string,
+        imagePreviews?: readonly QaapTranscriptUserImagePreview[],
     ): QaapAgentConversationDTO {
         const trimmed = outbound.trim();
         const cachedMessages = this.host.transcriptLastConv?.id === summary.id
@@ -395,6 +397,7 @@ export class MobileProjectsAgentsHubInlineUi {
             role: 'user' as const,
             content: trimmed,
             createdAt: Date.now(),
+            ...(imagePreviews?.length ? { optimisticImagePreviews: imagePreviews } : {}),
         };
         return {
             id: summary.id,
@@ -419,9 +422,10 @@ export class MobileProjectsAgentsHubInlineUi {
         summary: QaapAgentConversationSummaryDTO,
         outbound: string,
         agentId?: string,
+        imagePreviews?: readonly QaapTranscriptUserImagePreview[],
     ): void {
         this.seedTranscriptOptimisticConversation(
-            this.buildOptimisticSubmitConversation(summary, outbound, agentId),
+            this.buildOptimisticSubmitConversation(summary, outbound, agentId, imagePreviews),
         );
     }
 
@@ -430,12 +434,13 @@ export class MobileProjectsAgentsHubInlineUi {
         summary: QaapAgentConversationSummaryDTO,
         draft: string,
         agentId: string,
+        imagePreviews?: readonly QaapTranscriptUserImagePreview[],
     ): void {
         const outbound = draft.trim();
-        if (!outbound) {
+        if (!outbound && !imagePreviews?.length) {
             return;
         }
-        const conv = this.buildOptimisticSubmitConversation(summary, outbound, agentId);
+        const conv = this.buildOptimisticSubmitConversation(summary, outbound, agentId, imagePreviews);
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
         this.seedTranscriptOptimisticConversation(conv);
     }

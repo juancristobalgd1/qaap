@@ -6,7 +6,9 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { conversationToSummary, rewindConversationToMessage, type QaapAgentConversationDTO, type QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
-import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
+import { resolveTranscriptUserMessageView } from '../common/qaap-agent-message-content';
+import { isSvgImagePreviewFileName, type QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
+import { resolveTranscriptImagePreviewSrc } from './qaap-transcript-user-attachment-preview-ui';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
@@ -35,11 +37,25 @@ export class MobileProjectsTranscriptMessagesUserUi {
 
         const row = document.createElement('div');
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-user';
+        const messageView = resolveTranscriptUserMessageView(msg);
+        const imagePreviews = messageView.imagePreviews;
+        if (imagePreviews.length) {
+            wrap.append(this.createTranscriptUserImagePreviews(imagePreviews));
+            void this.hydrateTranscriptUserImagePreviews(wrap, imagePreviews);
+        }
         const contentEl = document.createElement('div');
         contentEl.className = 'theia-mobile-agent-transcript-content';
-        const displayContent = resolveMessagePreviewText(msg);
-        this.toolUi.renderTranscriptRichContent(contentEl, displayContent, { defer, sync: !defer });
-        row.append(contentEl);
+        const displayContent = messageView.displayText;
+        if (displayContent.trim()) {
+            this.toolUi.renderTranscriptRichContent(contentEl, displayContent, { defer, sync: !defer });
+            row.append(contentEl);
+        } else if (!imagePreviews.length) {
+            const fallback = resolveTranscriptUserMessageView(msg).displayText;
+            if (fallback.trim()) {
+                this.toolUi.renderTranscriptRichContent(contentEl, fallback, { defer, sync: !defer });
+                row.append(contentEl);
+            }
+        }
         wrap.append(row);
 
         const plainText = this.contentUi.cleanTranscriptDisplayText(displayContent).trim();
@@ -56,6 +72,80 @@ export class MobileProjectsTranscriptMessagesUserUi {
             onUndo: () => { void this.undoTranscriptUserMessage(msg, conv); },
         }));
         return wrap;
+    }
+
+    createTranscriptUserImagePreviews(previews: readonly QaapTranscriptUserImagePreview[]): HTMLElement {
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-agent-transcript-user-attachments';
+        for (const preview of previews) {
+            const card = document.createElement('div');
+            card.className = 'theia-mobile-agent-transcript-user-attachment';
+
+            const thumbHost = document.createElement('div');
+            thumbHost.className = 'theia-mobile-agent-transcript-user-attachment-thumb';
+            const img = document.createElement('img');
+            img.className = 'theia-mobile-agent-transcript-user-attachment-image';
+            img.alt = preview.fileName;
+            img.loading = 'eager';
+            img.decoding = 'async';
+            if (preview.src) {
+                img.src = preview.src;
+            } else {
+                thumbHost.classList.add('theia-mod-loading');
+            }
+            thumbHost.append(img);
+
+            const body = document.createElement('div');
+            body.className = 'theia-mobile-agent-transcript-user-attachment-body';
+            const title = document.createElement('div');
+            title.className = 'theia-mobile-agent-transcript-user-attachment-title';
+            title.textContent = preview.fileName;
+            const kind = document.createElement('div');
+            kind.className = 'theia-mobile-agent-transcript-user-attachment-kind';
+            kind.textContent = isSvgImagePreviewFileName(preview.fileName)
+                ? nls.localizeByDefault('File')
+                : nls.localize('qaap/mobileProjects/stickyComposerAttachmentImage', 'Image');
+            body.append(title, kind);
+
+            card.append(thumbHost, body);
+            list.append(card);
+        }
+        return list;
+    }
+
+    protected async hydrateTranscriptUserImagePreviews(
+        wrap: HTMLElement,
+        previews: readonly QaapTranscriptUserImagePreview[],
+    ): Promise<void> {
+        const resolvePreview = this.host.resolveAttachmentPreview;
+        if (!resolvePreview) {
+            return;
+        }
+        const cards = [...wrap.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-user-attachment')];
+        await Promise.all(previews.map(async (preview, index) => {
+            if (preview.src) {
+                return;
+            }
+            const card = cards[index];
+            if (!card?.isConnected) {
+                return;
+            }
+            const thumbHost = card.querySelector<HTMLElement>('.theia-mobile-agent-transcript-user-attachment-thumb');
+            const img = card.querySelector<HTMLImageElement>('.theia-mobile-agent-transcript-user-attachment-image');
+            if (!thumbHost || !img) {
+                return;
+            }
+            const src = await resolveTranscriptImagePreviewSrc(preview, resolvePreview);
+            if (!card.isConnected) {
+                return;
+            }
+            thumbHost.classList.remove('theia-mod-loading');
+            if (src) {
+                img.src = src;
+            } else {
+                thumbHost.classList.add('theia-mod-missing');
+            }
+        }));
     }
 
     createTranscriptUserMessageActions(options: {
@@ -129,7 +219,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
         if (!summary || this.host.transcriptOpenSummaryId !== conv.id) {
             return;
         }
-        const plainText = this.contentUi.cleanTranscriptDisplayText(resolveMessagePreviewText(msg)).trim();
+        const plainText = this.contentUi.cleanTranscriptDisplayText(resolveTranscriptUserMessageView(msg).displayText).trim();
         if (!plainText) {
             return;
         }

@@ -13,6 +13,8 @@ import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-va
 import {
     applyResolvedAttachmentsToPrompt,
     buildResolvedComposerAttachmentBlock,
+    extractComposerAttachmentImagePaths,
+    stripComposerAttachmentPreamble,
 } from './qaap-composer-attachment-prompt';
 
 const FILE_VARIABLE_STUB: AIVariable = {
@@ -66,6 +68,16 @@ describe('qaap-composer-attachment-prompt', () => {
         expect(outbound).to.match(/^The user attached the following context/);
         expect(outbound.endsWith('Fix the bug')).to.equal(true);
         expect(outbound).to.include('---');
+    });
+
+    it('extractComposerAttachmentImagePaths reads imageContext headers and workspace paths', () => {
+        const outbound = applyResolvedAttachmentsToPrompt('Only svg', [IMAGE_RESOLVED]);
+        expect(extractComposerAttachmentImagePaths(outbound)).to.deep.equal(['assets/logo.png']);
+    });
+
+    it('stripComposerAttachmentPreamble keeps only the typed draft', () => {
+        const outbound = applyResolvedAttachmentsToPrompt('qwqq', [IMAGE_RESOLVED]);
+        expect(stripComposerAttachmentPreamble(outbound)).to.equal('qwqq');
     });
 
     it('applyResolvedAttachmentsToPrompt returns the draft unchanged when there is no attachment block', () => {

@@ -207,7 +207,7 @@ export function attachDeviceFilesOptimistic(
 }
 
 export async function attachDeviceImagesFromPicker(): Promise<AIVariableResolutionRequest[]> {
-    const files = await pickFilesFromDevice({ accept: 'image/*', multiple: true });
+    const files = await pickFilesFromDevice({ accept: 'image/*,.svg,image/svg+xml', multiple: true });
     if (files.length === 0) {
         return [];
     }

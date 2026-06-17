@@ -526,7 +526,7 @@ async function resolveDeviceAttachSelection(
 ): Promise<AIVariableResolutionRequest[]> {
     try {
         if (selection.kind === 'device-images') {
-            const files = await pickFilesFromDevice({ accept: 'image/*', multiple: true });
+            const files = await pickFilesFromDevice({ accept: 'image/*,.svg,image/svg+xml', multiple: true });
             if (files.length === 0) {
                 return [];
             }
