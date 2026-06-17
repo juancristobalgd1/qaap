@@ -4,9 +4,20 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { mergeSegmentTraceEvents } from './qaap-transcript-trace-model';
+import { mergeSegmentTraceEvents, segmentsToTraceEvents } from './qaap-transcript-trace-model';
 
 describe('qaap-transcript-trace-model', () => {
+    it('segmentsToTraceEvents marks the streaming tail as running', () => {
+        const events = segmentsToTraceEvents([
+            { type: 'thinking', content: 'plan' },
+            { type: 'tool', toolUseId: 't1', name: 'Read', args: '{}', finished: false },
+            { type: 'text', content: 'Answer' },
+        ], { streaming: true });
+        expect(events[0]).to.deep.include({ type: 'thought', status: 'running' });
+        expect(events[1]).to.deep.include({ type: 'tool_call', status: 'running' });
+        expect(events[2]).to.deep.include({ type: 'assistant_text', status: 'streaming' });
+    });
+
     it('mergeSegmentTraceEvents keeps lifecycle rows after segment sync', () => {
         const merged = mergeSegmentTraceEvents([
             {

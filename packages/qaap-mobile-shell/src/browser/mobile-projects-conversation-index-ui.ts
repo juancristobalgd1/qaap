@@ -31,6 +31,11 @@ export class MobileProjectsConversationIndexUi {
 
     constructor(protected readonly host: MobileProjectsConversationIndexHost) { }
 
+    /** Latest summary row for a conversation id (VPS or Theia-backed). */
+    findSummaryById(id: string): QaapAgentConversationSummaryDTO | undefined {
+        return this.host.conversations?.findSummaryById(id);
+    }
+
     activeInfoForProject(project: MobileProjectEntry): ReturnType<MobileProjectsActiveTasks['getForCwd']> {
         const cwd = this.host.projectsService.getProjectCwd(project);
         return cwd && this.host.activeTasks ? this.host.activeTasks.getForCwd(cwd) : undefined;

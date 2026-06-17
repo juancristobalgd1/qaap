@@ -15,6 +15,11 @@ import {
 import { detectAgentFailureKind, localizeAgentFailureMessage } from './qaap-agent-failure-message';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { QaapQaiqStreamAccumulator } from './qaap-qaiq-stream';
+import {
+    mergeStreamTraceEvents,
+    segmentsToTraceEvents,
+    type QaapTranscriptTraceEventDTO,
+} from './qaap-transcript-trace-model';
 
 export {
     isAntigravityAgent,
@@ -27,6 +32,21 @@ export interface QaapAgentStreamAccumulator {
     push(chunk: string): readonly QaapAgentMessageSegment[];
     getSegments(): readonly QaapAgentMessageSegment[];
     getDisplayText(): string;
+    getTraceEvents(): readonly QaapTranscriptTraceEventDTO[];
+}
+
+/** Live CLI stream → AG-UI trace rows with running/streaming tail states. */
+export function getAccumulatorTraceEvents(
+    accumulator: Pick<QaapAgentStreamAccumulator, 'getSegments'>,
+): readonly QaapTranscriptTraceEventDTO[] {
+    return segmentsToTraceEvents([...accumulator.getSegments()], { streaming: true });
+}
+
+export function mergeAccumulatorTraceEvents(
+    existing: readonly QaapTranscriptTraceEventDTO[] | undefined,
+    accumulator: Pick<QaapAgentStreamAccumulator, 'getTraceEvents'>,
+): QaapTranscriptTraceEventDTO[] {
+    return mergeStreamTraceEvents(existing, accumulator.getTraceEvents());
 }
 
 export function createAgentStreamAccumulator(agentId: string | undefined): QaapAgentStreamAccumulator | undefined {

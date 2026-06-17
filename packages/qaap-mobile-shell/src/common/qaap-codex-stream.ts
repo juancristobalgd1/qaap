@@ -5,6 +5,7 @@
 
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { normalizeQaiqToolName } from './qaap-qaiq-stream';
+import { segmentsToTraceEvents, type QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 
 interface CodexStreamItem {
     readonly id?: string;
@@ -79,6 +80,10 @@ export class QaapCodexStreamAccumulator {
             }
         }
         return parts.join('\n\n');
+    }
+
+    getTraceEvents(): readonly QaapTranscriptTraceEventDTO[] {
+        return segmentsToTraceEvents(this.segments, { streaming: true });
     }
 
     protected consumeLine(line: string): void {

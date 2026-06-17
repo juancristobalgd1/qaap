@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
-import { parseAgentLogForTranscript } from './qaap-cli-transcript-stream';
 
 export type QaapTranscriptTraceEventDTO =
     | {
@@ -61,15 +60,8 @@ export interface QaapTranscriptTrace {
     readonly segments: readonly QaapAgentMessageSegmentDTO[];
 }
 
-export interface ResolveQaapTranscriptTraceOptions {
-    readonly agentId?: string;
-    /** Temporary compatibility for old persisted logs. New providers should send traceEvents. */
-    readonly allowLegacyContentParse?: boolean;
-}
-
 export function resolveQaapTranscriptTrace(
     message: QaapAgentMessageDTO,
-    options: ResolveQaapTranscriptTraceOptions = {},
 ): QaapTranscriptTrace {
     const traceEvents = message.traceEvents ?? [];
     if (traceEvents.length > 0) {
@@ -82,16 +74,6 @@ export function resolveQaapTranscriptTrace(
             events: segmentsToTraceEvents(message.segments),
             segments: message.segments,
         };
-    }
-    if (options.allowLegacyContentParse && message.role === 'agent' && message.content?.trim()) {
-        const parsed = parseAgentLogForTranscript(options.agentId, message.content);
-        if (parsed.segments.length > 0) {
-            return {
-                source: 'legacy-content',
-                events: segmentsToTraceEvents(parsed.segments),
-                segments: parsed.segments,
-            };
-        }
     }
     return { source: 'empty', events: [], segments: [] };
 }
@@ -119,32 +101,57 @@ const LIFECYCLE_TRACE_EVENT_TYPES = new Set<QaapTranscriptTraceEventDTO['type']>
 ]);
 
 /** Preserve AG-UI lifecycle rows while syncing segment-derived tool/thought/text events. */
+export function mergeStreamTraceEvents(
+    existing: readonly QaapTranscriptTraceEventDTO[] | undefined,
+    incoming: readonly QaapTranscriptTraceEventDTO[],
+): QaapTranscriptTraceEventDTO[] {
+    const lifecycle = (existing ?? []).filter(event => LIFECYCLE_TRACE_EVENT_TYPES.has(event.type));
+    return [...incoming, ...lifecycle];
+}
+
 export function mergeSegmentTraceEvents(
     existing: readonly QaapTranscriptTraceEventDTO[] | undefined,
     segments: readonly QaapAgentMessageSegmentDTO[],
+    options?: SegmentsToTraceEventsOptions,
 ): QaapTranscriptTraceEventDTO[] {
-    const lifecycle = (existing ?? []).filter(event => LIFECYCLE_TRACE_EVENT_TYPES.has(event.type));
-    return [...segmentsToTraceEvents(segments), ...lifecycle];
+    return mergeStreamTraceEvents(existing, segmentsToTraceEvents(segments, options));
+}
+
+export interface SegmentsToTraceEventsOptions {
+    /** When true, the tail thought/text rows stay in running/streaming state during SSE. */
+    readonly streaming?: boolean;
 }
 
 export function segmentsToTraceEvents(
     segments: readonly QaapAgentMessageSegmentDTO[],
+    options: SegmentsToTraceEventsOptions = {},
 ): QaapTranscriptTraceEventDTO[] {
+    const streaming = options.streaming === true;
+    const lastThinkingIndex = streaming
+        ? segments.reduce((last, segment, index) => segment.type === 'thinking' ? index : last, -1)
+        : -1;
+    const lastTextIndex = streaming
+        ? segments.reduce((last, segment, index) => segment.type === 'text' ? index : last, -1)
+        : -1;
+    let thoughtOrdinal = 0;
+    let textOrdinal = 0;
     return segments.map((segment, index): QaapTranscriptTraceEventDTO => {
         if (segment.type === 'thinking') {
+            const id = `thought-${thoughtOrdinal++}`;
             return {
                 type: 'thought',
-                id: `thought-${index}`,
+                id,
                 content: segment.content,
-                status: 'completed',
+                status: streaming && index === lastThinkingIndex ? 'running' : 'completed',
             };
         }
         if (segment.type === 'text') {
+            const id = `text-${textOrdinal++}`;
             return {
                 type: 'assistant_text',
-                id: `text-${index}`,
+                id,
                 content: segment.content,
-                status: 'completed',
+                status: streaming && index === lastTextIndex ? 'streaming' : 'completed',
             };
         }
         const failed = !!segment.result && /\b(error|failed|failure|exit\s+[1-9]\d*)\b/i.test(segment.result);

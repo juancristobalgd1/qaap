@@ -170,7 +170,7 @@ export class MobileProjectsAgentsHubInlineUi {
         const project = this.resolveAgentsHubShellProject();
         const summary = this.host.transcriptOpenSummary;
         if (project && summary && this.host.agentsHubInlineActive) {
-            const latest = this.host.conversationIndexUi.conversationsForProject(project).find(c => c.id === summary.id) ?? summary;
+            const latest = this.host.conversationIndexUi.findSummaryById(summary.id) ?? summary;
             const headerChanged = latest.status !== summary.status
                 || latest.title !== summary.title
                 || !!latest.priority !== !!summary.priority;

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { type ClaudeStreamUsageLike, type QaapAgentContextUsage, usageFromClaudeStream } from './qaap-agent-context-usage';
+import { segmentsToTraceEvents, type QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 
 /** One renderable block in a QAIQ / Claude Code stream-json transcript. */
 export type QaapAgentMessageSegment =
@@ -123,6 +124,10 @@ export class QaapQaiqStreamAccumulator {
             }
         }
         return parts.join('\n\n');
+    }
+
+    getTraceEvents(): readonly QaapTranscriptTraceEventDTO[] {
+        return segmentsToTraceEvents(this.segments, { streaming: true });
     }
 
     protected consumeLine(line: string): void {

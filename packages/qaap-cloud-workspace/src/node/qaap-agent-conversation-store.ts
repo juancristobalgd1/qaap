@@ -98,6 +98,7 @@ import {
     appendTraceRunCancelledEvent,
     agentMessageHasStructuredTrace,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 
@@ -759,9 +760,11 @@ export class QaapAgentConversationStore {
         const existingAgentMessage = ref.agentMessageId
             ? conv.messages.find(message => message.id === ref.agentMessageId)
             : undefined;
-        const traceEvents = usesSegmentStream && segments?.length
-            ? mergeSegmentTraceEvents(existingAgentMessage?.traceEvents, segments)
-            : undefined;
+        const traceEvents = usesSegmentStream && stream
+            ? mergeAccumulatorTraceEvents(existingAgentMessage?.traceEvents, stream)
+            : usesSegmentStream && segments?.length
+                ? mergeSegmentTraceEvents(existingAgentMessage?.traceEvents, segments)
+                : undefined;
         let agentMessageId = ref.agentMessageId;
         let messages: QaapAgentMessage[];
         if (!agentMessageId) {
