@@ -19,6 +19,7 @@ import {
     transcriptTimelineTierClassName,
 } from '../common/qaap-transcript-timeline-tier';
 import { resolveTranscriptTimelineVisibilityPolicy } from '../common/qaap-transcript-timeline-visibility';
+import { resolveQaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
 import {
     markTranscriptTimelineGapExpanded,
     markTranscriptTimelineRevealAll,
@@ -620,12 +621,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const messageId = row.getAttribute(TRANSCRIPT_MESSAGE_ID_ATTR);
         if (messageId) {
             const message = conv.messages.find(entry => entry.id === messageId);
-            if (message?.segments?.length) {
-                return [...message.segments];
+            if (message) {
+                const segments = resolveQaapTranscriptTrace(message).segments;
+                if (segments.length) {
+                    return [...segments];
+                }
             }
         }
         const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
-        return lastAgent?.segments ? [...lastAgent.segments] : [];
+        return lastAgent ? [...resolveQaapTranscriptTrace(lastAgent).segments] : [];
     }
 
     protected syncTranscriptStreamingActivityLine(

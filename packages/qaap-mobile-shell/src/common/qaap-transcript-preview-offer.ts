@@ -5,6 +5,7 @@
 
 import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import { buildQaapDevPreviewUrl, parseQaapDevPreviewPort, resolveDevPreviewPublicOrigin } from './qaap-dev-preview';
+import { resolveQaapTranscriptTrace } from './qaap-transcript-trace-model';
 
 const DEV_SERVER_COMMAND_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\b(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev|remix\s+dev)\b|\bnpx\s+vite\b|\bnpx\s+next\b/i;
 const DEV_URL_IN_TEXT_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(?:\/[^\s`*)\]]*)?/i;
@@ -123,16 +124,25 @@ function extractBashCommand(args: string | undefined): string | undefined {
     }
 }
 
+/** Segments for the latest agent turn, preferring settled traceEvents when present. */
+function latestAgentTraceSegments(conv: QaapAgentConversationDTO): readonly QaapAgentMessageSegmentDTO[] {
+    const agentMessage = [...conv.messages].reverse().find(message => message.role === 'agent');
+    if (!agentMessage) {
+        return [];
+    }
+    return resolveQaapTranscriptTrace(agentMessage).segments;
+}
+
 /** True when the latest agent turn is running a long-lived dev-server shell command. */
 export function conversationHasActiveDevServerRun(conv: QaapAgentConversationDTO): boolean {
     if (conv.status !== 'streaming') {
         return false;
     }
-    const agentMessage = [...conv.messages].reverse().find(message => message.role === 'agent');
-    if (!agentMessage?.segments?.length) {
+    const segments = latestAgentTraceSegments(conv);
+    if (!segments.length) {
         return false;
     }
-    for (const segment of [...agentMessage.segments].reverse()) {
+    for (const segment of [...segments].reverse()) {
         if (segment.type !== 'tool' || segment.finished) {
             continue;
         }
@@ -156,11 +166,11 @@ export function conversationHasActiveShellRun(conv: QaapAgentConversationDTO): b
     if (conv.status !== 'streaming') {
         return false;
     }
-    const agentMessage = [...conv.messages].reverse().find(message => message.role === 'agent');
-    if (!agentMessage?.segments?.length) {
+    const segments = latestAgentTraceSegments(conv);
+    if (!segments.length) {
         return false;
     }
-    return agentMessage.segments.some(segment =>
+    return segments.some(segment =>
         segment.type === 'tool'
         && !segment.finished
         && isShellToolName(segment.name),

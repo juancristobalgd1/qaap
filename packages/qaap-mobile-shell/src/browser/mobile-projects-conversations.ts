@@ -36,6 +36,7 @@ import { normalizeAgentMessageContentForDisplay, resolveMessagePreviewText } fro
 import {
     type QaapConversationChangeEvent,
 } from '../common/qaap-conversation-change';
+import { backfillConversationTraceEvents } from '../common/qaap-transcript-trace-backfill';
 import { QaapThreadStore } from '../common/qaap-thread-store';
 import type { QaapThreadStoreUpsertResult } from '../common/qaap-thread-store';
 import { cwdMatchesProject, lookupByCwd, normalizeCwd } from './mobile-projects-active-tasks';
@@ -376,13 +377,14 @@ export class MobileProjectsConversations {
      * Emits `document_loaded` once per conversation id (not on every SSE tick).
      */
     cacheDocument(document: QaapAgentConversationDTO): boolean {
-        const isFirstLoad = !this.threadStore.getDocument(document.id);
-        this.threadStore.setDocument(document);
+        const normalized = backfillConversationTraceEvents(document).conversation;
+        const isFirstLoad = !this.threadStore.getDocument(normalized.id);
+        this.threadStore.setDocument(normalized);
         if (isFirstLoad) {
             this.emitConversationChange({
                 kind: 'document_loaded',
-                conversationId: document.id,
-                cwd: document.cwd,
+                conversationId: normalized.id,
+                cwd: normalized.cwd,
             });
         }
         return isFirstLoad;

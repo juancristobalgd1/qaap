@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
-import { hasActiveQaapTraceWork } from './qaap-transcript-trace-model';
+import { hasActiveQaapTraceWork, resolveQaapTranscriptTrace } from './qaap-transcript-trace-model';
 
 export function hasUnfinishedAgentWork(conv: QaapAgentConversationDTO): boolean {
     return conv.messages.some(message => message.role === 'agent' && hasUnfinishedAgentMessageWork(message));
@@ -37,14 +37,15 @@ export function isAgentMessageVisuallySettled(message: QaapAgentMessageDTO): boo
     if (message.role !== 'agent') {
         return false;
     }
-    if (message.segments?.length) {
+    const segments = resolveQaapTranscriptTrace(message).segments;
+    if (segments.length) {
         if (hasUnfinishedAgentMessageWork(message)) {
             return false;
         }
-        const hasFinishedTool = message.segments.some(
+        const hasFinishedTool = segments.some(
             segment => segment.type === 'tool' && segment.finished,
         );
-        const hasText = message.segments.some(
+        const hasText = segments.some(
             segment => segment.type === 'text' && !!segment.content?.trim(),
         );
         if (hasText || hasFinishedTool) {

@@ -99,6 +99,7 @@ import {
     agentMessageHasStructuredTrace,
     syncSettledTraceEventsOnMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+import { backfillConversationTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
 import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
@@ -195,7 +196,16 @@ export class QaapAgentConversationStore {
     }
 
     get(id: string): QaapAgentConversation | undefined {
-        return this.conversations.get(id);
+        const conv = this.conversations.get(id);
+        if (!conv) {
+            return undefined;
+        }
+        const { conversation, changed } = backfillConversationTraceEvents(conv);
+        if (changed) {
+            this.conversations.set(id, conversation);
+            this.schedulePersist();
+        }
+        return conversation;
     }
 
     /** Running turn task id for a conversation, if any. */
@@ -1625,11 +1635,18 @@ export class QaapAgentConversationStore {
         try {
             const raw = await fsp.readFile(INDEX_PATH, 'utf8');
             const stored = JSON.parse(raw) as QaapAgentConversation[];
+            let anyChanged = false;
             for (const conv of stored) {
                 const recovered: QaapAgentConversation = conv.status === 'streaming' ? { ...conv, status: 'idle' } : conv;
-                this.conversations.set(recovered.id, recovered);
+                const { conversation, changed } = backfillConversationTraceEvents(recovered);
+                this.conversations.set(conversation.id, conversation);
+                if (changed || recovered.status !== conv.status) {
+                    anyChanged = true;
+                }
             }
-            await this.persist();
+            if (anyChanged) {
+                await this.persist();
+            }
         } catch {
             /* no prior conversations */
         }
