@@ -274,8 +274,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             const chatModel = this.resolveTranscriptTheiaChatModel(summary);
             return chatModel ? { chatModel } : {};
         }
-        const cwd = summary.cwd;
-        const live = this.host.conversations?.getConversationsForCwd(cwd).find(c => c.id === summary.id) ?? summary;
+        const live = this.host.conversations?.findSummaryById(summary.id) ?? summary;
         if (this.host.transcriptLastConv?.id === summary.id) {
             const effectiveStatus = resolveTranscriptEffectiveStatus(this.host.transcriptLastConv);
             return {

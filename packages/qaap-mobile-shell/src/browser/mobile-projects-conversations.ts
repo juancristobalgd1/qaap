@@ -96,7 +96,6 @@ type ConversationServerEvent =
 @injectable()
 export class MobileProjectsConversations {
 
-    protected readonly byCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     /** Canonical per-thread summaries + lazy documents (AG-UI MessagesSnapshot path). */
     readonly threadStore = new QaapThreadStore();
     /** E2E perf probe: survives server snapshot clears in {@link applyConversationGroups}. */
@@ -228,7 +227,7 @@ export class MobileProjectsConversations {
             : [];
         return this.mergeCwdConversationLists(
             lookupByCwd(this.theiaByCwd, cwd) ?? [],
-            lookupByCwd(this.byCwd, cwd) ?? [],
+            this.threadStore.getSummariesForCwd(cwd),
             probe,
         );
     }
@@ -247,7 +246,7 @@ export class MobileProjectsConversations {
 
     /** True when any conversation in any project is currently streaming a turn. */
     getStreamingCountForCwd(cwd: string): number {
-        return this.getConversationsForCwd(cwd).reduce((n, c) => n + (c.status === 'streaming' ? 1 : 0), 0);
+        return this.threadStore.getSummariesForCwd(cwd).reduce((n, c) => n + (c.status === 'streaming' ? 1 : 0), 0);
     }
 
     /**
@@ -256,16 +255,7 @@ export class MobileProjectsConversations {
      * variants whose base equals {@link baseCwd} so they can be grouped under that repo in Chats.
      */
     getVariantsForBaseCwd(baseCwd: string): QaapAgentConversationSummaryDTO[] {
-        const normalized = normalizeCwd(baseCwd);
-        const variants: QaapAgentConversationSummaryDTO[] = [];
-        for (const [, conversations] of this.byCwd) {
-            for (const conversation of conversations) {
-                if (conversation.parallelBaseCwd && normalizeCwd(conversation.parallelBaseCwd) === normalized) {
-                    variants.push(conversation);
-                }
-            }
-        }
-        return sortConversations(variants);
+        return this.threadStore.getVariantsForBaseCwd(baseCwd);
     }
 
     /**
@@ -276,12 +266,7 @@ export class MobileProjectsConversations {
         readonly name: string;
         readonly github?: { readonly owner: string; readonly name: string };
     }): QaapAgentConversationSummaryDTO[] {
-        const merged: QaapAgentConversationSummaryDTO[] = [];
-        for (const [cwd, conversations] of this.getAllConversationBuckets()) {
-            if (cwdMatchesProject(cwd, project)) {
-                merged.push(...conversations);
-            }
-        }
+        const merged = this.threadStore.listAllSummaries().filter(summary => cwdMatchesProject(summary.cwd, project));
         return sortConversations(merged);
     }
 
@@ -401,13 +386,7 @@ export class MobileProjectsConversations {
 
     /** All VPS conversation summaries (newest first per cwd bucket). */
     listAllSummaries(): QaapAgentConversationSummaryDTO[] {
-        const byId = new Map<string, QaapAgentConversationSummaryDTO>();
-        for (const list of this.byCwd.values()) {
-            for (const summary of list) {
-                byId.set(summary.id, summary);
-            }
-        }
-        return sortConversations([...byId.values()]);
+        return this.threadStore.listAllSummaries();
     }
 
     /** Optimistic update after deleting a conversation before SSE/storage refresh catches up. */
@@ -429,7 +408,6 @@ export class MobileProjectsConversations {
             return;
         }
         this.threadStore.removeSummary(conversationId, cwd);
-        this.syncByCwdBucket(cwd);
         this.emitConversationChange({ kind: 'deleted', conversationId, cwd });
     }
 
@@ -446,17 +424,7 @@ export class MobileProjectsConversations {
         groups: ReadonlyArray<{ readonly cwd: string; readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO> }>,
     ): void {
         this.threadStore.applySummarySnapshot(groups);
-        this.rebuildByCwdFromThreadStore();
         this.emitConversationChange({ kind: 'snapshot' });
-    }
-
-    protected rebuildByCwdFromThreadStore(): void {
-        this.byCwd.clear();
-        for (const summary of this.threadStore.listAllSummaries()) {
-            const cwd = normalizeCwd(summary.cwd);
-            const list = this.threadStore.getSummariesForCwd(cwd);
-            this.byCwd.set(cwd, list);
-        }
     }
 
     protected emitConversationChange(event: QaapConversationChangeEvent): void {
@@ -471,16 +439,6 @@ export class MobileProjectsConversations {
     }
 
     protected lastConversationChange: QaapConversationChangeEvent | undefined;
-
-    protected syncByCwdBucket(cwd: string): void {
-        const normalized = normalizeCwd(cwd);
-        const list = this.threadStore.getSummariesForCwd(normalized);
-        if (list.length === 0) {
-            this.byCwd.delete(normalized);
-        } else {
-            this.byCwd.set(normalized, list);
-        }
-    }
 
     protected async cancelConversationLive(id: string): Promise<void> {
         if (this.socket?.readyState === WebSocket.OPEN) {
@@ -516,13 +474,7 @@ export class MobileProjectsConversations {
                     this.transportWasDisconnected = false;
                     this.onDidReconnectTransportEmitter.fire();
                 }
-                for (const list of this.byCwd.values()) {
-                    for (const conversation of list) {
-                        if (conversation.status === 'streaming') {
-                            this.streamMetrics.setTransport(conversation.id, 'ws');
-                        }
-                    }
-                }
+                this.markStreamingTransports('ws');
                 this.schedulePrimeFromAll();
             });
 
@@ -559,13 +511,7 @@ export class MobileProjectsConversations {
             const source = new EventSource(STREAM_URL);
             this.source = source;
             this.transport = 'sse';
-            for (const list of this.byCwd.values()) {
-                for (const conversation of list) {
-                    if (conversation.status === 'streaming') {
-                        this.streamMetrics.setTransport(conversation.id, 'sse');
-                    }
-                }
-            }
+            this.markStreamingTransports('sse');
             source.addEventListener('created', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('updated', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('message', ev => this.dispatchSseEvent(ev as MessageEvent));
@@ -623,7 +569,6 @@ export class MobileProjectsConversations {
             case 'deleted': {
                 const cwd = normalizeCwd(payload.cwd);
                 this.threadStore.removeSummary(payload.conversationId, cwd);
-                this.syncByCwdBucket(cwd);
                 this.emitConversationChange({
                     kind: 'deleted',
                     conversationId: payload.conversationId,
@@ -829,9 +774,13 @@ export class MobileProjectsConversations {
     }
 
     protected upsert(conv: QaapAgentConversationSummaryDTO): QaapThreadStoreUpsertResult {
-        const result = this.threadStore.upsertSummary(conv);
-        this.syncByCwdBucket(conv.cwd);
-        return result;
+        return this.threadStore.upsertSummary(conv);
+    }
+
+    protected markStreamingTransports(transport: 'ws' | 'sse'): void {
+        for (const conversation of this.threadStore.listStreamingSummaries()) {
+            this.streamMetrics.setTransport(conversation.id, transport);
+        }
     }
 
     protected getAllConversationBuckets(): Array<[string, QaapAgentConversationSummaryDTO[]]> {
@@ -839,8 +788,10 @@ export class MobileProjectsConversations {
         for (const [cwd, list] of this.theiaByCwd) {
             buckets.set(cwd, [...list]);
         }
-        for (const [cwd, list] of this.byCwd) {
-            buckets.set(cwd, sortConversations([...(buckets.get(cwd) ?? []), ...list]));
+        for (const summary of this.threadStore.listAllSummaries()) {
+            const cwd = normalizeCwd(summary.cwd);
+            const merged = [...(buckets.get(cwd) ?? []), summary];
+            buckets.set(cwd, sortConversations(merged));
         }
         return [...buckets];
     }

@@ -91,6 +91,18 @@ describe('qaap-thread-store', () => {
         });
     });
 
+    it('listStreamingSummaries returns only active threads', () => {
+        const store = new QaapThreadStore();
+        store.applySummarySnapshot([{
+            cwd: '/workspace/demo',
+            conversations: [
+                summary({ id: 'idle', status: 'idle' }),
+                summary({ id: 'live', status: 'streaming' }),
+            ],
+        }]);
+        expect(store.listStreamingSummaries().map(entry => entry.id)).to.deep.equal(['live']);
+    });
+
     it('getVariantsForBaseCwd groups parallel-run threads under the base repo', () => {
         const store = new QaapThreadStore();
         store.applySummarySnapshot([

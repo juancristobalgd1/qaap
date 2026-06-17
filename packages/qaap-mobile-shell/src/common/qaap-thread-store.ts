@@ -154,6 +154,10 @@ export class QaapThreadStore {
         return sortConversationSummaries([...this.summariesById.values()]);
     }
 
+    listStreamingSummaries(): QaapAgentConversationSummaryDTO[] {
+        return this.listAllSummaries().filter(summary => summary.status === 'streaming');
+    }
+
     setDocument(document: QaapAgentConversationDTO): void {
         this.documents.set(document.id, document);
         this.notifyThread(document.id);
