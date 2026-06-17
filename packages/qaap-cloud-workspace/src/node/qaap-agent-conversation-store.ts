@@ -849,12 +849,32 @@ export class QaapAgentConversationStore {
     protected parseStructuredLog(
         agentId: string,
         log: string,
-    ): { content: string; segments: QaapAgentMessage['segments'] } | undefined {
+    ): {
+        content: string;
+        segments: QaapAgentMessage['segments'];
+        traceEvents: QaapAgentMessage['traceEvents'];
+    } | undefined {
         const parsed = parseAgentLogForTranscript(agentId, log);
-        if (!parsed.segments?.length) {
+        if (!parsed.segments?.length && !parsed.traceEvents?.length) {
             return undefined;
         }
         return parsed;
+    }
+
+    protected resolveStructuredParsedTraceEvents(
+        message: QaapAgentMessage,
+        parsed: {
+            segments?: QaapAgentMessage['segments'];
+            traceEvents?: QaapAgentMessage['traceEvents'];
+        },
+    ): QaapAgentMessage['traceEvents'] {
+        if (parsed.traceEvents?.length) {
+            return parsed.traceEvents;
+        }
+        if (parsed.segments?.length) {
+            return mergeSegmentTraceEvents(message.traceEvents, parsed.segments);
+        }
+        return message.traceEvents;
     }
 
     protected async applyTaskOutcome(
@@ -895,7 +915,10 @@ export class QaapAgentConversationStore {
             ? withUsageBaseline.messages.find(message => message.id === agentMessageId)
             : undefined;
         const skipLogReparse = agentMessageHasStructuredTrace(streamingAgent)
-            || (usesStructuredAgentTranscript(conv.agentId) && (streamingAgent?.segments?.length ?? 0) > 0);
+            || (usesStructuredAgentTranscript(conv.agentId) && (
+                (streamingAgent?.segments?.length ?? 0) > 0
+                || (streamingAgent?.traceEvents?.length ?? 0) > 0
+            ));
         const structuredParsed = log && !skipLogReparse ? this.parseStructuredLog(conv.agentId, log) : undefined;
         if (task.state !== 'completed') {
             const agentMessage = agentMessageId
@@ -936,9 +959,7 @@ export class QaapAgentConversationStore {
                     ...message,
                     content: structuredParsed.content || message.content,
                     segments: structuredParsed.segments,
-                    traceEvents: structuredParsed.segments?.length
-                        ? mergeSegmentTraceEvents(message.traceEvents, structuredParsed.segments)
-                        : message.traceEvents,
+                    traceEvents: this.resolveStructuredParsedTraceEvents(message, structuredParsed),
                 }
                 : message
             );
@@ -959,9 +980,7 @@ export class QaapAgentConversationStore {
                         return {
                             ...message,
                             segments: structuredParsed.segments,
-                            traceEvents: structuredParsed.segments?.length
-                        ? mergeSegmentTraceEvents(message.traceEvents, structuredParsed.segments)
-                        : message.traceEvents,
+                            traceEvents: this.resolveStructuredParsedTraceEvents(message, structuredParsed),
                         };
                     }
                     return message;

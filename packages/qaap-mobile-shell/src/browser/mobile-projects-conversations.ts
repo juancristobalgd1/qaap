@@ -369,6 +369,23 @@ export class MobileProjectsConversations {
         });
     }
 
+    /**
+     * Cache a full conversation document for transcript/context surfaces.
+     * Emits `document_loaded` once per conversation id (not on every SSE tick).
+     */
+    cacheDocument(document: QaapAgentConversationDTO): boolean {
+        const isFirstLoad = !this.threadStore.getDocument(document.id);
+        this.threadStore.setDocument(document);
+        if (isFirstLoad) {
+            this.emitConversationChange({
+                kind: 'document_loaded',
+                conversationId: document.id,
+                cwd: document.cwd,
+            });
+        }
+        return isFirstLoad;
+    }
+
     /** Latest summary row for a conversation id (VPS or Theia-backed). */
     findSummaryById(id: string): QaapAgentConversationSummaryDTO | undefined {
         const fromStore = this.threadStore.findSummaryById(id);

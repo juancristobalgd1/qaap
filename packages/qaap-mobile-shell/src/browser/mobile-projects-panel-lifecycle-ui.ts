@@ -318,6 +318,15 @@ export class MobileProjectsPanelLifecycleUi {
             const conversationUpdates = new DisposableCollection(
                 this.host.conversations.onDidChangeDetail(change => {
                     this.host.markTasksFirstLoadComplete(false);
+                    if (change.kind === 'document_loaded') {
+                        if (this.host.transcriptOpenSummaryId === change.conversationId) {
+                            this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
+                        }
+                        if (this.host.visible && this.host.hubQueryUi.isTasksHubView()) {
+                            this.host.refreshWorkHubConversationChrome();
+                        }
+                        return;
+                    }
                     const previewOnlyDelta = isPreviewOnlyConversationChange(change);
                     if (this.host.visible && this.host.hubQueryUi.isTasksHubView()) {
                         if (this.host.shouldSkipFullRenderListOnConversationTick()

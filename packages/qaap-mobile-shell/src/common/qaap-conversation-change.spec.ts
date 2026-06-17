@@ -46,5 +46,10 @@ describe('qaap-conversation-change', () => {
             changedFields: ['status'],
             listOrderChanged: false,
         })).to.equal(false);
+        expect(isPreviewOnlyConversationChange({
+            kind: 'document_loaded',
+            conversationId: 'c1',
+            cwd: '/repo',
+        })).to.equal(false);
     });
 });

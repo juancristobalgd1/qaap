@@ -512,10 +512,30 @@ export class MobileProjectsStickyComposerRenderUi {
         const theiaThreshold = resolveContextUsageWarningThreshold(this.host.readPreference);
         const subscribe = (onRefresh: () => void): Disposable => {
             const disposables = new DisposableCollection();
-            if (this.host.conversations) {
-                disposables.push(this.host.conversations.onDidChange(onRefresh));
+            const target = resolveTarget();
+            const conversationId = target?.summary?.id;
+            const conversations = this.host.conversations;
+            if (conversations && conversationId && !target?.chatModel) {
+                disposables.push(conversations.threadStore.subscribe(
+                    () => onRefresh(),
+                    snapshot => snapshot.summariesById.get(conversationId)?.contextUsage,
+                    conversationId,
+                ));
+                disposables.push(conversations.threadStore.subscribe(
+                    () => onRefresh(),
+                    snapshot => snapshot.document?.contextUsage,
+                    conversationId,
+                ));
+            } else if (conversations) {
+                disposables.push(conversations.onDidChangeDetail(change => {
+                    if (change.kind === 'snapshot'
+                        || change.conversationId === conversationId
+                        || !conversationId) {
+                        onRefresh();
+                    }
+                }));
             }
-            const model = resolveTarget()?.chatModel;
+            const model = target?.chatModel;
             if (model) {
                 disposables.push(model.onDidChange(onRefresh));
             }

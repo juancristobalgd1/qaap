@@ -345,7 +345,7 @@ export class MobileProjectsTranscriptLiveUi {
 
     protected cacheTranscriptConversation(document: QaapAgentConversationDTO): void {
         this.host.transcriptConversationCache.set(document.id, document);
-        this.host.conversations?.threadStore.setDocument(document);
+        this.host.conversations?.cacheDocument(document);
     }
 
     protected bindOpenTranscriptThreadStore(conversationId: string): void {
