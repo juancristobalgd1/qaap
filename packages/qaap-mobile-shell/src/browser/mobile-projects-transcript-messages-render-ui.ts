@@ -8,7 +8,11 @@ import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-mes
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, traceEventsToSegments } from '../common/qaap-transcript-trace-model';
 import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
-import { isTranscriptAgentTailStreaming, resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
+import {
+    isTranscriptAgentTailStreaming,
+    resolveTranscriptEffectiveStatus,
+    shouldShowTranscriptEmptyQuickActions,
+} from '../common/qaap-transcript-turn-status';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
@@ -166,14 +170,16 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (isStreamingTranscriptTailUnchanged(this.host.transcriptLastConv, conv)) {
             recordTranscriptRenderMetric('render_skip_unchanged_tail');
             this.host.transcriptLastConv = conv;
+            this.clearTranscriptEmptyQuickActions(this.resolveTranscriptMessageHost(host), conv);
             return;
         }
         recordTranscriptRenderMetric('render_full');
         this.host.transcriptLastConv = conv;
         const shouldVirtualize = this.host.transcriptUi.shouldVirtualize(conv);
         const messageHost = this.resolveTranscriptMessageHost(host);
+        const showQuickActions = shouldShowTranscriptEmptyQuickActions(conv, this.host.transcriptLastConv);
         const isEmptyChat = conv.messages.length === 0 && resolveTranscriptEffectiveStatus(conv) !== 'streaming';
-        if (isEmptyChat) {
+        if (isEmptyChat && showQuickActions) {
             this.host.transcriptUi.disposeList();
             messageHost.classList.remove('theia-mod-virtual-scroll');
             messageHost.replaceChildren();
@@ -188,6 +194,22 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             empty.className = 'theia-mobile-agent-transcript-empty';
             empty.append(this.workHub.createAgentsHubQuickActionsBlock());
             messageHost.append(empty);
+            this.host.transcriptUserScrollPinDispose.dispose();
+            this.host.transcriptUserScrollPinDispose = new DisposableCollection(
+                attachTranscriptScrollToBottomButton(host),
+            );
+            return;
+        }
+        if (isEmptyChat) {
+            this.host.transcriptUi.disposeList();
+            messageHost.classList.remove('theia-mod-virtual-scroll', 'theia-mod-empty-chat');
+            messageHost.replaceChildren();
+            this.host.transcriptLastRenderedConversationId = conv.id;
+            this.host.transcriptLastRenderedMessageId = undefined;
+            const project = this.host.transcriptOpenProject;
+            if (project && this.workHub.shouldEmbedAgentsHubRecentsInWorkspaceTranscript()) {
+                messageHost.append(this.workHub.createAgentsHubRecentsBlock(project));
+            }
             this.host.transcriptUserScrollPinDispose.dispose();
             this.host.transcriptUserScrollPinDispose = new DisposableCollection(
                 attachTranscriptScrollToBottomButton(host),
@@ -265,6 +287,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
      */
 
     tryPatchStreamingTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): boolean {
+        const messageHost = this.resolveTranscriptMessageHost(host);
+        this.clearTranscriptEmptyQuickActions(messageHost, conv);
         const patchKind = resolveStreamingTranscriptPatchKind(this.host.transcriptLastConv, conv);
         if (patchKind === 'none') {
             if (isStreamingTranscriptTailUnchanged(this.host.transcriptLastConv, conv)) {
@@ -282,7 +306,6 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             return this.tryPatchStreamingTranscriptVirtual(host, conv, patchKind);
         }
-        const messageHost = this.resolveTranscriptMessageHost(host);
         const wasNearBottom = isTranscriptScrollNearBottom(
             messageHost.scrollTop,
             messageHost.clientHeight,
@@ -533,7 +556,16 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         messageHost.querySelector(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)?.remove();
     }
 
+    protected clearTranscriptEmptyQuickActions(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+        if (shouldShowTranscriptEmptyQuickActions(conv, this.host.transcriptLastConv)) {
+            return;
+        }
+        messageHost.classList.remove('theia-mod-empty-chat');
+        messageHost.querySelector('.theia-mobile-agent-transcript-empty')?.remove();
+    }
+
     syncTranscriptActivityRow(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+        this.clearTranscriptEmptyQuickActions(messageHost, conv);
         this.removeTranscriptActivityRow(messageHost);
         messageHost.querySelectorAll('.theia-mod-streaming').forEach(element => {
             element.classList.remove('theia-mod-streaming');

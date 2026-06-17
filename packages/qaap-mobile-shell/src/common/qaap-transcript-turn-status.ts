@@ -80,3 +80,30 @@ export function isTranscriptAgentTailStreaming(conv: QaapAgentConversationDTO): 
     const last = conv.messages[conv.messages.length - 1];
     return last?.role === 'agent';
 }
+
+export function conversationHasUserMessage(
+    conv: QaapAgentConversationDTO,
+    cached?: Pick<QaapAgentConversationDTO, 'id' | 'messages'>,
+): boolean {
+    if (conv.messages.some(message => message.role === 'user')) {
+        return true;
+    }
+    if (cached?.id === conv.id && cached.messages.some(message => message.role === 'user')) {
+        return true;
+    }
+    return false;
+}
+
+/** Quick-action chips only before the user sends their first message in this chat. */
+export function shouldShowTranscriptEmptyQuickActions(
+    conv: QaapAgentConversationDTO,
+    cached?: Pick<QaapAgentConversationDTO, 'id' | 'messages'>,
+): boolean {
+    if (conversationHasUserMessage(conv, cached)) {
+        return false;
+    }
+    if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
+        return false;
+    }
+    return conv.messages.length === 0;
+}

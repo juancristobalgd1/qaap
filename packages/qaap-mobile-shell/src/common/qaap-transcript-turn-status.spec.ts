@@ -10,6 +10,7 @@ import {
     isConversationTurnVisuallySettled,
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
+    shouldShowTranscriptEmptyQuickActions,
 } from './qaap-transcript-turn-status';
 
 const conv = (partial: Partial<QaapAgentConversationDTO> = {}): QaapAgentConversationDTO => ({
@@ -178,5 +179,30 @@ describe('qaap-transcript-turn-status', () => {
             ],
         })).to.equal(false);
         expect(isTranscriptAgentTailStreaming({ ...streaming, status: 'idle' })).to.equal(false);
+    });
+
+    it('shouldShowTranscriptEmptyQuickActions is true only before the first user message', () => {
+        const fresh = conv({ status: 'idle' });
+        expect(shouldShowTranscriptEmptyQuickActions(fresh)).to.equal(true);
+
+        const streaming = conv({
+            messages: [{ id: 'u1', role: 'user', content: 'fix login', createdAt: 2 }],
+        });
+        expect(shouldShowTranscriptEmptyQuickActions(streaming)).to.equal(false);
+
+        const pendingUser = conv({
+            status: 'idle',
+            messages: [],
+        });
+        const cached = conv({
+            messages: [{ id: 'pending-u1', role: 'user', content: 'fix login', createdAt: 2 }],
+        });
+        expect(shouldShowTranscriptEmptyQuickActions(pendingUser, cached)).to.equal(false);
+
+        const waitingForAgent = conv({
+            status: 'streaming',
+            messages: [],
+        });
+        expect(shouldShowTranscriptEmptyQuickActions(waitingForAgent)).to.equal(false);
     });
 });
