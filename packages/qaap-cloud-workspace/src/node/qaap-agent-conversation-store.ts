@@ -47,7 +47,10 @@ import {
     type QaapAgentStreamAccumulator,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import { QaapQaiqStreamAccumulator } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-stream';
-import { QaapQaiqAgUiStreamEmitter } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-ag-ui-stream';
+import {
+    createAgUiCliStreamEmitter,
+    type QaapCliAgUiStreamEmitter,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
 import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
 import {
     buildAgentAutoContinuePrompt,
@@ -139,8 +142,8 @@ export class QaapAgentConversationStore {
     protected readonly modelFallbackTriedByUserMessage = new Map<string, Set<string>>();
     /** Per-task structured stdout parsers (QAIQ, Claude, Codex JSON, OpenCode, Antigravity). */
     protected readonly agentStreamByTaskId = new Map<string, QaapAgentStreamAccumulator>();
-    /** Per-task QAIQ/Claude stream-json → native AG-UI event emitters. */
-    protected readonly agUiStreamByTaskId = new Map<string, QaapQaiqAgUiStreamEmitter>();
+    /** Per-task CLI stdout → native AG-UI event emitters (QAIQ, Claude, Codex, OpenCode). */
+    protected readonly agUiStreamByTaskId = new Map<string, QaapCliAgUiStreamEmitter>();
     /** Last wire snapshot per agent message — drives incremental SSE deltas during streaming. */
     protected readonly lastWireMessageById = new Map<string, QaapAgentMessageWireSnapshot>();
     protected readonly agUiReducerByAgentMessageId = new Map<string, QaapAgUiTraceReducerState>();
@@ -830,7 +833,7 @@ export class QaapAgentConversationStore {
         this.schedulePersist();
     }
 
-    /** QAIQ / Claude stream-json → AG-UI reducer (traceEvents-only wire path). */
+    /** Structured CLI stdout → AG-UI reducer (traceEvents-only wire path). */
     protected applyAgUiTaskOutput(
         taskId: string,
         ref: { conversationId: string; userMessageId: string; agentMessageId?: string },
@@ -839,7 +842,7 @@ export class QaapAgentConversationStore {
     ): void {
         const usageStream = this.ensureAgentStream(taskId, agentId);
         usageStream?.push(chunk);
-        const emitter = this.ensureAgUiStream(taskId);
+        const emitter = this.ensureAgUiStream(taskId, agentId);
         const events = emitter.push(chunk);
         if (events.length === 0) {
             return;
@@ -901,10 +904,14 @@ export class QaapAgentConversationStore {
         return stream;
     }
 
-    protected ensureAgUiStream(taskId: string): QaapQaiqAgUiStreamEmitter {
+    protected ensureAgUiStream(taskId: string, agentId: string): QaapCliAgUiStreamEmitter {
         let emitter = this.agUiStreamByTaskId.get(taskId);
         if (!emitter) {
-            emitter = new QaapQaiqAgUiStreamEmitter();
+            const created = createAgUiCliStreamEmitter(agentId);
+            if (!created) {
+                throw new Error(`No AG-UI CLI stream emitter for agent: ${agentId}`);
+            }
+            emitter = created;
             this.agUiStreamByTaskId.set(taskId, emitter);
         }
         return emitter;

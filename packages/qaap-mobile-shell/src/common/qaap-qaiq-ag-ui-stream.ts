@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgUiEvent } from './qaap-ag-ui-transcript-adapter';
+import type { QaapCliAgUiStreamEmitter } from './qaap-cli-ag-ui-stream';
 import { mergeIncrementalStreamText } from './qaap-qaiq-stream';
 
 interface ContentBlock {
@@ -50,7 +51,7 @@ interface BlockState {
  * Incrementally maps QAIQ / Claude Code stream-json NDJSON into native AG-UI events
  * for {@link applyAgUiTranscriptEvent} — no segment accumulator on the hot path.
  */
-export class QaapQaiqAgUiStreamEmitter {
+export class QaapQaiqAgUiStreamEmitter implements QaapCliAgUiStreamEmitter {
 
     protected buffer = '';
     protected sawTimestampedAssistant = false;

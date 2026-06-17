@@ -406,9 +406,12 @@ export function usesStructuredAgentTranscript(agentId: string | undefined): bool
         || isAntigravityAgent(agentId);
 }
 
-/** CLI agents whose live stdout is mapped to native AG-UI events (stream-json). */
+/** CLI agents whose live stdout is mapped to native AG-UI events (structured NDJSON). */
 export function usesAgUiCliTranscriptStream(agentId: string | undefined): boolean {
-    return isQaiqAgent(agentId) || isClaudeCodeAgent(agentId);
+    return isQaiqAgent(agentId)
+        || isClaudeCodeAgent(agentId)
+        || isCodexAgent(agentId)
+        || isOpencodeAgent(agentId);
 }
 
 /**
