@@ -1492,8 +1492,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
         },
-    ): Promise<QaapAgentConversationSummaryDTO> {
+    ): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated> {
         return this.backgroundTaskUi.createProjectChatSession(project, cwd, draft, options);
+    }
+
+    seedTranscriptOptimisticSubmit(
+        summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO,
+        outbound: string,
+        agentId?: string,
+    ): void {
+        this.agentsHubInlineUi.seedTranscriptOptimisticSubmit(summary, outbound, agentId);
     }
 
     protected shouldUseTheiaCoder(content: string, selectedAgentId?: string): boolean {

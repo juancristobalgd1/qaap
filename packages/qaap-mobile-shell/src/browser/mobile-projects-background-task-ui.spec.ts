@@ -24,6 +24,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             shouldUseAgentsHubLanding: () => false,
             renderSubtitle: () => undefined,
             renderList: () => undefined,
+            seedTranscriptOptimisticSubmit: () => undefined,
         });
 
         expect(ui.resolveWorktreeForSession('/repo')).to.equal(true);

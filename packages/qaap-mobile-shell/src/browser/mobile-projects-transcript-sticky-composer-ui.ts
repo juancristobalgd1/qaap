@@ -1246,6 +1246,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     })();
                     return;
                 }
+                clearComposerDraft();
+                const activeChatHost = this.resolveComposerTranscriptChatHost(chatHost);
+                if (activeChatHost && !isLegacyTheiaChat) {
+                    this.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId);
+                }
                 void (async () => {
                     try {
                         if (isLegacyTheiaChat) {

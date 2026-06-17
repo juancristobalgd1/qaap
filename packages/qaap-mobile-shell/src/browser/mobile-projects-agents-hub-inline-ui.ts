@@ -369,6 +369,50 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
     }
 
+    buildOptimisticSubmitConversation(
+        summary: QaapAgentConversationSummaryDTO,
+        outbound: string,
+        agentId?: string,
+    ): QaapAgentConversationDTO {
+        const trimmed = outbound.trim();
+        const cachedMessages = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv.messages
+            : [];
+        const pendingUserMessage = {
+            id: `pending-user-${Date.now()}`,
+            role: 'user' as const,
+            content: trimmed,
+            createdAt: Date.now(),
+        };
+        return {
+            id: summary.id,
+            cwd: summary.cwd,
+            agentId: agentId ?? summary.agentId,
+            title: trimmed.slice(0, 120) || summary.title,
+            status: 'streaming',
+            createdAt: summary.createdAt ?? Date.now(),
+            updatedAt: Date.now(),
+            messages: appendOptimisticPendingUserMessage(cachedMessages, pendingUserMessage),
+        };
+    }
+
+    seedTranscriptOptimisticConversation(conv: QaapAgentConversationDTO): void {
+        this.host.transcriptConversationCache.set(conv.id, conv);
+        this.host.transcriptLastConv = conv;
+        this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptLastStreamProgressAt = Date.now();
+    }
+
+    seedTranscriptOptimisticSubmit(
+        summary: QaapAgentConversationSummaryDTO,
+        outbound: string,
+        agentId?: string,
+    ): void {
+        this.seedTranscriptOptimisticConversation(
+            this.buildOptimisticSubmitConversation(summary, outbound, agentId),
+        );
+    }
+
     renderAgentsHubIdleSubmitOptimistic(
         chatHost: HTMLElement,
         summary: QaapAgentConversationSummaryDTO,
@@ -379,25 +423,9 @@ export class MobileProjectsAgentsHubInlineUi {
         if (!outbound) {
             return;
         }
-        const pendingUserMessage = {
-            id: `pending-user-${Date.now()}`,
-            role: 'user' as const,
-            content: outbound,
-            createdAt: Date.now(),
-        };
-        const cachedMessages = this.host.transcriptLastConv?.id === summary.id
-            ? this.host.transcriptLastConv.messages
-            : [];
-        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, {
-            id: summary.id,
-            cwd: summary.cwd,
-            agentId,
-            title: outbound.slice(0, 120),
-            status: 'streaming',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            messages: appendOptimisticPendingUserMessage(cachedMessages, pendingUserMessage),
-        });
+        const conv = this.buildOptimisticSubmitConversation(summary, outbound, agentId);
+        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
+        this.seedTranscriptOptimisticConversation(conv);
     }
 
     syncAgentsHubInlineExecutionHeader(

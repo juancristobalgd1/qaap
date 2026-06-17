@@ -65,9 +65,14 @@ export interface MobileProjectsTranscriptSubmitHost {
             variables?: AIVariableResolutionRequest[];
             agentModel?: QaapCreateAgentTaskQaiqModel;
         },
-    ): Promise<QaapAgentConversationSummaryDTO>;
+    ): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
     applyTaskStartedToProject(cwd: string, title: string, taskId: string): void;
+    seedTranscriptOptimisticSubmit(
+        summary: QaapAgentConversationSummaryDTO,
+        outbound: string,
+        agentId?: string,
+    ): void;
     expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
     applyComposerAttachmentsToDraft?: (
         draft: string,
@@ -196,7 +201,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 content,
                 createdAt: Date.now(),
             });
-            const created = await this.host.createProjectChatSession(project, summary.cwd, content, {
+            const { summary: created, outbound } = await this.host.createProjectChatSession(project, summary.cwd, content, {
                 selectedAgentId: options.selectedAgentId,
                 modeId: options.modeId,
                 autoApprove: options.autoApprove,
@@ -204,6 +209,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 variables: options.variables,
                 agentModel: options.agentModel ?? this.resolveTranscriptSubmitAgentModel(pendingAgent, summary),
             });
+            this.host.seedTranscriptOptimisticSubmit(created, outbound, pendingAgent);
             this.host.transcriptOpenSummaryId = created.id;
             this.host.transcriptOpenSummary = created;
             this.host.transcriptComposerSummary = created;

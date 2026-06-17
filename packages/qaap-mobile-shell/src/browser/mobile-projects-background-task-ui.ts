@@ -62,6 +62,16 @@ export interface MobileProjectsBackgroundTaskHost {
     shouldUseAgentsHubLanding(): boolean;
     renderSubtitle(): void;
     renderList(): void;
+    seedTranscriptOptimisticSubmit(
+        summary: QaapAgentConversationSummaryDTO,
+        outbound: string,
+        agentId?: string,
+    ): void;
+}
+
+export interface QaapProjectChatSessionCreated {
+    readonly summary: QaapAgentConversationSummaryDTO;
+    readonly outbound: string;
 }
 
 export class MobileProjectsBackgroundTaskUi {
@@ -141,7 +151,8 @@ export class MobileProjectsBackgroundTaskUi {
             return;
         }
         try {
-            const summary = await this.createProjectChatSession(project, cwd, draft, options);
+            const { summary, outbound } = await this.createProjectChatSession(project, cwd, draft, options);
+            this.host.seedTranscriptOptimisticSubmit(summary, outbound, options.selectedAgentId);
             const wantsDevPreview = messageRequestsDevPreview(draft);
             if (wantsDevPreview || (options.openConversation ?? true)) {
                 await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);
@@ -182,7 +193,7 @@ export class MobileProjectsBackgroundTaskUi {
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
         },
-    ): Promise<QaapAgentConversationSummaryDTO> {
+    ): Promise<QaapProjectChatSessionCreated> {
         const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);
         if (useWorktree && options.worktree !== true) {
             MobileSnackbar.show(
@@ -194,12 +205,7 @@ export class MobileProjectsBackgroundTaskUi {
             );
         }
         const agent = await this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId ?? QAAP_COMPOSER_DEFAULT_AGENT_ID);
-        const expandedDraft = await this.host.expandComposerDraftForSubmit?.(draft) ?? draft;
-        const withAttachments = await this.host.applyComposerAttachmentsToDraft?.(
-            expandedDraft,
-            options.variables,
-        ) ?? expandedDraft;
-        const message = applyBackendInteractionModeToPrompt(withAttachments, options.modeId);
+        const outbound = await this.resolveOutboundMessage(draft, options);
         const agentModel = resolveAgentModelForSubmit(agent, cwd, options.agentModel);
         const approvalPolicyId = options.approvalPolicyId
             ?? reconcileAgentApprovalPolicyId(undefined, cwd);
@@ -211,7 +217,7 @@ export class MobileProjectsBackgroundTaskUi {
             cwd,
             agent,
             title: draft,
-            message,
+            message: outbound,
             interactionModeId: options.modeId,
             approvalPolicyId,
             ...(useWorktree ? { worktree: true } : {}),
@@ -225,7 +231,22 @@ export class MobileProjectsBackgroundTaskUi {
         });
         const summary = conversationToSummary(conversation);
         this.host.conversations?.recordSnapshot(summary);
-        return summary;
+        return { summary, outbound };
+    }
+
+    protected async resolveOutboundMessage(
+        draft: string,
+        options: {
+            modeId?: string;
+            variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
+        },
+    ): Promise<string> {
+        const expandedDraft = await this.host.expandComposerDraftForSubmit?.(draft) ?? draft;
+        const withAttachments = await this.host.applyComposerAttachmentsToDraft?.(
+            expandedDraft,
+            options.variables,
+        ) ?? expandedDraft;
+        return applyBackendInteractionModeToPrompt(withAttachments, options.modeId);
     }
     /**
      * When another agent is already streaming in the same repo, default to an isolated worktree
