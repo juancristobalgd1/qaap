@@ -4,13 +4,13 @@
 // *****************************************************************************
 
 import PerfectScrollbar from 'perfect-scrollbar';
-import { TabBar, Title, Widget } from '@lumino/widgets';
-import { VirtualDOM, VirtualElement } from '@lumino/virtualdom';
-import { Message } from '@lumino/messaging';
-import { ArrayExt } from '@lumino/algorithm';
-import { ElementExt } from '@lumino/domutils';
-import { Signal } from '@lumino/signaling';
-import { Drag } from '@lumino/dragdrop';
+import { TabBar, Title, Widget } from '@theia/core/shared/@lumino/widgets';
+import { VirtualDOM, VirtualElement } from '@theia/core/shared/@lumino/virtualdom';
+import { Message } from '@theia/core/shared/@lumino/messaging';
+import { ArrayExt } from '@theia/core/shared/@lumino/algorithm';
+import { ElementExt } from '@theia/core/shared/@lumino/domutils';
+import { Signal } from '@theia/core/shared/@lumino/signaling';
+import { Drag } from '@theia/core/shared/@lumino/dragdrop';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common';
 import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import {
@@ -22,9 +22,9 @@ import {
 import { TabBarToolbarRegistry, TabBarToolbar } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { TheiaDockPanel } from '@theia/core/lib/browser/shell/theia-dock-panel';
 import { BreadcrumbsRenderer, BreadcrumbsRendererFactory } from '@theia/core/lib/browser/breadcrumbs/breadcrumbs-renderer';
-import { Root, createRoot } from 'react-dom/client';
+import { Root, createRoot } from '@theia/core/shared/react-dom/client';
 import { SelectComponent } from '@theia/core/lib/browser/widgets/select-component';
-import { createElement } from 'react';
+import { createElement } from '@theia/core/shared/react';
 import { isContextMenuEvent } from '@theia/core/lib/browser/browser';
 import { NavigatableWidget } from '@theia/core/lib/browser/navigatable-types';
 
@@ -304,7 +304,7 @@ export class QaapScrollableTabBar extends TabBar<Widget> {
             this.scrollBar?.update();
         }
         if (this.currentIndex >= 0) {
-            void this.revealTab(this.currentIndex);
+            this.revealTab(this.currentIndex).catch(() => undefined);
         }
     }
 
@@ -379,7 +379,7 @@ export class QaapScrollableTabBar extends TabBar<Widget> {
             this.updateTabs();
         }
         if (this.currentIndex >= 0) {
-            void this.revealTab(this.currentIndex);
+            this.revealTab(this.currentIndex).catch(() => undefined);
         }
         this.scrollBar?.update();
     }

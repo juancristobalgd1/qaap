@@ -5,7 +5,7 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
-import { Panel } from '@lumino/widgets';
+import { Panel } from '@theia/core/shared/@lumino/widgets';
 import { animationFrame, Layout, MAXIMIZED_CLASS, TheiaSplitPanel } from '@theia/core/lib/browser';
 import { SidePanel } from '@theia/core/lib/browser/shell/side-panel-handler';
 import { ApplicationShellWithToolbarOverride } from '@theia/toolbar/lib/browser/application-shell-with-toolbar-override';

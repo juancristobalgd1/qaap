@@ -5,9 +5,9 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
-import { some, toArray } from '@lumino/algorithm';
-import { Widget, Title, Panel, BoxPanel, BoxLayout, SplitPanel } from '@lumino/widgets';
-import { MessageLoop } from '@lumino/messaging';
+import { some, toArray } from '@theia/core/shared/@lumino/algorithm';
+import { Widget, Title, Panel, BoxPanel, BoxLayout, SplitPanel } from '@theia/core/shared/@lumino/widgets';
+import { MessageLoop } from '@theia/core/shared/@lumino/messaging';
 import {
     SidePanelHandler,
     SidePanel,
@@ -97,7 +97,7 @@ export class QaapSidePanelHandler extends SidePanelHandler {
         const contentPanel = new BoxPanel({ layout: contentBox });
 
         this.activityCloseButton = new QaapActivityBarCloseButton(() => {
-            void this.collapse();
+            this.collapse().catch(() => undefined);
         });
 
         const scrollLayout = new BoxLayout({ direction: 'left-to-right', spacing: 0 });
@@ -257,7 +257,7 @@ export class QaapSidePanelHandler extends SidePanelHandler {
                 }
             }
             this.state.expansion = SidePanel.ExpansionState.collapsed;
-            void this.setPanelSize(0);
+            this.setPanelSize(0).catch(() => undefined);
         } else {
             container.removeClass(COLLAPSED_CLASS);
             container.setHidden(false);
@@ -336,7 +336,7 @@ export class QaapSidePanelHandler extends SidePanelHandler {
         const result = new Promise<void>(resolve => {
             promise.then(() => resolve(), () => resolve());
         });
-        void result.then(() => this.scheduleContentRelayout());
+        result.then(() => this.scheduleContentRelayout()).catch(() => undefined);
         this.state.pendingUpdate = this.state.pendingUpdate.then(() => result);
         return result;
     }

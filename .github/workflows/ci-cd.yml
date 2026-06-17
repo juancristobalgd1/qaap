@@ -83,16 +83,7 @@ jobs:
         shell: bash
         run: |
           npm ci
-          ELECTRON_VERSION=$(node -p "require('./examples/electron/package.json').devDependencies.electron")
-          if ! node -e "require.resolve('electron/package.json')" >/dev/null 2>&1; then
-            npm install --no-save "electron@${ELECTRON_VERSION}" --workspace=@theia/example-electron
-          fi
-          ELECTRON_INSTALL=$(node -p "require('path').join(require('path').dirname(require.resolve('electron/package.json')), 'install.js')")
-          ELECTRON_SKIP_BINARY_DOWNLOAD= node "${ELECTRON_INSTALL}"
-          node -e "const fs=require('fs');const p=require('path');const v=p.join(p.dirname(require.resolve('electron/package.json')),'dist','version');if(!fs.existsSync(v)){process.exit(1)}" \
-            || ELECTRON_SKIP_BINARY_DOWNLOAD= npx --yes "electron@${ELECTRON_VERSION}" --version
-          node -e "const fs=require('fs');const p=require('path');const v=p.join(p.dirname(require.resolve('electron/package.json')),'dist','version');if(!fs.existsSync(v)){console.error('Missing electron binary:',v);process.exit(1)}"
-          npm run build
+          npm run compile && npm run build:browser && npm run build:browser-only
           git status
           ./scripts/check_git_status.sh
         env:
@@ -115,7 +106,4 @@ jobs:
         run: |
           npm run test:browser
 
-      - name: Test (electron)
-        if: runner.os == 'Linux'
-        run: |
-          xvfb-run -a npm run test:electron
+      # Qaap CI targets the browser Work Hub surface; Electron build/tests stay local-only.

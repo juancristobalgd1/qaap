@@ -5,7 +5,7 @@
 // *****************************************************************************
 
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { DockLayout, DockPanel, TabBar, Widget } from '@lumino/widgets';
+import { DockLayout, DockPanel, TabBar, Widget } from '@theia/core/shared/@lumino/widgets';
 import { Emitter, Event as CommonEvent } from '@theia/core/lib/common';
 import { TabBarRendererFactory, SHELL_TABBAR_CONTEXT_MENU } from '@theia/core/lib/browser/shell/tab-bars';
 import { TabBarToolbarRegistry, TabBarToolbarFactory } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
@@ -88,7 +88,7 @@ export class QaapDockPanelRenderer implements DockLayout.IRenderer {
 
     protected onCurrentTabChanged(sender: QaapToolbarAwareTabBar, { currentIndex }: TabBar.ICurrentChangedArgs<Widget>): void {
         if (currentIndex >= 0) {
-            void sender.revealTab(currentIndex);
+            sender.revealTab(currentIndex).catch(() => undefined);
         }
     }
 }

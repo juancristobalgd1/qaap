@@ -6,7 +6,7 @@
 
 import { codicon } from '@theia/core/lib/browser';
 import { nls } from '@theia/core/lib/common';
-import { Widget } from '@lumino/widgets';
+import { Widget } from '@theia/core/shared/@lumino/widgets';
 
 /**
  * Collapse control for the side-panel activity row (icon only).
