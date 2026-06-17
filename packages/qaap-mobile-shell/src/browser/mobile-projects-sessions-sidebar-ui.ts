@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { QuickPickItem } from '@theia/core/lib/browser';
 import {
     readStoredAgent,
@@ -113,6 +114,7 @@ export class MobileProjectsSessionsSidebarUi {
     protected sessionsSidebarInteractionUntil = 0;
     protected sessionsSidebarLastStreamRefreshAt = 0;
     protected sessionsSidebarInteractionBound = false;
+    protected sessionsSidebarThreadStoreDispose: Disposable = Disposable.NULL;
 
     openWorkHubSessionsSidebar(): void {
         const sidebar = this.ensureWorkHubSessionsSidebar();
@@ -156,7 +158,10 @@ export class MobileProjectsSessionsSidebarUi {
                 tryPatchSessionList: host => this.tryPatchSessionsSidebarList(host),
                 rememberSessionListFingerprint: host => this.rememberSessionsSidebarListFingerprint(host),
                 shouldDeferSessionListRefresh: () => this.shouldDeferSessionsSidebarListRefresh(),
-                onSessionListHostReady: host => this.bindSessionsSidebarInteractionGuard(host),
+                onSessionListHostReady: host => {
+                    this.bindSessionsSidebarInteractionGuard(host);
+                    this.bindSessionsSidebarThreadStoreSubscriptions();
+                },
                 onNewChat: () => { void this.onWorkHubSessionsSidebarNewChat(); },
                 onClose: () => {
                     this.host.cardMenuUi.closeCardMenu();
@@ -519,6 +524,42 @@ export class MobileProjectsSessionsSidebarUi {
         }
         this.syncSessionsSidebarAnimatedListHeights(host);
         this.prefetchVisibleSidebarDocuments();
+        this.bindSessionsSidebarThreadStoreSubscriptions();
+    }
+
+    protected bindSessionsSidebarThreadStoreSubscriptions(): void {
+        this.sessionsSidebarThreadStoreDispose.dispose();
+        const conversations = this.host.conversations;
+        if (!conversations || !this.isWorkHubSessionsSidebarVisible()) {
+            this.sessionsSidebarThreadStoreDispose = Disposable.NULL;
+            return;
+        }
+        const disposables = new DisposableCollection();
+        for (const entry of this.collectSessionsSidebarConversationEntries()) {
+            if (entry.summary.source === 'theia-chat') {
+                continue;
+            }
+            const conversationId = entry.summary.id;
+            disposables.push(conversations.threadStore.subscribe(
+                () => { this.scheduleWorkHubSessionsSidebarRefresh(); },
+                snapshot => {
+                    const summary = snapshot.summariesById.get(conversationId);
+                    if (!summary) {
+                        return undefined;
+                    }
+                    return [
+                        summary.status,
+                        summary.updatedAt,
+                        summary.turnProgressCurrent,
+                        summary.turnProgressTotal,
+                        summary.lastMessagePreview,
+                        summary.activityLabel,
+                    ].join(':');
+                },
+                conversationId,
+            ));
+        }
+        this.sessionsSidebarThreadStoreDispose = disposables;
     }
 
     protected prefetchVisibleSidebarDocuments(limit = 8): void {

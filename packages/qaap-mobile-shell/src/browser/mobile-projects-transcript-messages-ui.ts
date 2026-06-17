@@ -23,6 +23,7 @@ import { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-tran
 import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
+import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
@@ -214,8 +215,10 @@ export class MobileProjectsTranscriptMessagesUi {
             if (last?.role !== 'agent') {
                 return [];
             }
-            return last.segments ?? [];
+            return [...resolveAgentMessageSegments(last)];
         }
-        return conv.messages.flatMap(message => message.role === 'agent' ? (message.segments ?? []) : []);
+        return conv.messages.flatMap(message => message.role === 'agent'
+            ? [...resolveAgentMessageSegments(message)]
+            : []);
     }
 }

@@ -242,3 +242,13 @@ export function fingerprintQaapTraceEvent(event: QaapTranscriptTraceEventDTO): s
 export function fingerprintQaapTraceEvents(events: readonly QaapTranscriptTraceEventDTO[] | undefined): string {
     return (events ?? []).map(fingerprintQaapTraceEvent).join('|');
 }
+
+/** Prefer traceEvents-derived segments; falls back to legacy {@link QaapAgentMessageDTO.segments}. */
+export function resolveAgentMessageSegments(
+    message: Pick<QaapAgentMessageDTO, 'segments' | 'traceEvents' | 'role' | 'content'> | undefined,
+): readonly QaapAgentMessageSegmentDTO[] {
+    if (!message) {
+        return [];
+    }
+    return resolveQaapTranscriptTrace(message as QaapAgentMessageDTO).segments;
+}

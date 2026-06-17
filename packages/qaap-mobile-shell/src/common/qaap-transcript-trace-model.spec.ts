@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { mergeSegmentTraceEvents, segmentsToTraceEvents } from './qaap-transcript-trace-model';
+import { mergeSegmentTraceEvents, resolveAgentMessageSegments, segmentsToTraceEvents } from './qaap-transcript-trace-model';
 
 describe('qaap-transcript-trace-model', () => {
     it('segmentsToTraceEvents marks the streaming tail as running', () => {
@@ -47,5 +47,15 @@ describe('qaap-transcript-trace-model', () => {
         expect(merged).to.have.length(2);
         expect(merged[0]).to.deep.include({ type: 'tool_call', id: 'tool-1', status: 'completed' });
         expect(merged[1]).to.deep.include({ type: 'checkpoint', id: 'cp-1' });
+    });
+
+    it('resolveAgentMessageSegments prefers traceEvents over raw segments', () => {
+        const segments = resolveAgentMessageSegments({
+            role: 'agent',
+            content: 'Done',
+            segments: [{ type: 'text', content: 'Legacy' }],
+            traceEvents: [{ type: 'assistant_text', id: 'text-0', content: 'Trace', status: 'completed' }],
+        });
+        expect(segments).to.deep.equal([{ type: 'text', content: 'Trace' }]);
     });
 });

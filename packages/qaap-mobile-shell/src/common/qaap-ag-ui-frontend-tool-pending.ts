@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
 export interface QaapPendingFrontendToolCall {
     readonly toolCallId: string;
@@ -42,8 +43,12 @@ export function findPendingQaapFrontendToolCalls(
         }
         pending.push({ toolCallId: event.id, name: event.name, args });
     }
-    for (const segment of message.segments ?? []) {
+    const pendingIds = new Set(pending.map(entry => entry.toolCallId));
+    for (const segment of resolveAgentMessageSegments(message)) {
         if (segment.type !== 'tool' || !frontendToolNames.has(segment.name)) {
+            continue;
+        }
+        if (pendingIds.has(segment.toolUseId)) {
             continue;
         }
         if (segment.finished || (segment.result !== undefined && segment.result.length > 0)) {

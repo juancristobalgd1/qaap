@@ -5,7 +5,7 @@
 
 import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import { buildQaapDevPreviewUrl, parseQaapDevPreviewPort, resolveDevPreviewPublicOrigin } from './qaap-dev-preview';
-import { resolveQaapTranscriptTrace } from './qaap-transcript-trace-model';
+import { resolveQaapTranscriptTrace, resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
 const DEV_SERVER_COMMAND_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\b(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev|remix\s+dev)\b|\bnpx\s+vite\b|\bnpx\s+next\b/i;
 const DEV_URL_IN_TEXT_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(?:\/[^\s`*)\]]*)?/i;
@@ -64,7 +64,7 @@ export function findTranscriptPreviewUrlFromConversation(
         if (fromContent) {
             return fromContent;
         }
-        for (const segment of [...(message.segments ?? [])].reverse()) {
+        for (const segment of [...resolveAgentMessageSegments(message)].reverse()) {
             const fromSegment = extractDevPreviewUrlFromAgentText(segmentText(segment), origin);
             if (fromSegment) {
                 return fromSegment;
@@ -84,7 +84,7 @@ export function findTranscriptPreviewPortHint(conv: QaapAgentConversationDTO): n
         }
     }
     for (const message of [...conv.messages].reverse()) {
-        const texts = [message.content, ...(message.segments ?? []).map(segmentText)];
+        const texts = [message.content, ...resolveAgentMessageSegments(message).map(segmentText)];
         for (const text of texts) {
             const direct = text?.match(DEV_URL_IN_TEXT_RE);
             const portRaw = direct?.[1] ?? text?.match(PORT_HINT_RE)?.[1];

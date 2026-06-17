@@ -6,6 +6,7 @@
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats } from './qaap-agent-transcript-segments';
 import { extractDevPreviewUrlFromAgentText, messageRequestsDevPreview } from './qaap-transcript-preview-offer';
+import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
 const ACTIONABLE_TASK_RE = /\b(?:fix|explore|implement|build|run|test|debug|review|refactor|add|create|update|install|deploy|figure\s+out)\b/i;
 const PLANNING_TEXT_RE = /\b(?:let me|i will|i'll|i am going to|going to (?:start|explore|check|look|figure)|need to (?:explore|check|understand|figure)|start by (?:exploring|looking|checking|understanding))\b/i;
@@ -24,7 +25,7 @@ function collectAgentVisibleText(agentMessage: QaapAgentMessageDTO): string {
     if (agentMessage.content?.trim()) {
         parts.push(agentMessage.content.trim());
     }
-    for (const segment of agentMessage.segments ?? []) {
+    for (const segment of resolveAgentMessageSegments(agentMessage)) {
         if ((segment.type === 'text' || segment.type === 'thinking') && segment.content?.trim()) {
             parts.push(segment.content.trim());
         }
@@ -51,11 +52,12 @@ function isExploreOnlyTaskMessage(userContent: string | undefined): boolean {
 
 /** True when the latest TodoWrite checklist still has pending or in-progress items. */
 export function agentMessageHasOpenTodos(agentMessage: QaapAgentMessageDTO | undefined): boolean {
-    if (!agentMessage?.segments?.length) {
+    const segments = resolveAgentMessageSegments(agentMessage);
+    if (!segments.length) {
         return false;
     }
     let latestTodoArgs: string | undefined;
-    for (const segment of agentMessage.segments) {
+    for (const segment of segments) {
         if (segment.type === 'tool' && segment.finished && isTranscriptTodoTool(segment.name) && segment.args) {
             latestTodoArgs = segment.args;
         }
@@ -79,7 +81,7 @@ export function agentMessageDeliversTaskOutcome(
         return false;
     }
     const text = collectAgentVisibleText(agentMessage);
-    const stats = resolveTranscriptActivityStats(agentMessage.segments ?? []);
+    const stats = resolveTranscriptActivityStats([...resolveAgentMessageSegments(agentMessage)]);
     if (messageRequestsDevPreview(userContent)) {
         if (extractDevPreviewUrlFromAgentText(text)) {
             return true;
@@ -118,8 +120,8 @@ export function isIncompleteAgentTurn(
     if (agentMessageDeliversTaskOutcome(userContent, agentMessage)) {
         return false;
     }
-    const segments = agentMessage.segments;
-    if (segments?.length) {
+    const segments = resolveAgentMessageSegments(agentMessage);
+    if (segments.length) {
         const hasUnfinishedTool = segments.some(segment => segment.type === 'tool' && !segment.finished);
         if (hasUnfinishedTool) {
             return true;

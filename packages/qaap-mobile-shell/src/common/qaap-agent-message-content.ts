@@ -3,8 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { QAAP_PRIMARY_AGENT_ID } from './qaap-agent-task-client';
 import { parseAgentLogForTranscript } from './qaap-cli-transcript-stream';
+import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 import {
     extractComposerAttachmentImagePaths,
     stripComposerAttachmentPreamble,
@@ -56,6 +58,8 @@ type MessagePreviewLike = {
         readonly type: string;
         readonly content?: string;
     }>;
+    readonly traceEvents?: ReadonlyArray<{ readonly type: string }>;
+    readonly role?: string;
 };
 
 
@@ -122,7 +126,7 @@ export function resolveMessagePreviewText(message: MessagePreviewLike | undefine
     if (trimmed && trimmed !== '…') {
         return trimmed;
     }
-    for (const segment of [...(message.segments ?? [])].reverse()) {
+    for (const segment of [...resolveAgentMessageSegments(message as QaapAgentMessageDTO)].reverse()) {
         if (segment.type === 'text' && segment.content?.trim()) {
             return segment.content.trim();
         }

@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
+
 /**
  * Claude-Code-style streaming status line data: elapsed turn time and an approximate
  * token count for the in-flight agent reply ("· 1m 23s · ~4.2k tokens").
@@ -35,9 +38,10 @@ export function resolveTranscriptTurnStreamChars(messages: readonly StreamStatus
     if (!last || last.role === 'user') {
         return 0;
     }
-    if (last.segments?.length) {
+    const segments = resolveAgentMessageSegments(last as QaapAgentMessageDTO);
+    if (segments.length) {
         let total = 0;
-        for (const segment of last.segments) {
+        for (const segment of segments) {
             if (segment.type === 'text' || segment.type === 'thinking') {
                 total += segment.content?.length ?? 0;
             }
