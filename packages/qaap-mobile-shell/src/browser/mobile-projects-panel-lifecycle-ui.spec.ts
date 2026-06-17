@@ -10,6 +10,7 @@ import {
     MobileProjectsPanelLifecycleUi,
     type MobileProjectsPanelLifecycleHost,
 } from './mobile-projects-panel-lifecycle-ui';
+import type { QaapConversationChangeEvent } from '../common/qaap-conversation-change';
 import type { MobileProjectsHubView } from './mobile-projects-types';
 
 describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
@@ -112,13 +113,12 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
     }
 
     it('coalesces conversation ticks into scheduleRenderList on the tasks hub', () => {
-        const onDidChangeEmitter = new Emitter<void>();
+        const onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
         const host = createHost({
             conversations: {
                 warmLiveTransport: () => undefined,
-                onDidChange: onDidChangeEmitter.event,
-                onDidChangeDetail: Event.None,
-                peekLastConversationChange: () => undefined,
+                onDidChange: Event.None,
+                onDidChangeDetail: onDidChangeDetailEmitter.event,
                 onDidReceiveMessage: Event.None,
                 onDidReceiveParallelRun: Event.None,
                 onDidReconnectTransport: Event.None,
@@ -127,9 +127,10 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
         const ui = new MobileProjectsPanelLifecycleUi(host);
         ui.subscribeToActiveTasks();
 
-        onDidChangeEmitter.fire(undefined);
-        onDidChangeEmitter.fire(undefined);
-        onDidChangeEmitter.fire(undefined);
+        const tick: QaapConversationChangeEvent = { kind: 'updated', conversationId: 'c1', cwd: '/repo', changedFields: ['status'] };
+        onDidChangeDetailEmitter.fire(tick);
+        onDidChangeDetailEmitter.fire(tick);
+        onDidChangeDetailEmitter.fire(tick);
 
         expect(host.scheduleRenderListCalls).to.equal(3);
         expect(host.renderListCalls).to.equal(0);
@@ -137,14 +138,13 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
     });
 
     it('refreshes chrome instead of scheduling hub list rebuild while transcript is open', () => {
-        const onDidChangeEmitter = new Emitter<void>();
+        const onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
         const host = createHost({
             shouldSkipFullRenderListOnConversationTick: () => true,
             conversations: {
                 warmLiveTransport: () => undefined,
-                onDidChange: onDidChangeEmitter.event,
-                onDidChangeDetail: Event.None,
-                peekLastConversationChange: () => undefined,
+                onDidChange: Event.None,
+                onDidChangeDetail: onDidChangeDetailEmitter.event,
                 onDidReceiveMessage: Event.None,
                 onDidReceiveParallelRun: Event.None,
                 onDidReconnectTransport: Event.None,
@@ -153,7 +153,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
         const ui = new MobileProjectsPanelLifecycleUi(host);
         ui.subscribeToActiveTasks();
 
-        onDidChangeEmitter.fire(undefined);
+        onDidChangeDetailEmitter.fire({ kind: 'updated', conversationId: 'c1', cwd: '/repo' });
 
         expect(host.refreshChromeCalls).to.equal(1);
         expect(host.scheduleRenderListCalls).to.equal(0);

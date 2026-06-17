@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { parseCodexLog, QaapCodexStreamAccumulator } from './qaap-codex-stream';
-import { parseOpencodeFormattedLog, parseOpencodeLog, QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
+import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
+import { parseOpencodeFormattedLog, QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
 import {
     isAntigravityAgent,
     isClaudeCodeAgent,
@@ -66,9 +66,9 @@ export function createAgentStreamAccumulator(agentId: string | undefined): QaapA
 export function parseAgentLogForTranscript(
     agentId: string | undefined,
     log: string,
-): { content: string; segments: QaapAgentMessageSegment[] } {
+): { content: string; segments: QaapAgentMessageSegment[]; traceEvents: QaapTranscriptTraceEventDTO[] } {
     if (!log.trim()) {
-        return { content: '', segments: [] };
+        return { content: '', segments: [], traceEvents: [] };
     }
     if (isQaiqAgent(agentId) || isClaudeCodeAgent(agentId)) {
         const acc = new QaapQaiqStreamAccumulator();
@@ -76,29 +76,61 @@ export function parseAgentLogForTranscript(
         const segments = [...acc.getSegments()];
         const displayText = acc.getDisplayText().trim();
         if (segments.length > 0) {
-            return { content: displayText || log.trim(), segments };
+            return {
+                content: displayText || log.trim(),
+                segments,
+                traceEvents: [...acc.getTraceEvents()],
+            };
         }
-        return { content: displayText, segments: [] };
+        return { content: displayText, segments: [], traceEvents: [] };
     }
     if (isCodexAgent(agentId)) {
-        const parsed = parseCodexLog(log);
-        if (parsed.segments.length > 0) {
-            return parsed;
+        const acc = new QaapCodexStreamAccumulator();
+        acc.push(log);
+        if (acc.consumedJsonEvents()) {
+            const segments = [...acc.getSegments()];
+            return {
+                content: acc.getDisplayText() || log.trim(),
+                segments,
+                traceEvents: [...acc.getTraceEvents()],
+            };
         }
     }
     if (isOpencodeAgent(agentId)) {
-        return parseOpencodeLog(log);
+        const acc = new QaapOpencodeStreamAccumulator();
+        acc.push(log);
+        if (acc.consumedJsonEvents()) {
+            const segments = [...acc.getSegments()];
+            return {
+                content: acc.getDisplayText() || log,
+                segments,
+                traceEvents: [...acc.getTraceEvents()],
+            };
+        }
+        const formatted = parseOpencodeFormattedLog(log);
+        return {
+            ...formatted,
+            traceEvents: formatted.segments.length ? segmentsToTraceEvents(formatted.segments) : [],
+        };
     }
     if (isAntigravityAgent(agentId)) {
         const acc = new QaapQaiqStreamAccumulator();
         acc.push(log);
         const segments = [...acc.getSegments()];
         if (segments.length > 0) {
-            return { content: acc.getDisplayText() || log.trim(), segments };
+            return {
+                content: acc.getDisplayText() || log.trim(),
+                segments,
+                traceEvents: [...acc.getTraceEvents()],
+            };
         }
-        return parseOpencodeFormattedLog(log);
+        const formatted = parseOpencodeFormattedLog(log);
+        return {
+            ...formatted,
+            traceEvents: formatted.segments.length ? segmentsToTraceEvents(formatted.segments) : [],
+        };
     }
-    return { content: log.trim(), segments: [] };
+    return { content: log.trim(), segments: [], traceEvents: [] };
 }
 
 /** Plain reply text for storage/UI — never surfaces QAIQ NDJSON metadata envelopes. */

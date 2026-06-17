@@ -6,6 +6,7 @@
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import type { QaapConversationCheckpointDTO } from './qaap-agent-conversation-client';
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
+import { mergeSegmentTraceEvents } from './qaap-transcript-trace-model';
 
 export function appendTraceRunCancelledEvent(
     message: QaapAgentMessageDTO,
@@ -61,4 +62,15 @@ export function agentMessageHasStructuredTrace(message: QaapAgentMessageDTO | un
         return false;
     }
     return (message.traceEvents?.length ?? 0) > 0;
+}
+
+/** Mark segment-derived trace rows as settled (completed) after a turn finishes or is interrupted. */
+export function syncSettledTraceEventsOnMessage(message: QaapAgentMessageDTO): QaapAgentMessageDTO {
+    if (!message.segments?.length) {
+        return message;
+    }
+    return {
+        ...message,
+        traceEvents: mergeSegmentTraceEvents(message.traceEvents, message.segments),
+    };
 }

@@ -115,6 +115,14 @@ export function isPreviewOnlySummaryChange(fields: readonly QaapConversationSumm
     );
 }
 
+/** True for SSE preview ticks that should not rebuild hub/sidebar structure. */
+export function isPreviewOnlyConversationChange(change: QaapConversationChangeEvent): boolean {
+    return change.kind === 'message_delta'
+        && !!change.changedFields
+        && isPreviewOnlySummaryChange(change.changedFields)
+        && !change.listOrderChanged;
+}
+
 export function streamingSortOrderMayChange(
     previous: QaapAgentConversationSummaryDTO | undefined,
     next: QaapAgentConversationSummaryDTO,

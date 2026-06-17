@@ -97,6 +97,7 @@ import {
     appendTraceCheckpointEvent,
     appendTraceRunCancelledEvent,
     agentMessageHasStructuredTrace,
+    syncSettledTraceEventsOnMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
 import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
@@ -943,7 +944,11 @@ export class QaapAgentConversationStore {
             );
             withReply = { ...withUsageBaseline, status: 'idle', updatedAt: Date.now(), messages };
         } else if (agentMessageId) {
-            withReply = { ...withUsageBaseline, status: 'idle' as const, updatedAt: Date.now() };
+            const messages = withUsageBaseline.messages.map(message => message.id === agentMessageId && message.role === 'agent'
+                ? syncSettledTraceEventsOnMessage(message)
+                : message
+            );
+            withReply = { ...withUsageBaseline, status: 'idle', updatedAt: Date.now(), messages };
         } else {
             const displayText = log ? resolveAgentLogDisplayText(conv.agentId, log) : '';
             const body = structuredParsed?.content?.trim() || displayText || '(agent produced no output)';
@@ -1173,13 +1178,12 @@ export class QaapAgentConversationStore {
             );
             if (hadUnfinishedTool) {
                 const finalizedSegments = finalizeUnfinishedAgentToolSegments(message.segments, interruptionReason);
-                next = {
+                next = syncSettledTraceEventsOnMessage({
                     ...next,
                     segments: finalizedSegments,
-                    traceEvents: finalizedSegments
-                        ? mergeSegmentTraceEvents(next.traceEvents, finalizedSegments)
-                        : next.traceEvents,
-                };
+                });
+            } else if (next.segments?.length) {
+                next = syncSettledTraceEventsOnMessage(next);
             }
             return next;
         });

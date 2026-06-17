@@ -73,7 +73,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             if (parsed.segments.length > 0) {
                 trace = {
                     source: 'legacy-content',
-                    events: segmentsToTraceEvents(parsed.segments),
+                    events: parsed.traceEvents.length > 0
+                        ? parsed.traceEvents
+                        : segmentsToTraceEvents(parsed.segments),
                     segments: parsed.segments,
                 };
             }

@@ -7,7 +7,7 @@ import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposa
 import { ChatService } from '@theia/ai-chat';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import { isWorkMissionControlEnabled } from './mobile-work-mission-control';
-import { isPreviewOnlySummaryChange } from '../common/qaap-conversation-change';
+import { isPreviewOnlyConversationChange } from '../common/qaap-conversation-change';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import {
     hasMobileProjectsLeftLanding,
@@ -316,13 +316,9 @@ export class MobileProjectsPanelLifecycleUi {
                 this.host.tasksFirstLoadFallback = window.setTimeout(() => this.host.markTasksFirstLoadComplete(true), 5000);
             }
             const conversationUpdates = new DisposableCollection(
-                this.host.conversations.onDidChange(() => {
+                this.host.conversations.onDidChangeDetail(change => {
                     this.host.markTasksFirstLoadComplete(false);
-                    const change = this.host.conversations?.peekLastConversationChange?.();
-                    const previewOnlyDelta = change?.kind === 'message_delta'
-                        && !!change.changedFields
-                        && isPreviewOnlySummaryChange(change.changedFields)
-                        && !change.listOrderChanged;
+                    const previewOnlyDelta = isPreviewOnlyConversationChange(change);
                     if (this.host.visible && this.host.hubQueryUi.isTasksHubView()) {
                         if (this.host.shouldSkipFullRenderListOnConversationTick()
                             || previewOnlyDelta) {

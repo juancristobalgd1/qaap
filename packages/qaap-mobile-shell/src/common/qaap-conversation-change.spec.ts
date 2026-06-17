@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     computeSummaryChangedFields,
+    isPreviewOnlyConversationChange,
     isPreviewOnlySummaryChange,
 } from './qaap-conversation-change';
 import type { QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
@@ -28,5 +29,22 @@ describe('qaap-conversation-change', () => {
         const fields = computeSummaryChangedFields(base, { ...base, status: 'idle' });
         expect(fields).to.include('status');
         expect(isPreviewOnlySummaryChange(fields)).to.equal(false);
+    });
+
+    it('isPreviewOnlyConversationChange detects preview-only message_delta events', () => {
+        expect(isPreviewOnlyConversationChange({
+            kind: 'message_delta',
+            conversationId: 'c1',
+            cwd: '/repo',
+            changedFields: ['lastMessagePreview', 'updatedAt'],
+            listOrderChanged: false,
+        })).to.equal(true);
+        expect(isPreviewOnlyConversationChange({
+            kind: 'message_delta',
+            conversationId: 'c1',
+            cwd: '/repo',
+            changedFields: ['status'],
+            listOrderChanged: false,
+        })).to.equal(false);
     });
 });

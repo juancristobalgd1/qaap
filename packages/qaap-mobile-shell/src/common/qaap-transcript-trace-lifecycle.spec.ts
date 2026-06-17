@@ -8,6 +8,7 @@ import {
     agentMessageHasStructuredTrace,
     appendTraceCheckpointEvent,
     appendTraceRunCancelledEvent,
+    syncSettledTraceEventsOnMessage,
 } from './qaap-transcript-trace-lifecycle';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 
@@ -65,5 +66,18 @@ describe('qaap-transcript-trace-lifecycle', () => {
             traceEvents: [{ type: 'assistant_text', id: 't1', content: 'hi', status: 'completed' }],
         }))).to.equal(true);
         expect(agentMessageHasStructuredTrace(agentMessage())).to.equal(false);
+    });
+
+    it('syncSettledTraceEventsOnMessage clears streaming tail states', () => {
+        const settled = syncSettledTraceEventsOnMessage(agentMessage({
+            segments: [{ type: 'text', content: 'Done' }],
+            traceEvents: [{
+                type: 'assistant_text',
+                id: 'text-0',
+                content: 'Done',
+                status: 'streaming',
+            }],
+        }));
+        expect(settled.traceEvents?.[0]).to.deep.include({ status: 'completed' });
     });
 });
