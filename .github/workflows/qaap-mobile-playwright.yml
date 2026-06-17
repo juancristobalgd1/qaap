@@ -48,7 +48,12 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Build Browser
-        run: npm run build:browser
+        run: |
+          npm ci
+          npm run build:browser
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Qaap mobile UI tests (@qaap-mobile only)
         run: |
