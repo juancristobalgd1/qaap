@@ -93,6 +93,7 @@ export interface MobileProjectsTranscriptSheetHost {
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     agentsHubInlineActive: boolean;
+    conversations?: import('./mobile-projects-conversations').MobileProjectsConversations;
     visible: boolean;
     delegate: {
         onEnterActiveTranscript?(): void;
@@ -151,7 +152,7 @@ export class MobileProjectsTranscriptSheetUi {
         const previousSummary = this.host.transcriptOpenSummary;
         if (previousProject && previousSummary && previousSummary.id !== summary.id) {
             this.host.transcriptStickyComposerUi.flushTranscriptComposerDraft(previousSummary.id);
-            await this.host.transcriptStickyComposerUi.flushTranscriptComposerPrefs(previousProject, previousSummary);
+            void this.host.transcriptStickyComposerUi.flushTranscriptComposerPrefs(previousProject, previousSummary);
         }
         this.host.replacingTranscriptSheet = true;
         this.closeTranscriptSheet();
@@ -220,7 +221,10 @@ export class MobileProjectsTranscriptSheetUi {
         this.bindTranscriptSheetDismiss(back, backdrop);
 
         this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
-        this.host.transcriptLiveUi.renderOpenTranscriptPlaceholder(chatHost, summary);
+        if (!this.host.transcriptLiveUi.applyCachedTranscriptOnOpen(summary, chatHost)) {
+            this.host.transcriptLiveUi.renderOpenTranscriptPlaceholder(chatHost, summary);
+        }
+        this.host.conversations?.prefetchDocument(summary.id);
         this.host.transcriptComposerPrefsConvId = undefined;
         this.host.transcriptComposerAgentModel = undefined;
         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);

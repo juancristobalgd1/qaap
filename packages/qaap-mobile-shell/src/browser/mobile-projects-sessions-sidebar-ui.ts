@@ -518,6 +518,25 @@ export class MobileProjectsSessionsSidebarUi {
             host.append(sectionHead, list);
         }
         this.syncSessionsSidebarAnimatedListHeights(host);
+        this.prefetchVisibleSidebarDocuments();
+    }
+
+    protected prefetchVisibleSidebarDocuments(limit = 8): void {
+        const conversations = this.host.conversations;
+        if (!conversations) {
+            return;
+        }
+        const ids: string[] = [];
+        for (const entry of this.collectSessionsSidebarConversationEntries()) {
+            if (ids.length >= limit) {
+                break;
+            }
+            if (entry.summary.source === 'theia-chat' || entry.summary.id.startsWith('pending-')) {
+                continue;
+            }
+            ids.push(entry.summary.id);
+        }
+        conversations.prefetchDocuments(ids);
     }
     syncSessionsSidebarAnimatedListHeights(host: HTMLElement): void {
         window.requestAnimationFrame(() => {

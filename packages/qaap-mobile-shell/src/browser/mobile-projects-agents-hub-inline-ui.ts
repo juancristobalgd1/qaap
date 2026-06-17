@@ -106,6 +106,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
     updateTasksAttentionChrome(): void;
     conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
+    conversations?: import('./mobile-projects-conversations').MobileProjectsConversations;
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     onNewClick(): Promise<void>;
     onStartNewProject(): Promise<void>;
@@ -377,7 +378,8 @@ export class MobileProjectsAgentsHubInlineUi {
             && this.host.transcriptLastConv
             && this.host.transcriptLastConv.id === activeSummary.id
             ? this.host.transcriptLastConv
-            : this.host.transcriptConversationCache.get(activeSummary.id)
+            : this.host.transcriptLiveUi.peekCachedOpenTranscript(activeSummary.id)
+                ?? this.host.transcriptConversationCache.get(activeSummary.id)
                 ?? this.host.transcriptSheetUi.summaryToTranscriptPlaceholder(activeSummary);
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
     }
@@ -548,9 +550,10 @@ export class MobileProjectsAgentsHubInlineUi {
         }
         if (previousProject && previousSummary && previousSummary.id !== summary.id) {
             this.host.transcriptStickyComposerUi.flushTranscriptComposerDraft(previousSummary.id);
-            await this.host.transcriptStickyComposerUi.flushTranscriptComposerPrefs(previousProject, previousSummary);
+            void this.host.transcriptStickyComposerUi.flushTranscriptComposerPrefs(previousProject, previousSummary);
         }
-        const cachedTargetConversation = this.host.transcriptConversationCache.get(summary.id);
+        const cachedTargetConversation = this.host.transcriptLiveUi.peekCachedOpenTranscript(summary.id)
+            ?? this.host.transcriptConversationCache.get(summary.id);
         if (this.host.agentsHubInlineActive) {
             this.host.replacingTranscriptSheet = true;
             this.closeAgentsHubSession();
@@ -591,6 +594,7 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, connectedChatHost);
             this.renderAgentsHubShellChat(connectedChatHost, project, summary);
             this.host.stickyComposerRenderUi.renderStickyComposer();
+            this.host.conversations?.prefetchDocument(summary.id);
             void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
@@ -603,6 +607,7 @@ export class MobileProjectsAgentsHubInlineUi {
         if (chatHost) {
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
             this.renderAgentsHubShellChat(chatHost, project, summary);
+            this.host.conversations?.prefetchDocument(summary.id);
             void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
         }
         this.host.stickyComposerRenderUi.renderStickyComposer();

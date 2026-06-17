@@ -975,7 +975,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         const conv = this.host.transcriptLastConv?.id === summary.id
             ? this.host.transcriptLastConv
-            : await getConversation(summary.id).catch(() => undefined);
+            : this.host.conversations?.threadStore.getDocument(summary.id)
+                ?? await getConversation(summary.id).catch(() => undefined);
         if (!conv || conv.id !== summary.id) {
             return false;
         }
@@ -1082,6 +1083,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (this.host.transcriptLastConv?.id === summary.id
             && this.host.transcriptComposerPrefsConvId !== summary.id) {
             this.applyTranscriptComposerPrefsFromConversation(this.host.transcriptLastConv, project, summary);
+            return;
+        }
+        const cachedDocument = this.host.conversations?.threadStore.getDocument(summary.id);
+        if (cachedDocument && this.host.transcriptComposerPrefsConvId !== summary.id) {
+            this.applyTranscriptComposerPrefsFromConversation(cachedDocument, project, summary);
             return;
         }
         if (this.host.transcriptComposerPrefsConvId === summary.id) {

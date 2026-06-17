@@ -1005,6 +1005,25 @@ export class MobileProjectsTranscriptLiveUi {
         });
     }
 
+    /** Paint cached messages immediately when opening a conversation (sidebar / hub). */
+    applyCachedTranscriptOnOpen(
+        summary: QaapAgentConversationSummaryDTO,
+        chatHost: HTMLElement,
+    ): boolean {
+        const cached = this.readCachedTranscriptConversation(summary.id);
+        if (!cached?.messages.length) {
+            return false;
+        }
+        this.host.transcriptLastConv = cached;
+        this.host.transcriptLastFingerprint = this.conversationTranscriptFingerprint(cached);
+        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, cached);
+        return true;
+    }
+
+    peekCachedOpenTranscript(conversationId: string): QaapAgentConversationDTO | undefined {
+        return this.readCachedTranscriptConversation(conversationId);
+    }
+
     reconcileConversationListSummary(full: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
         const snapshot = conversationToSummary(full);
         const stored = this.host.conversations?.findSummaryById(full.id);
@@ -1058,6 +1077,11 @@ export class MobileProjectsTranscriptLiveUi {
             : undefined;
         if (localSnapshot && localSnapshot.messages.length > 0) {
             this.host.transcriptLastConv = localSnapshot;
+            const cacheFingerprint = this.conversationTranscriptFingerprint(localSnapshot);
+            if (this.host.transcriptLastFingerprint !== cacheFingerprint) {
+                this.host.transcriptLastFingerprint = cacheFingerprint;
+                this.host.transcriptMessagesUi.renderTranscriptMessages(activeChatHost, localSnapshot);
+            }
         }
         try {
             const full = await this.resolveOpenTranscriptConversation(activeSummary);

@@ -14,6 +14,7 @@ import {
     QAAP_AGENT_CONVERSATION_API_PATH,
     QAAP_AGENT_CONVERSATION_WS_PATH,
     cancelConversationHttp,
+    getConversation,
     listAllConversationGroups,
     registerConversationLiveCancel,
     type QaapAgentConversationDTO,
@@ -113,6 +114,7 @@ export class MobileProjectsConversations {
     protected started = false;
     protected visibilityListenerInstalled = false;
     protected transportWasDisconnected = false;
+    protected readonly documentPrefetchInFlight = new Set<string>();
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
     /** Fires whenever conversation state on the server changes (any project). */
@@ -384,6 +386,35 @@ export class MobileProjectsConversations {
             });
         }
         return isFirstLoad;
+    }
+
+    /** Warm the full document in threadStore (deduped, best-effort). */
+    prefetchDocument(conversationId: string): void {
+        if (!conversationId || conversationId.startsWith('pending-')) {
+            return;
+        }
+        const cached = this.threadStore.getDocument(conversationId);
+        if (cached && cached.messages.length > 0) {
+            return;
+        }
+        if (this.documentPrefetchInFlight.has(conversationId)) {
+            return;
+        }
+        this.documentPrefetchInFlight.add(conversationId);
+        void getConversation(conversationId)
+            .then(document => {
+                this.cacheDocument(document);
+            })
+            .catch(() => undefined)
+            .finally(() => {
+                this.documentPrefetchInFlight.delete(conversationId);
+            });
+    }
+
+    prefetchDocuments(conversationIds: readonly string[]): void {
+        for (const conversationId of conversationIds) {
+            this.prefetchDocument(conversationId);
+        }
     }
 
     /** Latest summary row for a conversation id (VPS or Theia-backed). */

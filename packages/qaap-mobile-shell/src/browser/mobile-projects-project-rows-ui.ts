@@ -721,6 +721,16 @@ export class MobileProjectsProjectRowsUi {
             }
 
             item.append(taskDot, taskBody);
+            if (summary && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-')) {
+                let prefetched = false;
+                item.addEventListener('pointerenter', () => {
+                    if (prefetched) {
+                        return;
+                    }
+                    prefetched = true;
+                    this.host.conversationOpenUi.prefetchConversationDocument(summary.id);
+                }, { passive: true });
+            }
             item.addEventListener('click', ev => {
                 ev.stopPropagation();
                 options?.onActivate?.();

@@ -45,6 +45,10 @@ export interface MobileProjectsConversationOpenHost {
 export class MobileProjectsConversationOpenUi {
     constructor(protected readonly host: MobileProjectsConversationOpenHost) { }
 
+    prefetchConversationDocument(conversationId: string): void {
+        this.host.conversations?.prefetchDocument(conversationId);
+    }
+
     async openTaskInAgent(project: MobileProjectEntry, task?: MobileProjectTaskView): Promise<void> {
         // Task ids now correspond to conversation ids — tap opens the transcript sheet in-place so
         // the user can read/continue the conversation without switching workspaces.
@@ -76,6 +80,7 @@ export class MobileProjectsConversationOpenUi {
         // Opening a chat clears its unread badge — record the high-water mark before navigating so
         // the project glyph drops the "new replies" treatment on the next render.
         this.host.conversationFlags?.markRead(summary.id, summary.updatedAt);
+        this.host.conversations?.prefetchDocument(summary.id);
         await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);
         this.host.refreshWorkHubConversationChrome();
     }

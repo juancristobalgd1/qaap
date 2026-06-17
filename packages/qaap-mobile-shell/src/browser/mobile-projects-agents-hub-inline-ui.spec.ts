@@ -244,6 +244,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 scheduleTranscriptConversationRefresh: () => undefined,
                 refreshOpenTranscriptConversation: async () => undefined,
                 stopTranscriptLiveWatch: () => undefined,
+                peekCachedOpenTranscript: () => undefined,
+                applyCachedTranscriptOnOpen: () => false,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
             transcriptMessagesUi: {
                 renderTranscriptMessages: () => undefined,
@@ -349,6 +351,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 scheduleTranscriptConversationRefresh: () => undefined,
                 refreshOpenTranscriptConversation: async () => undefined,
                 stopTranscriptLiveWatch: () => undefined,
+                peekCachedOpenTranscript: () => undefined,
+                applyCachedTranscriptOnOpen: () => false,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
             transcriptSheetUi: {
                 closeTranscriptSheet: () => undefined,
@@ -419,6 +423,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 agentsHubInlineChatHost: chatHost,
                 transcriptLiveUi: {
                     stopTranscriptLiveWatch: () => { stopLiveWatchCalls++; },
+                    peekCachedOpenTranscript: () => undefined,
+                    applyCachedTranscriptOnOpen: () => false,
                 } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
                 transcriptMessagesUi: {
                     renderTranscriptMessages: () => { renderMessagesCalls++; },
@@ -457,6 +463,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
             transcriptLiveUi: {
                 stopTranscriptLiveWatch: () => undefined,
+                peekCachedOpenTranscript: () => undefined,
+                applyCachedTranscriptOnOpen: () => false,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
             transcriptUi: {
                 disposeList: () => undefined,
@@ -513,6 +521,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
             transcriptLiveUi: {
                 stopTranscriptLiveWatch: () => undefined,
+                peekCachedOpenTranscript: () => undefined,
+                applyCachedTranscriptOnOpen: () => false,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
             transcriptUi: {
                 disposeList: () => undefined,
