@@ -36,6 +36,8 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         const raf = (callback: FrameRequestCallback): number => setTimeout(() => callback(performance.now()), 0) as unknown as number;
         window.requestAnimationFrame = raf;
         window.cancelAnimationFrame = (handle: number): void => clearTimeout(handle);
+        globalThis.requestAnimationFrame = raf;
+        globalThis.cancelAnimationFrame = (handle: number): void => clearTimeout(handle);
     });
 
     function createRenderUi(): {

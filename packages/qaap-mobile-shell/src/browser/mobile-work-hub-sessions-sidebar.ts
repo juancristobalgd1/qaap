@@ -49,7 +49,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
 }
 
 /**
- * Full-screen sessions sidebar (mockup `.mock-sidebar`). List rows are rendered by the
+ * Full-screen sessions sidebar. List rows are rendered by the
  * delegate via {@link MobileProjectsPanel.createTaskItem} so behaviour matches Tasks inbox.
  */
 export class MobileWorkHubSessionsSidebar {
@@ -226,7 +226,7 @@ export class MobileWorkHubSessionsSidebar {
         this.accountLabel.textContent = this.accountBtn.title;
     }
 
-    /** Evita ghost-tap en la posición del ☰ al abrir (mockup). */
+    /** Evita ghost-tap en la posición del botón de cerrar al abrir. */
     protected guardSidebarCloseButton(closeBtn: HTMLButtonElement): void {
         closeBtn.classList.add('theia-mod-close-guarded');
         window.setTimeout(() => {

@@ -507,7 +507,7 @@ export function createDiffStatsLine(options: {
     return line;
 }
 
-/** Parallel run variant card (mockup `.variant` row). */
+/** Parallel run variant card. */
 export function createParallelVariantCard(options: {
     readonly agentId: string;
     readonly title: string;

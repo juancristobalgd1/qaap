@@ -158,6 +158,8 @@ describe('formatToolActivityLabel', () => {
         expect(extractToolArgFilePath('{"filePath":"packages/core/src/app.ts"}')).to.equal('packages/core/src/app.ts');
         expect(extractToolArgFilePath('{"target_file":"foo.ts"}')).to.equal('foo.ts');
         expect(extractToolArgFilePath('{"file_path":"src/config.ts"}')).to.equal('src/config.ts');
+        expect(extractToolArgFilePath('<path>/repo/src/store.tsx</path>')).to.equal('/repo/src/store.tsx');
+        expect(extractToolArgFilePath('<path>/repo/src/components/Trace.tsx')).to.equal('/repo/src/components/Trace.tsx');
         expect(extractToolArgFilePath('partial {"file_path":"mobile-projects-panel.ts"')).to.equal('mobile-projects-panel.ts');
     });
 

@@ -17,7 +17,7 @@ export interface QaapSegmentedFieldController<T extends string = string> {
     setValue(value: T): void;
 }
 
-/** Mockup-style segmented control (`.seg` in qaap-agentic-mockups.html). */
+/** Segmented control used by QAAP mobile forms. */
 export function createSegmentedField<T extends string>(options: {
     readonly label?: string;
     readonly segments: readonly QaapSegmentedOption<T>[];

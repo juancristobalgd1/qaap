@@ -70,10 +70,10 @@ describe('parseOpencodeFormattedLog', () => {
         const log = [
             '> build · minimax-m3-free',
             '',
-            '→ Read artifacts/mockup-studio/package.json',
-            '→ Read artifacts/mockup-studio/src/App.tsx',
+            '→ Read artifacts/demo-studio/package.json',
+            '→ Read artifacts/demo-studio/src/App.tsx',
             '',
-            '$ ls artifacts/mockup-studio/src',
+            '$ ls artifacts/demo-studio/src',
             'Canvas.tsx',
             'LeftPanel.tsx',
             '',

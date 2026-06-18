@@ -172,7 +172,8 @@ export class MobileProjectsTranscriptMessagesResolversUi {
                                 : undefined;
             return path ? this.compactTranscriptPath(path) : undefined;
         } catch {
-            return undefined;
+            const path = extractToolArgFilePath(argsJson);
+            return path ? this.compactTranscriptPath(path) : undefined;
         }
     }
 
@@ -180,9 +181,13 @@ export class MobileProjectsTranscriptMessagesResolversUi {
     extractTranscriptToolCommand(argsJson: string): string | undefined {
         try {
             const args = JSON.parse(argsJson) as Record<string, unknown>;
-            return typeof args.command === 'string' && args.command.trim() ? args.command.trim() : undefined;
+            const command = [args.command, args.cmd, args.script]
+                .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+            return command?.trim();
         } catch {
-            return undefined;
+            const match = argsJson.match(/<(?:command|cmd|script)>\s*([\s\S]+?)\s*<\/(?:command|cmd|script)>/i)
+                ?? argsJson.match(/<(?:command|cmd|script)>\s*([^\n\r<]+)/i);
+            return match?.[1]?.replace(/\s+/g, ' ').trim() || undefined;
         }
     }
 

@@ -21,9 +21,17 @@ export function resolveTranscriptCursorTraceLabel(
     argsJson: string,
     options?: { readonly path?: string; readonly command?: string },
 ): QaapTranscriptCursorTraceLabel {
+    const normalizedToolName = toolName.toLowerCase().replace(/[_-]+/g, ' ').trim();
+    if (normalizedToolName.includes('todo')) {
+        return { verb: 'Updated', detail: 'todo list' };
+    }
+    if (normalizedToolName === 'task' || normalizedToolName.includes('task')) {
+        return { verb: 'Started', detail: extractTranscriptTaskSummary(argsJson) ?? 'task' };
+    }
     const kind = classifyTranscriptToolActivityKind(toolName);
     const rowParts = resolveTranscriptToolRowParts(kind, toolName, options);
     const name = toolName.toLowerCase();
+    const fileName = options?.path ? options.path.replace(/\\/g, '/').split('/').filter(Boolean).pop() : undefined;
     switch (kind) {
         case 'searching': {
             const pattern = extractTranscriptTracePattern(argsJson);
@@ -36,7 +44,7 @@ export function resolveTranscriptCursorTraceLabel(
         case 'reading':
             return {
                 verb: 'Read',
-                detail: rowParts.detail,
+                detail: fileName ?? rowParts.detail,
                 tail: resolveTranscriptTraceLocationTail(toolName, argsJson),
             };
         case 'terminal':
@@ -46,7 +54,7 @@ export function resolveTranscriptCursorTraceLabel(
                 tail: extractTranscriptCommandTail(options?.command),
             };
         case 'editing': {
-            const file = options?.path ? options.path.split('/').pop() ?? options.path : rowParts.detail;
+            const file = fileName ?? rowParts.detail;
             return { verb: 'Edited', detail: file };
         }
         case 'mcp':
@@ -54,6 +62,31 @@ export function resolveTranscriptCursorTraceLabel(
         default:
             return { verb: 'Used', detail: rowParts.detail };
     }
+}
+
+function extractTranscriptTaskSummary(argsJson: string): string | undefined {
+    const trimmed = argsJson.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    try {
+        const args = JSON.parse(trimmed) as Record<string, unknown>;
+        const value = [args.description, args.prompt, args.task, args.title]
+            .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0);
+        return compactTraceDetail(value);
+    } catch {
+        const match = trimmed.match(/<(?:description|prompt|task|title)>\s*([^<]+?)\s*<\/(?:description|prompt|task|title)>/i)
+            ?? trimmed.match(/<(?:description|prompt|task|title)>\s*([^\n\r<]+)/i);
+        return compactTraceDetail(match?.[1]);
+    }
+}
+
+function compactTraceDetail(value: string | undefined, max = 44): string | undefined {
+    const clean = value?.replace(/\s+/g, ' ').trim();
+    if (!clean) {
+        return undefined;
+    }
+    return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
 }
 
 function extractTranscriptTracePattern(argsJson: string): string | undefined {

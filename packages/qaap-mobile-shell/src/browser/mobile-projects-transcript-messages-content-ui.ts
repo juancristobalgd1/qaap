@@ -114,11 +114,23 @@ export class MobileProjectsTranscriptMessagesContentUi {
 
     renderTranscriptMarkdown(host: HTMLElement, content: string, options?: { readonly defer?: boolean }): void {
         const clean = this.cleanTranscriptDisplayText(content).trim();
+        if (!clean) {
+            host.replaceChildren();
+            host.classList.remove('theia-mod-markdown');
+            return;
+        }
         if (options?.defer) {
             this.renderTranscriptDeferredMarkdownPlaceholder(host, clean);
             return;
         }
         const linked = this.linkifyTranscriptPreviewUrls(clean);
+        host.classList.remove(
+            TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS,
+            TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS,
+            TRANSCRIPT_STREAMING_HYBRID_CLASS,
+        );
+        host.classList.add('theia-mod-markdown');
+        host.textContent = clean;
         QaapTranscriptMarkdownWorkerClient.get().requestParse(
             host,
             linked,

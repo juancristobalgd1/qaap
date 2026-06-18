@@ -25,12 +25,25 @@ import { QaapTranscriptMarkdownWorkerClient } from './qaap-transcript-markdown-w
 describe('MobileProjectsTranscriptMessagesContentUi', () => {
 
     const { document } = parseHTML('<!DOCTYPE html><html><body></body></html>');
+    let previousDocument: Document | undefined;
 
     before(() => {
+        previousDocument = globalThis.document;
         (globalThis as typeof globalThis & { document: Document }).document = document as unknown as Document;
     });
 
+    after(() => {
+        if (previousDocument) {
+            (globalThis as typeof globalThis & { document: Document }).document = previousDocument;
+        }
+    });
+
     beforeEach(() => {
+        if (typeof window !== 'undefined') {
+            const testWindow = window as Partial<Pick<Window, 'requestAnimationFrame' | 'cancelAnimationFrame'>>;
+            delete testWindow.requestAnimationFrame;
+            delete testWindow.cancelAnimationFrame;
+        }
         QaapTranscriptMarkdownWorkerClient.resetForTests();
         const client = QaapTranscriptMarkdownWorkerClient.get();
         (client as unknown as { requestStreamingPatch: () => void }).requestStreamingPatch = () => { /* tested via direct HTML patch */ };
@@ -46,6 +59,21 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         expect(host.classList.contains(TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS)).to.equal(true);
         expect(host.classList.contains(TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS)).to.equal(false);
         expect(host.textContent).to.equal('**Hello** `world`');
+        expect(host.querySelector('strong')).to.equal(null);
+    });
+
+    it('renderTranscriptMarkdown shows plain text while worker markdown is pending', () => {
+        const host = document.createElement('div');
+        const ui = new MobileProjectsTranscriptMessagesContentUi({
+            transcriptMarkdownIt: markdownit(),
+        } as never);
+        const client = QaapTranscriptMarkdownWorkerClient.get();
+        (client as unknown as { requestParse: () => void }).requestParse = () => { /* simulate pending worker */ };
+
+        ui.renderTranscriptMarkdown(host, '**Agent response**');
+
+        expect(host.classList.contains('theia-mod-markdown')).to.equal(true);
+        expect(host.textContent).to.equal('**Agent response**');
         expect(host.querySelector('strong')).to.equal(null);
     });
 

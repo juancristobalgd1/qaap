@@ -186,6 +186,10 @@ export function extractToolArgFilePath(argsJson?: string): string | undefined {
     } catch {
         const match = trimmed.match(
             /"(?:file_path|path|filePath|filename|target_file|file)"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+        ) ?? trimmed.match(
+            /<(?:file_path|path|filePath|filename|target_file|file)>\s*([^<]+?)\s*<\/(?:file_path|path|filePath|filename|target_file|file)>/i,
+        ) ?? trimmed.match(
+            /<(?:file_path|path|filePath|filename|target_file|file)>\s*([^\n\r<]+)/i,
         );
         if (!match?.[1]) {
             return undefined;

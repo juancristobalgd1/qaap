@@ -58,7 +58,7 @@ packages/
   qaap-product-theme/      product CSS and theme tokens
   qaap-element-inspector/  preview element inspector
 qaiq/                      QAAP's bundled/forked agent CLI
-doc/                       architecture, deployment, agent docs, mockups
+doc/                       architecture, deployment, and agent docs
 ```
 
 ## Run From Source

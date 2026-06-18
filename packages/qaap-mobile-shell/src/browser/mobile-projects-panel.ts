@@ -292,7 +292,7 @@ export interface MobileProjectsPanelDelegate {
     onShowRoutinesHub?(): void | Promise<void>;
     /** Shell bottom bar active state after in-panel hub tab changes. */
     onHubLandingViewChanged?(): void;
-    /** Transcript sheet on body: leave Work Hub landing overlay (mockup chat-active). */
+    /** Transcript sheet on body: leave Work Hub landing overlay while chat is active. */
     onEnterActiveTranscript?(): void;
     /** Transcript closed: restore Agents hub if the user had opened chat from the landing. */
     onExitActiveTranscript?(): void;
@@ -1272,7 +1272,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.sessionsSidebarUi.toggleWorkHubSessionsSidebar();
     }
 
-    /** Carga proyectos + sesiones antes de pintar filas `createTaskItem` en el sidebar (mockup). */
+    /** Carga proyectos + sesiones antes de pintar filas `createTaskItem` en el sidebar. */
     protected async prepareSessionsSidebarData(): Promise<void> {
         await this.sessionsSidebarUi.prepareSessionsSidebarData();
     }

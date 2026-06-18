@@ -29,6 +29,21 @@ describe('resolveTranscriptCursorTraceLabel', () => {
             tail: 'cd, npm',
         });
     });
+
+    it('formats todo and task tools with user-readable labels', () => {
+        expect(resolveTranscriptCursorTraceLabel('todo list', '[', {})).to.deep.equal({
+            verb: 'Updated',
+            detail: 'todo list',
+        });
+        expect(resolveTranscriptCursorTraceLabel('task', '<task>Refactor the mobile timeline rows</task>', {})).to.deep.equal({
+            verb: 'Started',
+            detail: 'Refactor the mobile timeline rows',
+        });
+        expect(resolveTranscriptCursorTraceLabel('task', '<task>Polish the agent trace UI', {})).to.deep.equal({
+            verb: 'Started',
+            detail: 'Polish the agent trace UI',
+        });
+    });
 });
 
 describe('extractTranscriptCommandTail', () => {

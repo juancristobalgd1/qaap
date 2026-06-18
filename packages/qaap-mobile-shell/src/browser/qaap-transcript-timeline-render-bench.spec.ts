@@ -79,6 +79,24 @@ describe('qaap-transcript-timeline-render-bench', () => {
         return artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, conv, { streaming: true });
     }
 
+    function createCompletedConv(segments: QaapAgentMessageSegmentDTO[]): QaapAgentConversationDTO {
+        return {
+            id: 'conv-bench',
+            title: 'Bench',
+            cwd: '/tmp/bench',
+            agentId: 'codex',
+            status: 'idle',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: [{
+                id: 'agent-1',
+                role: 'agent',
+                content: '',
+                segments,
+            }],
+        } as QaapAgentConversationDTO;
+    }
+
     it('skips redundant timeline syncs during duplicate SSE frames', () => {
         enableTranscriptRenderMetrics(true);
         resetTranscriptRenderMetrics();
@@ -117,5 +135,71 @@ describe('qaap-transcript-timeline-render-bench', () => {
         }
         const elapsedMs = performance.now() - start;
         expect(elapsedMs).to.be.below(250);
+    });
+
+    it('renders assistant-style reasoning trace chrome with descriptive tool rows', () => {
+        const artifactsUi = createArtifactsUi();
+        const row = createStreamingRow(artifactsUi, [
+            { type: 'thinking', content: 'Let me think about this step by step.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ]);
+
+        expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-icon.theia-mobile-agent-trace-glyph')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent).to.equal('Reasoning');
+        expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-timeline')?.open).to.equal(true);
+        expect(row.querySelector('.theia-mobile-agent-activity-icon')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-activity-verb')?.textContent).to.equal('Read');
+        expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill')?.textContent).to.equal('page.tsx');
+        expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill .theia-mobile-agent-activity-file-icon.codicon-file-code')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-activity-detail-label')?.textContent).to.equal('page.tsx');
+    });
+
+    it('keeps reasoning as the only tool execution surface after settling', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Plan the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: '<path>/repo/app/page.tsx',
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'Bash',
+                toolUseId: 'tool-run-status',
+                args: JSON.stringify({ command: 'git status --short' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const conv = createCompletedConv(segments);
+        const row = artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, conv);
+
+        expect(row.querySelector('.theia-mobile-agent-activity-timeline')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-tool-group, .theia-mobile-agent-tool-pill')).to.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-activity-detail-label')?.textContent).to.equal('page.tsx');
+
+        const streamingRow = createStreamingRow(artifactsUi, segments);
+        const artifacts = document.createElement('div');
+        artifacts.className = 'theia-mobile-agent-transcript-artifacts';
+        const duplicate = document.createElement('details');
+        duplicate.className = 'theia-mobile-agent-tool-group';
+        artifacts.append(duplicate);
+        streamingRow.querySelector('.theia-mobile-agent-transcript-segments')?.append(artifacts);
+        artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
+
+        expect(streamingRow.querySelector('.theia-mobile-agent-activity-timeline')).to.not.equal(null);
+        expect(streamingRow.querySelector('.theia-mobile-agent-tool-group, .theia-mobile-agent-tool-pill')).to.equal(null);
     });
 });

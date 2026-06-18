@@ -16,7 +16,7 @@ export interface QaapGitChangedFile {
     adds: number;
     /** Removed lines across the diff. */
     dels: number;
-    /** True when the file's changes are fully staged (the mockup's "approved" state). */
+    /** True when the file's changes are fully staged. */
     staged: boolean;
 }
 

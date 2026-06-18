@@ -244,7 +244,7 @@ export function setMobileWorkHubComposerHeaderChrome(visible: boolean): void {
     setMobileWorkHubHideIdeSidePanels(visible && !peekPreferDesktopIde());
 }
 
-/** Full-screen agent transcript (mockup chat-active): hide hub landing chrome and hub bottom bar. */
+/** Full-screen agent transcript: hide hub landing chrome and hub bottom bar. */
 export const QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS = 'theia-mobile-mod-active-transcript';
 
 export function setMobileActiveTranscriptChrome(active: boolean): void {
