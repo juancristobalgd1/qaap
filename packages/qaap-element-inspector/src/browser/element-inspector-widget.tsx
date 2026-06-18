@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as React from 'react';
+import * as React from '@theia/core/shared/react';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { codicon, Message } from '@theia/core/lib/browser';
@@ -60,7 +60,7 @@ export class ElementInspectorWidget extends ReactWidget {
 
     protected runCommand(commandId: string): void {
         if (this.commands.isEnabled(commandId)) {
-            void this.commands.executeCommand(commandId).catch(() => undefined);
+            this.commands.executeCommand(commandId).catch(() => undefined);
         }
     }
 }

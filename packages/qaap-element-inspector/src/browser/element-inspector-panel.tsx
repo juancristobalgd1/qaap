@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as React from 'react';
+import * as React from '@theia/core/shared/react';
 import { codicon } from '@theia/core/lib/browser';
 import { nls } from '@theia/core/lib/common/nls';
 import { ElementInspectorService } from './element-inspector-service';
@@ -232,8 +232,18 @@ const LayoutGroup: React.FC<FieldProps> = ({ picked, setStyle }) => {
             <div className='theia-mini-browser-inspector__seg'>
                 <SegButton active={flexDir === 'row'} onClick={() => setStyle('flex-direction', 'row')} icon='arrow-right' title='row' />
                 <SegButton active={flexDir === 'column'} onClick={() => setStyle('flex-direction', 'column')} icon='arrow-down' title='column' />
-                <SegButton active={flexWrap === 'wrap'} onClick={() => setStyle('flex-wrap', flexWrap === 'wrap' ? 'nowrap' : 'wrap')} icon='list-unordered' title='wrap' />
-                <SegButton active={disp === 'grid' || disp === 'inline-grid'} onClick={() => setStyle('display', disp.includes('grid') ? 'block' : 'grid')} icon='layout-panel' title='grid' />
+                <SegButton
+                    active={flexWrap === 'wrap'}
+                    onClick={() => setStyle('flex-wrap', flexWrap === 'wrap' ? 'nowrap' : 'wrap')}
+                    icon='list-unordered'
+                    title='wrap'
+                />
+                <SegButton
+                    active={disp === 'grid' || disp === 'inline-grid'}
+                    onClick={() => setStyle('display', disp.includes('grid') ? 'block' : 'grid')}
+                    icon='layout-panel'
+                    title='grid'
+                />
             </div>
             <SelectRow label='Justify' prop='justify-content' picked={picked} setStyle={setStyle} options={JUSTIFY_CONTENT_OPTIONS} />
             <SelectRow label='Align items' prop='align-items' picked={picked} setStyle={setStyle} options={ALIGN_ITEMS_OPTIONS} />
@@ -317,7 +327,13 @@ const AppearanceGroup: React.FC<FieldProps> = ({ picked, setStyle }) => {
             <StyleNumberInput label='Radius' prop='border-radius' picked={picked} setStyle={setStyle} fallback='0' />
             <ColorRow label='Border color' prop='border-color' picked={picked} setStyle={setStyle} />
             <StyleNumberInput label='Border W' prop='border-width' picked={picked} setStyle={setStyle} fallback='0' />
-            <SelectRow label='Border' prop='border-style' picked={picked} setStyle={setStyle} options={['none', 'solid', 'dashed', 'dotted', 'double', 'groove', 'ridge', 'inset', 'outset']} />
+            <SelectRow
+                label='Border'
+                prop='border-style'
+                picked={picked}
+                setStyle={setStyle}
+                options={['none', 'solid', 'dashed', 'dotted', 'double', 'groove', 'ridge', 'inset', 'outset']}
+            />
             <StyleTextInput label='Shadow' prop='box-shadow' picked={picked} setStyle={setStyle} />
         </div>
     );
@@ -399,7 +415,7 @@ const StyleNumberInput: React.FC<InputBaseProps & { fallback: string; inline?: b
         }
     };
     const applyStep = (delta: number): void => {
-        if (!/^[-+]?\d*\.?\d+$/.test(value)) return;
+        if (!/^[-+]?\d*\.?\d+$/.test(value)) {return; }
         const next = (parseFloat(value) || 0) + delta;
         const nextStr = String(next);
         setValue(nextStr);
@@ -439,7 +455,7 @@ const StyleTextInput: React.FC<InputBaseProps> = ({ label, prop, picked, setStyl
     const [value, setValue] = React.useState<string>(raw);
     const focused = React.useRef(false);
     React.useEffect(() => {
-        if (!focused.current) setValue(raw);
+        if (!focused.current) {setValue(raw); }
     }, [raw]);
     return (
         <label className='theia-mini-browser-inspector__field' title={prop}>
@@ -505,7 +521,7 @@ const SegButton: React.FC<{ active: boolean; onClick: () => void; icon: string; 
 
 function splitNumberUnit(raw: string, fallback: string): { text: string; unit: string } {
     const r = String(raw || fallback || '').trim();
-    if (!r) return { text: '', unit: 'px' };
+    if (!r) {return { text: '', unit: 'px' }; }
     if (!/^[-+.\d]/.test(r)) {
         return { text: r, unit: '' };
     }
@@ -609,7 +625,7 @@ const HtmlTab: React.FC<{ picked: PickedElement; service: ElementInspectorServic
     const [text, setText] = React.useState<string>(picked.textPreview);
     const focused = React.useRef(false);
     React.useEffect(() => {
-        if (!focused.current) setText(picked.textPreview);
+        if (!focused.current) {setText(picked.textPreview); }
     }, [picked.textPreview, picked.pickedId]);
     return (
         <div className='theia-mini-browser-inspector__html'>
@@ -643,15 +659,15 @@ const HtmlTab: React.FC<{ picked: PickedElement; service: ElementInspectorServic
 
 function formatSelector(node: { tagName: string; id?: string; classes: ReadonlyArray<string> }): string {
     let selector = node.tagName;
-    if (node.id) selector += '#' + node.id;
-    if (node.classes && node.classes.length) selector += '.' + node.classes.slice(0, 3).join('.');
+    if (node.id) {selector += '#' + node.id; }
+    if (node.classes && node.classes.length) {selector += '.' + node.classes.slice(0, 3).join('.'); }
     return selector;
 }
 
 function isTextAlign(picked: PickedElement, side: 'left' | 'center' | 'right' | 'justify'): boolean {
     const v = (picked.computedStyles['text-align'] || '').toLowerCase();
-    if (side === 'left') return v === 'left' || v === 'start';
-    if (side === 'right') return v === 'right' || v === 'end';
+    if (side === 'left') {return v === 'left' || v === 'start'; }
+    if (side === 'right') {return v === 'right' || v === 'end'; }
     return v === side;
 }
 

@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as React from 'react';
-import { createRoot, Root } from 'react-dom/client';
+import * as React from '@theia/core/shared/react';
+import { createRoot, Root } from '@theia/core/shared/react-dom/client';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { ElementInspectorService } from './element-inspector-service';
@@ -111,6 +111,6 @@ export function mountEmbeddedElementInspector(
 
 function runCommand(commands: CommandRegistry, commandId: string): void {
     if (commands.isEnabled(commandId)) {
-        void commands.executeCommand(commandId).catch(() => undefined);
+        commands.executeCommand(commandId).catch(() => undefined);
     }
 }

@@ -32,6 +32,8 @@ import {
     PREFERENCE_NAME_DEFAULT_NOTIFICATION_TYPE,
     GenericCapabilitySelections,
     CAPABILITY_TYPE_PROMPT_MAP,
+    LanguageModelAliasRegistry,
+    LanguageModelAlias,
 } from '@theia/ai-core/lib/common';
 import { isChatAgent } from '@theia/ai-chat/lib/common';
 import { codicon, CommonCommands, QuickInputService } from '@theia/core/lib/browser';
@@ -41,13 +43,11 @@ import { inject, injectable, named, postConstruct } from '@theia/core/shared/inv
 import * as React from '@theia/core/shared/react';
 import { AIConfigurationSelectionService } from './ai-configuration-service';
 import { LanguageModelRenderer } from './language-model-renderer';
-import { LanguageModelAliasRegistry, LanguageModelAlias } from '@theia/ai-core/lib/common/language-model-alias';
 import { AIVariableConfigurationWidget } from './variable-configuration-widget';
-import { nls } from '@theia/core';
+import { ContributionProvider, nls } from '@theia/core';
 import { PromptVariantRenderer } from './template-settings-renderer';
 import { AIListDetailConfigurationWidget } from './base/ai-list-detail-configuration-widget';
 import { AgentNotificationSettings } from './components/agent-notification-settings';
-import { ContributionProvider } from '@theia/core';
 import { LanguageModelOptionContribution } from './language-model-option-contribution';
 
 interface ParsedPrompt {

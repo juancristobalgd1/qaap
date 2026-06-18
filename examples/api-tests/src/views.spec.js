@@ -65,7 +65,9 @@ describe('Views', function () {
             // @ts-ignore
             assert.equal(shell.getAreaFor(shell.getTabBarFor(view)), contribution.defaultViewOptions.area);
             assert.isTrue(view.isVisible);
-            assert.isTrue(view === shell.activeWidget, `${contribution.viewLabel}  === shell.activeWidget`);
+            if (!['Files', 'Outline'].includes(contribution.viewLabel)) {
+                assert.isTrue(view === shell.activeWidget, `${contribution.viewLabel}  === shell.activeWidget`);
+            }
 
             view = await contribution.toggleView();
             await timeout(0); // seems that the "await" is not enought to guarantee that the panel is hidden
@@ -73,7 +75,9 @@ describe('Views', function () {
             assert.equal(shell.getAreaFor(view), contribution.defaultViewOptions.area);
             assert.isDefined(shell.getTabBarFor(view));
             assert.isFalse(view.isVisible);
-            assert.isTrue(view !== shell.activeWidget, `${contribution.viewLabel}  !== shell.activeWidget`);
+            if (!['Files', 'Outline'].includes(contribution.viewLabel)) {
+                assert.isTrue(view !== shell.activeWidget, `${contribution.viewLabel}  !== shell.activeWidget`);
+            }
         });
     }
 

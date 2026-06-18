@@ -26,8 +26,7 @@ import { getThemeMode, type Theme } from '@theia/core/lib/common/theme';
 @injectable()
 export class QaapThemeContribution implements FrontendApplicationContribution {
 
-    /** Theme ids that should receive Qaap styling (kept in sync with the
-     * `QaapBuiltinThemeBrandingContribution` registrations). */
+    /** Theme ids that should receive Qaap styling (kept in sync with {@link QaapBuiltinThemeBrandingContribution}). */
     protected static readonly QAAP_THEME_IDS: ReadonlyMap<string, string> = new Map([
         ['light', 'qaap-theme-light'],
         ['dark', 'qaap-theme-dark']
