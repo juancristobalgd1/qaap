@@ -905,7 +905,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const activeIndex = visibleItems.findIndex(item => isTranscriptActivityLiveState(item.state));
         const segments = options?.segments ?? [];
         if (timeline instanceof HTMLDetailsElement) {
-            const autoExpanded = options?.expanded ?? shouldExpandTranscriptInlineTimeline(segments, !!options?.streaming);
+            const autoExpanded = false;
             this.bindTranscriptActivityTimelineToggle(timeline);
             const expanded = timeline.dataset.transcriptTimelineUserToggled === '1'
                 ? timeline.open
@@ -917,7 +917,23 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             timeline.classList.toggle('theia-mod-stalled', !!options?.stalled);
             timeline.classList.toggle('theia-mod-streaming', !!options?.streaming);
             this.syncTranscriptActivityTimelineSummaryElement(timeline, segments, visibleItems, policy);
-            timeline.querySelector('.theia-mobile-agent-activity-timeline-summary-count')?.remove();
+            timeline.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-count')
+                .forEach(count => count.textContent = String(visibleItems.length));
+            const progressText = options?.stalled
+                ? nls.localize('qaap/mobileProjects/transcriptActivityStillWorking', 'Still working')
+                : options?.streaming
+                    ? nls.localize('qaap/mobileProjects/transcriptActivityWorking', 'Working')
+                    : '';
+            timeline.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-label').forEach(label => {
+                label.classList.toggle('theia-mod-shimmer', !!options?.streaming && !options?.stalled);
+                label.classList.toggle('theia-mod-stall', !!options?.stalled);
+            });
+            timeline.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-status').forEach(status => {
+                status.hidden = !progressText;
+                status.textContent = progressText;
+                status.classList.toggle('theia-mod-shimmer', !!options?.streaming && !options?.stalled);
+                status.classList.toggle('theia-mod-stall', !!options?.stalled);
+            });
             const stickyBar = timeline.querySelector<HTMLElement>('.theia-mobile-agent-activity-timeline-sticky-bar');
             stickyBar?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         } else {
@@ -1968,29 +1984,48 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 nls.localize('qaap/mobileProjects/transcriptActivityTimeline', 'Activity'),
             );
             timeline.classList.toggle('theia-mod-stalled', !!options?.stalled);
-            timeline.open = options?.expanded ?? shouldExpandTranscriptInlineTimeline(segments, !!options?.streaming);
+            timeline.open = false;
 
             const summary = document.createElement('summary');
             summary.className = 'theia-mobile-agent-activity-timeline-summary';
+            const summaryIcon = document.createElement('span');
+            summaryIcon.className = 'theia-mobile-agent-activity-timeline-summary-icon codicon codicon-tools';
+            summaryIcon.setAttribute('aria-hidden', 'true');
             const label = document.createElement('span');
             label.className = 'theia-mobile-agent-activity-timeline-summary-label';
             label.textContent = this.resolveTranscriptActivityTimelineSummary(segments, items);
+            const count = document.createElement('span');
+            count.className = 'theia-mobile-agent-activity-timeline-summary-count';
+            count.textContent = String(items.length);
+            const status = document.createElement('span');
+            status.className = 'theia-mobile-agent-activity-timeline-summary-status';
+            status.setAttribute('aria-live', 'polite');
+            status.hidden = true;
             const chevron = document.createElement('span');
             chevron.className = 'theia-mobile-agent-activity-timeline-summary-chevron codicon codicon-chevron-down';
             chevron.setAttribute('aria-hidden', 'true');
-            summary.append(label, chevron);
+            summary.append(summaryIcon, label, count, status, chevron);
             const openPanel = document.createElement('div');
             openPanel.className = 'theia-mobile-agent-activity-timeline-open-panel';
             const stickyBar = document.createElement('button');
             stickyBar.type = 'button';
             stickyBar.className = 'theia-mobile-agent-activity-timeline-sticky-bar';
             stickyBar.setAttribute('aria-expanded', 'true');
+            const stickyIcon = document.createElement('span');
+            stickyIcon.className = 'theia-mobile-agent-activity-timeline-summary-icon codicon codicon-tools';
+            stickyIcon.setAttribute('aria-hidden', 'true');
             const stickyLabel = document.createElement('span');
             stickyLabel.className = 'theia-mobile-agent-activity-timeline-summary-label';
+            const stickyCount = document.createElement('span');
+            stickyCount.className = 'theia-mobile-agent-activity-timeline-summary-count';
+            const stickyStatus = document.createElement('span');
+            stickyStatus.className = 'theia-mobile-agent-activity-timeline-summary-status';
+            stickyStatus.setAttribute('aria-live', 'polite');
+            stickyStatus.hidden = true;
             const stickyChevron = document.createElement('span');
             stickyChevron.className = 'theia-mobile-agent-activity-timeline-summary-chevron codicon codicon-chevron-down';
             stickyChevron.setAttribute('aria-hidden', 'true');
-            stickyBar.append(stickyLabel, stickyChevron);
+            stickyBar.append(stickyIcon, stickyLabel, stickyCount, stickyStatus, stickyChevron);
             const list = document.createElement('ol');
             list.className = 'theia-mobile-agent-activity-list';
             bindTranscriptActivityListKeyboard(list);
