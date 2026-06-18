@@ -43,6 +43,7 @@ export interface TranscriptActivityNavigationItem {
     readonly durationMs?: number;
     readonly timestamp?: number;
     readonly errorSummary?: string;
+    readonly recoverySummary?: string;
     readonly retryHint?: boolean;
     /** Cursor-style row parts — verb emphasis + muted tail tags. */
     readonly verb?: string;
@@ -158,6 +159,7 @@ export function resolveTranscriptActivityNavigationItems(
 ): TranscriptActivityNavigationItem[] {
     const items: TranscriptActivityNavigationItem[] = [];
     let previousFailed = false;
+    let previousFailureSummary: string | undefined;
     for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
         const segment = segments[segmentIndex]!;
         if (segment.type === 'thinking' && segment.content.trim()) {
@@ -172,6 +174,7 @@ export function resolveTranscriptActivityNavigationItems(
                 });
             }
             previousFailed = false;
+            previousFailureSummary = undefined;
             continue;
         }
         if (segment.type !== 'tool') {
@@ -179,6 +182,7 @@ export function resolveTranscriptActivityNavigationItems(
                 continue;
             }
             previousFailed = false;
+            previousFailureSummary = undefined;
             continue;
         }
         const kind = deps.resolveToolKind(segment.name);
@@ -212,6 +216,9 @@ export function resolveTranscriptActivityNavigationItems(
             durationMs: deps.resolveStepDurationMs?.(segmentIndex, segment),
             timestamp: deps.resolveStepTimestamp?.(segmentIndex, segment),
             errorSummary,
+            recoverySummary: state === 'retrying' && previousFailureSummary
+                ? nls.localize('qaap/mobileProjects/transcriptActivityRetryingAfterFailure', 'Retrying after: {0}', previousFailureSummary)
+                : undefined,
             retryHint: detectTranscriptToolRetryHint(segment.result),
             verb: cursorParts.verb,
             detail: cursorParts.detail,
@@ -221,6 +228,7 @@ export function resolveTranscriptActivityNavigationItems(
             parentToolUseId: segment.parentToolUseId,
         });
         previousFailed = state === 'error';
+        previousFailureSummary = state === 'error' ? errorSummary : undefined;
     }
     const textChars = resolveTranscriptAgentTextChars(segments);
     if (options?.streaming && isTranscriptShortTextPreamble(segments)) {

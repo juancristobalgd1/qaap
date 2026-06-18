@@ -7,9 +7,9 @@ import type {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
     QaapAgentMessageDTO,
+    QaapTranscriptTraceEventDTO,
 } from './qaap-transcript-agent-types';
 import { fingerprintAgentSegments } from './qaap-transcript-incremental-update';
-import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-agent-types';
 
 export interface QaapTranscriptSseMessageEvent {
     readonly conversationId: string;

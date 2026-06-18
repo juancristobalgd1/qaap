@@ -50,6 +50,7 @@ export function fingerprintTranscriptTimelineSync(
             item.subagentRoot ? 1 : 0,
             item.durationMs ?? '',
             item.errorSummary ?? '',
+            item.recoverySummary ?? '',
         ].join(':'));
     }
     return parts.join('|');
@@ -82,6 +83,7 @@ export function fingerprintTranscriptActivityItemSlot(
         item.subagentRoot ? 1 : 0,
         item.durationMs ?? '',
         item.errorSummary ?? '',
+        item.recoverySummary ?? '',
         item.toolKind ?? '',
         item.editAdded ?? '',
         item.editRemoved ?? '',

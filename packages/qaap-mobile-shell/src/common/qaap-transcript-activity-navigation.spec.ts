@@ -87,6 +87,7 @@ describe('qaap-transcript-activity-navigation', () => {
         ], deps, false);
         expect(items[1]?.state).to.equal('retrying');
         expect(items[1]?.label).to.equal('Retrying: Running: bash');
+        expect(items[1]?.recoverySummary).to.equal('Retrying after: Error: port in use');
     });
 
     it('groups consecutive finished reads into a single timeline row', () => {

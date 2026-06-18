@@ -17,32 +17,55 @@ const BASE = process.env.QAAP_BASE_URL ?? 'http://127.0.0.1:3000';
 const OUT_DIR = process.env.QAAP_SCREENSHOT_DIR
     ?? path.join(process.cwd(), 'test-results', 'agent-trace-demo');
 
-function activityItem(state, label, active = false, stalled = false) {
+function activityItem(item, active = false, stalled = false) {
+    const state = item.state;
     const activeClass = active ? ' theia-mod-active' : '';
     const shimmer = active && !stalled ? ' theia-mod-shimmer' : '';
     const stall = active && stalled ? ' theia-mod-stall' : '';
+    const tier = item.tier ?? (active ? 'current' : 'recent');
+    const tierClass = ` theia-mod-timeline-${tier}`;
+    const currentAttr = active ? ' aria-current="step" data-transcript-activity-active="true"' : '';
     let icon;
-    if (active) {
+    if (item.cursor) {
+        icon = '';
+    } else if (active) {
         icon = '<span class="theia-mobile-agent-activity-icon theia-mod-active theia-mod-pulse" aria-hidden="true"><span class="codicon codicon-arrow-small-right" aria-hidden="true"></span></span>';
-    } else if (state === 'done') {
-        icon = '<span class="theia-mobile-agent-activity-icon theia-mod-done codicon codicon-check" aria-hidden="true"></span>';
+    } else if (state === 'success' || state === 'done') {
+        icon = '<span class="theia-mobile-agent-activity-icon theia-mod-success codicon codicon-check" aria-hidden="true"></span>';
+    } else if (state === 'error') {
+        icon = '<span class="theia-mobile-agent-activity-icon theia-mod-error codicon codicon-error" aria-hidden="true"></span>';
     } else {
         icon = '<span class="theia-mobile-agent-activity-icon theia-mod-pending" aria-hidden="true"></span>';
     }
-    return `<li class="theia-mobile-agent-activity-item theia-mod-${state}${activeClass}">${icon}<span class="theia-mobile-agent-activity-label${shimmer}${stall}">${label}</span></li>`;
+    const copy = item.cursor
+        ? `<div class="theia-mobile-agent-activity-copy">
+            <span class="theia-mobile-agent-activity-row${shimmer}${stall}">
+              <span class="theia-mobile-agent-activity-verb">${item.verb}</span>
+              <span class="theia-mobile-agent-activity-detail"> ${item.detail}</span>
+              ${item.diff ? `<span class="theia-mobile-agent-activity-diff-stats"><span class="theia-mobile-agent-activity-diff-add">+${item.diff.add}</span><span class="theia-mobile-agent-activity-diff-remove">−${item.diff.remove}</span></span>` : ''}
+              ${item.tail ? `<span class="theia-mobile-agent-activity-tail"> ${item.tail}</span>` : ''}
+            </span>
+            ${item.meta ? `<span class="theia-mobile-agent-activity-meta">${item.meta}</span>` : ''}
+            ${item.error ? `<span class="theia-mobile-agent-activity-narrative theia-mod-error"><span class="theia-mobile-agent-activity-narrative-label">What:</span><span class="theia-mobile-agent-activity-narrative-value">${item.error}</span></span>` : ''}
+            ${item.recovery ? `<span class="theia-mobile-agent-activity-narrative theia-mod-recovery"><span class="theia-mobile-agent-activity-narrative-label">Recovery:</span><span class="theia-mobile-agent-activity-narrative-value">${item.recovery}</span></span>` : ''}
+          </div>`
+        : `<div class="theia-mobile-agent-activity-copy"><span class="theia-mobile-agent-activity-label${shimmer}${stall}">${item.label}</span></div>`;
+    return `<li class="theia-mobile-agent-activity-item theia-mod-${state}${activeClass}${tierClass}"${currentAttr}>${icon}${copy}</li>`;
 }
 
 function buildTimeline(items, { stalled = false, collapsed = false } = {}) {
-    const list = items.map((item, i) => activityItem(item.state, item.label, item.active ?? i === items.findIndex(x => x.active), stalled)).join('');
-    const summary = items.length > 0 ? 'Explored 3 files, 2 commands' : 'Activity';
+    const list = items.map((item, i) => activityItem(item, item.active ?? i === items.findIndex(x => x.active), stalled)).join('');
+    const active = items.find(item => item.active) ?? items.find(item => item.state === 'running');
+    const activeLabel = active?.label ?? (active?.verb && active?.detail ? `${active.verb} ${active.detail}` : undefined);
+    const summary = activeLabel ?? (items.length > 0 ? 'Explored 3 files, 2 commands' : 'Activity');
     return `
-<details class="theia-mobile-agent-premium-card theia-mobile-agent-activity-timeline theia-mod-inline theia-mod-collapsible${stalled ? ' theia-mod-stalled' : ''}" aria-label="Activity"${collapsed ? '' : ' open'}>
+<details class="theia-mobile-agent-premium-card theia-mobile-agent-activity-timeline theia-mod-inline theia-mod-collapsible theia-mod-cursor-trace${stalled ? ' theia-mod-stalled' : ''}" aria-label="Activity"${collapsed ? '' : ' open'}>
   <summary class="theia-mobile-agent-activity-timeline-summary">
     <span class="theia-mobile-agent-activity-timeline-summary-icon codicon codicon-checklist" aria-hidden="true"></span>
     <span class="theia-mobile-agent-activity-timeline-summary-label">${summary}</span>
     <span class="theia-mobile-agent-activity-timeline-summary-count">${items.length}</span>
   </summary>
-  <ol class="theia-mobile-agent-activity-list">${list}</ol>
+  <div class="theia-mobile-agent-activity-timeline-open-panel"><ol class="theia-mobile-agent-activity-list">${list}</ol></div>
 </details>`;
 }
 
@@ -63,11 +86,28 @@ function buildAgentRow({ thought, timeline, streamLine, text, artifacts = '' }) 
   <div class="theia-mobile-agent-transcript-segments">
     ${thought ?? ''}
     ${timeline ?? ''}
+    ${streamLine ?? ''}
     ${text ? `<div class="theia-mobile-agent-transcript-content theia-mod-markdown theia-mod-streaming-incremental-markdown">${text}</div>` : ''}
     ${artifacts ? `<div class="theia-mobile-agent-transcript-artifacts">${artifacts}</div>` : ''}
-    ${streamLine ?? ''}
   </div>
 </div>`;
+}
+
+function buildTraceStatus(label, stalled = false) {
+    return `<div class="theia-mobile-agent-trace-status${stalled ? ' theia-mod-stall' : ' theia-mod-live'}">${label}</div>`;
+}
+
+function terminalPill({ failed = false, preview = 'output: 218 passing' } = {}) {
+    return `
+<details class="theia-mobile-agent-tool-pill theia-mod-terminal ${failed ? 'theia-mod-failed' : 'theia-mod-done'}">
+  <summary class="theia-mobile-agent-tool-pill-summary">
+    <span class="theia-mobile-agent-tool-pill-chevron codicon codicon-chevron-right" aria-hidden="true"></span>
+    <span class="theia-mobile-agent-tool-pill-icon codicon codicon-terminal" aria-hidden="true"></span>
+    <span class="theia-mobile-agent-tool-pill-verb">${failed ? 'Failed' : 'Ran'}</span>
+    <span class="theia-mobile-agent-tool-pill-label">npm test</span>
+    <span class="theia-mobile-agent-tool-pill-result-preview">${preview}</span>
+  </summary>
+</details>`;
 }
 
 function buildStreamLine(kind, label, stalled = false) {
@@ -97,36 +137,39 @@ function buildTranscriptShell(innerRows) {
 
 const DEMOS = {
     thinking: buildTranscriptShell(buildAgentRow({
-        thought: buildThoughtBrief({ live: true, title: 'Thinking for 12s', meta: '' }),
-        streamLine: buildStreamLine('thinking', 'Thinking for 12s'),
+        thought: buildThoughtBrief({ live: true, title: 'Planning next step · 12s', meta: '' }),
+        streamLine: buildStreamLine('thinking', 'Planning next step'),
     })),
     tools: buildTranscriptShell(buildAgentRow({
         thought: buildThoughtBrief({ title: 'Thought for 8s', meta: 'Explored 3 files, 2 commands' }),
         timeline: buildTimeline([
-            { state: 'done', label: 'Read auth/service.ts' },
-            { state: 'done', label: 'Running: npm test -- auth' },
-            { state: 'running', label: 'Editing auth/login.ts', active: true },
+            { state: 'success', cursor: true, verb: 'Read', detail: 'auth/service.ts', meta: '1.1s', tier: 'history' },
+            { state: 'success', cursor: true, verb: 'Ran', detail: 'npm test -- auth', meta: '4.2s', tail: 'terminal' },
+            { state: 'running', cursor: true, verb: 'Editing', detail: 'auth/login.ts', meta: '12s', diff: { add: 18, remove: 3 }, active: true },
         ]),
+        streamLine: buildTraceStatus('Running shell · 12s'),
         text: '<p>Voy a extraer la validación de tokens a un módulo compartido y añadir cobertura en los tests existentes.</p>',
+        artifacts: terminalPill(),
     })),
     stalled: buildTranscriptShell(buildAgentRow({
         thought: buildThoughtBrief({ title: 'Thought for 22s', meta: 'Explored 4 files, 3 commands' }),
         timeline: buildTimeline([
-            { state: 'done', label: 'Read package.json' },
-            { state: 'done', label: 'Running: npm run compile' },
-            { state: 'running', label: 'Taking longer than expected', active: true },
+            { state: 'success', cursor: true, verb: 'Read', detail: 'package.json', meta: '0.7s', tier: 'history' },
+            { state: 'error', cursor: true, verb: 'Failed', detail: 'npm run compile', meta: '3.4s', error: 'Port 3000 already in use' },
+            { state: 'retrying', cursor: true, verb: 'Retrying', detail: 'npm run compile', meta: '18s', recovery: 'Retrying after: Port 3000 already in use', active: true },
         ], { stalled: true }),
-        streamLine: buildStreamLine('stall', 'Taking longer than expected', true),
+        streamLine: buildTraceStatus('Taking longer than expected', true),
+        artifacts: terminalPill({ failed: true, preview: 'failed: Error: port in use' }),
     })),
     complete: buildTranscriptShell(`
 <div class="theia-mobile-agent-transcript-msg theia-mod-agent">
   <div class="theia-mobile-agent-transcript-segments">
     ${buildThoughtBrief({ title: 'Explored the workspace', meta: 'Explored 4 files, 2 commands' })}
     ${buildTimeline([
-        { state: 'done', label: 'Read auth/service.ts' },
-        { state: 'done', label: 'Running: npm test' },
-        { state: 'done', label: 'Edited auth/login.ts' },
-        { state: 'done', label: 'Writing response' },
+        { state: 'success', cursor: true, verb: 'Read', detail: 'auth/service.ts', meta: '0.9s', tier: 'history' },
+        { state: 'success', cursor: true, verb: 'Ran', detail: 'npm test', meta: '8.2s', tail: 'terminal' },
+        { state: 'success', cursor: true, verb: 'Edited', detail: 'auth/login.ts', meta: '1.8s', diff: { add: 24, remove: 6 } },
+        { state: 'success', cursor: true, verb: 'Wrote', detail: 'response', meta: 'now' },
     ], { collapsed: true })}
     <div class="theia-mobile-agent-transcript-content theia-mod-markdown">
       <p>Listo: moví la validación a <code>auth/token-validator.ts</code> y añadí 6 tests. Puedes revisar los cambios en la pestaña <strong>Files</strong>.</p>

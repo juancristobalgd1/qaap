@@ -615,6 +615,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
         failed: boolean;
         copyFrom?: () => string;
         mcpServer?: string;
+        resultPreview?: string;
     }): HTMLElement {
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-tool-pill-summary';
@@ -633,6 +634,12 @@ export class MobileProjectsTranscriptMessagesToolUi {
         summary.append(chevron, icon, verb, label);
         if (options.kind === 'mcp') {
             summary.append(this.createTranscriptMcpBadge(options.mcpServer));
+        }
+        if (options.resultPreview) {
+            const preview = document.createElement('span');
+            preview.className = 'theia-mobile-agent-tool-pill-result-preview';
+            preview.textContent = options.resultPreview;
+            summary.append(preview);
         }
         this.appendTranscriptToolPillSummaryTail(summary, {
             finished: options.finished,
@@ -663,6 +670,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
             failed: boolean;
             copyFrom?: () => string;
             mcpServer?: string;
+            resultPreview?: string;
         },
     ): void {
         const verb = summary.querySelector('.theia-mobile-agent-tool-pill-verb');
@@ -677,6 +685,14 @@ export class MobileProjectsTranscriptMessagesToolUi {
         if (options.kind === 'mcp') {
             const label = summary.querySelector('.theia-mobile-agent-tool-pill-label');
             label?.after(this.createTranscriptMcpBadge(options.mcpServer));
+        }
+        summary.querySelector('.theia-mobile-agent-tool-pill-result-preview')?.remove();
+        if (options.resultPreview) {
+            const preview = document.createElement('span');
+            preview.className = 'theia-mobile-agent-tool-pill-result-preview';
+            preview.textContent = options.resultPreview;
+            const badge = summary.querySelector('.theia-mobile-agent-tool-pill-badge.theia-mod-mcp');
+            (badge ?? summary.querySelector('.theia-mobile-agent-tool-pill-label'))?.after(preview);
         }
         summary.querySelector('.theia-mobile-agent-shell-tail')?.remove();
         this.appendTranscriptToolPillSummaryTail(summary, {

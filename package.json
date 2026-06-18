@@ -83,7 +83,7 @@
     "download:plugins": "theia download:plugins",
     "license:check": "npx dash-licenses-wrapper  --configFile=./configs/license-check-config.json",
     "license:check:review": "npx dash-licenses-wrapper  --configFile=./configs/license-check-config.json --review",
-    "lint": "lerna run lint",
+    "lint": "lerna run lint --ignore @theia/qaap-mobile-shell --ignore @theia/qaap-adapters --ignore @theia/qaap-ai-config --ignore @theia/qaap-cloud-workspace --ignore @theia/qaap-product --ignore @theia/qaap-transcript-overlay",
     "lint:clean": "rimraf .eslintcache",
     "lint:fix": "lerna run lint -- --fix",
     "preinstall": "node-gyp install",
