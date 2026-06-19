@@ -892,9 +892,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         options?: TranscriptActivityTimelineOptions,
     ): void {
         const expandState = readTranscriptTimelineExpandState(timeline);
+        const timelineExpanded = timeline instanceof HTMLDetailsElement
+            ? (timeline.dataset.transcriptTimelineUserToggled === '1' ? timeline.open : timeline.classList.contains('theia-mod-cursor-trace'))
+            : false;
         const policy = resolveTranscriptTimelineVisibilityPolicy(items, {
             maxVisibleItems: options?.maxVisibleItems,
-            revealAll: expandState.revealAll,
+            revealAll: expandState.revealAll || timelineExpanded,
         });
         const visibleItems = policy.visibleItems;
         const activeIndex = visibleItems.findIndex(item => isTranscriptActivityLiveState(item.state));
@@ -1058,11 +1061,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (summaryLabels.length === 0) {
             return;
         }
-        const cursorTrace = timeline.classList.contains('theia-mod-cursor-trace');
         for (const summaryLabel of summaryLabels) {
-            const summaryText = cursorTrace
-                ? nls.localize('qaap/mobileProjects/transcriptReasoning', 'Reasoning')
-                : this.resolveTranscriptActivityTimelineSummary(segments, visibleItems, 0);
+            const summaryText = this.resolveTranscriptActivityTimelineSummary(segments, visibleItems, 0);
             const summaryFingerprint = fingerprintTranscriptTimelineSummary(
                 summaryText,
                 policy.hiddenCount,
@@ -1987,6 +1987,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 'aria-label',
                 nls.localize('qaap/mobileProjects/transcriptActivityTimeline', 'Activity'),
             );
+            timeline.setAttribute('aria-atomic', 'true');
+            timeline.setAttribute('role', 'log');
             timeline.classList.toggle('theia-mod-stalled', !!options?.stalled);
             timeline.open = false;
 
@@ -2004,6 +2006,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             const status = document.createElement('span');
             status.className = 'theia-mobile-agent-activity-timeline-summary-status';
             status.setAttribute('aria-live', 'polite');
+            status.setAttribute('role', 'log');
             status.hidden = true;
             const chevron = document.createElement('span');
             chevron.className = 'theia-mobile-agent-activity-timeline-summary-chevron codicon codicon-chevron-down';
@@ -2025,6 +2028,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             const stickyStatus = document.createElement('span');
             stickyStatus.className = 'theia-mobile-agent-activity-timeline-summary-status';
             stickyStatus.setAttribute('aria-live', 'polite');
+            stickyStatus.setAttribute('role', 'log');
             stickyStatus.hidden = true;
             const stickyChevron = document.createElement('span');
             stickyChevron.className = 'theia-mobile-agent-activity-timeline-summary-chevron codicon codicon-chevron-down';
@@ -2046,6 +2050,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             'aria-label',
             nls.localize('qaap/mobileProjects/transcriptActivityTimeline', 'Activity'),
         );
+        timeline.setAttribute('aria-atomic', 'true');
         timeline.classList.toggle('theia-mod-stalled', !!options?.stalled);
         timeline.append(this.createTranscriptPremiumHead(
             'codicon-checklist',
@@ -2122,6 +2127,17 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             li.append(copy);
         }
         this.populateTranscriptActivityStepCopy(copy, item, isActive, options);
+
+        if (item.state === 'error' && item.errorSummary) {
+            const errorEl = copy.querySelector('.theia-mobile-agent-activity-error-detail');
+            if (errorEl && !errorEl.id) {
+                const errorId = `trace-error-${item.segmentIndex ?? Math.random().toString(36).slice(2, 8)}`;
+                errorEl.id = errorId;
+                li.setAttribute('aria-describedby', errorId);
+            }
+        } else {
+            li.removeAttribute('aria-describedby');
+        }
     }
 
     protected applyTranscriptActivityItemChrome(
@@ -2283,16 +2299,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 detail.className = 'theia-mobile-agent-activity-detail';
                 const detailAsPill = this.shouldRenderTranscriptActivityDetailAsPill(item.detail);
                 detail.classList.toggle('theia-mod-pill', detailAsPill);
-                if (detailAsPill) {
-                    const icon = document.createElement('span');
-                    icon.className = `theia-mobile-agent-activity-file-icon codicon ${this.transcriptFileIconClass(item.detail)}`;
-                    icon.setAttribute('aria-hidden', 'true');
-                    const detailLabel = document.createElement('span');
-                    detailLabel.className = 'theia-mobile-agent-activity-detail-label';
-                    detailLabel.textContent = item.detail;
-                    detail.append(icon, detailLabel);
+                if (detailAsPill && item.detail) {
+                    detail.append(this.createTranscriptActivityFileChip(item.detail));
                 } else {
-                    detail.textContent = item.detail;
+                    detail.textContent = item.detail ?? '';
                 }
                 rowEl.append(verb, detail);
                 if (item.editAdded !== undefined || item.editRemoved !== undefined) {
@@ -2358,11 +2368,43 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (!errorDetail) {
                 errorDetail = document.createElement('span');
                 errorDetail.className = 'theia-mobile-agent-activity-error-detail';
-                copy.append(errorDetail);
+                const expandBtn = document.createElement('button');
+                expandBtn.type = 'button';
+                expandBtn.className = 'theia-mobile-agent-activity-error-expand';
+                expandBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/transcriptErrorExpand', 'Show error details'));
+                expandBtn.textContent = 'Show details';
+                expandBtn.addEventListener('click', event => {
+                    event.stopPropagation();
+                    errorDetail?.classList.toggle('theia-mod-expanded');
+                    expandBtn.textContent = errorDetail?.classList.contains('theia-mod-expanded')
+                        ? nls.localize('qaap/mobileProjects/transcriptErrorHide', 'Hide details')
+                        : nls.localize('qaap/mobileProjects/transcriptErrorExpand', 'Show details');
+                });
+                copy.append(errorDetail, expandBtn);
             }
             errorDetail.textContent = item.errorSummary;
+            errorDetail.setAttribute('aria-label', item.errorSummary);
         } else {
             errorDetail?.remove();
+            copy.querySelector('.theia-mobile-agent-activity-error-expand')?.remove();
+        }
+
+        let waitingBadge = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-waiting-badge');
+        if (item.state === 'waiting') {
+            if (!waitingBadge) {
+                waitingBadge = document.createElement('span');
+                waitingBadge.className = 'theia-mobile-agent-activity-waiting-badge';
+                const badgeIcon = document.createElement('span');
+                badgeIcon.className = 'codicon codicon-shield';
+                badgeIcon.setAttribute('aria-hidden', 'true');
+                const badgeLabel = document.createElement('span');
+                badgeLabel.className = 'theia-mobile-agent-activity-waiting-badge-label';
+                badgeLabel.textContent = nls.localize('qaap/mobileProjects/transcriptWaitingApproval', 'Awaiting approval');
+                waitingBadge.append(badgeIcon, badgeLabel);
+                (copy.querySelector('.theia-mobile-agent-activity-row') ?? label)?.after(waitingBadge);
+            }
+        } else {
+            waitingBadge?.remove();
         }
     }
 
@@ -2371,9 +2413,45 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             return false;
         }
         const clean = detail.trim();
-        return /^(?:https?:\/\/)?(?:www\.)?[\w.-]+\.[a-z]{2,}(?:\/\S*)?$/i.test(clean)
-            || /(?:^|\/)[^/\s]+\.(?:[cm]?[jt]sx?|tsx?|json|md|css|scss|html|py|go|rs|java|kt|swift|ya?ml)$/i.test(clean);
+        if (/^(?:https?:\/\/)?(?:www\.)?[\w.-]+\.[a-z]{2,}(?:\/\S*)?$/i.test(clean)) {
+            return true;
+        }
+        if (!/[./\\]/.test(clean)) {
+            return false;
+        }
+        return true;
     }
+
+    protected createTranscriptActivityFileChip(detail: string): HTMLElement {
+        const chip = document.createElement('span');
+        chip.className = 'theia-mobile-agent-activity-file-chip';
+        chip.setAttribute('role', 'button');
+        chip.tabIndex = 0;
+        const icon = document.createElement('span');
+        icon.className = `codicon ${this.transcriptFileIconClass(detail)}`;
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agent-activity-file-chip-label';
+        label.textContent = detail;
+        chip.append(icon, label);
+        return chip;
+    }
+
+    protected readonly activityToolKindIconMap: Record<string, string> = {
+        reading: 'codicon-book',
+        editing: 'codicon-pencil',
+        terminal: 'codicon-terminal',
+        searching: 'codicon-search',
+        todo: 'codicon-tasklist',
+        mcp: 'codicon-puzzle',
+        writing: 'codicon-comment',
+        thinking: 'codicon-brain',
+        planning: 'codicon-lightbulb',
+        file: 'codicon-file-code',
+        webfetch: 'codicon-globe',
+        task: 'codicon-list-tree',
+        delegate: 'codicon-person-add',
+    };
 
     createTranscriptActivityIcon(
         state: TranscriptActivityStepState,
@@ -2391,19 +2469,20 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             icon.append(arrow);
             return icon;
         }
+        const kindIconClass = toolKind ? this.activityToolKindIconMap[toolKind] : undefined;
         switch (state) {
             case 'thinking':
-                icon.classList.add('theia-mod-thinking', 'codicon', 'codicon-lightbulb');
+                icon.classList.add('theia-mod-thinking', 'codicon', kindIconClass ?? 'codicon-lightbulb');
                 break;
             case 'waiting':
-                icon.classList.add('theia-mod-waiting', 'codicon', 'codicon-watch');
+                icon.classList.add('theia-mod-waiting', 'codicon', 'codicon-shield');
                 break;
             case 'streaming':
-                icon.classList.add('theia-mod-streaming', 'codicon', 'codicon-loading');
+                icon.classList.add('theia-mod-streaming', 'codicon', kindIconClass ?? 'codicon-loading');
                 break;
             case 'success':
-                if (toolKind) {
-                    icon.classList.add('theia-mod-kind', 'theia-mod-success', 'codicon', this.toolUi.transcriptToolIconClass(toolKind));
+                if (toolKind && kindIconClass) {
+                    icon.classList.add('theia-mod-kind', 'theia-mod-success', 'codicon', kindIconClass);
                 } else {
                     icon.classList.add('theia-mod-success', 'codicon', 'codicon-check');
                 }
@@ -2422,8 +2501,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 break;
             case 'running':
             default:
-                if (toolKind) {
-                    icon.classList.add('theia-mod-kind', 'theia-mod-running', 'codicon', this.toolUi.transcriptToolIconClass(toolKind));
+                if (toolKind && kindIconClass) {
+                    icon.classList.add('theia-mod-kind', 'theia-mod-running', 'codicon', kindIconClass);
                 } else {
                     icon.classList.add('theia-mod-running', 'codicon', 'codicon-sync');
                 }

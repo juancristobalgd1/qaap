@@ -153,13 +153,13 @@ describe('qaap-transcript-timeline-render-bench', () => {
 
         expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-icon.theia-mobile-agent-trace-glyph')).to.not.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent).to.equal('Reasoning');
+        expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent).to.equal('Explored 1 file');
         expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-timeline')?.open).to.equal(true);
         expect(row.querySelector('.theia-mobile-agent-activity-icon')).to.not.equal(null);
         expect(row.querySelector('.theia-mobile-agent-activity-verb')?.textContent).to.equal('Read');
         expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill')?.textContent).to.equal('page.tsx');
-        expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill .theia-mobile-agent-activity-file-icon.codicon-file-code')).to.not.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-detail-label')?.textContent).to.equal('page.tsx');
+        expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill .theia-mobile-agent-activity-file-chip .codicon-file-code')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-activity-file-chip-label')?.textContent).to.equal('page.tsx');
     });
 
     it('keeps reasoning as the only tool execution surface after settling', () => {
@@ -188,7 +188,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
 
         expect(row.querySelector('.theia-mobile-agent-activity-timeline')).to.not.equal(null);
         expect(row.querySelector('.theia-mobile-agent-tool-group, .theia-mobile-agent-tool-pill')).to.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-detail-label')?.textContent).to.equal('page.tsx');
+        expect(row.querySelector('.theia-mobile-agent-activity-file-chip-label')?.textContent).to.equal('page.tsx');
 
         const streamingRow = createStreamingRow(artifactsUi, segments);
         const artifacts = document.createElement('div');
