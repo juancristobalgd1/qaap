@@ -50,7 +50,7 @@ export interface WorkHubTeamConversationInput {
     readonly id: string;
     readonly agentId: string;
     readonly title: string;
-    readonly status: 'idle' | 'streaming' | 'failed';
+    readonly status: 'idle' | 'streaming' | 'settled' | 'failed';
     readonly paused?: boolean;
     readonly activityLabel?: string;
     readonly turnProgressCurrent?: number;

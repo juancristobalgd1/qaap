@@ -67,7 +67,13 @@ export function resolveTranscriptEffectiveStatus(
     if (conv.status !== 'streaming') {
         return conv.status;
     }
-    return isConversationTurnVisuallySettled(conv) ? 'idle' : 'streaming';
+    // When the turn is visually settled but the backend VPS task is still attached (e.g. a dev
+    // server keeps the process alive after the model finished the turn), return 'settled' so
+    // the UI can show background-activity indicators instead of falsely appearing idle.
+    if (isConversationTurnVisuallySettled(conv)) {
+        return 'settled';
+    }
+    return 'streaming';
 }
 
 /**

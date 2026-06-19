@@ -139,7 +139,7 @@ describe('MobileProjectsHubIncrementalUi', () => {
                 summaryToTaskView: (summary: { id: string; title: string; status: string; createdAt: number; cwd: string }) => ({
                     id: summary.id,
                     title: summary.title,
-                    state: summary.status === 'streaming' ? 'running' : 'idle',
+                    state: summary.status === 'streaming' ? 'running' : summary.status === 'settled' ? 'running' : 'idle',
                     since: 'now',
                     command: 'qaiq',
                     cwd: summary.cwd,

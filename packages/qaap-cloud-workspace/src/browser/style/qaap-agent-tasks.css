@@ -121,6 +121,17 @@
     color: var(--theia-editor-background);
 }
 
+.qaap-agent-tasks-state--settled {
+    background: color-mix(in srgb, var(--theia-progressBar-background, var(--theia-focusBorder)) 60%, transparent);
+    color: var(--theia-editor-background);
+    animation: qaap-agent-tasks-settled-pulse 2s ease-in-out infinite;
+}
+
+@keyframes qaap-agent-tasks-settled-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
 .qaap-agent-tasks-state--idle {
     background: var(--theia-badge-background);
     color: var(--theia-badge-foreground);

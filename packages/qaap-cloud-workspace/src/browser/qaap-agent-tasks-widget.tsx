@@ -310,6 +310,7 @@ export class QaapAgentTasksWidget extends ReactWidget {
     protected conversationStateLabel(status: QaapAgentConversationSummaryDTO['status']): string {
         switch (status) {
             case 'streaming': return nls.localize('qaap/agentTasks/stateRunning', 'Running');
+            case 'settled': return nls.localize('qaap/agentTasks/stateFinishing', 'Finishing');
             case 'failed': return nls.localize('qaap/agentTasks/stateFailed', 'Failed');
             default: return nls.localize('qaap/agentTasks/stateIdle', 'Idle');
         }

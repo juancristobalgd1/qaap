@@ -10577,6 +10577,17 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
   color: var(--theia-notificationsWarningIcon-foreground, #cca700);
 }
 
+.theia-mobile-projects-task-dot.theia-mod-background {
+  background: transparent !important;
+  color: var(--theia-descriptionForeground);
+  animation: theia-task-dot-background-pulse 2s ease-in-out infinite;
+}
+
+@keyframes theia-task-dot-background-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .theia-mobile-projects-task-progress {
   flex: 0 0 22px;
   width: 22px;
@@ -19256,6 +19267,9 @@ body>.theia-mobile-transcript-files-menu {
 
 .theia-mobile-agent-activity-label.theia-mod-shimmer,
 .theia-mobile-agent-activity-row.theia-mod-shimmer,
+.theia-mobile-agent-activity-row.theia-mod-shimmer .theia-mobile-agent-activity-verb,
+.theia-mobile-agent-activity-row.theia-mod-shimmer .theia-mobile-agent-activity-detail,
+.theia-mobile-agent-activity-row.theia-mod-shimmer .theia-mobile-agent-activity-tail,
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-label.theia-mod-shimmer,
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-status.theia-mod-shimmer {
   background: linear-gradient(100deg,
@@ -22731,5 +22745,4 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
     padding: 2px 0 4px 16px;
   }
 }
-
 

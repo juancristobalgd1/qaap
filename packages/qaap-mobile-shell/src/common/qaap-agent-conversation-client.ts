@@ -44,7 +44,7 @@ export interface QaapAgentConversationSummaryDTO {
     readonly cwd: string;
     readonly agentId: string;
     readonly title: string;
-    readonly status: 'idle' | 'streaming' | 'failed';
+    readonly status: 'idle' | 'streaming' | 'settled' | 'failed';
     readonly createdAt: number;
     readonly updatedAt: number;
     readonly messageCount: number;
@@ -145,7 +145,7 @@ export interface QaapAgentConversationDTO {
     readonly cwd: string;
     readonly agentId: string;
     readonly title: string;
-    readonly status: 'idle' | 'streaming' | 'failed';
+    readonly status: 'idle' | 'streaming' | 'settled' | 'failed';
     readonly createdAt: number;
     readonly updatedAt: number;
     readonly messages: QaapAgentMessageDTO[];
@@ -174,6 +174,9 @@ function resolveEffectiveConversationStatus(conv: QaapAgentConversationDTO): Qaa
     const effective = resolveTranscriptEffectiveStatus(conv);
     if (effective === 'failed' || conv.messages.some(message => !!message.error)) {
         return 'failed';
+    }
+    if (effective === 'settled') {
+        return 'settled';
     }
     return effective;
 }

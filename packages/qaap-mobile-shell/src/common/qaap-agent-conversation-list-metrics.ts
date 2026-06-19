@@ -28,7 +28,7 @@ export interface QaapAgentConversationListMetrics {
 const STREAMING_TURN_FALLBACK_TOTAL = 6;
 
 export interface QaapAgentConversationListMetricsInput {
-    readonly status: 'idle' | 'streaming' | 'failed';
+    readonly status: 'idle' | 'streaming' | 'settled' | 'failed';
     readonly messages: ReadonlyArray<{
         readonly role: 'user' | 'agent';
         readonly content: string;

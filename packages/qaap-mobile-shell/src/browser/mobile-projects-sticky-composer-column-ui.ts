@@ -263,7 +263,8 @@ export class MobileProjectsStickyComposerColumnUi {
 
         const input = document.createElement('textarea');
         input.className = 'theia-mobile-projects-sticky-composer-input';
-        input.rows = 1;
+        input.rows = 2;
+        input.setAttribute('rows', '2');
         const placeholderAgent = options.resolveAgentLabel();
         input.placeholder = options.inputPlaceholder ?? nls.localize(
             'qaap/mobileProjects/stickyComposerPlaceholder',
@@ -575,4 +576,3 @@ export class MobileProjectsStickyComposerColumnUi {
 }
 
 export type StickyComposerColumnOptions = Parameters<MobileProjectsStickyComposerColumnUi['buildStickyComposerColumn']>[0];
-

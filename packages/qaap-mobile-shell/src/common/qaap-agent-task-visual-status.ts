@@ -12,7 +12,8 @@ export type QaapAgentTaskVisualStatusId =
     | 'needs-you'
     | 'failed'
     | 'pr-ready'
-    | 'verified';
+    | 'verified'
+    | 'background';
 
 export interface QaapAgentTaskVisualStatus {
     readonly id: QaapAgentTaskVisualStatusId;
@@ -78,6 +79,14 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         iconClass: 'codicon-pass',
         color: 'var(--theia-charts-green, #4caf7c)',
     },
+    'background': {
+        id: 'background',
+        labelKey: 'qaap/mobileProjects/taskStateBackground',
+        label: 'finishing',
+        className: 'theia-mod-background',
+        iconClass: 'codicon-sync',
+        color: 'var(--theia-descriptionForeground)',
+    },
 };
 
 export function resolveQaapAgentTaskVisualStatus(
@@ -95,6 +104,9 @@ export function resolveQaapAgentTaskVisualStatus(
     }
     if (state === 'running' || summary?.status === 'streaming') {
         return STATUS_BY_ID['running'];
+    }
+    if (summary?.status === 'settled') {
+        return STATUS_BY_ID['background'];
     }
     if (
         state === 'needs-input'

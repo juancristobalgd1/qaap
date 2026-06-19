@@ -79,7 +79,7 @@ describe('qaap-transcript-turn-status', () => {
             ],
         });
         expect(isConversationTurnVisuallySettled(streaming)).to.equal(true);
-        expect(resolveTranscriptEffectiveStatus(streaming)).to.equal('idle');
+        expect(resolveTranscriptEffectiveStatus(streaming)).to.equal('settled');
     });
 
     it('isAgentMessageVisuallySettled accepts plain stdout agents', () => {

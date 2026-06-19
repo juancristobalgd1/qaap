@@ -64,7 +64,7 @@ export class MobileProjectsConversationIndexUi {
     }
 
     countDoneTasks(project: MobileProjectEntry): number {
-        return this.vpsTasksForProject(project).filter(c => c.status === 'idle' && c.messageCount > 0).length;
+        return this.vpsTasksForProject(project).filter(c => (c.status === 'idle' || c.status === 'settled') && c.messageCount > 0).length;
     }
 
     countNeedsInputTasks(project: MobileProjectEntry): number {
@@ -215,10 +215,10 @@ export class MobileProjectsConversationIndexUi {
         current: QaapAgentConversationSummaryDTO,
         next: QaapAgentConversationSummaryDTO,
     ): QaapAgentConversationSummaryDTO {
-        if (current.status === 'idle' && next.status === 'streaming' && current.updatedAt >= next.updatedAt) {
+        if ((current.status === 'idle' || current.status === 'settled') && next.status === 'streaming' && current.updatedAt >= next.updatedAt) {
             return current;
         }
-        if (current.status === 'streaming' && next.status === 'idle') {
+        if (current.status === 'streaming' && (next.status === 'idle' || next.status === 'settled')) {
             return next.updatedAt >= current.updatedAt ? next : current;
         }
         if (current.status !== 'streaming' && next.status === 'streaming') {

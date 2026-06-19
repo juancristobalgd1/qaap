@@ -29,6 +29,8 @@ export type QaapAgentConversationStatus =
     | 'idle'
     /** A user message is being processed by the agent. */
     | 'streaming'
+    /** The agent turn is visually settled (tools done, answer shown) but the backend VPS task is still attached. */
+    | 'settled'
     /** Last agent turn failed (the conversation can still accept a follow-up message). */
     | 'failed';
 

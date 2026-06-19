@@ -123,7 +123,7 @@ export class MobileProjectsHubTeamDataUi {
             if (!summary || summary.source === 'theia-chat' || isConversationAutoApproveEnabled(summary)) {
                 continue;
             }
-            if (summary.status !== 'streaming' && summary.status !== 'idle') {
+            if (summary.status !== 'streaming' && summary.status !== 'idle' && summary.status !== 'settled') {
                 continue;
             }
             items.push({
