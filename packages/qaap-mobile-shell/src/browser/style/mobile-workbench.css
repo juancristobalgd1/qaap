@@ -20818,7 +20818,7 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer>.theia-mobile-proje
   align-items: center;
   gap: 4px;
   min-width: 0;
-  min-height: 46px;
+  min-height: 64px;
   box-sizing: border-box;
   padding: 16px 12px 4px 18px;
 }
@@ -20836,7 +20836,7 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer>.theia-mobile-proje
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
-  min-height: 26px;
+  min-height: 44px;
   max-height: 120px;
   padding: 0;
   margin: 0;

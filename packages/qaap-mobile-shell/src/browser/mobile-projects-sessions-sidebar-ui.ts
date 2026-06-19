@@ -725,6 +725,7 @@ export class MobileProjectsSessionsSidebarUi {
             String(Math.min(pageSize, hiddenCount)),
         );
         moreBtn.addEventListener('click', ev => {
+            ev.preventDefault();
             ev.stopPropagation();
             const current = this.host.sessionsSidebarVisibleConversationCountByProjectId.get(project.id)
                 ?? MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT;
@@ -732,7 +733,8 @@ export class MobileProjectsSessionsSidebarUi {
                 project.id,
                 Math.min(current + pageSize, totalCount),
             );
-            this.host.sessionsSidebar?.refreshList();
+            this.resetSessionsSidebarListFingerprint();
+            this.host.sessionsSidebar?.refreshList({ force: true });
         });
         return moreBtn;
     }
@@ -747,9 +749,11 @@ export class MobileProjectsSessionsSidebarUi {
             String(MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT),
         );
         lessBtn.addEventListener('click', ev => {
+            ev.preventDefault();
             ev.stopPropagation();
             this.host.sessionsSidebarVisibleConversationCountByProjectId.delete(project.id);
-            this.host.sessionsSidebar?.refreshList();
+            this.resetSessionsSidebarListFingerprint();
+            this.host.sessionsSidebar?.refreshList({ force: true });
         });
         return lessBtn;
     }
