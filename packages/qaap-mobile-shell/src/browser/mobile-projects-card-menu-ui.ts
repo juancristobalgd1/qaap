@@ -44,7 +44,7 @@ export interface MobileProjectsCardMenuHost {
     onRenameConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onSetConversationPriority(summary: QaapAgentConversationSummaryDTO, priority: boolean): Promise<void>;
     onSetConversationPaused(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, paused: boolean): Promise<void>;
-    onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
     onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void>;
     openAgentComposer(project: MobileProjectEntry): Promise<void>;
     showTaskLog(project: MobileProjectEntry, taskId: string): Promise<void>;

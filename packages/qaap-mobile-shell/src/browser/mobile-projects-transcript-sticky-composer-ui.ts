@@ -188,7 +188,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     ) => Promise<string | undefined>;
     transcriptComposerUi: MobileProjectsTranscriptComposerUi;
 
-    onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
     submitBackgroundAgentTask(
         project: MobileProjectEntry,
         draft: string,

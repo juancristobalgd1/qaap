@@ -217,29 +217,55 @@ export class MobileProjectsConversationActionsUi {
         }
     }
 
-    async onCancelConversation(
+    onCancelConversation(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
+    ): void {
         this.host.cardMenuUi.closeCardMenu();
-        try {
-            if (summary.source === 'theia-chat') {
-                const session = await this.host.getOrRestoreProjectChatSession(project, summary);
+
+        this.host.conversations?.recordSnapshot({ ...summary, status: 'idle', updatedAt: Date.now() });
+        this.host.renderList();
+
+        if (summary.source === 'theia-chat') {
+            const sessionId = summary.sessionId;
+            if (sessionId && this.host.chatService) {
+                const session = this.host.chatService.getSession(sessionId);
                 const request = [...(session?.model.getRequests() ?? [])]
                     .reverse()
                     .find(candidate => ChatRequestModel.isInProgress(candidate));
                 if (session && request) {
-                    await this.host.chatService?.cancelRequest(session.id, request.id);
+                    this.host.chatService.cancelRequest(session.id, request.id).catch(err => {
+                        this.host.messageService?.error(nls.localize(
+                            'qaap/mobileProjects/cancelTaskFailed',
+                            'Could not cancel run: {0}',
+                            err instanceof Error ? err.message : String(err)
+                        ));
+                    });
+                    return;
                 }
-            } else {
-                await cancelConversation(summary.id);
             }
-        } catch (error) {
-            this.host.messageService?.error(nls.localize(
-                'qaap/mobileProjects/cancelTaskFailed',
-                'Could not cancel run: {0}',
-                error instanceof Error ? error.message : String(error)
-            ));
+            this.host.getOrRestoreProjectChatSession(project, summary).then(session => {
+                const request = [...(session?.model.getRequests() ?? [])]
+                    .reverse()
+                    .find(candidate => ChatRequestModel.isInProgress(candidate));
+                if (session && request) {
+                    this.host.chatService?.cancelRequest(session.id, request.id).catch(err => {
+                        this.host.messageService?.error(nls.localize(
+                            'qaap/mobileProjects/cancelTaskFailed',
+                            'Could not cancel run: {0}',
+                            err instanceof Error ? err.message : String(err)
+                        ));
+                    });
+                }
+            }).catch(() => { /* already updated local state */ });
+        } else {
+            cancelConversation(summary.id).catch(err => {
+                this.host.messageService?.error(nls.localize(
+                    'qaap/mobileProjects/cancelTaskFailed',
+                    'Could not cancel run: {0}',
+                    err instanceof Error ? err.message : String(err)
+                ));
+            });
         }
     }
 

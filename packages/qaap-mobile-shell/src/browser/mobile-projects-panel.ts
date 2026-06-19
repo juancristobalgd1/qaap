@@ -1718,11 +1718,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.conversationActionsUi.onSetConversationAutoApprove(summary, autoApprove);
     }
 
-    protected async onCancelConversation(
+    protected onCancelConversation(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        return this.conversationActionsUi.onCancelConversation(project, summary);
+    ): void {
+        this.conversationActionsUi.onCancelConversation(project, summary);
     }
 
     protected async onRetryConversation(
