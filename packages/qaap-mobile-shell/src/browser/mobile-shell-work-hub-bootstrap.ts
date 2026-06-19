@@ -185,6 +185,32 @@ export class MobileShellWorkHubBootstrapController {
         }
     }
 
+    /**
+     * Critical mode boundary: IDE widgets must never bleed into Work Hub. These are separate
+     * workspaces with separate visual ownership; Work Hub owns its own Plan/Chat/Preview/Files/
+     * Terminal surfaces, while restored workbench widgets belong exclusively to the IDE.
+     *
+     * The mini-browser preview is an IDE widget restored by the workbench shell; close it whenever
+     * Work Hub becomes primary so it cannot overlay the agent UI.
+     */
+    protected async closeIdeOnlyWidgetsForWorkHub(): Promise<void> {
+        const widgets = new Map<string, { id: string; node: HTMLElement }>();
+        for (const area of ['main', 'left', 'right', 'bottom'] as ApplicationShell.Area[]) {
+            for (const widget of this.shell.getWidgets(area)) {
+                if (this.isIdeOnlyWidgetForWorkHub(widget)) {
+                    widgets.set(widget.id, widget);
+                }
+            }
+        }
+        await Promise.all([...widgets.values()].map(widget => this.shell.closeWidget(widget.id, { save: false })));
+    }
+
+    protected isIdeOnlyWidgetForWorkHub(widget: { id: string; node: HTMLElement }): boolean {
+        return widget.id.startsWith('mini-browser:')
+            || widget.node.classList.contains('qaap-mini-browser-shell')
+            || !!widget.node.querySelector(':scope .qaap-mini-browser-shell, :scope .theia-mini-browser');
+    }
+
     /** After reload: return to the Agents execution shell instead of restoring IDE editor tabs. */
     async restoreAgentsSurfaceAfterReload(epoch: number = this.sessionState.agentsBootstrapEpoch): Promise<void> {
         try {
@@ -235,6 +261,7 @@ export class MobileShellWorkHubBootstrapController {
 
     /** Collapse restored IDE side sheets before revealing Work Hub (avoids Explorer flash). */
     protected async prepareWorkHubIdePanelsHidden(): Promise<void> {
+        await this.closeIdeOnlyWidgetsForWorkHub();
         await this.host.collapseMobileSideSheets();
         this.host.settleMobileSidePanelsCollapsed();
     }

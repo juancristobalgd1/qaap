@@ -59,10 +59,11 @@ describe('qaap-transcript-user-scroll-pin', () => {
         expect(isTranscriptScrollNearBottom(740, 200, 1000)).to.equal(false);
     });
 
-    it('does not pin the final user message while reading the latest AI response', () => {
-        expect(shouldPinTranscriptUserIndex(0, 1)).to.equal(false);
-        expect(shouldPinTranscriptUserIndex(1, 2)).to.equal(false);
+    it('allows the active user message to pin while the transcript is away from the newest bottom', () => {
+        expect(shouldPinTranscriptUserIndex(0, 1)).to.equal(true);
+        expect(shouldPinTranscriptUserIndex(1, 2)).to.equal(true);
         expect(shouldPinTranscriptUserIndex(0, 2)).to.equal(true);
         expect(shouldPinTranscriptUserIndex(undefined, 2)).to.equal(false);
+        expect(shouldPinTranscriptUserIndex(2, 2)).to.equal(false);
     });
 });

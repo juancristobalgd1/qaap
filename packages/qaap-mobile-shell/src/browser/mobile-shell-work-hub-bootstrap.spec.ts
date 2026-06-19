@@ -113,6 +113,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         };
         const shell = {
             mainPanel: { widgets: () => [] },
+            getWidgets: () => [],
             closeWidget: async () => undefined,
         } as unknown as ApplicationShell;
         const workspaceService = {
@@ -147,6 +148,22 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         expect(host.calls).to.include('settleMobileSidePanelsCollapsed');
         expect(host.calls).to.include('releaseMobileWorkHubBootGuardWhenReady');
         expect(host.calls).to.include('refreshProjectBootstrapFromWorkspace');
+    });
+
+    it('closes restored IDE preview widgets before revealing Work Hub', async () => {
+        const previewNode = document.createElement('div');
+        previewNode.classList.add('qaap-mini-browser-shell');
+        const closed: string[] = [];
+        const { controller } = createController();
+        (controller as unknown as { shell: ApplicationShell }).shell = {
+            mainPanel: { widgets: () => [] },
+            getWidgets: (area: string) => area === 'main'
+                ? [{ id: 'mini-browser:preview', node: previewNode }]
+                : [],
+            closeWidget: async (id: string) => { closed.push(id); },
+        } as unknown as ApplicationShell;
+        await (controller as unknown as { closeIdeOnlyWidgetsForWorkHub(): Promise<void> }).closeIdeOnlyWidgetsForWorkHub();
+        expect(closed).to.deep.equal(['mini-browser:preview']);
     });
 
     it('tryBootstrapMobileAgentsChat restores when tasks panel is visible but shell is empty', () => {

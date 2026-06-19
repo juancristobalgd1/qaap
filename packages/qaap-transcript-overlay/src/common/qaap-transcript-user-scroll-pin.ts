@@ -77,5 +77,5 @@ export function isTranscriptScrollNearBottom(
 }
 
 export function shouldPinTranscriptUserIndex(index: number | undefined, userCount: number): index is number {
-    return index !== undefined && index < userCount - 1;
+    return index !== undefined && index >= 0 && index < userCount;
 }
