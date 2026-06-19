@@ -470,7 +470,19 @@ export class ClaudeCodeChatAgent implements ChatAgent {
             return;
         }
 
-        const questions = toolInput.questions;
+        const normalizedInput: AskUserQuestionInput = {
+            ...toolInput,
+            questions: toolInput.questions.map(q => ({
+                ...q,
+                header: q.header || q.question.slice(0, 20),
+                multiSelect: q.multiSelect ?? false,
+                options: q.options.length < 2
+                    ? [...q.options, { label: 'Other', description: 'Different approach' }]
+                    : q.options.slice(0, 4),
+            })),
+        };
+
+        const questions = normalizedInput.questions;
         const answers: Record<string, string> = {};
         let answeredCount = 0;
         const totalQuestions = questions.length;
@@ -490,7 +502,7 @@ export class ClaudeCodeChatAgent implements ChatAgent {
                     this.getPendingAskUserQuestions(request).delete(approvalRequest.requestId);
 
                     const updatedInput: AskUserQuestionInput = {
-                        ...toolInput,
+                        ...normalizedInput,
                         answers
                     };
 
