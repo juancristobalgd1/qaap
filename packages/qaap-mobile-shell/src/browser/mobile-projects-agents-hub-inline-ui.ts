@@ -235,6 +235,13 @@ export class MobileProjectsAgentsHubInlineUi {
             return;
         }
         const summary = this.resolveAgentsHubShellSummary(project);
+        this.ensureAgentsHubExecutionShell(project, summary);
+    }
+
+    protected ensureAgentsHubExecutionShell(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): HTMLElement | undefined {
         this.host.agentsHubShellActive = true;
         if (
             this.host.agentsHubInlineExecutionRoot?.isConnected
@@ -252,7 +259,7 @@ export class MobileProjectsAgentsHubInlineUi {
             if (liveTranscriptOpen) {
                 this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
             }
-            return;
+            return this.host.agentsHubInlineChatHost;
         }
         const executionRoot = document.createElement('div');
         executionRoot.className = 'theia-mobile-agents-hub-inline-execution';
@@ -302,6 +309,7 @@ export class MobileProjectsAgentsHubInlineUi {
         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummaryId) {
             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
         }
+        return chatHost;
     }
 
     protected createAgentsHubNoProjectOnboarding(): HTMLElement {
@@ -580,29 +588,12 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptComposerAgentModel = undefined;
         this.host.transcriptComposerMountKey = undefined;
         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);
-        const connectedChatHost = this.host.agentsHubInlineChatHost;
-        if (this.host.agentsHubInlineExecutionRoot?.isConnected && connectedChatHost?.isConnected) {
-            this.host.transcriptLiveUi.stopTranscriptLiveWatch();
-            this.host.transcriptLastConv = cachedTargetConversation;
-            this.host.transcriptLastFingerprint = undefined;
-            this.host.transcriptLastSseDeltaAt = undefined;
-            this.host.transcriptLastStreamProgressAt = undefined;
-            this.host.transcriptLastStreamProgressAt = undefined;
-            this.syncAgentsHubInlineExecutionHeader(project, summary);
-            const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project);
-            this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
-            this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
-            this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, connectedChatHost);
-            this.renderAgentsHubShellChat(connectedChatHost, project, summary);
-            this.host.stickyComposerRenderUi.renderStickyComposer();
-            this.host.conversations?.prefetchDocument(summary.id);
-            void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
-            return;
-        }
-        if (!this.host.agentsHubInlineExecutionRoot?.isConnected) {
-            this.renderAgentsHubExecutionShell();
-        }
-        const chatHost = this.host.agentsHubInlineChatHost;
+        this.host.transcriptLiveUi.stopTranscriptLiveWatch();
+        this.host.transcriptLastConv = cachedTargetConversation;
+        this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptLastSseDeltaAt = undefined;
+        this.host.transcriptLastStreamProgressAt = undefined;
+        const chatHost = this.ensureAgentsHubExecutionShell(project, summary);
         const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project);
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);

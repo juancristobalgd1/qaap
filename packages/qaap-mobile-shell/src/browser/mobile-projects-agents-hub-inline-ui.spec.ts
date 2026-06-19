@@ -6,7 +6,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { Disposable } from '@theia/core/lib/common/disposable';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import {
@@ -282,24 +282,102 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
         });
         const ui = new MobileProjectsAgentsHubInlineUi(host);
-        let renderShellCalls = 0;
-        ui.renderAgentsHubExecutionShell = () => {
-            renderShellCalls++;
-            host.agentsHubShellActive = true;
-            const chatHost = document.createElement('div');
-            host.agentsHubInlineChatHost = chatHost;
-            host.transcriptChatHost = chatHost;
-            host.scroll.append(chatHost);
-        };
-        await ui.openAgentsHubInlineTranscript(project, {
-            ...openSummary(),
-            status: 'failed',
+        document.body.append(host.scroll);
+        try {
+            await ui.openAgentsHubInlineTranscript(project, {
+                ...openSummary(),
+                status: 'failed',
+            });
+            expect(renderListCalls).to.equal(0);
+            expect(host.agentsHubInlineExecutionRoot?.parentElement).to.equal(host.scroll);
+            expect(host.agentsHubInlineChatHost?.isConnected).to.equal(true);
+            expect(host.agentsHubInlineExecutionRoot?.contains(host.agentsHubInlineChatHost!)).to.equal(true);
+            expect(shownTab).to.equal('terminal');
+            expect(mountedTab).to.equal('terminal');
+        } finally {
+            host.scroll.remove();
+        }
+    });
+
+    it('openAgentsHubInlineTranscript reuses the idle execution shell and only swaps conversation data', async () => {
+        const project = {
+            id: 'proj-1',
+            name: 'demo',
+            status: 'working',
+            isCurrent: true,
+        } as MobileProjectEntry;
+        let renderedConversationId: string | undefined;
+        const host = createHost({
+            projects: [project],
+            agentsHubSelectedProjectId: project.id,
+            projectsService: {
+                getProjectCwd: () => '/tmp/demo',
+            } as unknown as MobileProjectsAgentsHubInlineHost['projectsService'],
+            executionSurfaceTabsUi: {
+                setExecutionSurfaceTab: () => undefined,
+                executionSurfaceTabForProject: () => 'messages',
+                showOnlyExecutionSurfaceTab: () => undefined,
+                mountTranscriptSurfaceTab: () => undefined,
+                buildTranscriptTabStrip: () => document.createElement('div'),
+                refreshExecutionSurfaceTabStripState: () => undefined,
+                syncExecutionSurfaceChrome: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
+            transcriptComposerUi: {
+                refreshTranscriptComposerAgents: async () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
+            transcriptStickyComposerUi: {
+                flushTranscriptComposerDraft: () => undefined,
+                flushTranscriptComposerPrefs: async () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
+            transcriptLiveUi: {
+                ensureTranscriptConversationRefresh: () => undefined,
+                scheduleTranscriptConversationRefresh: () => undefined,
+                refreshOpenTranscriptConversation: async () => undefined,
+                stopTranscriptLiveWatch: () => undefined,
+                peekCachedOpenTranscript: () => undefined,
+                applyCachedTranscriptOnOpen: () => false,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptMessagesUi: {
+                renderTranscriptMessages: (_host: HTMLElement, conv: QaapAgentConversationDTO) => { renderedConversationId = conv.id; },
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptMessagesUi'],
+            stickyComposerRenderUi: {
+                renderStickyComposer: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['stickyComposerRenderUi'],
+            transcriptSheetUi: {
+                closeTranscriptSheet: () => undefined,
+                summaryToTranscriptPlaceholder: (summary: QaapAgentConversationSummaryDTO) => ({
+                    id: summary.id,
+                    cwd: summary.cwd,
+                    agentId: summary.agentId,
+                    title: summary.title,
+                    status: summary.status,
+                    createdAt: summary.createdAt,
+                    updatedAt: summary.updatedAt,
+                    messages: [],
+                }),
+                createTranscriptSheetSurfaceHosts: () => ({
+                    planHost: document.createElement('div'),
+                    reviewHost: document.createElement('div'),
+                    previewHost: document.createElement('div'),
+                    filesHost: document.createElement('div'),
+                    terminalHost: document.createElement('div'),
+                }),
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
         });
-        expect(renderListCalls).to.equal(0);
-        expect(renderShellCalls).to.equal(1);
-        expect(host.agentsHubInlineChatHost?.parentElement).to.equal(host.scroll);
-        expect(shownTab).to.equal('terminal');
-        expect(mountedTab).to.equal('terminal');
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        document.body.append(host.scroll);
+        try {
+            ui.renderAgentsHubExecutionShell();
+            const idleRoot = host.agentsHubInlineExecutionRoot;
+            const idleChatHost = host.agentsHubInlineChatHost;
+            expect(renderedConversationId).to.equal('__qaap_agents_hub_idle__');
+            await ui.openAgentsHubInlineTranscript(project, openSummary());
+            expect(host.agentsHubInlineExecutionRoot).to.equal(idleRoot);
+            expect(host.agentsHubInlineChatHost).to.equal(idleChatHost);
+            expect(renderedConversationId).to.equal('conv-open');
+        } finally {
+            host.scroll.remove();
+        }
     });
 
     it('openAgentsHubInlineTranscript preserves the active execution surface when switching conversations', async () => {
@@ -348,6 +426,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                     flushTranscriptComposerPrefs: async () => undefined,
                 } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
                 transcriptLiveUi: {
+                    ensureTranscriptConversationRefresh: () => undefined,
                     stopTranscriptLiveWatch: () => undefined,
                     scheduleTranscriptConversationRefresh: () => undefined,
                     refreshOpenTranscriptConversation: async () => undefined,
