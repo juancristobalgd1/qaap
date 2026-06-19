@@ -294,6 +294,8 @@ export interface MobileProjectsPanelDelegate {
     onHubLandingViewChanged?(): void;
     /** Transcript sheet on body: leave Work Hub landing overlay while chat is active. */
     onEnterActiveTranscript?(): void;
+    /** Work Hub conversation became active; keep IDE-only panels out of the Work Hub surface. */
+    onEnterWorkHubConversation?(): void;
     /** Transcript closed: restore Agents hub if the user had opened chat from the landing. */
     onExitActiveTranscript?(): void;
 }

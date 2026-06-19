@@ -231,7 +231,8 @@ export function syncMobileWorkHubHideIdeSidePanelsFromComposerHeader(): void {
     if (typeof document === 'undefined') {
         return;
     }
-    const hide = document.body.classList.contains(QAAP_MOBILE_WORKHUB_COMPOSER_HEADER_BODY_CLASS)
+    const hide = (document.body.classList.contains(QAAP_MOBILE_WORKHUB_COMPOSER_HEADER_BODY_CLASS)
+        || document.body.classList.contains(QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS))
         && !peekPreferDesktopIde();
     setMobileWorkHubHideIdeSidePanels(hide);
 }
@@ -252,6 +253,7 @@ export function setMobileActiveTranscriptChrome(active: boolean): void {
         return;
     }
     document.body.classList.toggle(QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS, active);
+    syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
 }
 
 export function markMobileProjectReadmeForOpen(): void {

@@ -439,6 +439,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                     this.refreshWorkbenchTopBar();
                 },
                 onEnterActiveTranscript: () => this.transcriptChrome.onEnterActiveTranscript(),
+                onEnterWorkHubConversation: () => this.enforceWorkHubSurfaceIsolation(),
                 onExitActiveTranscript: () => { void this.transcriptChrome.onExitActiveTranscript(); },
                 openWorkHubPreferencesSheet: query => this.openWorkHubPreferencesSheet(query),
                 openWorkHubAiConfigurationSheet: tabId => this.openWorkHubAiConfigurationSheet(tabId),
@@ -1164,6 +1165,20 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     protected onEnterActiveTranscript(): void {
         this.transcriptChrome.onEnterActiveTranscript();
+    }
+
+    protected enforceWorkHubSurfaceIsolation(): void {
+        if (peekPreferDesktopIde()) {
+            return;
+        }
+        markPreferAgentsSurface();
+        setMobileWorkHubComposerHeaderChrome(true);
+        syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
+        void this.sideSheetController.collapseMobileSidePanels();
+        this.sideSheetController.settleMobileSidePanelsCollapsed();
+        this.scheduleSnapAndUiRefresh();
+        this.refreshBottomBar();
+        this.refreshWorkbenchTopBar();
     }
 
     protected async onExitActiveTranscript(): Promise<void> {

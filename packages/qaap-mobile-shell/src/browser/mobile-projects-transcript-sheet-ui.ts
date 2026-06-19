@@ -230,7 +230,13 @@ export class MobileProjectsTranscriptSheetUi {
         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);
         this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(chatInputHost, project, summary, chatHost);
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
+        // Mount all tabs so they're available when switching views
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'plan');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'review');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'preview');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'files');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'terminal');
         void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
     }
 

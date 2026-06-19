@@ -16471,8 +16471,6 @@ body>.theia-mobile-transcript-files-menu {
   border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
   font-size: 13px;
   line-height: 1.45;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
 }
 
 .theia-mobile-agent-transcript-content.theia-mod-deferred-markdown,

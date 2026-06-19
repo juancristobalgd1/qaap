@@ -47,6 +47,7 @@ describe('mobile-projects-panel-factory', () => {
             onShowRoutinesHub: () => { delegateCalls.push('onShowRoutinesHub'); },
             onHubLandingViewChanged: () => { delegateCalls.push('onHubLandingViewChanged'); },
             onEnterActiveTranscript: () => { delegateCalls.push('onEnterActiveTranscript'); },
+            onEnterWorkHubConversation: () => { delegateCalls.push('onEnterWorkHubConversation'); },
             onExitActiveTranscript: () => { delegateCalls.push('onExitActiveTranscript'); },
             openWorkHubPreferencesSheet: async () => { delegateCalls.push('openWorkHubPreferencesSheet'); },
             openWorkHubAiConfigurationSheet: async () => { delegateCalls.push('openWorkHubAiConfigurationSheet'); },

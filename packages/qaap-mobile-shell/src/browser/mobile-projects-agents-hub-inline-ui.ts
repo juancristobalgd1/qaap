@@ -580,7 +580,6 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptComposerAgentModel = undefined;
         this.host.transcriptComposerMountKey = undefined;
         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);
-        this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
         const connectedChatHost = this.host.agentsHubInlineChatHost;
         if (this.host.agentsHubInlineExecutionRoot?.isConnected && connectedChatHost?.isConnected) {
             this.host.transcriptLiveUi.stopTranscriptLiveWatch();
@@ -590,7 +589,9 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.transcriptLastStreamProgressAt = undefined;
             this.host.transcriptLastStreamProgressAt = undefined;
             this.syncAgentsHubInlineExecutionHeader(project, summary);
-            this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
+            const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project);
+            this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
+            this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, connectedChatHost);
             this.renderAgentsHubShellChat(connectedChatHost, project, summary);
             this.host.stickyComposerRenderUi.renderStickyComposer();
@@ -602,8 +603,9 @@ export class MobileProjectsAgentsHubInlineUi {
             this.renderAgentsHubExecutionShell();
         }
         const chatHost = this.host.agentsHubInlineChatHost;
-        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
-        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
+        const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project);
+        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
         if (chatHost) {
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
             this.renderAgentsHubShellChat(chatHost, project, summary);

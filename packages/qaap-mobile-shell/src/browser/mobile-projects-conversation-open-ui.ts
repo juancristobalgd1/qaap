@@ -26,6 +26,7 @@ export interface MobileProjectsConversationOpenHost {
     delegate: {
         onDismiss(): void;
         onOpenAgentOnTask?(project: MobileProjectEntry): void | Promise<void>;
+        onEnterWorkHubConversation?(): void;
     };
 
     conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
@@ -70,6 +71,7 @@ export class MobileProjectsConversationOpenUi {
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        this.host.delegate.onEnterWorkHubConversation?.();
         if (this.host.homeMode && !this.host.isProjectDetailView()) {
             this.host.agentsHubSelectedProjectId = project.id;
             if (this.host.hubView !== 'tasks') {

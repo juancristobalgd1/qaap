@@ -71,6 +71,7 @@ describe('mobile-shell-transcript-chrome-controller', () => {
         expect(sessionState.landingLeftThisSession).to.equal(true);
         expect(host.calls).to.include('panel.hide');
         expect(document.body.classList.contains('theia-mobile-mod-active-transcript')).to.equal(true);
+        expect(document.body.classList.contains('theia-mobile-mod-workhub-hide-ide-side-panels')).to.equal(true);
         expect(document.body.classList.contains('theia-mobile-mod-landing')).to.equal(false);
     });
 

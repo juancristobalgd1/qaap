@@ -254,6 +254,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
 
     /** Hide all execution surfaces; reveal exactly one tab. */
     showOnlyExecutionSurfaceTab(tab: TranscriptTab): void {
+        this.syncConnectedTranscriptSurfaceHosts();
         const showMessages = tab === 'messages';
         if (this.host.agentsHubInlineTranscriptRoot) {
             this.host.agentsHubInlineTranscriptRoot.hidden = !showMessages;
@@ -298,6 +299,52 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         if (tab !== 'preview') {
             this.host.transcriptSurfacesUi.suspendTranscriptPreviewIframe();
         }
+    }
+
+    protected syncConnectedTranscriptSurfaceHosts(): void {
+        const inlineRoot = this.host.agentsHubInlineExecutionRoot;
+        if (inlineRoot?.isConnected) {
+            const transcriptRoot = this.directChildWithClass(inlineRoot, 'theia-mobile-agents-hub-inline-transcript');
+            if (transcriptRoot) {
+                this.host.agentsHubInlineTranscriptRoot = transcriptRoot;
+                const chatHost = this.directChildWithClass(transcriptRoot, 'theia-mobile-agent-transcript-real-chat');
+                if (chatHost) {
+                    this.host.transcriptChatHost = chatHost;
+                }
+            }
+            this.syncSurfaceHostsFromContainer(inlineRoot);
+        }
+
+        const sheet = this.host.transcriptSheet
+            ?.querySelector<HTMLElement>('.theia-mobile-agent-log-sheet.theia-mod-transcript');
+        if (sheet?.isConnected) {
+            const chatHost = this.directChildWithClass(sheet, 'theia-mobile-agent-transcript-real-chat');
+            if (chatHost) {
+                this.host.transcriptChatHost = chatHost;
+            }
+            const inputHost = this.directChildWithClass(sheet, 'theia-mobile-agent-transcript-chat-input');
+            if (inputHost) {
+                this.host.transcriptChatInputHost = inputHost;
+            }
+            this.syncSurfaceHostsFromContainer(sheet);
+        }
+    }
+
+    protected syncSurfaceHostsFromContainer(container: HTMLElement): void {
+        this.host.transcriptPlanHost = this.directChildWithClass(container, 'theia-mobile-transcript-plan') ?? this.host.transcriptPlanHost;
+        this.host.transcriptReviewHost = this.directChildWithClass(container, 'theia-mobile-transcript-review') ?? this.host.transcriptReviewHost;
+        this.host.transcriptPreviewHost = this.directChildWithClass(container, 'theia-mobile-transcript-preview') ?? this.host.transcriptPreviewHost;
+        this.host.transcriptFilesHost = this.directChildWithClass(container, 'theia-mobile-transcript-files-host') ?? this.host.transcriptFilesHost;
+        this.host.transcriptTerminalHost = this.directChildWithClass(container, 'theia-mobile-transcript-terminal-host') ?? this.host.transcriptTerminalHost;
+    }
+
+    protected directChildWithClass(parent: HTMLElement, className: string): HTMLElement | undefined {
+        for (const child of Array.from(parent.children)) {
+            if (child instanceof HTMLElement && child.classList.contains(className)) {
+                return child;
+            }
+        }
+        return undefined;
     }
 
     mountExecutionSurfaceTabContent(

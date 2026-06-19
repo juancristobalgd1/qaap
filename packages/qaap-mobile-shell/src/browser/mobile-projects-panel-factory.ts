@@ -64,6 +64,7 @@ export interface MobileProjectsPanelFactoryDelegate {
     onShowRoutinesHub(): void;
     onHubLandingViewChanged(): void;
     onEnterActiveTranscript(): void;
+    onEnterWorkHubConversation(): void;
     onExitActiveTranscript(): void;
     openWorkHubPreferencesSheet(query?: string): Promise<void>;
     openWorkHubAiConfigurationSheet(tabId?: string): Promise<void>;
@@ -142,6 +143,7 @@ export class MobileProjectsPanelFactory {
                 onShowRoutinesHub: () => delegate.onShowRoutinesHub(),
                 onHubLandingViewChanged: () => delegate.onHubLandingViewChanged(),
                 onEnterActiveTranscript: () => delegate.onEnterActiveTranscript(),
+                onEnterWorkHubConversation: () => delegate.onEnterWorkHubConversation(),
                 onExitActiveTranscript: () => delegate.onExitActiveTranscript(),
             },
             {
