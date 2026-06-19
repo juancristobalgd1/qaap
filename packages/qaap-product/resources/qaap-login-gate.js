@@ -16,11 +16,10 @@
                 return;
             }
             var ss = window.sessionStorage;
-            if (ss.getItem('qaap.mobileProjects.preferDesktopIde') === '1') {
-                ss.removeItem('qaap.mobileProjects.preferDesktopIde');
-            }
-            if (ss.getItem('qaap.mobileProjects.explicitDesktopIde') === '1') {
-                ss.removeItem('qaap.mobileProjects.explicitDesktopIde');
+            var preferDesktopIde = ss.getItem('qaap.mobileProjects.preferDesktopIde') === '1'
+                || ss.getItem('qaap.mobileProjects.explicitDesktopIde') === '1';
+            if (preferDesktopIde) {
+                return;
             }
             // NOTE: `homeVisible` is NOT a skip — the Work Hub Home is a hub surface, so on reload
             // we must keep hiding the IDE until the hub home mounts (applyLandingChrome releases it).

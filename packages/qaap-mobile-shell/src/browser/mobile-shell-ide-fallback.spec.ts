@@ -109,6 +109,8 @@ describe('mobile-shell-ide-fallback', () => {
         const { controller, host, sessionState } = createController();
         controller.returnToAgentsFromDesktopIde();
         expect(peekPreferDesktopIde()).to.equal(false);
+        expect(document.body.classList.contains('theia-mobile-mod-workhub-composer-header')).to.equal(true);
+        expect(document.body.classList.contains('theia-mobile-mod-workhub-hide-ide-side-panels')).to.equal(true);
         expect(sessionState.landingLeftThisSession).to.equal(true);
         expect(host.calls).to.include('cancelAgentsBootstrap');
         await new Promise<void>(resolve => { setTimeout(resolve, 0); });

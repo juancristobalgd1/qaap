@@ -3,10 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-/** Legacy key from when the IDE choice survived reloads; kept so stale values can be cleared. */
 export const QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY = 'qaap.mobileProjects.preferDesktopIde';
 
-/** Legacy key from when the IDE choice survived reloads; kept so stale values can be cleared. */
+/** Kept for compatibility with builds that wrote this explicit IDE marker. */
 export const QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY = 'qaap.mobileProjects.explicitDesktopIde';
 
 /** User is on the Agents / Work Hub workspace surface (not the project list landing). */
@@ -24,16 +23,12 @@ function syncDesktopIdeBodyClass(): void {
     document.body.classList.toggle(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS, preferDesktopIdeThisRuntime);
 }
 
-/**
- * CRITICAL: "Open IDE" is an in-runtime escape hatch only. It must not survive reload/F5,
- * because Work Hub is the product default on every boot. Keep desktop-IDE state memory-only.
- */
 export function markPreferDesktopIde(): void {
     preferDesktopIdeThisRuntime = true;
     syncDesktopIdeBodyClass();
     if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.removeItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY);
-        sessionStorage.removeItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY);
+        sessionStorage.setItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY, '1');
+        sessionStorage.setItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY, '1');
         sessionStorage.removeItem(QAAP_MOBILE_PREFER_AGENTS_SURFACE_KEY);
     }
 }
@@ -49,8 +44,10 @@ export function clearPreferDesktopIde(): void {
 
 export function peekPreferDesktopIde(): boolean {
     if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.removeItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY);
-        sessionStorage.removeItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY);
+        preferDesktopIdeThisRuntime = sessionStorage.getItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY) === '1'
+            || sessionStorage.getItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY) === '1'
+            || preferDesktopIdeThisRuntime;
+        syncDesktopIdeBodyClass();
     }
     return preferDesktopIdeThisRuntime;
 }

@@ -6,9 +6,12 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
+    clearPreferAgentsSurface,
+    clearPreferDesktopIde,
     markMobileProjectsHomeVisible,
     markMobileProjectsPanelDismiss,
     markPreferAgentsSurface,
+    markPreferDesktopIde,
     shouldBootstrapMobileAgentsChat,
     shouldPreferWorkHubAgentsLayout,
 } from '../browser/mobile-projects-open';
@@ -40,11 +43,19 @@ describe('mobile-projects-open work hub bootstrap', () => {
         };
         (global as unknown as { sessionStorage: Storage }).sessionStorage = sessionStorage as Storage;
         Object.defineProperty(window, 'sessionStorage', { value: sessionStorage, configurable: true });
+        clearPreferDesktopIde();
+        clearPreferAgentsSurface();
         window.location.hash = '#/Users/jc/.qaap/workspaces/demo/Mockup';
     });
 
     it('bootstraps agents chat for workspace routes even without persisted agents preference', () => {
         expect(shouldBootstrapMobileAgentsChat()).to.equal(true);
+        expect(shouldPreferWorkHubAgentsLayout()).to.equal(false);
+    });
+
+    it('does not bootstrap agents chat for workspace routes when desktop IDE is persisted', () => {
+        markPreferDesktopIde();
+        expect(shouldBootstrapMobileAgentsChat()).to.equal(false);
         expect(shouldPreferWorkHubAgentsLayout()).to.equal(false);
     });
 

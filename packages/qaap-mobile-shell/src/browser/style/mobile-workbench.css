@@ -3116,7 +3116,8 @@ body.theia-mobile-mod-workhub-composer-header #theia-app-shell.theia-mod-mobile-
   pointer-events: none !important;
 }
 
-/* Work Hub primary surface: hide restored IDE side/bottom panels (Explorer flash on boot). */
+/* Work Hub primary surface: hide restored IDE main/side/bottom panels (Explorer/Preview flash on boot). */
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide) #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
 body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide) #theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel,
 body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide) #theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel,
 body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide) #theia-app-shell.theia-mod-mobile-one-column #theia-bottom-content-panel,
@@ -3127,6 +3128,7 @@ body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop
   pointer-events: none !important;
 }
 
+body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide) #theia-app-shell:not(.theia-mod-mobile-one-column) #theia-main-content-panel,
 body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide) #theia-app-shell:not(.theia-mod-mobile-one-column) #theia-left-content-panel,
 body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide) #theia-app-shell:not(.theia-mod-mobile-one-column) #theia-right-content-panel,
 body.theia-mobile-mod-workhub-hide-ide-side-panels:not(.theia-mobile-mod-desktop-ide) #theia-app-shell:not(.theia-mod-mobile-one-column) #theia-bottom-content-panel,
@@ -22743,4 +22745,3 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
     padding: 2px 0 4px 16px;
   }
 }
-

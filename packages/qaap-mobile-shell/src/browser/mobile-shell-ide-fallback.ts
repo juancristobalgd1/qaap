@@ -7,6 +7,7 @@ import {
     clearMobileWorkHubBootGuard,
     clearPreferAgentsSurface,
     clearPreferDesktopIde,
+    markPreferAgentsSurface,
     markPreferDesktopIde,
     setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
@@ -40,7 +41,7 @@ export interface MobileShellIdeFallbackOptions {
     sessionState: MobileShellSessionState;
 }
 
-/** Classic IDE entry/exit while Work Hub remains the reload default (memory-only IDE preference). */
+/** Classic IDE entry/exit while keeping IDE and Work Hub as explicit, persistent session surfaces. */
 export class MobileShellIdeFallbackController {
 
     protected readonly host: MobileShellIdeFallbackHost;
@@ -100,6 +101,8 @@ export class MobileShellIdeFallbackController {
     returnToAgentsFromDesktopIde(): void {
         this.host.cancelAgentsBootstrap();
         clearPreferDesktopIde();
+        markPreferAgentsSurface();
+        setMobileWorkHubComposerHeaderChrome(true);
         this.sessionState.landingLeftThisSession = true;
         document.body.classList.remove('theia-mobile-mod-landing');
         if (!this.host.isMobileActive() && this.host.shouldActivateMobileLayout()) {
