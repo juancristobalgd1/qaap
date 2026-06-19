@@ -1725,6 +1725,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.conversationActionsUi.onCancelConversation(project, summary);
     }
 
+    isAgentWorking(): boolean {
+        return this.transcriptStickyComposerUi.isTranscriptStickyComposerAgentWorking();
+    }
+
     protected async onRetryConversation(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,

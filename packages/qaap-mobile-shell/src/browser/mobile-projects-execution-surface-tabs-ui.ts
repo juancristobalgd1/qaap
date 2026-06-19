@@ -82,6 +82,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     projects: MobileProjectEntry[];
     closeCardMenu(): void;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+    isAgentWorking(): boolean;
 }
 
 /** Tab strip, overflow picker, and execution-surface visibility for transcript and project detail. */
@@ -110,6 +111,26 @@ export class MobileProjectsExecutionSurfaceTabsUi {
     setExecutionSurfaceTab(project: MobileProjectEntry, tab: TranscriptTab): void {
         this.host.executionSurfaceTabByProjectId.set(project.id, tab);
         this.syncExecutionSurfaceChrome(project);
+    }
+
+    enforceAgentWorkingTab(): void {
+        if (!this.host.isAgentWorking()) {
+            return;
+        }
+        const project = this.resolveExecutionSurfaceProject();
+        if (!project) {
+            return;
+        }
+        const current = this.executionSurfaceTabForProject(project);
+        if (current === 'messages') {
+            return;
+        }
+        this.setExecutionSurfaceTab(project, 'messages');
+        this.rebuildExecutionSurfaceTabStrips(project, 'messages');
+        this.showOnlyExecutionSurfaceTab('messages');
+        this.mountExecutionSurfaceTabContent(project, this.host.transcriptOpenSummary!, 'messages');
+        this.host.root.classList.add('theia-mod-project-surface-chat');
+        this.host.root.classList.remove('theia-mod-project-surface-tools');
     }
 
     /** Keep Chat vs overflow-select styling in sync on every connected header strip. */
@@ -200,6 +221,9 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         summary: QaapAgentConversationSummaryDTO,
         origin: 'transcript' | 'project-detail',
     ): void {
+        if (this.host.isAgentWorking() && tab !== 'messages') {
+            tab = 'messages';
+        }
         const sameTab = this.executionSurfaceTabForProject(project) === tab;
         if (sameTab) {
             this.syncExecutionSurfaceChrome(project);
@@ -332,6 +356,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         if (!this.host.transcriptTabStrip) {
             return;
         }
+        this.enforceAgentWorkingTab();
         this.refreshExecutionSurfaceTabStripState(this.host.transcriptTabStrip, this.executionSurfaceTabForProject(project));
     }
 
@@ -462,7 +487,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
     }
 
     executionSurfaceTabSpecs(): Array<{ id: TranscriptTab; label: string; icon: string }> {
-        return [
+        const all: Array<{ id: TranscriptTab; label: string; icon: string }> = [
             { id: 'messages', label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: 'codicon-comment-discussion' },
             { id: 'plan', label: nls.localize('qaap/mobileProjects/tabPlan', 'Plan'), icon: 'codicon-file-text' },
             { id: 'review', label: nls.localize('qaap/mobileProjects/tabChanges', 'Changes'), icon: QAAP_SCM_CHANGES_ICON_CLASS },
@@ -470,6 +495,10 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-folder-opened' },
             { id: 'terminal', label: nls.localize('qaap/mobileProjects/tabTerminal', 'Terminal'), icon: 'codicon-terminal' },
         ];
+        if (this.host.isAgentWorking()) {
+            return all.filter(spec => spec.id === 'messages');
+        }
+        return all;
     }
 
     createExecutionSurfaceIconSelect(
