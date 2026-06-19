@@ -48,7 +48,7 @@ export function transcriptUserMessageScrollTop(anchorOffsetPx: number, paddingPx
  */
 export function resolveStuckUserIndex(
     wrapTopsRelativeToScroller: readonly number[],
-    stuckTopMaxPx = 24,
+    stuckTopMaxPx = 6,
 ): number | undefined {
     if (wrapTopsRelativeToScroller.length === 0) {
         return undefined;

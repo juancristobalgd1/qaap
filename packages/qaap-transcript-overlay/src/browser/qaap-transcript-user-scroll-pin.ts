@@ -11,7 +11,6 @@ import {
 import { prefersReducedMotion, resolveScrollBehavior } from '../common/qaap-prefers-reduced-motion';
 import {
     isTranscriptScrollAtTop,
-    isTranscriptScrollNearBottom,
     resolveStuckUserIndex,
     shouldPinTranscriptUserIndex,
     transcriptUserMessageScrollTop,
@@ -24,7 +23,8 @@ const SUPPRESSED_WRAP_CLASS = 'theia-mod-sticky-suppressed';
 const JUMP_CLASS = 'theia-mod-scroll-pinned-jump';
 const STICKY_COMPACT_CLASS = 'theia-mod-sticky-compact';
 const CONTENT_SELECTOR = '.theia-mobile-agent-transcript-content';
-const STUCK_TOP_MAX_PX = 24;
+const STUCK_TOP_MAX_PX = 6;
+const STICKY_VISUAL_DRIFT_MAX_PX = 16;
 /**
  * Coalescing window for mutation-driven re-syncs. During token streaming the
  * MutationObserver fires many times per second; each full sync re-measures wrap
@@ -45,31 +45,9 @@ function syncStickyCompact(entry: TranscriptUserPinEntry): void {
     if (!content) {
         return;
     }
-    const maxHeightPx = transcriptScrollCompactMaxHeightPx(parseFloat(getComputedStyle(content).fontSize));
+    const computedStyle = content.ownerDocument.defaultView?.getComputedStyle(content);
+    const maxHeightPx = transcriptScrollCompactMaxHeightPx(parseFloat(computedStyle?.fontSize ?? ''));
     content.classList.toggle(STICKY_COMPACT_CLASS, isTranscriptContentTall(content, maxHeightPx));
-}
-
-function reserveNaturalWrapHeight(entry: TranscriptUserPinEntry): void {
-    const content = entry.bubble.querySelector<HTMLElement>(CONTENT_SELECTOR);
-    const hadStuckClass = entry.wrap.classList.contains(STUCK_WRAP_CLASS);
-    const hadSuppressedClass = entry.wrap.classList.contains(SUPPRESSED_WRAP_CLASS);
-    const hadCompactClass = content?.classList.contains(STICKY_COMPACT_CLASS) ?? false;
-    const previousMinHeight = entry.wrap.style.minHeight;
-
-    entry.wrap.classList.remove(STUCK_WRAP_CLASS, SUPPRESSED_WRAP_CLASS);
-    content?.classList.remove(STICKY_COMPACT_CLASS);
-    entry.wrap.style.removeProperty('min-height');
-
-    const naturalHeight = entry.wrap.offsetHeight;
-
-    entry.wrap.classList.toggle(STUCK_WRAP_CLASS, hadStuckClass);
-    entry.wrap.classList.toggle(SUPPRESSED_WRAP_CLASS, hadSuppressedClass);
-    content?.classList.toggle(STICKY_COMPACT_CLASS, hadCompactClass);
-    entry.wrap.style.minHeight = previousMinHeight;
-
-    if (naturalHeight > 0) {
-        entry.wrap.style.minHeight = `${Math.ceil(naturalHeight)}px`;
-    }
 }
 
 function clearStickyVisual(entry: TranscriptUserPinEntry): void {
@@ -84,9 +62,9 @@ function clearStickyVisual(entry: TranscriptUserPinEntry): void {
 }
 
 function applyStickyVisual(entry: TranscriptUserPinEntry): void {
-    reserveNaturalWrapHeight(entry);
     entry.wrap.classList.add(STUCK_WRAP_CLASS);
     entry.wrap.classList.remove(SUPPRESSED_WRAP_CLASS);
+    entry.wrap.style.removeProperty('min-height');
     const jumpLabel = nls.localize('qaap/mobileProjects/transcriptPinnedJump', 'Jump to message');
     entry.bubble.classList.add(JUMP_CLASS);
     syncStickyCompact(entry);
@@ -129,7 +107,12 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
     let lastScrollHeight = -1;
     let zIndexWrap: HTMLElement | undefined;
     let observedLayoutElements: HTMLElement[] = [];
+    let mutationObserver: MutationObserver | undefined;
     const entryStates = new WeakMap<HTMLElement, TranscriptUserPinVisualState>();
+
+    const discardPendingMutationRecords = (): void => {
+        mutationObserver?.takeRecords();
+    };
 
     const collectEntries = (): TranscriptUserPinEntry[] => {
         const entries: TranscriptUserPinEntry[] = [];
@@ -171,6 +154,7 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
                 entry.wrap.style.top = previousStyles[i].top;
                 entry.wrap.style.zIndex = previousStyles[i].zIndex;
             });
+            discardPendingMutationRecords();
         }
     };
 
@@ -224,6 +208,17 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
         for (const entry of entries) {
             applyEntryState(entry, 'clear');
         }
+    };
+
+    const hasDriftedStickyVisual = (entries: readonly TranscriptUserPinEntry[]): boolean => {
+        const scrollerTop = scroller.getBoundingClientRect().top;
+        return entries.some(entry => {
+            if (!entry.wrap.classList.contains(STUCK_WRAP_CLASS)) {
+                return false;
+            }
+            const top = entry.wrap.getBoundingClientRect().top - scrollerTop;
+            return top < -STICKY_VISUAL_DRIFT_MAX_PX || top > STICKY_VISUAL_DRIFT_MAX_PX;
+        });
     };
 
     const finishScrollToUserMessage = (): void => {
@@ -319,10 +314,16 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
             lastScrollHeight = scrollHeight;
             naturalTopsCache = undefined;
         }
+        if (hasDriftedStickyVisual(entries)) {
+            // Virtualized transcript rows can be repositioned by style/transform
+            // updates without changing scrollHeight. If a previously sticky row is
+            // now visibly away from the scrollport top, force a fresh natural-top pass.
+            naturalTopsCache = undefined;
+            refreshVisualsPending = true;
+        }
         if (
             entries.length === 0
             || isTranscriptScrollAtTop(scrollTop)
-            || isTranscriptScrollNearBottom(scrollTop, scroller.clientHeight, scrollHeight)
         ) {
             clearStickyEntries(entries);
             return;
@@ -355,6 +356,14 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
                 applyEntryState(entries[i], 'clear');
             }
         }
+        discardPendingMutationRecords();
+        if (hasDriftedStickyVisual(entries)) {
+            naturalTopsCache = undefined;
+            refreshVisualsPending = true;
+            clearStickyEntries(entries);
+            discardPendingMutationRecords();
+            scheduleSync();
+        }
     };
 
     const scheduleSync = (): void => {
@@ -380,10 +389,11 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
     };
 
     const observeTranscriptLayoutElements = (observer: ResizeObserver): void => {
+        const ownerHTMLElement = scroller.ownerDocument.defaultView?.HTMLElement;
         const next = [
             scroller,
             ...Array.from(scroller.children).filter((child): child is HTMLElement =>
-                child instanceof HTMLElement && !child.matches(USER_WRAP_SELECTOR)
+                (!ownerHTMLElement || child instanceof ownerHTMLElement) && !child.matches(USER_WRAP_SELECTOR)
             ),
         ];
         if (next.length === observedLayoutElements.length && next.every((element, index) => element === observedLayoutElements[index])) {
@@ -400,21 +410,38 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
 
     const onTranscriptDisclosureToggle = (event: Event): void => {
         const target = event.target;
-        if (!(target instanceof HTMLElement) || target.tagName !== 'DETAILS' || !scroller.contains(target)) {
+        const ownerHTMLElement = scroller.ownerDocument.defaultView?.HTMLElement;
+        if (
+            !target
+            || (ownerHTMLElement && !(target instanceof ownerHTMLElement))
+            || !(target as Element).matches?.('details')
+            || !scroller.contains(target as Node)
+        ) {
             return;
         }
         invalidateLayoutCache(true);
     };
 
-    const isStickyOwnedClassMutation = (mutation: MutationRecord): boolean => {
-        if (mutation.type !== 'attributes' || mutation.attributeName !== 'class' || !(mutation.target instanceof HTMLElement)) {
+    const isStickyOwnedVisualMutation = (mutation: MutationRecord): boolean => {
+        if (
+            mutation.type !== 'attributes'
+            || (mutation.attributeName !== 'class' && mutation.attributeName !== 'style')
+        ) {
             return false;
         }
         const target = mutation.target;
-        return !!target.closest(USER_WRAP_SELECTOR)
-            && (target.matches(USER_WRAP_SELECTOR)
-                || target.matches(USER_BUBBLE_SELECTOR)
-                || target.matches(CONTENT_SELECTOR));
+        const ownerHTMLElement = scroller.ownerDocument.defaultView?.HTMLElement;
+        if (ownerHTMLElement && !(target instanceof ownerHTMLElement)) {
+            return false;
+        }
+        const element = target as Element;
+        if (!element.closest || !element.matches) {
+            return false;
+        }
+        return !!element.closest(USER_WRAP_SELECTOR)
+            && (element.matches(USER_WRAP_SELECTOR)
+                || element.matches(USER_BUBBLE_SELECTOR)
+                || element.matches(CONTENT_SELECTOR));
     };
 
     const shouldInvalidateForMutations = (mutations: readonly MutationRecord[]): boolean => mutations.some(mutation => {
@@ -424,8 +451,8 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
         if (mutation.type !== 'attributes') {
             return false;
         }
-        if (mutation.attributeName === 'class') {
-            return !isStickyOwnedClassMutation(mutation);
+        if (mutation.attributeName === 'class' || mutation.attributeName === 'style') {
+            return !isStickyOwnedVisualMutation(mutation);
         }
         return mutation.attributeName === 'open'
             || mutation.attributeName === 'hidden'
@@ -447,7 +474,7 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
     if (resizeObserver) {
         observeTranscriptLayoutElements(resizeObserver);
     }
-    const mutationObserver = new MutationObserver(mutations => {
+    mutationObserver = new MutationObserver(mutations => {
         if (!shouldInvalidateForMutations(mutations)) {
             return;
         }
@@ -461,7 +488,7 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
         subtree: true,
         characterData: true,
         attributes: true,
-        attributeFilter: ['open', 'class', 'hidden', 'aria-expanded'],
+        attributeFilter: ['open', 'class', 'style', 'hidden', 'aria-expanded'],
     });
 
     scheduleSync();

@@ -41,12 +41,13 @@ describe('qaap-transcript-user-scroll-pin', () => {
         expect(transcriptUserMessageScrollTop(4)).to.equal(0);
     });
 
-    it('picks the last user message stuck at the scrollport top (handoff)', () => {
-        expect(resolveStuckUserIndex([520, 23, 23])).to.equal(2);
-        expect(resolveStuckUserIndex([23, 23, 890])).to.equal(1);
+    it('picks only user messages that have reached the scrollport top (handoff)', () => {
+        expect(resolveStuckUserIndex([520, 0, 0])).to.equal(2);
+        expect(resolveStuckUserIndex([0, 0, 890])).to.equal(1);
+        expect(resolveStuckUserIndex([-120, 6, 890])).to.equal(1);
         expect(resolveStuckUserIndex([120, 400])).to.equal(undefined);
-        expect(resolveStuckUserIndex([23])).to.equal(0);
-        expect(resolveStuckUserIndex([25])).to.equal(undefined);
+        expect(resolveStuckUserIndex([7])).to.equal(undefined);
+        expect(resolveStuckUserIndex([-1])).to.equal(0);
     });
 
     it('detects transcript top before first sticky preview', () => {
