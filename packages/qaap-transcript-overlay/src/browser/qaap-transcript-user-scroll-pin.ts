@@ -128,6 +128,7 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
     let naturalTopsCache: number[] | undefined;
     let lastScrollHeight = -1;
     let zIndexWrap: HTMLElement | undefined;
+    let observedLayoutElements: HTMLElement[] = [];
     const entryStates = new WeakMap<HTMLElement, TranscriptUserPinVisualState>();
 
     const collectEntries = (): TranscriptUserPinEntry[] => {
@@ -178,6 +179,17 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
             naturalTopsCache = measureNaturalTops(entries);
         }
         return naturalTopsCache;
+    };
+
+    const invalidateLayoutCache = (immediate = false): void => {
+        entriesCache = undefined;
+        naturalTopsCache = undefined;
+        refreshVisualsPending = true;
+        if (immediate) {
+            scheduleSync();
+        } else {
+            scheduleMutationSync();
+        }
     };
 
     const applyEntryState = (entry: TranscriptUserPinEntry, state: TranscriptUserPinVisualState, force = false): void => {
@@ -367,24 +379,90 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
         }, delay);
     };
 
+    const observeTranscriptLayoutElements = (observer: ResizeObserver): void => {
+        const next = [
+            scroller,
+            ...Array.from(scroller.children).filter((child): child is HTMLElement =>
+                child instanceof HTMLElement && !child.matches(USER_WRAP_SELECTOR)
+            ),
+        ];
+        if (next.length === observedLayoutElements.length && next.every((element, index) => element === observedLayoutElements[index])) {
+            return;
+        }
+        for (const element of observedLayoutElements) {
+            observer.unobserve(element);
+        }
+        for (const element of next) {
+            observer.observe(element);
+        }
+        observedLayoutElements = next;
+    };
+
+    const onTranscriptDisclosureToggle = (event: Event): void => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement) || target.tagName !== 'DETAILS' || !scroller.contains(target)) {
+            return;
+        }
+        invalidateLayoutCache(true);
+    };
+
+    const isStickyOwnedClassMutation = (mutation: MutationRecord): boolean => {
+        if (mutation.type !== 'attributes' || mutation.attributeName !== 'class' || !(mutation.target instanceof HTMLElement)) {
+            return false;
+        }
+        const target = mutation.target;
+        return !!target.closest(USER_WRAP_SELECTOR)
+            && (target.matches(USER_WRAP_SELECTOR)
+                || target.matches(USER_BUBBLE_SELECTOR)
+                || target.matches(CONTENT_SELECTOR));
+    };
+
+    const shouldInvalidateForMutations = (mutations: readonly MutationRecord[]): boolean => mutations.some(mutation => {
+        if (mutation.type === 'childList' || mutation.type === 'characterData') {
+            return true;
+        }
+        if (mutation.type !== 'attributes') {
+            return false;
+        }
+        if (mutation.attributeName === 'class') {
+            return !isStickyOwnedClassMutation(mutation);
+        }
+        return mutation.attributeName === 'open'
+            || mutation.attributeName === 'hidden'
+            || mutation.attributeName === 'aria-expanded';
+    });
+
     scroller.addEventListener('scroll', scheduleSync, { passive: true });
     scroller.addEventListener('click', onStickyActivate);
     scroller.addEventListener('keydown', onStickyKeyDown);
+    scroller.addEventListener('toggle', onTranscriptDisclosureToggle, true);
     const resizeObserver = typeof ResizeObserver !== 'undefined'
         ? new ResizeObserver(() => {
-            naturalTopsCache = undefined;
-            refreshVisualsPending = true;
-            scheduleSync();
+            if (resizeObserver) {
+                observeTranscriptLayoutElements(resizeObserver);
+            }
+            invalidateLayoutCache(true);
         })
         : undefined;
-    resizeObserver?.observe(scroller);
-    const mutationObserver = new MutationObserver(() => {
-        entriesCache = undefined;
-        naturalTopsCache = undefined;
-        refreshVisualsPending = true;
-        scheduleMutationSync();
+    if (resizeObserver) {
+        observeTranscriptLayoutElements(resizeObserver);
+    }
+    const mutationObserver = new MutationObserver(mutations => {
+        if (!shouldInvalidateForMutations(mutations)) {
+            return;
+        }
+        if (resizeObserver) {
+            observeTranscriptLayoutElements(resizeObserver);
+        }
+        invalidateLayoutCache();
     });
-    mutationObserver.observe(scroller, { childList: true, subtree: true, characterData: true });
+    mutationObserver.observe(scroller, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['open', 'class', 'hidden', 'aria-expanded'],
+    });
 
     scheduleSync();
 
@@ -395,6 +473,7 @@ export function attachTranscriptUserScrollPin(scroller: HTMLElement): Disposable
         scroller.removeEventListener('scroll', scheduleSync);
         scroller.removeEventListener('click', onStickyActivate);
         scroller.removeEventListener('keydown', onStickyKeyDown);
+        scroller.removeEventListener('toggle', onTranscriptDisclosureToggle, true);
         if (scrollToUserMessageTimer !== undefined) {
             window.clearTimeout(scrollToUserMessageTimer);
         }
