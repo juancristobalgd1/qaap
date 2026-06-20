@@ -19,6 +19,7 @@ import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scr
 import { scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
+import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
 import {
     attachTranscriptRowDeferObserver,
@@ -268,6 +269,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     ): void {
         this.host.transcriptUserScrollPinDispose.dispose();
         this.host.transcriptUserScrollPinDispose = new DisposableCollection(
+            attachTranscriptUserScrollPin(messageHost),
             attachTranscriptActivityTimelineStickySummary(messageHost),
             attachTranscriptScrollToBottomButton(host),
             attachTranscriptRowDeferObserver(messageHost, {
