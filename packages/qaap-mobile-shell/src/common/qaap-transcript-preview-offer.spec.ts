@@ -16,10 +16,19 @@ import {
     findTranscriptPreviewPortHint,
     isLikelyDevServerShellCommand,
     messageRequestsDevPreview,
+    previewPageTitleMatchesProjectName,
     transcriptPreviewProbePorts,
 } from './qaap-transcript-preview-offer';
 
 describe('qaap-transcript-preview-offer', () => {
+
+    it('previewPageTitleMatchesProjectName rejects empty titles and requires project name overlap', () => {
+        expect(previewPageTitleMatchesProjectName(undefined, 'Todo')).to.equal(false);
+        expect(previewPageTitleMatchesProjectName('', 'Todo')).to.equal(false);
+        expect(previewPageTitleMatchesProjectName('Todo App', 'Todo')).to.equal(true);
+        expect(previewPageTitleMatchesProjectName('LadinPage', 'Todo')).to.equal(false);
+        expect(previewPageTitleMatchesProjectName('Anything', '')).to.equal(true);
+    });
 
     it('extractDevPreviewUrlFromAgentText accepts localhost URLs and port hints', () => {
         expect(extractDevPreviewUrlFromAgentText('Local: http://localhost:5173/', 'http://localhost:3000'))

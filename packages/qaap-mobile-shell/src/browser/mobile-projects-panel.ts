@@ -834,6 +834,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.projectNavigationUi.closeProjectDetail();
     }
 
+    onHubExpandedProjectChanged(project: MobileProjectEntry): void {
+        this.transcriptSurfacesUi.onHubProjectExpanded(project);
+    }
+
     protected resetProjectDetailSurfaces(): void {
         this.projectNavigationUi.resetProjectDetailSurfaces();
     }
@@ -2062,7 +2066,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected stageTranscriptPreviewReadyUrl(readyUrl: string): void {
-        this.transcriptSurfacesUi.stageTranscriptPreviewReadyUrl(readyUrl);
+        const projectId = this.transcriptController.state.transcriptOpenProject?.id
+            ?? this.expandedId;
+        if (!projectId) {
+            return;
+        }
+        this.transcriptSurfacesUi.stageTranscriptPreviewReadyUrl(projectId, readyUrl);
     }
 
     protected ensureOverlayUi(): {

@@ -47,6 +47,7 @@ export interface MobileProjectsProjectNavigationHost {
         onWorkspaceOpened?(): void;
     };
 
+    onHubExpandedProjectChanged?(project: MobileProjectEntry): void;
     closeCardMenu(): void;
     stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
@@ -74,6 +75,7 @@ export class MobileProjectsProjectNavigationUi {
         if (this.host.expandedId === project.id) {
             return;
         }
+        this.host.onHubExpandedProjectChanged?.(project);
         this.host.expandedId = project.id;
         this.host.soloExpanded = true;
         this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
@@ -90,6 +92,9 @@ export class MobileProjectsProjectNavigationUi {
     async toggleRowExpanded(project: MobileProjectEntry): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
         const wasExpanded = this.host.expandedId === project.id;
+        if (!wasExpanded) {
+            this.host.onHubExpandedProjectChanged?.(project);
+        }
         this.host.expandedId = wasExpanded ? undefined : project.id;
         this.host.suppressCurrentAutoExpand = wasExpanded && project.isCurrent;
         this.host.soloExpanded = this.host.expandedId !== undefined;

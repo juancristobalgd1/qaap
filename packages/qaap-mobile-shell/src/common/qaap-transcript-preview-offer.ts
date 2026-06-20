@@ -15,6 +15,19 @@ const DEFAULT_VITE_PROBE_PORTS = [5173, 5174, 5175, 5176, 3000, 3001, 4173, 8080
 
 const DEV_PREVIEW_INTENT_RE = /\b(?:dev\s+server|live\s+preview|in-ide\s+preview|run\s+(?:the\s+)?(?:app|project)|build\s+and\s+run|run\s+locally|start\s+(?:the\s+)?(?:dev|app|server)|launch\s+(?:the\s+)?(?:app|project|server)|preview\s+(?:the\s+)?(?:app|project|page)|show\s+(?:me\s+)?(?:the\s+)?(?:app|preview)|boot(?:s|ed)\s+cleanly|figure\s+out\s+how\s+to\s+build|open\s+(?:the\s+)?preview|lanza(?:r)?(?:\s+autom[aá]ticamente)?\s+(?:el\s+)?servidor|abre(?:r)?\s+(?:la\s+)?(?:preview|vista\s+previa)|mu[eé]str(?:ame|ar)\s+(?:la\s+)?(?:preview|vista\s+previa)|verifica(?:r)?\s+que\s+(?:la\s+)?p[aá]gina|levanta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|inicia(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|arranca(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|ejecuta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|corre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|muestra(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview|vista\s+previa)|vista\s+previa|servidor\s+de\s+desarrollo|abre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview))\b/i;
 
+/** True when an HTML page title plausibly belongs to the named hub project. */
+export function previewPageTitleMatchesProjectName(title: string | undefined, projectName: string): boolean {
+    const normalizedName = projectName.trim().toLowerCase();
+    if (!normalizedName) {
+        return true;
+    }
+    const normalizedTitle = title?.trim().toLowerCase();
+    if (!normalizedTitle) {
+        return false;
+    }
+    return normalizedTitle.includes(normalizedName);
+}
+
 /** True when user text asks to run or preview the app locally. */
 export function messageRequestsDevPreview(text: string | undefined): boolean {
     return !!text?.trim() && DEV_PREVIEW_INTENT_RE.test(text);
