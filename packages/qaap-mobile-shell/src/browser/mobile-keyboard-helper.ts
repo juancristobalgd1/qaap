@@ -17,12 +17,17 @@
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 
+/** Applied to `document.body` while the OS virtual keyboard occludes the viewport. */
+export const QAAP_MOBILE_KEYBOARD_OPEN_BODY_CLASS = 'theia-mobile-mod-keyboard-open';
+
 /**
  * Mobile virtual-keyboard support for the narrow-viewport workbench.
  *
  * Three concerns are handled together because they share lifecycle and DOM listeners:
  *   1. visualViewport tracking: exposes `--theia-mobile-keyboard-inset` (px) on the shell
- *      so the layout can shrink and the bottom activity bar stays above the keyboard.
+ *      so the layout shrinks above the virtual keyboard. While the keyboard is open, bottom
+ *      navigation and the status strip are hidden (`theia-mobile-mod-keyboard-open`) instead
+ *      of being lifted above the keyboard.
  *   2. Code accessory bar: floating row of keys (Tab, Esc, arrows, brackets, …) that
  *      appears above the keyboard when a Monaco editor is focused. Native software
  *      keyboards omit these and they are essential for coding on phones.
@@ -130,7 +135,7 @@ export class MobileKeyboardHelper implements Disposable {
         document.documentElement.style.removeProperty('--theia-mobile-keyboard-inset');
         document.documentElement.style.removeProperty('--theia-mobile-visual-viewport-height');
         document.documentElement.style.removeProperty('--theia-mobile-terminal-scroll-padding');
-        this.shellNode.classList.remove('theia-mod-mobile-keyboard-open');
+        this.setKeyboardOpenChrome(false);
         this.shellNode.classList.remove('theia-mod-mobile-terminal-keyboard');
         this.lastEditorTarget = undefined;
         this.lastTerminalTarget = undefined;
@@ -219,10 +224,10 @@ export class MobileKeyboardHelper implements Disposable {
         this.lastInsetPx = inset;
         if (inset > 0) {
             document.documentElement.style.setProperty('--theia-mobile-keyboard-inset', `${inset}px`);
-            this.shellNode.classList.add('theia-mod-mobile-keyboard-open');
+            this.setKeyboardOpenChrome(true);
         } else {
             document.documentElement.style.removeProperty('--theia-mobile-keyboard-inset');
-            this.shellNode.classList.remove('theia-mod-mobile-keyboard-open');
+            this.setKeyboardOpenChrome(false);
             if (this.editableFocusCount <= 0 && !this.hasActiveMobileTextEntryOverlay()) {
                 this.stableLayoutViewportHeight = Math.round(Math.max(innerH, vvExtent));
                 this.restoreViewportScroll();
@@ -230,6 +235,13 @@ export class MobileKeyboardHelper implements Disposable {
         }
         this.updateAccessoryVisibility();
         this.updateTerminalScrollPadding();
+    }
+
+    protected setKeyboardOpenChrome(open: boolean): void {
+        this.shellNode.classList.toggle('theia-mod-mobile-keyboard-open', open);
+        if (typeof document !== 'undefined') {
+            document.body.classList.toggle(QAAP_MOBILE_KEYBOARD_OPEN_BODY_CLASS, open);
+        }
     }
 
     /** Hysteresis avoids padding/inset toggling while the OS keyboard animates. */
