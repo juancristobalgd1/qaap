@@ -50,7 +50,7 @@ export function collapseLeftPanelIfMobileOneColumn(shell: ApplicationShell): voi
         return;
     }
     if (shell.isExpanded('left')) {
-        void shell.collapsePanel('left');
+        shell.collapsePanel('left');
     }
 }
 
@@ -61,6 +61,6 @@ export function collapseSidePanelForWidgetIfMobileOneColumn(shell: ApplicationSh
     }
     const area = shell.getAreaFor(widget);
     if (area && ApplicationShell.isSideArea(area) && shell.isExpanded(area)) {
-        void shell.collapsePanel(area);
+        shell.collapsePanel(area);
     }
 }

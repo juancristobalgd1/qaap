@@ -43,11 +43,10 @@ import { AIConfigurationSelectionService } from './ai-configuration-service';
 import { LanguageModelRenderer } from './language-model-renderer';
 import { LanguageModelAliasRegistry, LanguageModelAlias } from '@theia/ai-core/lib/common/language-model-alias';
 import { AIVariableConfigurationWidget } from './variable-configuration-widget';
-import { nls } from '@theia/core';
+import { ContributionProvider, nls } from '@theia/core';
 import { PromptVariantRenderer } from './template-settings-renderer';
 import { AIListDetailConfigurationWidget } from './base/ai-list-detail-configuration-widget';
 import { AgentNotificationSettings } from './components/agent-notification-settings';
-import { ContributionProvider } from '@theia/core';
 import { LanguageModelOptionContribution } from './language-model-option-contribution';
 
 interface ParsedPrompt {

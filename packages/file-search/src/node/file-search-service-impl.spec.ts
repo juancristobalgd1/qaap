@@ -159,10 +159,17 @@ describe('search-service', function (): void {
 
     describe('irrelevant absolute results', () => {
         const rootUri = FileUri.create(path.resolve(__dirname, '../../../..'));
+        const excludeLocalWorktrees = ['**/.worktrees/**'];
 
         it('not fuzzy', async () => {
             const searchPattern = 'package'; // package.json should produce a result.
-            const matches = await service.find(searchPattern, { rootUris: [rootUri.toString()], fuzzyMatch: false, useGitIgnore: true, limit: 200 });
+            const matches = await service.find(searchPattern, {
+                rootUris: [rootUri.toString()],
+                fuzzyMatch: false,
+                useGitIgnore: true,
+                limit: 200,
+                excludePatterns: excludeLocalWorktrees
+            });
             expect(matches).not.empty;
             for (const match of matches) {
                 const relativeUri = rootUri.relative(new URI(match));
@@ -173,7 +180,13 @@ describe('search-service', function (): void {
         });
 
         it('fuzzy', async () => {
-            const matches = await service.find('shell', { rootUris: [rootUri.toString()], fuzzyMatch: true, useGitIgnore: true, limit: 200 });
+            const matches = await service.find('shell', {
+                rootUris: [rootUri.toString()],
+                fuzzyMatch: true,
+                useGitIgnore: true,
+                limit: 200,
+                excludePatterns: excludeLocalWorktrees
+            });
             expect(matches).not.empty;
             for (const match of matches) {
                 const relativeUri = rootUri.relative(new URI(match));
@@ -188,7 +201,13 @@ describe('search-service', function (): void {
         });
 
         it('should not look into .git', async () => {
-            const matches = await service.find('master', { rootUris: [rootUri.toString()], fuzzyMatch: false, useGitIgnore: true, limit: 200 });
+            const matches = await service.find('master', {
+                rootUris: [rootUri.toString()],
+                fuzzyMatch: false,
+                useGitIgnore: true,
+                limit: 200,
+                excludePatterns: excludeLocalWorktrees
+            });
             // `**/.git/refs/remotes/*/master` files should not be picked up
             assert.deepStrictEqual([], matches);
         });

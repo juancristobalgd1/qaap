@@ -33,6 +33,17 @@ const track = temp.track();
 const expect = chai.expect;
 const FORK_TEST_FILE = path.join(__dirname, '../../src/node/test/process-fork-test.js');
 
+function stripNodeColorEnvWarnings(output: string): string {
+    const noColorWarningPattern = [
+        String.raw`\r?\n?\(node:\d+\) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set\.`,
+        String.raw`\r?\n\(Use ` + '`node --trace-warnings \.\.\.`' + String.raw` to show where the warning was created\)`
+    ].join('');
+    return output.replace(
+        new RegExp(noColorWarningPattern, 'g'),
+        ''
+    ).trim();
+}
+
 describe('RawProcess', function (): void {
 
     this.timeout(20_000);
@@ -151,7 +162,7 @@ describe('RawProcess', function (): void {
             });
         });
 
-        expect(output).to.be.equal('text to stderr');
+        expect(stripNodeColorEnvWarnings(output)).to.be.equal('text to stderr');
     });
 
     it('test forked pipe stdout stream', async function (): Promise<void> {
