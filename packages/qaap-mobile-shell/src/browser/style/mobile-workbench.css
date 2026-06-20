@@ -5241,6 +5241,56 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   padding-right: max(18px, env(safe-area-inset-right, 0px));
 }
 
+/*
+ * Narrow / touch — widen the sticky composer to the screen edge (safe-area aware).
+ * Empty quick-action chips break out of scroll padding so they align with the composer lip.
+ */
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-projects {
+    --qaap-composer-edge-inset: 8px;
+  }
+
+  .theia-mobile-projects-sticky-composer,
+  .theia-mobile-projects.theia-mod-home .theia-mobile-projects-sticky-composer,
+  body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects-sticky-composer,
+  body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects-sticky-composer,
+  .theia-mobile-agent-transcript-root .theia-mobile-agent-transcript-chat-input .theia-mobile-projects-sticky-composer {
+    padding-left: max(var(--qaap-composer-edge-inset), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--qaap-composer-edge-inset), env(safe-area-inset-right, 0px));
+  }
+
+  .theia-mobile-agent-transcript-empty-actions {
+    --qaap-empty-actions-edge-inset: max(var(--qaap-composer-edge-inset), env(safe-area-inset-right, 0px));
+    width: calc(100% + 2 * var(--theia-mobile-work-hub-pad-x, 16px));
+    margin-inline-start: calc(-1 * max(var(--theia-mobile-work-hub-pad-x, 16px), env(safe-area-inset-left, 0px)));
+    margin-inline-end: calc(-1 * max(var(--theia-mobile-work-hub-pad-x, 16px), env(safe-area-inset-right, 0px)));
+    padding-inline-start: max(var(--qaap-composer-edge-inset), env(safe-area-inset-left, 0px));
+    scroll-padding-inline-start: max(var(--qaap-composer-edge-inset), env(safe-area-inset-left, 0px));
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-inline-active .theia-mobile-agent-transcript-empty-actions,
+  .theia-mobile-projects.theia-mod-home.theia-mod-hub-repos.theia-mod-project-detail .theia-mobile-agent-transcript-empty-actions {
+    width: calc(100% + 2 * var(--theia-mobile-execution-chrome-pad-x, 12px));
+    margin-inline-start: calc(-1 * max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-left, 0px)));
+    margin-inline-end: calc(-1 * max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-right, 0px)));
+  }
+
+  .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
+    --qaap-codex-shell-radius: 20px;
+  }
+
+  .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-body {
+    padding-left: 10px;
+    padding-right: 8px;
+  }
+
+  .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-controls-row {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
+
 .theia-mobile-projects-sticky-composer-column {
   display: flex;
   flex-direction: column;
