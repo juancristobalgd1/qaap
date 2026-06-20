@@ -6,6 +6,7 @@
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { Widget as LuminoWidget } from '@lumino/widgets';
 import { MessageLoop } from '@lumino/messaging';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
@@ -17,10 +18,62 @@ import type { TranscriptTerminalSurface } from './qaap-transcript-surface-types'
 export interface TranscriptTerminalViewServices {
     resolveCwd(cwd: string): string;
     createTerminal(cwd: string): Promise<TerminalWidget>;
+    restoreTerminal(cwd: string, state: TranscriptTerminalPersistedTerminal): Promise<TerminalWidget>;
+    loadWorkspaceState(workspaceKey: string): Promise<TranscriptTerminalPersistedWorkspace | undefined>;
+    saveWorkspaceState(workspaceKey: string, state: TranscriptTerminalPersistedWorkspace | undefined): Promise<void>;
     localize(key: string, defaultValue: string, ...args: string[]): string;
 }
 
 export type { TranscriptTerminalSurface } from './qaap-transcript-surface-types';
+
+const WORK_HUB_TERMINALS_STORAGE_KEY = 'qaap.workHub.terminals.v1';
+
+export interface TranscriptTerminalPersistedTerminal {
+    readonly terminalId: number;
+    readonly titleLabel?: string;
+}
+
+export interface TranscriptTerminalPersistedWorkspace {
+    readonly activeIndex: number;
+    readonly terminals: TranscriptTerminalPersistedTerminal[];
+}
+
+interface TranscriptTerminalPersistedStore {
+    readonly version: 1;
+    readonly workspaces: Record<string, TranscriptTerminalPersistedWorkspace | undefined>;
+}
+
+interface TerminalStateStore {
+    storeState(): object;
+}
+
+function markTerminalRestorable(terminal: TerminalWidget): void {
+    const storeState = (terminal as unknown as Partial<TerminalStateStore>).storeState;
+    if (typeof storeState === 'function') {
+        storeState.call(terminal);
+    }
+}
+
+function installTranscriptTerminalWheelScrollBridge(mountHost: HTMLElement): Disposable {
+    const onWheel = (event: WheelEvent): void => {
+        if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+            return;
+        }
+        const viewport = mountHost.querySelector<HTMLElement>('.xterm-viewport');
+        if (!viewport || viewport.scrollHeight <= viewport.clientHeight + 1) {
+            return;
+        }
+        const maxScrollTop = viewport.scrollHeight - viewport.clientHeight;
+        const canScrollUp = viewport.scrollTop > 0;
+        const canScrollDown = viewport.scrollTop < maxScrollTop;
+        if ((event.deltaY < 0 && !canScrollUp) || (event.deltaY > 0 && !canScrollDown)) {
+            return;
+        }
+        event.stopPropagation();
+    };
+    mountHost.addEventListener('wheel', onWheel, { passive: false });
+    return Disposable.create(() => mountHost.removeEventListener('wheel', onWheel));
+}
 
 export function scheduleTranscriptTerminalResize(terminal: TerminalWidget): void {
     terminal.update();
@@ -53,12 +106,15 @@ export async function createTranscriptTerminalSurface(
     mountTarget: HTMLElement,
     cwd: string,
     services: TranscriptTerminalViewServices,
+    restoredState?: TranscriptTerminalPersistedTerminal,
 ): Promise<TranscriptTerminalSurface> {
     if (!mountTarget.isConnected) {
         throw new Error('Host is not attached.');
     }
     const resolvedCwd = services.resolveCwd(cwd);
-    const terminal = await services.createTerminal(resolvedCwd);
+    const terminal = restoredState
+        ? await services.restoreTerminal(resolvedCwd, restoredState)
+        : await services.createTerminal(resolvedCwd);
     const mountHost = document.createElement('div');
     mountHost.className = 'theia-mobile-transcript-terminal-mount';
     mountTarget.replaceChildren();
@@ -66,10 +122,16 @@ export async function createTranscriptTerminalSurface(
 
     terminal.node.classList.add('theia-mobile-transcript-terminal-embed');
     LuminoWidget.attach(terminal, mountHost);
-    await terminal.start();
+    if (!restoredState) {
+        await terminal.start();
+    }
     scheduleTranscriptTerminalResize(terminal);
 
     const toDispose = new DisposableCollection(
+        installTranscriptTerminalWheelScrollBridge(mountHost),
+        Disposable.create(() => {
+            window.removeEventListener('beforeunload', markForReload);
+        }),
         Disposable.create(() => {
             if (terminal.isAttached && terminal.node.parentElement) {
                 LuminoWidget.detach(terminal);
@@ -80,6 +142,8 @@ export async function createTranscriptTerminalSurface(
             mountHost.remove();
         }),
     );
+    const markForReload = (): void => markTerminalRestorable(terminal);
+    window.addEventListener('beforeunload', markForReload);
 
     return { terminal, mountHost, dispose: toDispose };
 }
@@ -123,7 +187,21 @@ export function detachTranscriptTerminalSurface(host: HTMLElement, surface: Tran
 export function createTranscriptTerminalViewServices(
     terminalService: TerminalService,
     workspaceService: WorkspaceService,
+    storageService: StorageService,
 ): TranscriptTerminalViewServices {
+    const defaultTerminalOptions = (cwd: string) => ({
+        title: nls.localizeByDefault('Terminal'),
+        cwd,
+        destroyTermOnClose: true,
+        useServerTitle: true,
+    });
+    const loadStore = async (): Promise<TranscriptTerminalPersistedStore> => {
+        const stored = await storageService.getData<TranscriptTerminalPersistedStore>(
+            WORK_HUB_TERMINALS_STORAGE_KEY,
+            { version: 1, workspaces: {} },
+        );
+        return stored?.version === 1 ? stored : { version: 1, workspaces: {} };
+    };
     return {
         resolveCwd: cwd => {
             const root = resolveTranscriptWorkspaceRootUri(cwd, workspaceService);
@@ -132,12 +210,33 @@ export function createTranscriptTerminalViewServices(
             }
             return cwd;
         },
-        createTerminal: async cwd => terminalService.newTerminal({
-            title: nls.localizeByDefault('Terminal'),
-            cwd,
-            destroyTermOnClose: true,
-            useServerTitle: true,
-        }),
+        createTerminal: async cwd => terminalService.newTerminal(defaultTerminalOptions(cwd)),
+        restoreTerminal: async (cwd, state) => {
+            const terminal = await terminalService.newTerminal(defaultTerminalOptions(cwd));
+            if (state.titleLabel) {
+                terminal.title.label = state.titleLabel;
+                terminal.title.caption = state.titleLabel;
+            }
+            await terminal.start(state.terminalId);
+            return terminal;
+        },
+        loadWorkspaceState: async workspaceKey => {
+            const store = await loadStore();
+            return store.workspaces[workspaceKey];
+        },
+        saveWorkspaceState: async (workspaceKey, state) => {
+            const store = await loadStore();
+            const workspaces = { ...store.workspaces };
+            if (state && state.terminals.length > 0) {
+                workspaces[workspaceKey] = state;
+            } else {
+                delete workspaces[workspaceKey];
+            }
+            await storageService.setData<TranscriptTerminalPersistedStore>(
+                WORK_HUB_TERMINALS_STORAGE_KEY,
+                { version: 1, workspaces },
+            );
+        },
         localize: (key, defaultValue, ...args) => nls.localize(key, defaultValue, ...args),
     };
 }

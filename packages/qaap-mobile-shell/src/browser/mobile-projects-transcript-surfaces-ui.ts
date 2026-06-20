@@ -45,6 +45,7 @@ import {
     createTranscriptTerminalStagingHost,
     createTranscriptTerminalSurface,
     scheduleTranscriptTerminalResize,
+    type TranscriptTerminalPersistedWorkspace,
     type TranscriptTerminalSurface,
     type TranscriptTerminalViewServices,
 } from './qaap-transcript-terminal-view';
@@ -1148,7 +1149,16 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
         const terminalServices = this.host.createTranscriptTerminalViewServices?.();
         const resolved = terminalServices ? terminalServices.resolveCwd(cwd) : cwd;
-        return normalizeTranscriptWorkspaceKey(resolved);
+        return this.resolveProjectScopedWorkspaceKey(project, resolved);
+    }
+
+    protected resolveProjectScopedWorkspaceKey(
+        project: MobileProjectEntry,
+        resolvedPath: string,
+    ): TranscriptWorkspaceSurfaceKey {
+        const workspaceKey = normalizeTranscriptWorkspaceKey(resolvedPath);
+        const projectKey = project.id.trim() || project.uri?.toString() || project.name || 'unknown-project';
+        return `project:${encodeURIComponent(projectKey)}:${workspaceKey}`;
     }
 
     ensureTranscriptFilesTab(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
@@ -1258,6 +1268,12 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (!state) {
             state = { surfaces: [], activeIndex: 0 };
             this.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
+            await this.restoreTranscriptTerminalSlides(workspaceKey, cwd, services);
+            state = this.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
+        }
+        if (!state) {
+            state = { surfaces: [], activeIndex: 0 };
+            this.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
         }
         if (state.surfaces.length === 0) {
             await this.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary);
@@ -1325,6 +1341,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             state.surfaces.push(surface);
             state.activeIndex = activateNewest ? state.surfaces.length - 1 : Math.max(0, state.activeIndex);
             this.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
+            void this.persistTranscriptTerminalWorkspace(workspaceKey);
             if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'terminal'
                 && this.resolveTranscriptWorkspaceKey(project, summary) === workspaceKey) {
                 this.renderTranscriptTerminalSlides(workspaceKey);
@@ -1393,7 +1410,19 @@ export class MobileProjectsTranscriptSurfacesUi {
                 scheduleTranscriptTerminalResize(terminal);
             }
         });
-        this.host.transcriptTerminalResizeObserver.observe(slider);
+        const resizeTargets = [
+            slider.parentElement,
+            slider,
+            terminal.node.parentElement,
+            terminal.node,
+            terminal.node.querySelector<HTMLElement>('.terminal-container'),
+            terminal.node.querySelector<HTMLElement>('.xterm'),
+        ];
+        for (const target of resizeTargets) {
+            if (target) {
+                this.host.transcriptTerminalResizeObserver.observe(target);
+            }
+        }
     }
 
     renderTranscriptTerminalDots(workspaceKey: TranscriptWorkspaceSurfaceKey): void {
@@ -1413,6 +1442,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             tab.setAttribute('aria-label', title);
             tab.addEventListener('click', () => {
                 state.activeIndex = index;
+                void this.persistTranscriptTerminalWorkspace(workspaceKey);
                 this.renderTranscriptTerminalSlides(workspaceKey);
                 this.renderTranscriptTerminalDots(workspaceKey);
             });
@@ -1461,7 +1491,69 @@ export class MobileProjectsTranscriptSurfacesUi {
             state.activeIndex = state.surfaces.length - 1;
         }
         this.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
+        void this.persistTranscriptTerminalWorkspace(workspaceKey);
         this.renderTranscriptTerminalSlides(workspaceKey);
+    }
+
+    protected async restoreTranscriptTerminalSlides(
+        workspaceKey: TranscriptWorkspaceSurfaceKey,
+        cwd: string,
+        services: TranscriptTerminalViewServices,
+    ): Promise<void> {
+        const persisted = await services.loadWorkspaceState(workspaceKey);
+        if (!persisted || persisted.terminals.length === 0) {
+            return;
+        }
+        const state = this.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey) ?? { surfaces: [], activeIndex: 0 };
+        if (state.surfaces.length > 0) {
+            return;
+        }
+        for (const terminalState of persisted.terminals) {
+            try {
+                const staging = createTranscriptTerminalStagingHost();
+                const surface = await createTranscriptTerminalSurface(staging, cwd, services, terminalState);
+                state.surfaces.push(surface);
+            } catch (error) {
+                console.warn('[qaap-mobile-shell] failed to restore WorkHub terminal', error);
+            }
+        }
+        state.activeIndex = Math.min(
+            Math.max(0, persisted.activeIndex),
+            Math.max(0, state.surfaces.length - 1),
+        );
+        this.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
+        void this.persistTranscriptTerminalWorkspace(workspaceKey);
+    }
+
+    protected async persistTranscriptTerminalWorkspace(workspaceKey: TranscriptWorkspaceSurfaceKey): Promise<void> {
+        const services = this.host.createTranscriptTerminalViewServices?.();
+        if (!services) {
+            return;
+        }
+        const state = this.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
+        const persisted = this.toPersistedTerminalWorkspace(state);
+        await services.saveWorkspaceState(workspaceKey, persisted);
+    }
+
+    protected toPersistedTerminalWorkspace(
+        state: TranscriptTerminalSliderState | undefined,
+    ): TranscriptTerminalPersistedWorkspace | undefined {
+        if (!state || state.surfaces.length === 0) {
+            return undefined;
+        }
+        const terminals = state.surfaces
+            .map(surface => ({
+                terminalId: surface.terminal.terminalId,
+                titleLabel: surface.terminal.title.label,
+            }))
+            .filter(terminal => Number.isInteger(terminal.terminalId) && terminal.terminalId >= 0);
+        if (terminals.length === 0) {
+            return undefined;
+        }
+        return {
+            activeIndex: Math.min(Math.max(0, state.activeIndex), terminals.length - 1),
+            terminals,
+        };
     }
 
     detachTranscriptFilesFromHost(): void {

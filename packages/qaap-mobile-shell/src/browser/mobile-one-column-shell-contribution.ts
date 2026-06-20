@@ -21,6 +21,7 @@ import { SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { CommandContribution, CommandRegistry } from '@theia/core/lib/common/command';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
+import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
@@ -277,6 +278,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(TerminalService)
     protected readonly terminalService: TerminalService;
 
+    @inject(StorageService)
+    protected readonly storageService: StorageService;
+
     @inject(AIConfigurationSelectionService)
     protected readonly aiConfigurationSelectionService: AIConfigurationSelectionService;
 
@@ -394,6 +398,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 labelProvider: this.labelProvider,
                 markdownPreviewHandler: this.markdownPreviewHandler,
                 terminalService: this.terminalService,
+                storageService: this.storageService,
                 previewSurfaceRegistry: this.previewSurfaceRegistry,
                 elementInspectorService: this.elementInspectorService,
                 clipboardService: this.clipboardService,

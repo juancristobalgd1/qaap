@@ -5,6 +5,7 @@
 
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { LabelProvider } from '@theia/core/lib/browser';
+import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
@@ -90,6 +91,7 @@ export interface MobileProjectsPanelFactoryDeps {
     labelProvider: LabelProvider;
     markdownPreviewHandler: MarkdownPreviewHandler;
     terminalService: TerminalService;
+    storageService: StorageService;
     previewSurfaceRegistry: QaapPreviewSurfaceRegistry;
     elementInspectorService: ElementInspectorService;
     clipboardService: ClipboardService;
@@ -220,6 +222,7 @@ export class MobileProjectsPanelFactory {
                 createTranscriptTerminalViewServices: () => createTranscriptTerminalViewServices(
                     deps.terminalService,
                     deps.workspaceService,
+                    deps.storageService,
                 ),
                 previewSurfaceRegistry: deps.previewSurfaceRegistry,
                 previewInspectorDeps: {
