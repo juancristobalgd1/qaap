@@ -49,6 +49,7 @@ export class MobileProjectsProjectDetailUi {
 
     createProjectDetailView(project: MobileProjectEntry): HTMLElement {
         if (this.host.projectDetailExpandedId !== project.id) {
+            this.host.transcriptSurfacesUi.onHubProjectExpanded(project);
             this.host.projectDetailExpandedId = project.id;
         }
 
