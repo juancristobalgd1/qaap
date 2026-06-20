@@ -254,8 +254,7 @@ export class MobileShellBottomBarController {
         overlay.style.top = `${topRect.bottom}px`;
         overlay.style.bottom = [
             'calc(',
-            'var(--theia-mobile-bottom-bar-height, 56px)',
-            '+ var(--theia-mobile-status-chrome-height, 34px)',
+            'var(--theia-mobile-bottom-chrome-reserved, 0px)',
             '+ var(--theia-mobile-keyboard-inset, 0px)',
             '+ env(safe-area-inset-bottom, 0px)',
             ')',

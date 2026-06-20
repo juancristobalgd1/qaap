@@ -80,8 +80,8 @@
     padding-top: env(safe-area-inset-top, 0px);
     padding-right: env(safe-area-inset-right, 0px);
     /* `--theia-mobile-keyboard-inset` is set by MobileKeyboardHelper from
-       window.visualViewport so the bottom activity bar stays visible above the
-       virtual keyboard on iOS / Android. Defaults to 0 when the keyboard is closed. */
+       window.visualViewport so the layout shrinks above the virtual keyboard.
+       Bottom navigation and status chrome are hidden while the inset is active. */
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--theia-mobile-keyboard-inset, 0px));
     padding-left: env(safe-area-inset-left, 0px);
   }
@@ -96,8 +96,10 @@
        inherit it — shell-only variables do not apply outside `#theia-app-shell`. */
     --theia-mobile-bottom-bar-height: 64px;
     --theia-mobile-status-chrome-height: calc(var(--theia-statusBar-height, 34px) + env(safe-area-inset-bottom, 0px));
+    /* Bottom activity bar + status strip reserved while the keyboard is closed. */
+    --theia-mobile-bottom-chrome-reserved: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-status-chrome-height, 34px));
     /* Bottom activity bar + status + virtual keyboard (`MobileKeyboardHelper`) + home indicator. */
-    --theia-mobile-bottom-chrome-stack: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-status-chrome-height, 34px) + var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
+    --theia-mobile-bottom-chrome-stack: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
     /* Keyboard-only lift when the bottom chrome is hidden (Agents landing / active transcript). */
     --theia-mobile-keyboard-lift: calc(var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
     --theia-ui-font-size1: 15px;
@@ -784,7 +786,7 @@
   padding-top: env(safe-area-inset-top, 0px);
   padding-right: env(safe-area-inset-right, 0px);
   padding-left: env(safe-area-inset-left, 0px);
-  padding-bottom: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-status-chrome-height, 34px) + var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
 }
 
 #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel {
@@ -994,6 +996,31 @@ body.theia-mobile-mod-landing-hub-list .theia-mobile-bottom-chrome-host>#theia-m
   }
 }
 
+/* Surfaces that already hide bottom chrome should not reserve its height in layout math. */
+body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide),
+body.theia-mobile-mod-active-transcript,
+body.theia-mobile-mod-landing:not(.theia-mobile-mod-landing-hub-list) {
+  --theia-mobile-bottom-chrome-reserved: 0px;
+}
+
+/* Hub list keeps the icon-only bottom bar (no status strip). */
+body.theia-mobile-mod-landing-hub-list {
+  --theia-mobile-bottom-chrome-reserved: var(--theia-mobile-bottom-bar-height, 56px);
+}
+
+/*
+ * Virtual keyboard open: hide bottom navigation + status chrome and reclaim their height
+ * for the editor/terminal instead of lifting the bars above the keyboard.
+ */
+body.theia-mobile-mod-keyboard-open {
+  --theia-mobile-bottom-chrome-reserved: 0px;
+}
+
+body.theia-mobile-mod-keyboard-open .theia-mobile-bottom-chrome-host {
+  display: none !important;
+  pointer-events: none !important;
+}
+
 #theia-app-shell.theia-mod-mobile-one-column #theia-left-right-split-panel>.lm-SplitPanel-handle {
   display: none !important;
 }
@@ -1068,7 +1095,7 @@ body.theia-mobile-mod-landing-hub-list .theia-mobile-bottom-chrome-host>#theia-m
   /* Full viewport height under the top safe-area only; menubar strip is not reserved so the sheet gains vertical space. */
   top: env(safe-area-inset-top, 0px) !important;
   /* Keep sheet content above the fixed bottom navigation and status chrome. */
-  bottom: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-status-chrome-height, 34px) + var(--theia-mobile-keyboard-inset, 0px)) !important;
+  bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px)) !important;
   left: 0 !important;
   right: 0 !important;
   width: 100vw !important;
@@ -1384,11 +1411,11 @@ body.theia-mobile-mod-landing-hub-list .theia-mobile-bottom-chrome-host>#theia-m
 }
 
 /* Edge swipe targets (body children).
-   Bottom is lifted by `--theia-mobile-keyboard-inset` so the touch zone never sits behind the virtual keyboard. */
+   Bottom follows reserved chrome + keyboard inset so zones stay above the keyboard. */
 .theia-mobile-edgeSwipeZone {
   position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + var(--theia-private-menubar-height, 40px));
-  bottom: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-status-chrome-height, 34px) + var(--theia-mobile-keyboard-inset, 0px));
+  bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px));
   width: 20px;
   z-index: 9650;
   touch-action: none;
@@ -2888,7 +2915,7 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list #theia-app-shell
   top: 0 !important;
   right: 0 !important;
   left: 0 !important;
-  bottom: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px)) !important;
+  bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px)) !important;
   height: auto !important;
   max-height: none !important;
   padding-bottom: 0;
@@ -13175,7 +13202,7 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
 .theia-mobile-snackbar {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-status-chrome-height, 34px) + var(--theia-mobile-keyboard-inset, 0px) + 12px);
+  bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + 12px);
   transform: translate(-50%, 12px);
   z-index: 10500;
   display: inline-flex;
