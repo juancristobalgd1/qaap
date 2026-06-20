@@ -57,7 +57,7 @@
 ||   line        #ECEAE3   hairline (cards, panels)
 ||   lineSoft    #F3F1EB   inner dividers
 || Accent:
-||   amber       #D97757   used sparingly (selection, focus, primary CTA)
+||   graphite    #494949   logo-aligned primary accent (selection, focus, primary CTA)
 ||===========================================================================*/
 
 body.qaap-theme-light {
@@ -69,9 +69,9 @@ body.qaap-theme-light {
   --qaap-muted: #8A8A8A;
   --qaap-line: #ECEAE3;
   --qaap-line-soft: #F3F1EB;
-  --qaap-accent: #D97757;
-  --qaap-accent-ink: #854017;
-  --qaap-accent-soft: #FBECDC;
+  --qaap-accent: #494949;
+  --qaap-accent-ink: #2F2F2F;
+  --qaap-accent-soft: #E6E6E6;
   --qaap-success: #357A4F;
   --qaap-danger: #B23D27;
   --qaap-add-bg: #EEF6EE;
@@ -79,7 +79,7 @@ body.qaap-theme-light {
   --qaap-del-bg: #F8E5DF;
   --qaap-del-ink: #8E2F1F;
   --qaap-code: #FCFBF7;
-  --qaap-focus-ring: rgba(217, 119, 87, 0.28);
+  --qaap-focus-ring: rgba(73, 73, 73, 0.28);
 
   --qaap-shadow-sm: 0 1px 2px rgba(17, 17, 17, 0.04), 0 1px 1px rgba(17, 17, 17, 0.03);
   --qaap-shadow-md: 0 6px 18px rgba(17, 17, 17, 0.06), 0 2px 6px rgba(17, 17, 17, 0.04);
@@ -98,7 +98,7 @@ body.qaap-theme-light {
 ||   muted       #85816F   tertiary
 ||   line        #2A2823   hairline
 ||   lineSoft    #1F1D19   ultra soft divider
-||   amber       #E58E40   accent (slightly brighter for dark)
+||   graphite    #494949   logo-aligned primary accent
 ||===========================================================================*/
 
 body.qaap-theme-dark {
@@ -110,9 +110,9 @@ body.qaap-theme-dark {
   --qaap-muted: #85816F;
   --qaap-line: #2A2823;
   --qaap-line-soft: #1F1D19;
-  --qaap-accent: #E58E40;
-  --qaap-accent-ink: #F5C58F;
-  --qaap-accent-soft: #3A2614;
+  --qaap-accent: #494949;
+  --qaap-accent-ink: #DADADA;
+  --qaap-accent-soft: #2A2A2A;
   --qaap-success: #67B07F;
   --qaap-danger: #E6745A;
   --qaap-add-bg: #1C2A1D;
@@ -120,7 +120,7 @@ body.qaap-theme-dark {
   --qaap-del-bg: #2E1814;
   --qaap-del-ink: #E89A8B;
   --qaap-code: #121110;
-  --qaap-focus-ring: rgba(229, 142, 64, 0.45);
+  --qaap-focus-ring: rgba(73, 73, 73, 0.55);
 
   --qaap-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 1px rgba(0, 0, 0, 0.30);
   --qaap-shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.30);
@@ -474,7 +474,7 @@ body.qaap-theme-dark .qaap-pill.qaap-mod-danger {
     color: var(--qaap-del-ink);
   }
 
-  /* Primary CTAs on mobile sheets pick the Qaap amber instead of the
+  /* Primary CTAs on mobile sheets pick the Qaap graphite instead of the
      foreground/background swap (which can look too stark). */
   body.qaap-theme-light .theia-mobile-pr-action.theia-mod-primary,
   body.qaap-theme-dark .theia-mobile-pr-action.theia-mod-primary,
@@ -804,7 +804,7 @@ body.qaap-theme-dark .gs-quick-action:focus-visible {
 }
 
 /* Icon inside the surface button picks the Qaap accent for a single visual
-   anchor; in light mode this is the warm amber, in dark it's the brighter
+   anchor; in light mode this is the graphite logo accent, in dark it's the same
    variant. The original rule colored the icon with `focusBorder` so it inherits
    automatically once `--theia-focusBorder` is mapped, but we restate it here
    to keep the welcome page legible even if a future tweak changes the focus
@@ -823,7 +823,7 @@ body.qaap-theme-dark .theia-mobile-open-repo-item.theia-mod-current {
 }
 
 /* Welcome page background: replace the gradient mix that uses `focusBorder`
-   (now Qaap amber, which would tint the whole top of the page) with the same
+   (now Qaap graphite, which would tint the whole top of the page) with the same
    surfaceAlt → bg subtle gradient. */
 body.qaap-theme-light .gs-container,
 body.qaap-theme-dark .gs-container {
@@ -835,7 +835,7 @@ body.qaap-theme-dark .gs-container {
 }
 
 /*-----------------------------------------------------------------------------
-|| Focus ring: replaces the harsh single-pixel ring with a soft amber glow.
+|| Focus ring: replaces the harsh single-pixel ring with a soft graphite glow.
 ||----------------------------------------------------------------------------*/
 
 body.qaap-theme-light #theia-app-shell :focus-visible,

@@ -17,7 +17,7 @@ import { getThemeMode, type Theme } from '@theia/core/lib/common/theme';
  *  - Marketplace themes, High Contrast and any custom user theme keep their
  *    own colors untouched.
  *  - Switching from `Dark (Qaap)` to e.g. `One Dark Pro` cleanly removes the
- *    Qaap amber accent and warm hairlines, no leftovers.
+ *    Qaap graphite accent and warm hairlines, no leftovers.
  *
  * The Qaap built-in themes are registered by
  * {@link QaapBuiltinThemeBrandingContribution} with ids `light` / `dark`,

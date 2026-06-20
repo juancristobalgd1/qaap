@@ -60,9 +60,9 @@ body.qaap-theme-light {
   --q-muted: #8A8A8A;
   --q-line: #ECEAE3;
   --q-line-soft: #F3F1EB;
-  --q-accent: #D97757;
-  --q-accent-soft: #FBECDC;
-  --q-accent-ink: #854017;
+  --q-accent: #494949;
+  --q-accent-soft: #E6E6E6;
+  --q-accent-ink: #2F2F2F;
   --q-success: #357A4F;
   --q-warning: #B8860B;
   --q-danger: #B23D27;
@@ -92,9 +92,9 @@ body.qaap-theme-dark {
   --q-muted: #85816F;
   --q-line: #2A2823;
   --q-line-soft: #1F1D19;
-  --q-accent: #E58E40;
-  --q-accent-soft: #3A2614;
-  --q-accent-ink: #F5C58F;
+  --q-accent: #494949;
+  --q-accent-soft: #2A2A2A;
+  --q-accent-ink: #DADADA;
   --q-success: #67B07F;
   --q-warning: #D7A84F;
   --q-danger: #E6745A;

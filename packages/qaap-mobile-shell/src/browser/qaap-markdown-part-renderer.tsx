@@ -10,11 +10,13 @@ import {
 } from '@theia/ai-chat/lib/common';
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';
 import { OpenerService, open } from '@theia/core/lib/browser';
+import { CommandRegistry } from '@theia/core/lib/common/command';
 import { MarkdownString } from '@theia/core/lib/common/markdown-rendering';
 import { URI } from '@theia/core/lib/common/uri';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { ReactNode, useEffect, useRef } from '@theia/core/shared/react';
 import * as React from '@theia/core/shared/react';
+import { MiniBrowserCommands } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
 import {
     QAAP_CHAT_MARKDOWN_PLAIN_STREAM_CLASS,
     type QaapChatMarkdownRenderMode,
@@ -30,13 +32,41 @@ export { QAAP_CHAT_MARKDOWN_PLAIN_STREAM_CLASS };
 export interface QaapMarkdownRenderProps {
     text: string | MarkdownString;
     openerService: OpenerService;
+    commandRegistry: CommandRegistry;
     className?: string;
 }
 
-const QaapMarkdownRender: React.FC<QaapMarkdownRenderProps> = ({ text, openerService, className }) => {
-    const ref = useQaapMarkdownRendering(text, openerService);
+const QaapMarkdownRender: React.FC<QaapMarkdownRenderProps> = ({ text, openerService, commandRegistry, className }) => {
+    const ref = useQaapMarkdownRendering(text, openerService, commandRegistry);
     return <div className={className} ref={ref}></div>;
 };
+
+export function shouldOpenMarkdownHrefInWorkHubBrowser(href: string, ownerDocument: Document = document): boolean {
+    const trimmed = href.trim();
+    if (!/^(https?:\/\/|localhost(?::|\/|$)|127\.0\.0\.1(?::|\/|$)|0\.0\.0\.0(?::|\/|$))/i.test(trimmed)) {
+        return false;
+    }
+    const body = ownerDocument.body;
+    return !!body?.classList.contains('theia-mobile-mod-workhub-composer-header')
+        || !!body?.classList.contains('theia-mobile-mod-workhub-no-bottom-chrome');
+}
+
+export async function openQaapMarkdownHref(
+    href: string,
+    openerService: OpenerService,
+    commandRegistry: CommandRegistry,
+    ownerDocument: Document = document,
+): Promise<void> {
+    if (shouldOpenMarkdownHrefInWorkHubBrowser(href, ownerDocument)) {
+        try {
+            await commandRegistry.executeCommand(MiniBrowserCommands.OPEN_URL.id, href);
+            return;
+        } catch (error) {
+            console.warn('Failed to open WorkHub markdown URL in mini-browser, falling back to opener service.', error);
+        }
+    }
+    await open(openerService, new URI(href));
+}
 
 /** Chat markdown renderer — worker offload, RAF-coalesced paints, plain streaming when safe. */
 @injectable()
@@ -45,6 +75,8 @@ export class QaapMarkdownPartRenderer implements ChatResponsePartRenderer<Markdo
     static readonly PRIORITY = 11;
 
     @inject(OpenerService) protected readonly openerService: OpenerService;
+
+    @inject(CommandRegistry) protected readonly commandRegistry: CommandRegistry;
 
     canHandle(response: ChatResponseContent): number {
         if (MarkdownChatResponseContent.is(response)) {
@@ -61,13 +93,14 @@ export class QaapMarkdownPartRenderer implements ChatResponsePartRenderer<Markdo
             // eslint-disable-next-line no-null/no-null
             return null;
         }
-        return <QaapMarkdownRender text={response.content} openerService={this.openerService} />;
+        return <QaapMarkdownRender text={response.content} openerService={this.openerService} commandRegistry={this.commandRegistry} />;
     }
 }
 
 export const useQaapMarkdownRendering = (
     markdown: string | MarkdownString,
     openerService: OpenerService,
+    commandRegistry: CommandRegistry,
     skipSurroundingParagraph = false,
 ): React.RefObject<HTMLDivElement> => {
     // eslint-disable-next-line no-null/no-null
@@ -136,8 +169,9 @@ export const useQaapMarkdownRendering = (
             if (target?.tagName === 'A') {
                 const href = target.getAttribute('href');
                 if (href) {
-                    open(openerService, new URI(href));
                     event.preventDefault();
+                    event.stopPropagation();
+                    void openQaapMarkdownHref(href, openerService, commandRegistry, target.ownerDocument);
                 }
             }
         };
@@ -150,7 +184,7 @@ export const useQaapMarkdownRendering = (
             }
             ref.current?.removeEventListener('click', handleClick);
         };
-    }, [markdownString, skipSurroundingParagraph, openerService]);
+    }, [markdownString, skipSurroundingParagraph, openerService, commandRegistry]);
 
     return ref;
 };
