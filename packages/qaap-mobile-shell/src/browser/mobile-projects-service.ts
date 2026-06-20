@@ -51,6 +51,7 @@ import {
     readLocalProjectSessions,
     writeLocalProjectSessions,
 } from './mobile-projects-session-cache';
+import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
 
 const HIDDEN_PROJECT_IDS_STORAGE_KEY = 'qaap.mobileProjects.hiddenIds';
 const PINNED_PROJECT_IDS_STORAGE_KEY = 'qaap.mobileProjects.pinnedIds';
@@ -878,29 +879,10 @@ export class MobileProjectsService {
     }
 
     protected collapseCurrentWorkspaceDuplicates(entries: MobileProjectEntry[]): MobileProjectEntry[] {
-        const current = entries.find(project => project.isCurrent);
-        if (!current) {
-            return entries;
-        }
-        const currentUri = current.uri?.toString();
-        const currentName = this.normalizeProjectName(current.name);
-        const currentGithubName = current.github ? this.normalizeProjectName(current.github.name) : undefined;
-        return entries.filter(project => {
-            if (project.isCurrent) {
-                return true;
-            }
-            if (currentUri && project.uri?.toString() === currentUri) {
-                return false;
-            }
-            const name = this.normalizeProjectName(project.name);
-            if (currentName && name === currentName) {
-                return false;
-            }
-            if (currentGithubName && name === currentGithubName) {
-                return false;
-            }
-            const githubName = project.github ? this.normalizeProjectName(project.github.name) : undefined;
-            return !githubName || githubName !== currentName;
+        return deduplicateMobileProjectEntries(entries, {
+            normalizeName: name => this.normalizeProjectName(name),
+            cwdFromUri: uri => this.cwdFromFileUri(uri),
+            projectActivityTime: project => this.projectActivityTime(project),
         });
     }
 
