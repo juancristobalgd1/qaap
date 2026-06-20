@@ -80,10 +80,6 @@ function collectProjectDeduplicationKeys(
 
     if (project.github) {
         keys.add(`github:${project.github.owner}/${project.github.name}`.toLowerCase());
-        const githubName = ctx.normalizeName(project.github.name);
-        if (githubName) {
-            keys.add(`name:${githubName}`);
-        }
     }
 
     const cwd = ctx.cwdFromUri(project.uri);

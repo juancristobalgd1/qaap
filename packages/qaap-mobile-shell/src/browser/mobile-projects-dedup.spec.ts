@@ -102,4 +102,33 @@ describe('mobile-projects-dedup', () => {
         expect(deduped).to.have.length(2);
     });
 
+    it('keeps github repos with the same name under different owners', () => {
+        const alpha = project({
+            id: 'github:alpha/demo',
+            name: 'demo',
+            github: {
+                owner: 'alpha',
+                name: 'demo',
+                fullName: 'alpha/demo',
+                htmlUrl: 'https://github.com/alpha/demo',
+                private: false,
+            },
+        });
+        const beta = project({
+            id: 'github:beta/demo',
+            name: 'demo',
+            github: {
+                owner: 'beta',
+                name: 'demo',
+                fullName: 'beta/demo',
+                htmlUrl: 'https://github.com/beta/demo',
+                private: false,
+            },
+        });
+
+        const deduped = deduplicateMobileProjectEntries([alpha, beta], ctx);
+
+        expect(deduped.map(candidate => candidate.id)).to.deep.equal([alpha.id, beta.id]);
+    });
+
 });
