@@ -16770,6 +16770,29 @@ body>.theia-mobile-transcript-files-menu {
   max-width: none;
 }
 
+/* User bubbles must scroll with the transcript — never stick to the scrollport top. */
+.theia-mobile-agent-transcript-user-wrap,
+.theia-mobile-agent-transcript-user-wrap.theia-mod-sticky-stuck,
+.theia-mobile-agent-transcript-user-wrap.theia-mod-sticky-suppressed {
+  position: relative !important;
+  top: auto !important;
+  z-index: auto !important;
+  pointer-events: auto;
+  transform: none;
+  contain: none;
+}
+
+.theia-mobile-agent-transcript-user-wrap .theia-mobile-agent-transcript-content.theia-mod-sticky-compact {
+  max-height: none;
+  overflow: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.theia-mobile-agent-transcript-user-wrap .theia-mobile-agent-transcript-content.theia-mod-sticky-compact::after {
+  content: none;
+}
+
 .theia-mobile-agent-transcript-user-actions {
   display: flex;
   flex-wrap: wrap;
