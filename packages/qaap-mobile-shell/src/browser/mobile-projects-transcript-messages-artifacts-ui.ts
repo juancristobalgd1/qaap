@@ -652,6 +652,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (line) {
                 this.syncTranscriptStreamingActivityLine(line, conv, stalled, timedOut);
             }
+            this.syncTranscriptStreamTimeoutBanner(row, timedOut);
             row.classList.toggle('theia-mod-stream-stalled', stalled);
             row.classList.toggle('theia-mod-stream-timed-out', timedOut);
         }
@@ -665,41 +666,46 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             return;
         }
         if (!banner) {
-            banner = document.createElement('div');
-            banner.className = 'theia-mobile-agent-stream-timeout-banner';
+            banner = this.createTranscriptStreamTimeoutBanner();
             banner.setAttribute(attr, 'true');
-            banner.setAttribute('role', 'alert');
-
-            const message = document.createElement('p');
-            message.className = 'theia-mobile-agent-stream-timeout-message';
-            message.textContent = nls.localize(
-                'qaap/mobileProjects/transcriptStreamTimedOut',
-                'El agente no respondió a tiempo',
-            );
-
-            const actions = document.createElement('div');
-            actions.className = 'theia-mobile-agent-stream-timeout-actions';
-
-            const cancelBtn = document.createElement('button');
-            cancelBtn.type = 'button';
-            cancelBtn.className = 'theia-mobile-agent-stream-timeout-btn theia-mod-ghost';
-            cancelBtn.textContent = nls.localize('qaap/mobileProjects/transcriptStreamTimeoutCancel', 'Cancelar');
-            cancelBtn.addEventListener('click', () => {
-                this.host.cancelOpenTranscriptStream?.();
-            });
-
-            const retryBtn = document.createElement('button');
-            retryBtn.type = 'button';
-            retryBtn.className = 'theia-mobile-agent-stream-timeout-btn theia-mod-primary';
-            retryBtn.textContent = nls.localize('qaap/mobileProjects/transcriptStreamTimeoutRetry', 'Reintentar');
-            retryBtn.addEventListener('click', () => {
-                void this.host.retryOpenTranscriptStream?.();
-            });
-
-            actions.append(cancelBtn, retryBtn);
-            banner.append(message, actions);
             segmentsBody.append(banner);
         }
+    }
+
+    protected createTranscriptStreamTimeoutBanner(): HTMLElement {
+        const banner = document.createElement('div');
+        banner.className = 'theia-mobile-agent-stream-timeout-banner';
+        banner.setAttribute('role', 'alert');
+
+        const message = document.createElement('p');
+        message.className = 'theia-mobile-agent-stream-timeout-message';
+        message.textContent = nls.localize(
+            'qaap/mobileProjects/transcriptStreamTimedOut',
+            'El agente no respondió a tiempo',
+        );
+
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-agent-stream-timeout-actions';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'theia-mobile-agent-stream-timeout-btn theia-mod-ghost';
+        cancelBtn.textContent = nls.localize('qaap/mobileProjects/transcriptStreamTimeoutCancel', 'Cancelar');
+        cancelBtn.addEventListener('click', () => {
+            this.host.cancelOpenTranscriptStream?.();
+        });
+
+        const retryBtn = document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.className = 'theia-mobile-agent-stream-timeout-btn theia-mod-primary';
+        retryBtn.textContent = nls.localize('qaap/mobileProjects/transcriptStreamTimeoutRetry', 'Reintentar');
+        retryBtn.addEventListener('click', () => {
+            void this.host.retryOpenTranscriptStream?.();
+        });
+
+        actions.append(cancelBtn, retryBtn);
+        banner.append(message, actions);
+        return banner;
     }
 
     protected resolveTranscriptRowSegments(conv: QaapAgentConversationDTO, row: HTMLElement): QaapAgentMessageSegmentDTO[] {
@@ -2882,9 +2888,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         dot.setAttribute('aria-hidden', 'true');
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-stream-label';
-        label.textContent = `${state.title}…`;
+        label.textContent = timedOut ? state.title : `${state.title}…`;
         label.classList.toggle('theia-mod-shimmer', shouldTranscriptStreamLabelShimmer(state.kind, stalled, timedOut));
-        label.classList.toggle('theia-mod-stall', stalled);
+        label.classList.toggle('theia-mod-stall', stalled || timedOut);
         line.append(dot, label);
         const meta = this.createTranscriptStreamMeta(conv);
         if (meta) {
@@ -2893,6 +2899,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         row.append(line);
         if (conv.status === 'streaming') {
             row.classList.toggle('theia-mod-stream-stalled', stalled);
+            row.classList.toggle('theia-mod-stream-timed-out', timedOut);
+            if (timedOut) {
+                row.append(this.createTranscriptStreamTimeoutBanner());
+            }
             this.ensureTranscriptStreamStallWatch(row);
         }
         return row;

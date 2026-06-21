@@ -158,6 +158,43 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(messageHost.querySelector('.theia-mobile-agent-stream-line')).to.equal(null);
     });
 
+    it('shows actionable timeout chrome when an agent turn has no first response', () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        let cancelled = 0;
+        let retried = 0;
+        host.cancelOpenTranscriptStream = () => {
+            cancelled += 1;
+        };
+        host.retryOpenTranscriptStream = () => {
+            retried += 1;
+        };
+        host.transcriptLastStreamProgressAt = Date.now() - 61_000;
+
+        const streaming = streamingIdleConv();
+        host.transcriptLastConv = streaming;
+        renderUi.renderTranscriptMessages(chatHost, streaming);
+
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const activityRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        expect(activityRow).to.not.equal(null);
+        expect(activityRow?.classList.contains('theia-mod-stream-timed-out')).to.equal(true);
+        expect(activityRow?.querySelector('.theia-mobile-agent-stream-label')?.textContent)
+            .to.equal('El agente no respondió a tiempo');
+
+        const banner = activityRow?.querySelector<HTMLElement>('.theia-mobile-agent-stream-timeout-banner');
+        expect(banner?.textContent).to.contain('El agente no respondió a tiempo');
+        const buttons = [...banner?.querySelectorAll<HTMLButtonElement>('button') ?? []];
+        expect(buttons.map(button => button.textContent)).to.deep.equal(['Cancelar', 'Reintentar']);
+        buttons[0].click();
+        buttons[1].click();
+        expect(cancelled).to.equal(1);
+        expect(retried).to.equal(1);
+    });
+
     it('renders optimistic image previews in pending user rows', () => {
         const { renderUi } = createRenderUi();
         const chatHost = document.createElement('div');

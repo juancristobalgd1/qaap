@@ -145,7 +145,7 @@ export class MobileProjectsTranscriptMessagesUi {
 
     resolveTranscriptStreamingActivity(
         conv: QaapAgentConversationDTO,
-        options?: { readonly stalled?: boolean },
+        options?: { readonly stalled?: boolean; readonly timedOut?: boolean },
     ): { kind: string; title: string; detail: string } {
         return this.artifactsUi.resolveTranscriptStreamingActivity(conv, options);
     }
