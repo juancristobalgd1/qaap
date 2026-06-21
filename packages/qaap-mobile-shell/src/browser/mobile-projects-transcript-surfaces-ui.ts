@@ -1378,6 +1378,22 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
     }
 
+    async revealTranscriptReviewFile(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        filePath: string,
+    ): Promise<void> {
+        const trimmed = filePath.trim();
+        if (!trimmed) {
+            return;
+        }
+        this.host.executionSurfaceTabsUi.selectTranscriptTab('review', project, summary);
+        await this.mountTranscriptReviewWidget(project, summary);
+        if (!this.host.diffReviewWidget?.focusTranscriptReviewFile(trimmed)) {
+            console.warn('[qaap-mobile-shell] Review file not found in diff list:', trimmed);
+        }
+    }
+
     async ensureTranscriptTerminalTab(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,

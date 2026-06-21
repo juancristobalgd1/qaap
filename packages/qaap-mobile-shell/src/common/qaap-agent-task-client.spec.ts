@@ -16,6 +16,7 @@ import {
     stripNonCoderAgentMention,
     normalizeBackendAgentId,
     migrateLegacyBackendAgentId,
+    migrateStoredComposerAgentId,
     QAIQ_AGENT_ID,
     readStoredQaiqModel,
     filterQaapComposerAgents,
@@ -23,7 +24,6 @@ import {
     mergeComposerAgentPickerOptions,
     filterUiSelectableVpsAgents,
     migrateQaapProductAgentId,
-    QAAP_COMPOSER_DEFAULT_AGENT_ID,
     QAAP_PRIMARY_AGENT_ID,
     reconcileSelectedAgent,
     reconcileStickyComposerAgent,
@@ -80,6 +80,13 @@ describe('qaap-agent-task-client', () => {
         expect(migrateQaapProductAgentId('opencode')).to.equal('opencode');
     });
 
+    it('migrateStoredComposerAgentId upgrades opencode when qaiq is on PATH', () => {
+        const available = new Set(['qaiq', 'opencode']);
+        expect(migrateStoredComposerAgentId('opencode', available)).to.equal('qaiq');
+        expect(migrateStoredComposerAgentId('codex', available)).to.equal('codex');
+        expect(migrateStoredComposerAgentId('openclaude', available)).to.equal('qaiq');
+    });
+
     it('mergeAgentTaskAgentOptions unions HTTP and WebSocket agent snapshots', () => {
         const merged = mergeAgentTaskAgentOptions(
             [{ id: 'codex', label: 'Codex', available: true }],
@@ -100,6 +107,16 @@ describe('qaap-agent-task-client', () => {
         expect(ids).to.not.include('shell');
     });
 
+    it('mergeComposerAgentPickerOptions lists QAIQ first when installed', () => {
+        const agents = [
+            { id: 'codex', label: 'Codex', available: true },
+            { id: 'qaiq', label: 'QAIQ', available: true },
+            { id: 'claude', label: 'Claude Code', available: true },
+        ];
+        const ids = mergeComposerAgentPickerOptions(agents).map(agent => agent.id);
+        expect(ids[0]).to.equal('qaiq');
+    });
+
     it('mergeComposerAgentPickerOptions only lists agents the server detected as installed', () => {
         const agents = [
             { id: 'qaiq', label: 'QAIQ', available: true },
@@ -109,13 +126,34 @@ describe('qaap-agent-task-client', () => {
         expect(ids).to.deep.equal(['qaiq']);
     });
 
-    it('reconcileSelectedAgent prefers OpenCode as the composer default', () => {
+    it('reconcileSelectedAgent prefers QAIQ as the composer default', () => {
         const agents = [
             { id: 'qaiq', label: 'QAIQ', available: true },
             { id: 'opencode', label: 'OpenCode', available: true },
             { id: 'codex', label: 'Codex', available: true },
         ];
-        expect(reconcileSelectedAgent(undefined, agents, 'codex', undefined)).to.equal('opencode');
+        expect(reconcileSelectedAgent(undefined, agents, 'codex', undefined)).to.equal('qaiq');
+    });
+
+    it('reconcileSelectedAgent upgrades stored OpenCode to QAIQ when both are available', () => {
+        const storage = new Map<string, string>();
+        (global as unknown as { window: Window }).window = {
+            localStorage: {
+                getItem: (key: string) => storage.get(key) ?? null,
+                setItem: (key: string, value: string) => { storage.set(key, value); },
+                removeItem: (key: string) => { storage.delete(key); },
+                clear: () => { storage.clear(); },
+                key: () => null,
+                length: 0,
+            },
+        } as unknown as Window;
+        storage.set(`qaap.agentTasks.selectedAgent.${hashString('/repo')}`, 'opencode');
+        const agents = [
+            { id: 'qaiq', label: 'QAIQ', available: true },
+            { id: 'opencode', label: 'OpenCode', available: true },
+        ];
+        expect(reconcileSelectedAgent(undefined, agents, 'opencode', '/repo')).to.equal('qaiq');
+        expect(storage.get(`qaap.agentTasks.selectedAgent.${hashString('/repo')}`)).to.equal('qaiq');
     });
 
     it('reconcileSelectedAgent upgrades a stored openclaude pick to qaiq', () => {
@@ -168,7 +206,7 @@ describe('qaap-agent-task-client', () => {
         })).to.equal('qaiq');
     });
 
-    it('reconcileStickyComposerAgent defaults to OpenCode but honors an explicit VPS pick', () => {
+    it('reconcileStickyComposerAgent defaults to QAIQ but honors an explicit VPS pick', () => {
         const agents = [
             { id: 'qaiq', label: 'QAIQ', available: true },
             { id: 'opencode', label: 'OpenCode', available: true },
@@ -179,7 +217,7 @@ describe('qaap-agent-task-client', () => {
         expect(reconcileStickyComposerAgent('codex', agents, 'codex', undefined, true))
             .to.equal('codex');
         expect(reconcileStickyComposerAgent(undefined, agents, 'codex', undefined, false))
-            .to.equal(QAAP_COMPOSER_DEFAULT_AGENT_ID);
+            .to.equal(QAIQ_AGENT_ID);
     });
 
     it('isStickyComposerAgentSelected matches Coder case-insensitively', () => {

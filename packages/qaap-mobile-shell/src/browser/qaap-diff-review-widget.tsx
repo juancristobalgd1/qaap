@@ -325,6 +325,30 @@ export class QaapDiffReviewWidget extends ReactWidget {
         return this.expandedAgentFiles.has(path);
     }
 
+    /** Transcript Review tab: expand and scroll to a changed file by workspace-relative path. */
+    focusTranscriptReviewFile(filePath: string): boolean {
+        const trimmed = filePath.trim();
+        if (!trimmed) {
+            return false;
+        }
+        const normalized = trimmed.replace(/^\.?\//, '');
+        const match = this.files.find(file => file.path === normalized
+            || file.path === trimmed
+            || file.path.endsWith(`/${normalized}`)
+            || normalized.endsWith(file.path));
+        if (!match) {
+            return false;
+        }
+        this.expandedAgentFiles.add(match.path);
+        this.update();
+        const path = match.path;
+        window.requestAnimationFrame(() => {
+            const section = this.node.querySelector<HTMLElement>(`[data-qaap-review-path="${CSS.escape(path)}"]`);
+            section?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        });
+        return true;
+    }
+
     protected async selectFile(path: string | undefined): Promise<void> {
         this.selectedPath = path;
         this.diff = undefined;
@@ -675,7 +699,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             expanded ? '' : 'qaap-agent-changes-file--collapsed',
         ].filter(Boolean).join(' ');
         return (
-            <section key={file.path} className={fileClass}>
+            <section key={file.path} className={fileClass} data-qaap-review-path={file.path}>
                 <div className='qaap-agent-changes-filehdr'>
                     <button
                         type='button'

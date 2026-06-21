@@ -65,6 +65,7 @@ import {
     type StickyComposerContextChipView,
 } from './qaap-sticky-composer-context-ui';
 import {
+    revokeComposerContextPreview,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
@@ -351,6 +352,7 @@ export interface MobileProjectsPanelOptions {
     resolveVerifyChecks?: (cwd: string) => Promise<Array<{ readonly label: string; readonly command: string }>>;
     /** Opens a workspace file when the user taps a transcript read chip. */
     openTranscriptFile?: (filePath: string) => void | Promise<void>;
+    openTranscriptReviewFile?: (filePath: string) => void | Promise<void>;
     /** Codex-style workspace browser for the transcript Files tab. */
     createTranscriptFilesViewServices?: () => TranscriptFilesViewServices | undefined;
     /** Integrated terminal for the transcript Terminal tab (same {@link TerminalService} as the workbench). */
@@ -388,6 +390,8 @@ export interface MobileProjectsPanelOptions {
         draft: string,
         variables?: import('@theia/ai-core').AIVariableResolutionRequest[],
     ) => Promise<string>;
+    /** Bridges Monaco editor selection into sticky/transcript composer context chips. */
+    composerEditorContextService?: import('./qaap-composer-editor-context-service').QaapComposerEditorContextService;
 }
 
 type WorkHubSearchTarget =
@@ -643,6 +647,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly messageService: MessageService | undefined;
     protected readonly resolveVerifyChecks: MobileProjectsPanelOptions['resolveVerifyChecks'];
     protected readonly openTranscriptFile: MobileProjectsPanelOptions['openTranscriptFile'];
+    protected readonly openTranscriptReviewFile: (filePath: string) => void | Promise<void>;
     protected readonly createTranscriptFilesViewServices: MobileProjectsPanelOptions['createTranscriptFilesViewServices'];
     protected readonly createTranscriptTerminalViewServices: MobileProjectsPanelOptions['createTranscriptTerminalViewServices'];
     protected readonly previewSurfaceRegistry: MobileProjectsPanelOptions['previewSurfaceRegistry'];
@@ -660,6 +665,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     readonly agUiFrontendTools: MobileProjectsPanelOptions['agUiFrontendTools'];
     protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
     protected readonly applyComposerAttachmentsToDraft: MobileProjectsPanelOptions['applyComposerAttachmentsToDraft'];
+    protected readonly composerEditorContextService: MobileProjectsPanelOptions['composerEditorContextService'];
     protected activeTasksDispose: Disposable = Disposable.NULL;
     protected conversationsDispose: Disposable = Disposable.NULL;
     protected inboxStreamDispose: Disposable = Disposable.NULL;
@@ -742,6 +748,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 return editorOpenFallback(filePath);
             }
         };
+        this.openTranscriptReviewFile = filePath => {
+            const state = this.transcriptController.state;
+            const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
+            const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
+            if (project && summary) {
+                return this.transcriptSurfacesUi.revealTranscriptReviewFile(project, summary, filePath);
+            }
+        };
         this.createTranscriptFilesViewServices = options.createTranscriptFilesViewServices;
         this.createTranscriptTerminalViewServices = options.createTranscriptTerminalViewServices;
         this.previewSurfaceRegistry = options.previewSurfaceRegistry;
@@ -759,6 +773,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.agUiFrontendTools = options.agUiFrontendTools;
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
         this.applyComposerAttachmentsToDraft = options.applyComposerAttachmentsToDraft;
+        this.composerEditorContextService = options.composerEditorContextService;
         this.root = document.createElement('div');
         this.root.className = this.homeMode ? 'theia-mobile-projects theia-mod-home' : 'theia-mobile-projects';
         if (!this.homeMode) {
@@ -879,12 +894,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     dispose(): void {
+        this.composerEditorContextService?.registerPanelDelegate(undefined);
         this.hubListRenderScheduler.dispose();
         this.panelLifecycleUi.dispose();
     }
 
     async show(options?: { preferredHubView?: MobileProjectsHubView }): Promise<void> {
         await this.panelLifecycleUi.show(options);
+        this.composerEditorContextService?.registerPanelDelegate(this.createComposerEditorContextPanelDelegate());
     }
 
     hide(): void {
@@ -1522,8 +1539,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.agentsHubInlineUi.seedTranscriptOptimisticSubmit(summary, outbound, agentId, imagePreviews);
     }
 
-    protected shouldUseTheiaCoder(content: string, selectedAgentId?: string): boolean {
-        return this.backgroundTaskUi.shouldUseTheiaCoder(content, selectedAgentId);
+    protected shouldUseTheiaCoder(
+        content: string,
+        selectedAgentId?: string,
+        options: { forceVps?: boolean; isLegacyTheiaChat?: boolean } = {},
+    ): boolean {
+        return this.backgroundTaskUi.shouldUseTheiaCoder(content, selectedAgentId, options);
     }
 
     protected async loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot> {
@@ -2168,5 +2189,52 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected dismissPanelIfSheet(): void {
         this.panelLifecycleUi.dismissPanelIfSheet();
+    }
+
+    handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void {
+        this.composerEditorContextService?.notifyEditorContextRemoved(entry);
+    }
+
+    protected createComposerEditorContextPanelDelegate(): import('./qaap-composer-editor-context-service').QaapComposerEditorContextPanelDelegate {
+        return {
+            resolveActiveComposerContextTarget: () => this.resolveActiveComposerContextTarget(),
+            getComposerContextEntries: target => target === 'transcript'
+                ? this.transcriptController.state.transcriptComposerContext
+                : this.stickyComposerContext,
+            upsertEditorContextEntry: (target, entry) => {
+                const entries = target === 'transcript'
+                    ? this.transcriptController.state.transcriptComposerContext
+                    : this.stickyComposerContext;
+                const existingIndex = entries.findIndex((item: StickyComposerContextEntry) => item.request.variable.name === entry.request.variable.name);
+                if (existingIndex >= 0) {
+                    revokeComposerContextPreview(entries[existingIndex]);
+                    entries.splice(existingIndex, 1, entry);
+                    return;
+                }
+                entries.push(entry);
+            },
+            notifyEditorContextRemoved: entry => {
+                this.handleComposerContextItemRemoved(entry);
+            },
+            refreshComposerAfterContextPin: target => {
+                if (target === 'transcript') {
+                    this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+                    return;
+                }
+                this.stickyComposerRenderUi.renderStickyComposer();
+            },
+            focusComposerInput: () => {
+                const input = this.root.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input-editor');
+                input?.focus();
+            },
+        };
+    }
+
+    protected resolveActiveComposerContextTarget(): import('./qaap-composer-editor-context-service').ComposerEditorContextTarget {
+        const state = this.transcriptController.state;
+        if (state.transcriptOpenSummary || state.transcriptComposerSummary) {
+            return 'transcript';
+        }
+        return 'sticky';
     }
 }

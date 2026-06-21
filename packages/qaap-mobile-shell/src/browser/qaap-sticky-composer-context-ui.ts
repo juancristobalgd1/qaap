@@ -58,6 +58,9 @@ export function resolveStickyComposerContextEntry(
         return view;
     }
     const view = resolveStickyComposerContextChip(request, labelProvider);
+    if (entry.displayName?.trim()) {
+        view.title = entry.displayName.trim();
+    }
     if (entry.pending) {
         view.pending = true;
     }

@@ -53,6 +53,7 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptPreviewRequestRunning: boolean;
     transcriptMarkdownIt: ReturnType<typeof markdownit>;
     openTranscriptFile?: (filePath: string) => void | Promise<void>;
+    openTranscriptReviewFile?: (filePath: string) => void | Promise<void>;
     messageService?: MessageService;
     previewClipboard?: ClipboardService;
     conversations?: MobileProjectsConversations;
@@ -90,7 +91,13 @@ export class MobileProjectsTranscriptMessagesUi {
         this.contentUi = new MobileProjectsTranscriptMessagesContentUi(host);
         this.resolversUi = new MobileProjectsTranscriptMessagesResolversUi(host, this.contentUi);
         this.toolUi = new MobileProjectsTranscriptMessagesToolUi(host, this.contentUi, this.resolversUi);
-        this.artifactsUi = new MobileProjectsTranscriptMessagesArtifactsUi(host, this.contentUi, this.resolversUi, this.toolUi);
+        this.artifactsUi = new MobileProjectsTranscriptMessagesArtifactsUi(
+            host,
+            this.contentUi,
+            this.resolversUi,
+            this.toolUi,
+            conv => this.applyTranscriptConversationMutation(conv),
+        );
         let renderUi!: MobileProjectsTranscriptMessagesRenderUi;
         this.userUi = new MobileProjectsTranscriptMessagesUserUi(host, this.contentUi, this.toolUi, (messageHost, conv) => {
             renderUi.renderTranscriptMessages(messageHost, conv);
@@ -153,6 +160,16 @@ export class MobileProjectsTranscriptMessagesUi {
 
     scrollTranscriptStreamingTraceIntoView(options?: { readonly expandTimeline?: boolean }): void {
         this.artifactsUi.scrollTranscriptStreamingTraceIntoView(options);
+    }
+
+    applyTranscriptConversationMutation(conv: QaapAgentConversationDTO): void {
+        this.host.transcriptLastConv = conv;
+        this.host.transcriptLastFingerprint = undefined;
+        const messageHost = this.host.transcriptChatHost;
+        if (messageHost) {
+            this.renderTranscriptMessages(messageHost, conv);
+        }
+        this.host.transcriptStickyComposerUi.refreshComposerActivityStack();
     }
 
     createTranscriptActivityTimeline(

@@ -17,10 +17,7 @@ import {
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
 import {
-    extractBackendAgentMention,
     fetchAgentTaskListAll,
-    isTheiaCoderAgent,
-    isTheiaCoderMention,
     mergeAgentTaskAgentOptions,
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     readStoredAgent,
@@ -30,6 +27,7 @@ import {
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
 } from '../common/qaap-agent-task-client';
+import { shouldRouteSubmitToTheiaCoder } from '../common/qaap-agent-submit-routing';
 import { applyBackendInteractionModeToPrompt } from '../common/qaap-sticky-composer-mode';
 import { reconcileAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -262,11 +260,13 @@ export class MobileProjectsBackgroundTaskUi {
         }
         return (this.host.conversations?.getStreamingCountForCwd(cwd) ?? 0) > 0;
     }
-    shouldUseTheiaCoder(content: string, selectedAgentId?: string): boolean {
-        if (extractBackendAgentMention(content)) {
-            return false;
-        }
-        return isTheiaCoderAgent(selectedAgentId) || isTheiaCoderMention(content);
+    shouldUseTheiaCoder(content: string, selectedAgentId?: string, options: { forceVps?: boolean; isLegacyTheiaChat?: boolean } = {}): boolean {
+        return shouldRouteSubmitToTheiaCoder({
+            draft: content,
+            selectedAgentId,
+            forceVps: options.forceVps,
+            isLegacyTheiaChat: options.isLegacyTheiaChat,
+        });
     }
     async loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot> {
         this.host.activeTasks?.start();

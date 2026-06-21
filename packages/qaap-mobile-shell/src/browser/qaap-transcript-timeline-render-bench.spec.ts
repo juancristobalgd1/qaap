@@ -170,6 +170,355 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(row.querySelector('.theia-mobile-agent-activity-file-chip-label')?.textContent).to.equal('page.tsx');
     });
 
+    it('renders expandable grouped terminal steps with command details', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'Bash',
+                toolUseId: 'tool-1',
+                args: JSON.stringify({ command: 'find . -name "*.ts"' }),
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'Bash',
+                toolUseId: 'tool-2',
+                args: JSON.stringify({ command: 'npm test' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+        });
+        const grouped = timeline?.querySelector('.theia-mobile-agent-activity-item.theia-mod-expandable-step');
+        expect(grouped).to.not.equal(null);
+        const expand = grouped?.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand');
+        expect(expand).to.not.equal(null);
+        expect(expand?.open).to.equal(false);
+        expand!.open = true;
+        const body = expand?.querySelector('.theia-mobile-agent-activity-expand-body');
+        expect(body?.classList.contains('theia-mod-terminal-group')).to.equal(true);
+        const panel = body?.querySelector('.theia-mobile-agent-activity-terminal-panel');
+        expect(panel).to.not.equal(null);
+        expect(panel?.querySelector('.theia-mobile-agent-premium-head.theia-mod-terminal')).to.not.equal(null);
+        const stack = panel?.querySelector('.theia-mobile-agent-activity-terminal-stack');
+        expect(stack).to.not.equal(null);
+        const windows = stack?.querySelectorAll<HTMLDetailsElement>('.theia-mobile-agent-activity-terminal-window');
+        expect(windows?.length).to.equal(2);
+        expect(windows?.[0]?.querySelector('.theia-mobile-agent-shell-command code')?.textContent)
+            .to.equal('find . -name "*.ts"');
+        expect(windows?.[1]?.querySelector('.theia-mobile-agent-shell-command code')?.textContent)
+            .to.equal('npm test');
+        expect(windows?.[0]?.open).to.equal(true);
+        expect(windows?.[1]?.open).to.equal(false);
+    });
+
+    it('renders terminal stdout inside premium expand cards', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'Bash',
+                toolUseId: 'tool-stdout',
+                args: JSON.stringify({ command: 'echo hello' }),
+                result: 'hello\n',
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+        });
+        const step = timeline?.querySelector('.theia-mobile-agent-activity-item.theia-mod-expandable-step');
+        const expand = step?.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand');
+        expand!.open = true;
+        const output = expand?.querySelector('.theia-mobile-agent-activity-terminal-output');
+        expect(output?.textContent).to.equal('hello');
+        expect(expand?.querySelector('.theia-mobile-agent-activity-terminal-window')).to.not.equal(null);
+        expect(expand?.querySelector('.theia-mobile-agent-activity-terminal-output-label')?.textContent).to.equal('Output');
+    });
+
+    it('renders premium todo checklist expand for Updated todo list', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'TodoWrite',
+                toolUseId: 'todo-1',
+                args: JSON.stringify({
+                    todos: [
+                        { content: 'Ship timeline expand', status: 'completed' },
+                        { content: 'Polish error panel', status: 'in_progress' },
+                        { content: 'Verify in browser', status: 'pending' },
+                    ],
+                }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+        });
+        const step = timeline?.querySelector('.theia-mobile-agent-activity-item.theia-mod-expandable-step');
+        const expand = step?.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand');
+        expand!.open = true;
+        const panel = expand?.querySelector('.theia-mobile-agent-activity-todo-panel');
+        expect(panel).to.not.equal(null);
+        expect(panel?.querySelector('.theia-mobile-agent-activity-todo-progress-fill')).to.not.equal(null);
+        const items = panel?.querySelectorAll('.theia-mobile-agent-todo-checklist.theia-mod-premium .theia-mobile-agent-todo-item');
+        expect(items?.length).to.equal(3);
+    });
+
+    it('renders premium tool error panel for TodoWrite validation failures', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'TodoWrite',
+                toolUseId: 'todo-fail',
+                args: JSON.stringify({ todos: [] }),
+                result: '<tool_use_error>InputValidationError: TodoWrite failed due to the following issue:\nThe `merge` field is required.',
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+        });
+        const errorItem = timeline?.querySelector('.theia-mobile-agent-activity-item.theia-mod-error');
+        const panel = errorItem?.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-error-panel');
+        expect(panel).to.not.equal(null);
+        expect(panel?.open).to.equal(true);
+        expect(panel?.querySelector('.theia-mobile-agent-activity-error-panel-code')?.textContent)
+            .to.equal('InputValidationError');
+        expect(panel?.querySelector('.theia-mobile-agent-activity-error-panel-message')?.textContent)
+            .to.include('merge');
+        expect(panel?.querySelector('.theia-mobile-agent-activity-error-panel-action.theia-mod-hint')?.textContent)
+            .to.equal('Copy fix hint');
+    });
+
+    it('renders premium read expand with syntax-highlighted clamped output', () => {
+        const artifactsUi = createArtifactsUi();
+        const longJson = `{\n${'  "line": true,\n'.repeat(12)}}`;
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'read-1',
+                args: JSON.stringify({ path: 'package.json' }),
+                result: longJson,
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+        });
+        const step = timeline?.querySelector('.theia-mobile-agent-activity-item.theia-mod-expandable-step');
+        const expand = step?.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand');
+        expand!.open = true;
+        const body = expand?.querySelector('.theia-mobile-agent-activity-expand-body');
+        expect(body?.classList.contains('theia-mod-read')).to.equal(true);
+        expect(body?.querySelector('.theia-mobile-agent-activity-read-window')).to.not.equal(null);
+        expect(body?.querySelector('.theia-mobile-agent-code-view')).to.not.equal(null);
+        expect(body?.querySelector('.theia-mobile-agent-clamp-toggle')).to.not.equal(null);
+    });
+
+    it('renders grouped edit expand with per-file diff stats rows', () => {
+        const artifactsUi = createArtifactsUi();
+        const diff = [
+            '```diff',
+            '--- a/src/foo.ts',
+            '+++ b/src/foo.ts',
+            '@@ -1,2 +1,3 @@',
+            '+added',
+            '-removed',
+            '```',
+        ].join('\n');
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'edit_file',
+                toolUseId: 'edit-1',
+                args: JSON.stringify({ path: 'src/foo.ts' }),
+                result: diff,
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'edit_file',
+                toolUseId: 'edit-2',
+                args: JSON.stringify({ path: 'src/bar.ts' }),
+                result: '1 file changed, 2 insertions(+), 1 deletion(-)',
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+        });
+        const grouped = timeline?.querySelector('.theia-mobile-agent-activity-item.theia-mod-expandable-step');
+        const expand = grouped?.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand');
+        expand!.open = true;
+        const body = expand?.querySelector('.theia-mobile-agent-activity-expand-body');
+        expect(body?.classList.contains('theia-mod-edit-group')).to.equal(true);
+        const rows = body?.querySelectorAll('.theia-mobile-agent-activity-edit-row');
+        expect(rows?.length).to.equal(2);
+        expect(rows?.[0]?.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+1');
+        expect(rows?.[1]?.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+2');
+    });
+
+    it('marks changed-file rows as review-open actions when host supports review reveal', () => {
+        const host = {
+            transcriptLastConv: undefined,
+            transcriptUserScrollPinDispose: Disposable.NULL,
+            transcriptLiveUi: { refreshTranscriptApprovals: async () => undefined },
+            projectRowsUi: {
+                localizeActivityLabel: (label: string) => label,
+            },
+            openTranscriptReviewFile: () => undefined,
+        } as unknown as MobileProjectsTranscriptMessagesHost;
+        const contentUi = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        const resolversUi = new MobileProjectsTranscriptMessagesResolversUi(host as never, contentUi);
+        const toolUi = new MobileProjectsTranscriptMessagesToolUi(host as never, contentUi, resolversUi);
+        const artifactsUi = new MobileProjectsTranscriptMessagesArtifactsUi(host, contentUi, resolversUi, toolUi);
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'edit_file',
+                toolUseId: 'edit-1',
+                args: JSON.stringify({ path: 'src/foo.ts' }),
+                result: '1 file changed, 1 insertion(+)',
+                finished: true,
+            },
+        ];
+        const card = artifactsUi.createTranscriptChangedFilesCard(segments);
+        const row = card?.querySelector('.theia-mobile-agent-changed-file');
+        expect(row?.classList.contains('theia-mod-clickable')).to.equal(true);
+        expect(row?.getAttribute('role')).to.equal('button');
+    });
+
+    it('shows checkpoint restore CTA beside error panel when a checkpoint exists', () => {
+        const host = {
+            transcriptLastConv: {
+                id: 'conv-checkpoint',
+                status: 'idle',
+                checkpoints: [{
+                    id: 'cp-before',
+                    messageId: 'u1',
+                    label: 'Before edit',
+                    commit: 'abc123',
+                    ref: 'refs/qaap/checkpoints/cp-before',
+                    capturedAt: 1,
+                }],
+            },
+            transcriptUserScrollPinDispose: Disposable.NULL,
+            transcriptLiveUi: { refreshTranscriptApprovals: async () => undefined },
+            projectRowsUi: { localizeActivityLabel: (label: string) => label },
+        } as unknown as MobileProjectsTranscriptMessagesHost;
+        const contentUi = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        const resolversUi = new MobileProjectsTranscriptMessagesResolversUi(host as never, contentUi);
+        const toolUi = new MobileProjectsTranscriptMessagesToolUi(host as never, contentUi, resolversUi);
+        const artifactsUi = new MobileProjectsTranscriptMessagesArtifactsUi(host, contentUi, resolversUi, toolUi);
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'TodoWrite',
+                toolUseId: 'todo-fail',
+                args: JSON.stringify({ todos: [] }),
+                result: '<tool_use_error>InputValidationError: TodoWrite failed due to the following issue:\nThe `merge` field is required.',
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+            conv: host.transcriptLastConv as QaapAgentConversationDTO,
+        });
+        const restore = timeline?.querySelector('.theia-mobile-agent-activity-error-panel .theia-mobile-agent-activity-checkpoint-restore');
+        expect(restore?.textContent).to.equal('Restore to before this step');
+    });
+
+    it('shows inline mini diff for a single changed file while collapsed', () => {
+        const artifactsUi = createArtifactsUi();
+        const diff = [
+            '```diff',
+            '--- a/src/foo.ts',
+            '+++ b/src/foo.ts',
+            '@@ -1,2 +1,3 @@',
+            '+added line',
+            '-removed line',
+            ' context',
+            '```',
+        ].join('\n');
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'edit_file',
+                toolUseId: 'edit-1',
+                args: JSON.stringify({ path: 'src/foo.ts' }),
+                result: diff,
+                finished: true,
+            },
+        ];
+        const card = artifactsUi.createTranscriptChangedFilesCard(segments);
+        expect(card instanceof HTMLDetailsElement && card.open).to.equal(false);
+        const miniDiff = card?.querySelector('.theia-mobile-agent-changed-files-mini-diff-line');
+        expect(miniDiff).to.not.equal(null);
+        expect(card?.querySelector('.theia-mobile-agent-changed-files-stats .theia-mod-added')?.textContent).to.equal('+1');
+        expect(card?.querySelector('.theia-mobile-agent-changed-files-stats .theia-mod-removed')?.textContent).to.equal('−1');
+    });
+
+    it('shows per-file diff stats in collapsed changed-files preview', () => {
+        const artifactsUi = createArtifactsUi();
+        const diff = [
+            '```diff',
+            '--- a/src/foo.ts',
+            '+++ b/src/foo.ts',
+            '@@ -1,2 +1,3 @@',
+            '+added line',
+            '-removed line',
+            ' context',
+            '```',
+        ].join('\n');
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'edit_file',
+                toolUseId: 'edit-1',
+                args: JSON.stringify({ path: 'src/foo.ts' }),
+                result: diff,
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'edit_file',
+                toolUseId: 'edit-2',
+                args: JSON.stringify({ path: 'src/bar.ts' }),
+                result: '1 file changed, 2 insertions(+), 1 deletion(-)',
+                finished: true,
+            },
+        ];
+        const card = artifactsUi.createTranscriptChangedFilesCard(segments);
+        expect(card).to.not.equal(undefined);
+        expect(card instanceof HTMLDetailsElement && card.open).to.equal(false);
+        const preview = card?.querySelector('.theia-mobile-agent-changed-files-collapsed-preview');
+        expect(preview).to.not.equal(null);
+        const rows = preview?.querySelectorAll('.theia-mobile-agent-changed-file.theia-mod-compact');
+        expect(rows?.length).to.equal(2);
+        expect(rows?.[0]?.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+1');
+        expect(rows?.[0]?.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('−1');
+        expect(rows?.[1]?.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+2');
+        expect(rows?.[1]?.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('−1');
+        const expandedRow = card?.querySelector('.theia-mobile-agent-changed-files-list .theia-mobile-agent-changed-file:not(.theia-mod-compact)');
+        expect(expandedRow?.querySelector('.theia-mobile-agent-changed-file-stats')).to.not.equal(null);
+    });
+
     it('collapses the timeline after a completed turn', () => {
         const artifactsUi = createArtifactsUi();
         const segments: QaapAgentMessageSegmentDTO[] = [
@@ -258,6 +607,39 @@ describe('qaap-transcript-timeline-render-bench', () => {
         const writingRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
             .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Writing');
         expect(writingRow?.textContent).to.equal('Writing response');
+    });
+
+    it('renders compact grep matches inside search expand', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'Grep',
+                toolUseId: 'grep-expand',
+                args: JSON.stringify({ pattern: 'resolvePinned' }),
+                result: [
+                    'Found 1 matching line',
+                    'packages/qaap-mobile-shell/src/browser/foo.ts:42:  return resolvePinnedEditorContextVariable(',
+                ].join('\n'),
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+            cursorTrace: true,
+        });
+        const step = timeline?.querySelector('.theia-mobile-agent-activity-item.theia-mod-expandable-step');
+        const expand = step?.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand');
+        expand!.open = true;
+        const match = expand?.querySelector('.theia-mobile-agent-activity-search-match');
+        expect(match).to.not.equal(null);
+        expect(match?.querySelector('.theia-mobile-agent-activity-search-match-file')?.textContent)
+            .to.equal('src/browser/foo.ts');
+        expect(match?.querySelector('.theia-mobile-agent-activity-search-match-line')?.textContent)
+            .to.equal('42');
+        expect(match?.querySelector('.theia-mobile-agent-activity-search-match-snippet')?.textContent)
+            .to.contain('resolvePinnedEditorContextVariable');
     });
 
     it('keeps reasoning as the only tool execution surface after settling', () => {

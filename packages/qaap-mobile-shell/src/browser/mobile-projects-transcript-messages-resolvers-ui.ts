@@ -7,7 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { extractToolArgFilePath } from '../common/qaap-agent-conversation-list-metrics';
 import { formatToolActivityLabel, parseDiffStatsFromText } from '../common/qaap-agent-conversation-list-metrics';
 import { resolveTranscriptActivityNavigationItems, type TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
-import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
+import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment, extractTranscriptDiffCard } from '../common/qaap-agent-transcript-segments';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
@@ -55,7 +55,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
 
     resolveTranscriptChangedFiles(
         segments: QaapAgentMessageSegmentDTO[],
-    ): Array<{ readonly path: string; readonly kind: 'edited' | 'created' }> {
+    ): Array<{ readonly path: string; readonly kind: 'edited' | 'created'; readonly added?: number; readonly removed?: number }> {
         const byPath = new Map<string, 'edited' | 'created'>();
         for (const segment of segments) {
             if (segment.type !== 'tool') {
@@ -71,7 +71,15 @@ export class MobileProjectsTranscriptMessagesResolversUi {
             }
             byPath.set(path, kind === 'created' ? 'created' : byPath.get(path) ?? 'edited');
         }
-        return [...byPath.entries()].map(([path, kind]) => ({ path, kind }));
+        return [...byPath.entries()].map(([path, kind]) => {
+            const stats = this.resolveTranscriptFileDiffStats(segments, path);
+            return {
+                path,
+                kind,
+                added: stats.added,
+                removed: stats.removed,
+            };
+        });
     }
 
 
@@ -119,7 +127,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
     }
 
     resolveTranscriptFileDiffStats(
-        segments: QaapAgentMessageSegmentDTO[],
+        segments: readonly QaapAgentMessageSegmentDTO[],
         filePath: string,
     ): { readonly added?: number; readonly removed?: number } {
         for (const segment of segments) {
@@ -131,7 +139,12 @@ export class MobileProjectsTranscriptMessagesResolversUi {
                 continue;
             }
             for (const text of [segment.result ?? '', segment.args]) {
-                const parsed = parseDiffStatsFromText(this.contentUi.cleanTranscriptDisplayText(text));
+                const clean = this.contentUi.cleanTranscriptDisplayText(text);
+                const card = extractTranscriptDiffCard(clean);
+                if (card) {
+                    return { added: card.added, removed: card.removed };
+                }
+                const parsed = parseDiffStatsFromText(clean);
                 if (parsed) {
                     return parsed;
                 }
@@ -212,6 +225,9 @@ export class MobileProjectsTranscriptMessagesResolversUi {
     transcriptToolResultFailed(result: string | undefined): boolean {
         if (!result?.trim()) {
             return false;
+        }
+        if (/tool_use_error|InputValidationError/i.test(result)) {
+            return true;
         }
         return /\b(error|failed|failure|exit\s+[1-9]\d*|code\s+[1-9]\d*)\b/i.test(result)
             && !/\b0\s+failed\b/i.test(result);
@@ -302,6 +318,9 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         }
         if (name.includes('bash') || name.includes('shell') || name.includes('terminal') || name.includes('run_')) {
             return 'terminal';
+        }
+        if (name.includes('todo')) {
+            return 'todo';
         }
         if (name.includes('write') || name.includes('edit') || name.includes('patch') || name.includes('replace')) {
             return 'editing';

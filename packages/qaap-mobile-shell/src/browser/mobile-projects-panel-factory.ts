@@ -50,6 +50,8 @@ import { pickMobileContextVariable } from './qaap-mobile-context-attach-menu';
 import { QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB } from '../common/mobile-work-hub-catalog';
 import { resolveStickyComposerAttachmentPreview } from './qaap-sticky-composer-attachment-preview';
 import { resolveStickyComposerContextChip } from './qaap-sticky-composer-context-ui';
+import { resolvePinnedEditorContextVariable } from './qaap-composer-editor-context-resolver';
+import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 
 export interface MobileProjectsPanelFactoryDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -102,6 +104,7 @@ export interface MobileProjectsPanelFactoryDeps {
     composerPromptImprover?: QaapComposerPromptImprover;
     projectBootstrap: QaapProjectBootstrapService;
     agUiFrontendTools?: QaapAgUiFrontendToolService;
+    composerEditorContextService: QaapComposerEditorContextService;
     activeTasks: MobileProjectsActiveTasks;
     conversations: MobileProjectsConversations;
     backgroundContext: QaapBackgroundContextProvider;
@@ -184,6 +187,7 @@ export class MobileProjectsPanelFactory {
                             QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB,
                         ),
                     },
+                    deps.composerEditorContextService.shouldOfferManualEditorContextAttach(),
                 ),
                 formatContextChip: item => resolveStickyComposerContextChip(item, deps.labelProvider),
                 resolveAttachmentPreview: item => resolveStickyComposerAttachmentPreview(
@@ -202,6 +206,14 @@ export class MobileProjectsPanelFactory {
                     draft,
                     variables,
                     deps.variableService,
+                    undefined,
+                    {
+                        resolvePinnedRequest: request => resolvePinnedEditorContextVariable(
+                            request,
+                            deps.workspaceService,
+                            deps.fileService,
+                        ),
+                    },
                 ),
                 createDiffReviewWidget: () => deps.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID),
                 resolveVerifyChecks: cwd => resolveAgentVerifyChecksForCwd(cwd, deps.fileService),
@@ -242,6 +254,7 @@ export class MobileProjectsPanelFactory {
                 openAiConfigurationSheet: tabId => delegate.openWorkHubAiConfigurationSheet(tabId),
                 projectBootstrap: deps.projectBootstrap,
                 agUiFrontendTools: deps.agUiFrontendTools,
+                composerEditorContextService: deps.composerEditorContextService,
             },
         );
     }

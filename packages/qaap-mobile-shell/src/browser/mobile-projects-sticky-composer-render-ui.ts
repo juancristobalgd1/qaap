@@ -129,6 +129,7 @@ isProjectDetailView(): boolean;
 projectsService: MobileProjectsService;
 transcriptComposerSendRefresh: (() => void) | undefined;
 composerPromptImprover?: QaapComposerPromptImprover;
+handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
 }
 
 export class MobileProjectsStickyComposerRenderUi {
@@ -333,8 +334,10 @@ export class MobileProjectsStickyComposerRenderUi {
                 this.renderStickyComposer();
             },
             removeContextItem: index => {
-                revokeComposerContextPreview(this.host.stickyComposerContext[index]);
+                const entry = this.host.stickyComposerContext[index];
+                revokeComposerContextPreview(entry);
                 this.host.stickyComposerContext.splice(index, 1);
+                this.host.handleComposerContextItemRemoved(entry);
                 this.renderStickyComposer();
             },
             formatContextChip: item => this.host.stickyComposerContextUi.formatComposerContextEntry(item),

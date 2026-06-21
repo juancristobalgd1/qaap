@@ -27,7 +27,7 @@ auth/API-key setup if you want to use `@codex`; Claude Code still needs its own 
 
 QAIQ is the generic BYOK/free-tier path: it can run non-interactively in the server with
 providers such as `openai`, `gemini`, `ollama`, and other OpenAI-compatible routes. Select it
-with `@qaiq` or make it the default with `QAAP_DEFAULT_AGENT=qaiq`.
+with `@qaiq` or make it the default with `QAAP_DEFAULT_AGENT=qaiq`. The Work Hub composer also defaults to **QAIQ** when no per-project agent is stored.
 
 When several CLIs are installed, QAAP prefers **QAIQ**, then Aider, before Codex or Claude Code
 — so background jobs do not silently burn Codex subscription quota unless you pick `@codex` or

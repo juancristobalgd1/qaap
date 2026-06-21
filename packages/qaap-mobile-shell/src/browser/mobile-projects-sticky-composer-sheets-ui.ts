@@ -793,6 +793,14 @@ export class MobileProjectsStickyComposerSheetsUi {
         chrome.backBtn.onclick = null;
         chrome.title.textContent = nls.localize('qaap/mobileProjects/stickyComposerPickAgent', 'Choose agent');
 
+        const defaultHint = document.createElement('p');
+        defaultHint.className = 'theia-qaap-agent-sheet-default-hint';
+        defaultHint.textContent = nls.localize(
+            'qaap/mobileProjects/stickyComposerAgentDefaultHint',
+            'QAIQ is the default Qaap agent. Codex, Claude Code, and others are optional alternatives.',
+        );
+        chrome.list.append(defaultHint);
+
         const appendAgent = (agentId: string, label: string): void => {
             const hasModels = agentSupportsModelPicker(agentId);
             const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);

@@ -10,7 +10,7 @@ export interface QaapTranscriptActivitySegment {
     readonly name?: string;
 }
 
-export type QaapTranscriptToolActivityKind = 'reading' | 'searching' | 'terminal' | 'editing' | 'mcp' | 'tool';
+export type QaapTranscriptToolActivityKind = 'reading' | 'searching' | 'terminal' | 'editing' | 'mcp' | 'todo' | 'tool';
 
 /** True when a tool name denotes an MCP server invocation (Codex `mcp_tool_call`, Cursor `CallMcpTool`, …). */
 export function isTranscriptMcpTool(toolName: string): boolean {
@@ -56,12 +56,15 @@ export function classifyTranscriptToolActivityKind(toolName: string): QaapTransc
     }
     // Task-list tools track the agent's plan, not workspace files — never count them as edits.
     if (name.includes('todo')) {
-        return 'tool';
+        return 'todo';
     }
     if (name.includes('write') || name.includes('edit') || name.includes('patch') || name.includes('replace')) {
         return 'editing';
     }
-    if (name.includes('grep') || name.includes('search') || name.includes('glob')) {
+    if (name.includes('web_search')) {
+        return 'tool';
+    }
+    if (name.includes('grep') || name.includes('glob') || (name.includes('search') && !name.includes('web'))) {
         return 'searching';
     }
     if (name.includes('read') || name.includes('list') || name.includes('ls')) {

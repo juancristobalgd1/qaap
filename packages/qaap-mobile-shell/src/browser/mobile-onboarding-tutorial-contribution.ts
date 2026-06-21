@@ -239,7 +239,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 title: nls.localize('theia/core/mobile/onboarding/bottomBar/title', 'Bottom bar — agent-first'),
                 body: nls.localize(
                     'qaap/mobileOnboarding/bottomBar/body',
-                    'The bar at the bottom is your primary workspace on mobile: Agent, Preview, Explore, PR, and Terminal. Open Work Hub for projects and chats; review working changes from the hub when an agent finishes a turn.'
+                    'The bottom bar is your agent workspace: Work Hub runs QAIQ on your server so tasks keep going after you close the tab. Use Preview, Explore, PR, and Terminal from here; open the classic IDE only when you need the full editor.',
                 ),
                 target: () => document.getElementById('theia-mobile-bottom-bar') ?? undefined,
                 placement: 'top',
@@ -249,7 +249,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 title: nls.localize('theia/core/mobile/onboarding/agent/title', 'Tap Agent to chat'),
                 body: nls.localize(
                     'theia/core/mobile/onboarding/agent/body',
-                    'On a phone you mostly drive the IDE through the AI Agent. Tap this button to open the chat sheet and start a task.'
+                    'Tap Agent to open Work Hub. Your tasks run with QAIQ on the server — pick Codex or Claude only when you need an alternative.',
                 ),
                 target: () => document.querySelector<HTMLElement>(
                     '#theia-mobile-bottom-bar .theia-mobile-bottom-activity-btn[data-action-id="agent"]'

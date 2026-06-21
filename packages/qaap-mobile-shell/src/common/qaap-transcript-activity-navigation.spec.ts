@@ -208,18 +208,17 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(grouped[0]?.label).to.equal('Ran 3 commands');
     });
 
-    it('keeps consecutive edits separate with diff stats for cursor trace rows', () => {
+    it('groups consecutive finished edits for timeline expand', () => {
         const diff = '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-old\n+new\n+also';
         const items = resolveTranscriptActivityNavigationItems([
             { type: 'tool', name: 'edit_file', args: '{"path":"foo.ts"}', finished: true, toolUseId: '1', result: diff },
             { type: 'tool', name: 'edit_file', args: '{"path":"bar.ts"}', finished: true, toolUseId: '2', result: diff },
         ], deps, false);
         const grouped = groupTranscriptActivityNavigationItems(items);
-        expect(grouped).to.have.length(2);
-        expect(grouped[0]?.verb).to.equal('Edited');
-        expect(grouped[0]?.detail).to.equal('foo.ts');
-        expect(grouped[0]?.editAdded).to.be.greaterThan(0);
-        expect(grouped[0]?.editRemoved).to.be.greaterThan(0);
+        expect(grouped).to.have.length(1);
+        expect(grouped[0]?.grouped).to.equal(true);
+        expect(grouped[0]?.groupCount).to.equal(2);
+        expect(grouped[0]?.label).to.equal('Edited 2 files');
     });
 
     it('parses git-style edit summaries when no unified diff is present', () => {
@@ -310,6 +309,7 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(items[0]?.state).to.equal('success');
         expect(items[0]?.label).to.include('Checkpoint: After refactor');
         expect(items[0]?.label).to.include('+3/-1');
+        expect(items[0]?.checkpointId).to.equal('cp-1');
         expect(items[1]?.state).to.equal('cancelled');
         expect(items[1]?.label).to.equal('Turn cancelled.');
     });

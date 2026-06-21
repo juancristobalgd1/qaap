@@ -14,8 +14,15 @@ import {
     applyResolvedAttachmentsToPrompt,
     buildResolvedComposerAttachmentBlock,
     extractComposerAttachmentImagePaths,
+    resolveComposerContextAttachments,
     stripComposerAttachmentPreamble,
 } from './qaap-composer-attachment-prompt';
+import {
+    buildEditorContextAttachmentRequest,
+    buildEditorSelectionFingerprint,
+    buildPinnedEditorContextResolvedVariable,
+    type EditorSelectionSnapshot,
+} from './qaap-composer-editor-context-bridge-core';
 
 const FILE_VARIABLE_STUB: AIVariable = {
     id: 'file-provider',
@@ -49,6 +56,35 @@ const IMAGE_RESOLVED: ResolvedAIContextVariable = {
 };
 
 describe('qaap-composer-attachment-prompt', () => {
+
+    it('resolveComposerContextAttachments prefers a pinned resolver over variableService', async () => {
+        const snapshot: EditorSelectionSnapshot = {
+            workspaceRelativePath: 'package.json',
+            fileName: 'package.json',
+            startLineNumber: 1,
+            startColumn: 1,
+            endLineNumber: 3,
+            endColumn: 22,
+            hasSelection: true,
+        };
+        const request = {
+            ...buildEditorContextAttachmentRequest(),
+            arg: buildEditorSelectionFingerprint(snapshot),
+        };
+        const pinned = buildPinnedEditorContextResolvedVariable(request, snapshot, '{"name":"qaap"}');
+        const variableService = {
+            resolveVariable: async () => undefined,
+        } as unknown as import('@theia/ai-core').AIVariableService;
+        const resolved = await resolveComposerContextAttachments(
+            [request],
+            variableService,
+            {},
+            {
+                resolvePinnedRequest: async () => pinned,
+            },
+        );
+        expect(resolved).to.deep.equal([pinned]);
+    });
 
     it('buildResolvedComposerAttachmentBlock formats file context with fenced content', () => {
         const block = buildResolvedComposerAttachmentBlock([FILE_RESOLVED]);

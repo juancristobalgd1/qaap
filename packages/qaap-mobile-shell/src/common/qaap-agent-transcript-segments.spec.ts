@@ -115,8 +115,8 @@ describe('classifyTranscriptToolActivityKind', () => {
         expect(classifyTranscriptToolActivityKind('Grep')).to.equal('searching');
         expect(classifyTranscriptToolActivityKind('Bash')).to.equal('terminal');
         expect(classifyTranscriptToolActivityKind('Edit')).to.equal('editing');
-        expect(classifyTranscriptToolActivityKind('todo_write')).to.equal('tool');
-        expect(classifyTranscriptToolActivityKind('TodoWrite')).to.equal('tool');
+        expect(classifyTranscriptToolActivityKind('todo_write')).to.equal('todo');
+        expect(classifyTranscriptToolActivityKind('TodoWrite')).to.equal('todo');
         expect(classifyTranscriptToolActivityKind('custom_tool')).to.equal('tool');
         expect(classifyTranscriptToolActivityKind('mcp_tool_call')).to.equal('mcp');
         expect(classifyTranscriptToolActivityKind('CallMcpTool')).to.equal('mcp');

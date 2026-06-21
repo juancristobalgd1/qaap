@@ -42,6 +42,7 @@ import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service'
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
+import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
@@ -84,6 +85,8 @@ import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/termin
 import { QaapTerminalFrontendContribution } from './qaap-terminal-frontend-contribution';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
+import { QaapComposerEditorContextContribution } from './qaap-composer-editor-context-contribution';
+import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import { QaapStickyComposerPromptHistoryContribution } from './qaap-sticky-composer-prompt-history';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapDiffReviewContribution } from './qaap-diff-review-contribution';
@@ -180,6 +183,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(FrontendApplicationContribution).toService(QaapChatMicTranscribeContribution);
     bind(QaapStickyComposerPromptHistoryContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapStickyComposerPromptHistoryContribution);
+    bind(QaapComposerEditorContextService).toSelf().inSingletonScope();
+    bind(QaapComposerEditorContextContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(QaapComposerEditorContextContribution);
+    bind(MenuContribution).toService(QaapComposerEditorContextContribution);
+    bind(KeybindingContribution).toService(QaapComposerEditorContextContribution);
     bind(QaapChatInputCodexLayoutContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapChatInputCodexLayoutContribution);
     bind(QaapChatInputProductContribution).toSelf().inSingletonScope();

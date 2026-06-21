@@ -30,6 +30,8 @@ export interface StickyComposerActivityStackOptions {
     onStop?: () => void;
     onUndoAll?: () => void;
     onKeepAll?: () => void;
+    onRestoreCheckpoint?: () => void;
+    restoreCheckpointBusy?: boolean;
     changedFilesBulkBusy?: boolean;
     onReview?: () => void;
     onRunApp?: () => void;
@@ -141,6 +143,8 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         options.onCommitAction ? 1 : 0,
         options.onRunApp ? 1 : 0,
         options.onOpenPreview ? 1 : 0,
+        options.onRestoreCheckpoint ? 1 : 0,
+        options.restoreCheckpointBusy ? 1 : 0,
     ].join('|');
 }
 
@@ -164,12 +168,17 @@ export function patchStickyComposerChangesPillHost(
         : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
     const hasCommitAction = !!options.onCommitAction;
     const hasNextActions = !!options.onRunApp || !!options.onOpenPreview;
+    const hasRestoreCheckpoint = !!options.onRestoreCheckpoint;
     const existingCommitGroup = row.querySelector(':scope > .theia-mobile-sticky-composer-commit-group');
     if (!!existingCommitGroup !== hasCommitAction) {
         return false;
     }
     const existingNextActions = row.querySelector(':scope > .theia-mobile-sticky-composer-next-actions');
     if (!!existingNextActions !== hasNextActions) {
+        return false;
+    }
+    const existingRestoreBtn = row.querySelector(':scope > .theia-mobile-sticky-composer-checkpoint-revert');
+    if (!!existingRestoreBtn !== hasRestoreCheckpoint) {
         return false;
     }
 
@@ -205,6 +214,10 @@ export function patchStickyComposerChangesPillHost(
 
     if (hasNextActions && existingNextActions instanceof HTMLElement) {
         patchChangesNextActions(existingNextActions, options);
+    }
+
+    if (hasRestoreCheckpoint && existingRestoreBtn instanceof HTMLButtonElement) {
+        existingRestoreBtn.disabled = !!options.restoreCheckpointBusy || !!options.agentWorking;
     }
 
     const existingStop = row.querySelector(':scope > .theia-mobile-sticky-composer-activity-stop');
@@ -421,6 +434,25 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
             options.onReview?.();
         });
         row.append(pill);
+    }
+
+    if (options.onRestoreCheckpoint) {
+        const revertBtn = document.createElement('button');
+        revertBtn.type = 'button';
+        revertBtn.className = 'theia-mobile-sticky-composer-checkpoint-revert';
+        revertBtn.title = nls.localize(
+            'qaap/mobileProjects/stickyComposerRestoreCheckpoint',
+            'Revert workspace to last checkpoint',
+        );
+        revertBtn.setAttribute('aria-label', revertBtn.title);
+        revertBtn.textContent = nls.localize('qaap/mobileProjects/stickyComposerRestoreCheckpointShort', 'Revert');
+        revertBtn.disabled = !!options.restoreCheckpointBusy || !!options.agentWorking;
+        revertBtn.addEventListener('click', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            options.onRestoreCheckpoint?.();
+        });
+        row.append(revertBtn);
     }
 
     if (options.onCommitAction) {

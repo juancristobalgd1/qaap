@@ -32,6 +32,7 @@ import {
     renderMobileMcpAttachView,
 } from './qaap-mobile-mcp-attach-menu';
 import { resolveComposerProjectFileAttachment } from '../common/qaap-mobile-composer-project-file-attach';
+import { QAAP_EDITOR_CONTEXT_VARIABLE_NAME } from '../common/qaap-composer-editor-context-bridge-core';
 
 const QUERY_CONTEXT = { type: 'context-variable-picker' };
 
@@ -39,8 +40,6 @@ const MOBILE_CONTEXT_ATTACH_EXCLUDED_VARIABLE_NAMES = new Set([
     FILE_VARIABLE.name,
     IMAGE_CONTEXT_VARIABLE.name,
     TASK_CONTEXT_VARIABLE.name,
-    /** Keep in sync with `@theia/ai-editor` `EDITOR_CONTEXT_VARIABLE.name`. */
-    'editorContext',
 ]);
 
 export interface MobileContextAttachServices {
@@ -576,8 +575,16 @@ async function useGenericArgumentPicker(
     return { variable, arg: args.join(PromptText.VARIABLE_SEPARATOR_CHAR) };
 }
 
-function filterMobileContextVariables(variables: readonly AIContextVariable[]): AIContextVariable[] {
-    return variables.filter(variable => !MOBILE_CONTEXT_ATTACH_EXCLUDED_VARIABLE_NAMES.has(variable.name));
+function filterMobileContextVariables(
+    variables: readonly AIContextVariable[],
+    allowEditorContext: boolean,
+): AIContextVariable[] {
+    return variables.filter(variable => {
+        if (variable.name === QAAP_EDITOR_CONTEXT_VARIABLE_NAME) {
+            return allowEditorContext;
+        }
+        return !MOBILE_CONTEXT_ATTACH_EXCLUDED_VARIABLE_NAMES.has(variable.name);
+    });
 }
 
 async function resolveDeviceAttachSelection(
@@ -627,8 +634,9 @@ export async function pickMobileContextVariable(
     handlers?: MobileComposerAttachHandlers,
     skillService?: SkillService,
     mcpOptions?: MobileMcpAttachOptions,
+    allowEditorContext = false,
 ): Promise<AIVariableResolutionRequest[]> {
-    const variables = filterMobileContextVariables(variableService.getContextVariables());
+    const variables = filterMobileContextVariables(variableService.getContextVariables(), allowEditorContext);
     if (skillService) {
         await skillService.ready;
     }

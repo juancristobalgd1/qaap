@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
-import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { ChatAgent, ChatAgentLocation } from '@theia/ai-chat/lib/common/chat-agents';
@@ -71,7 +70,7 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
     protected readonly activeFinishCallbacks = new Set<(state: string) => void>();
 
     onStart(): void {
-        if (this.registered || matchesMobileNarrowViewport()) {
+        if (this.registered) {
             return;
         }
         this.agentService.registerAgent(this.createAgentDescriptor());

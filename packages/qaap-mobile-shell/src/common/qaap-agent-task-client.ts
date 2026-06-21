@@ -39,7 +39,7 @@ export const OPENCODE_AGENT_ID = 'opencode';
 export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;
 
 /** Composer / Work Hub default when no per-project agent is stored. */
-export const QAAP_COMPOSER_DEFAULT_AGENT_ID = OPENCODE_AGENT_ID;
+export const QAAP_COMPOSER_DEFAULT_AGENT_ID = QAIQ_AGENT_ID;
 
 /** UI/storage id before the QAIQ rename; still accepted when resolving selection. */
 export const LEGACY_OPENCLAUDE_AGENT_ID = 'openclaude';
@@ -137,6 +137,27 @@ export function migrateLegacyBackendAgentId(agentId: string | undefined): string
     return agentId === LEGACY_OPENCLAUDE_AGENT_ID ? QAIQ_AGENT_ID : agentId;
 }
 
+/**
+ * Upgrade legacy composer storage picks when QAIQ is available on the server.
+ * OpenCode was the previous product default — migrate silently so existing users land on QAIQ.
+ */
+export function migrateStoredComposerAgentId(
+    stored: string | undefined,
+    availableIds: ReadonlySet<string>,
+    cwd?: string,
+): string | undefined {
+    const migrated = migrateLegacyBackendAgentId(stored);
+    if (!migrated) {
+        return undefined;
+    }
+    const normalized = migrated.trim().toLowerCase();
+    if (normalized === OPENCODE_AGENT_ID && availableIds.has(QAIQ_AGENT_ID)) {
+        writeStoredAgent(cwd, QAIQ_AGENT_ID);
+        return QAIQ_AGENT_ID;
+    }
+    return migrated;
+}
+
 /** Map retired defaults (Coder, Codex, …) to {@link QAAP_PRIMARY_AGENT_ID} for Qaap product UI. */
 export function migrateQaapProductAgentId(agentId: string | undefined): string | undefined {
     const migrated = migrateLegacyBackendAgentId(agentId);
@@ -217,7 +238,7 @@ export function reconcileSelectedAgent(
     if (normalizedCurrent && ids.has(normalizedCurrent)) {
         return normalizedCurrent;
     }
-    const stored = readStoredAgent(cwd);
+    const stored = migrateStoredComposerAgentId(readStoredAgent(cwd), ids, cwd);
     if (stored && ids.has(stored)) {
         return stored;
     }
@@ -251,7 +272,19 @@ export function mergeComposerAgentPickerOptions(
         }
         merged.set(agent.id.toLowerCase(), agent);
     }
-    return Array.from(merged.values()).sort((left, right) => left.label.localeCompare(right.label));
+    return Array.from(merged.values()).sort(compareComposerAgentPickerOrder);
+}
+
+function compareComposerAgentPickerOrder(
+    left: QaapAgentTaskAgentOption,
+    right: QaapAgentTaskAgentOption,
+): number {
+    const leftPrimary = left.id.toLowerCase() === QAIQ_AGENT_ID;
+    const rightPrimary = right.id.toLowerCase() === QAIQ_AGENT_ID;
+    if (leftPrimary !== rightPrimary) {
+        return leftPrimary ? -1 : 1;
+    }
+    return left.label.localeCompare(right.label);
 }
 
 /** Merge HTTP `/all` and WebSocket snapshot agent lists (WebSocket may arrive after the first fetch). */

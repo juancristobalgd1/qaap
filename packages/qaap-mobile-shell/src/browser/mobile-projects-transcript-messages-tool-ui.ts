@@ -15,13 +15,24 @@ import {
     type TranscriptDeferredToolBodyHydrate,
 } from './qaap-transcript-row-defer';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapTranscriptTodoItem } from '../common/qaap-agent-transcript-segments';
+import type {
+    TranscriptActivityEditExpandEntry,
+    TranscriptActivityReadExpandEntry,
+    TranscriptActivityTerminalExpandEntry,
+} from '../common/qaap-transcript-activity-expand-core';
+import type { TranscriptSearchMatch } from '../common/qaap-transcript-search-matches-core';
+import type { TranscriptToolErrorDisplay } from '../common/qaap-transcript-tool-error-display';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { tryBuildTranscriptRichToolBody } from './qaap-transcript-rich-content-ui';
 
-/** Lightweight stdout/stderr host inside a streaming tool pill (no syntax highlight per tick). */
+/** Sticky expand headers kick in once a grouped panel is long enough to scroll. */
+const TRANSCRIPT_EXPAND_STICKY_TERMINAL_MIN = 6;
+const TRANSCRIPT_EXPAND_STICKY_READ_MIN = 8;
+
 export const TRANSCRIPT_TOOL_RESULT_STREAM_CLASS = 'theia-mobile-agent-tool-result-stream';
 /** Placeholder body mounted before tool stdout/result arrives (speculative pill). */
 export const TRANSCRIPT_TOOL_SPECULATIVE_CLASS = 'theia-mobile-agent-tool-pill-speculative';
@@ -324,22 +335,42 @@ export class MobileProjectsTranscriptMessagesToolUi {
     }
 
     /** Claude-Code-style live task checklist (✓ done, ◉ in progress, ○ pending). */
-    protected createTranscriptTodoChecklist(
+    createTranscriptTodoChecklist(
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
     ): HTMLElement | undefined {
         const items = parseTranscriptTodoChecklist(segment.args);
         if (!items) {
             return undefined;
         }
+        return this.createTranscriptTodoChecklistFromItems(items);
+    }
+
+    createTranscriptTodoChecklistFromItems(
+        items: readonly QaapTranscriptTodoItem[],
+        options?: { readonly premium?: boolean },
+    ): HTMLElement {
         const list = document.createElement('ul');
-        list.className = 'theia-mobile-agent-todo-checklist';
+        list.className = options?.premium
+            ? 'theia-mobile-agent-todo-checklist theia-mod-premium'
+            : 'theia-mobile-agent-todo-checklist';
         for (const item of items) {
             const row = document.createElement('li');
             row.className = `theia-mobile-agent-todo-item theia-mod-${item.status.replace('_', '-')}`;
             const marker = document.createElement('span');
             marker.className = 'theia-mobile-agent-todo-marker';
             marker.setAttribute('aria-hidden', 'true');
-            marker.textContent = item.status === 'completed' ? '✓' : item.status === 'in_progress' ? '◉' : '○';
+            if (options?.premium) {
+                marker.classList.add(
+                    'codicon',
+                    item.status === 'completed'
+                        ? 'codicon-pass-filled'
+                        : item.status === 'in_progress'
+                            ? 'codicon-record'
+                            : 'codicon-circle-large-outline',
+                );
+            } else {
+                marker.textContent = item.status === 'completed' ? '✓' : item.status === 'in_progress' ? '◉' : '○';
+            }
             const label = document.createElement('span');
             label.className = 'theia-mobile-agent-todo-label';
             label.textContent = item.label;
@@ -347,6 +378,159 @@ export class MobileProjectsTranscriptMessagesToolUi {
             list.append(row);
         }
         return list;
+    }
+
+    createTranscriptActivityTodoExpandPanel(items: readonly QaapTranscriptTodoItem[]): HTMLElement {
+        const panel = document.createElement('div');
+        panel.className = 'theia-mobile-agent-activity-todo-panel theia-mobile-agent-premium-card';
+        const completed = items.filter(item => item.status === 'completed').length;
+        const inProgress = items.filter(item => item.status === 'in_progress').length;
+        const pending = items.length - completed - inProgress;
+        const head = document.createElement('header');
+        head.className = 'theia-mobile-agent-premium-head theia-mod-todos';
+        const icon = document.createElement('span');
+        icon.className = 'theia-mobile-agent-premium-head-icon codicon codicon-tasklist';
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agent-premium-head-label';
+        label.textContent = nls.localize('qaap/mobileProjects/transcriptActivityTodoPanel', 'Task list');
+        const count = document.createElement('span');
+        count.className = 'theia-mobile-agent-premium-head-count';
+        count.textContent = nls.localize(
+            'qaap/mobileProjects/transcriptActivityTodoPanelCount',
+            '{0} items',
+            String(items.length),
+        );
+        head.append(icon, label, count);
+        const statsParts: string[] = [];
+        if (completed > 0) {
+            statsParts.push(nls.localize(
+                'qaap/mobileProjects/transcriptActivityTodoPanelDone',
+                '{0} done',
+                String(completed),
+            ));
+        }
+        if (inProgress > 0) {
+            statsParts.push(nls.localize(
+                'qaap/mobileProjects/transcriptActivityTodoPanelActive',
+                '{0} active',
+                String(inProgress),
+            ));
+        }
+        if (pending > 0) {
+            statsParts.push(nls.localize(
+                'qaap/mobileProjects/transcriptActivityTodoPanelPending',
+                '{0} pending',
+                String(pending),
+            ));
+        }
+        if (statsParts.length) {
+            const stats = document.createElement('span');
+            stats.className = 'theia-mobile-agent-activity-todo-panel-stats';
+            stats.textContent = statsParts.join(' · ');
+            head.append(stats);
+        }
+        panel.append(head);
+        if (items.length > 0) {
+            const progress = document.createElement('div');
+            progress.className = 'theia-mobile-agent-activity-todo-progress';
+            progress.setAttribute('role', 'progressbar');
+            progress.setAttribute('aria-valuemin', '0');
+            progress.setAttribute('aria-valuemax', String(items.length));
+            progress.setAttribute('aria-valuenow', String(completed));
+            progress.setAttribute('aria-label', nls.localize(
+                'qaap/mobileProjects/transcriptActivityTodoProgress',
+                '{0} of {1} tasks completed',
+                String(completed),
+                String(items.length),
+            ));
+            const fill = document.createElement('span');
+            fill.className = 'theia-mobile-agent-activity-todo-progress-fill';
+            fill.style.width = `${Math.round((completed / items.length) * 100)}%`;
+            progress.append(fill);
+            panel.append(progress);
+        }
+        panel.append(this.createTranscriptTodoChecklistFromItems(items, { premium: true }));
+        return panel;
+    }
+
+    createTranscriptActivityErrorPanel(
+        display: TranscriptToolErrorDisplay,
+        options?: { readonly defaultOpen?: boolean; readonly onRetry?: () => void | Promise<void> },
+    ): HTMLDetailsElement {
+        const details = document.createElement('details');
+        details.className = 'theia-mobile-agent-activity-error-panel';
+        details.open = options?.defaultOpen ?? true;
+        const summary = document.createElement('summary');
+        summary.className = 'theia-mobile-agent-activity-error-panel-summary';
+        const icon = document.createElement('span');
+        icon.className = 'theia-mobile-agent-activity-error-panel-icon codicon codicon-warning';
+        icon.setAttribute('aria-hidden', 'true');
+        const titleWrap = document.createElement('span');
+        titleWrap.className = 'theia-mobile-agent-activity-error-panel-title-wrap';
+        const code = document.createElement('span');
+        code.className = 'theia-mobile-agent-activity-error-panel-code';
+        code.textContent = display.code;
+        const preview = document.createElement('span');
+        preview.className = 'theia-mobile-agent-activity-error-panel-preview';
+        preview.textContent = display.preview;
+        titleWrap.append(code, preview);
+        const chevron = document.createElement('span');
+        chevron.className = 'theia-mobile-agent-activity-error-panel-chevron codicon codicon-chevron-right';
+        chevron.setAttribute('aria-hidden', 'true');
+        summary.append(icon, titleWrap, chevron);
+        const body = document.createElement('div');
+        body.className = 'theia-mobile-agent-activity-error-panel-body';
+        const message = document.createElement('pre');
+        message.className = 'theia-mobile-agent-activity-error-panel-message';
+        message.textContent = display.message;
+        body.append(message);
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-agent-activity-error-panel-actions';
+        if (display.fixHint.trim()) {
+            const hintBtn = document.createElement('button');
+            hintBtn.type = 'button';
+            hintBtn.className = 'theia-mobile-agent-activity-error-panel-action theia-mod-hint';
+            hintBtn.textContent = nls.localize('qaap/mobileProjects/transcriptErrorCopyFixHint', 'Copy fix hint');
+            hintBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void this.copyTranscriptShellText(display.fixHint, hintBtn, hintBtn, hintBtn.textContent ?? '');
+            });
+            actions.append(hintBtn);
+        }
+        if (options?.onRetry) {
+            const retryBtn = document.createElement('button');
+            retryBtn.type = 'button';
+            retryBtn.className = 'theia-mobile-agent-activity-error-panel-action theia-mod-retry codicon codicon-refresh';
+            retryBtn.textContent = nls.localize('qaap/mobileProjects/transcriptErrorRetryStep', 'Retry step');
+            retryBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void Promise.resolve(options.onRetry!());
+            });
+            actions.append(retryBtn);
+        }
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'theia-mobile-agent-activity-error-panel-copy codicon codicon-copy';
+        const copyLabel = nls.localize('qaap/mobileProjects/transcriptShellCopy', 'Copy');
+        copyBtn.setAttribute('aria-label', copyLabel);
+        const tip = document.createElement('span');
+        tip.className = 'theia-mobile-agent-activity-error-panel-copy-tip';
+        tip.setAttribute('role', 'tooltip');
+        tip.textContent = nls.localize('qaap/mobileProjects/transcriptShellCopied', 'Copied');
+        copyBtn.append(tip);
+        copyBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            event.preventDefault();
+            void this.copyTranscriptShellText(display.body, copyBtn, tip, copyLabel);
+        });
+        actions.append(copyBtn);
+        body.append(actions);
+        summary.addEventListener('click', event => event.stopPropagation());
+        details.append(summary, body);
+        return details;
     }
 
     createTranscriptToolSpeculativePlaceholder(): HTMLElement {
@@ -455,6 +639,39 @@ export class MobileProjectsTranscriptMessagesToolUi {
             this.host.messageService?.error(
                 nls.localize('qaap/mobileProjects/transcriptOpenFileFailed', 'Could not open {0}', filePath),
             );
+        });
+    }
+
+    handleTranscriptReviewFileOpen(filePath: string): void {
+        if (!this.host.openTranscriptReviewFile) {
+            return;
+        }
+        void Promise.resolve(this.host.openTranscriptReviewFile(filePath)).catch(error => {
+            console.warn('[qaap-mobile-shell] Failed to open transcript review file:', error);
+            this.host.messageService?.error(
+                nls.localize('qaap/mobileProjects/transcriptOpenReviewFileFailed', 'Could not open {0} in Review', filePath),
+            );
+        });
+    }
+
+    attachTranscriptReviewFileOpenAction(row: HTMLElement, filePath: string): void {
+        if (!this.host.openTranscriptReviewFile) {
+            return;
+        }
+        row.classList.add('theia-mod-clickable');
+        row.setAttribute('role', 'button');
+        row.tabIndex = 0;
+        row.title = nls.localize('qaap/mobileProjects/transcriptOpenFileInReview', 'Open in Review');
+        const open = (event: Event): void => {
+            event.stopPropagation();
+            event.preventDefault();
+            this.handleTranscriptReviewFileOpen(filePath);
+        };
+        row.addEventListener('click', open);
+        row.addEventListener('keydown', event => {
+            if (event instanceof KeyboardEvent && (event.key === 'Enter' || event.key === ' ')) {
+                open(event);
+            }
         });
     }
 
@@ -876,5 +1093,472 @@ export class MobileProjectsTranscriptMessagesToolUi {
         });
         details.append(summary, body);
         return details;
+    }
+
+    createTranscriptActivityTerminalExpandPanel(
+        entries: readonly TranscriptActivityTerminalExpandEntry[],
+        options?: { readonly single?: boolean },
+    ): HTMLElement {
+        const panel = document.createElement('div');
+        const showHead = !options?.single && entries.length >= 2;
+        panel.className = showHead
+            ? 'theia-mobile-agent-activity-terminal-panel theia-mobile-agent-premium-card'
+            : 'theia-mobile-agent-activity-terminal-panel theia-mod-single';
+        if (showHead) {
+            const head = document.createElement('header');
+            head.className = 'theia-mobile-agent-premium-head theia-mod-terminal';
+            const icon = document.createElement('span');
+            icon.className = 'theia-mobile-agent-premium-head-icon codicon codicon-terminal';
+            icon.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.className = 'theia-mobile-agent-premium-head-label';
+            label.textContent = nls.localize('qaap/mobileProjects/transcriptActivityTerminalPanel', 'Shell output');
+            const count = document.createElement('span');
+            count.className = 'theia-mobile-agent-premium-head-count';
+            count.textContent = nls.localize(
+                'qaap/mobileProjects/transcriptActivityTerminalPanelCount',
+                '{0} commands',
+                String(entries.length),
+            );
+            head.append(icon, label, count);
+            const failedCount = entries.filter(entry => this.isTranscriptActivityTerminalEntryFailed(entry)).length;
+            const runningCount = entries.filter(entry => entry.finished === false).length;
+            const successCount = entries.length - failedCount - runningCount;
+            const statsParts: string[] = [];
+            if (successCount > 0) {
+                statsParts.push(nls.localize(
+                    'qaap/mobileProjects/transcriptActivityTerminalPanelSuccess',
+                    '{0} passed',
+                    String(successCount),
+                ));
+            }
+            if (failedCount > 0) {
+                statsParts.push(nls.localize(
+                    'qaap/mobileProjects/transcriptActivityTerminalPanelFailed',
+                    '{0} failed',
+                    String(failedCount),
+                ));
+            }
+            if (runningCount > 0) {
+                statsParts.push(nls.localize(
+                    'qaap/mobileProjects/transcriptActivityTerminalPanelRunning',
+                    '{0} running',
+                    String(runningCount),
+                ));
+            }
+            if (statsParts.length) {
+                const stats = document.createElement('span');
+                stats.className = 'theia-mobile-agent-activity-terminal-panel-stats';
+                stats.textContent = statsParts.join(' · ');
+                head.append(stats);
+            }
+            if (entries.length >= TRANSCRIPT_EXPAND_STICKY_TERMINAL_MIN) {
+                head.classList.add('theia-mod-sticky-head');
+            }
+            panel.append(head);
+        }
+        const stack = document.createElement('div');
+        stack.className = 'theia-mobile-agent-activity-terminal-stack';
+        const defaultOpenIndex = this.resolveTranscriptActivityTerminalDefaultOpenIndex(entries);
+        entries.forEach((entry, index) => {
+            stack.append(this.createTranscriptActivityTerminalExpandCard(entry, {
+                index,
+                total: entries.length,
+                defaultOpen: index === defaultOpenIndex,
+            }));
+        });
+        panel.append(stack);
+        return panel;
+    }
+
+    protected isTranscriptActivityTerminalEntryFailed(entry: TranscriptActivityTerminalExpandEntry): boolean {
+        if (entry.failed) {
+            return true;
+        }
+        return entry.exitCode !== undefined && entry.exitCode !== 0;
+    }
+
+    protected resolveTranscriptActivityTerminalDefaultOpenIndex(
+        entries: readonly TranscriptActivityTerminalExpandEntry[],
+    ): number {
+        const runningIndex = entries.findIndex(entry => entry.finished === false);
+        if (runningIndex >= 0) {
+            return runningIndex;
+        }
+        const failedIndex = entries.findIndex(entry => this.isTranscriptActivityTerminalEntryFailed(entry));
+        if (failedIndex >= 0) {
+            return failedIndex;
+        }
+        return 0;
+    }
+
+    createTranscriptActivityTerminalExpandCard(
+        entry: TranscriptActivityTerminalExpandEntry,
+        options?: { readonly index?: number; readonly total?: number; readonly defaultOpen?: boolean },
+    ): HTMLElement {
+        const failed = entry.failed ?? this.resolversUi.transcriptToolResultFailed(entry.output);
+        const finished = entry.finished !== false;
+        const exitCode = entry.exitCode ?? (finished ? this.parseTranscriptShellExitCode(entry.output) : undefined);
+        const details = document.createElement('details');
+        details.className = 'theia-mobile-agent-shell-window theia-mobile-agent-activity-terminal-window';
+        details.open = options?.defaultOpen ?? (options?.total === undefined || options.total <= 1);
+        if (finished) {
+            details.classList.add(failed ? 'theia-mod-failed' : 'theia-mod-done');
+        } else {
+            details.classList.add('theia-mod-running');
+        }
+
+        const command = entry.command?.trim();
+        const body = document.createElement('div');
+        body.className = 'theia-mobile-agent-shell-body';
+        if (command) {
+            const commandBlock = document.createElement('div');
+            commandBlock.className = 'theia-mobile-agent-shell-command-block';
+            const commandLine = document.createElement('div');
+            commandLine.className = 'theia-mobile-agent-shell-command';
+            const prompt = document.createElement('span');
+            prompt.className = 'theia-mobile-agent-shell-prompt';
+            prompt.textContent = '$';
+            const commandText = document.createElement('code');
+            commandText.textContent = command;
+            commandLine.append(prompt, commandText);
+            commandBlock.append(commandLine);
+            body.append(commandBlock);
+        }
+        const output = entry.output?.trim();
+        if (output) {
+            const outputWrap = document.createElement('div');
+            outputWrap.className = 'theia-mobile-agent-activity-terminal-output-wrap';
+            const outputLabel = document.createElement('div');
+            outputLabel.className = 'theia-mobile-agent-activity-terminal-output-label';
+            const lineCount = output.split('\n').length;
+            outputLabel.textContent = lineCount > 1
+                ? nls.localize(
+                    'qaap/mobileProjects/transcriptActivityTerminalOutputLines',
+                    'Output · {0} lines',
+                    String(lineCount),
+                )
+                : nls.localize('qaap/mobileProjects/transcriptActivityTerminalOutput', 'Output');
+            outputWrap.append(outputLabel);
+            outputWrap.append(this.createTranscriptClampedPre(
+                this.resolversUi.formatTranscriptToolResult(output),
+                'theia-mobile-agent-shell-output theia-mobile-agent-activity-terminal-output',
+            ));
+            body.append(outputWrap);
+        } else if (finished) {
+            const empty = document.createElement('div');
+            empty.className = 'theia-mobile-agent-activity-terminal-empty';
+            empty.textContent = nls.localize('qaap/mobileProjects/transcriptActivityTerminalNoOutput', 'No output');
+            body.append(empty);
+        } else {
+            const pending = document.createElement('div');
+            pending.className = 'theia-mobile-agent-activity-terminal-empty theia-mod-pending';
+            const dot = document.createElement('span');
+            dot.className = 'theia-mobile-agent-activity-terminal-pending-dot';
+            dot.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.textContent = nls.localize('qaap/mobileProjects/transcriptActivityTerminalRunning', 'Running…');
+            pending.append(dot, label);
+            body.append(pending);
+        }
+
+        const compactCommand = command && command !== '{}'
+            ? this.resolversUi.compactTranscriptCommand(command)
+            : nls.localize('qaap/mobileProjects/transcriptShell', 'Shell');
+        let title = compactCommand;
+        if (options?.total && options.total > 1 && options.index !== undefined) {
+            title = `${options.index + 1}/${options.total} · ${compactCommand}`;
+        }
+        const summary = this.createTranscriptShellWindowHead({
+            title,
+            finished,
+            failed,
+            exitCode,
+            copyFrom: () => this.collectTranscriptShellBodyCopyText(body),
+        });
+        summary.addEventListener('click', event => event.stopPropagation());
+        details.append(summary, body);
+        return details;
+    }
+
+    createTranscriptActivityReadExpandPanel(
+        entries: readonly TranscriptActivityReadExpandEntry[],
+        options?: { readonly single?: boolean },
+    ): HTMLElement {
+        const panel = document.createElement('div');
+        const showHead = !options?.single && entries.length >= 2;
+        panel.className = showHead
+            ? 'theia-mobile-agent-activity-read-panel theia-mobile-agent-premium-card'
+            : 'theia-mobile-agent-activity-read-panel theia-mod-single';
+        if (showHead) {
+            const head = document.createElement('header');
+            head.className = 'theia-mobile-agent-premium-head theia-mod-read';
+            const icon = document.createElement('span');
+            icon.className = 'theia-mobile-agent-premium-head-icon codicon codicon-file';
+            icon.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.className = 'theia-mobile-agent-premium-head-label';
+            label.textContent = nls.localize('qaap/mobileProjects/transcriptActivityReadPanel', 'File contents');
+            const count = document.createElement('span');
+            count.className = 'theia-mobile-agent-premium-head-count';
+            count.textContent = nls.localize(
+                'qaap/mobileProjects/transcriptActivityReadPanelCount',
+                '{0} files',
+                String(entries.length),
+            );
+            head.append(icon, label, count);
+            if (entries.length >= TRANSCRIPT_EXPAND_STICKY_READ_MIN) {
+                head.classList.add('theia-mod-sticky-head');
+            }
+            panel.append(head);
+        }
+        const stack = document.createElement('div');
+        stack.className = 'theia-mobile-agent-activity-read-stack';
+        entries.forEach((entry, index) => {
+            stack.append(this.createTranscriptActivityReadExpandCard(entry, {
+                index,
+                total: entries.length,
+                defaultOpen: entries.length <= 1 || index === 0,
+            }));
+        });
+        panel.append(stack);
+        return panel;
+    }
+
+    createTranscriptActivityReadExpandCard(
+        entry: TranscriptActivityReadExpandEntry,
+        options?: { readonly index?: number; readonly total?: number; readonly defaultOpen?: boolean },
+    ): HTMLElement {
+        const text = this.contentUi.cleanTranscriptDisplayText(entry.text);
+        const lineCount = text.split('\n').length;
+        const path = entry.path?.trim();
+        const slash = path ? path.lastIndexOf('/') : -1;
+        const fileName = path ? (slash >= 0 ? path.slice(slash + 1) : path) : undefined;
+        const language = resolveTranscriptCodeLanguage(path, text);
+        const details = document.createElement('details');
+        details.className = 'theia-mobile-agent-shell-window theia-mobile-agent-activity-read-window theia-mod-done';
+        details.open = options?.defaultOpen ?? true;
+
+        const body = document.createElement('div');
+        body.className = 'theia-mobile-agent-shell-body';
+        const outputWrap = document.createElement('div');
+        outputWrap.className = 'theia-mobile-agent-activity-read-output-wrap';
+        const outputLabel = document.createElement('div');
+        outputLabel.className = 'theia-mobile-agent-activity-read-output-label';
+        outputLabel.textContent = lineCount > 1
+            ? nls.localize(
+                'qaap/mobileProjects/transcriptActivityReadOutputLines',
+                'Contents · {0} lines',
+                String(lineCount),
+            )
+            : nls.localize('qaap/mobileProjects/transcriptActivityReadOutput', 'Contents');
+        outputWrap.append(outputLabel);
+        const codeView = createTranscriptCodeView(text, language);
+        outputWrap.append(this.createTranscriptClampedBlock(codeView, lineCount));
+        body.append(outputWrap);
+
+        let title = fileName
+            ?? nls.localize('qaap/mobileProjects/transcriptActivityReadUntitled', 'Read output');
+        if (options?.total && options.total > 1 && options.index !== undefined) {
+            title = `${options.index + 1}/${options.total} · ${title}`;
+        }
+        const summary = this.createTranscriptShellWindowHead({
+            title,
+            finished: true,
+            failed: false,
+            copyFrom: () => text,
+        });
+        summary.addEventListener('click', event => event.stopPropagation());
+        details.append(summary, body);
+        return details;
+    }
+
+    createTranscriptActivityEditExpandPanel(
+        entries: readonly TranscriptActivityEditExpandEntry[],
+        options?: { readonly single?: boolean },
+    ): HTMLElement {
+        const panel = document.createElement('div');
+        const showHead = !options?.single && entries.length >= 2;
+        panel.className = showHead
+            ? 'theia-mobile-agent-activity-edit-panel theia-mobile-agent-premium-card'
+            : 'theia-mobile-agent-activity-edit-panel theia-mod-single';
+        if (showHead) {
+            const head = document.createElement('header');
+            head.className = 'theia-mobile-agent-premium-head theia-mod-edit';
+            const icon = document.createElement('span');
+            icon.className = 'theia-mobile-agent-premium-head-icon codicon codicon-diff';
+            icon.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span');
+            label.className = 'theia-mobile-agent-premium-head-label';
+            label.textContent = nls.localize('qaap/mobileProjects/transcriptActivityEditPanel', 'Changed files');
+            const count = document.createElement('span');
+            count.className = 'theia-mobile-agent-premium-head-count';
+            count.textContent = nls.localize(
+                'qaap/mobileProjects/transcriptActivityEditPanelCount',
+                '{0} files',
+                String(entries.length),
+            );
+            head.append(icon, label, count);
+            let totalAdded = 0;
+            let totalRemoved = 0;
+            for (const entry of entries) {
+                totalAdded += entry.added ?? 0;
+                totalRemoved += entry.removed ?? 0;
+            }
+            if (totalAdded > 0 || totalRemoved > 0) {
+                const stats = document.createElement('span');
+                stats.className = 'theia-mobile-agent-activity-edit-panel-stats';
+                if (totalAdded > 0) {
+                    const add = document.createElement('span');
+                    add.className = 'theia-mobile-agent-diff-stat theia-mod-added';
+                    add.textContent = `+${totalAdded}`;
+                    stats.append(add);
+                }
+                if (totalRemoved > 0) {
+                    const rem = document.createElement('span');
+                    rem.className = 'theia-mobile-agent-diff-stat theia-mod-removed';
+                    rem.textContent = `−${totalRemoved}`;
+                    stats.append(rem);
+                }
+                head.append(stats);
+            }
+            if (entries.length >= TRANSCRIPT_EXPAND_STICKY_READ_MIN) {
+                head.classList.add('theia-mod-sticky-head');
+            }
+            panel.append(head);
+        }
+        const stack = document.createElement('div');
+        stack.className = 'theia-mobile-agent-activity-edit-stack';
+        entries.forEach(entry => {
+            stack.append(this.createTranscriptActivityEditExpandRow(entry));
+        });
+        panel.append(stack);
+        return panel;
+    }
+
+    createTranscriptActivityEditExpandRow(entry: TranscriptActivityEditExpandEntry): HTMLElement {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'theia-mobile-agent-activity-edit-row';
+        const icon = document.createElement('span');
+        icon.className = `theia-mobile-agent-activity-edit-row-icon codicon ${this.transcriptFileIconClass(entry.path)}`;
+        icon.setAttribute('aria-hidden', 'true');
+        const info = document.createElement('span');
+        info.className = 'theia-mobile-agent-activity-edit-row-info';
+        const slash = entry.path.lastIndexOf('/');
+        const name = document.createElement('span');
+        name.className = 'theia-mobile-agent-activity-edit-row-name';
+        name.textContent = slash >= 0 ? entry.path.slice(slash + 1) : entry.path;
+        info.append(name);
+        if (slash > 0) {
+            const dir = document.createElement('span');
+            dir.className = 'theia-mobile-agent-activity-edit-row-dir';
+            dir.textContent = entry.path.slice(0, slash);
+            info.append(dir);
+        }
+        const tail = document.createElement('span');
+        tail.className = 'theia-mobile-agent-activity-edit-row-tail';
+        const added = entry.added ?? 0;
+        const removed = entry.removed ?? 0;
+        if (added > 0 || removed > 0) {
+            const stats = document.createElement('span');
+            stats.className = 'theia-mobile-agent-activity-edit-row-stats';
+            if (added > 0) {
+                const add = document.createElement('span');
+                add.className = 'theia-mobile-agent-diff-stat theia-mod-added';
+                add.textContent = `+${added}`;
+                stats.append(add);
+            }
+            if (removed > 0) {
+                const rem = document.createElement('span');
+                rem.className = 'theia-mobile-agent-diff-stat theia-mod-removed';
+                rem.textContent = `−${removed}`;
+                stats.append(rem);
+            }
+            tail.append(stats);
+        }
+        const reviewIcon = document.createElement('span');
+        reviewIcon.className = 'theia-mobile-agent-activity-edit-row-review codicon codicon-git-compare';
+        reviewIcon.setAttribute('aria-hidden', 'true');
+        tail.append(reviewIcon);
+        row.append(icon, info, tail);
+        row.addEventListener('click', event => {
+            event.stopPropagation();
+            event.preventDefault();
+            this.handleTranscriptReviewFileOpen(entry.path);
+        });
+        return row;
+    }
+
+    createTranscriptActivityRunningBadge(): HTMLElement {
+        const badge = document.createElement('span');
+        badge.className = 'theia-mobile-agent-activity-running-badge';
+        const dot = document.createElement('span');
+        dot.className = 'theia-mobile-agent-activity-running-dot';
+        dot.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agent-activity-running-label theia-mod-shimmer';
+        label.textContent = nls.localize('qaap/mobileProjects/transcriptActivityRunning', 'Running…');
+        badge.append(dot, label);
+        return badge;
+    }
+
+    createTranscriptActivitySearchMatchesPanel(matches: readonly TranscriptSearchMatch[]): HTMLElement {
+        const panel = document.createElement('div');
+        panel.className = matches.length >= 8
+            ? 'theia-mobile-agent-activity-search-panel theia-mobile-agent-premium-card'
+            : 'theia-mobile-agent-activity-search-panel theia-mod-single';
+        const head = document.createElement('header');
+        head.className = 'theia-mobile-agent-premium-head theia-mod-search';
+        if (matches.length >= 8) {
+            head.classList.add('theia-mod-sticky-head');
+        }
+        const icon = document.createElement('span');
+        icon.className = 'theia-mobile-agent-premium-head-icon codicon codicon-search';
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agent-premium-head-label';
+        label.textContent = nls.localize('qaap/mobileProjects/transcriptActivitySearchPanel', 'Matches');
+        const count = document.createElement('span');
+        count.className = 'theia-mobile-agent-premium-head-count';
+        count.textContent = String(matches.length);
+        head.append(icon, label, count);
+        panel.append(head);
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-agent-activity-search-stack';
+        for (const match of matches) {
+            const row = document.createElement('div');
+            row.className = 'theia-mobile-agent-activity-search-match';
+            const file = document.createElement('span');
+            file.className = 'theia-mobile-agent-activity-search-match-file';
+            file.textContent = match.file;
+            const line = document.createElement('span');
+            line.className = 'theia-mobile-agent-activity-search-match-line';
+            line.textContent = String(match.line);
+            const snippet = document.createElement('span');
+            snippet.className = 'theia-mobile-agent-activity-search-match-snippet';
+            snippet.textContent = match.snippet;
+            row.append(file, line, snippet);
+            list.append(row);
+        }
+        panel.append(list);
+        return panel;
+    }
+
+    protected transcriptFileIconClass(path: string): string {
+        const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+        if (['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'cs', 'php', 'sh'].includes(ext)) {
+            return 'codicon-file-code';
+        }
+        if (['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'env'].includes(ext)) {
+            return 'codicon-settings-gear';
+        }
+        if (['md', 'mdx', 'txt', 'rst'].includes(ext)) {
+            return 'codicon-markdown';
+        }
+        if (['css', 'scss', 'less', 'html', 'svg'].includes(ext)) {
+            return 'codicon-symbol-color';
+        }
+        return 'codicon-file';
     }
 }

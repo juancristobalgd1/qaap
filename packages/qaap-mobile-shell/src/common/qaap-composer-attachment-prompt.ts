@@ -115,14 +115,28 @@ export async function resolveComposerContextAttachments(
     requests: readonly AIVariableResolutionRequest[] | undefined,
     variableService: AIVariableService,
     context: AIVariableContext = {},
+    options?: {
+        resolvePinnedRequest?: (
+            request: AIVariableResolutionRequest,
+        ) => Promise<ResolvedAIContextVariable | undefined>;
+    },
 ): Promise<ResolvedAIContextVariable[]> {
     if (!requests?.length) {
         return [];
     }
-    const resolved = await Promise.all(
-        requests.map(request => variableService.resolveVariable(request, context)),
-    );
-    return resolved.filter(ResolvedAIContextVariable.is);
+    const resolved: ResolvedAIContextVariable[] = [];
+    for (const request of requests) {
+        const pinned = await options?.resolvePinnedRequest?.(request);
+        if (pinned) {
+            resolved.push(pinned);
+            continue;
+        }
+        const next = await variableService.resolveVariable(request, context);
+        if (ResolvedAIContextVariable.is(next)) {
+            resolved.push(next);
+        }
+    }
+    return resolved;
 }
 
 /** Resolves composer context chips and prepends them to the outbound user prompt. */
@@ -131,7 +145,12 @@ export async function applyComposerAttachmentsToPrompt(
     requests: readonly AIVariableResolutionRequest[] | undefined,
     variableService: AIVariableService,
     context?: AIVariableContext,
+    options?: {
+        resolvePinnedRequest?: (
+            request: AIVariableResolutionRequest,
+        ) => Promise<ResolvedAIContextVariable | undefined>;
+    },
 ): Promise<string> {
-    const resolved = await resolveComposerContextAttachments(requests, variableService, context);
+    const resolved = await resolveComposerContextAttachments(requests, variableService, context, options);
     return applyResolvedAttachmentsToPrompt(draft, resolved);
 }

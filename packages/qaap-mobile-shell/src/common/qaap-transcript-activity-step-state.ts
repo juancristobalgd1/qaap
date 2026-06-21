@@ -27,19 +27,15 @@ export function isTranscriptActivityLiveState(state: TranscriptActivityStepState
     return TRANSCRIPT_ACTIVITY_LIVE_STATES.has(state);
 }
 
+import { resolveTranscriptToolErrorDisplay } from './qaap-transcript-tool-error-display';
+
 /** First line of a failed tool result — short enough for a timeline row. */
 export function excerptTranscriptToolError(result: string | undefined, maxLength = 96): string | undefined {
-    const line = (result ?? '')
-        .split('\n')
-        .map(entry => entry.replace(/\s+/g, ' ').trim())
-        .find(entry => entry.length > 0);
-    if (!line) {
+    const display = resolveTranscriptToolErrorDisplay(result, maxLength);
+    if (!display?.preview) {
         return undefined;
     }
-    if (line.length <= maxLength) {
-        return line;
-    }
-    return `${line.slice(0, maxLength - 1).trimEnd()}…`;
+    return display.preview;
 }
 
 export function detectTranscriptToolRetryHint(result: string | undefined): boolean {

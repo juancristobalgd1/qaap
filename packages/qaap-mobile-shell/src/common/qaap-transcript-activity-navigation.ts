@@ -63,6 +63,8 @@ export interface TranscriptActivityNavigationItem {
     readonly expandable?: boolean;
     /** Collapsed one-line preview under read rows (first line of tool result). */
     readonly resultPreview?: string;
+    /** Per-turn git snapshot id — enables workspace restore from the timeline row. */
+    readonly checkpointId?: string;
 }
 
 export interface TranscriptActivityNavigationDeps {
@@ -285,6 +287,7 @@ const GROUPABLE_TOOL_KINDS = new Set<QaapTranscriptToolActivityKind>([
     'reading',
     'searching',
     'terminal',
+    'editing',
 ]);
 
 function formatGroupedActivityLabel(kind: QaapTranscriptToolActivityKind, count: number): string {
@@ -439,6 +442,7 @@ export function resolveTranscriptLifecycleActivityItems(
                 detail: event.label,
                 tail: stats,
                 timestamp: event.capturedAt,
+                checkpointId: event.id,
             }];
         }
         if (event.type === 'run_cancelled') {

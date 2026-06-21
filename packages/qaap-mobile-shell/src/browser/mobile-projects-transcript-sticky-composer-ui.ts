@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { ConfirmDialog } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
 import type { QuickInputService } from '@theia/core/lib/common/quick-pick-service';
@@ -13,6 +14,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     conversationToSummary,
     getConversation,
+    restoreConversationCheckpoint,
     updateConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -30,6 +32,7 @@ import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import { isTranscriptComposerVisualIdle } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking } from '../common/qaap-transcript-turn-status';
+import { resolveLatestRestorableCheckpoint } from '../common/qaap-transcript-checkpoint-restore';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
     resolveChatModelContextUsageBreakdown,
@@ -212,6 +215,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     transcriptMessagesUi: import('./mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
+    handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
     transcriptLiveUi: import('./mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
 }
@@ -225,6 +229,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
     protected readonly composerActivityGitFilesByConversationId = new Map<string, StickyComposerChangedFileView[]>();
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
+    protected composerCheckpointRestoreBusy = false;
 
     constructor(
         protected readonly host: MobileProjectsTranscriptStickyComposerHost,
@@ -478,6 +483,55 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
     }
 
+    protected async restoreLatestComposerCheckpoint(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        if (this.composerCheckpointRestoreBusy) {
+            return;
+        }
+        const conv = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : await getConversation(summary.id).catch(() => undefined);
+        const checkpoint = resolveLatestRestorableCheckpoint(conv);
+        if (!checkpoint) {
+            return;
+        }
+        const confirmed = await new ConfirmDialog({
+            title: nls.localize('qaap/mobileProjects/transcriptCheckpointRestoreTitle', 'Restore checkpoint'),
+            msg: nls.localize(
+                'qaap/mobileProjects/transcriptCheckpointRestoreMsg',
+                'Revert tracked files to "{0}"? Changes made after this point will be lost.',
+                checkpoint.label,
+            ),
+            ok: nls.localize('qaap/mobileProjects/transcriptCheckpointRestoreConfirm', 'Restore'),
+            cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
+        }).open();
+        if (!confirmed) {
+            return;
+        }
+        this.composerCheckpointRestoreBusy = true;
+        this.refreshComposerActivityStack();
+        try {
+            const updated = await restoreConversationCheckpoint(summary.id, checkpoint.id);
+            this.host.conversations?.recordSnapshot(conversationToSummary(updated));
+            this.host.transcriptMessagesUi.applyTranscriptConversationMutation(updated);
+            await this.syncComposerGitSnapshot(project, summary);
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/transcriptCheckpointRestored', 'Workspace restored'),
+                { kind: 'success', duration: 2000 },
+            );
+        } catch (error) {
+            MobileSnackbar.show(
+                error instanceof Error ? error.message : String(error),
+                { kind: 'warning', duration: 3200 },
+            );
+        } finally {
+            this.composerCheckpointRestoreBusy = false;
+            this.refreshComposerActivityStack();
+        }
+    }
+
     protected async keepAllComposerChangedFiles(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -580,6 +634,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const activityFiles = this.resolveComposerActivityFilesForStack(project, summary, conv);
         void this.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
         const agentWorking = this.isTranscriptStickyComposerAgentWorking();
+        const latestCheckpoint = resolveLatestRestorableCheckpoint(conv);
         return {
             queueEntries: this.host.transcriptFollowUpQueue.peek(summary.id),
             queueExpanded: this.host.transcriptComposerQueueExpanded,
@@ -613,10 +668,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
             onOpenPreview: project.previewUrl
                 ? () => { void this.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(project.previewUrl!); }
                 : undefined,
+            onRestoreCheckpoint: latestCheckpoint
+                ? () => { void this.restoreLatestComposerCheckpoint(project, summary); }
+                : undefined,
+            restoreCheckpointBusy: this.composerCheckpointRestoreBusy,
             onCommitAction: (this.host.commitMessageAi || this.host.quickInputService)
                 ? action => { void this.runComposerCommitAction(project, summary, action); }
                 : undefined,
-            commitBusy: this.composerCommitBusy || this.composerChangedFilesBulkBusy,
+            commitBusy: this.composerCommitBusy || this.composerChangedFilesBulkBusy || this.composerCheckpointRestoreBusy,
         };
     }
 
@@ -1233,8 +1292,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 this.remountTranscriptStickyComposer();
             },
             removeContextItem: index => {
-                revokeComposerContextPreview(this.host.transcriptComposerContext[index]);
+                const entry = this.host.transcriptComposerContext[index];
+                revokeComposerContextPreview(entry);
                 this.host.transcriptComposerContext.splice(index, 1);
+                this.host.handleComposerContextItemRemoved(entry);
                 this.remountTranscriptStickyComposer();
             },
             formatContextChip: item => this.host.stickyComposerContextUi.formatComposerContextEntry(item),
