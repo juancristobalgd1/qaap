@@ -73,7 +73,7 @@ export function buildTranscriptCodeBlockCard(payload: TranscriptToolUiCodeBlockP
     separator.setAttribute('role', 'separator');
     const body = document.createElement('div');
     body.className = 'theia-mobile-agent-code-block-card-body';
-    const lang = resolveTranscriptCodeLanguage(payload.filename, payload.code);
+    const lang = resolveTranscriptCodeLanguage(payload.filename, payload.code, payload.language);
     body.append(createTranscriptCodeView(payload.code, lang));
     card.append(head, separator, body);
     return card;

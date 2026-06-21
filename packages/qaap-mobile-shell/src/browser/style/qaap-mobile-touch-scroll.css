@@ -88,6 +88,7 @@
   .theia-mobile-projects-sticky-composer-mention-popover,
   .theia-mobile-projects-sticky-composer-plugin-picker-body,
   .theia-mobile-mcp-attach-scroll,
+  .theia-mobile-skills-attach-scroll,
   .theia-qaap-approval-policy-sheet-list,
   .theia-mobile-sticky-composer-tools-host,
   .theia-mobile-projects-sticky-composer-context-files.theia-mod-attachments,
@@ -206,6 +207,15 @@
 
   /* Empty-chat suggestion slider — horizontal only (nested inside vertical transcript). */
   .theia-mobile-agent-transcript-empty-actions {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x !important;
+    overscroll-behavior-x: contain;
+  }
+
+  /* Sticky composer changes pill strip — horizontal swipe when actions overflow. */
+  .theia-mobile-sticky-composer-changes-pill-row {
     overflow-x: auto !important;
     overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch;

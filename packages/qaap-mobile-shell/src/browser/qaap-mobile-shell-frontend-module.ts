@@ -84,6 +84,7 @@ import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/termin
 import { QaapTerminalFrontendContribution } from './qaap-terminal-frontend-contribution';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
+import { QaapStickyComposerPromptHistoryContribution } from './qaap-sticky-composer-prompt-history';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapDiffReviewContribution } from './qaap-diff-review-contribution';
 import { QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
@@ -177,6 +178,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(FrontendApplicationContribution).toService(QaapSelectComponentOverlayContribution);
     bind(QaapChatMicTranscribeContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapChatMicTranscribeContribution);
+    bind(QaapStickyComposerPromptHistoryContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapStickyComposerPromptHistoryContribution);
     bind(QaapChatInputCodexLayoutContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapChatInputCodexLayoutContribution);
     bind(QaapChatInputProductContribution).toSelf().inSingletonScope();

@@ -35,6 +35,12 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         const visibleCounts = new Map<string, number>();
         const host = {
             sessionsSidebarVisibleConversationCountByProjectId: visibleCounts,
+            hubQueryUi: {
+                projectsForCurrentHubList: () => [{ id: 'a' }, { id: 'b' }],
+            },
+            conversationIndexUi: {
+                conversationsForProject: () => [],
+            },
             sessionsSidebar: {
                 refreshList: (options?: { force?: boolean }) => { refreshOptions = options; },
             },

@@ -132,6 +132,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         this.mountExecutionSurfaceTabContent(project, this.host.transcriptOpenSummary!, 'messages');
         this.host.root.classList.add('theia-mod-project-surface-chat');
         this.host.root.classList.remove('theia-mod-project-surface-tools');
+        this.host.renderHeader();
     }
 
     /** Keep Chat vs overflow-select styling in sync on every connected header strip. */
@@ -251,6 +252,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         this.host.root.classList.toggle('theia-mod-project-surface-tools', tab !== 'messages');
         this.host.stickyComposerRenderUi.renderStickyComposer();
         this.syncExecutionSurfaceChrome(project);
+        this.host.renderHeader();
     }
 
     /** Hide all execution surfaces; reveal exactly one tab. */

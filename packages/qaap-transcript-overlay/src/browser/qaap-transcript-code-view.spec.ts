@@ -14,6 +14,12 @@ describe('qaap-transcript-code-view', () => {
         expect(resolveTranscriptCodeLanguage('package.json')).to.equal('json');
     });
 
+    it('resolves shell from markdown fence language hint', () => {
+        expect(resolveTranscriptCodeLanguage(undefined, undefined, 'bash')).to.equal('shell');
+        expect(resolveTranscriptCodeLanguage(undefined, undefined, 'BASH')).to.equal('shell');
+        expect(resolveTranscriptCodeLanguage(undefined, undefined, 'sh')).to.equal('shell');
+    });
+
     it('resolves grep output from content shape', () => {
         const text = [
             'src/index.ts:12:const value = 1',

@@ -730,7 +730,18 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.chatAgentService = options.chatAgentService;
         this.messageService = options.messageService;
         this.resolveVerifyChecks = options.resolveVerifyChecks;
-        this.openTranscriptFile = options.openTranscriptFile;
+        const editorOpenFallback = options.openTranscriptFile;
+        this.openTranscriptFile = filePath => {
+            const state = this.transcriptController.state;
+            const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
+            const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
+            if (project && summary) {
+                return this.transcriptSurfacesUi.revealTranscriptFile(project, summary, filePath);
+            }
+            if (editorOpenFallback) {
+                return editorOpenFallback(filePath);
+            }
+        };
         this.createTranscriptFilesViewServices = options.createTranscriptFilesViewServices;
         this.createTranscriptTerminalViewServices = options.createTranscriptTerminalViewServices;
         this.previewSurfaceRegistry = options.previewSurfaceRegistry;

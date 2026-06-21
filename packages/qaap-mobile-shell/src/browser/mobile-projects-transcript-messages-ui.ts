@@ -40,6 +40,7 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptLastFingerprint: string | undefined;
     transcriptLastStreamProgressAt: number | undefined;
     transcriptLastSemanticProgressKey: string | undefined;
+    transcriptLastTransportEventAt: number | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptComposerDraft: string;
     transcriptComposerHost: HTMLElement | undefined;

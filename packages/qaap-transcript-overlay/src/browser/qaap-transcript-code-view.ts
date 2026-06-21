@@ -27,7 +27,31 @@ const EXTENSION_LANGUAGE: Record<string, TranscriptCodeLanguage> = {
     zsh: 'shell',
 };
 
-export function resolveTranscriptCodeLanguage(filePath?: string, text?: string): TranscriptCodeLanguage {
+const LANGUAGE_HINT: Record<string, TranscriptCodeLanguage> = {
+    ...EXTENSION_LANGUAGE,
+    javascript: 'javascript',
+    typescript: 'typescript',
+    shell: 'shell',
+    bash: 'shell',
+    sh: 'shell',
+    zsh: 'shell',
+    plain: 'plain',
+    text: 'plain',
+    txt: 'plain',
+};
+
+export function resolveTranscriptCodeLanguage(
+    filePath?: string,
+    text?: string,
+    languageHint?: string,
+): TranscriptCodeLanguage {
+    if (languageHint) {
+        const normalized = languageHint.toLowerCase().trim();
+        const hinted = LANGUAGE_HINT[normalized];
+        if (hinted) {
+            return hinted;
+        }
+    }
     if (filePath) {
         const ext = filePath.split('.').pop()?.toLowerCase();
         if (ext && EXTENSION_LANGUAGE[ext]) {
@@ -243,8 +267,75 @@ function appendShellLine(host: HTMLElement, line: string): void {
     const promptMatch = line.match(/^(\s*\$\s?)(.*)$/);
     if (promptMatch) {
         appendSpan(host, promptMatch[1], 'keyword');
-        appendSpan(host, promptMatch[2], 'plain');
+        appendShellTokens(host, promptMatch[2] ?? '');
         return;
     }
-    host.textContent = line || ' ';
+    appendShellTokens(host, line);
+}
+
+function appendShellTokens(host: HTMLElement, line: string): void {
+    if (!line) {
+        host.textContent = ' ';
+        return;
+    }
+    let index = 0;
+    let expectCommand = true;
+    while (index < line.length) {
+        const rest = line.slice(index);
+        const separator = rest.match(/^(\s*(?:&&|\|\||\||;)\s*)/);
+        if (separator) {
+            appendSpan(host, separator[1], 'sep');
+            index += separator[1].length;
+            expectCommand = true;
+            continue;
+        }
+        const whitespace = rest.match(/^(\s+)/);
+        if (whitespace) {
+            appendSpan(host, whitespace[1], 'plain');
+            index += whitespace[1].length;
+            continue;
+        }
+        if (rest[0] === '"' || rest[0] === '\'') {
+            const end = findShellQuoteEnd(line, index);
+            appendSpan(host, line.slice(index, end), 'string');
+            index = end;
+            expectCommand = false;
+            continue;
+        }
+        if (rest[0] === '#') {
+            appendSpan(host, line.slice(index), 'comment');
+            return;
+        }
+        const token = rest.match(/^(\$\{[^}]+\}|\$[\w@#*!?-]+|-[\w-]+|[^\s#"'|$;&<>]+)/)?.[0];
+        if (!token) {
+            appendSpan(host, rest[0], 'plain');
+            index += 1;
+            continue;
+        }
+        if (token.startsWith('$')) {
+            appendSpan(host, token, 'string');
+        } else if (token.startsWith('-')) {
+            appendSpan(host, token, 'keyword');
+        } else if (expectCommand) {
+            appendSpan(host, token, 'keyword');
+            expectCommand = false;
+        } else {
+            appendSpan(host, token, 'plain');
+        }
+        index += token.length;
+    }
+}
+
+function findShellQuoteEnd(line: string, start: number): number {
+    const quote = line[start];
+    for (let index = start + 1; index < line.length; index++) {
+        if (line[index] === '\\' && index + 1 < line.length) {
+            index += 1;
+            continue;
+        }
+        if (line[index] === quote) {
+            return index + 1;
+        }
+    }
+    return line.length;
 }

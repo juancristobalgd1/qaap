@@ -5,6 +5,8 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { QAAP_GIT_REVIEW_API_PATH, type QaapGitBranchesResponse } from '../common/qaap-git-review';
+import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { StickyComposerWorkspaceBarView } from './qaap-sticky-composer-workspace-bar';
 import {
     markStickyComposerPopoverAnchor,
@@ -26,6 +28,8 @@ preparedCwdByProjectId: Map<string, string>;
 projects: MobileProjectEntry[];
 agentsHubSelectedProjectId: string | undefined;
 agentsHubShellActive: boolean;
+agentsHubInlineActive: boolean;
+transcriptOpenProject: MobileProjectEntry | undefined;
 stickyComposerWorkspaceSheet: HTMLElement | undefined;
 transcriptComposerHost: HTMLElement | undefined;
 transcriptComposerProject: MobileProjectEntry | undefined;
@@ -34,9 +38,14 @@ projectsService: MobileProjectsService;
 delegate: { onProjectsChanged?: () => void };
 transcriptComposerUi: MobileProjectsTranscriptComposerUi;
 transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
+conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
 render(): void;
 renderAgentsHubExecutionShell(): void;
 openProject(project: MobileProjectEntry): Promise<void>;
+openAgentsHubInlineTranscript(
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+): Promise<void>;
 onNewClick(): Promise<void>;
 activateAgentsHubProject(project: MobileProjectEntry): Promise<void>;
 stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
@@ -201,6 +210,42 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             }
         });
     }
+
+    protected resolveComposerWorkspaceOpenConversation(
+        project: MobileProjectEntry,
+    ): QaapAgentConversationSummaryDTO | undefined {
+        return this.host.conversationIndexUi.conversationsForProject(project)
+            .find(summary => !isAgentsHubIdleConversationSummary(summary));
+    }
+
+    async selectComposerWorkspaceProject(
+        entry: MobileProjectEntry,
+        contextProject: MobileProjectEntry,
+    ): Promise<void> {
+        if (entry.id === contextProject.id) {
+            return;
+        }
+        this.host.agentsHubSelectedProjectId = entry.id;
+        const cwd = await this.host.projectsService.prepareProjectCwd(entry);
+        if (cwd) {
+            this.host.preparedCwdByProjectId.set(entry.id, cwd);
+        }
+        if (this.host.agentsHubInlineActive || this.host.agentsHubShellActive) {
+            const summary = this.resolveComposerWorkspaceOpenConversation(entry);
+            if (summary) {
+                await this.host.openAgentsHubInlineTranscript(entry, summary);
+            } else {
+                await this.host.activateAgentsHubProject(entry);
+            }
+            this.remountComposerWithWorkspaceBar(entry);
+            return;
+        }
+        if (entry.isCurrent) {
+            this.remountComposerWithWorkspaceBar(entry);
+            return;
+        }
+        await this.host.openProject(entry);
+    }
     openComposerWorkspaceProjectSheet(
         project: MobileProjectEntry,
         transcriptOverlay = false,
@@ -274,24 +319,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             btn.append(content);
             btn.addEventListener('click', () => {
                 this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
-                if (entry.id === project.id) {
-                    return;
-                }
-                this.host.agentsHubSelectedProjectId = entry.id;
-                void this.host.projectsService.prepareProjectCwd(entry).then(cwd => {
-                    if (cwd) {
-                        this.host.preparedCwdByProjectId.set(entry.id, cwd);
-                    }
-                    if (this.host.agentsHubShellActive) {
-                        this.host.renderAgentsHubExecutionShell();
-                        return;
-                    }
-                    if (entry.isCurrent) {
-                        this.remountComposerWithWorkspaceBar(entry);
-                        return;
-                    }
-                    void this.host.openProject(entry);
-                });
+                void this.selectComposerWorkspaceProject(entry, project);
             });
             list.append(btn);
         }

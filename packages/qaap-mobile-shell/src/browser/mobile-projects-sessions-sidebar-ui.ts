@@ -24,9 +24,14 @@ import {
     type WorkHubSessionsSidebarFingerprintInput,
 } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
 import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import {
+    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
+    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
+    resolveSessionsSidebarInitialConversationLimit,
+} from '../common/qaap-sessions-sidebar-conversation-limit';
 
-export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT = 5;
-export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE = 15;
+export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT;
+export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE;
 /** Pause live sidebar sync while the user taps a row (prevents click loss). */
 const SESSIONS_SIDEBAR_INTERACTION_GUARD_MS = 900;
 /** Min interval between live sidebar refreshes during SSE (~4 fps). */
@@ -635,6 +640,14 @@ export class MobileProjectsSessionsSidebarUi {
         section.append(head, list);
         return section;
     }
+    protected resolveSessionsSidebarCollapsedLimit(totalConversations: number): number {
+        const projectCount = this.host.hubQueryUi.projectsForCurrentHubList().length;
+        return resolveSessionsSidebarInitialConversationLimit({
+            projectCount,
+            totalConversations,
+            viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
+        });
+    }
     getSessionsSidebarConversationDisplayLimit(
         project: MobileProjectEntry,
         totalCount: number,
@@ -644,7 +657,7 @@ export class MobileProjectsSessionsSidebarUi {
             return totalCount;
         }
         const stored = this.host.sessionsSidebarVisibleConversationCountByProjectId.get(project.id);
-        const limit = stored ?? MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT;
+        const limit = stored ?? this.resolveSessionsSidebarCollapsedLimit(totalCount);
         return Math.min(limit, totalCount);
     }
     resolveSessionsSidebarVisibleConversations(
@@ -656,7 +669,7 @@ export class MobileProjectsSessionsSidebarUi {
         if (bypassLimit) {
             return { visible: all, hiddenCount: 0, showLess: false };
         }
-        const defaultLimit = MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT;
+        const defaultLimit = this.resolveSessionsSidebarCollapsedLimit(all.length);
         const displayLimit = this.getSessionsSidebarConversationDisplayLimit(project, all.length, bypassLimit);
         if (all.length <= defaultLimit && !this.host.sessionsSidebarVisibleConversationCountByProjectId.has(project.id)) {
             return { visible: all, hiddenCount: 0, showLess: false };
@@ -730,7 +743,7 @@ export class MobileProjectsSessionsSidebarUi {
             ev.preventDefault();
             ev.stopPropagation();
             const current = this.host.sessionsSidebarVisibleConversationCountByProjectId.get(project.id)
-                ?? MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT;
+                ?? this.resolveSessionsSidebarCollapsedLimit(totalCount);
             this.host.sessionsSidebarVisibleConversationCountByProjectId.set(
                 project.id,
                 Math.min(current + pageSize, totalCount),
@@ -748,7 +761,9 @@ export class MobileProjectsSessionsSidebarUi {
         lessBtn.title = nls.localize(
             'qaap/sessionsSidebar/showLessHint',
             'Show only the first {0} sessions',
-            String(MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT),
+            String(this.resolveSessionsSidebarCollapsedLimit(
+                this.host.conversationIndexUi.conversationsForProject(project).length,
+            )),
         );
         lessBtn.addEventListener('click', ev => {
             ev.preventDefault();

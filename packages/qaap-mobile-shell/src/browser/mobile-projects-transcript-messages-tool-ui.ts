@@ -463,7 +463,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
             return;
         }
         head.classList.add('theia-mod-clickable');
-        head.title = nls.localize('qaap/mobileProjects/transcriptOpenFile', 'Open in editor');
+        head.title = nls.localize('qaap/mobileProjects/transcriptOpenFileInFiles', 'Open in Files preview');
         head.addEventListener('click', event => {
             event.stopPropagation();
             event.preventDefault();

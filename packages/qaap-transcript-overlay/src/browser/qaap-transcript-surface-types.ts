@@ -9,6 +9,8 @@ import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget
 export interface TranscriptFilesMount {
     readonly root: HTMLElement;
     readonly dispose: Disposable;
+    /** Selects a workspace file in the inline preview (relative or absolute path). */
+    readonly revealFilePath?: (filePath: string) => Promise<void>;
 }
 
 export interface TranscriptTerminalSurface {

@@ -20,6 +20,14 @@ const deps = {
             return undefined;
         }
     },
+    extractToolCommand: (argsJson: string) => {
+        try {
+            const args = JSON.parse(argsJson) as { command?: string };
+            return args.command;
+        } catch {
+            return undefined;
+        }
+    },
     resolveToolKind: (toolName: string) => {
         if (toolName.includes('bash')) {
             return 'terminal';
@@ -86,7 +94,61 @@ describe('qaap-transcript-activity-navigation', () => {
             },
         ], deps, false);
         expect(items[1]?.state).to.equal('retrying');
-        expect(items[1]?.label).to.equal('Retrying: Running: bash');
+        expect(items[1]?.label).to.equal('Retrying: Ran npm start');
+    });
+
+    it('collapses consecutive planning rows into one timeline step', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'thinking', content: 'Plan A' },
+            { type: 'thinking', content: 'Plan B' },
+            { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: true, toolUseId: '1' },
+        ], deps, true);
+        const grouped = groupTranscriptActivityNavigationItems(items);
+        expect(grouped).to.have.length(2);
+        expect(grouped[0]?.verb).to.equal('Thinking');
+        expect(grouped[0]?.groupCount).to.equal(2);
+        expect(grouped[0]?.detail).to.equal(undefined);
+        expect(grouped[0]?.tail).to.equal(undefined);
+        expect(grouped[0]?.thinkingContent).to.equal('Plan A\n\nPlan B');
+        expect(grouped[1]?.verb).to.equal('Read');
+    });
+
+    it('keeps thinking excerpt out of collapsed timeline row metadata', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'thinking', content: 'Now I understand the project structure and will proceed carefully.' },
+        ], deps, true);
+        expect(items[0]?.verb).to.equal('Thinking');
+        expect(items[0]?.detail).to.equal(undefined);
+        expect(items[0]?.thinkingContent).to.include('Now I understand');
+    });
+
+    it('propagates thinking durationMs from resolveStepDurationMs', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'thinking', content: 'Plan A' },
+            { type: 'thinking', content: 'Plan B' },
+            { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: true, toolUseId: '1' },
+        ], {
+            ...deps,
+            resolveStepDurationMs: (segmentIndex, segment) => (
+                segment.type === 'thinking' && segmentIndex === 0 ? 1500 : segmentIndex === 1 ? 2400 : undefined
+            ),
+        }, true);
+        expect(items[0]?.durationMs).to.equal(1500);
+        expect(items[1]?.durationMs).to.equal(2400);
+        const grouped = groupTranscriptActivityNavigationItems(items);
+        expect(grouped[0]?.durationMs).to.equal(3900);
+    });
+
+    it('dedupes identical consecutive thinking content when grouping', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'thinking', content: 'Same plan' },
+            { type: 'thinking', content: 'Same plan' },
+            { type: 'thinking', content: 'Different plan' },
+        ], deps, true);
+        const grouped = groupTranscriptActivityNavigationItems(items);
+        expect(grouped).to.have.length(1);
+        expect(grouped[0]?.groupCount).to.equal(3);
+        expect(grouped[0]?.thinkingContent).to.equal('Same plan\n\nDifferent plan');
     });
 
     it('groups consecutive finished reads into a single timeline row', () => {
@@ -104,7 +166,19 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(grouped[0]?.label).to.equal('Read 3 files');
         expect(grouped[0]?.navigate).to.equal('file');
         expect(grouped[0]?.filePath).to.equal('src/c.ts');
-        expect(grouped[1]?.label).to.equal('Running: bash');
+        expect(grouped[1]?.label).to.equal('Ran npm test');
+    });
+
+    it('groups consecutive finished shell commands around the latest command detail', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'tool', name: 'bash', args: '{"command":"ls -la /workspace"}', finished: true, toolUseId: '1' },
+            { type: 'tool', name: 'bash', args: '{"command":"npm test"}', finished: true, toolUseId: '2' },
+        ], deps, false);
+        const grouped = groupTranscriptActivityNavigationItems(items);
+        expect(grouped).to.have.length(1);
+        expect(grouped[0]?.verb).to.equal('Ran');
+        expect(grouped[0]?.detail).to.equal('npm test');
+        expect(grouped[0]?.tail).to.equal('2 commands');
     });
 
     it('keeps running tools ungrouped while collapsing prior finished reads', () => {
@@ -148,6 +222,22 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(grouped[0]?.editRemoved).to.be.greaterThan(0);
     });
 
+    it('parses git-style edit summaries when no unified diff is present', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            {
+                type: 'tool',
+                name: 'edit_file',
+                args: '{"path":"qaap-agent-conversation-list-metrics.spec.ts"}',
+                finished: true,
+                toolUseId: '1',
+                result: '1 file changed, 1 insertion(+), 1 deletion(-)',
+            },
+        ], deps, false);
+        expect(items[0]?.editAdded).to.equal(1);
+        expect(items[0]?.editRemoved).to.equal(1);
+        expect(items[0]?.verb).to.equal('Edited');
+    });
+
     it('uses streaming state for the writing step while the turn is live', () => {
         const items = resolveTranscriptActivityNavigationItems([
             { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: true, toolUseId: '1' },
@@ -172,6 +262,30 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(withTool[0]?.state).to.equal('running');
         expect(withTool[1]?.label).to.equal('Writing response');
         expect(withTool[1]?.state).to.equal('waiting');
+    });
+
+    it('propagates tool durationMs from resolveStepDurationMs', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: true, toolUseId: '1' },
+        ], {
+            ...deps,
+            resolveStepDurationMs: () => 2100,
+        }, false);
+        expect(items[0]?.durationMs).to.equal(2100);
+    });
+
+    it('attaches read result preview for finished read tools', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            {
+                type: 'tool',
+                name: 'read_file',
+                args: '{"path":"store.tsx"}',
+                finished: true,
+                toolUseId: '1',
+                result: 'export const StoreContext = createContext(null);',
+            },
+        ], deps, false);
+        expect(items[0]?.resultPreview).to.equal('export const StoreContext = createContext(null);');
     });
 
     it('resolveTranscriptLifecycleActivityItems maps checkpoint and run_cancelled rows', () => {

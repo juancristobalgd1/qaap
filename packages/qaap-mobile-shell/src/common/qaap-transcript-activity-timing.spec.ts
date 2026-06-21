@@ -52,6 +52,54 @@ describe('qaap-transcript-activity-timing', () => {
         expect(store.resolveTimestamp('msg-2', 0, segment)).to.equal(4500);
     });
 
+    it('tracks live and settled thinking segment duration', () => {
+        const store = new TranscriptActivityTimingStore();
+        const thinking = { type: 'thinking' as const, content: 'planning' };
+        store.observe('msg-3', [thinking], 1000, { streaming: true });
+        expect(store.resolveDurationMs('msg-3', 0, thinking, 4200)).to.equal(3200);
+        store.observe('msg-3', [
+            thinking,
+            { type: 'tool' as const, name: 'read_file', args: '{}', finished: false, toolUseId: '1' },
+        ], 5000, { streaming: true });
+        expect(store.resolveDurationMs('msg-3', 0, thinking)).to.equal(4000);
+        expect(store.resolveTimestamp('msg-3', 0, thinking)).to.equal(5000);
+    });
+
+    it('sums grouped thinking durations via navigation resolveStepDurationMs', () => {
+        const store = new TranscriptActivityTimingStore();
+        const first = { type: 'thinking' as const, content: 'Plan A' };
+        const second = { type: 'thinking' as const, content: 'Plan B' };
+        store.observe('msg-4', [first], 1000, { streaming: true });
+        store.observe('msg-4', [first, second], 2500, { streaming: true });
+        store.observe('msg-4', [
+            first,
+            second,
+            { type: 'tool' as const, name: 'read_file', args: '{}', finished: true, toolUseId: '1' },
+        ], 6000, { streaming: false });
+        expect(store.resolveDurationMs('msg-4', 0, first)).to.equal(1500);
+        expect(store.resolveDurationMs('msg-4', 1, second)).to.equal(3500);
+    });
+
+    it('skips cold-loaded settled thinking without client timing', () => {
+        const store = new TranscriptActivityTimingStore();
+        const thinking = { type: 'thinking' as const, content: 'done planning' };
+        store.observe('msg-5', [thinking], 9000, { streaming: false });
+        expect(store.resolveDurationMs('msg-5', 0, thinking)).to.equal(undefined);
+    });
+
+    it('skips cold-loaded finished tools without wire timestamps', () => {
+        const store = new TranscriptActivityTimingStore();
+        const tool = {
+            type: 'tool' as const,
+            name: 'read_file',
+            args: '{}',
+            finished: true,
+            toolUseId: '1',
+        };
+        store.observe('msg-6', [tool], 9000);
+        expect(store.resolveDurationMs('msg-6', 0, tool)).to.equal(undefined);
+    });
+
     it('joins duration and relative timestamps in step meta', () => {
         const now = 600_000;
         expect(formatTranscriptActivityStepMeta(2400, 570_000, now)).to.equal('2.4s · just now');

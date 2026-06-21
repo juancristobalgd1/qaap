@@ -87,6 +87,10 @@ export function fingerprintTranscriptActivityItemSlot(
         item.editRemoved ?? '',
         item.grouped ? 1 : 0,
         item.groupCount ?? '',
+        item.thinkingContent?.length ?? '',
+        item.thinkingContent?.slice(0, 64) ?? '',
+        item.expandable ? 1 : 0,
+        item.resultPreview ?? '',
     ].join(':');
 }
 

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import URI from '@theia/core/lib/common/uri';
 import {
     createTranscriptCodeView,
     resolveTranscriptCodeLanguage,
@@ -1349,5 +1350,47 @@ export function mountTranscriptFilesView(
         root.remove();
     }));
 
-    return { root, dispose: disposables };
+    const revealFilePath = async (filePath: string): Promise<void> => {
+        const trimmed = filePath.trim();
+        if (!trimmed) {
+            return;
+        }
+        let resourcePath: string;
+        let relativePath: string;
+        if (/^file:/i.test(trimmed)) {
+            resourcePath = trimmed;
+            relativePath = services.relativePathForResource(resourcePath, state.rootUri);
+        } else if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+            resourcePath = trimmed.startsWith('/')
+                ? new URI(`file://${trimmed}`).toString()
+                : new URI(trimmed.replace(/\\/g, '/')).toString();
+            relativePath = services.relativePathForResource(resourcePath, state.rootUri);
+            if (relativePath.startsWith('..')) {
+                relativePath = trimmed.replace(/\\/g, '/').split('/').filter(Boolean).join('/');
+            }
+        } else {
+            relativePath = trimmed.replace(/^\.?\//, '');
+            resourcePath = new URI(state.rootUri).resolve(relativePath).toString();
+        }
+        const parts = relativePath.split('/').filter(Boolean);
+        state.expanded.add(state.rootUri);
+        await ensureChildren(state.rootUri);
+        for (let index = 1; index < parts.length; index++) {
+            const parentRelative = parts.slice(0, index).join('/');
+            const parentUri = new URI(state.rootUri).resolve(parentRelative).toString();
+            state.expanded.add(parentUri);
+            await ensureChildren(parentUri);
+        }
+        const name = parts[parts.length - 1] ?? relativePath;
+        state.filter = '';
+        filterInput.value = '';
+        await loadPreview({
+            name,
+            resourcePath,
+            relativePath,
+            isDirectory: false,
+        });
+    };
+
+    return { root, dispose: disposables, revealFilePath };
 }

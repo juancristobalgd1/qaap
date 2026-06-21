@@ -9,6 +9,7 @@ import {
     isAgentMessageVisuallySettled,
     isConversationTurnVisuallySettled,
     isTranscriptAgentTailStreaming,
+    isTranscriptSummaryAgentWorking,
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
 } from './qaap-transcript-turn-status';
@@ -204,5 +205,27 @@ describe('qaap-transcript-turn-status', () => {
             messages: [],
         });
         expect(shouldShowTranscriptEmptyQuickActions(waitingForAgent)).to.equal(false);
+    });
+
+    it('isTranscriptSummaryAgentWorking respects visually settled streaming turns', () => {
+        const summary = { id: 'c1', status: 'streaming' as const };
+        const settledTurn = conv({
+            messages: [
+                { id: 'u1', role: 'user', content: 'fix tests', createdAt: 2 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: 'Done.',
+                    createdAt: 8,
+                    segments: [
+                        { type: 'tool', toolUseId: 't1', name: 'Edit', args: '{}', finished: true },
+                        { type: 'text', content: 'Done.' },
+                    ],
+                },
+            ],
+        });
+        expect(isTranscriptSummaryAgentWorking(summary, settledTurn)).to.equal(false);
+        expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'settled' }, undefined)).to.equal(false);
+        expect(isTranscriptSummaryAgentWorking(summary, undefined)).to.equal(true);
     });
 });

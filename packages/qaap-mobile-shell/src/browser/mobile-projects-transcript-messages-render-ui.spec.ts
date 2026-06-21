@@ -53,6 +53,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             transcriptLastFingerprint: undefined,
             transcriptLastStreamProgressAt: undefined,
             transcriptLastSemanticProgressKey: undefined,
+            transcriptLastTransportEventAt: undefined,
             transcriptChatHost: undefined,
             transcriptComposerDraft: '',
             transcriptComposerHost: undefined,
@@ -196,7 +197,8 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         host.retryOpenTranscriptStream = () => {
             retried += 1;
         };
-        host.transcriptLastStreamProgressAt = Date.now() - 31_000;
+        host.transcriptLastStreamProgressAt = Date.now() - 61_000;
+        host.transcriptLastTransportEventAt = Date.now();
 
         const streaming = streamingIdleConv();
         host.transcriptLastConv = streaming;

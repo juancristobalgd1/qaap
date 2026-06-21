@@ -6,18 +6,22 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
+import { parseDiffStatsFromText } from './qaap-agent-conversation-list-metrics';
 import {
     classifyTranscriptToolActivityKind,
+    excerptTranscriptReadResultPreview,
     extractTranscriptDiffCard,
     type QaapTranscriptToolActivityKind,
 } from './qaap-agent-transcript-segments';
 import {
+    formatTranscriptCursorTraceRowText,
     resolveTranscriptCursorTraceLabel,
     splitTranscriptCursorGroupedLabel,
 } from './qaap-transcript-cursor-trace-label';
 import {
     detectTranscriptToolRetryHint,
     excerptTranscriptToolError,
+    isTranscriptActivityLiveState,
     type TranscriptActivityStepState,
 } from './qaap-transcript-activity-step-state';
 import {
@@ -54,6 +58,11 @@ export interface TranscriptActivityNavigationItem {
     readonly parentToolUseId?: string;
     readonly nestDepth?: number;
     readonly subagentRoot?: boolean;
+    /** Full reasoning text for expandable timeline rows (`navigate: 'thought'`). */
+    readonly thinkingContent?: string;
+    readonly expandable?: boolean;
+    /** Collapsed one-line preview under read rows (first line of tool result). */
+    readonly resultPreview?: string;
 }
 
 export interface TranscriptActivityNavigationDeps {
@@ -81,6 +90,24 @@ export interface TranscriptActivityNavigationOptions {
     readonly stalled?: boolean;
     readonly pendingToolUseIds?: ReadonlySet<string>;
     readonly messageCancelled?: boolean;
+}
+
+function resolveEditDiffStats(
+    segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+): Pick<TranscriptActivityNavigationItem, 'editAdded' | 'editRemoved'> {
+    const result = segment.result?.trim();
+    if (!result) {
+        return {};
+    }
+    const card = extractTranscriptDiffCard(result);
+    if (card) {
+        return { editAdded: card.added, editRemoved: card.removed };
+    }
+    const parsed = parseDiffStatsFromText(result);
+    if (parsed) {
+        return { editAdded: parsed.added, editRemoved: parsed.removed };
+    }
+    return {};
 }
 
 function resolveToolStepState(
@@ -162,10 +189,15 @@ export function resolveTranscriptActivityNavigationItems(
         const segment = segments[segmentIndex]!;
         if (segment.type === 'thinking' && segment.content.trim()) {
             if (includeThinkingSteps) {
+                const thinkingContent = segment.content.trim();
+                const live = options?.streaming && segmentIndex === segments.length - 1;
                 items.push({
-                    label: deps.localizePlanningLabel(),
-                    state: options?.streaming ? 'thinking' : 'success',
+                    label: nls.localize('qaap/mobileProjects/transcriptThinking', 'Thinking'),
+                    verb: 'Thinking',
+                    state: live ? 'thinking' : 'success',
                     navigate: 'thought',
+                    expandable: true,
+                    thinkingContent,
                     segmentIndex,
                     durationMs: deps.resolveStepDurationMs?.(segmentIndex, segment),
                     timestamp: deps.resolveStepTimestamp?.(segmentIndex, segment),
@@ -199,11 +231,11 @@ export function resolveTranscriptActivityNavigationItems(
             path: filePath,
             command,
         });
-        const diffCard = kind === 'editing' && segment.result?.trim()
-            ? extractTranscriptDiffCard(segment.result)
-            : undefined;
+        const rowLabel = formatTranscriptCursorTraceRowText(cursorParts.verb, cursorParts.detail);
+        const editDiff = kind === 'editing' ? resolveEditDiffStats(segment) : {};
+        const resultFailed = deps.isToolResultFailed(segment.result);
         items.push({
-            label: resolveToolStepLabel(baseLabel, state, errorSummary, deps),
+            label: resolveToolStepLabel(rowLabel || baseLabel, state, errorSummary, deps),
             state,
             navigate,
             filePath,
@@ -216,14 +248,21 @@ export function resolveTranscriptActivityNavigationItems(
             verb: cursorParts.verb,
             detail: cursorParts.detail,
             tail: cursorParts.tail,
-            editAdded: diffCard?.added,
-            editRemoved: diffCard?.removed,
+            editAdded: editDiff.editAdded,
+            editRemoved: editDiff.editRemoved,
             parentToolUseId: segment.parentToolUseId,
+            resultPreview: kind === 'reading' && segment.finished && !resultFailed
+                ? excerptTranscriptReadResultPreview(segment.result)
+                : undefined,
         });
         previousFailed = state === 'error';
     }
     const textChars = resolveTranscriptAgentTextChars(segments);
-    if (options?.streaming && isTranscriptShortTextPreamble(segments)) {
+    if (
+        options?.streaming
+        && isTranscriptShortTextPreamble(segments)
+        && !hasActiveTranscriptToolSegment(segments, options.pendingToolUseIds)
+    ) {
         items.push({
             label: deps.localizePlanningLabel(),
             verb: 'Planning',
@@ -304,6 +343,82 @@ function resolveGroupedDurationMs(group: readonly TranscriptActivityNavigationIt
 const GROUPABLE_RUNNING_KINDS = new Set<QaapTranscriptToolActivityKind>(['terminal']);
 const MIN_GROUPED_RUNNING_COUNT = 3;
 
+function isTranscriptTimelinePlanningItem(item: TranscriptActivityNavigationItem): boolean {
+    return item.verb === 'Planning'
+        || item.verb === 'Thinking'
+        || item.navigate === 'thought';
+}
+
+function resolveGroupedThinkingContent(
+    slice: readonly TranscriptActivityNavigationItem[],
+): string | undefined {
+    const parts: string[] = [];
+    for (const item of slice) {
+        const content = item.thinkingContent?.trim();
+        if (!content) {
+            continue;
+        }
+        if (parts.length === 0 || parts[parts.length - 1] !== content) {
+            parts.push(content);
+        }
+    }
+    if (parts.length === 0) {
+        return undefined;
+    }
+    return parts.join('\n\n');
+}
+
+function resolveGroupedThinkingSegmentIndices(
+    slice: readonly TranscriptActivityNavigationItem[],
+): number[] {
+    return slice
+        .flatMap(item => item.segmentIndices?.length
+            ? [...item.segmentIndices]
+            : item.segmentIndex !== undefined ? [item.segmentIndex] : []);
+}
+
+function collapseTranscriptPlanningItems(
+    items: readonly TranscriptActivityNavigationItem[],
+    start: number,
+): { readonly slice: readonly TranscriptActivityNavigationItem[]; readonly end: number } {
+    let end = start + 1;
+    while (end < items.length && isTranscriptTimelinePlanningItem(items[end]!)) {
+        end += 1;
+    }
+    return { slice: items.slice(start, end), end };
+}
+
+function resolveGroupedTerminalTraceParts(
+    slice: readonly TranscriptActivityNavigationItem[],
+): Pick<TranscriptActivityNavigationItem, 'verb' | 'detail' | 'tail'> {
+    const grouped = splitTranscriptCursorGroupedLabel('terminal', slice.length);
+    const lastDetail = [...slice].reverse().find(entry => entry.detail?.trim())?.detail?.trim();
+    if (!lastDetail) {
+        return grouped;
+    }
+    if (slice.length === 1) {
+        return { verb: 'Ran', detail: lastDetail, tail: slice[0]?.tail };
+    }
+    if (slice.length <= 3) {
+        return {
+            verb: 'Ran',
+            detail: lastDetail,
+            tail: slice.length === 2 ? '2 commands' : '3 commands',
+        };
+    }
+    return grouped;
+}
+
+function resolveGroupedTraceParts(
+    kind: QaapTranscriptToolActivityKind,
+    slice: readonly TranscriptActivityNavigationItem[],
+): Pick<TranscriptActivityNavigationItem, 'verb' | 'detail' | 'tail'> {
+    if (kind === 'terminal') {
+        return resolveGroupedTerminalTraceParts(slice);
+    }
+    return splitTranscriptCursorGroupedLabel(kind, slice.length);
+}
+
 /** Collapse consecutive finished tool steps of the same kind (e.g. "Read 6 files"). */
 /** Timeline rows for AG-UI lifecycle events that are not represented as tool segments. */
 export function resolveTranscriptLifecycleActivityItems(
@@ -344,6 +459,29 @@ export function groupTranscriptActivityNavigationItems(
     let index = 0;
     while (index < items.length) {
         const item = items[index]!;
+        if (isTranscriptTimelinePlanningItem(item)) {
+            const { slice, end } = collapseTranscriptPlanningItems(items, index);
+            if (slice.length >= 2) {
+                const last = slice[slice.length - 1]!;
+                const thinkingContent = resolveGroupedThinkingContent(slice);
+                const live = slice.some(entry => isTranscriptActivityLiveState(entry.state));
+                grouped.push({
+                    label: nls.localize('qaap/mobileProjects/transcriptThinking', 'Thinking'),
+                    verb: 'Thinking',
+                    state: live ? last.state : 'success',
+                    navigate: 'thought',
+                    expandable: true,
+                    thinkingContent,
+                    grouped: true,
+                    groupCount: slice.length,
+                    segmentIndices: resolveGroupedThinkingSegmentIndices(slice),
+                    durationMs: resolveGroupedDurationMs(slice),
+                    timestamp: last.timestamp,
+                });
+                index = end;
+                continue;
+            }
+        }
         const kind = item.toolKind;
         if (!kind) {
             grouped.push(item);
@@ -373,7 +511,7 @@ export function groupTranscriptActivityNavigationItems(
                         .filter((segmentIndex): segmentIndex is number => segmentIndex !== undefined),
                     durationMs: resolveGroupedDurationMs(slice),
                     timestamp: slice[slice.length - 1]?.timestamp,
-                    ...splitTranscriptCursorGroupedLabel(kind, slice.length),
+                    ...resolveGroupedTraceParts(kind, slice),
                     ...navigation,
                 });
                 index = end;
@@ -411,7 +549,7 @@ export function groupTranscriptActivityNavigationItems(
                 .filter((segmentIndex): segmentIndex is number => segmentIndex !== undefined),
             durationMs: resolveGroupedDurationMs(slice),
             timestamp: slice[slice.length - 1]?.timestamp,
-            ...splitTranscriptCursorGroupedLabel(kind, slice.length),
+            ...resolveGroupedTraceParts(kind, slice),
             ...navigation,
         });
         index = end;

@@ -149,6 +149,39 @@ function createAttachMenuSeparator(): HTMLElement {
     return separator;
 }
 
+function filterAttachMenuSkills(
+    skills: readonly { readonly name: string; readonly description: string }[],
+    query: string,
+): Array<{ readonly name: string; readonly description: string }> {
+    const needle = query.trim().toLowerCase();
+    if (!needle) {
+        return [...skills];
+    }
+    return skills.filter(skill =>
+        skill.name.toLowerCase().includes(needle)
+        || skill.description.toLowerCase().includes(needle),
+    );
+}
+
+function createAttachMenuSearchInput(options: {
+    className: string;
+    placeholder: string;
+    onInput: (value: string) => void;
+}): HTMLInputElement {
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = options.className;
+    search.placeholder = options.placeholder;
+    search.setAttribute('aria-label', options.placeholder);
+    search.addEventListener('input', () => {
+        options.onInput(search.value);
+    });
+    search.addEventListener('keydown', ev => {
+        ev.stopPropagation();
+    });
+    return search;
+}
+
 function createAttachMenuBackButton(label: string, onBack: () => void): HTMLButtonElement {
     const item = document.createElement('button');
     item.type = 'button';
@@ -390,18 +423,32 @@ function showContextAttachMenu(
                 nls.localize('qaap/mobileProjects/stickyComposerAttachBack', 'Back'),
                 () => renderMainView(),
             ));
-            menuBody.append(createAttachMenuSeparator());
-            if (skills.length === 0) {
-                const empty = document.createElement('div');
-                empty.className = 'theia-mobile-projects-sticky-composer-attach-menu-empty';
-                empty.textContent = nls.localize(
-                    'qaap/mobileProjects/stickyComposerAttachSkillsEmpty',
-                    'No skills found. Add SKILL.md folders under ~/.cursor/skills or ~/.claude/skills.',
-                );
-                menuBody.append(empty);
-            } else {
-                for (const skill of skills) {
-                    menuBody.append(createAttachMenuItem({
+
+            const scroll = document.createElement('div');
+            scroll.className = 'theia-mobile-skills-attach-scroll';
+            menuBody.append(scroll);
+
+            let filterQuery = '';
+            const renderSkillRows = (): void => {
+                scroll.replaceChildren();
+                const filtered = filterAttachMenuSkills(skills, filterQuery);
+                if (filtered.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'theia-mobile-projects-sticky-composer-attach-menu-empty';
+                    empty.textContent = skills.length === 0
+                        ? nls.localize(
+                            'qaap/mobileProjects/stickyComposerAttachSkillsEmpty',
+                            'No skills found. Add SKILL.md folders under ~/.cursor/skills or ~/.claude/skills.',
+                        )
+                        : nls.localize(
+                            'qaap/mobileProjects/stickyComposerAttachSkillsNoMatch',
+                            'No skills match your search.',
+                        );
+                    scroll.append(empty);
+                    return;
+                }
+                for (const skill of filtered) {
+                    scroll.append(createAttachMenuItem({
                         iconClasses: 'codicon codicon-book',
                         label: skill.name,
                         hint: skill.description?.trim(),
@@ -409,8 +456,22 @@ function showContextAttachMenu(
                         onSelect: () => finish({ kind: 'skill', skillName: skill.name }),
                     }));
                 }
-            }
-            menu.focus();
+            };
+
+            const search = createAttachMenuSearchInput({
+                className: 'theia-mobile-skills-attach-search',
+                placeholder: nls.localize('qaap/mobileProjects/skillsAttachSearch', 'Search skills…'),
+                onInput: value => {
+                    filterQuery = value;
+                    renderSkillRows();
+                },
+            });
+            menuBody.insertBefore(search, scroll);
+
+            renderSkillRows();
+            requestAnimationFrame(() => {
+                search.focus();
+            });
         };
 
         document.body.appendChild(menu);

@@ -6,6 +6,8 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
+import { resolveTranscriptStreamHealth } from '../common/qaap-transcript-stream-health';
+import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     type MobileProjectEntry,
     MOBILE_PROJECT_STATUS_COLORS,
@@ -17,6 +19,8 @@ export interface MobileProjectsTranscriptHeaderHost {
     transcriptOpenSummaryId: string | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptLastConv: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
+    transcriptLastStreamProgressAt: number | undefined;
+    transcriptLastTransportEventAt: number | undefined;
     transcriptOpenProject: MobileProjectEntry | undefined;
     agentsHubInlineActive: boolean;
     visible: boolean;
@@ -129,6 +133,9 @@ export class MobileProjectsTranscriptHeaderUi {
     ): string {
         const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
         if (effectiveStatus === 'streaming') {
+            if (this.resolveTranscriptStreamTimedOut(summary)) {
+                return nls.localize('qaap/mobileProjects/chatStatusTimedOut', 'Sin respuesta');
+            }
             return summary?.activityLabel?.trim()
                 || nls.localize('qaap/mobileProjects/chatStatusStreaming', 'Working');
         }
@@ -159,16 +166,32 @@ export class MobileProjectsTranscriptHeaderUi {
         return summary?.status;
     }
 
+    protected resolveTranscriptStreamTimedOut(summary?: QaapAgentConversationSummaryDTO): boolean {
+        const summaryId = summary?.id ?? this.host.transcriptOpenSummaryId;
+        const conv = this.host.transcriptLastConv;
+        if (!conv || !summaryId || conv.id !== summaryId || resolveTranscriptEffectiveStatus(conv) !== 'streaming') {
+            return false;
+        }
+        return resolveTranscriptStreamHealth({
+            streaming: true,
+            lastProgressAtMs: this.host.transcriptLastStreamProgressAt,
+            lastTransportEventAtMs: this.host.transcriptLastTransportEventAt,
+            segments: resolveTranscriptStreamingAgentSegments(conv),
+        }).timedOut;
+    }
+
     /** Keep header status chips and composer send/stop controls in sync during live SSE. */
     refreshTranscriptExecutionChrome(): void {
         const project = this.host.transcriptOpenProject;
         const summary = this.host.transcriptOpenSummary;
         if (this.host.agentsHubInlineActive && project && this.host.visible && summary) {
             const status = this.resolveActiveChatEffectiveStatus(summary) ?? summary.status;
+            const streamTimedOut = this.resolveTranscriptStreamTimedOut(summary);
             const chromeKey = [
                 project.status,
                 summary.id,
                 status,
+                streamTimedOut ? '1' : '0',
                 summary.priority ? '1' : '0',
                 summary.status ?? '',
                 summary.activityLabel?.trim() ?? '',
@@ -183,6 +206,9 @@ export class MobileProjectsTranscriptHeaderUi {
 
     activeChatStatusIcon(summary?: QaapAgentConversationSummaryDTO): string {
         if (this.resolveActiveChatEffectiveStatus(summary) === 'streaming') {
+            if (this.resolveTranscriptStreamTimedOut(summary)) {
+                return 'codicon-warning';
+            }
             return 'codicon-loading';
         }
         if (summary?.status === 'failed') {
@@ -199,6 +225,9 @@ export class MobileProjectsTranscriptHeaderUi {
         summary?: QaapAgentConversationSummaryDTO,
     ): string {
         if (this.resolveActiveChatEffectiveStatus(summary) === 'streaming') {
+            if (this.resolveTranscriptStreamTimedOut(summary)) {
+                return 'theia-mod-needs-input';
+            }
             return 'theia-mod-running';
         }
         if (summary?.status === 'failed') {

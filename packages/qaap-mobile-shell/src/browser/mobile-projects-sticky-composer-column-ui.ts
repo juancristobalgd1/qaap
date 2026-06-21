@@ -36,6 +36,10 @@ import type { StickyComposerContextEntry } from '../common/qaap-composer-context
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
+import {
+    handleStickyComposerPromptHistoryKeydown,
+    recordStickyComposerPromptSubmission,
+} from './qaap-sticky-composer-prompt-history';
 
 export interface MobileProjectsStickyComposerColumnHost {
 stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
@@ -447,6 +451,7 @@ export class MobileProjectsStickyComposerColumnUi {
             submitInFlight = true;
             lastSubmitAt = now;
             lastSubmitDraft = draft;
+            recordStickyComposerPromptSubmission(input, draft);
             input.value = '';
             options.setDraft('');
             updateSend();
@@ -459,6 +464,13 @@ export class MobileProjectsStickyComposerColumnUi {
             }
         };
         input.addEventListener('keydown', ev => {
+            if (handleStickyComposerPromptHistoryKeydown(input, ev, {
+                setDraft: value => { options.setDraft(value); },
+                afterInputChange: options.afterInputChange,
+            })) {
+                updateSend();
+                return;
+            }
             if (ev.key === 'Enter' && !ev.shiftKey && !ev.defaultPrevented) {
                 ev.preventDefault();
                 submit();

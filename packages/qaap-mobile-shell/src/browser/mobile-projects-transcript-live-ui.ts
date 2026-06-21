@@ -92,6 +92,7 @@ export interface MobileProjectsTranscriptLiveHost {
     transcriptLastFingerprint: string | undefined;
     transcriptLastStreamProgressAt: number | undefined;
     transcriptLastSemanticProgressKey: string | undefined;
+    transcriptLastTransportEventAt: number | undefined;
     transcriptLastSseDeltaAt: number | undefined;
     transcriptLastStatus: QaapAgentConversationSummaryDTO['status'] | undefined;
     transcriptScheduleRefresh: (() => void) | undefined;
@@ -175,6 +176,10 @@ export class MobileProjectsTranscriptLiveUi {
         this.ensureVisibilityResumeListener();
     }
 
+    protected touchTranscriptTransportEvent(): void {
+        this.host.transcriptLastTransportEventAt = Date.now();
+    }
+
     protected touchTranscriptSemanticProgressFromConversation(conv: QaapAgentConversationDTO): void {
         const segments = resolveTranscriptStreamingAgentSegments(conv);
         const next = advanceTranscriptSemanticProgressClock(segments, {
@@ -188,12 +193,14 @@ export class MobileProjectsTranscriptLiveUi {
     clearTranscriptSemanticProgressClock(): void {
         this.host.transcriptLastStreamProgressAt = undefined;
         this.host.transcriptLastSemanticProgressKey = undefined;
+        this.host.transcriptLastTransportEventAt = undefined;
     }
 
     seedTranscriptSemanticProgressClock(): void {
         const seeded = seedTranscriptSemanticProgressClock();
         this.host.transcriptLastStreamProgressAt = seeded.at;
         this.host.transcriptLastSemanticProgressKey = seeded.key;
+        this.host.transcriptLastTransportEventAt = seeded.at;
     }
 
     protected ensureVisibilityResumeListener(): void {
@@ -228,6 +235,7 @@ export class MobileProjectsTranscriptLiveUi {
         if (!this.isActiveTranscriptConversation(event.conversationId)) {
             return;
         }
+        this.touchTranscriptTransportEvent();
         this.agUiLiveBridge.onLiveMessage(event);
         const message = this.resolveLiveSseMessage(event);
         if (!message) {
@@ -490,9 +498,17 @@ export class MobileProjectsTranscriptLiveUi {
             this.host.transcriptOpenSummary = this.reconcileConversationListSummary(this.host.transcriptLastConv);
         }
         const backendStreaming = this.host.transcriptLastConv?.status === 'streaming';
+        const effectivelyStreaming = this.host.transcriptLastConv
+            ? resolveTranscriptEffectiveStatus(this.host.transcriptLastConv) === 'streaming'
+            : backendStreaming;
         const previousStatus = this.host.transcriptLastStatus;
         if (backendStreaming) {
-            this.host.transcriptComposerSendRefresh?.();
+            if (effectivelyStreaming) {
+                this.host.transcriptComposerSendRefresh?.();
+            } else {
+                this.host.transcriptStickyComposerUi.refreshComposerActivityStack();
+                this.host.transcriptComposerSendRefresh?.();
+            }
             this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
         } else if (previousStatus === 'streaming') {
             this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
@@ -627,7 +643,11 @@ export class MobileProjectsTranscriptLiveUi {
                     const messageHost = this.host.transcriptMessagesUi.resolveTranscriptMessageHost(chatHost);
                     this.host.transcriptMessagesUi.settleVisuallySettledAgentTranscript(messageHost, conv);
                 }
+                if (this.host.transcriptOpenSummary?.id === conv.id) {
+                    this.host.transcriptOpenSummary = this.reconcileConversationListSummary(conv);
+                }
             }
+            this.host.transcriptStickyComposerUi.refreshComposerActivityStack();
             this.host.transcriptComposerSendRefresh?.();
             this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
             return;

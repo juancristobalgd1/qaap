@@ -1349,6 +1349,35 @@ export class MobileProjectsTranscriptSurfacesUi {
         window.dispatchEvent(new Event('resize'));
     }
 
+    async revealTranscriptFile(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        filePath: string,
+    ): Promise<void> {
+        const trimmed = filePath.trim();
+        if (!trimmed) {
+            return;
+        }
+        this.host.executionSurfaceTabsUi.selectTranscriptTab('files', project, summary);
+        this.ensureTranscriptFilesTab(project, summary);
+        const workspaceKey = this.resolveTranscriptWorkspaceKey(project, summary);
+        if (!workspaceKey) {
+            return;
+        }
+        const mount = this.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey);
+        if (!mount?.revealFilePath) {
+            return;
+        }
+        try {
+            await mount.revealFilePath(trimmed);
+        } catch (error) {
+            console.warn('[qaap-mobile-shell] Failed to reveal transcript file in Files preview:', error);
+            this.host.messageService?.error(
+                nls.localize('qaap/mobileProjects/transcriptOpenFileFailed', 'Could not open {0}', trimmed),
+            );
+        }
+    }
+
     async ensureTranscriptTerminalTab(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,

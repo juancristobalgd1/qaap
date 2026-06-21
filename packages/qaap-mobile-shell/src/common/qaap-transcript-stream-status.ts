@@ -210,11 +210,11 @@ export function formatTranscriptThoughtDuration(elapsedMs: number): string {
     return formatTranscriptStreamElapsed(elapsedMs);
 }
 
-/** Cursor switches from "Planning next moves" to this after ~15s without visible progress. */
-export const TRANSCRIPT_STREAM_STALL_MS = 15_000;
+/** Cursor switches from "Planning next moves" to this after ~20s without visible progress. */
+export const TRANSCRIPT_STREAM_STALL_MS = 20_000;
 
-/** Hard timeout when no semantic progress (tools / answer text) for this long. */
-export const TRANSCRIPT_STREAM_TIMEOUT_MS = 30_000;
+/** Hard timeout when no liveness signals for this long (see qaap-transcript-stream-health). */
+export const TRANSCRIPT_STREAM_TIMEOUT_MS = 60_000;
 
 /** Hide "Thinking for…" / planning chrome until the turn has been thinking-only this long. */
 export const TRANSCRIPT_THINKING_UI_GRACE_MS = 2_000;
@@ -376,6 +376,7 @@ export function isTranscriptStreamStalled(
     return now - lastProgressAtMs >= TRANSCRIPT_STREAM_STALL_MS;
 }
 
+/** @deprecated Prefer resolveTranscriptStreamHealth for timeout cause and active-tool budgets. */
 export function isTranscriptStreamTimedOut(
     lastProgressAtMs: number | undefined,
     streaming: boolean,

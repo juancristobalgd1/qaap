@@ -6,8 +6,17 @@
 import { expect } from 'chai';
 import {
     extractTranscriptCommandTail,
+    formatTranscriptCursorTraceRowText,
     resolveTranscriptCursorTraceLabel,
 } from './qaap-transcript-cursor-trace-label';
+
+describe('formatTranscriptCursorTraceRowText', () => {
+    it('joins verb, detail, and tail with spaces', () => {
+        expect(formatTranscriptCursorTraceRowText('Ran', 'ls -la /workspace', 'cd, npm')).to.equal('Ran ls -la /workspace cd, npm');
+        expect(formatTranscriptCursorTraceRowText('Read', '3 files')).to.equal('Read 3 files');
+        expect(formatTranscriptCursorTraceRowText('Writing', 'response')).to.equal('Writing response');
+    });
+});
 
 describe('resolveTranscriptCursorTraceLabel', () => {
     it('formats grep rows with pattern tail', () => {
@@ -34,6 +43,14 @@ describe('resolveTranscriptCursorTraceLabel', () => {
         expect(resolveTranscriptCursorTraceLabel('AskUserQuestion', '{}', {})).to.deep.equal({
             verb: 'Asked',
             detail: 'a question',
+        });
+    });
+
+    it('formats glob searches without a redundant files prefix', () => {
+        expect(resolveTranscriptCursorTraceLabel('Glob', JSON.stringify({ pattern: '**/*.md' }), {})).to.deep.equal({
+            verb: 'Searched',
+            detail: '**/*.md',
+            tail: undefined,
         });
     });
 

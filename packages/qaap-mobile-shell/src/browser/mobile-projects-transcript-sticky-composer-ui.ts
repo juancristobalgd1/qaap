@@ -29,7 +29,7 @@ import { createComposerContextEntry } from '../common/qaap-composer-context-entr
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import { isTranscriptComposerVisualIdle } from '../common/qaap-transcript-stream-status';
-import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
+import { resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking } from '../common/qaap-transcript-turn-status';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
     resolveChatModelContextUsageBreakdown,
@@ -921,8 +921,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (!summary || !this.host.transcriptComposerHost?.isConnected) {
             return false;
         }
-        if (this.host.transcriptLastConv?.id === summary.id) {
-            return resolveTranscriptEffectiveStatus(this.host.transcriptLastConv) === 'streaming';
+        const conv = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : undefined;
+        if (isTranscriptSummaryAgentWorking(summary, conv)) {
+            return true;
         }
         if (summary.source === 'theia-chat' && this.host.chatService) {
             const sessionId = summary.sessionId ?? this.host.transcriptTheiaSessionByConversationId.get(summary.id);
@@ -931,14 +934,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 return true;
             }
         }
-        const project = this.host.transcriptComposerProject;
-        if (project) {
-            const latest = this.host.conversationIndexUi.conversationsForProject(project).find(candidate => candidate.id === summary.id);
-            if (latest?.status === 'streaming') {
-                return true;
-            }
-        }
-        return this.host.transcriptOpenSummary?.id === summary.id && this.host.transcriptOpenSummary.status === 'streaming';
+        return false;
     }
 
     isTranscriptStickyComposerAgentBeamIdle(): boolean {
@@ -955,7 +951,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const segments = conv ? resolveTranscriptStreamingAgentSegments(conv) : [];
         return isTranscriptComposerVisualIdle(
             segments,
-            true,
+            conv ? resolveTranscriptEffectiveStatus(conv) === 'streaming' : summary.status === 'streaming',
             this.host.transcriptLastStreamProgressAt,
         );
     }

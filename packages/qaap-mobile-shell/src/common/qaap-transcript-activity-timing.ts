@@ -16,8 +16,24 @@ type TimedToolSegment = Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> & 
     readonly finishedAt?: number;
 };
 
+export interface TranscriptActivityTimingObserveOptions {
+    /** When true, the tail thinking segment stays live until the turn settles. */
+    readonly streaming?: boolean;
+}
+
 function timingKey(messageId: string, segmentIndex: number): string {
     return `${messageId}:${segmentIndex}`;
+}
+
+function isThinkingSegmentSettled(
+    segmentIndex: number,
+    segments: readonly QaapAgentMessageSegmentDTO[],
+    streaming: boolean,
+): boolean {
+    if (segmentIndex < segments.length - 1) {
+        return true;
+    }
+    return !streaming;
 }
 
 /** Client-side step timing while SSE patches arrive (backend may also supply startedAt/finishedAt). */
@@ -28,17 +44,36 @@ export class TranscriptActivityTimingStore {
         messageId: string,
         segments: readonly QaapAgentMessageSegmentDTO[],
         now = Date.now(),
+        options?: TranscriptActivityTimingObserveOptions,
     ): void {
+        const streaming = options?.streaming === true;
         segments.forEach((segment, segmentIndex) => {
             const key = timingKey(messageId, segmentIndex);
-            const wireStarted = segment.type === 'tool'
-                ? (segment as TimedToolSegment).startedAt
-                : undefined;
-            const wireFinished = segment.type === 'tool'
-                ? (segment as TimedToolSegment).finishedAt
-                : undefined;
+            if (segment.type === 'thinking') {
+                const settled = isThinkingSegmentSettled(segmentIndex, segments, streaming);
+                const existing = this.entries.get(key);
+                if (!existing) {
+                    if (settled) {
+                        return;
+                    }
+                    this.entries.set(key, { startedAt: now });
+                }
+                const entry = this.entries.get(key)!;
+                if (settled && entry.finishedAt === undefined) {
+                    entry.finishedAt = now;
+                }
+                return;
+            }
+            if (segment.type !== 'tool') {
+                return;
+            }
+            const wireStarted = (segment as TimedToolSegment).startedAt;
+            const wireFinished = (segment as TimedToolSegment).finishedAt;
             const existing = this.entries.get(key);
             if (!existing) {
+                if (segment.finished && wireStarted === undefined && wireFinished === undefined) {
+                    return;
+                }
                 this.entries.set(key, {
                     startedAt: wireStarted ?? now,
                     finishedAt: wireFinished,
@@ -50,7 +85,7 @@ export class TranscriptActivityTimingStore {
             }
             if (wireFinished !== undefined) {
                 existing.finishedAt = wireFinished;
-            } else if (segment.type === 'tool' && segment.finished && existing.finishedAt === undefined) {
+            } else if (segment.finished && existing.finishedAt === undefined) {
                 existing.finishedAt = now;
             }
         });
@@ -77,10 +112,12 @@ export class TranscriptActivityTimingStore {
         if (startedAt === undefined) {
             return undefined;
         }
-        const finishedAt = wireFinished ?? entry?.finishedAt
-            ?? (segment?.type === 'tool' && !segment.finished ? now : entry?.finishedAt ?? wireFinished);
+        const finishedAt = wireFinished ?? entry?.finishedAt;
         if (finishedAt === undefined) {
             if (segment?.type === 'tool' && !segment.finished) {
+                return Math.max(0, now - startedAt);
+            }
+            if (segment?.type === 'thinking') {
                 return Math.max(0, now - startedAt);
             }
             return undefined;
@@ -102,7 +139,11 @@ export class TranscriptActivityTimingStore {
         if (wireFinished !== undefined) {
             return wireFinished;
         }
-        return this.entries.get(timingKey(messageId, segmentIndex))?.finishedAt;
+        const entry = this.entries.get(timingKey(messageId, segmentIndex));
+        if (segment?.type === 'thinking') {
+            return entry?.finishedAt ?? entry?.startedAt;
+        }
+        return entry?.finishedAt;
     }
 
     clearConversation(messageIds: readonly string[]): void {

@@ -83,21 +83,21 @@ describe('qaap-transcript-stream-status', () => {
         expect(formatTranscriptThoughtDuration(90_000)).to.equal('1m 30s');
     });
 
-    it('detects stream stalls after the Cursor-style grace window', () => {
-        const now = 20_000;
+    it('detects stream stalls after the grace window', () => {
+        const now = 25_000;
         expect(isTranscriptStreamStalled(0, true, now)).to.equal(true);
-        expect(isTranscriptStreamStalled(4_000, true, now)).to.equal(true);
-        expect(isTranscriptStreamStalled(6_000, true, now)).to.equal(false);
+        expect(isTranscriptStreamStalled(5_000, true, now)).to.equal(true);
+        expect(isTranscriptStreamStalled(10_000, true, now)).to.equal(false);
         expect(isTranscriptStreamStalled(6_000, false, now)).to.equal(false);
         expect(isTranscriptStreamStalled(undefined, true, now)).to.equal(false);
     });
 
-    it('detects hard timeouts after thirty seconds without semantic progress', () => {
-        const now = 45_000;
+    it('detects hard timeouts after sixty seconds without semantic progress', () => {
+        const now = 65_000;
         expect(isTranscriptStreamTimedOut(0, true, now)).to.equal(true);
         expect(isTranscriptStreamTimedOut(5_000, true, now)).to.equal(true);
-        expect(isTranscriptStreamTimedOut(20_000, true, now)).to.equal(false);
-        expect(isTranscriptStreamTimedOut(20_000, false, now)).to.equal(false);
+        expect(isTranscriptStreamTimedOut(50_000, true, now)).to.equal(false);
+        expect(isTranscriptStreamTimedOut(50_000, false, now)).to.equal(false);
     });
 
     it('uses lightweight composer chrome during thinking-only and stalled streams', () => {

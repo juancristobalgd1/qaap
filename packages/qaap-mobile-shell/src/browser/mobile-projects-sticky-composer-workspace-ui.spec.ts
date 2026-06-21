@@ -8,6 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 enableJSDOM();
 
 import { expect } from 'chai';
+import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { MobileProjectsStickyComposerWorkspaceUi, type MobileProjectsStickyComposerWorkspaceHost } from './mobile-projects-sticky-composer-workspace-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
@@ -41,13 +42,20 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         };
     }
 
-    function createHost(projects: MobileProjectEntry[]): MobileProjectsStickyComposerWorkspaceHost {
+    function createHost(projects: MobileProjectEntry[], options?: {
+        readonly agentsHubInlineActive?: boolean;
+        readonly transcriptOpenProject?: MobileProjectEntry;
+        readonly conversationsByProjectId?: Map<string, QaapAgentConversationSummaryDTO[]>;
+    }): MobileProjectsStickyComposerWorkspaceHost {
+        const conversationsByProjectId = options?.conversationsByProjectId ?? new Map();
         return {
             composerWorkspaceBranchByProjectId: new Map(),
             preparedCwdByProjectId: new Map(),
             projects,
             agentsHubSelectedProjectId: undefined,
             agentsHubShellActive: true,
+            agentsHubInlineActive: options?.agentsHubInlineActive ?? false,
+            transcriptOpenProject: options?.transcriptOpenProject,
             stickyComposerWorkspaceSheet: undefined,
             transcriptComposerHost: undefined,
             transcriptComposerProject: undefined,
@@ -65,9 +73,14 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
             transcriptStickyComposerUi: {
                 remountTranscriptStickyComposer: () => undefined,
             } as unknown as MobileProjectsStickyComposerWorkspaceHost['transcriptStickyComposerUi'],
+            conversationIndexUi: {
+                conversationsForProject: (project: MobileProjectEntry) =>
+                    conversationsByProjectId.get(project.id) ?? [],
+            } as unknown as MobileProjectsStickyComposerWorkspaceHost['conversationIndexUi'],
             render: () => undefined,
             renderAgentsHubExecutionShell: () => undefined,
             openProject: async () => undefined,
+            openAgentsHubInlineTranscript: async () => undefined,
             onNewClick: async () => undefined,
             activateAgentsHubProject: async () => undefined,
             stickyComposerRenderUi: {
@@ -94,5 +107,73 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
             'Current',
             'Next',
         ]);
+    });
+
+    it('selectComposerWorkspaceProject opens an existing conversation when switching inline projects', async () => {
+        const current = project('mockup', 'Mockup', true);
+        const other = project('other', 'Other');
+        const otherSummary: QaapAgentConversationSummaryDTO = {
+            id: 'conv-other',
+            cwd: '/other',
+            agentId: 'codex',
+            title: 'Other task',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 3,
+        };
+        const conversationsByProjectId = new Map<string, QaapAgentConversationSummaryDTO[]>([
+            [other.id, [otherSummary]],
+        ]);
+        const host = createHost([current, other], {
+            agentsHubInlineActive: true,
+            transcriptOpenProject: current,
+            conversationsByProjectId,
+        });
+        let opened: { projectId: string; summaryId: string } | undefined;
+        host.openAgentsHubInlineTranscript = async (projectEntry, summary) => {
+            opened = { projectId: projectEntry.id, summaryId: summary.id };
+        };
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+
+        await ui.selectComposerWorkspaceProject(other, current);
+
+        expect(host.agentsHubSelectedProjectId).to.equal('other');
+        expect(opened).to.deep.equal({ projectId: 'other', summaryId: 'conv-other' });
+    });
+
+    it('selectComposerWorkspaceProject activates idle shell when the target project has no chats', async () => {
+        const current = project('mockup', 'Mockup', true);
+        const other = project('other', 'Other');
+        const host = createHost([current, other], {
+            agentsHubInlineActive: true,
+            transcriptOpenProject: current,
+        });
+        let activated: string | undefined;
+        host.activateAgentsHubProject = async projectEntry => {
+            activated = projectEntry.id;
+        };
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+
+        await ui.selectComposerWorkspaceProject(other, current);
+
+        expect(activated).to.equal('other');
+    });
+
+    it('selectComposerWorkspaceProject ignores selecting the already active project', async () => {
+        const current = project('mockup', 'Mockup', true);
+        const host = createHost([current], {
+            agentsHubInlineActive: true,
+            transcriptOpenProject: current,
+        });
+        let opened = false;
+        host.openAgentsHubInlineTranscript = async () => {
+            opened = true;
+        };
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+
+        await ui.selectComposerWorkspaceProject(current, current);
+
+        expect(opened).to.equal(false);
     });
 });

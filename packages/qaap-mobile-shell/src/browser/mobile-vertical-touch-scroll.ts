@@ -145,6 +145,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-projects-sticky-composer-mention-popover',
     '.theia-mobile-projects-sticky-composer-plugin-picker-body',
     '.theia-mobile-mcp-attach-scroll',
+    '.theia-mobile-skills-attach-scroll',
     '.theia-qaap-approval-policy-sheet-list',
     '.theia-mobile-sticky-composer-tools-host',
     '.theia-mobile-projects-sticky-composer-context-files.theia-mod-attachments',

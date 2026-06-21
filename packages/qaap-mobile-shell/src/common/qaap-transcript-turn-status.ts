@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { hasActiveQaapTraceWork, resolveQaapTranscriptTrace } from './qaap-transcript-trace-model';
 
 export function hasUnfinishedAgentWork(conv: QaapAgentConversationDTO): boolean {
@@ -74,6 +74,17 @@ export function resolveTranscriptEffectiveStatus(
         return 'settled';
     }
     return 'streaming';
+}
+
+/** True while the UI should treat the conversation as an in-flight agent turn (composer stop, stall watch). */
+export function isTranscriptSummaryAgentWorking(
+    summary: Pick<QaapAgentConversationSummaryDTO, 'id' | 'status'>,
+    conv: QaapAgentConversationDTO | undefined,
+): boolean {
+    if (conv && conv.id === summary.id) {
+        return resolveTranscriptEffectiveStatus(conv) === 'streaming';
+    }
+    return summary.status === 'streaming';
 }
 
 /**

@@ -119,6 +119,31 @@ export function resolveTranscriptThinkingContent(segments: readonly QaapTranscri
     return parts.join('\n\n');
 }
 
+/** One-line code preview from a read tool result — skips diffs, errors, and placeholder "ok". */
+export function excerptTranscriptReadResultPreview(result: string | undefined, maxLength = 88): string | undefined {
+    const raw = result?.trim();
+    if (!raw || /^ok$/i.test(raw)) {
+        return undefined;
+    }
+    if (raw.includes('@@') || raw.startsWith('--- ') || raw.startsWith('+++ ')) {
+        return undefined;
+    }
+    if (/\berror\b/i.test(raw.split('\n')[0] ?? '')) {
+        return undefined;
+    }
+    const line = raw
+        .split('\n')
+        .map(entry => entry.replace(/\s+/g, ' ').trim())
+        .find(entry => entry.length > 0);
+    if (!line) {
+        return undefined;
+    }
+    if (line.length <= maxLength) {
+        return line;
+    }
+    return `${line.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 /** One-line preview for the thought-brief body (Cursor-style intent paragraph). */
 export function excerptTranscriptThought(text: string | undefined, maxLength = 280): string {
     const compact = (text ?? '').replace(/\s+/g, ' ').trim();
@@ -315,10 +340,22 @@ export function resolveSpecialTranscriptToolTraceLabel(
     toolName: string,
 ): QaapTranscriptToolRowParts | undefined {
     const key = toolName.toLowerCase().replace(/[_-]+/g, '');
-    if (key === 'askuserquestion') {
-        return { verb: 'Asked', detail: 'a question' };
+    switch (key) {
+        case 'askuserquestion':
+            return { verb: 'Asked', detail: 'a question' };
+        case 'websearch':
+        case 'websearchtool':
+            return { verb: 'Searched', detail: 'the web' };
+        case 'webfetch':
+        case 'webfetchtool':
+            return { verb: 'Fetched', detail: 'a page' };
+        case 'listdir':
+        case 'list_dir':
+        case 'getworkspacefilelist':
+            return { verb: 'Listed', detail: 'directory' };
+        default:
+            return undefined;
     }
-    return undefined;
 }
 
 /** Compact a shell command for a one-line row label. */

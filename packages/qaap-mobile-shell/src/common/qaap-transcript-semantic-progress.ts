@@ -10,26 +10,33 @@ export type TranscriptSemanticProgressSegment = Readonly<{
     readonly type: string;
     readonly content?: string;
     readonly finished?: boolean;
+    readonly result?: string;
 }>;
 
-/** Fingerprint of user-visible agent progress — excludes thinking token drips. */
+/** Fingerprint of stream liveness — tools, answer text, thinking, and in-flight tool output. */
 export function buildTranscriptSemanticProgressKey(
     segments: readonly TranscriptSemanticProgressSegment[],
 ): string {
     let toolCount = 0;
     let finishedToolCount = 0;
     let textChars = 0;
+    let thinkingChars = 0;
+    let activeToolResultChars = 0;
     for (const segment of segments) {
         if (segment.type === 'tool') {
             toolCount += 1;
             if (segment.finished) {
                 finishedToolCount += 1;
+            } else {
+                activeToolResultChars += segment.result?.length ?? 0;
             }
         } else if (segment.type === 'text') {
             textChars += segment.content?.trim().length ?? 0;
+        } else if (segment.type === 'thinking') {
+            thinkingChars += segment.content?.trim().length ?? 0;
         }
     }
-    return `${toolCount}:${finishedToolCount}:${textChars}`;
+    return `${toolCount}:${finishedToolCount}:${textChars}:${thinkingChars}:${activeToolResultChars}`;
 }
 
 export interface TranscriptSemanticProgressClock {
@@ -37,7 +44,7 @@ export interface TranscriptSemanticProgressClock {
     readonly key: string | undefined;
 }
 
-/** Advance the stall/timeout clock only when tools or answer text change — not on thinking SSE. */
+/** Advance the stall/timeout clock when tools, answer text, thinking, or tool output change. */
 export function advanceTranscriptSemanticProgressClock(
     segments: readonly TranscriptSemanticProgressSegment[],
     state: TranscriptSemanticProgressClock,

@@ -24,12 +24,14 @@ export interface MobileProjectsHubHeaderHost {
     homeMode: boolean;
     hubView: MobileProjectsHubView;
     agentsHubInlineActive: boolean;
+    agentsHubShellActive: boolean;
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
 
     isProjectDetailView(): boolean;
     isProjectDiffView(): boolean;
     shouldUseAgentsHubLanding(): boolean;
+    resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
@@ -59,8 +61,9 @@ export class MobileProjectsHubHeaderUi {
             && !inProjectDiff;
         this.host.sessionsMenuBtn.hidden = !showSessionsMenu;
         this.host.sessionsMenuBtn.setAttribute('aria-hidden', showSessionsMenu ? 'false' : 'true');
-        this.host.headerNewChatBtn.hidden = !showSessionsMenu;
-        this.host.headerNewChatBtn.setAttribute('aria-hidden', showSessionsMenu ? 'false' : 'true');
+        const showNewChatBtn = showSessionsMenu && this.resolveHeaderNewChatVisible();
+        this.host.headerNewChatBtn.hidden = !showNewChatBtn;
+        this.host.headerNewChatBtn.setAttribute('aria-hidden', showNewChatBtn ? 'false' : 'true');
         const showHeaderBack = inProjectDetail
             || inProjectDiff
             || this.host.hubQueryUi.isSidebarSecondaryHubView()
@@ -137,6 +140,27 @@ export class MobileProjectsHubHeaderUi {
         }
         this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/title', 'Work Hub');
         this.syncAgentsHubAccountChrome();
+    }
+
+    resolveHeaderNewChatVisible(): boolean {
+        if (!this.host.shouldUseAgentsHubLanding()) {
+            return false;
+        }
+        const project = this.resolveHeaderNewChatProject();
+        if (!project) {
+            return false;
+        }
+        return this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'messages';
+    }
+
+    protected resolveHeaderNewChatProject(): MobileProjectEntry | undefined {
+        if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject) {
+            return this.host.transcriptOpenProject;
+        }
+        if (this.host.agentsHubShellActive) {
+            return this.host.resolveAgentsHubShellProject();
+        }
+        return undefined;
     }
 
     syncAgentsHubAccountChrome(): void {

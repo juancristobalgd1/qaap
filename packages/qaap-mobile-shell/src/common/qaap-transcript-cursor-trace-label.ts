@@ -17,6 +17,27 @@ export interface QaapTranscriptCursorTraceLabel {
     readonly tail?: string;
 }
 
+/** One readable timeline row (`Ran ls -la`, `Read 3 files`, `Asked a question`). */
+export function formatTranscriptCursorTraceRowText(
+    verb: string | undefined,
+    detail: string | undefined,
+    tail?: string,
+): string {
+    const left = verb?.trim() ?? '';
+    const middle = detail?.trim() ?? '';
+    const suffix = tail?.trim() ?? '';
+    const core = middle ? (left ? `${left} ${middle}` : middle) : left;
+    return suffix ? `${core} ${suffix}`.trim() : core;
+}
+
+function formatTranscriptSearchPattern(pattern: string): string {
+    const clean = pattern.replace(/\s+/g, ' ').trim();
+    if (!clean) {
+        return 'workspace';
+    }
+    return compactTraceDetail(clean, 52) ?? clean;
+}
+
 /** Cursor-style verb / detail / muted-tail parts for a timeline step row. */
 export function resolveTranscriptCursorTraceLabel(
     toolName: string,
@@ -39,7 +60,7 @@ export function resolveTranscriptCursorTraceLabel(
             const pattern = extractTranscriptTracePattern(argsJson);
             const verb = name.includes('grep') ? 'Grepped' : 'Searched';
             const detail = pattern
-                ? (name.includes('grep') ? pattern : `files ${pattern}`)
+                ? formatTranscriptSearchPattern(pattern)
                 : rowParts.detail;
             return { verb, detail, tail: resolveTranscriptTraceLocationTail(toolName, argsJson) };
         }
