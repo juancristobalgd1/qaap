@@ -107,14 +107,14 @@ describe('formatToolActivityLabel', () => {
     });
 
     it('maps bash/shell tools to Running command', () => {
-        expect(formatToolActivityLabel('Bash')).to.equal('Running command');
-        expect(formatToolActivityLabel('run_command')).to.equal('Running command');
+        expect(formatToolActivityLabel('Bash')).to.equal('Ran command');
+        expect(formatToolActivityLabel('run_command')).to.equal('Ran command');
     });
 
     it('maps write/edit tools to Editing', () => {
-        expect(formatToolActivityLabel('Edit')).to.equal('Editing');
-        expect(formatToolActivityLabel('Write')).to.equal('Editing');
-        expect(formatToolActivityLabel('patch')).to.equal('Editing');
+        expect(formatToolActivityLabel('Edit')).to.equal('Edited file');
+        expect(formatToolActivityLabel('Write')).to.equal('Created file');
+        expect(formatToolActivityLabel('patch')).to.equal('Edited file');
     });
 
     it('maps think tools to Thinking', () => {
@@ -135,12 +135,13 @@ describe('formatToolActivityLabel', () => {
     });
 
     it('enriches edit label with last two path segments from JSON args', () => {
-        expect(formatToolActivityLabel('str_replace_editor', '{"path":"src/auth/login.ts"}')).to.equal('Editing auth/login.ts');
-        expect(formatToolActivityLabel('Edit', '{"path":"packages/core/src/app.ts"}')).to.equal('Editing src/app.ts');
+        expect(formatToolActivityLabel('str_replace_editor', '{"path":"src/auth/login.ts"}')).to.equal('Edited file: auth/login.ts');
+        expect(formatToolActivityLabel('Edit', '{"path":"packages/core/src/app.ts"}')).to.equal('Edited file: src/app.ts');
     });
 
     it('enriches bash label with command from JSON args', () => {
-        expect(formatToolActivityLabel('Bash', '{"command":"npm test"}')).to.equal('Running: npm test');
+        expect(formatToolActivityLabel('Bash', '{"command":"npm test"}')).to.equal('Ran command: npm test');
+        expect(formatToolActivityLabel('Bash', '{"command":"pnpm dev"}')).to.equal('Started server: pnpm dev');
     });
 
     it('enriches search label with pattern from JSON args', () => {
@@ -169,12 +170,12 @@ describe('formatToolActivityLabel', () => {
     });
 
     it('falls back to generic label when args is not valid JSON', () => {
-        expect(formatToolActivityLabel('Bash', 'not json')).to.equal('Running command');
-        expect(formatToolActivityLabel('Edit', 'partial {')).to.equal('Editing');
+        expect(formatToolActivityLabel('Bash', 'not json')).to.equal('Ran command');
+        expect(formatToolActivityLabel('Edit', 'partial {')).to.equal('Edited file');
     });
 
     it('falls back to generic label when args has no recognised detail field', () => {
-        expect(formatToolActivityLabel('Bash', '{"timeout":30}')).to.equal('Running command');
+        expect(formatToolActivityLabel('Bash', '{"timeout":30}')).to.equal('Ran command');
     });
 });
 
@@ -223,7 +224,7 @@ describe('buildConversationListMetrics', () => {
                 },
             ],
         });
-        expect(metrics.activityLabel).to.equal('Running: npm test');
+        expect(metrics.activityLabel).to.equal('Ran command: npm test');
         expect(metrics.turnProgressCurrent).to.equal(1);
         expect(metrics.turnProgressTotal).to.equal(1);
     });

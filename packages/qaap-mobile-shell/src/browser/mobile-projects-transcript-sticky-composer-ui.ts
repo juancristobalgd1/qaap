@@ -607,11 +607,47 @@ export class MobileProjectsTranscriptStickyComposerUi {
             onReview: () => {
                 this.host.executionSurfaceTabsUi.selectTranscriptTab('review', project, summary);
             },
+            onRunApp: () => {
+                void this.submitRunGeneratedAppFollowUp(project, summary);
+            },
+            onOpenPreview: project.previewUrl
+                ? () => { void this.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(project.previewUrl!); }
+                : undefined,
             onCommitAction: (this.host.commitMessageAi || this.host.quickInputService)
                 ? action => { void this.runComposerCommitAction(project, summary, action); }
                 : undefined,
             commitBusy: this.composerCommitBusy || this.composerChangedFilesBulkBusy,
         };
+    }
+
+    protected async submitRunGeneratedAppFollowUp(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        const chatHost = this.host.resolveActiveTranscriptChatHost() ?? this.host.transcriptChatHost;
+        if (!chatHost) {
+            this.host.transcriptComposerDraft = nls.localize(
+                'qaap/mobileProjects/runGeneratedAppPrompt',
+                'Run the generated app now. Install dependencies if needed, start the dev server, fix any startup errors, and open or report the preview URL.',
+            );
+            this.remountTranscriptStickyComposer();
+            return;
+        }
+        const pinnedId = this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary);
+        await this.submitTranscriptComposerDraft(
+            nls.localize(
+                'qaap/mobileProjects/runGeneratedAppPrompt',
+                'Run the generated app now. Install dependencies if needed, start the dev server, fix any startup errors, and open or report the preview URL.',
+            ),
+            project,
+            summary,
+            chatHost,
+            {
+                resolvedPinnedId: pinnedId,
+                showApprovalPolicy: agentSupportsApprovalPolicy(pinnedId),
+                isLegacyTheiaChat: summary.source === 'theia-chat',
+            },
+        );
     }
 
     /** Same git workflows as the diff-review toolbar, surfaced beside the composer Changes pill. */

@@ -10,6 +10,7 @@ import {
     MobileProjectsExecutionSurfaceTabsUi,
     type MobileProjectsExecutionSurfaceTabsHost,
 } from './mobile-projects-execution-surface-tabs-ui';
+import type { MobileProjectEntry } from './mobile-projects-types';
 
 describe('mobile-projects-execution-surface-tabs-ui', () => {
 
@@ -59,6 +60,13 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             transcriptHeaderUi: {} as MobileProjectsExecutionSurfaceTabsHost['transcriptHeaderUi'],
             transcriptSurfacesUi: {
                 suspendTranscriptPreviewIframe: () => undefined,
+                updateTranscriptHeader: () => undefined,
+                renderPlanTab: () => undefined,
+                mountTranscriptReviewWidget: async () => undefined,
+                renderPreviewTab: () => undefined,
+                ensureTranscriptFilesTab: () => undefined,
+                ensureTranscriptTerminalTab: async () => undefined,
+                syncExecutionSurfaceChrome: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptSurfacesUi'],
             projectDetailUi: {} as MobileProjectsExecutionSurfaceTabsHost['projectDetailUi'],
             ensureAgentsHubExecutionShellRendered: () => undefined,
@@ -126,5 +134,62 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         } finally {
             executionRoot.remove();
         }
+    });
+
+    it('allows opening Changes when a streaming turn is visually settled', () => {
+        const project: MobileProjectEntry = {
+            id: 'p1',
+            name: 'Demo',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        };
+        const summary = {
+            id: 'conv-1',
+            cwd: '/tmp/demo',
+            agentId: 'task',
+            title: 'Build page',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+        };
+        const reviewHost = document.createElement('div');
+        const host = createHost({
+            transcriptOpenProject: project,
+            transcriptOpenSummary: summary,
+            transcriptReviewHost: reviewHost,
+            transcriptLastConv: {
+                id: 'conv-1',
+                cwd: '/tmp/demo',
+                agentId: 'task',
+                title: 'Build page',
+                status: 'streaming',
+                createdAt: 1,
+                updatedAt: 2,
+                messages: [{
+                    id: 'a1',
+                    role: 'agent',
+                    content: 'Done.',
+                    createdAt: 2,
+                }],
+            },
+            projects: [project],
+            isAgentWorking: () => true,
+        });
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+
+        ui.selectTranscriptTab('review', project, summary);
+
+        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('review');
+        expect(reviewHost.hidden).to.equal(false);
     });
 });

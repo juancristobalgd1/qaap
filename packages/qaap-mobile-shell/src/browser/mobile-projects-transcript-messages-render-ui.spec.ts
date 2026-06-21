@@ -135,6 +135,30 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         };
     }
 
+    it('keeps empty landing chats as chat prompts without the project creation hero', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const conv: QaapAgentConversationDTO = {
+            id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
+            cwd: '/workspace',
+            agentId: 'codex',
+            title: 'Idle',
+            status: 'idle',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: [],
+        };
+
+        renderUi.renderTranscriptMessages(chatHost, conv);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+
+        expect(messageHost.querySelector('.theia-mobile-agents-hub-landing-hero')).to.equal(null);
+        expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-actions')).to.not.equal(null);
+    });
+
     it('clears streaming activity row when switching to an empty conversation', () => {
         const { renderUi, host } = createRenderUi();
         const chatHost = document.createElement('div');
@@ -172,7 +196,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         host.retryOpenTranscriptStream = () => {
             retried += 1;
         };
-        host.transcriptLastStreamProgressAt = Date.now() - 61_000;
+        host.transcriptLastStreamProgressAt = Date.now() - 31_000;
 
         const streaming = streamingIdleConv();
         host.transcriptLastConv = streaming;

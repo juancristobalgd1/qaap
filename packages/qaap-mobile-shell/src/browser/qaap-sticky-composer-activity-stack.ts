@@ -32,6 +32,8 @@ export interface StickyComposerActivityStackOptions {
     onKeepAll?: () => void;
     changedFilesBulkBusy?: boolean;
     onReview?: () => void;
+    onRunApp?: () => void;
+    onOpenPreview?: () => void;
     /** When set, a commit split-button (primary action + options menu) renders beside the Changes pill. */
     onCommitAction?: (action: QaapGitCommitWorkflowAction) => void;
     commitBusy?: boolean;
@@ -137,6 +139,8 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         options.agentWorking ? 1 : 0,
         options.commitBusy ? 1 : 0,
         options.onCommitAction ? 1 : 0,
+        options.onRunApp ? 1 : 0,
+        options.onOpenPreview ? 1 : 0,
     ].join('|');
 }
 
@@ -159,8 +163,13 @@ export function patchStickyComposerChangesPillHost(
         ? files.length
         : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
     const hasCommitAction = !!options.onCommitAction;
+    const hasNextActions = !!options.onRunApp || !!options.onOpenPreview;
     const existingCommitGroup = row.querySelector(':scope > .theia-mobile-sticky-composer-commit-group');
     if (!!existingCommitGroup !== hasCommitAction) {
+        return false;
+    }
+    const existingNextActions = row.querySelector(':scope > .theia-mobile-sticky-composer-next-actions');
+    if (!!existingNextActions !== hasNextActions) {
         return false;
     }
 
@@ -192,6 +201,10 @@ export function patchStickyComposerChangesPillHost(
         if (menuBtn) {
             menuBtn.disabled = !!options.commitBusy;
         }
+    }
+
+    if (hasNextActions && existingNextActions instanceof HTMLElement) {
+        patchChangesNextActions(existingNextActions, options);
     }
 
     const existingStop = row.querySelector(':scope > .theia-mobile-sticky-composer-activity-stop');
@@ -399,7 +412,7 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
         );
         const label = document.createElement('span');
         label.className = 'theia-mobile-sticky-composer-changes-pill-label';
-        label.textContent = nls.localize('qaap/diff/changes', 'Changes');
+        label.textContent = nls.localize('qaap/mobileProjects/reviewChanges', 'Review changes');
         pill.append(label);
         appendDiffStatsInline(pill, stats);
         pill.addEventListener('click', ev => {
@@ -412,6 +425,11 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
 
     if (options.onCommitAction) {
         row.append(renderChangesCommitGroup(options));
+    }
+
+    const nextActions = renderChangesNextActions(options);
+    if (nextActions) {
+        row.append(nextActions);
     }
 
     if (options.agentWorking && options.onStop) {
@@ -431,6 +449,63 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
 
     section.append(row);
     return section;
+}
+
+function renderChangesNextActions(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
+    if (!options.onRunApp && !options.onOpenPreview) {
+        return undefined;
+    }
+    const group = document.createElement('div');
+    group.className = 'theia-mobile-sticky-composer-next-actions';
+    patchChangesNextActions(group, options);
+    return group;
+}
+
+function patchChangesNextActions(group: HTMLElement, options: StickyComposerActivityStackOptions): void {
+    group.replaceChildren();
+    if (options.onRunApp) {
+        group.append(createChangesNextActionButton({
+            className: 'theia-mod-run',
+            label: nls.localize('qaap/agentsHub/quickAction/runApp', 'Run app'),
+            iconClass: 'codicon-rocket',
+            onClick: options.onRunApp,
+        }));
+    }
+    if (options.onOpenPreview) {
+        group.append(createChangesNextActionButton({
+            className: 'theia-mod-preview',
+            label: nls.localize('qaap/mobileProjects/openPreview', 'Open preview'),
+            iconClass: 'codicon-globe',
+            onClick: options.onOpenPreview,
+        }));
+    }
+}
+
+function createChangesNextActionButton(options: {
+    readonly className: string;
+    readonly label: string;
+    readonly iconClass: string;
+    readonly onClick: () => void;
+}): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `theia-mobile-sticky-composer-next-action ${options.className}`;
+    btn.title = options.label;
+    btn.setAttribute('aria-label', options.label);
+    btn.append(createNextActionIcon(options.iconClass), document.createTextNode(options.label));
+    btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        options.onClick();
+    });
+    return btn;
+}
+
+function createNextActionIcon(iconClass: string): HTMLElement {
+    const icon = document.createElement('span');
+    icon.className = `codicon ${iconClass}`;
+    icon.setAttribute('aria-hidden', 'true');
+    return icon;
 }
 
 /** Split button beside the Changes pill: primary "Commit & Push" + a menu with the other git workflows. */

@@ -103,8 +103,8 @@ export class QaapQaiqAgUiStreamEmitter implements QaapCliAgUiStreamEmitter {
         if (type === 'user') {
             return this.handleUserMessage(envelope);
         }
-        if (type === 'result' && envelope.is_error && typeof envelope.result === 'string' && envelope.result.trim()) {
-            return [{ type: 'RUN_ERROR', message: envelope.result.trim() }];
+        if (type === 'result') {
+            return this.handleResultMessage(envelope);
         }
         return [];
     }
@@ -403,6 +403,61 @@ export class QaapQaiqAgUiStreamEmitter implements QaapCliAgUiStreamEmitter {
             });
         }
         return events;
+    }
+
+    protected handleResultMessage(envelope: StreamMessageEnvelope): QaapAgUiEvent[] {
+        if (typeof envelope.result !== 'string' || !envelope.result.trim()) {
+            return [];
+        }
+        const result = envelope.result.trim();
+        if (envelope.is_error) {
+            return [{ type: 'RUN_ERROR', message: result }];
+        }
+        return this.syncFinalResultText(result);
+    }
+
+    protected syncFinalResultText(text: string): QaapAgUiEvent[] {
+        const trimmed = text.trim();
+        if (!trimmed) {
+            return [];
+        }
+        const priorId = this.liveTextId ?? this.findPartialTextId(trimmed);
+        if (priorId) {
+            const prior = this.textContentById.get(priorId) ?? '';
+            const wasLiveText = this.liveTextId === priorId;
+            if (trimmed === prior) {
+                this.clearLiveTextIfCurrent(priorId);
+                return wasLiveText ? [{ type: 'TEXT_MESSAGE_END', messageId: priorId }] : [];
+            }
+            if (trimmed.startsWith(prior) && trimmed.length > prior.length) {
+                const append = trimmed.slice(prior.length);
+                this.textContentById.set(priorId, trimmed);
+                this.clearLiveTextIfCurrent(priorId);
+                return [
+                    { type: 'TEXT_MESSAGE_CONTENT', messageId: priorId, delta: append },
+                    { type: 'TEXT_MESSAGE_END', messageId: priorId },
+                ];
+            }
+        }
+        const existingId = this.findTextIdWithContent(trimmed);
+        if (existingId) {
+            return [];
+        }
+        const messageId = this.nextMessageId('text');
+        this.textContentById.set(messageId, trimmed);
+        return [
+            { type: 'TEXT_MESSAGE_START', messageId },
+            { type: 'TEXT_MESSAGE_CONTENT', messageId, delta: trimmed },
+            { type: 'TEXT_MESSAGE_END', messageId },
+        ];
+    }
+
+    protected clearLiveTextIfCurrent(messageId: string): void {
+        if (this.liveTextId !== messageId) {
+            return;
+        }
+        this.liveTextId = undefined;
+        this.liveText = '';
     }
 
     protected ensureLiveTextId(): string {

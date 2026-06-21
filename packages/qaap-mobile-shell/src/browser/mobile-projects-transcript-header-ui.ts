@@ -132,6 +132,9 @@ export class MobileProjectsTranscriptHeaderUi {
             return summary?.activityLabel?.trim()
                 || nls.localize('qaap/mobileProjects/chatStatusStreaming', 'Working');
         }
+        if (effectiveStatus === 'settled') {
+            return nls.localize('qaap/mobileProjects/chatStatusFinalizing', 'Finalizing');
+        }
         if (summary?.status === 'failed') {
             return nls.localize('qaap/mobileProjects/chatStatusFailed', 'Failed');
         }

@@ -19,6 +19,7 @@ import {
     isQaapScmChangesIcon,
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '../common/qaap-scm-changes-icon';
+import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
 import { applyExecutionSurfaceHeaderChrome } from './qaap-execution-surface-header-chrome';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
@@ -221,7 +222,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         summary: QaapAgentConversationSummaryDTO,
         origin: 'transcript' | 'project-detail',
     ): void {
-        if (this.host.isAgentWorking() && tab !== 'messages') {
+        if (this.shouldRestrictToMessages(summary) && tab !== 'messages') {
             tab = 'messages';
         }
         const sameTab = this.executionSurfaceTabForProject(project) === tab;
@@ -542,10 +543,22 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-folder-opened' },
             { id: 'terminal', label: nls.localize('qaap/mobileProjects/tabTerminal', 'Terminal'), icon: 'codicon-terminal' },
         ];
-        if (this.host.isAgentWorking()) {
+        if (this.shouldRestrictToMessages(this.host.transcriptOpenSummary)) {
             return all.filter(spec => spec.id === 'messages');
         }
         return all;
+    }
+
+    protected shouldRestrictToMessages(summary?: QaapAgentConversationSummaryDTO): boolean {
+        if (!this.host.isAgentWorking()) {
+            return false;
+        }
+        const conv = this.host.transcriptLastConv;
+        const summaryId = summary?.id ?? this.host.transcriptOpenSummary?.id;
+        if (conv && summaryId && conv.id === summaryId) {
+            return resolveTranscriptEffectiveStatus(conv) === 'streaming';
+        }
+        return true;
     }
 
     createExecutionSurfaceIconSelect(

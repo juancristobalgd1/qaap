@@ -225,6 +225,28 @@ export class MobileProjectsStickyComposerWorkspaceUi {
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-sticky-composer-sheet-list';
+
+        const actionsLabel = document.createElement('div');
+        actionsLabel.className = 'theia-mobile-sticky-composer-sheet-section-label';
+        actionsLabel.textContent = nls.localize('qaap/composerWorkspace/projectSheetActions', 'Add');
+        list.append(actionsLabel);
+        list.append(this.createComposerProjectSheetAction({
+            iconClass: 'codicon-add',
+            label: nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project'),
+            onSelect: () => {
+                this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
+                void this.onCreateNewProjectFromSheet();
+            },
+        }));
+        list.append(this.createComposerProjectSheetAction({
+            iconClass: 'codicon-repo-clone',
+            label: nls.localize('qaap/mobileProjects/newRepository', 'Add repository'),
+            onSelect: () => {
+                this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
+                void this.host.onNewClick();
+            },
+        }));
+
         const label = document.createElement('div');
         label.className = 'theia-mobile-sticky-composer-sheet-section-label';
         label.textContent = nls.localize('qaap/composerWorkspace/projectSheetSection', 'Repository');
@@ -273,27 +295,6 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             });
             list.append(btn);
         }
-
-        const actionsLabel = document.createElement('div');
-        actionsLabel.className = 'theia-mobile-sticky-composer-sheet-section-label';
-        actionsLabel.textContent = nls.localize('qaap/composerWorkspace/projectSheetActions', 'Add');
-        list.append(actionsLabel);
-        list.append(this.createComposerProjectSheetAction({
-            iconClass: 'codicon-repo-clone',
-            label: nls.localize('qaap/mobileProjects/newRepository', 'Add repository'),
-            onSelect: () => {
-                this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
-                void this.host.onNewClick();
-            },
-        }));
-        list.append(this.createComposerProjectSheetAction({
-            iconClass: 'codicon-add',
-            label: nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project'),
-            onSelect: () => {
-                this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
-                void this.onCreateNewProjectFromSheet();
-            },
-        }));
 
         panel.append(list);
         this.mountComposerWorkspaceSheetPresentation(panel, {
@@ -591,4 +592,3 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         }
     }
 }
-

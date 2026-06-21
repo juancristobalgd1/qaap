@@ -47,7 +47,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(host!.className).to.equal('theia-mobile-sticky-composer-changes-pill-host');
             const pill = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-changes-pill');
             expect(pill).to.exist;
-            expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-label')?.textContent).to.equal('Changes');
+            expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-label')?.textContent).to.equal('Review changes');
             expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+5');
             expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('-1');
             expect(host!.querySelector('.theia-mobile-sticky-composer-changed-file-row')).to.equal(null);
@@ -112,6 +112,23 @@ describe('qaap-sticky-composer-activity-stack', () => {
             items[0].click();
             expect(actions).to.deep.equal(['commit-push', 'create-branch-commit']);
             expect(dropdown!.hidden).to.equal(true);
+        });
+
+        it('renders explicit next-step actions after changes are available', () => {
+            const actions: string[] = [];
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 10, removed: 1 },
+                onReview: () => undefined,
+                onRunApp: () => { actions.push('run'); },
+                onOpenPreview: () => { actions.push('preview'); },
+            });
+            document.body.append(host!);
+
+            const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
+            expect(nextActions.map(action => action.textContent)).to.deep.equal(['Run app', 'Open preview']);
+            nextActions[0].click();
+            nextActions[1].click();
+            expect(actions).to.deep.equal(['run', 'preview']);
         });
 
         it('marks the commit group busy (border beam) and disables its buttons while committing', () => {

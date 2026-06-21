@@ -6667,6 +6667,64 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex: 0 0 auto;
 }
 
+.theia-mobile-sticky-composer-next-actions {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.theia-mobile-sticky-composer-next-action {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 5%, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.theia-mobile-sticky-composer-next-action.theia-mod-preview {
+  color: color-mix(in srgb, var(--theia-button-background, #0e639c) 70%, var(--theia-foreground));
+}
+
+.theia-mobile-sticky-composer-next-action:hover,
+.theia-mobile-sticky-composer-next-action:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 10%, var(--theia-editor-background));
+  border-color: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+}
+
+@media (max-width: 430px) {
+  .theia-mobile-sticky-composer-changes-pill-row {
+    gap: 6px;
+  }
+
+  .theia-mobile-sticky-composer-changes-pill,
+  .theia-mobile-sticky-composer-next-action {
+    padding-inline: 8px;
+  }
+
+  .theia-mobile-sticky-composer-next-action {
+    max-width: 96px;
+  }
+}
+
 /* Commit split-button — same glass pill language as the Changes pill. */
 .theia-mobile-sticky-composer-commit-group {
   flex: 0 1 auto;

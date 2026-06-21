@@ -214,7 +214,7 @@ export function formatTranscriptThoughtDuration(elapsedMs: number): string {
 export const TRANSCRIPT_STREAM_STALL_MS = 15_000;
 
 /** Hard timeout when no semantic progress (tools / answer text) for this long. */
-export const TRANSCRIPT_STREAM_TIMEOUT_MS = 60_000;
+export const TRANSCRIPT_STREAM_TIMEOUT_MS = 30_000;
 
 /** Hide "Thinking for…" / planning chrome until the turn has been thinking-only this long. */
 export const TRANSCRIPT_THINKING_UI_GRACE_MS = 2_000;

@@ -210,9 +210,6 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             const empty = document.createElement('div');
             empty.className = 'theia-mobile-agent-transcript-empty';
-            if (this.workHub.isAgentsHubLanding()) {
-                empty.append(this.workHub.createAgentsHubLandingHeroBlock());
-            }
             empty.append(this.workHub.createAgentsHubQuickActionsBlock());
             messageHost.append(empty);
             this.host.transcriptUserScrollPinDispose.dispose();

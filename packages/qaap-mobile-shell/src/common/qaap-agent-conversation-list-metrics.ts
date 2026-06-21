@@ -268,10 +268,20 @@ export function formatToolActivityLabel(toolName: string | undefined | null, arg
         return detail ? `Reading ${detail}` : 'Reading files';
     }
     if (name.includes('bash') || name.includes('shell') || name.includes('terminal') || name.includes('run_')) {
-        return detail ? `Running: ${detail}` : 'Running command';
+        if (detail && /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve)\b|(?:vite|next|astro|remix)\s+(?:dev|start)?\b/i.test(detail)) {
+            return `Started server: ${detail}`;
+        }
+        if (detail && /\b(?:open|preview|localhost|127\.0\.0\.1|0\.0\.0\.0|:\d{2,5})\b/i.test(detail)) {
+            return `Preview ready: ${detail}`;
+        }
+        return detail ? `Ran command: ${detail}` : 'Ran command';
     }
     if (name.includes('write') || name.includes('edit') || name.includes('patch') || name.includes('replace')) {
-        return detail ? `Editing ${detail}` : 'Editing';
+        const created = name.includes('write') || name.includes('create');
+        if (created) {
+            return detail ? `Created file: ${detail}` : 'Created file';
+        }
+        return detail ? `Edited file: ${detail}` : 'Edited file';
     }
     if (name.includes('think')) {
         return 'Thinking';
