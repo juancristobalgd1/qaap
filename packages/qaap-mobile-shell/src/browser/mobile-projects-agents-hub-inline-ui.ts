@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationDTO,
@@ -16,9 +16,6 @@ import {
 } from '../common/qaap-agents-hub-landing';
 import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
-import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
-import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
-import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
@@ -62,6 +59,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptConversationCache: Map<string, QaapAgentConversationDTO>;
     transcriptLastSseDeltaAt: number | undefined;
     transcriptLastStreamProgressAt: number | undefined;
+    transcriptLastSemanticProgressKey: string | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptPlanHost: HTMLElement | undefined;
     transcriptReviewHost: HTMLElement | undefined;
@@ -295,12 +293,6 @@ export class MobileProjectsAgentsHubInlineUi {
         executionRoot.append(transcriptRoot);
         this.host.scroll.append(executionRoot);
 
-        this.host.transcriptUserScrollPinDispose.dispose();
-        this.host.transcriptUserScrollPinDispose = new DisposableCollection(
-            attachTranscriptUserScrollPin(chatHost),
-            attachTranscriptActivityTimelineStickySummary(chatHost),
-            attachTranscriptScrollToBottomButton(chatHost),
-        );
         this.host.updateTasksAttentionChrome();
         this.host.renderSubtitle();
         this.syncAgentsHubInlineExecutionHeader(project, summary);
@@ -334,9 +326,21 @@ export class MobileProjectsAgentsHubInlineUi {
         const actions = document.createElement('div');
         actions.className = 'theia-mobile-agents-hub-onboarding-actions';
 
+        const newProject = document.createElement('button');
+        newProject.type = 'button';
+        newProject.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary';
+        const newProjectIcon = document.createElement('span');
+        newProjectIcon.className = 'codicon codicon-new-folder theia-mobile-agents-hub-onboarding-btn-icon';
+        newProjectIcon.setAttribute('aria-hidden', 'true');
+        const newProjectLabel = document.createElement('span');
+        newProjectLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
+        newProjectLabel.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
+        newProject.append(newProjectIcon, newProjectLabel);
+        newProject.addEventListener('click', () => { void this.host.onStartNewProject(); });
+
         const addRepo = document.createElement('button');
         addRepo.type = 'button';
-        addRepo.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary';
+        addRepo.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-ghost';
         const addRepoIcon = document.createElement('span');
         addRepoIcon.className = 'codicon codicon-repo-clone theia-mobile-agents-hub-onboarding-btn-icon';
         addRepoIcon.setAttribute('aria-hidden', 'true');
@@ -346,19 +350,7 @@ export class MobileProjectsAgentsHubInlineUi {
         addRepo.append(addRepoIcon, addRepoLabel);
         addRepo.addEventListener('click', () => { void this.host.onNewClick(); });
 
-        const newProject = document.createElement('button');
-        newProject.type = 'button';
-        newProject.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-ghost';
-        const newProjectIcon = document.createElement('span');
-        newProjectIcon.className = 'codicon codicon-add theia-mobile-agents-hub-onboarding-btn-icon';
-        newProjectIcon.setAttribute('aria-hidden', 'true');
-        const newProjectLabel = document.createElement('span');
-        newProjectLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
-        newProjectLabel.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
-        newProject.append(newProjectIcon, newProjectLabel);
-        newProject.addEventListener('click', () => { void this.host.onStartNewProject(); });
-
-        actions.append(addRepo, newProject);
+        actions.append(newProject, addRepo);
 
         const openLocal = document.createElement('button');
         openLocal.type = 'button';
@@ -425,7 +417,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptConversationCache.set(conv.id, conv);
         this.host.transcriptLastConv = conv;
         this.host.transcriptLastFingerprint = undefined;
-        this.host.transcriptLastStreamProgressAt = Date.now();
+        this.host.transcriptLiveUi.seedTranscriptSemanticProgressClock();
     }
 
     seedTranscriptOptimisticSubmit(
@@ -592,7 +584,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptLastConv = cachedTargetConversation;
         this.host.transcriptLastFingerprint = undefined;
         this.host.transcriptLastSseDeltaAt = undefined;
-        this.host.transcriptLastStreamProgressAt = undefined;
+        this.host.transcriptLiveUi.clearTranscriptSemanticProgressClock();
         const chatHost = this.ensureAgentsHubExecutionShell(project, summary);
         const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project);
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
@@ -614,7 +606,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptLiveUi.stopTranscriptLiveWatch();
         this.host.transcriptLastConv = undefined;
         this.host.transcriptLastFingerprint = undefined;
-        this.host.transcriptLastStreamProgressAt = undefined;
+        this.host.transcriptLiveUi.clearTranscriptSemanticProgressClock();
         this.host.transcriptLastSseDeltaAt = undefined;
         this.host.transcriptOpenSummaryId = undefined;
         this.host.transcriptOpenSummary = undefined;

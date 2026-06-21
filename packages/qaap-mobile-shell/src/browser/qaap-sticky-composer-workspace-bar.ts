@@ -11,6 +11,15 @@ export interface StickyComposerWorkspaceBarView {
     readonly branchName: string;
 }
 
+export type StickyComposerWorkspaceFieldKind = 'project' | 'branch' | 'destination';
+
+export function appendStickyComposerContextDivider(container: HTMLElement): void {
+    const divider = document.createElement('span');
+    divider.className = 'theia-mobile-projects-sticky-composer-context-divider';
+    divider.setAttribute('aria-hidden', 'true');
+    container.append(divider);
+}
+
 export function createStickyComposerWorkspacePill(options: {
     readonly iconClass: string;
     readonly label: string;
@@ -18,6 +27,7 @@ export function createStickyComposerWorkspacePill(options: {
     readonly onClick: (anchor: HTMLButtonElement) => void;
     readonly mono?: boolean;
     readonly branch?: boolean;
+    readonly fieldKind?: StickyComposerWorkspaceFieldKind;
 }): HTMLButtonElement {
     return createWorkspacePill(options);
 }
@@ -30,29 +40,53 @@ export function renderStickyComposerWorkspaceBar(options: {
     readonly includeBranch?: boolean;
 }): HTMLElement {
     const bar = document.createElement('div');
-    bar.className = 'theia-mobile-projects-sticky-composer-workspace-bar';
+    bar.className = 'theia-mobile-projects-sticky-composer-workspace-bar theia-mobile-projects-sticky-composer-workspace-context-bar';
 
-    const pills: HTMLButtonElement[] = [];
+    const appendField = (pill: HTMLButtonElement, kind: StickyComposerWorkspaceFieldKind): void => {
+        if (bar.childElementCount > 0) {
+            appendStickyComposerContextDivider(bar);
+        }
+        const field = document.createElement('div');
+        field.className = `theia-mobile-projects-sticky-composer-context-field theia-mod-${kind}`;
+        field.append(pill);
+        bar.append(field);
+    };
+
     if (options.includeProject !== false) {
-        pills.push(createWorkspacePill({
+        appendField(createWorkspacePill({
             iconClass: 'codicon-folder',
             label: options.view.projectName,
             ariaLabel: nls.localize('qaap/composerWorkspace/projectAria', 'Project: {0}', options.view.projectName),
             onClick: options.onOpenProject,
-        }));
+            fieldKind: 'project',
+        }), 'project');
     }
     if (options.includeBranch !== false) {
-        pills.push(createWorkspacePill({
+        appendField(createWorkspacePill({
             iconClass: 'codicon-git-branch',
             label: options.view.branchName,
             ariaLabel: nls.localize('qaap/composerWorkspace/branchAria', 'Branch: {0}', options.view.branchName),
             onClick: options.onOpenBranch,
             mono: true,
             branch: true,
-        }));
+            fieldKind: 'branch',
+        }), 'branch');
     }
-    bar.append(...pills);
     return bar;
+}
+
+export function appendStickyComposerWorkspaceContextField(
+    bar: HTMLElement,
+    pill: HTMLButtonElement,
+    kind: StickyComposerWorkspaceFieldKind,
+): void {
+    if (bar.childElementCount > 0) {
+        appendStickyComposerContextDivider(bar);
+    }
+    const field = document.createElement('div');
+    field.className = `theia-mobile-projects-sticky-composer-context-field theia-mod-${kind}`;
+    field.append(pill);
+    bar.append(field);
 }
 
 function createWorkspacePill(options: {
@@ -62,12 +96,16 @@ function createWorkspacePill(options: {
     readonly onClick: (anchor: HTMLButtonElement) => void;
     readonly mono?: boolean;
     readonly branch?: boolean;
+    readonly fieldKind?: StickyComposerWorkspaceFieldKind;
 }): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'theia-mobile-projects-sticky-composer-workspace-pill';
     if (options.branch) {
         btn.classList.add('theia-mod-branch');
+    }
+    if (options.fieldKind) {
+        btn.classList.add(`theia-mod-field-${options.fieldKind}`);
     }
     btn.title = options.ariaLabel;
     btn.setAttribute('aria-label', options.ariaLabel);

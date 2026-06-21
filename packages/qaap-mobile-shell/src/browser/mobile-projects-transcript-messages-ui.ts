@@ -39,6 +39,7 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptLastRenderedMessageId: string | undefined;
     transcriptLastFingerprint: string | undefined;
     transcriptLastStreamProgressAt: number | undefined;
+    transcriptLastSemanticProgressKey: string | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptComposerDraft: string;
     transcriptComposerHost: HTMLElement | undefined;
@@ -67,6 +68,8 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     maybeSyncTranscriptVisuallySettledChrome(conv: QaapAgentConversationDTO): void;
+    cancelOpenTranscriptStream?(): void;
+    retryOpenTranscriptStream?(): void | Promise<void>;
 }
 
 /** Transcript message list rendering: rows, streaming patches, and rich segment UI. */

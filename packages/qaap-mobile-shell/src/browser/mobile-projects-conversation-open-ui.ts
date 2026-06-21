@@ -22,6 +22,7 @@ export interface MobileProjectsConversationOpenHost {
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     transcriptLastFingerprint: string | undefined;
     transcriptLastStreamProgressAt: number | undefined;
+    transcriptLastSemanticProgressKey: string | undefined;
     transcriptLastSseDeltaAt: number | undefined;
     delegate: {
         onDismiss(): void;

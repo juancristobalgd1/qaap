@@ -116,7 +116,7 @@ export class MobileProjectsTranscriptSubmitUi {
             return;
         }
         this.host.transcriptLastFingerprint = undefined;
-        this.host.transcriptLastStreamProgressAt = Date.now();
+        this.host.transcriptLiveUi.seedTranscriptSemanticProgressClock();
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
     }
 

@@ -27,6 +27,8 @@ import {
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
+import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
+import { isTranscriptComposerVisualIdle } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
@@ -903,6 +905,25 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return this.host.transcriptOpenSummary?.id === summary.id && this.host.transcriptOpenSummary.status === 'streaming';
     }
 
+    isTranscriptStickyComposerAgentBeamIdle(): boolean {
+        if (!this.isTranscriptStickyComposerAgentWorking()) {
+            return false;
+        }
+        const summary = this.host.transcriptComposerSummary;
+        if (!summary) {
+            return true;
+        }
+        const conv = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : undefined;
+        const segments = conv ? resolveTranscriptStreamingAgentSegments(conv) : [];
+        return isTranscriptComposerVisualIdle(
+            segments,
+            true,
+            this.host.transcriptLastStreamProgressAt,
+        );
+    }
+
     applyTranscriptComposerPrefsFromConversation(
         conv: QaapAgentConversationDTO,
         project: MobileProjectEntry,
@@ -1227,6 +1248,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 })
                 : undefined,
             isAgentWorking: () => this.isTranscriptStickyComposerAgentWorking(),
+            isAgentBeamIdle: () => this.isTranscriptStickyComposerAgentBeamIdle(),
             onStop: () => { void this.host.onCancelConversation(project, summary); },
             onSendControlMounted: refresh => { this.host.transcriptComposerSendRefresh = refresh; },
             onAttach: anchor => { void this.onTranscriptComposerAttach(project, anchor); },

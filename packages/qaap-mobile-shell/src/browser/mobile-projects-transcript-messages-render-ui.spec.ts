@@ -52,6 +52,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             transcriptLastRenderedMessageId: undefined,
             transcriptLastFingerprint: undefined,
             transcriptLastStreamProgressAt: undefined,
+            transcriptLastSemanticProgressKey: undefined,
             transcriptChatHost: undefined,
             transcriptComposerDraft: '',
             transcriptComposerHost: undefined,
@@ -75,7 +76,14 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             maybeSyncTranscriptVisuallySettledChrome: () => undefined,
         } as unknown as MobileProjectsTranscriptMessagesHost;
         const workHub = {
+            isAgentsHubLanding: () => true,
             shouldEmbedAgentsHubRecentsInWorkspaceTranscript: () => false,
+            createAgentsHubLandingHeroBlock: () => {
+                const hero = document.createElement('section');
+                hero.className = 'theia-mobile-agents-hub-landing-hero';
+                hero.textContent = 'Start new project';
+                return hero;
+            },
             createAgentsHubQuickActionsBlock: () => {
                 const block = document.createElement('div');
                 block.className = 'theia-mobile-agent-transcript-empty-actions';

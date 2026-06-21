@@ -78,7 +78,7 @@ export function formatTranscriptStreamTokens(chars: number): string | undefined 
     return `~${rounded}k tokens`;
 }
 
-type ThinkingPhaseSegment = Readonly<{ readonly type: string; readonly content?: string }>;
+type ThinkingPhaseSegment = Readonly<{ readonly type: string; readonly content?: string; readonly finished?: boolean }>;
 
 /**
  * Cursor-style thinking phase: streaming turn with no tool calls or answer text yet.
@@ -158,11 +158,35 @@ export function resolveTranscriptTraceDisplayPhase(
     return 'acting';
 }
 
-/** Inline timeline is redundant with the live thought brief during thinking-only streaming. */
+/** True while the turn is streaming but no tool or substantive answer has arrived yet. */
+export function shouldShowTranscriptStreamingBootstrapTimeline(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+): boolean {
+    if (!streaming) {
+        return false;
+    }
+    if (segments.some(segment => segment.type === 'tool')) {
+        return false;
+    }
+    if (hasActiveTranscriptToolSegment(segments)) {
+        return false;
+    }
+    const textChars = resolveTranscriptAgentTextChars(segments);
+    if (textChars > 0 && !isTranscriptShortTextPreamble(segments)) {
+        return false;
+    }
+    return true;
+}
+
+/** Show bootstrap lifecycle steps during thinking-only streaming; otherwise hide redundant thinking chrome. */
 export function shouldShowTranscriptInlineTimeline(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
 ): boolean {
+    if (shouldShowTranscriptStreamingBootstrapTimeline(segments, streaming)) {
+        return true;
+    }
     return resolveTranscriptTraceDisplayPhase(segments, streaming) !== 'thinking';
 }
 
@@ -171,6 +195,9 @@ export function shouldExpandTranscriptInlineTimeline(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
 ): boolean {
+    if (shouldShowTranscriptStreamingBootstrapTimeline(segments, streaming)) {
+        return true;
+    }
     return resolveTranscriptTraceDisplayPhase(segments, streaming) === 'acting';
 }
 
@@ -185,6 +212,9 @@ export function formatTranscriptThoughtDuration(elapsedMs: number): string {
 
 /** Cursor switches from "Planning next moves" to this after ~15s without visible progress. */
 export const TRANSCRIPT_STREAM_STALL_MS = 15_000;
+
+/** Hard timeout when no semantic progress (tools / answer text) for this long. */
+export const TRANSCRIPT_STREAM_TIMEOUT_MS = 60_000;
 
 /** Hide "Thinking for…" / planning chrome until the turn has been thinking-only this long. */
 export const TRANSCRIPT_THINKING_UI_GRACE_MS = 2_000;
@@ -344,4 +374,45 @@ export function isTranscriptStreamStalled(
         return false;
     }
     return now - lastProgressAtMs >= TRANSCRIPT_STREAM_STALL_MS;
+}
+
+export function isTranscriptStreamTimedOut(
+    lastProgressAtMs: number | undefined,
+    streaming: boolean,
+    now = Date.now(),
+): boolean {
+    if (!streaming || lastProgressAtMs === undefined) {
+        return false;
+    }
+    return now - lastProgressAtMs >= TRANSCRIPT_STREAM_TIMEOUT_MS;
+}
+
+/** True when the composer should use the lightweight idle chrome instead of the premium border beam. */
+export function isTranscriptComposerVisualIdle(
+    segments: readonly ThinkingPhaseSegment[],
+    streaming: boolean,
+    lastProgressAtMs: number | undefined,
+    now = Date.now(),
+): boolean {
+    if (!streaming) {
+        return false;
+    }
+    if (isTranscriptStreamStalled(lastProgressAtMs, streaming, now)
+        || isTranscriptStreamTimedOut(lastProgressAtMs, streaming, now)) {
+        return true;
+    }
+    const hasActiveTool = segments.some(segment =>
+        segment.type === 'tool' && !segment.finished);
+    if (hasActiveTool) {
+        return false;
+    }
+    return !segments.some(segment =>
+        segment.type === 'text' && (segment.content?.trim().length ?? 0) > 0);
+}
+
+export function shouldTranscriptStreamLabelShimmer(kind: string, stalled: boolean, timedOut = false): boolean {
+    if (stalled || timedOut) {
+        return false;
+    }
+    return kind !== 'planning' && kind !== 'thinking' && kind !== 'stall' && kind !== 'timeout';
 }

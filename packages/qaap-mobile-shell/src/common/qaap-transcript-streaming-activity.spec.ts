@@ -14,6 +14,12 @@ describe('qaap-transcript-streaming-activity', () => {
         expect(view.title).to.equal('Slow');
     });
 
+    it('returns timeout state when requested', () => {
+        const view = resolveTranscriptStreamingActivityFromSegments([], { timedOut: true });
+        expect(view.kind).to.equal('timeout');
+        expect(view.title).to.equal('El agente no respondió a tiempo');
+    });
+
     it('prefers the active unfinished tool', () => {
         const view = resolveTranscriptStreamingActivityFromSegments([
             { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: true, toolUseId: '1' },

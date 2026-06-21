@@ -331,7 +331,7 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptLastFingerprint = undefined;
         this.host.transcriptLastConv = undefined;
         this.host.transcriptLastSseDeltaAt = undefined;
-        this.host.transcriptLastStreamProgressAt = undefined;
+        this.host.transcriptLiveUi.clearTranscriptSemanticProgressClock();
         this.host.transcriptChatHost = undefined;
         this.host.transcriptChatInputHost = undefined;
         this.host.transcriptTabStrip = undefined;

@@ -27,6 +27,7 @@ export interface WorkHubTranscriptBridge {
     renderTeamSectionInTranscript(host: HTMLElement, conv: QaapAgentConversationDTO): void;
     renderInlineApproval(host: HTMLElement, conv: QaapAgentConversationDTO): void;
     createAgentsHubRecentsBlock(project: MobileProjectEntry): HTMLElement;
+    createAgentsHubLandingHeroBlock(): HTMLElement;
     createAgentsHubQuickActionsBlock(): HTMLElement;
     renderIdleSubmitOptimistic(
         chatHost: HTMLElement,

@@ -88,6 +88,7 @@ closeCurrentWorkspace(): Promise<void>;
 openConversationSummary(project: MobileProjectEntry, summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
 runCatalogAction(action: import('../common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
     onNewClick(): Promise<void>;
+    onStartNewProject(): Promise<void>;
 }
 
 interface SessionsSidebarConversationEntry {
@@ -163,6 +164,7 @@ export class MobileProjectsSessionsSidebarUi {
                     this.bindSessionsSidebarThreadStoreSubscriptions();
                 },
                 onNewChat: () => { void this.onWorkHubSessionsSidebarNewChat(); },
+                onStartNewProject: () => { void this.host.onStartNewProject(); },
                 onClose: () => {
                     this.host.cardMenuUi.closeCardMenu();
                 },

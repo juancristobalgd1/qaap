@@ -50,6 +50,12 @@ describe('mobile-vertical-touch-scroll', () => {
         expect(MOBILE_SCROLL_COMPOSITOR_EXCLUDED_SELECTORS).to.include('.theia-mobile-projects-scroll');
     });
 
+    it('does not treat transcript real-chat as the scroll host (inner list scrolls)', () => {
+        expect(MOBILE_VERTICAL_SCROLL_SELECTORS).to.not.include(
+            '.theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat',
+        );
+    });
+
     it('isMobileScrollCompositorExcluded guards Work Hub projects scroll', () => {
         const projectsScroll = {
             matches: (selector: string) => selector === '.theia-mobile-projects-scroll',

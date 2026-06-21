@@ -128,6 +128,8 @@ export const TRANSCRIPT_OVERLAY_STATE_KEYS = [
     'transcriptOpenProject',
     'transcriptAutoApproveBusy',
     'transcriptLastFingerprint',
+    'transcriptLastStreamProgressAt',
+    'transcriptLastSemanticProgressKey',
     'transcriptLastConv',
     'transcriptTheiaSessionByConversationId',
     'stickyComposerContextUsageDispose',
@@ -237,6 +239,8 @@ export class TranscriptOverlayState {
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptAutoApproveBusy = false;
     transcriptLastFingerprint: string | undefined;
+    transcriptLastStreamProgressAt: number | undefined;
+    transcriptLastSemanticProgressKey: string | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     readonly transcriptTheiaSessionByConversationId = new Map<string, string>();
     stickyComposerContextUsageDispose: Disposable = Disposable.NULL;

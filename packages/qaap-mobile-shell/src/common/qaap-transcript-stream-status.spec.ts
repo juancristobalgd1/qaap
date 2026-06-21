@@ -11,6 +11,8 @@ import {
     isTranscriptAgentThinkingPhase,
     isTranscriptSimpleQaTurn,
     isTranscriptStreamStalled,
+    isTranscriptStreamTimedOut,
+    isTranscriptComposerVisualIdle,
     isTranscriptThinkingGracePeriod,
     resolveTranscriptTraceDisplayPhase,
     resolveTranscriptTurnStartMs,
@@ -19,6 +21,7 @@ import {
     shouldShowTranscriptInlineTimeline,
     shouldShowTranscriptStreamingActivity,
     shouldShowTranscriptThoughtBrief,
+    shouldTranscriptStreamLabelShimmer,
     TRANSCRIPT_THINKING_UI_GRACE_MS,
 } from './qaap-transcript-stream-status';
 
@@ -89,12 +92,35 @@ describe('qaap-transcript-stream-status', () => {
         expect(isTranscriptStreamStalled(undefined, true, now)).to.equal(false);
     });
 
+    it('detects hard timeouts after sixty seconds without semantic progress', () => {
+        const now = 70_000;
+        expect(isTranscriptStreamTimedOut(0, true, now)).to.equal(true);
+        expect(isTranscriptStreamTimedOut(5_000, true, now)).to.equal(true);
+        expect(isTranscriptStreamTimedOut(20_000, true, now)).to.equal(false);
+        expect(isTranscriptStreamTimedOut(20_000, false, now)).to.equal(false);
+    });
+
+    it('uses lightweight composer chrome during thinking-only and stalled streams', () => {
+        const now = 20_000;
+        expect(isTranscriptComposerVisualIdle([], true, 0, now)).to.equal(true);
+        expect(isTranscriptComposerVisualIdle([{ type: 'thinking', content: 'plan' }], true, 5_000, now)).to.equal(true);
+        expect(isTranscriptComposerVisualIdle([{ type: 'tool', finished: false }], true, 19_000, now)).to.equal(false);
+        expect(isTranscriptComposerVisualIdle([{ type: 'text', content: 'Hello' }], true, 19_000, now)).to.equal(false);
+    });
+
+    it('shimmers stream labels only for active progress kinds', () => {
+        expect(shouldTranscriptStreamLabelShimmer('writing', false)).to.equal(true);
+        expect(shouldTranscriptStreamLabelShimmer('planning', false)).to.equal(false);
+        expect(shouldTranscriptStreamLabelShimmer('planning', true)).to.equal(false);
+    });
+
     it('resolves trace display phases for progressive disclosure', () => {
         expect(resolveTranscriptTraceDisplayPhase([], true)).to.equal('thinking');
         expect(resolveTranscriptTraceDisplayPhase([{ type: 'thinking', content: 'plan' }], true)).to.equal('thinking');
-        expect(shouldShowTranscriptInlineTimeline([{ type: 'thinking', content: 'plan' }], true)).to.equal(false);
+        expect(shouldShowTranscriptInlineTimeline([{ type: 'thinking', content: 'plan' }], true)).to.equal(true);
         expect(resolveTranscriptTraceDisplayPhase([{ type: 'tool' }], true)).to.equal('acting');
         expect(shouldExpandTranscriptInlineTimeline([{ type: 'tool' }], true)).to.equal(true);
+        expect(shouldExpandTranscriptInlineTimeline([], true)).to.equal(true);
         expect(resolveTranscriptTraceDisplayPhase([
             { type: 'text', content: "I'll" },
         ], true)).to.equal('acting');

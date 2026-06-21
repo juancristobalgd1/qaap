@@ -1742,6 +1742,22 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.conversationActionsUi.onRetryConversation(project, summary);
     }
 
+    cancelOpenTranscriptStream(): void {
+        const project = this.transcriptController.state.transcriptOpenProject;
+        const summary = this.transcriptController.state.transcriptOpenSummary;
+        if (project && summary) {
+            this.onCancelConversation(project, summary);
+        }
+    }
+
+    retryOpenTranscriptStream(): void {
+        const project = this.transcriptController.state.transcriptOpenProject;
+        const summary = this.transcriptController.state.transcriptOpenSummary;
+        if (project && summary) {
+            void this.onRetryConversation(project, summary);
+        }
+    }
+
     protected async onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void> {
         return this.conversationActionsUi.onDeleteConversation(summary);
     }
@@ -1899,6 +1915,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     createAgentsHubRecentsBlock(project: MobileProjectEntry): HTMLElement {
         return this.tasksHubUi.createAgentsHubRecentsBlock(project);
+    }
+
+    createAgentsHubLandingHeroBlock(): HTMLElement {
+        return this.tasksHubUi.createAgentsHubLandingHeroBlock();
     }
 
     createAgentsHubQuickActionsBlock(): HTMLElement {

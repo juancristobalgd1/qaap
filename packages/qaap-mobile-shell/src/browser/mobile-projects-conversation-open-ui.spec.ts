@@ -44,6 +44,7 @@ describe('mobile-projects-conversation-open-ui', () => {
             transcriptLastConv: undefined,
             transcriptLastFingerprint: undefined,
             transcriptLastStreamProgressAt: undefined,
+            transcriptLastSemanticProgressKey: undefined,
             transcriptLastSseDeltaAt: undefined,
             delegate: {
                 onDismiss: () => undefined,

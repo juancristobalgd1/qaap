@@ -22,6 +22,7 @@ const WORK_HUB_TRANSCRIPT_BRIDGE_METHODS = [
     'renderTeamSectionInTranscript',
     'renderInlineApproval',
     'createAgentsHubRecentsBlock',
+    'createAgentsHubLandingHeroBlock',
     'createAgentsHubQuickActionsBlock',
     'renderIdleSubmitOptimistic',
 ] as const;

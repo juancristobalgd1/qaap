@@ -16,7 +16,7 @@ import {
     shouldShowTranscriptEmptyQuickActions,
 } from '../common/qaap-transcript-turn-status';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
-import { scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
+import { scrollElementToEnd, scrollElementToEndAfterLayout } from '../common/qaap-prefers-reduced-motion';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
@@ -210,6 +210,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             const empty = document.createElement('div');
             empty.className = 'theia-mobile-agent-transcript-empty';
+            if (this.workHub.isAgentsHubLanding()) {
+                empty.append(this.workHub.createAgentsHubLandingHeroBlock());
+            }
             empty.append(this.workHub.createAgentsHubQuickActionsBlock());
             messageHost.append(empty);
             this.host.transcriptUserScrollPinDispose.dispose();
@@ -258,7 +261,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 }
             }
         }
-        scrollElementToEnd(messageHost);
+        scrollElementToEndAfterLayout(messageHost);
         this.attachTranscriptScrollChrome(host, messageHost, conv);
     }
 

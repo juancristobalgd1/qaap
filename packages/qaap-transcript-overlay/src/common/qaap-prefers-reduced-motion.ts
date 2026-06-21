@@ -33,3 +33,41 @@ export function scrollElementToEnd(
 ): void {
     scrollElementTo(scroller, scroller.scrollHeight, preferred);
 }
+
+/** Re-run scroll-to-end after flex layout settles (avoids empty viewport on first paint). */
+export function scrollElementToEndAfterLayout(
+    scroller: HTMLElement,
+    preferred: ScrollBehavior = 'auto',
+): void {
+    const snap = (): void => {
+        if (scroller.clientHeight <= 0) {
+            return;
+        }
+        scrollElementToEnd(scroller, preferred);
+    };
+    snap();
+    if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(snap);
+        });
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+        let disconnected = false;
+        const observer = new ResizeObserver(() => {
+            snap();
+            if (!disconnected && scroller.clientHeight > 0 && scroller.scrollHeight > scroller.clientHeight) {
+                disconnected = true;
+                observer.disconnect();
+            }
+        });
+        observer.observe(scroller);
+        if (typeof setTimeout === 'function') {
+            setTimeout(() => {
+                if (!disconnected) {
+                    disconnected = true;
+                    observer.disconnect();
+                }
+            }, 2000);
+        }
+    }
+}

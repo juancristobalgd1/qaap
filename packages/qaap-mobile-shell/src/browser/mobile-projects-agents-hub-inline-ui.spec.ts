@@ -82,6 +82,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             transcriptConversationCache: new Map(),
             transcriptLastSseDeltaAt: undefined,
             transcriptLastStreamProgressAt: undefined,
+            transcriptLastSemanticProgressKey: undefined,
             transcriptChatHost: undefined,
             transcriptPlanHost: undefined,
             transcriptReviewHost: undefined,
@@ -140,9 +141,10 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         const ui = new MobileProjectsAgentsHubInlineUi(host);
         ui.renderAgentsHubExecutionShell();
         expect(host.scroll.querySelector('.theia-mobile-agents-hub-onboarding')).to.not.equal(null);
-        expect(host.scroll.querySelector('.theia-mobile-agents-hub-onboarding-btn.theia-mod-primary')).to.not.equal(null);
+        const primaryBtn = host.scroll.querySelector('.theia-mobile-agents-hub-onboarding-btn.theia-mod-primary');
+        expect(primaryBtn).to.not.equal(null);
+        expect(primaryBtn?.textContent).to.include('Start new project');
         expect(host.scroll.textContent).to.include('Add repository');
-        expect(host.scroll.textContent).to.include('Start new project');
     });
 
     const openSummary = (): QaapAgentConversationSummaryDTO => ({

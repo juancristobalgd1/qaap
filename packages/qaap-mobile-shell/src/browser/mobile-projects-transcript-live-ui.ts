@@ -21,6 +21,11 @@ import {
 import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
 import { excerptTranscriptThought } from '../common/qaap-agent-transcript-segments';
 import { applyAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
+import {
+    advanceTranscriptSemanticProgressClock,
+    resolveTranscriptStreamingAgentSegments,
+    seedTranscriptSemanticProgressClock,
+} from '../common/qaap-transcript-semantic-progress';
 import type { ConversationLiveMessageEvent } from './mobile-projects-conversations';
 import {
     applyConversationMessageDelta,
@@ -53,7 +58,6 @@ import {
     buildConversationTranscriptFingerprint,
     mergeConversationTranscriptFingerprint,
     shouldForceTranscriptRenderOnStatusSettle,
-    transcriptFingerprintChanged,
     TRANSCRIPT_TOOL_USE_ID_ATTR,
 } from '../common/qaap-transcript-incremental-update';
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
@@ -87,6 +91,7 @@ export interface MobileProjectsTranscriptLiveHost {
     transcriptConversationCache: Map<string, QaapAgentConversationDTO>;
     transcriptLastFingerprint: string | undefined;
     transcriptLastStreamProgressAt: number | undefined;
+    transcriptLastSemanticProgressKey: string | undefined;
     transcriptLastSseDeltaAt: number | undefined;
     transcriptLastStatus: QaapAgentConversationSummaryDTO['status'] | undefined;
     transcriptScheduleRefresh: (() => void) | undefined;
@@ -168,6 +173,27 @@ export class MobileProjectsTranscriptLiveUi {
         this.agUiLiveBridge = new QaapAgUiTranscriptLiveBridge(() => this.host.agUiFrontendTools);
         this.ensureBootstrapPreviewListener();
         this.ensureVisibilityResumeListener();
+    }
+
+    protected touchTranscriptSemanticProgressFromConversation(conv: QaapAgentConversationDTO): void {
+        const segments = resolveTranscriptStreamingAgentSegments(conv);
+        const next = advanceTranscriptSemanticProgressClock(segments, {
+            at: this.host.transcriptLastStreamProgressAt,
+            key: this.host.transcriptLastSemanticProgressKey,
+        });
+        this.host.transcriptLastStreamProgressAt = next.at;
+        this.host.transcriptLastSemanticProgressKey = next.key;
+    }
+
+    clearTranscriptSemanticProgressClock(): void {
+        this.host.transcriptLastStreamProgressAt = undefined;
+        this.host.transcriptLastSemanticProgressKey = undefined;
+    }
+
+    seedTranscriptSemanticProgressClock(): void {
+        const seeded = seedTranscriptSemanticProgressClock();
+        this.host.transcriptLastStreamProgressAt = seeded.at;
+        this.host.transcriptLastSemanticProgressKey = seeded.key;
     }
 
     protected ensureVisibilityResumeListener(): void {
@@ -395,11 +421,9 @@ export class MobileProjectsTranscriptLiveUi {
         this.cacheTranscriptConversation(next);
         this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, next);
         if (next.status === 'streaming') {
-            if (!prevConv || prevConv.status !== 'streaming' || transcriptFingerprintChanged(prevConv, next)) {
-                this.host.transcriptLastStreamProgressAt = Date.now();
-            }
+            this.touchTranscriptSemanticProgressFromConversation(next);
         } else {
-            this.host.transcriptLastStreamProgressAt = undefined;
+            this.clearTranscriptSemanticProgressClock();
         }
         if (conversationUsesInteractiveApprovals(next) && this.host.transcriptApprovalRefreshTimer === undefined) {
             this.syncTranscriptPendingApproval(next);
@@ -725,9 +749,6 @@ export class MobileProjectsTranscriptLiveUi {
                 getLastSseDeltaAt: () => this.host.transcriptLastSseDeltaAt,
                 setLastSseDeltaAt: at => {
                     this.host.transcriptLastSseDeltaAt = at;
-                    if (at !== undefined) {
-                        this.host.transcriptLastStreamProgressAt = at;
-                    }
                 },
                 findSummaryById: id => this.host.conversations?.findSummaryById(id),
                 refreshConversation: options => this.refreshOpenTranscriptConversation(options),
@@ -1120,13 +1141,13 @@ export class MobileProjectsTranscriptLiveUi {
                 }
                 if (full.status !== 'streaming' && !this.host.transcriptPreviewRequestPending) {
                     this.host.transcriptLastSseDeltaAt = undefined;
-                    this.host.transcriptLastStreamProgressAt = undefined;
+                    this.clearTranscriptSemanticProgressClock();
                 }
                 return;
             }
             this.host.transcriptLastFingerprint = fingerprint;
             if (full.status === 'streaming') {
-                this.host.transcriptLastStreamProgressAt = Date.now();
+                this.touchTranscriptSemanticProgressFromConversation(full);
             }
             this.host.transcriptMessagesUi.renderTranscriptMessages(activeChatHost, full);
             if (conversationUsesInteractiveApprovals(full)) {
@@ -1144,7 +1165,7 @@ export class MobileProjectsTranscriptLiveUi {
             this.host.handleTranscriptStatusForAutoVerify(activeProject, activeSummary, full.status);
             if (full.status !== 'streaming') {
                 this.host.transcriptLastSseDeltaAt = undefined;
-                this.host.transcriptLastStreamProgressAt = undefined;
+                this.clearTranscriptSemanticProgressClock();
                 this.syncTranscriptConversationSettledChrome();
             } else {
                 this.host.transcriptLastStatus = full.status;

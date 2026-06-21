@@ -19,10 +19,21 @@ export function resolveTranscriptStreamingActivityFromSegments(
     segments: readonly QaapAgentMessageSegmentDTO[],
     options?: {
         readonly stalled?: boolean;
+        readonly timedOut?: boolean;
         readonly stallTitle?: string;
         readonly localizeToolTitle?: (label: string) => string;
     },
 ): TranscriptStreamingActivityView {
+    if (options?.timedOut) {
+        return {
+            kind: 'timeout',
+            title: nls.localize('qaap/mobileProjects/transcriptStreamTimedOut', 'El agente no respondió a tiempo'),
+            detail: nls.localize(
+                'qaap/mobileProjects/transcriptStreamTimedOutDetail',
+                'Cancela o reintenta para continuar.',
+            ),
+        };
+    }
     if (options?.stalled) {
         return {
             kind: 'stall',

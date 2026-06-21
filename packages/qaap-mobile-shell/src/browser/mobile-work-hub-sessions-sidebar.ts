@@ -37,6 +37,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onSearch?: () => void;
     onExtensions?: () => void;
     onAutomations?: () => void;
+    onStartNewProject?: () => void;
     /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
     shouldSkipSessionListRefresh?(): boolean;
     /** Throttle/defer live sidebar sync during SSE (e.g. user tap guard). */
@@ -141,6 +142,14 @@ export class MobileWorkHubSessionsSidebar {
                 () => {
                     this.hideForMobileOverlay();
                     this.delegate.onNewChat();
+                },
+            ),
+            this.createNavButton(
+                'codicon-new-folder',
+                nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project'),
+                () => {
+                    this.hideForMobileOverlay();
+                    this.delegate.onStartNewProject?.();
                 },
             ),
             this.createNavButton(
