@@ -5,6 +5,8 @@
 
 import {
     classifyTranscriptToolActivityKind,
+    humanizeTranscriptToolDisplayName,
+    resolveSpecialTranscriptToolTraceLabel,
     resolveTranscriptToolRowParts,
     type QaapTranscriptToolActivityKind,
 } from './qaap-agent-transcript-segments';
@@ -59,8 +61,13 @@ export function resolveTranscriptCursorTraceLabel(
         }
         case 'mcp':
             return { verb: 'Called', detail: rowParts.detail, tail: 'MCP' };
-        default:
-            return { verb: 'Used', detail: rowParts.detail };
+        default: {
+            const special = resolveSpecialTranscriptToolTraceLabel(toolName);
+            if (special) {
+                return special;
+            }
+            return { verb: 'Used', detail: humanizeTranscriptToolDisplayName(toolName || 'tool') };
+        }
     }
 }
 

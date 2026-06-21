@@ -92,8 +92,8 @@ describe('qaap-transcript-stream-status', () => {
         expect(isTranscriptStreamStalled(undefined, true, now)).to.equal(false);
     });
 
-    it('detects hard timeouts after sixty seconds without semantic progress', () => {
-        const now = 70_000;
+    it('detects hard timeouts after thirty seconds without semantic progress', () => {
+        const now = 45_000;
         expect(isTranscriptStreamTimedOut(0, true, now)).to.equal(true);
         expect(isTranscriptStreamTimedOut(5_000, true, now)).to.equal(true);
         expect(isTranscriptStreamTimedOut(20_000, true, now)).to.equal(false);

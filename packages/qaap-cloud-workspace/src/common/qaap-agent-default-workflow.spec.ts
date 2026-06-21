@@ -21,6 +21,8 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         expect(result).to.include('[QAAP default agent workflow]');
         expect(result).to.include('[QAAP parallel tools]');
         expect(result).to.include('[QAAP dev preview]');
+        expect(result).to.include('[QAAP benign code edit policy]');
+        expect(result).to.include('do not refuse with a report-only workaround');
         expect(result).to.include('Fix the bug');
     });
 

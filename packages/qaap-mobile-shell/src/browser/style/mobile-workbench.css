@@ -18267,7 +18267,10 @@ body>.theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-row {
-  display: inline;
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35em;
   font-size: 13px;
   line-height: 1.46;
   color: color-mix(in srgb, var(--theia-foreground) 82%, var(--theia-descriptionForeground));
@@ -18531,7 +18534,10 @@ body>.theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-row {
-  display: inline;
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35em;
   word-break: break-word;
 }
 

@@ -162,6 +162,70 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(row.querySelector('.theia-mobile-agent-activity-file-chip-label')?.textContent).to.equal('page.tsx');
     });
 
+    it('separates verb and detail in cursor-trace rows', () => {
+        const artifactsUi = createArtifactsUi();
+        const row = createStreamingRow(artifactsUi, [
+            {
+                type: 'tool',
+                name: 'Bash',
+                toolUseId: 'tool-ls',
+                args: JSON.stringify({ command: 'ls -la /workspace/repos/demo' }),
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-many',
+                args: JSON.stringify({ path: 'index.html' }),
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-many-2',
+                args: JSON.stringify({ path: 'style.css' }),
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-many-3',
+                args: JSON.stringify({ path: 'script.js' }),
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'AskUserQuestion',
+                toolUseId: 'tool-ask',
+                args: '{}',
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'Done.' },
+        ]);
+
+        const bashRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Ran');
+        expect(bashRow?.textContent).to.match(/^Ran\s+ls -la/);
+
+        const readRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Read'
+                && el.textContent?.includes('files'));
+        expect(readRow?.textContent).to.match(/^Read\s+3 files/);
+
+        const askRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Asked');
+        expect(askRow?.textContent).to.equal('Asked a question');
+
+        const writingRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Writing');
+        expect(writingRow?.textContent).to.equal('Writing response');
+    });
+
     it('keeps reasoning as the only tool execution surface after settling', () => {
         const artifactsUi = createArtifactsUi();
         const segments: QaapAgentMessageSegmentDTO[] = [

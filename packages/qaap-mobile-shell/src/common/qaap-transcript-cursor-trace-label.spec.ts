@@ -30,6 +30,13 @@ describe('resolveTranscriptCursorTraceLabel', () => {
         });
     });
 
+    it('formats ask-user-question tools with readable labels', () => {
+        expect(resolveTranscriptCursorTraceLabel('AskUserQuestion', '{}', {})).to.deep.equal({
+            verb: 'Asked',
+            detail: 'a question',
+        });
+    });
+
     it('formats todo and task tools with user-readable labels', () => {
         expect(resolveTranscriptCursorTraceLabel('todo list', '[', {})).to.deep.equal({
             verb: 'Updated',

@@ -302,6 +302,25 @@ export interface QaapTranscriptToolRowParts {
     readonly detail: string;
 }
 
+/** Human-readable tool name for timeline rows (AskUserQuestion → Ask User Question). */
+export function humanizeTranscriptToolDisplayName(toolName: string): string {
+    return toolName
+        .replace(/_/g, ' ')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .trim();
+}
+
+/** Cursor-style label override for tools that need verb/detail instead of a raw identifier. */
+export function resolveSpecialTranscriptToolTraceLabel(
+    toolName: string,
+): QaapTranscriptToolRowParts | undefined {
+    const key = toolName.toLowerCase().replace(/[_-]+/g, '');
+    if (key === 'askuserquestion') {
+        return { verb: 'Asked', detail: 'a question' };
+    }
+    return undefined;
+}
+
 /** Compact a shell command for a one-line row label. */
 export function excerptTranscriptToolCommand(command: string, maxChars = 64): string {
     const collapsed = command.replace(/\s+/g, ' ').trim();
@@ -326,11 +345,16 @@ export function resolveTranscriptToolRowParts(
         case 'terminal':
             return { verb: 'Ran', detail: options?.command ? excerptTranscriptToolCommand(options.command) : 'command' };
         case 'mcp':
-            return { verb: 'Called', detail: (toolName || 'MCP').replace(/_/g, ' ') };
+            return { verb: 'Called', detail: humanizeTranscriptToolDisplayName(toolName || 'MCP') };
         case 'editing':
             return { verb: 'Edited', detail: file ?? 'file' };
-        default:
-            return { verb: 'Used', detail: (toolName || 'tool').replace(/_/g, ' ') };
+        default: {
+            const special = resolveSpecialTranscriptToolTraceLabel(toolName);
+            if (special) {
+                return special;
+            }
+            return { verb: 'Used', detail: humanizeTranscriptToolDisplayName(toolName || 'tool') };
+        }
     }
 }
 

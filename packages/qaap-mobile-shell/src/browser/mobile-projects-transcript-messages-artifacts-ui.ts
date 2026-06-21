@@ -2400,7 +2400,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 } else {
                     detail.textContent = item.detail ?? '';
                 }
-                rowEl.append(verb, detail);
+                rowEl.append(verb, document.createTextNode(' '), detail);
                 if (item.editAdded !== undefined || item.editRemoved !== undefined) {
                     this.appendTranscriptActivityEditDiffTail(rowEl, item.editAdded ?? 0, item.editRemoved ?? 0);
                 } else if (item.tail) {
