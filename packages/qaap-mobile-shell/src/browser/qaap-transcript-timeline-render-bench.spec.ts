@@ -51,7 +51,10 @@ describe('qaap-transcript-timeline-render-bench', () => {
         const host = {
             transcriptLastConv: undefined,
             transcriptUserScrollPinDispose: Disposable.NULL,
-            transcriptLiveUi: { refreshTranscriptApprovals: async () => undefined },
+            transcriptLiveUi: {
+                refreshTranscriptApprovals: async () => undefined,
+                hasPendingTranscriptToolApproval: () => false,
+            },
             projectRowsUi: {
                 localizeActivityLabel: (label: string) => label,
             },
@@ -377,7 +380,10 @@ describe('qaap-transcript-timeline-render-bench', () => {
         const host = {
             transcriptLastConv: undefined,
             transcriptUserScrollPinDispose: Disposable.NULL,
-            transcriptLiveUi: { refreshTranscriptApprovals: async () => undefined },
+            transcriptLiveUi: {
+                refreshTranscriptApprovals: async () => undefined,
+                hasPendingTranscriptToolApproval: () => false,
+            },
             projectRowsUi: {
                 localizeActivityLabel: (label: string) => label,
             },
@@ -418,7 +424,10 @@ describe('qaap-transcript-timeline-render-bench', () => {
                 }],
             },
             transcriptUserScrollPinDispose: Disposable.NULL,
-            transcriptLiveUi: { refreshTranscriptApprovals: async () => undefined },
+            transcriptLiveUi: {
+                refreshTranscriptApprovals: async () => undefined,
+                hasPendingTranscriptToolApproval: () => false,
+            },
             projectRowsUi: { localizeActivityLabel: (label: string) => label },
         } as unknown as MobileProjectsTranscriptMessagesHost;
         const contentUi = new MobileProjectsTranscriptMessagesContentUi(host as never);

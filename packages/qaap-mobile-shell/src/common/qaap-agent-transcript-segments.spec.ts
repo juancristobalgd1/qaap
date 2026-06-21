@@ -284,7 +284,7 @@ describe('resolveTranscriptToolRowParts', () => {
         expect(resolveTranscriptToolRowParts('editing', 'Edit'))
             .to.deep.equal({ verb: 'Edited', detail: 'file' });
         expect(resolveTranscriptToolRowParts('tool', 'web_search'))
-            .to.deep.equal({ verb: 'Used', detail: 'web search' });
+            .to.deep.equal({ verb: 'Searched', detail: 'the web' });
     });
 
     it('excerpts long commands with collapsed whitespace', () => {

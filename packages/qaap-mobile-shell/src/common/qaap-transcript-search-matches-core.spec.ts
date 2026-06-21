@@ -15,8 +15,8 @@ describe('qaap-transcript-search-matches-core', () => {
             'packages/qaap-mobile-shell/src/browser/bar.ts:10:export function bar() {',
         ].join('\n');
         expect(parseTranscriptSearchMatches(raw)).to.deep.equal([
-            { file: 'browser/foo.ts', line: 42, snippet: 'const answer = 42;' },
-            { file: 'browser/bar.ts', line: 10, snippet: 'export function bar() {' },
+            { file: 'src/browser/foo.ts', line: 42, snippet: 'const answer = 42;' },
+            { file: 'src/browser/bar.ts', line: 10, snippet: 'export function bar() {' },
         ]);
     });
 
