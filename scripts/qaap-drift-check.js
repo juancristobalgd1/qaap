@@ -36,9 +36,28 @@ function sh(cmd) {
     }
 }
 
-const base = process.env.QAAP_DIFF_BASE || 'upstream/master';
 const reportOnly = process.env.QAAP_DRIFT_CHECK_REPORT === '1';
 const writeBaseline = process.argv.includes('--write-baseline');
+
+/** Prefer an unambiguous upstream ref (local branch name can lag behind CI fetch). */
+function resolveDiffBase() {
+    if (process.env.QAAP_DIFF_BASE) {
+        return process.env.QAAP_DIFF_BASE;
+    }
+    const candidates = [
+        'refs/heads/upstream/master',
+        'refs/remotes/upstream/master',
+        'upstream/master',
+    ];
+    for (const candidate of candidates) {
+        if (sh(`git rev-parse --verify ${candidate}`)) {
+            return candidate;
+        }
+    }
+    return 'upstream/master';
+}
+
+const base = resolveDiffBase();
 
 /** @type {RegExp[]} Paths allowed to differ from upstream (seams + examples + tooling). */
 const ALLOWED = [
