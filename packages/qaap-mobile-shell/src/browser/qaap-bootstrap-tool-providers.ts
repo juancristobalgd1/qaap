@@ -26,6 +26,16 @@ function snapshotJson(service: QaapProjectBootstrapService, message?: string): s
     );
 }
 
+async function missingProjectMessage(service: QaapProjectBootstrapService): Promise<string> {
+    const snapshot = service.getStateSnapshot();
+    if (snapshot.missingDescriptorHint) {
+        return snapshot.missingDescriptorHint;
+    }
+    return await service.getMissingDescriptorHint()
+        ?? 'No runnable Node project detected in the workspace root. '
+        + 'If the app was scaffolded in a subfolder, Qaap should auto-detect it after refresh.';
+}
+
 @injectable()
 export class QaapBootstrapStatusTool implements ToolProvider {
 
@@ -76,7 +86,7 @@ export class QaapBootstrapInstallTool implements ToolProvider {
                 }
                 const before = this.bootstrap.getStateSnapshot();
                 if (!before.descriptor) {
-                    return snapshotJson(this.bootstrap, 'No installable Node project detected in the workspace.');
+                    return snapshotJson(this.bootstrap, await missingProjectMessage(this.bootstrap));
                 }
                 if (before.phase === 'installing') {
                     return snapshotJson(this.bootstrap, 'Install already in progress.');
@@ -116,7 +126,7 @@ export class QaapBootstrapRunDevTool implements ToolProvider {
                 }
                 const before = this.bootstrap.getStateSnapshot();
                 if (!before.descriptor) {
-                    return snapshotJson(this.bootstrap, 'No runnable Node project detected in the workspace.');
+                    return snapshotJson(this.bootstrap, await missingProjectMessage(this.bootstrap));
                 }
                 const phase = before.phase;
                 if (phase === 'installing' || phase === 'starting') {
@@ -166,7 +176,7 @@ export class QaapBootstrapOpenPreviewTool implements ToolProvider {
                 }
                 const before = this.bootstrap.getStateSnapshot();
                 if (!before.descriptor) {
-                    return snapshotJson(this.bootstrap, 'No project descriptor; open a workspace with package.json first.');
+                    return snapshotJson(this.bootstrap, await missingProjectMessage(this.bootstrap));
                 }
                 try {
                     if (before.previewUrl) {

@@ -26,6 +26,9 @@ export interface QaapBootstrapToolSnapshot {
     readonly existingServerPort?: number;
     readonly lastPort?: number;
     readonly selectedAppPath?: string;
+    readonly scaffoldRelativePath?: string;
+    readonly previewRoot?: string;
+    readonly missingDescriptorHint?: string;
     readonly forwardedPorts?: ReadonlyArray<{ readonly port: number; readonly url: string; readonly opened: boolean }>;
     /** Best single-line failure from install/dev terminal output (install-failed / run-failed). */
     readonly terminalFailure?: string;
@@ -41,6 +44,8 @@ export function serializeQaapBootstrapState(
     const descriptor = state.descriptor;
     const needsInstall = state.needsInstall
         ?? (descriptor !== undefined && !descriptor.nodeModulesPresent);
+    const previewRoot = state.selectedApp?.relativePath
+        ?? descriptor?.scaffoldRelativePath;
     return {
         phase: state.phase,
         projectName: descriptor?.name,
@@ -48,13 +53,18 @@ export function serializeQaapBootstrapState(
         packageManager: descriptor?.packageManager,
         nodeModulesPresent: descriptor?.nodeModulesPresent,
         needsInstall: needsInstall || undefined,
-        devCommand: descriptor?.devCommandLabel ?? descriptor?.devCommand,
+        devCommand: state.selectedApp?.devCommandLabel
+            ?? descriptor?.devCommandLabel
+            ?? descriptor?.devCommand,
         previewUrl: state.previewUrl,
         error: state.error,
         portInUse: state.portInUse,
         existingServerPort: state.existingServerPort,
         lastPort: state.lastPort,
         selectedAppPath: state.selectedApp?.relativePath,
+        scaffoldRelativePath: descriptor?.scaffoldRelativePath,
+        previewRoot,
+        missingDescriptorHint: state.missingDescriptorHint,
         forwardedPorts: forwardedPorts.length > 0
             ? forwardedPorts.map(p => ({ port: p.port, url: p.url, opened: p.previewOpen }))
             : undefined,

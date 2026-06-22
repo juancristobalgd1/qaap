@@ -6,6 +6,11 @@
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats } from './qaap-agent-transcript-segments';
 import { extractDevPreviewUrlFromAgentText, messageRequestsDevPreview } from './qaap-transcript-preview-offer';
+import {
+    agentWebGenerationPassesQualityGate,
+    buildWebGenerationAutoContinuePrompt,
+    messageRequestsWebGeneration,
+} from './qaap-agent-web-generation-quality-gate';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
 const ACTIONABLE_TASK_RE = /\b(?:fix|explore|implement|build|run|test|debug|review|refactor|add|create|update|install|deploy|figure\s+out)\b/i;
@@ -80,6 +85,16 @@ export function agentMessageDeliversTaskOutcome(
     if (agentMessageHasOpenTodos(agentMessage)) {
         return false;
     }
+    if (!agentMessageDeliversBaseTaskOutcome(userContent, agentMessage)) {
+        return false;
+    }
+    return agentWebGenerationPassesQualityGate(userContent, agentMessage);
+}
+
+function agentMessageDeliversBaseTaskOutcome(
+    userContent: string | undefined,
+    agentMessage: QaapAgentMessageDTO,
+): boolean {
     const text = collectAgentVisibleText(agentMessage);
     const stats = resolveTranscriptActivityStats([...resolveAgentMessageSegments(agentMessage)]);
     if (messageRequestsDevPreview(userContent)) {
@@ -133,10 +148,18 @@ export function isIncompleteAgentTurn(
 }
 
 export function buildAgentAutoContinuePrompt(userContent?: string): string {
+    if (messageRequestsWebGeneration(userContent)) {
+        return buildWebGenerationAutoContinuePrompt(userContent);
+    }
     if (messageRequestsDevPreview(userContent)) {
         return 'Continue this task now. Complete every remaining todo item, inspect package.json, install dependencies with one-shot Bash if needed, fix build issues, '
             + 'and confirm the dev server port for preview. Do not stop after search, read, or planning text.';
     }
     return 'Continue this task now. Complete every remaining todo item, use Read, Glob, or Grep to inspect the repo, then Bash for one-shot commands. '
         + 'Do not stop after planning, searching, or thinking — finish the user request and report concrete results.';
+}
+
+export function buildDevPreviewAutoContinueExhaustedReason(): string {
+    return 'Dev preview did not become ready after multiple agent attempts. '
+        + 'Qaap could not start or attach to the dev server — check that package.json exists in the workspace root or a detected subfolder, install dependencies, then use Run & Preview.';
 }

@@ -9,7 +9,7 @@ import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, ty
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptStreamingBootstrapTimeline, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
+import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptStreamingBootstrapTimeline, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
@@ -17,6 +17,11 @@ import { resolveTranscriptStreamingBootstrapActivityItems } from '../common/qaap
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigateTarget, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
 import { groupTranscriptActivityNavigationItems, resolveTranscriptLifecycleActivityItems } from '../common/qaap-transcript-activity-navigation';
+import { conversationRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
+import {
+    resolveTranscriptBootstrapDiagnosticActivityItems,
+    toTranscriptPreviewBootstrapSnapshot,
+} from '../common/qaap-transcript-preview-bootstrap-failure';
 import { isTranscriptActivityLiveState, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
 import { formatTranscriptActivityStepMeta, TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
 import {
@@ -635,8 +640,18 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             },
         );
         const lifecycleItems = resolveTranscriptLifecycleActivityItems(rowContext.message?.traceEvents);
+        const conv = options?.conv;
+        const hasPreviewFailureTrace = rowContext.message?.traceEvents?.some(event => event.type === 'error') ?? false;
+        const bootstrapDiagnosticItems = conv
+            && !hasPreviewFailureTrace
+            && (conversationRequestsDevPreview(conv) || conv.status === 'failed')
+            && this.host.projectBootstrap
+            ? resolveTranscriptBootstrapDiagnosticActivityItems(
+                toTranscriptPreviewBootstrapSnapshot(this.host.projectBootstrap.getStateSnapshot()),
+            )
+            : [];
         const items = annotateTranscriptActivityNestMetadata(
-            groupTranscriptActivityNavigationItems([...bootstrapItems, ...segmentItems, ...lifecycleItems]),
+            groupTranscriptActivityNavigationItems([...bootstrapItems, ...segmentItems, ...lifecycleItems, ...bootstrapDiagnosticItems]),
             segments,
         );
         const annotatedItems = annotateTranscriptActivityCheckpointIds(items, options?.conv);
@@ -923,12 +938,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const ownerRow = line.closest<HTMLElement>('.theia-mobile-agent-transcript-msg');
         const segments = ownerRow
             ? this.resolveTranscriptRowSegments(conv, ownerRow)
-            : [...(conv.messages.at(-1)?.role === 'agent' ? conv.messages.at(-1)?.segments ?? [] : [])];
+            : [...resolveTranscriptStreamingAgentSegments(conv)];
         const turnStartMs = resolveTranscriptTurnStartMs(conv.messages);
         const show = shouldShowTranscriptStreamingActivity(segments, true, {
             turnElapsedMs: resolveTranscriptTurnElapsedMs(turnStartMs),
             userPromptChars: resolveLastUserPromptChars(conv.messages),
             stalled: stalled || timedOut,
+            awaitingFirstAgentOutput: isAwaitingFirstTranscriptAgentOutput(conv),
         });
         const host = line.closest<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`) ?? line.parentElement;
         if (host instanceof HTMLElement) {
@@ -3723,8 +3739,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     createTranscriptStreamingActivityRow(conv: QaapAgentConversationDTO): HTMLElement | undefined {
-        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
-        const segments = lastAgent?.segments ?? [];
+        const segments = [...resolveTranscriptStreamingAgentSegments(conv)];
+        const awaitingFirstAgentOutput = isAwaitingFirstTranscriptAgentOutput(conv);
         const turnStartMs = resolveTranscriptTurnStartMs(conv.messages);
         const stalled = this.resolveTranscriptStreamStalled(conv);
         const timedOut = this.resolveTranscriptStreamTimedOut(conv);
@@ -3732,6 +3748,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             turnElapsedMs: resolveTranscriptTurnElapsedMs(turnStartMs),
             userPromptChars: resolveLastUserPromptChars(conv.messages),
             stalled: stalled || timedOut,
+            awaitingFirstAgentOutput,
         })) {
             return undefined;
         }
@@ -3758,6 +3775,18 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             line.append(meta);
         }
         row.append(line);
+        if (shouldShowTranscriptStreamingBootstrapTimeline(segments, true)) {
+            const bootstrapHost = document.createElement('div');
+            bootstrapHost.className = 'theia-mobile-agent-stream-bootstrap';
+            const items = resolveTranscriptStreamingBootstrapActivityItems(conv.agentId, { stalled, timedOut });
+            for (const item of items) {
+                const step = document.createElement('div');
+                step.className = `theia-mobile-agent-stream-bootstrap-step theia-mod-${item.state ?? 'running'}`;
+                step.textContent = item.label;
+                bootstrapHost.append(step);
+            }
+            row.append(bootstrapHost);
+        }
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
             row.classList.toggle('theia-mod-stream-stalled', stalled);
             row.classList.toggle('theia-mod-stream-timed-out', timedOut);
@@ -3810,8 +3839,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         conv: QaapAgentConversationDTO,
         options?: { readonly stalled?: boolean; readonly timedOut?: boolean },
     ): { kind: string; title: string; detail: string } {
-        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
-        const segments = lastAgent?.segments ?? [];
+        const segments = [...resolveTranscriptStreamingAgentSegments(conv)] as QaapAgentMessageSegmentDTO[];
         return resolveTranscriptStreamingActivityFromSegments(segments, {
             stalled: options?.stalled,
             timedOut: options?.timedOut,

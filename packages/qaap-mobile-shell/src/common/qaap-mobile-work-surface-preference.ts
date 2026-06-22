@@ -23,30 +23,45 @@ function syncDesktopIdeBodyClass(): void {
     document.body.classList.toggle(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS, preferDesktopIdeThisRuntime);
 }
 
-export function markPreferDesktopIde(): void {
-    preferDesktopIdeThisRuntime = true;
-    syncDesktopIdeBodyClass();
-    if (typeof sessionStorage !== 'undefined') {
+function readPersistedPreferDesktopIde(): boolean {
+    if (typeof sessionStorage === 'undefined') {
+        return false;
+    }
+    return sessionStorage.getItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY) === '1'
+        || sessionStorage.getItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY) === '1';
+}
+
+function writePersistedPreferDesktopIde(active: boolean): void {
+    if (typeof sessionStorage === 'undefined') {
+        return;
+    }
+    if (active) {
         sessionStorage.setItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY, '1');
         sessionStorage.setItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY, '1');
         sessionStorage.removeItem(QAAP_MOBILE_PREFER_AGENTS_SURFACE_KEY);
-    }
-}
-
-export function clearPreferDesktopIde(): void {
-    preferDesktopIdeThisRuntime = false;
-    syncDesktopIdeBodyClass();
-    if (typeof sessionStorage !== 'undefined') {
+    } else {
         sessionStorage.removeItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY);
         sessionStorage.removeItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY);
     }
 }
 
+/** Persists explicit desktop IDE choice for reload/F5 within the same browser session. */
+export function markPreferDesktopIde(): void {
+    preferDesktopIdeThisRuntime = true;
+    writePersistedPreferDesktopIde(true);
+    syncDesktopIdeBodyClass();
+}
+
+export function clearPreferDesktopIde(): void {
+    preferDesktopIdeThisRuntime = false;
+    writePersistedPreferDesktopIde(false);
+    syncDesktopIdeBodyClass();
+}
+
+/** Hydrates session-scoped IDE preference after reload. */
 export function peekPreferDesktopIde(): boolean {
     if (typeof sessionStorage !== 'undefined') {
-        preferDesktopIdeThisRuntime = sessionStorage.getItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY) === '1'
-            || sessionStorage.getItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY) === '1'
-            || preferDesktopIdeThisRuntime;
+        preferDesktopIdeThisRuntime = preferDesktopIdeThisRuntime || readPersistedPreferDesktopIde();
         syncDesktopIdeBodyClass();
     }
     return preferDesktopIdeThisRuntime;
@@ -54,13 +69,10 @@ export function peekPreferDesktopIde(): boolean {
 
 export function markPreferAgentsSurface(): void {
     if (typeof sessionStorage !== 'undefined') {
-        // Async mobile bootstrap must not clobber an explicit "Open IDE" choice.
         if (peekPreferDesktopIde()) {
             return;
         }
         sessionStorage.setItem(QAAP_MOBILE_PREFER_AGENTS_SURFACE_KEY, '1');
-        sessionStorage.removeItem(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY);
-        sessionStorage.removeItem(QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY);
     }
 }
 

@@ -34,6 +34,25 @@ export function appendTraceRunCancelledEvent(
     };
 }
 
+export function appendTracePreviewFailureEvent(
+    message: QaapAgentMessageDTO,
+    reason: string,
+    options: { readonly at?: number } = {},
+): QaapAgentMessageDTO {
+    const at = options.at ?? Date.now();
+    const event: QaapTranscriptTraceEventDTO = {
+        type: 'error',
+        id: `preview-failure-${at}`,
+        message: reason,
+        startedAt: at,
+    };
+    return {
+        ...message,
+        error: reason,
+        traceEvents: [...(message.traceEvents ?? []), event],
+    };
+}
+
 export function appendTraceCheckpointEvent(
     message: QaapAgentMessageDTO,
     checkpoint: QaapConversationCheckpointDTO,

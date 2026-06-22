@@ -289,6 +289,11 @@ export interface QaapPostAgUiTranscriptEventRequest {
     readonly event: Readonly<Record<string, unknown>>;
 }
 
+/** POST body for `/agent-conversations/:id/preview-bootstrap-failure`. */
+export interface QaapPostPreviewBootstrapFailureRequest {
+    readonly reason?: string;
+}
+
 /** Payload pushed over SSE when a conversation changes. */
 export type QaapAgentConversationEvent =
     | { readonly type: 'created'; readonly conversation: QaapAgentConversationSummary }

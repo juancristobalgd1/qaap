@@ -18,6 +18,7 @@ import {
     updateConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
+    type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
@@ -30,7 +31,12 @@ import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
-import { isTranscriptComposerVisualIdle } from '../common/qaap-transcript-stream-status';
+import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
+import {
+    isTranscriptComposerVisualIdle,
+} from '../common/qaap-transcript-stream-status';
+import { resolveTranscriptStreamHealth } from '../common/qaap-transcript-stream-health';
+import { resolveTranscriptStreamingBootstrapActivityItems } from '../common/qaap-transcript-streaming-bootstrap';
 import { resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking } from '../common/qaap-transcript-turn-status';
 import { resolveLatestRestorableCheckpoint } from '../common/qaap-transcript-checkpoint-restore';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
@@ -98,7 +104,9 @@ import {
     buildStickyComposerChangesPillFingerprint,
     patchStickyComposerActivityStack,
     patchStickyComposerChangesPillHost,
+    patchStickyComposerStreamingSection,
     renderStickyComposerChangesPill,
+    renderStickyComposerStreamingSection,
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
@@ -626,6 +634,47 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
     }
 
+    protected resolveComposerStreamingActivity(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO | undefined,
+        agentWorking: boolean,
+    ): StickyComposerActivityStackOptions['streamingActivity'] {
+        if (!agentWorking) {
+            return undefined;
+        }
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+        const segments = conv ? resolveTranscriptStreamingAgentSegments(conv) : [];
+        const streaming = conv ? resolveTranscriptEffectiveStatus(conv) === 'streaming' : summary.status === 'streaming';
+        const health = conv ? resolveTranscriptStreamHealth({
+            streaming,
+            lastProgressAtMs: this.host.transcriptLastStreamProgressAt,
+            lastTransportEventAtMs: undefined,
+            segments,
+        }) : { stalled: false, timedOut: false };
+        const activity = resolveTranscriptStreamingActivityFromSegments(segments as QaapAgentMessageSegmentDTO[], {
+            stalled: health.stalled,
+            timedOut: health.timedOut,
+        });
+        if (segments.length === 0) {
+            const bootstrap = resolveTranscriptStreamingBootstrapActivityItems(summary.agentId ?? conv?.agentId, {
+                stalled: health.stalled,
+                timedOut: health.timedOut,
+            });
+            const runningStep = bootstrap.find(item => item.state === 'running' || item.state === 'warning');
+            return {
+                title: runningStep?.label ?? activity.title,
+                detail: cwd ? nls.localize('qaap/mobileProjects/composerStreamingWorkspace', 'Workspace: {0}', cwd) : activity.detail,
+                stalled: health.stalled || health.timedOut,
+            };
+        }
+        return {
+            title: activity.title,
+            detail: activity.detail || (cwd ? nls.localize('qaap/mobileProjects/composerStreamingWorkspace', 'Workspace: {0}', cwd) : undefined),
+            stalled: health.stalled || health.timedOut,
+        };
+    }
+
     protected buildTranscriptComposerActivityOptions(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -635,6 +684,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         void this.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
         const agentWorking = this.isTranscriptStickyComposerAgentWorking();
         const latestCheckpoint = resolveLatestRestorableCheckpoint(conv);
+        const streamingActivity = this.resolveComposerStreamingActivity(project, summary, conv, agentWorking);
         return {
             queueEntries: this.host.transcriptFollowUpQueue.peek(summary.id),
             queueExpanded: this.host.transcriptComposerQueueExpanded,
@@ -657,6 +707,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             diffStats: activityFiles.stats,
             filesExpanded: this.peekTranscriptComposerChangedFilesExpanded(summary.id),
             onFilesExpandedChange: expanded => { this.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
+            streamingActivity,
             agentWorking,
             onStop: () => { void this.host.onCancelConversation(project, summary); },
             onReview: () => {
@@ -873,9 +924,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         const stackFingerprint = buildStickyComposerActivityStackFingerprint(activityOptions);
         const stack = renderStickyComposerActivityStack(activityOptions);
+        const streamingSection = renderStickyComposerStreamingSection(activityOptions);
         const existing = card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
-        if (!stack) {
+        const existingStreaming = card.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-streaming');
+        if (!stack && !streamingSection) {
             existing?.remove();
+            existingStreaming?.remove();
             this.lastComposerActivityStackFingerprint = '';
             card.classList.remove('theia-mod-has-activity');
         } else if (existing instanceof HTMLElement) {
@@ -883,17 +937,35 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 || patchStickyComposerActivityStack(existing, activityOptions)) {
                 this.lastComposerActivityStackFingerprint = stackFingerprint;
             } else {
-                existing.replaceWith(stack);
+                existing.replaceWith(stack ?? streamingSection!);
                 this.lastComposerActivityStackFingerprint = stackFingerprint;
             }
+            const streamingInStack = existing.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-streaming');
+            if (streamingSection && streamingInStack instanceof HTMLElement) {
+                patchStickyComposerStreamingSection(streamingInStack, activityOptions);
+            }
             card.classList.add('theia-mod-has-activity');
-        } else {
+        } else if (streamingSection && !stack) {
+            if (existingStreaming instanceof HTMLElement) {
+                patchStickyComposerStreamingSection(existingStreaming, activityOptions);
+            } else {
+                const stage = card.querySelector(':scope > .theia-mobile-projects-sticky-composer-stage');
+                if (stage) {
+                    card.insertBefore(streamingSection, stage);
+                } else {
+                    card.append(streamingSection);
+                }
+            }
+            this.lastComposerActivityStackFingerprint = stackFingerprint;
+            card.classList.add('theia-mod-has-activity');
+        } else if (stack) {
             const stage = card.querySelector(':scope > .theia-mobile-projects-sticky-composer-stage');
             if (stage) {
                 card.insertBefore(stack, stage);
             } else {
                 card.append(stack);
             }
+            this.lastComposerActivityStackFingerprint = stackFingerprint;
             card.classList.add('theia-mod-has-activity');
         }
         this.syncComposerActivityFingerprint(summary, project, activityOptions);

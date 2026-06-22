@@ -493,3 +493,30 @@ export async function postAgUiTranscriptEvent(
         throw new Error((await response.text()) || response.statusText);
     }
 }
+
+/** Mark a conversation failed when Qaap bootstrap could not start dev preview after the agent turn. */
+export async function reportPreviewBootstrapFailure(
+    conversationId: string,
+    reason: string,
+): Promise<QaapAgentConversationDTO | undefined> {
+    const trimmed = reason.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/preview-bootstrap-failure`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: trimmed }),
+        },
+    );
+    if (response.status === 404) {
+        return undefined;
+    }
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return await response.json() as QaapAgentConversationDTO;
+}

@@ -54,8 +54,10 @@ import {
 import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
 import {
     buildAgentAutoContinuePrompt,
+    buildDevPreviewAutoContinueExhaustedReason,
     isIncompleteAgentTurn,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
+import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
 import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
@@ -102,6 +104,7 @@ import {
 } from '../common/qaap-agent-model-fallback';
 import {
     appendTraceCheckpointEvent,
+    appendTracePreviewFailureEvent,
     appendTraceRunCancelledEvent,
     agentMessageHasStructuredTrace,
     syncSettledTraceEventsOnMessage,
@@ -1176,6 +1179,9 @@ export class QaapAgentConversationStore {
         }
         const attempts = this.autoContinueCountByUserMessage.get(userMessageId) ?? 0;
         if (attempts >= 2) {
+            if (messageRequestsDevPreview(userMessage.content)) {
+                this.reportPreviewBootstrapFailure(conversationId, buildDevPreviewAutoContinueExhaustedReason());
+            }
             return;
         }
         this.autoContinueCountByUserMessage.set(userMessageId, attempts + 1);
@@ -1193,6 +1199,50 @@ export class QaapAgentConversationStore {
         } catch {
             /* turn already replaced or cancelled */
         }
+    }
+
+    /**
+     * Terminal state when Qaap bootstrap cannot attach a dev preview after the agent turn finished.
+     * Idempotent while the conversation is already failed with the same tail error.
+     */
+    reportPreviewBootstrapFailure(conversationId: string, reason: string): QaapAgentConversation | undefined {
+        const trimmed = reason.trim();
+        if (!trimmed) {
+            return undefined;
+        }
+        const conv = this.conversations.get(conversationId);
+        if (!conv) {
+            return undefined;
+        }
+        if (conv.status === 'failed') {
+            return conv;
+        }
+        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
+        const lastUser = [...conv.messages].reverse().find(message => message.role === 'user');
+        if (!lastAgent || !lastUser) {
+            return undefined;
+        }
+        if (conv.status === 'streaming' && !isConversationTurnVisuallySettled(conv)) {
+            return undefined;
+        }
+        const failed = this.markTurnFailed(conv, {
+            userMessageId: lastUser.id,
+            agentMessageId: lastAgent.id,
+            reason: trimmed,
+            failureBody: lastAgent.content,
+        });
+        let next = this.finalizeStreamingAgentMessage(failed.conv, lastAgent.id, trimmed);
+        next = {
+            ...next,
+            messages: next.messages.map(message => message.id === lastAgent.id && message.role === 'agent'
+                ? appendTracePreviewFailureEvent(message, trimmed)
+                : message),
+        };
+        this.conversations.set(conversationId, next);
+        this.publishFinalizedAgentMessage(conversationId, next, lastAgent.id);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        void this.persist();
+        return next;
     }
 
     protected appendAgentReply(conv: QaapAgentConversation, content: string): QaapAgentConversation {

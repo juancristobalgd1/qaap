@@ -16,6 +16,7 @@ import {
     QaapCreateAgentConversationRequest,
     QaapPostAgentMessageRequest,
     QaapPostAgUiTranscriptEventRequest,
+    QaapPostPreviewBootstrapFailureRequest,
     QaapUpdateAgentConversationRequest,
 } from '../common/qaap-agent-conversation';
 import {
@@ -75,6 +76,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/ag-ui/events`, (req, res) => {
             this.handlePostAgUiEvent(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/preview-bootstrap-failure`, (req, res) => {
+            this.handlePostPreviewBootstrapFailure(req, res);
         });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             this.handleUpdate(req, res);
@@ -303,6 +307,21 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return;
         }
         res.status(202).json({ ok: true, conversationId: conv.id, status: conv.status });
+    }
+
+    protected handlePostPreviewBootstrapFailure(req: Request, res: Response): void {
+        const body = (req.body ?? {}) as Partial<QaapPostPreviewBootstrapFailureRequest>;
+        const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+        if (!reason) {
+            res.status(400).json({ error: '"reason" must be a non-empty string.' });
+            return;
+        }
+        const conv = this.store.reportPreviewBootstrapFailure(req.params.id, reason);
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation not found or preview failure cannot be recorded yet.' });
+            return;
+        }
+        res.json(conv);
     }
 
     protected handleUpdate(req: Request, res: Response): void {

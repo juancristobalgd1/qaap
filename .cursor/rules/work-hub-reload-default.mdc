@@ -1,21 +1,23 @@
 ---
-description: Work Hub por defecto tras reload/F5 — nunca restaurar IDE persistido (CRITICO)
+description: Persistir superficie activa (Work Hub o IDE) en reload/F5 dentro de la misma sesión de pestaña (CRITICO)
 alwaysApply: true
 ---
 
-# Work Hub reload default (critico)
+# Superficie activa en reload (critico)
 
-Work Hub es la superficie por defecto de Qaap. Al recargar la pagina, abrir una workspace por URL, volver de OAuth, o restaurar layout, la app debe entrar directo a Work Hub / Agents. El IDE clasico solo puede mostrarse si el usuario pulsa "Open IDE" durante el runtime actual.
+Al recargar la pagina (F5) dentro de la misma sesion de pestaña, la app debe **mantener la superficie que el usuario tenia abierta**:
 
-## Regla innegociable
+- **Work Hub / Agents** → recargar y seguir en Work Hub (sin flash del IDE).
+- **IDE clasico** (tras "Open IDE") → recargar y seguir en el IDE.
 
-No persistir la preferencia de IDE clasico. En particular, no guardar ni leer como estado durable:
+Work Hub sigue siendo la superficie **por defecto** en el primer arranque de una pestaña nueva o cuando no hay preferencia persistida.
 
-- `qaap.mobileProjects.preferDesktopIde`
-- `qaap.mobileProjects.explicitDesktopIde`
-- cualquier reemplazo equivalente en `sessionStorage`, `localStorage`, query/hash, backend, o layout restore
+## Persistencia permitida (solo sessionStorage, misma pestaña)
 
-`markPreferDesktopIde()` debe ser memory-only. `peekPreferDesktopIde()` debe limpiar claves legacy y devolver solo la bandera en memoria del runtime actual.
+- `qaap.mobileProjects.preferDesktopIde` / `qaap.mobileProjects.explicitDesktopIde` — usuario eligio IDE.
+- `qaap.mobileProjects.preferAgentsSurface` / `qaap.mobileProjects.dismissPanel` — usuario esta en Work Hub.
+
+No persistir en `localStorage`, query/hash, backend, ni layout restore como selector de superficie inicial.
 
 ## Puntos criticos
 
@@ -27,11 +29,10 @@ No persistir la preferencia de IDE clasico. En particular, no guardar ni leer co
 
 ## Contrato esperado
 
-- F5/reload despues de haber usado "Open IDE" vuelve a Work Hub.
-- El guard temprano `qaap-login-gate.js` no debe hacer `return` por una key de IDE persistida.
-- La restauracion de layout puede restaurar widgets internos, pero no puede elegir el IDE como superficie inicial.
-- Las claves legacy de IDE se eliminan al leer/preparar el estado.
-- La preferencia de Agents/Work Hub si puede sobrevivir reload cuando ayuda a evitar flash de IDE.
+- F5 en Work Hub → Work Hub (boot guard oculta IDE hasta montar hub).
+- F5 en IDE → IDE (login gate y boot guard hacen `return` si `preferDesktopIde` en sessionStorage).
+- "Back to Work Hub" limpia preferencia IDE y marca Agents surface.
+- Nueva pestana / sessionStorage vacio → Work Hub por defecto.
 
 ## Verificacion
 
@@ -44,7 +45,6 @@ npx lerna run test --scope @theia/qaap-mobile-shell
 
 Y verificar manualmente en browser:
 
-1. Abrir un workspace.
-2. Pulsar "Open IDE".
-3. Recargar la pagina con F5.
-4. Confirmar que aparece Work Hub directamente, sin flash ni restauracion del IDE.
+1. Abrir workspace → Work Hub → F5 → Work Hub.
+2. "Open IDE" → F5 → IDE clasico.
+3. Volver a Work Hub → F5 → Work Hub.

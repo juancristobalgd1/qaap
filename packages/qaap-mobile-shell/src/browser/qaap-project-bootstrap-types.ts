@@ -94,6 +94,11 @@ export interface QaapProjectDescriptor {
     readonly monorepoFlavor?: QaapMonorepoFlavor;
     /** Sub-apps with a runnable dev script, empty unless the project is a monorepo. */
     readonly apps: QaapMonorepoAppCandidate[];
+    /**
+     * When preview/install targets a child folder (e.g. `create-vite` scaffold) while the workspace
+     * root has no `package.json`, the relative path from the workspace root to that app.
+     */
+    readonly scaffoldRelativePath?: string;
 }
 
 export function isMonorepoDescriptor(descriptor: QaapProjectDescriptor): boolean {

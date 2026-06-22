@@ -13,6 +13,8 @@ import { conversationEverRequestedDevPreview } from '../common/qaap-transcript-p
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
+import { buildTranscriptPreviewBootstrapFailureReason, toTranscriptPreviewBootstrapSnapshot } from '../common/qaap-transcript-preview-bootstrap-failure';
+import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
 
 /**
  * When a background agent turn settles after a preview-related request, refresh project bootstrap
@@ -76,6 +78,13 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         const readyUrl = await ensureTranscriptDevPreview(this.bootstrap);
         if (readyUrl) {
             await this.bootstrap.focusPreview().catch(() => undefined);
+            return;
+        }
+        const reason = buildTranscriptPreviewBootstrapFailureReason(
+            toTranscriptPreviewBootstrapSnapshot(this.bootstrap.getStateSnapshot()),
+        );
+        if (reason) {
+            await reportPreviewBootstrapFailure(summary.id, reason).catch(() => undefined);
         }
     }
 }

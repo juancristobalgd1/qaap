@@ -3,11 +3,27 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import {
+    buildAgentDirectExecutionPromptBlock,
+    SUBAGENT_POLICY_MARKER,
+} from './qaap-agent-subagent-policy';
+
 const SHELL_AGENT_ID = 'shell';
 const DEFAULT_WORKFLOW_MARKER = '[QAAP default agent workflow]';
 const PARALLEL_TOOLS_MARKER = '[QAAP parallel tools]';
 const DEV_PREVIEW_MARKER = '[QAAP dev preview]';
 const BENIGN_CODE_EDIT_MARKER = '[QAAP benign code edit policy]';
+
+const WEB_GENERATION_MARKER = '[QAAP web generation quality]';
+
+export function buildAgentWebGenerationQualityPromptBlock(): string {
+    return [
+        WEB_GENERATION_MARKER,
+        'For landing pages and simple websites, do not stop after create-vite or npm create scaffolding.',
+        'Replace the default Vite/React starter (logos, counter demo) with the requested branding, sections, and copy.',
+        'Confirm package.json has a dev script and mention the run command (e.g. npm run dev) in your final reply.',
+    ].join('\n');
+}
 
 export function buildAgentBenignCodeEditPromptBlock(): string {
     return [
@@ -43,6 +59,7 @@ export function buildAgentDevPreviewPromptBlock(): string {
         'Qaap keeps the dev server alive in a dedicated IDE terminal with hot reload.',
         'Never run long-lived dev commands in shell (pnpm dev, npm start, vite, next dev, astro dev, etc.) — shell tools time out after ~30s and kill the preview.',
         'Use one-shot install/build/typecheck/test commands only. When the app should be previewable, reply with the expected local port (e.g. 5173) and confirm dependencies are installed; Qaap starts the server separately.',
+        'Prefer scaffolding web apps in the workspace root (package.json at root). If you must use a subfolder, name it clearly in your final message — Qaap auto-detects child projects for preview.',
     ].join('\n');
 }
 
@@ -59,6 +76,12 @@ export function appendAgentDefaultWorkflowToPrompt(prompt: string, agentId: stri
     }
     if (!prompt.includes(BENIGN_CODE_EDIT_MARKER)) {
         blocks.push(buildAgentBenignCodeEditPromptBlock());
+    }
+    if (!prompt.includes(WEB_GENERATION_MARKER)) {
+        blocks.push(buildAgentWebGenerationQualityPromptBlock());
+    }
+    if (!prompt.includes(SUBAGENT_POLICY_MARKER)) {
+        blocks.push(buildAgentDirectExecutionPromptBlock());
     }
     return `${blocks.join('\n\n')}\n\n---\n\n${prompt}`;
 }

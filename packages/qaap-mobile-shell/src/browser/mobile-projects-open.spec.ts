@@ -53,10 +53,16 @@ describe('mobile-projects-open work hub bootstrap', () => {
         expect(shouldPreferWorkHubAgentsLayout()).to.equal(false);
     });
 
-    it('does not bootstrap agents chat for workspace routes when desktop IDE is persisted', () => {
+    it('does not bootstrap agents chat for workspace routes when desktop IDE is active in runtime', () => {
         markPreferDesktopIde();
         expect(shouldBootstrapMobileAgentsChat()).to.equal(false);
         expect(shouldPreferWorkHubAgentsLayout()).to.equal(false);
+    });
+
+    it('does not bootstrap agents chat after reload when desktop IDE preference is persisted', () => {
+        storage.set('qaap.mobileProjects.preferDesktopIde', '1');
+        storage.set('qaap.mobileProjects.explicitDesktopIde', '1');
+        expect(shouldBootstrapMobileAgentsChat()).to.equal(false);
     });
 
     it('bootstraps agents chat for workspace routes even when homeVisible is stale in sessionStorage', () => {
