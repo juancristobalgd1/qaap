@@ -82,7 +82,7 @@ test.describe('@qaap-mobile transcript dev preview flow', () => {
 
     test('levanta la app from orphan scaffold subfolder switches to Preview', async ({ playwright, browser }) => {
         ensureFixtureDeps(VITE_SUBFOLDER_APP);
-        expect(fs.existsSync(path.join(VITE_SUBFOLDER_FIXTURE, 'package.json'))).to.equal(false);
+        expect(fs.existsSync(path.join(VITE_SUBFOLDER_FIXTURE, 'package.json'))).toBe(false);
         const ws = new TheiaWorkspace([VITE_SUBFOLDER_FIXTURE]);
         const app = await TheiaAppLoader.load({ playwright, browser }, ws);
         await app.waitForShellAndInitialized();
