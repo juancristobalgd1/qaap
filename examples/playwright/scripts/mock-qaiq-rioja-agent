@@ -130,9 +130,15 @@ CSS
 fi
 
 emit_assistant_thinking 'Voy a crear una landing page moderna sobre vinos Rioja con Vite.'
-emit_assistant_text 'Perfecto. Voy a generar la estructura del proyecto, escribir los archivos y ejecutar npm install.'
+emit_assistant_text 'Perfecto. Voy a generar la estructura del proyecto en una subcarpeta (como create-vite), escribir los archivos y ejecutar npm install.'
 
-mkdir -p src
+APP_DIR="."
+if [[ "${QAAP_MOCK_RIOJA_SUBFOLDER:-1}" != "0" ]]; then
+    APP_DIR="rioja-wines-landing-page"
+    mkdir -p "$APP_DIR"
+fi
+mkdir -p "$APP_DIR/src"
+cd "$APP_DIR"
 
 cat > package.json <<'PKG'
 {
@@ -151,7 +157,7 @@ cat > package.json <<'PKG'
 }
 PKG
 
-emit_tool_use "tu-write-pkg" "Write" '{"file_path":"package.json"}'
+emit_tool_use "tu-write-pkg" "Write" '{"file_path":"'"${APP_DIR}/package.json"'"}'
 emit_tool_result "tu-write-pkg" "Wrote package.json"
 
 cat > index.html <<'HTML'
@@ -206,7 +212,7 @@ cat > index.html <<'HTML'
 </html>
 HTML
 
-emit_tool_use "tu-write-html" "Write" '{"file_path":"index.html"}'
+emit_tool_use "tu-write-html" "Write" '{"file_path":"'"${APP_DIR}/index.html"'"}'
 emit_tool_result "tu-write-html" "Wrote index.html"
 
 cat > src/style.css <<'CSS'
@@ -249,9 +255,9 @@ document.querySelector('.cta')?.addEventListener('click', () => {
 });
 JS
 
-emit_tool_use "tu-write-css" "Write" '{"file_path":"src/style.css"}'
+emit_tool_use "tu-write-css" "Write" '{"file_path":"'"${APP_DIR}/src/style.css"'"}'
 emit_tool_result "tu-write-css" "Wrote src/style.css"
-emit_tool_use "tu-write-js" "Write" '{"file_path":"src/main.js"}'
+emit_tool_use "tu-write-js" "Write" '{"file_path":"'"${APP_DIR}/src/main.js"'"}'
 emit_tool_result "tu-write-js" "Wrote src/main.js"
 
 INSTALL_OUT=""
@@ -264,7 +270,7 @@ else
     emit_tool_result "tu-bash-install" "npm not found" "true"
 fi
 
-FINAL_TEXT='He creado una landing page moderna sobre vinos Rioja con Vite. Los archivos principales son index.html, src/style.css y src/main.js. Las dependencias están instaladas. El servidor de desarrollo escuchará en http://127.0.0.1:5173 cuando Qaap lo levante.'
+FINAL_TEXT='He creado una landing page moderna sobre vinos Rioja con Vite en '"${APP_DIR}/"'. Los archivos principales son index.html, src/style.css y src/main.js. Las dependencias están instaladas. El servidor de desarrollo escuchará en http://127.0.0.1:5173 cuando Qaap lo levante.'
 emit_assistant_text "$FINAL_TEXT"
 emit_result "$FINAL_TEXT"
 

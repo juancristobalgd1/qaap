@@ -252,16 +252,25 @@ async function pollConversation(page, cwd, { timeoutMs = 180_000 } = {}) {
     return { ...last, timedOut: true };
 }
 
+function resolveScaffoldAppRoot(cwd) {
+    const nested = path.join(cwd, 'rioja-wines-landing-page');
+    if (fs.existsSync(path.join(nested, 'package.json'))) {
+        return nested;
+    }
+    return cwd;
+}
+
 async function checkWorkspaceFiles(cwd) {
+    const appRoot = resolveScaffoldAppRoot(cwd);
     const files = ['package.json', 'index.html', 'src/style.css', 'src/main.js'];
     const exists = {};
     for (const f of files) {
-        exists[f] = fs.existsSync(path.join(cwd, f));
+        exists[f] = fs.existsSync(path.join(appRoot, f));
     }
-    const hasNodeModules = fs.existsSync(path.join(cwd, 'node_modules'));
-    const html = exists['index.html'] ? fs.readFileSync(path.join(cwd, 'index.html'), 'utf8') : '';
+    const hasNodeModules = fs.existsSync(path.join(appRoot, 'node_modules'));
+    const html = exists['index.html'] ? fs.readFileSync(path.join(appRoot, 'index.html'), 'utf8') : '';
     const mentionsRioja = /rioja/i.test(html);
-    return { exists, hasNodeModules, mentionsRioja, htmlLength: html.length };
+    return { appRoot, exists, hasNodeModules, mentionsRioja, htmlLength: html.length };
 }
 
 function killDevPort(port = 5173) {
@@ -306,11 +315,12 @@ async function waitForDevProbe(port = 5173, timeoutMs = 120_000) {
 async function startWorkspaceDevServer(workspace, port = 5173) {
     killDevPort(port);
     await new Promise(resolve => setTimeout(resolve, 500));
+    const appRoot = resolveScaffoldAppRoot(workspace);
     const logPath = path.join(OUT_DIR, 'dev-server.log');
     fs.mkdirSync(OUT_DIR, { recursive: true });
     const logFd = fs.openSync(logPath, 'w');
     const child = spawn('npm', ['run', 'dev'], {
-        cwd: workspace,
+        cwd: appRoot,
         stdio: ['ignore', logFd, logFd],
         detached: true,
         env: { ...process.env, NODE_ENV: 'development' },
