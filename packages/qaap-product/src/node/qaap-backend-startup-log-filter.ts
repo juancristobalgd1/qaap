@@ -13,6 +13,7 @@ const QUIET_STARTUP_CONSOLE_PATTERNS: readonly RegExp[] = [
     /^Failed to localize plugin '/,
     /^Failed to load translation from: /,
     /^Could not read '.*' contribution 'localizations'\./,
+    /^The local plugin referenced by local-dir:.+ does not exist\.$/,
 ];
 
 function formatConsoleArgs(args: readonly unknown[]): string {
@@ -30,6 +31,11 @@ function formatConsoleArgs(args: readonly unknown[]): string {
 
 function isQuietStartupConsoleMessage(message: string): boolean {
     return QUIET_STARTUP_CONSOLE_PATTERNS.some(pattern => pattern.test(message));
+}
+
+/** @internal Exported for unit tests only. */
+export function qaapIsQuietStartupConsoleMessageForTests(message: string): boolean {
+    return isQuietStartupConsoleMessage(message);
 }
 
 /**

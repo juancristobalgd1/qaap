@@ -4,16 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { qaapIsQuietStartupConsoleMessageForTests } from './qaap-backend-startup-log-filter';
 
 describe('qaap-backend-startup-log-filter patterns', () => {
-
-    const patterns = [
-        /^Failed to load plugin localization bundles from /,
-        /^Failed reading translation file from: /,
-        /^Failed to localize plugin '/,
-        /^Failed to load translation from: /,
-        /^Could not read '.*' contribution 'localizations'\./,
-    ];
 
     it('matches common optional plugin localization failures', () => {
         const samples = [
@@ -21,14 +14,15 @@ describe('qaap-backend-startup-log-filter patterns', () => {
             'Failed reading translation file from: /tmp/plugins/bar/package.nls.json Error: ENOENT',
             "Failed to localize plugin 'dbaeumer.vscode-eslint'.",
             'Could not read \'ms-python.python\' contribution \'localizations\'.',
+            'The local plugin referenced by local-dir:/Users/jc/.theia/plugins does not exist.',
         ];
         for (const sample of samples) {
-            expect(patterns.some(pattern => pattern.test(sample)), sample).to.equal(true);
+            expect(qaapIsQuietStartupConsoleMessageForTests(sample), sample).to.equal(true);
         }
     });
 
     it('does not match unrelated backend errors', () => {
-        expect(patterns.some(pattern => pattern.test('Failed to start backend server'))).to.equal(false);
+        expect(qaapIsQuietStartupConsoleMessageForTests('Failed to start backend server')).to.equal(false);
     });
 
 });
