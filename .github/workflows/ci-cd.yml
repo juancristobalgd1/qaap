@@ -23,6 +23,9 @@ jobs:
     name: Lint
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    env:
+      NODE_OPTIONS: --max_old_space_size=4096
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # https://github.com/microsoft/vscode-ripgrep/issues/9
 
     steps:
       - name: Checkout
@@ -44,11 +47,9 @@ jobs:
         run: |
           npm ci
           ./scripts/check_git_status.sh
-        env:
-          NODE_OPTIONS: --max_old_space_size=4096
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # https://github.com/microsoft/vscode-ripgrep/issues/9
 
       - name: Lint
+        shell: bash
         run: |
           npm run lint
 
