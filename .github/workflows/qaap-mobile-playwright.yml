@@ -47,10 +47,23 @@ jobs:
           node-version: '24.x'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Use Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+
       - name: Build Browser
-        run: npm run build:browser
+        shell: bash
+        run: |
+          npm ci
+          npm run build:browser
+          npm run download:plugins
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Qaap mobile UI tests (@qaap-mobile only)
+        shell: bash
         run: |
           cd examples/playwright
           npm run ui-tests:qaap-mobile
