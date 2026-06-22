@@ -162,6 +162,8 @@ const ALLOWED = [
     /^CLAUDE\.md$/,
     /^doc\/qaap-.*\.(md|html)$/,
     /^\.github\/workflows\/qaap-.*\.yml$/,
+    // Fork CI matrix (Node heap, test hooks) — not upstream Theia workflow content.
+    /^\.github\/workflows\/ci-cd\.yml$/,
     /^\.prompts\//,
     /^\.theia\//,
     /^\.dockerignore$/,

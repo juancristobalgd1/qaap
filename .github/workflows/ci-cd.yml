@@ -51,7 +51,7 @@ jobs:
       - name: Lint
         shell: bash
         run: |
-          npm run lint
+          NX_DAEMON=false npx lerna run lint --stream --concurrency 2
 
   build:
     name: Build and Test (${{ matrix.os }}, node-${{ matrix.node }})
