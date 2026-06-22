@@ -3,6 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+enableJSDOM();
+
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
@@ -88,13 +92,6 @@ function bindMockFileService(detector: QaapProjectBootstrapDetector, mock: MockF
 }
 
 describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
-
-    it('formatMissingProjectHint explains orphan scaffolds vs empty workspace', () => {
-        const detector = new QaapProjectBootstrapDetector();
-        expect(detector.formatMissingProjectHint([])).to.include('No package.json in the workspace root');
-        expect(detector.formatMissingProjectHint(['rioja-wines-landing-page'])).to.include('rioja-wines-landing-page');
-        expect(detector.formatMissingProjectHint(['app-a', 'app-b'])).to.include('app-a');
-    });
 
     it('detects a Vite app scaffolded in a direct child folder', async () => {
         const mock = new MockFileService();

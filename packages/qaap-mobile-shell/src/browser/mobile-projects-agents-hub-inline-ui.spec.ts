@@ -114,7 +114,9 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             transcriptComposerUi: {} as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
             transcriptStickyComposerUi: {} as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
             transcriptHeaderUi: { refreshTranscriptExecutionChrome: () => undefined } as unknown as MobileProjectsAgentsHubInlineHost['transcriptHeaderUi'],
-            transcriptLiveUi: {} as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
             transcriptMessagesUi: {} as MobileProjectsAgentsHubInlineHost['transcriptMessagesUi'],
             renderHeader: () => undefined,
             renderSubtitle: () => undefined,
@@ -249,6 +251,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 flushTranscriptComposerPrefs: async () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
             transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
                 ensureTranscriptConversationRefresh: () => undefined,
                 scheduleTranscriptConversationRefresh: () => undefined,
                 refreshOpenTranscriptConversation: async () => undefined,
@@ -332,6 +335,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 flushTranscriptComposerPrefs: async () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
             transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
                 ensureTranscriptConversationRefresh: () => undefined,
                 scheduleTranscriptConversationRefresh: () => undefined,
                 refreshOpenTranscriptConversation: async () => undefined,
@@ -428,6 +432,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                     flushTranscriptComposerPrefs: async () => undefined,
                 } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
                 transcriptLiveUi: {
+                    clearTranscriptSemanticProgressClock: () => undefined,
                     ensureTranscriptConversationRefresh: () => undefined,
                     stopTranscriptLiveWatch: () => undefined,
                     scheduleTranscriptConversationRefresh: () => undefined,
@@ -522,6 +527,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 flushTranscriptComposerPrefs: async () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
             transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
                 ensureTranscriptConversationRefresh: () => undefined,
                 scheduleTranscriptConversationRefresh: () => undefined,
                 refreshOpenTranscriptConversation: async () => undefined,
@@ -597,6 +603,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 agentsHubInlineExecutionRoot: executionRoot,
                 agentsHubInlineChatHost: chatHost,
                 transcriptLiveUi: {
+                    clearTranscriptSemanticProgressClock: () => undefined,
                     stopTranscriptLiveWatch: () => { stopLiveWatchCalls++; },
                     peekCachedOpenTranscript: () => undefined,
                     applyCachedTranscriptOnOpen: () => false,
@@ -637,6 +644,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 closeTranscriptComposerSheets: () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
             transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
                 stopTranscriptLiveWatch: () => undefined,
                 peekCachedOpenTranscript: () => undefined,
                 applyCachedTranscriptOnOpen: () => false,
@@ -695,6 +703,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 }),
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
             transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
                 stopTranscriptLiveWatch: () => undefined,
                 peekCachedOpenTranscript: () => undefined,
                 applyCachedTranscriptOnOpen: () => false,

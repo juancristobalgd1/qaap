@@ -414,6 +414,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
             transcriptLastConv: {
                 id: 'conv-checkpoint',
                 status: 'idle',
+                messages: [],
                 checkpoints: [{
                     id: 'cp-before',
                     messageId: 'u1',

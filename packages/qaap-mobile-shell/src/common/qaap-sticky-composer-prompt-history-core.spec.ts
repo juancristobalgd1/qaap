@@ -14,7 +14,12 @@ describe('qaap-sticky-composer-prompt-history-core', () => {
     function createTextarea(value: string, start: number, end = start): HTMLTextAreaElement {
         const textarea = document.createElement('textarea');
         textarea.value = value;
-        textarea.setSelectionRange(start, end);
+        if (typeof textarea.setSelectionRange === 'function') {
+            textarea.setSelectionRange(start, end);
+        } else {
+            Object.defineProperty(textarea, 'selectionStart', { value: start, configurable: true });
+            Object.defineProperty(textarea, 'selectionEnd', { value: end, configurable: true });
+        }
         return textarea;
     }
 

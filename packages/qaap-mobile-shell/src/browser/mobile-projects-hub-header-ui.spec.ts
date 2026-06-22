@@ -3,11 +3,18 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
 import { MobileProjectsHubHeaderUi, type MobileProjectsHubHeaderHost } from './mobile-projects-hub-header-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 describe('MobileProjectsHubHeaderUi', () => {
+
+    beforeEach(() => {
+        if (typeof document === 'undefined') {
+            enableJSDOM();
+        }
+    });
     function project(id: string, name: string): MobileProjectEntry {
         return {
             id,

@@ -35,7 +35,7 @@ export function messageRequestsDevPreview(text: string | undefined): boolean {
 
 /** True when any user turn in the conversation asked to run or preview the app. */
 export function conversationEverRequestedDevPreview(conv: QaapAgentConversationDTO): boolean {
-    return conv.messages.some(message => message.role === 'user' && messageRequestsDevPreview(message.content));
+    return (conv.messages ?? []).some(message => message.role === 'user' && messageRequestsDevPreview(message.content));
 }
 
 /** Whether this conversation should drive dev-preview bootstrap (any turn may have asked). */

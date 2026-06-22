@@ -15,6 +15,9 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 describe('MobileProjectsStickyComposerWorkspaceUi', () => {
 
     beforeEach(() => {
+        if (typeof document === 'undefined') {
+            enableJSDOM();
+        }
         document.body.replaceChildren();
         if (!HTMLElement.prototype.scrollTo) {
             HTMLElement.prototype.scrollTo = () => undefined;

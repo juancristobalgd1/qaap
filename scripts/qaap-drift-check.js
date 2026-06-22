@@ -38,6 +38,7 @@ function sh(cmd) {
 
 const base = process.env.QAAP_DIFF_BASE || 'upstream/master';
 const reportOnly = process.env.QAAP_DRIFT_CHECK_REPORT === '1';
+const writeBaseline = process.argv.includes('--write-baseline');
 
 /** @type {RegExp[]} Paths allowed to differ from upstream (seams + examples + tooling). */
 const ALLOWED = [
@@ -219,6 +220,19 @@ if (newDrift.length) {
     }
     console.error('\nAllowlist: scripts/qaap-drift-check.js ALLOWED');
     console.error('Baseline: scripts/qaap-drift-baseline.txt (remove paths after migration)');
+    if (writeBaseline && violations.length) {
+        const header = [
+            '# Known upstream drift outside packages/qaap-* (historical). Shrink as migrations land.',
+            `# Generated against ${base}; paths must match \`git diff --name-only ${base}\`.`,
+            '#',
+            '# Empty new-drift set: CI passes while paths are migrated into packages/qaap-* or ALLOWED.',
+            '# Regenerate: node scripts/qaap-drift-check.js --write-baseline',
+            '',
+        ].join('\n');
+        fs.writeFileSync(baselinePath, `${header}${violations.sort().join('\n')}\n`);
+        console.error(`\n[qaap-drift-check] Wrote ${violations.length} path(s) to ${path.relative(root, baselinePath)}`);
+        process.exit(0);
+    }
     if (!reportOnly) {
         process.exit(1);
     }

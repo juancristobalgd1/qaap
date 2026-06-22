@@ -52,7 +52,10 @@ async function mountTimelineFixture(page: Page): Promise<void> {
         <div class="theia-mobile-agent-changed-files-collapsed-preview">
           <div class="theia-mobile-agent-changed-files-mini-diff">
             <pre class="theia-mobile-agent-changed-files-mini-diff-lines">
-              <div class="theia-mobile-agent-changed-files-mini-diff-line theia-mod-add"><span class="theia-mobile-agent-changed-files-mini-diff-marker">+</span><span class="theia-mobile-agent-changed-files-mini-diff-text">added line</span></div>
+              <div class="theia-mobile-agent-changed-files-mini-diff-line theia-mod-add">
+                <span class="theia-mobile-agent-changed-files-mini-diff-marker">+</span>
+                <span class="theia-mobile-agent-changed-files-mini-diff-text">added line</span>
+              </div>
             </pre>
           </div>
         </div>
@@ -69,7 +72,10 @@ async function mountTimelineFixture(page: Page): Promise<void> {
             <div class="theia-mobile-agent-activity-copy">
               <details class="theia-mobile-agent-activity-expand">
                 <summary class="theia-mobile-agent-activity-expand-summary">
-                  <span class="theia-mobile-agent-activity-row"><span class="theia-mobile-agent-activity-verb">Ran</span> <span class="theia-mobile-agent-activity-detail theia-mod-command">npm test</span></span>
+                  <span class="theia-mobile-agent-activity-row">
+                    <span class="theia-mobile-agent-activity-verb">Ran</span>
+                    <span class="theia-mobile-agent-activity-detail theia-mod-command">npm test</span>
+                  </span>
                   <span class="theia-mobile-agent-activity-expand-chevron codicon codicon-chevron-right" aria-hidden="true"></span>
                 </summary>
                 <div class="theia-mobile-agent-activity-expand-body theia-mod-terminal">
@@ -84,7 +90,10 @@ async function mountTimelineFixture(page: Page): Promise<void> {
             <div class="theia-mobile-agent-activity-copy">
               <details class="theia-mobile-agent-activity-expand">
                 <summary class="theia-mobile-agent-activity-expand-summary">
-                  <span class="theia-mobile-agent-activity-row"><span class="theia-mobile-agent-activity-verb">Updated</span> <span class="theia-mobile-agent-activity-detail">task list</span></span>
+                  <span class="theia-mobile-agent-activity-row">
+                    <span class="theia-mobile-agent-activity-verb">Updated</span>
+                    <span class="theia-mobile-agent-activity-detail">task list</span>
+                  </span>
                   <span class="theia-mobile-agent-activity-expand-chevron codicon codicon-chevron-right" aria-hidden="true"></span>
                 </summary>
                 <div class="theia-mobile-agent-activity-expand-body theia-mod-todo">
@@ -126,7 +135,7 @@ async function mountTimelineFixture(page: Page): Promise<void> {
         chat.append(host);
         host.querySelector<HTMLButtonElement>('.theia-mobile-agent-transcript-user-action.theia-mod-copy')
             ?.addEventListener('click', () => {
-                void navigator.clipboard.writeText('Fix the failing tool step');
+                navigator.clipboard.writeText('Fix the failing tool step').catch(() => undefined);
             });
     });
 }
