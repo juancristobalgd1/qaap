@@ -274,6 +274,17 @@ export class MobileProjectsConversationActionsUi {
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        const rollbackSnapshot = { ...summary };
+        const rollbackConv = this.host.transcriptLiveUi.readOpenTranscriptRollbackSnapshot(summary.id);
+        const retriedTurnContent = rollbackConv
+            ? [...rollbackConv.messages].reverse().find(message => message.role === 'user')?.content ?? summary.title
+            : summary.title;
+
+        this.host.transcriptLiveUi.applyOptimisticFailedTaskRetry(summary);
+        this.host.conversations?.recordSnapshot({ ...summary, status: 'streaming', updatedAt: Date.now() });
+        this.host.applyTaskStartedToProject(summary.cwd, retriedTurnContent, summary.id);
+        this.host.renderList();
+
         try {
             const retried = await retryConversation(summary.id);
             this.host.conversations?.recordSnapshot(conversationToSummary(retried));
@@ -290,6 +301,11 @@ export class MobileProjectsConversationActionsUi {
                 { kind: 'success', duration: 1400 }
             );
         } catch (error) {
+            this.host.conversations?.recordSnapshot(rollbackSnapshot);
+            this.host.renderList();
+            if (rollbackConv && this.host.isWatchingOpenTranscript(summary.id)) {
+                this.host.transcriptLiveUi.restoreOpenTranscriptSnapshot(rollbackConv);
+            }
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/retryTaskFailed',
                 'Could not retry: {0}',

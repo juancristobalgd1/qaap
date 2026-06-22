@@ -14,6 +14,7 @@ import {
 } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '../common/qaap-transcript-incremental-update';
+import { seedTranscriptSemanticProgressClock } from '../common/qaap-transcript-semantic-progress';
 import { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
 import { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-transcript-messages-render-ui';
@@ -196,6 +197,11 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         };
         host.retryOpenTranscriptStream = () => {
             retried += 1;
+            const seeded = seedTranscriptSemanticProgressClock();
+            host.transcriptLastStreamProgressAt = seeded.at;
+            host.transcriptLastSemanticProgressKey = seeded.key;
+            host.transcriptLastTransportEventAt = seeded.at;
+            renderUi.renderTranscriptMessages(chatHost, streaming);
         };
         host.transcriptLastStreamProgressAt = Date.now() - 61_000;
         host.transcriptLastTransportEventAt = Date.now();
@@ -219,6 +225,9 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         buttons[1].click();
         expect(cancelled).to.equal(1);
         expect(retried).to.equal(1);
+        const refreshedRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        expect(refreshedRow?.classList.contains('theia-mod-stream-timed-out')).to.equal(false);
+        expect(messageHost.querySelector('.theia-mobile-agent-stream-timeout-banner')).to.equal(null);
     });
 
     it('renders optimistic image previews in pending user rows', () => {

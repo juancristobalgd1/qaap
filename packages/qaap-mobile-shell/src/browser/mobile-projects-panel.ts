@@ -1785,9 +1785,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     retryOpenTranscriptStream(): void {
         const project = this.transcriptController.state.transcriptOpenProject;
         const summary = this.transcriptController.state.transcriptOpenSummary;
-        if (project && summary) {
-            void this.onRetryConversation(project, summary);
+        if (!project || !summary) {
+            return;
         }
+        this.transcriptLiveUi.applyOptimisticStreamTimeoutRetry(summary);
+        this.conversations?.recordSnapshot({ ...summary, status: 'streaming', updatedAt: Date.now() });
+        this.renderList();
+        void this.transcriptLiveUi.resyncOpenTranscriptStreamAfterTimeout(project, summary);
     }
 
     protected async onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void> {

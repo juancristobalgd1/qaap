@@ -211,6 +211,80 @@ export class MobileProjectsTranscriptLiveUi {
         this.host.transcriptLastTransportEventAt = seeded.at;
     }
 
+    /** Deep-enough copy of the open transcript for rollback after an optimistic retry. */
+    readOpenTranscriptRollbackSnapshot(conversationId: string): QaapAgentConversationDTO | undefined {
+        const conv = this.host.transcriptLastConv;
+        const source = conv?.id === conversationId
+            ? conv
+            : this.peekCachedOpenTranscript(conversationId);
+        if (!source) {
+            return undefined;
+        }
+        return { ...source, messages: [...source.messages] };
+    }
+
+    restoreOpenTranscriptSnapshot(conv: QaapAgentConversationDTO): void {
+        this.host.transcriptLastConv = conv;
+        this.host.transcriptLastFingerprint = undefined;
+        const chatHost = this.resolveActiveTranscriptChatHost();
+        if (chatHost) {
+            this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
+        }
+        this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+    }
+
+    /**
+     * Zero-latency recovery when the client-side stream watchdog timed out but the backend turn
+     * may still be running — hide the timeout chrome and restart the progress clock immediately.
+     */
+    applyOptimisticStreamTimeoutRetry(summary: QaapAgentConversationSummaryDTO): void {
+        this.seedTranscriptSemanticProgressClock();
+        this.transcriptTurnVisuallySettledActive = false;
+        const conv = this.host.transcriptLastConv;
+        const chatHost = this.resolveActiveTranscriptChatHost();
+        if (!chatHost || !conv || conv.id !== summary.id) {
+            return;
+        }
+        const optimistic: QaapAgentConversationDTO = { ...conv, status: 'streaming' };
+        this.host.transcriptLastConv = optimistic;
+        this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, optimistic);
+        this.scheduleTranscriptComposerActivityRefresh(optimistic);
+        this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+    }
+
+    /** Paint a failed task as streaming again before the VPS retry round-trip completes. */
+    applyOptimisticFailedTaskRetry(summary: QaapAgentConversationSummaryDTO): void {
+        this.seedTranscriptSemanticProgressClock();
+        this.transcriptTurnVisuallySettledActive = false;
+        const conv = this.readOpenTranscriptRollbackSnapshot(summary.id);
+        const chatHost = this.resolveActiveTranscriptChatHost();
+        if (!chatHost || !conv) {
+            return;
+        }
+        const optimistic: QaapAgentConversationDTO = {
+            ...conv,
+            status: 'streaming',
+            updatedAt: Date.now(),
+        };
+        this.host.transcriptLastConv = optimistic;
+        this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, optimistic);
+        this.scheduleTranscriptComposerActivityRefresh(optimistic);
+        this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+    }
+
+    async resyncOpenTranscriptStreamAfterTimeout(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        const chatHost = this.resolveActiveTranscriptChatHost();
+        if (chatHost) {
+            this.scheduleTranscriptConversationRefresh(project, summary, chatHost);
+        }
+        await this.refreshOpenTranscriptConversation({ forcePoll: true });
+    }
+
     protected ensureVisibilityResumeListener(): void {
         if (this.visibilityResumeListenerInstalled || typeof document === 'undefined') {
             return;
