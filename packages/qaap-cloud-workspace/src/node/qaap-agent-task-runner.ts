@@ -1446,7 +1446,7 @@ export class QaapAgentTaskRunner {
                         const devServerDenial = findQaiqDevServerGuardDenial(event.request);
                         const denyMessage = devServerDenial
                             ?? (autoAction === 'deny' && event.request.toolName
-                                ? buildQaiqAutoDeniedToolMessage(event.request.toolName)
+                                ? buildQaiqAutoDeniedToolMessage(event.request.toolName, event.request.toolInput)
                                 : undefined);
                         if (devServerDenial) {
                             logStream.write('\n[qaap] auto-denied long-lived dev-server shell command; Qaap manages dev servers via the preview bootstrap.\n');

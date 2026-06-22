@@ -287,7 +287,7 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(items[0]?.resultPreview).to.equal('export const StoreContext = createContext(null);');
     });
 
-    it('resolveTranscriptLifecycleActivityItems maps checkpoint and run_cancelled rows', () => {
+    it('resolveTranscriptLifecycleActivityItems maps checkpoint, run_cancelled, and error rows', () => {
         const items = resolveTranscriptLifecycleActivityItems([
             {
                 type: 'checkpoint',
@@ -304,13 +304,21 @@ describe('qaap-transcript-activity-navigation', () => {
                 message: 'Turn cancelled.',
                 startedAt: 200,
             },
+            {
+                type: 'error',
+                id: 'preview-1',
+                message: 'Run/preview failed: no package.json in the workspace root.',
+                startedAt: 300,
+            },
         ]);
-        expect(items).to.have.length(2);
+        expect(items).to.have.length(3);
         expect(items[0]?.state).to.equal('success');
         expect(items[0]?.label).to.include('Checkpoint: After refactor');
         expect(items[0]?.label).to.include('+3/-1');
         expect(items[0]?.checkpointId).to.equal('cp-1');
         expect(items[1]?.state).to.equal('cancelled');
         expect(items[1]?.label).to.equal('Turn cancelled.');
+        expect(items[2]?.state).to.equal('error');
+        expect(items[2]?.label).to.include('package.json');
     });
 });

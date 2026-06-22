@@ -50,6 +50,12 @@ import {
     messageRequestsDevPreview,
     resolveReadyTranscriptPreviewUrlFromProbe,
 } from '../common/qaap-transcript-preview-offer';
+import {
+    buildTranscriptPreviewBootstrapFailureReason,
+    shouldReportTranscriptPreviewBootstrapFailure,
+    toTranscriptPreviewBootstrapSnapshot,
+} from '../common/qaap-transcript-preview-bootstrap-failure';
+import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
@@ -105,6 +111,7 @@ export interface MobileProjectsTranscriptLiveHost {
     transcriptComposerPrefsConvId: string | undefined;
     transcriptComposerSendRefresh: (() => void) | undefined;
     transcriptPreviewRequestPending: boolean;
+    transcriptPreviewRequestRunning: boolean;
     transcriptApprovalRefreshTimer: number | undefined;
     cachedAgentApprovals: import('../common/qaap-agent-approval-client').QaapAgentApprovalRequestDTO[];
     projectsService: MobileProjectsService;
@@ -167,6 +174,7 @@ export class MobileProjectsTranscriptLiveUi {
     protected transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
     protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
     protected transcriptPreviewPollMisses = 0;
+    protected readonly transcriptPreviewFailureReportedFor = new Set<string>();
     protected visibilityResumeListenerInstalled = false;
     protected readonly agUiLiveBridge: QaapAgUiTranscriptLiveBridge;
 
@@ -557,11 +565,56 @@ export class MobileProjectsTranscriptLiveUi {
         }
         this.transcriptDevPreviewBootstrapConversationId = conv.id;
         void ensureTranscriptDevPreview(bootstrap).then(readyUrl => {
-            if (!readyUrl || this.host.transcriptOpenSummaryId !== conv.id) {
+            if (readyUrl && this.host.transcriptOpenSummaryId === conv.id) {
+                void this.openReadyTranscriptPreviewUrl(readyUrl, conv);
                 return;
             }
-            void this.openReadyTranscriptPreviewUrl(readyUrl, conv);
+            void this.maybeReportTranscriptPreviewBootstrapFailure(conv, bootstrap);
         }).catch(() => undefined);
+    }
+
+    protected async maybeReportTranscriptPreviewBootstrapFailure(
+        conv: QaapAgentConversationDTO,
+        bootstrap: QaapProjectBootstrapService,
+    ): Promise<void> {
+        if (!conversationRequestsDevPreview(conv) && !this.host.transcriptPreviewRequestPending) {
+            return;
+        }
+        if (this.transcriptPreviewFailureReportedFor.has(conv.id)) {
+            return;
+        }
+        const snapshot = toTranscriptPreviewBootstrapSnapshot(bootstrap.getStateSnapshot());
+        if (!shouldReportTranscriptPreviewBootstrapFailure(snapshot, this.transcriptPreviewPollMisses)) {
+            return;
+        }
+        const reason = buildTranscriptPreviewBootstrapFailureReason(snapshot);
+        if (!reason) {
+            return;
+        }
+        this.transcriptPreviewFailureReportedFor.add(conv.id);
+        this.host.transcriptPreviewRequestPending = false;
+        this.host.transcriptPreviewRequestRunning = false;
+        this.stopTranscriptPreviewOfferRefresh();
+        try {
+            const updated = await reportPreviewBootstrapFailure(conv.id, reason);
+            if (updated && this.host.transcriptOpenSummaryId === conv.id) {
+                this.host.transcriptLastConv = updated;
+                this.host.transcriptLastStatus = resolveTranscriptEffectiveStatus(updated);
+                if (this.host.transcriptOpenSummary?.id === conv.id) {
+                    this.host.transcriptOpenSummary = this.reconcileConversationListSummary(updated);
+                }
+                const chatHost = this.resolveActiveTranscriptChatHost();
+                if (chatHost) {
+                    this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, updated);
+                }
+            }
+        } catch {
+            /* best-effort */
+        }
+        this.host.transcriptStickyComposerUi.refreshComposerActivityStack();
+        this.host.transcriptComposerSendRefresh?.();
+        this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+        MobileSnackbar.show(reason, { duration: 8000, kind: 'warning' });
     }
 
     protected async openReadyTranscriptPreviewUrl(
@@ -616,6 +669,8 @@ export class MobileProjectsTranscriptLiveUi {
         this.transcriptPreviewSettlePollUntil = Date.now() + 120_000;
         this.transcriptDevPreviewBootstrapConversationId = undefined;
         this.transcriptPreviewOfferAnnouncedUrl = undefined;
+        this.transcriptPreviewFailureReportedFor.delete(conv.id);
+        this.transcriptPreviewPollMisses = 0;
         const project = this.host.transcriptOpenProject;
         const summary = this.host.transcriptOpenSummary;
         if (messageRequestsDevPreview(content) && project && summary) {
@@ -967,6 +1022,10 @@ export class MobileProjectsTranscriptLiveUi {
             } else {
                 this.transcriptPreviewPollMisses += 1;
                 this.transcriptPreviewPollIntervalMs = this.resolveTranscriptPreviewPollIntervalMs();
+                const bootstrap = this.host.projectBootstrap;
+                if (bootstrap) {
+                    void this.maybeReportTranscriptPreviewBootstrapFailure(conv, bootstrap);
+                }
             }
         } catch {
             /* best-effort */

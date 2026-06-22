@@ -27,6 +27,7 @@ import {
     STATIC_ROOT_CANDIDATE_DIRS,
     buildStaticServeCommand,
 } from './qaap-project-bootstrap-static';
+import { formatMissingBootstrapProjectHint } from '../common/qaap-project-bootstrap-scaffold-plan';
 
 interface PackageJsonShape {
     name?: unknown;
@@ -39,6 +40,12 @@ interface PackageJsonShape {
 
 /** Hard cap on sub-apps enumerated so we never freeze the UI on enormous monorepos. */
 const MAX_MONOREPO_APPS = 32;
+
+/** Hard cap on direct-child scaffold folders probed when the workspace root has no manifest. */
+const MAX_SCAFFOLD_SUBFOLDER_APPS = 16;
+
+/** Directories skipped when scanning for orphan scaffold projects under the workspace root. */
+const SCAFFOLD_SUBFOLDER_SKIP = new Set(['node_modules', '.git', '.qaap', 'dist', 'build', 'out']);
 
 /** Fallback directories scanned when no explicit workspaces config exists ("implicit" layout). */
 const IMPLICIT_MONOREPO_DIRS = ['apps', 'packages', 'examples', 'sites', 'services', 'artifacts'];
@@ -76,7 +83,11 @@ export class QaapProjectBootstrapDetector {
         if (!(await this.fileService.exists(packageJsonUri))) {
             // No Node project: fall back to serving a plain static site (index.html) if present, so
             // hand-written / exported front-ends get the same one-tap preview and AI bootstrap tools.
-            return this.detectStaticSite(rootUri);
+            const staticSite = await this.detectStaticSite(rootUri);
+            if (staticSite) {
+                return staticSite;
+            }
+            return this.detectScaffoldedSubfolder(rootUri);
         }
 
         let pkg: PackageJsonShape;
@@ -166,6 +177,120 @@ export class QaapProjectBootstrapDetector {
             }
         }
         return undefined;
+    }
+
+    /**
+     * Lists runnable child folders (direct children with `package.json` + dev script). Used when
+     * agents scaffold with `create-vite` / `npm create` into a subfolder instead of the workspace root.
+     */
+    async listScaffoldSubfolderCandidates(workspaceRoot: URI): Promise<QaapMonorepoAppCandidate[]> {
+        return this.enumerateScaffoldSubfolderApps(workspaceRoot);
+    }
+
+    /** Human-readable hint when preview cannot run because the workspace root has no manifest. */
+    formatMissingProjectHint(candidatePaths: readonly string[]): string | undefined {
+        return formatMissingBootstrapProjectHint(candidatePaths);
+    }
+
+    /**
+     * When the workspace root has no Node manifest, look for a freshly scaffolded app in a direct
+     * child folder (common `create-vite` / `npm create` layout).
+     */
+    protected async detectScaffoldedSubfolder(workspaceRoot: URI): Promise<QaapProjectDescriptor | undefined> {
+        const apps = await this.enumerateScaffoldSubfolderApps(workspaceRoot);
+        if (apps.length === 0) {
+            return undefined;
+        }
+        const primary = apps[0];
+        const packageManager = await this.detectPackageManager(primary.rootUri, await this.readPackageJson(primary.rootUri));
+        const installCommand = buildBootstrapInstallCommand(packageManager);
+        const nodeModulesPresent = await this.resolveNodeModulesPresent(
+            workspaceRoot,
+            primary.kind,
+            packageManager,
+            apps,
+        );
+        const scaffoldRelativePath = primary.relativePath;
+        if (apps.length === 1) {
+            return {
+                rootUri: workspaceRoot,
+                name: primary.name,
+                kind: primary.kind,
+                packageManager,
+                installCommand,
+                expectedPort: primary.expectedPort,
+                nodeModulesPresent,
+                monorepoFlavor: undefined,
+                apps,
+                scaffoldRelativePath,
+            };
+        }
+        return {
+            rootUri: workspaceRoot,
+            name: workspaceRoot.path.base || 'project',
+            kind: primary.kind,
+            packageManager,
+            installCommand,
+            nodeModulesPresent,
+            monorepoFlavor: 'implicit',
+            apps,
+        };
+    }
+
+    protected async enumerateScaffoldSubfolderApps(workspaceRoot: URI): Promise<QaapMonorepoAppCandidate[]> {
+        const apps: QaapMonorepoAppCandidate[] = [];
+        try {
+            const stat = await this.fileService.resolve(workspaceRoot);
+            for (const child of stat.children ?? []) {
+                if (apps.length >= MAX_SCAFFOLD_SUBFOLDER_APPS) {
+                    break;
+                }
+                if (!child.isDirectory) {
+                    continue;
+                }
+                if (child.name.startsWith('.') || SCAFFOLD_SUBFOLDER_SKIP.has(child.name)) {
+                    continue;
+                }
+                const pm = await this.detectPackageManager(child.resource, await this.readPackageJson(child.resource));
+                const candidate = await this.toAppCandidate(workspaceRoot, child.resource, pm);
+                if (candidate) {
+                    apps.push(candidate);
+                }
+            }
+        } catch {
+            return [];
+        }
+        apps.sort((a, b) => this.compareScaffoldCandidates(a, b));
+        return apps;
+    }
+
+    protected compareScaffoldCandidates(a: QaapMonorepoAppCandidate, b: QaapMonorepoAppCandidate): number {
+        const score = (kind: QaapProjectKind): number => {
+            switch (kind) {
+                case 'node-vite': return 0;
+                case 'node-next': return 1;
+                case 'node-astro': return 2;
+                case 'node-svelte': return 3;
+                case 'node-remix': return 4;
+                case 'node-cra': return 5;
+                case 'node-nuxt': return 6;
+                default: return 10;
+            }
+        };
+        const byKind = score(a.kind) - score(b.kind);
+        if (byKind !== 0) {
+            return byKind;
+        }
+        return a.relativePath.localeCompare(b.relativePath);
+    }
+
+    protected async readPackageJson(packageRoot: URI): Promise<PackageJsonShape> {
+        try {
+            const content = await this.fileService.read(packageRoot.resolve('package.json'));
+            return JSON.parse(content.value || '{}') as PackageJsonShape;
+        } catch {
+            return {};
+        }
     }
 
     /**
@@ -446,6 +571,14 @@ export class QaapProjectBootstrapDetector {
         pm: QaapPackageManager,
         apps: QaapMonorepoAppCandidate[],
     ): Promise<boolean> {
+        if (apps.length > 0) {
+            for (const app of apps) {
+                if (await this.fileService.exists(app.rootUri.resolve('node_modules'))
+                    && await this.isDevToolingPresent(app.rootUri, app.kind, rootUri)) {
+                    return true;
+                }
+            }
+        }
         const hasRootModules = await this.fileService.exists(rootUri.resolve('node_modules'));
         if (!hasRootModules) {
             return false;

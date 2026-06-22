@@ -197,4 +197,24 @@ describe('qaap-agent-turn-completion', () => {
         expect(agentMessageDeliversTaskOutcome(prompt, agent)).to.equal(false);
         expect(isIncompleteAgentTurn(prompt, agent)).to.equal(true);
     });
+
+    it('isIncompleteAgentTurn rejects scaffold-only landing page work', () => {
+        const prompt = 'Create a landing page for Rioja wines using Vite and React.';
+        const agent: QaapAgentMessageDTO = {
+            id: 'a5',
+            role: 'agent',
+            content: 'Created the Vite project.',
+            createdAt: 2,
+            segments: [{
+                type: 'tool',
+                toolUseId: 't1',
+                name: 'Bash',
+                args: JSON.stringify({ command: 'npm create vite@latest rioja-wines-landing-page -- --template react-ts' }),
+                finished: true,
+            }],
+        };
+        expect(agentMessageDeliversTaskOutcome(prompt, agent)).to.equal(false);
+        expect(isIncompleteAgentTurn(prompt, agent)).to.equal(true);
+        expect(buildAgentAutoContinuePrompt(prompt)).to.include('starter');
+    });
 });

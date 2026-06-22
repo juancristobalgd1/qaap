@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
+import { buildSubagentDeniedMessage } from './qaap-agent-subagent-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 export type QaapQaiqControlAutoAction = 'allow' | 'deny' | 'queue';
@@ -74,10 +75,11 @@ export function resolveQaiqControlRequestAutoAction(
 }
 
 /** Deny guidance for tools that can never be approved mid-turn (subagents). */
-export function buildQaiqAutoDeniedToolMessage(toolName: string): string {
-    return `${toolName} is not available in this run. `
-        + 'Do the work directly in this conversation instead of delegating to a subagent, '
-        + 'and do not retry the call unchanged.';
+export function buildQaiqAutoDeniedToolMessage(
+    toolName: string,
+    toolInput?: Record<string, unknown>,
+): string {
+    return buildSubagentDeniedMessage(toolName, toolInput);
 }
 
 /** Deny guidance when a queued approval expired without a user response. */

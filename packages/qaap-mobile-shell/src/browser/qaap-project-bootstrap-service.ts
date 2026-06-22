@@ -42,6 +42,11 @@ import {
 } from './qaap-project-bootstrap-dev-errors';
 import { MobileProjectsService } from './mobile-projects-service';
 import { peekPreferDesktopIde } from './mobile-projects-open';
+import {
+    enrichBootstrapDevRunError,
+    resolveBootstrapDevTarget,
+    resolveBootstrapInstallTarget,
+} from '../common/qaap-project-bootstrap-scaffold-plan';
 
 /** Terminal titles created by {@link QaapProjectBootstrapService.spawnCommand}. */
 const BOOTSTRAP_DEV_TERMINAL_TITLE_PREFIX = 'Dev (';
@@ -106,6 +111,8 @@ export interface QaapBootstrapStateChange {
      * successfully launched this workspace.
      */
     readonly lastPort?: number;
+    /** Actionable hint when no runnable project was detected (orphan scaffold vs empty workspace). */
+    readonly missingDescriptorHint?: string;
 }
 
 interface PersistedEntry {
@@ -188,6 +195,8 @@ export class QaapProjectBootstrapService {
     protected devPreviewWarmupTimer: number | undefined;
     /** Rolling tail of the current dev terminal output for failure diagnostics. */
     protected devOutputTail = '';
+    /** Set when detection finds no runnable project — explains orphan scaffolds vs empty workspace. */
+    protected _missingDescriptorHint: string | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -273,21 +282,69 @@ export class QaapProjectBootstrapService {
         if (!descriptor) {
             return undefined;
         }
-        const app = this._selectedApp;
-        if (app) {
-            // pnpm workspaces: filter commands run from the workspace root, not the package folder.
-            const cwd = descriptor.packageManager === 'pnpm' ? descriptor.rootUri : app.rootUri;
-            return { command: app.devCommand, cwd, expectedPort: app.expectedPort, kind: app.kind };
-        }
-        if (descriptor.devCommand) {
-            return {
-                command: descriptor.devCommand,
-                cwd: descriptor.rootUri,
+        const app = this._selectedApp ?? (descriptor.apps.length === 1 ? descriptor.apps[0] : undefined);
+        const plan = resolveBootstrapDevTarget(
+            {
+                rootKey: descriptor.rootUri.toString(),
+                devCommand: descriptor.devCommand,
+                installCommand: descriptor.installCommand,
+                packageManager: descriptor.packageManager,
                 expectedPort: descriptor.expectedPort,
                 kind: descriptor.kind,
-            };
+            },
+            app ? {
+                rootKey: app.rootUri.toString(),
+                devCommand: app.devCommand,
+                expectedPort: app.expectedPort,
+                kind: app.kind,
+            } : undefined,
+            undefined,
+        );
+        if (!plan) {
+            return undefined;
         }
-        return undefined;
+        return {
+            command: plan.command,
+            cwd: new URI(plan.cwdKey),
+            expectedPort: plan.expectedPort,
+            kind: plan.kind as QaapProjectKind,
+        };
+    }
+
+    /** Install cwd/command — orphan scaffolds install inside the child app folder, not the workspace root. */
+    protected resolveInstallPlan(): { command: string; cwd: URI } | undefined {
+        const descriptor = this._descriptor;
+        if (!descriptor) {
+            return undefined;
+        }
+        const fallbackApp = descriptor.apps.length === 1 ? descriptor.apps[0] : undefined;
+        const plan = resolveBootstrapInstallTarget(
+            {
+                rootKey: descriptor.rootUri.toString(),
+                devCommand: descriptor.devCommand,
+                installCommand: descriptor.installCommand,
+            },
+            this._selectedApp ? {
+                rootKey: this._selectedApp.rootUri.toString(),
+                devCommand: this._selectedApp.devCommand,
+            } : undefined,
+            fallbackApp ? {
+                rootKey: fallbackApp.rootUri.toString(),
+                devCommand: fallbackApp.devCommand,
+            } : undefined,
+        );
+        return { command: plan.command, cwd: new URI(plan.cwdKey) };
+    }
+
+    /** Actionable copy when preview cannot run because no runnable project was detected. */
+    async getMissingDescriptorHint(): Promise<string | undefined> {
+        const roots = await this.workspaceService.roots;
+        const workspaceRoot = roots[0]?.resource;
+        if (!workspaceRoot) {
+            return undefined;
+        }
+        const candidates = await this.detector.listScaffoldSubfolderCandidates(workspaceRoot);
+        return this.detector.formatMissingProjectHint(candidates.map(app => app.relativePath));
     }
 
     /**
@@ -337,10 +394,16 @@ export class QaapProjectBootstrapService {
         const installId = ++this.installGeneration;
         this.setPhase('installing');
         try {
+            const installPlan = this.resolveInstallPlan();
+            if (!installPlan) {
+                this.setPhase('install-failed');
+                this._error = 'No install target for this workspace.';
+                return;
+            }
             const terminal = await this.spawnCommandWithRetry({
                 title: `Install (${descriptor.packageManager})`,
-                command: descriptor.installCommand,
-                cwd: descriptor.rootUri,
+                command: installPlan.command,
+                cwd: installPlan.cwd,
                 reveal: false,
             });
             if (installId !== this.installGeneration) {
@@ -570,9 +633,11 @@ export class QaapProjectBootstrapService {
         this._portConflictDetected = false;
         this._portConflictPort = undefined;
         if (!descriptor) {
+            this._missingDescriptorHint = await this.getMissingDescriptorHint();
             this.setPhase('idle');
             return;
         }
+        this._missingDescriptorHint = undefined;
         const persisted = this.readPersisted(descriptor.rootUri.toString());
         // Restore the previously selected monorepo app when it still exists; this avoids the user
         // having to repick after a reload.
@@ -899,10 +964,15 @@ export class QaapProjectBootstrapService {
             ?? this.activeDevPortHint
             ?? plan.expectedPort;
         this._needsInstall = terminalOutputNeedsInstall(this.devOutputTail);
-        this._error = portConflict && conflictPort
+        this._error = this.enrichDevRunError(portConflict && conflictPort
             ? `Port :${conflictPort} is already in use. Another terminal may already be serving the app.`
-            : extractTerminalFailureLine(this.devOutputTail, this.toUserFacingDevError(message));
+            : extractTerminalFailureLine(this.devOutputTail, this.toUserFacingDevError(message)));
         this.setPhase('run-failed');
+    }
+
+    protected enrichDevRunError(message: string): string {
+        const previewRoot = this._selectedApp?.relativePath ?? this._descriptor?.scaffoldRelativePath;
+        return enrichBootstrapDevRunError(message, previewRoot);
     }
 
     protected appendDevOutput(data: string): void {
@@ -1195,6 +1265,7 @@ export class QaapProjectBootstrapService {
             lastPort: this._lastPort,
             portInUse: portInUse || undefined,
             existingServerPort: portInUse ? existingServerPort : undefined,
+            missingDescriptorHint: this._missingDescriptorHint,
         };
     }
 

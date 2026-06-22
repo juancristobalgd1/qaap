@@ -452,6 +452,13 @@ export function resolveTranscriptLifecycleActivityItems(
                 timestamp: event.startedAt,
             }];
         }
+        if (event.type === 'error') {
+            return [{
+                label: event.message.trim() || 'Preview failed.',
+                state: 'error',
+                timestamp: event.startedAt,
+            }];
+        }
         return [];
     });
 }

@@ -148,6 +148,10 @@ describe('qaap-transcript-stream-status', () => {
         expect(isTranscriptThinkingGracePeriod([], true, TRANSCRIPT_THINKING_UI_GRACE_MS)).to.equal(false);
         expect(shouldShowTranscriptStreamingActivity([], true, { turnElapsedMs: 500 })).to.equal(false);
         expect(shouldShowTranscriptStreamingActivity([], true, { turnElapsedMs: TRANSCRIPT_THINKING_UI_GRACE_MS })).to.equal(true);
+        expect(shouldShowTranscriptStreamingActivity([], true, {
+            turnElapsedMs: 500,
+            awaitingFirstAgentOutput: true,
+        })).to.equal(true);
 
         const simple = [
             { type: 'thinking', content: 'short plan' },

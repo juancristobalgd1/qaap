@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
 /**
@@ -334,6 +334,13 @@ export function shouldShowTranscriptThoughtBrief(
 }
 
 /** Whether transcript footer / composer should show planning or writing chrome. */
+export function isAwaitingFirstTranscriptAgentOutput(
+    conv: Pick<QaapAgentConversationDTO, 'messages'>,
+): boolean {
+    const last = conv.messages.at(-1);
+    return !last || last.role === 'user';
+}
+
 export function shouldShowTranscriptStreamingActivity(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
@@ -341,12 +348,16 @@ export function shouldShowTranscriptStreamingActivity(
         readonly turnElapsedMs?: number;
         readonly userPromptChars?: number;
         readonly stalled?: boolean;
+        readonly awaitingFirstAgentOutput?: boolean;
     },
 ): boolean {
     if (!streaming) {
         return false;
     }
     if (options?.stalled) {
+        return true;
+    }
+    if (options?.awaitingFirstAgentOutput) {
         return true;
     }
     const hasActiveTool = segments.some(segment =>
