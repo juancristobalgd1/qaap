@@ -41,3 +41,8 @@ echo "=== Rioja composer UI flow (P0 gate) ==="
 node scripts/qaap-rioja-ui-flow-eval.mjs
 echo "=== Rioja API flow (regression) ==="
 node scripts/qaap-rioja-e2e-eval.mjs
+
+if [[ "${QAAP_REAL_QAIQ:-}" == "1" ]]; then
+    echo "=== Real QAIQ smoke (optional) ==="
+    node scripts/qaap-rioja-real-qaiq-eval.mjs
+fi

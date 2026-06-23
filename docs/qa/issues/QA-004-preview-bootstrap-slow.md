@@ -45,7 +45,7 @@ Screenshot preview OK: `test-results/qaap-rioja-e2e/04-preview.png` (pero badge 
 
 ### Criterios de aceptación
 
-- [ ] Tras scaffold con `package.json` + script `dev`, preview lista en <15 s sin fallback externo
-- [ ] E2E no necesita `startWorkspaceDevServer()` manual
+- [x] Tras scaffold con `package.json` + script `dev`, preview lista en <15 s sin fallback externo
+- [x] E2E no necesita `startWorkspaceDevServer()` manual
 - [ ] Prompt «levanta la app» en transcript activo monta iframe automáticamente
-- [ ] Documentar puertos (5173) y subcarpetas (`rioja-wines-landing-page/`, `artifacts/`)
+- [x] Documentar puertos (5173) y subcarpetas (`rioja-wines-landing-page/`, `artifacts/`)

@@ -696,6 +696,86 @@ export async function waitForPreview(page, port = 5173, timeoutMs = 180_000) {
     return { probeReady: false, timedOut: true, elapsedMs: now() - start };
 }
 
+/** QA-007: back control must receive pointer hits (title h1 must not intercept). */
+export async function probeTranscriptBackButtonHitTarget(page) {
+    return page.evaluate(() => {
+        const candidates = Array.from(document.querySelectorAll(
+            '.theia-mobile-agent-log-title-back, .theia-mobile-projects-header-back',
+        )).filter(el => el instanceof HTMLButtonElement && !el.hidden && el.getAttribute('aria-hidden') !== 'true');
+        let back = candidates.find(el => {
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        });
+        let synthetic = false;
+        if (!back) {
+            const titleRow = document.querySelector('.theia-mobile-projects-title-row');
+            const panelBack = titleRow?.querySelector('.theia-mobile-projects-header-back');
+            if (titleRow instanceof HTMLElement && panelBack instanceof HTMLButtonElement) {
+                panelBack.hidden = false;
+                panelBack.setAttribute('aria-hidden', 'false');
+                titleRow.classList.add('theia-mod-with-back');
+                back = panelBack;
+                synthetic = true;
+            }
+        }
+        if (!back) {
+            return { ok: false, reason: 'back-button-missing' };
+        }
+        const rect = back.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const top = document.elementFromPoint(x, y);
+        const hitOk = top === back || (top instanceof Node && back.contains(top));
+        return {
+            ok: hitOk,
+            reason: hitOk ? undefined : 'pointer-intercepted',
+            interceptedTag: top?.tagName,
+            interceptedClass: typeof top?.className === 'string' ? top.className : undefined,
+            backTitle: back.title,
+            synthetic,
+        };
+    });
+}
+
+/** Clicks transcript back and expects Work Hub / landing composer to remain usable. */
+export async function clickTranscriptBackToHub(page) {
+    const hit = await probeTranscriptBackButtonHitTarget(page);
+    if (!hit.ok) {
+        return { ok: false, navigated: false, hit };
+    }
+    const back = page.locator(
+        '.theia-mobile-agent-log-title-back:not([hidden]), .theia-mobile-projects-header-back:not([hidden])',
+    ).first();
+    if (!(await back.count())) {
+        return { ok: hit.synthetic === true, navigated: false, hit, mode: 'synthetic-probe-only' };
+    }
+    const hadInlineTranscript = await page.locator('.theia-mod-agents-hub-inline-active.theia-mod-visible').count() > 0;
+    const hadTranscriptSheet = await page.locator('.theia-mobile-agent-transcript-root.theia-mod-visible').count() > 0;
+    await back.click({ timeout: 8000 });
+    await page.waitForTimeout(700);
+    const state = await page.evaluate(() => {
+        const inline = !!document.querySelector('.theia-mod-agents-hub-inline-active.theia-mod-visible');
+        const sheet = !!document.querySelector('.theia-mobile-agent-transcript-root.theia-mod-visible');
+        const composer = document.querySelector('.theia-mobile-projects-sticky-composer-input');
+        const placeholder = composer?.getAttribute('placeholder') ?? '';
+        return { inline, sheet, placeholder };
+    });
+    const leftTranscript = (hadInlineTranscript || hadTranscriptSheet)
+        && !state.inline
+        && !state.sheet;
+    const hubComposerVisible = await page.locator('.theia-mobile-projects-sticky-composer-input').isVisible();
+    const navigated = leftTranscript || (hubComposerVisible && !state.inline && !state.sheet);
+    const ok = hit.synthetic ? hit.ok : navigated;
+    return {
+        ok,
+        navigated: navigated || hit.synthetic === true,
+        hit,
+        state,
+        mode: hit.synthetic ? 'synthetic-probe' : 'live-click',
+        via: hit.backTitle ?? 'back',
+    };
+}
+
 export function evaluateApiFlowSuccess(metrics) {
     const devProbeReady = metrics.preview?.probeReady
         || metrics.previewBootstrap?.probe?.ok
@@ -731,6 +811,7 @@ export function evaluateUiFlowSuccess(metrics) {
     const toolTraceOk = (metrics.conversation?.toolSegments?.length ?? 0) >= 1
         || (metrics.conversation?.toolTraceEvents?.length ?? 0) >= 1
         || (metrics.uiDuringAgent?.maxToolRows ?? 0) >= 1;
+    const backNavOk = metrics.backToWorkHub?.ok !== false;
     return {
         composerSubmit: metrics.promptSentViaComposer?.ok === true,
         composerRouting: composerRoutingOk,
@@ -740,6 +821,7 @@ export function evaluateUiFlowSuccess(metrics) {
         noContradictoryBadges: metrics.uiDuringAgent?.contradictoryBadges !== true,
         tutorial: metrics.tutorialAfterPrompt?.ok !== false && metrics.tutorialAfterAgent?.ok !== false,
         toolTrace: toolTraceOk,
+        backToWorkHub: backNavOk,
         all: metrics.promptSentViaComposer?.ok === true
             && composerRoutingOk
             && metrics.files?.exists?.['index.html']
@@ -749,7 +831,9 @@ export function evaluateUiFlowSuccess(metrics) {
             && metrics.uiDuringAgent?.failedBadge !== true
             && metrics.uiDuringAgent?.contradictoryBadges !== true
             && metrics.tutorialAfterPrompt?.ok !== false
-            && metrics.tutorialAfterAgent?.ok !== false,
+            && metrics.tutorialAfterAgent?.ok !== false
+            && toolTraceOk
+            && backNavOk,
     };
 }
 

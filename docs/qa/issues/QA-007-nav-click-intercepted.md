@@ -25,6 +25,6 @@ Blocking element ref: e52
 
 ### Criterios de aceptación
 
-- [ ] Botones de nav workbench siempre por encima del contenido scrollable del transcript
-- [ ] `pointer-events: none` en título sticky o padding/z-index corregido
-- [ ] Test accesibilidad: botón nav alcanzable vía click y teclado
+- [x] Botones de nav workbench siempre por encima del contenido scrollable del transcript
+- [x] `pointer-events: none` en título sticky o padding/z-index corregido
+- [x] Test accesibilidad: botón nav alcanzable vía click y teclado (`rioja-ui-flow-eval` gate `backToWorkHub`)

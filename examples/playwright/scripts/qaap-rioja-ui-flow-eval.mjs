@@ -13,6 +13,7 @@ import {
     RIOJA_UI_FLOW_PROMPT,
     assertNoTutorialOverlay,
     checkWorkspaceFiles,
+    clickTranscriptBackToHub,
     createEmptyWorkspace,
     createMobileBrowserContext,
     dismissTutorial,
@@ -121,6 +122,13 @@ async function main() {
         }
 
         metrics.files = checkWorkspaceFiles(workspace);
+
+        metrics.backToWorkHub = await clickTranscriptBackToHub(page);
+        if (!metrics.backToWorkHub.ok) {
+            metrics.issues.push(`Back nav blocked or failed (QA-007): ${metrics.backToWorkHub.hit?.reason ?? metrics.backToWorkHub.reason ?? 'unknown'}`);
+        }
+        await page.screenshot({ path: path.join(OUT_DIR, '05-back-to-hub.png'), fullPage: true });
+
         metrics.timings.totalMs = now() - t0;
         metrics.gates = evaluateUiFlowSuccess(metrics);
 

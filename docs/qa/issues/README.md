@@ -2,10 +2,17 @@
 
 Generados tras la evaluación QA del 2026-06-23. El repositorio `juancristobalgd1/qaap` tiene **Issues deshabilitados** en GitHub; estos archivos están listos para copiar/pegar o importar cuando se activen.
 
-## Fix aplicado (branch local)
+## Fix aplicado (2026-06-23)
 
-- **QA-001** — `resolveCurrentWorkspaceProject()` + composer cwd guard (`packages/qaap-mobile-shell`, 2026-06-23)
-- **QA-002** — default shell auto-approve + `toolApprovalRules` en createConversation (`qaap-mobile-shell` + `qaap-cloud-workspace`, 2026-06-23)
+| ID | Resumen | Gate E2E |
+|----|---------|----------|
+| QA-001 | Composer cwd desde URL del workspace | `composerRouting` |
+| QA-002 | Shell auto-approve headless + `toolApprovalRules` | mock bash en UI/API |
+| QA-003 | Trace/segments en API tras fallo | `toolTrace` |
+| QA-004 | Preview <15 s sin fallback manual | `previewPromptMs` ~5.8 s |
+| QA-005 | Errores accionables + sin falsos failed en Glob | `notFailedUi` |
+| QA-006 | Tutorial no sobre transcript activo/fallido | `tutorial` |
+| QA-007 | `pointer-events` en título + probe back nav | `backToWorkHub` |
 
 ## Cómo abrirlos en GitHub
 
@@ -30,10 +37,20 @@ gh issue create --title "Título del issue" --body-file docs/qa/issues/QA-001-co
 
 ## Evidencia compartida
 
-- E2E mock (pasa vía API): `test-results/qaap-rioja-e2e/report.json`
-- Flujo UI real (falla): `test-results/qaap-qa-ui-flow/report.json`
-- Screenshots: `test-results/qaap-rioja-e2e/*.png`, `test-results/qaap-qa-ui-flow/*.png`
-- Script repro UI: `examples/playwright/scripts/qaap-rioja-ui-flow-eval.mjs` (gate P0 composer)
-- Script repro API: `examples/playwright/scripts/qaap-rioja-e2e-eval.mjs`
+- UI composer gate: `test-results/qaap-rioja-ui-flow/report.json`
+- API + preview gate: `test-results/qaap-rioja-e2e/report.json`
+- Real QAIQ smoke (opcional): `test-results/qaap-rioja-real-qaiq/report.json`
+- Scripts: `examples/playwright/scripts/qaap-rioja-ui-flow-eval.mjs`, `qaap-rioja-e2e-eval.mjs`, `qaap-rioja-real-qaiq-eval.mjs`
 - CI: `.github/workflows/qaap-rioja-agent-e2e.yml`
 - Local: `scripts/qaap-run-rioja-agent-e2e.sh`
+
+## Real QAIQ (no mock)
+
+```sh
+# Terminal 1 — sin mock-qaiq-bin en PATH
+npm run start:browser
+
+# Terminal 2
+cd examples/playwright
+QAAP_REAL_QAIQ=1 npm run rioja-real-qaiq-eval
+```
