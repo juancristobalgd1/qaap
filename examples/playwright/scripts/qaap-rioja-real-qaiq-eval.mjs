@@ -6,26 +6,41 @@
  *   - QAAP_REAL_QAIQ=1
  *   - Server at QAAP_BASE_URL started with real qaiq on PATH (no mock-qaiq-bin prefix)
  *   - QAIQ credentials configured for the CLI
+ *
+ * Uses HTTP API only (no Playwright browser).
  */
-import { chromium } from 'playwright';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
     BASE,
+    createAgentConversationApi,
     createEmptyWorkspace,
-    createMobileBrowserContext,
-    dismissTutorial,
+    fetchBackendAgentsApi,
     fmtMs,
     now,
-    openWorkspace,
-    pollConversation,
+    pollConversationApi,
     resolveMockQaiqPath,
 } from './qaap-rioja-e2e-shared.mjs';
 
 const OUT_DIR = path.join(process.cwd(), '..', '..', 'test-results', 'qaap-rioja-real-qaiq');
 const REAL_PROMPT = 'Create a file named qaap-real-smoke.txt in the workspace root containing exactly: ok';
 const SMOKE_FILE = 'qaap-real-smoke.txt';
+
+/** Override via QAAP_REAL_QAIQ_MODEL='openrouter/nvidia/nemotron-3-super-120b-a12b:free' */
+function resolveRealQaiqAgentModel() {
+    const raw = process.env.QAAP_REAL_QAIQ_MODEL?.trim();
+    if (raw) {
+        const [vendor, ...rest] = raw.split('/');
+        const modelId = rest.join('/') || raw;
+        return { provider: 'openai', vendor: vendor || 'openrouter', modelId };
+    }
+    return {
+        provider: 'openai',
+        vendor: 'openrouter',
+        modelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    };
+}
 
 function resolveQaiqOnPath() {
     try {
@@ -48,6 +63,18 @@ function isMockQaiqOnPath(qaiqPath) {
     }
 }
 
+function backendUsesMockQaiq(agents) {
+    const qaiq = agents?.agents?.find(agent => agent.id === 'qaiq');
+    if (!qaiq?.bin) {
+        return false;
+    }
+    try {
+        return fs.realpathSync(qaiq.bin) === fs.realpathSync(resolveMockQaiqPath());
+    } catch {
+        return String(qaiq.bin).includes('mock-qaiq');
+    }
+}
+
 async function main() {
     if (process.env.QAAP_REAL_QAIQ !== '1') {
         console.log('Skip: set QAAP_REAL_QAIQ=1 to run the real QAIQ smoke eval.');
@@ -63,16 +90,31 @@ async function main() {
         return;
     }
     if (isMockQaiqOnPath(qaiqPath)) {
-        console.error(`Real QAIQ smoke: PATH resolves to mock (${qaiqPath}). Restart server without mock-qaiq-bin.`);
+        console.error(`Real QAIQ smoke: shell PATH resolves to mock (${qaiqPath}).`);
+        process.exitCode = 1;
+        return;
+    }
+
+    const backendAgents = await fetchBackendAgentsApi();
+    if (!backendAgents.ok) {
+        console.error(`Real QAIQ smoke: backend unreachable at ${BASE} (${backendAgents.status ?? 'error'})`);
+        process.exitCode = 1;
+        return;
+    }
+    if (backendUsesMockQaiq(backendAgents)) {
+        console.error('Real QAIQ smoke: backend still uses mock QAIQ. Restart server without mock-qaiq-bin in PATH.');
         process.exitCode = 1;
         return;
     }
 
     const workspace = createEmptyWorkspace('qaap-real-qaiq-');
+    const agentModel = resolveRealQaiqAgentModel();
     const metrics = {
         workspace,
         qaiqPath,
+        backendAgents,
         prompt: REAL_PROMPT,
+        agentModel,
         phases: {},
         conversation: {},
         file: {},
@@ -81,43 +123,21 @@ async function main() {
     };
 
     const t0 = now();
-    console.log('\n=== Qaap Real QAIQ Smoke Eval ===');
+    console.log('\n=== Qaap Real QAIQ Smoke Eval (API) ===');
     console.log(`Workspace: ${workspace}`);
-    console.log(`QAIQ: ${qaiqPath}`);
+    console.log(`QAIQ (shell): ${qaiqPath}`);
+    console.log(`QAIQ (backend): ${backendAgents.agents?.find(a => a.id === 'qaiq')?.bin ?? 'unknown'}`);
     console.log(`Base: ${BASE}`);
-
-    const { browser, context } = await createMobileBrowserContext(chromium);
-    const page = await context.newPage();
+    console.log(`Model: ${agentModel.vendor}/${agentModel.modelId}`);
 
     try {
-        await openWorkspace(page, workspace);
-        await dismissTutorial(page);
-
         const tPrompt = now();
-        const conversation = await page.evaluate(async ({ workspaceCwd, body }) => {
-            const res = await fetch('/qaap/api/agent-conversations', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    cwd: workspaceCwd,
-                    agent: 'qaiq',
-                    message: body,
-                    title: 'Real QAIQ smoke',
-                    autoApprove: true,
-                    approvalPolicyId: 'full-access',
-                }),
-            });
-            if (!res.ok) {
-                throw new Error(`createConversation failed: ${res.status}`);
-            }
-            return res.json();
-        }, { workspaceCwd: workspace, body: REAL_PROMPT });
+        const conversation = await createAgentConversationApi(workspace, REAL_PROMPT, 'qaiq', { agentModel });
         metrics.phases.promptSubmitMs = now() - tPrompt;
         metrics.conversationCreate = { ok: true, id: conversation.id };
 
         const tAgent = now();
-        metrics.conversation = await pollConversation(page, workspace, { timeoutMs: 300_000 });
+        metrics.conversation = await pollConversationApi(workspace, { timeoutMs: 300_000 });
         metrics.phases.agentTurnMs = now() - tAgent;
 
         const smokePath = path.join(workspace, SMOKE_FILE);
@@ -145,6 +165,10 @@ async function main() {
         }
         console.log('\n--- Gates ---');
         console.log(JSON.stringify(metrics.gates, null, 2));
+        if (!metrics.gates.all) {
+            console.log('\n--- Conversation ---');
+            console.log(JSON.stringify(metrics.conversation, null, 2));
+        }
         console.log(`\nReporte: ${reportPath}`);
 
         process.exitCode = metrics.gates.all ? 0 : 1;
@@ -154,8 +178,6 @@ async function main() {
         fs.writeFileSync(path.join(OUT_DIR, 'report.json'), JSON.stringify(metrics, null, 2));
         console.error(err);
         process.exitCode = 1;
-    } finally {
-        await browser.close();
     }
 }
 

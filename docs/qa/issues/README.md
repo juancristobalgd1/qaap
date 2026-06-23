@@ -46,11 +46,22 @@ gh issue create --title "Título del issue" --body-file docs/qa/issues/QA-001-co
 
 ## Real QAIQ (no mock)
 
+Requisitos: servidor **sin** `mock-qaiq-bin` en PATH y API key del proveedor (p. ej. `OPENROUTER_API_KEY`).
+
 ```sh
-# Terminal 1 — sin mock-qaiq-bin en PATH
+# Terminal 1 — raíz del repo (exporta tu key antes de arrancar)
+export OPENROUTER_API_KEY=sk-or-...
 npm run start:browser
+
+# Comprueba en el log del backend:
+# [qaap-agent-tasks] qaiq: 0.15.0-qaap.1 (QAIQ)   ← real, no mock
 
 # Terminal 2
 cd examples/playwright
 QAAP_REAL_QAIQ=1 npm run rioja-real-qaiq-eval
+
+# Modelo opcional (default: openrouter/nvidia/nemotron-3-super-120b-a12b:free)
+QAAP_REAL_QAIQ_MODEL=openrouter/anthropic/claude-sonnet-4 QAAP_REAL_QAIQ=1 npm run rioja-real-qaiq-eval
 ```
+
+Reporte: `test-results/qaap-rioja-real-qaiq/report.json`

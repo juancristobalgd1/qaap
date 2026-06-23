@@ -278,6 +278,104 @@ export async function fetchBackendAgents(page) {
     });
 }
 
+export async function fetchBackendAgentsApi() {
+    const res = await fetch(`${BASE}/qaap/api/agent-tasks`);
+    if (!res.ok) {
+        return { ok: false, status: res.status };
+    }
+    const body = await res.json();
+    return {
+        ok: true,
+        agentConfigured: body.agentConfigured,
+        defaultAgent: body.defaultAgent,
+        agents: (body.agents ?? []).map(agent => ({ id: agent.id, label: agent.label, bin: agent.bin })),
+    };
+}
+
+export async function createAgentConversationApi(cwd, message, agent = 'qaiq', options = {}) {
+    const res = await fetch(`${BASE}/qaap/api/agent-conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            cwd,
+            agent,
+            message,
+            title: message.slice(0, 96),
+            autoApprove: true,
+            approvalPolicyId: 'full-access',
+            ...(options.agentModel ? { agentModel: options.agentModel } : {}),
+        }),
+    });
+    if (!res.ok) {
+        throw new Error(`createConversation failed: ${res.status} ${await res.text()}`);
+    }
+    return res.json();
+}
+
+async function summarizeConversationForCwd(workspaceCwd) {
+    const listRes = await fetch(`${BASE}/qaap/api/agent-conversations?cwd=${encodeURIComponent(workspaceCwd)}`);
+    if (!listRes.ok) {
+        return { ok: false, reason: 'list-failed', status: listRes.status };
+    }
+    const list = await listRes.json();
+    const conversations = list.conversations ?? [];
+    if (!conversations.length) {
+        return { ok: false, reason: 'no-conversation' };
+    }
+    const latest = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    const detailRes = await fetch(`${BASE}/qaap/api/agent-conversations/${encodeURIComponent(latest.id)}`);
+    if (!detailRes.ok) {
+        return { ok: false, reason: 'detail-failed' };
+    }
+    const conv = await detailRes.json();
+    const toolSegments = [];
+    const toolTraceEvents = [];
+    for (const msg of conv.messages ?? []) {
+        for (const seg of msg.segments ?? []) {
+            if (seg.type === 'tool') {
+                toolSegments.push({ name: seg.name, finished: seg.finished });
+            }
+        }
+        for (const event of msg.traceEvents ?? []) {
+            if (event.type === 'tool_call') {
+                toolTraceEvents.push({ name: event.name, status: event.status });
+            }
+        }
+    }
+    const lastAgent = [...(conv.messages ?? [])].reverse().find(m => m.role === 'agent');
+    return {
+        ok: true,
+        id: conv.id,
+        cwd: conv.cwd,
+        status: conv.status,
+        messageCount: conv.messages?.length ?? 0,
+        toolSegments,
+        toolTraceEvents,
+        agentId: conv.agentId,
+        lastAgentText: lastAgent?.content?.slice(0, 200),
+        lastAgentTraceCount: lastAgent?.traceEvents?.length ?? 0,
+    };
+}
+
+export async function pollConversationApi(cwd, { timeoutMs = 180_000, onPoll } = {}) {
+    const start = now();
+    let last = {};
+    while (now() - start < timeoutMs) {
+        last = await summarizeConversationForCwd(cwd);
+        if (onPoll) {
+            await onPoll(last);
+        }
+        if (last.ok && last.status !== 'streaming') {
+            return last;
+        }
+        if (last.ok && last.status === 'failed') {
+            return { ...last, ok: false, reason: 'task-failed' };
+        }
+        await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    return { ...last, timedOut: true };
+}
+
 export async function pollConversation(page, cwd, { timeoutMs = 180_000, onPoll } = {}) {
     const start = now();
     let last = {};
