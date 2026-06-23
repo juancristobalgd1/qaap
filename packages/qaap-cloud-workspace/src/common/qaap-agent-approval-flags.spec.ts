@@ -22,7 +22,7 @@ describe('qaap-agent-approval-flags', () => {
             .to.deep.equal({ shell: true, network: false });
     });
 
-    it('approve-for-me allows read-only exploration for QAIQ', () => {
+    it('approve-for-me allows read-only exploration and routine shell for QAIQ', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
@@ -30,6 +30,7 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).to.include('--allowed-tools');
         expect(command).to.include('Read');
         expect(command).to.include('Grep');
+        expect(command).to.include('Bash');
         expect(command).not.to.include('acceptEdits');
     });
 
@@ -51,12 +52,27 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).to.include('--disallowed-tools Agent,Task');
     });
 
-    it('approve-for-me uses acceptEdits for Claude instead of full skip', () => {
+    it('approve-for-me uses acceptEdits for Claude when shell is disabled', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "claude --print -p 'hi'",
+            {
+                agentId: 'claude',
+                approvalPolicyId: 'approve-for-me',
+                autoApprove: true,
+                toolApprovalRules: { shell: false, network: false },
+            },
+        );
+        expect(command).to.include('--permission-mode acceptEdits');
+        expect(command).not.to.include('--dangerously-skip-permissions');
+    });
+
+    it('approve-for-me enables Bash for Claude by default', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "claude --print -p 'hi'",
             { agentId: 'claude', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
-        expect(command).to.include('--permission-mode acceptEdits');
+        expect(command).to.include('--allowed-tools');
+        expect(command).to.include('Bash');
         expect(command).not.to.include('--dangerously-skip-permissions');
     });
 
@@ -82,10 +98,24 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).to.include('--dangerously-skip-permissions');
     });
 
-    it('approve-for-me uses full-auto for Codex', () => {
+    it('approve-for-me uses workspace-write sandbox for Codex when shell is enabled', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "codex exec --json 'hi'",
             { agentId: 'codex', approvalPolicyId: 'approve-for-me', autoApprove: true },
+        );
+        expect(command).to.include('--sandbox workspace-write');
+        expect(command).not.to.include('--dangerously-bypass-approvals-and-sandbox');
+    });
+
+    it('approve-for-me uses full-auto for Codex when shell is explicitly disabled', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "codex exec --json 'hi'",
+            {
+                agentId: 'codex',
+                approvalPolicyId: 'approve-for-me',
+                autoApprove: true,
+                toolApprovalRules: { shell: false, network: false },
+            },
         );
         expect(command).to.include('--full-auto');
         expect(command).not.to.include('--dangerously-bypass-approvals-and-sandbox');
@@ -99,16 +129,25 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.include('--full-auto');
     });
 
-    it('default approve-for-me still needs QAIQ stdio for gated shell', () => {
+    it('default approve-for-me uses headless QAIQ allowed-tools (no stdio)', () => {
         expect(shouldUseQaiqStdioApprovals({
             agentId: 'qaiq',
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
-        })).to.equal(true);
+        })).to.equal(false);
         expect(shouldUseInteractiveAgentApprovals({
             agentId: 'qaiq',
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
         })).to.equal(false);
+    });
+
+    it('approve-for-me with shell disabled needs QAIQ stdio for gated Bash', () => {
+        expect(shouldUseQaiqStdioApprovals({
+            agentId: 'qaiq',
+            approvalPolicyId: 'approve-for-me',
+            autoApprove: true,
+            toolApprovalRules: { shell: false, network: false },
+        })).to.equal(true);
     });
 });

@@ -72,6 +72,7 @@ export interface MobileProjectsTranscriptMessagesHost {
     maybeSyncTranscriptVisuallySettledChrome(conv: QaapAgentConversationDTO): void;
     cancelOpenTranscriptStream?(): void;
     retryOpenTranscriptStream?(): void | Promise<void>;
+    retryOpenFailedConversationTask?(): void | Promise<void>;
 }
 
 /** Transcript message list rendering: rows, streaming patches, and rich segment UI. */

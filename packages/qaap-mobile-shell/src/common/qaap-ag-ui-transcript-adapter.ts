@@ -10,6 +10,9 @@ import {
     type QaapAgentMessageWireSnapshot,
 } from './qaap-agent-message-wire-delta';
 import { applyQaapJsonPatch, type QaapJsonPatchOperation } from './qaap-ag-ui-json-patch';
+import { createAgUiCliStreamEmitter } from './qaap-cli-ag-ui-stream';
+import { filterQaiqStreamProcessLogLines } from './qaap-qaiq-stream';
+import { resolveAgentMessageDisplayContent } from './qaap-transcript-trace-model';
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 
 /** activityType for Cursor-style execution traces in AG-UI ActivitySnapshot/Delta. */
@@ -68,13 +71,47 @@ export function buildAgentMessageFromQaapAgUiReducer(
     reducer: QaapAgUiTraceReducerState,
     createdAt: number,
 ): QaapAgentMessageDTO {
-    return {
+    const message: QaapAgentMessageDTO = {
         id: reducer.agentMessageId,
         role: 'agent',
         content: '',
         createdAt,
         traceEvents: [...reducer.traceEvents],
     };
+    const content = resolveAgentMessageDisplayContent(message);
+    return content ? { ...message, content } : message;
+}
+
+/** Replay a settled QAIQ/Claude NDJSON log through the AG-UI reducer (store backfill when live stream missed rows). */
+export function buildAgentMessageFromAgUiStructuredLog(
+    agentId: string,
+    agentMessageId: string,
+    createdAt: number,
+    log: string,
+): QaapAgentMessageDTO | undefined {
+    const emitter = createAgUiCliStreamEmitter(agentId);
+    if (!emitter || !log.trim()) {
+        return undefined;
+    }
+    let state: QaapAgUiTraceReducerState | undefined;
+    const filtered = filterQaiqStreamProcessLogLines(log);
+    for (const line of filtered.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            continue;
+        }
+        for (const event of emitter.push(`${trimmed}\n`)) {
+            ({ next: state } = reduceQaapAgUiTranscriptEvent(state, event, {
+                agentMessageId,
+                createdAt,
+                agentId,
+            }));
+        }
+    }
+    if (!state || state.traceEvents.length === 0) {
+        return undefined;
+    }
+    return buildAgentMessageFromQaapAgUiReducer(state, createdAt);
 }
 
 /** Map one AG-UI event into trace state and the smallest wire delta vs the previous snapshot. */

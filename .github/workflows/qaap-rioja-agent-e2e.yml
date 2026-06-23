@@ -1,0 +1,104 @@
+name: Qaap Rioja Agent E2E
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'examples/playwright/scripts/qaap-rioja-*'
+      - 'examples/playwright/scripts/mock-qaiq-rioja-agent'
+      - 'packages/qaap-mobile-shell/**'
+      - 'packages/qaap-cloud-workspace/**'
+      - 'scripts/qaap-run-rioja-agent-e2e.sh'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'examples/playwright/scripts/qaap-rioja-*'
+      - 'examples/playwright/scripts/mock-qaiq-rioja-agent'
+      - 'packages/qaap-mobile-shell/**'
+      - 'packages/qaap-cloud-workspace/**'
+      - 'scripts/qaap-run-rioja-agent-e2e.sh'
+  workflow_dispatch:
+
+jobs:
+  rioja-composer-ui-flow:
+    name: Rioja composer UI flow (P0)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '24.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Use Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+
+      - name: Build browser app
+        shell: bash
+        run: |
+          npm ci
+          npm run build:browser
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright Chromium
+        shell: bash
+        run: cd examples/playwright && npx playwright install chromium
+
+      - name: Start browser backend with mock QAIQ
+        shell: bash
+        run: |
+          MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
+          mkdir -p "${MOCK_BIN}"
+          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "${MOCK_BIN}/qaiq"
+          echo "${MOCK_BIN}" >> "${GITHUB_PATH}"
+          cd examples/browser
+          npm run start > "${{ github.workspace }}/test-results/browser-server.log" 2>&1 &
+          echo $! > "${{ github.workspace }}/test-results/browser-server.pid"
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:3000 >/dev/null; then
+              echo "Server ready after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to start"
+          tail -n 80 "${{ github.workspace }}/test-results/browser-server.log" || true
+          exit 1
+
+      - name: Rioja composer UI flow eval (P0 gate)
+        shell: bash
+        run: cd examples/playwright && npm run rioja-ui-flow-eval
+
+      - name: Rioja API flow eval (regression)
+        shell: bash
+        run: cd examples/playwright && npm run rioja-e2e-eval
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@6.0.0
+        with:
+          name: qaap-rioja-agent-e2e
+          path: |
+            test-results/qaap-rioja-ui-flow/**
+            test-results/qaap-rioja-e2e/**
+            test-results/browser-server.log
+          if-no-files-found: warn
+
+      - name: Stop browser backend
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f test-results/browser-server.pid ]]; then
+            kill "$(cat test-results/browser-server.pid)" 2>/dev/null || true
+          fi

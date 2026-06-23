@@ -23,9 +23,12 @@ import {
     QAAP_AGENT_CONVERSATION_WS_PATH,
     parseQaapAgentConversationWsClientMessage,
 } from '../common/qaap-agent-conversation-ws';
+import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
+import type { QaapAgUiEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
+import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
+import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
-import type { QaapAgUiEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
 
 const SSE_HEARTBEAT_MS = 25_000;
 /** Ping interval for WebSocket connections — keeps the socket alive through proxies. */
@@ -238,6 +241,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 cwd = worktree.worktreePath;
                 worktreeBranch = worktree.branch;
             }
+            const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
+            const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
             const conv = this.store.create({
                 cwd,
                 ...(baseCwd ? { parallelBaseCwd: baseCwd } : {}),
@@ -250,7 +255,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 autoApprove: body.autoApprove,
                 contextPreamble: body.contextPreamble,
                 interactionModeId: body.interactionModeId,
-                approvalPolicyId: body.approvalPolicyId,
+                approvalPolicyId,
+                ...(toolApprovalRules ? { toolApprovalRules } : {}),
             });
             res.status(201).json(conv);
         } catch (error) {
@@ -271,12 +277,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             const autoApprove = typeof body.autoApprove === 'boolean' ? body.autoApprove : undefined;
             const interactionModeId = typeof body.interactionModeId === 'string' ? body.interactionModeId.trim() : undefined;
             const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
-            const toolApprovalRules = body.toolApprovalRules && typeof body.toolApprovalRules === 'object'
-                ? {
-                    shell: body.toolApprovalRules.shell === true,
-                    network: body.toolApprovalRules.network === true,
-                }
-                : undefined;
+            const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
             const conv = this.store.postUserMessage(
                 req.params.id,
                 content,
@@ -358,10 +359,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             patch.approvalPolicyId = body.approvalPolicyId;
         }
         if (body.toolApprovalRules && typeof body.toolApprovalRules === 'object') {
-            patch.toolApprovalRules = {
-                shell: body.toolApprovalRules.shell === true,
-                network: body.toolApprovalRules.network === true,
-            };
+            const approvalPolicyId = typeof body.approvalPolicyId === 'string'
+                ? body.approvalPolicyId.trim()
+                : undefined;
+            patch.toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
         }
         if (body.linkedPullRequest !== undefined) {
             patch.linkedPullRequest = body.linkedPullRequest;
@@ -401,4 +402,23 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         req.on('close', cleanup);
         res.on('close', cleanup);
     }
+}
+
+function parseRequestToolApprovalRules(
+    body: unknown,
+    approvalPolicyId: string | undefined,
+): QaapAgentToolApprovalRules | undefined {
+    if (!body || typeof body !== 'object') {
+        return undefined;
+    }
+    const rules = body as { shell?: unknown; network?: unknown };
+    const policy = isAgentApprovalPolicyId(approvalPolicyId) ? approvalPolicyId : undefined;
+    return resolveEffectiveToolApprovalRules(policy, {
+        shell: rules.shell === true ? true : rules.shell === false ? false : undefined,
+        network: rules.network === true ? true : rules.network === false ? false : undefined,
+    });
+}
+
+function isAgentApprovalPolicyId(value: string | undefined): value is QaapAgentApprovalPolicyId {
+    return value === 'request-approval' || value === 'approve-for-me' || value === 'full-access';
 }

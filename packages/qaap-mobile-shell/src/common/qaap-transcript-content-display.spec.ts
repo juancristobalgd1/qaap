@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import {
+    isAgentToolResultFailure,
     isTranscriptErrorOutput,
     isTranscriptTerminalOutputText,
     looksLikeTranscriptMarkdown,
@@ -44,5 +45,17 @@ describe('qaap-transcript-content-display', () => {
     it('does not treat short error snippets as terminal output', () => {
         const short = 'Error: command not found';
         expect(isTranscriptTerminalOutputText(short)).to.equal(false);
+    });
+
+    it('isAgentToolResultFailure ignores error substrings inside file paths', () => {
+        const globOutput = [
+            'package.json',
+            'index.html',
+            'node_modules/postcss/lib/css-syntax-error.js',
+            '(Results are truncated. Consider using a more specific path or pattern.)',
+        ].join('\n');
+        expect(isAgentToolResultFailure(globOutput)).to.equal(false);
+        expect(isAgentToolResultFailure('fatal: not a git repository')).to.equal(true);
+        expect(isAgentToolResultFailure('git log --oneline -10\nError: Exit code 128')).to.equal(true);
     });
 });

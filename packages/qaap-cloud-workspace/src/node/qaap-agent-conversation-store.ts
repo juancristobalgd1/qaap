@@ -92,6 +92,7 @@ import {
     type QaapAgentMessageWireSnapshot,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
 import {
+    buildAgentMessageFromAgUiStructuredLog,
     buildAgentMessageFromQaapAgUiReducer,
     reduceQaapAgUiTranscriptEvent,
     type QaapAgUiEvent,
@@ -109,7 +110,7 @@ import {
     agentMessageHasStructuredTrace,
     syncSettledTraceEventsOnMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
-import { backfillConversationTraceEvents, preferTraceFirstAgentMessageStorage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
+import { backfillConversationTraceEvents, materializeConversationForApiWithChanges, materializeAgentMessageForApi, preferTraceFirstAgentMessageStorage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
 import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
@@ -213,11 +214,12 @@ export class QaapAgentConversationStore {
             return undefined;
         }
         const { conversation, changed } = backfillConversationTraceEvents(conv);
-        if (changed) {
-            this.conversations.set(id, conversation);
+        const materialized = materializeConversationForApiWithChanges(conversation);
+        if (changed || materialized.changed) {
+            this.conversations.set(id, materialized.conversation);
             this.schedulePersist();
         }
-        return conversation;
+        return materialized.conversation;
     }
 
     /** Running turn task id for a conversation, if any. */
@@ -280,6 +282,7 @@ export class QaapAgentConversationStore {
                 request.autoApprove === false ? false : request.autoApprove === true ? true : undefined,
                 request.interactionModeId,
                 request.approvalPolicyId,
+                request.toolApprovalRules,
             );
         }
         return this.conversations.get(id)!;
@@ -848,6 +851,7 @@ export class QaapAgentConversationStore {
         const emitter = this.ensureAgUiStream(taskId, agentId);
         const events = emitter.push(chunk);
         if (events.length === 0) {
+            this.applyAccumulatorStructuredOutput(taskId, ref, agentId);
             return;
         }
         let conv = this.conversations.get(ref.conversationId);
@@ -929,10 +933,106 @@ export class QaapAgentConversationStore {
         traceEvents: QaapAgentMessage['traceEvents'];
     } | undefined {
         const parsed = parseAgentLogForTranscript(agentId, log);
-        if (!parsed.segments?.length && !parsed.traceEvents?.length) {
+        if (!parsed.segments?.length && !parsed.traceEvents?.length && !parsed.content?.trim()) {
             return undefined;
         }
         return parsed;
+    }
+
+    /** When AG-UI event mapping is empty but the segment accumulator parsed NDJSON, persist that snapshot. */
+    protected applyAccumulatorStructuredOutput(
+        taskId: string,
+        ref: { conversationId: string; userMessageId: string; agentMessageId?: string },
+        agentId: string,
+    ): void {
+        const conv = this.conversations.get(ref.conversationId);
+        const stream = this.agentStreamByTaskId.get(taskId);
+        if (!conv || !stream) {
+            return;
+        }
+        const segments = [...stream.getSegments()];
+        const content = stream.getDisplayText();
+        if (!content && segments.length === 0) {
+            return;
+        }
+        const now = Date.now();
+        const existingAgentMessage = ref.agentMessageId
+            ? conv.messages.find(message => message.id === ref.agentMessageId)
+            : undefined;
+        const traceEvents = mergeAccumulatorTraceEvents(existingAgentMessage?.traceEvents, stream);
+        let agentMessageId = ref.agentMessageId;
+        let messages: QaapAgentMessage[];
+        if (!agentMessageId) {
+            agentMessageId = randomUUID();
+            ref.agentMessageId = agentMessageId;
+            this.taskToConversation.set(taskId, ref);
+            const message: QaapAgentMessage = preferTraceFirstAgentMessageStorage(materializeAgentMessageForApi({
+                id: agentMessageId,
+                role: 'agent',
+                content: content || '…',
+                segments,
+                ...(traceEvents ? { traceEvents } : {}),
+                createdAt: now,
+            }));
+            messages = [...conv.messages, message];
+            this.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, message);
+        } else {
+            messages = conv.messages.map(message => message.id === agentMessageId
+                ? preferTraceFirstAgentMessageStorage(materializeAgentMessageForApi({
+                    ...message,
+                    content: content || message.content,
+                    segments: segments.length > 0 ? segments : message.segments,
+                    ...(traceEvents ? { traceEvents } : {}),
+                }))
+                : message
+            );
+            const updated = messages.find(message => message.id === agentMessageId);
+            if (updated) {
+                this.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, updated);
+            }
+        }
+        const next: QaapAgentConversation = {
+            ...conv,
+            status: 'streaming',
+            updatedAt: now,
+            messages,
+            ...(totalTokensFromContextUsage(conv.contextUsage) === 0 ? { contextUsageEstimated: true } : {}),
+            contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
+        };
+        this.conversations.set(conv.id, next);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        this.schedulePersist();
+    }
+
+    protected backfillAgentMessageFromStructuredLog(
+        message: QaapAgentMessage,
+        agentId: string,
+        log: string,
+    ): QaapAgentMessage {
+        if (message.role !== 'agent' || agentMessageHasStructuredTrace(message) || message.content?.trim()) {
+            return message;
+        }
+        const parsed = this.parseStructuredLog(agentId, log);
+        if (parsed?.segments?.length || parsed?.traceEvents?.length) {
+            return materializeAgentMessageForApi({
+                ...message,
+                content: parsed.content || message.content,
+                segments: parsed.segments,
+                traceEvents: this.resolveStructuredParsedTraceEvents(message, parsed),
+            });
+        }
+        const replayed = buildAgentMessageFromAgUiStructuredLog(agentId, message.id, message.createdAt, log);
+        if (replayed?.traceEvents?.length) {
+            return materializeAgentMessageForApi({
+                ...message,
+                content: replayed.content || message.content,
+                traceEvents: replayed.traceEvents,
+            });
+        }
+        if (parsed?.content?.trim()) {
+            return { ...message, content: parsed.content };
+        }
+        return message;
     }
 
     protected resolveStructuredParsedTraceEvents(
@@ -996,16 +1096,27 @@ export class QaapAgentConversationStore {
             ));
         const structuredParsed = log && !skipLogReparse ? this.parseStructuredLog(conv.agentId, log) : undefined;
         if (task.state !== 'completed') {
-            const agentMessage = agentMessageId
-                ? withUsageBaseline.messages.find(message => message.id === agentMessageId)
-                : undefined;
+            let convForFailure = withUsageBaseline;
+            let agentMessageForFailure = streamingAgent;
+            if (agentMessageId && log && streamingAgent?.role === 'agent' && !agentMessageHasStructuredTrace(streamingAgent)) {
+                const backfilled = materializeAgentMessageForApi(syncSettledTraceEventsOnMessage(
+                    this.backfillAgentMessageFromStructuredLog(streamingAgent, conv.agentId, log),
+                ));
+                agentMessageForFailure = backfilled;
+                convForFailure = {
+                    ...withUsageBaseline,
+                    messages: withUsageBaseline.messages.map(message => message.id === agentMessageId
+                        ? backfilled
+                        : message),
+                };
+            }
             if (this.maybeRetryTurnWithFallbackModel(
                 conversationId,
                 userMessageId,
                 agentMessageId,
                 task,
-                withUsageBaseline,
-                agentMessage,
+                convForFailure,
+                agentMessageForFailure,
                 startSha,
             )) {
                 return;
@@ -1013,9 +1124,10 @@ export class QaapAgentConversationStore {
             const reason = resolveAgentTurnFailureMessage(log, {
                 state: task.state === 'interrupted' ? 'interrupted' : 'failed',
                 exitCode: task.exitCode,
+                agentMessage: agentMessageForFailure,
             });
             const failureBody = log ? resolveAgentLogDisplayText(conv.agentId, log) : '';
-            const failed = this.markTurnFailed(withUsageBaseline, {
+            const failed = this.markTurnFailed(convForFailure, {
                 userMessageId,
                 agentMessageId,
                 reason,
@@ -1040,10 +1152,15 @@ export class QaapAgentConversationStore {
             );
             withReply = { ...withUsageBaseline, status: 'idle', updatedAt: Date.now(), messages };
         } else if (agentMessageId) {
-            const messages = withUsageBaseline.messages.map(message => message.id === agentMessageId && message.role === 'agent'
-                ? syncSettledTraceEventsOnMessage(message)
-                : message
-            );
+            const messages = withUsageBaseline.messages.map(message => {
+                if (message.id !== agentMessageId || message.role !== 'agent') {
+                    return message;
+                }
+                const backfilled = log
+                    ? this.backfillAgentMessageFromStructuredLog(message, conv.agentId, log)
+                    : message;
+                return materializeAgentMessageForApi(syncSettledTraceEventsOnMessage(backfilled));
+            });
             withReply = { ...withUsageBaseline, status: 'idle', updatedAt: Date.now(), messages };
         } else {
             const displayText = log ? resolveAgentLogDisplayText(conv.agentId, log) : '';
@@ -1276,7 +1393,13 @@ export class QaapAgentConversationStore {
         );
         if (agentMessageId) {
             messages = messages.map(message => message.id === agentMessageId && message.role === 'agent'
-                ? { ...message, error: options.reason }
+                ? {
+                    ...message,
+                    error: options.reason,
+                    content: message.content?.trim()
+                        ? message.content
+                        : (options.failureBody?.trim() ?? message.content),
+                }
                 : message
             );
         } else {

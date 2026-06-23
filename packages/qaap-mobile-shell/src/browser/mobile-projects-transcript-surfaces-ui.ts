@@ -1175,6 +1175,9 @@ export class MobileProjectsTranscriptSurfacesUi {
             const readyUrl = await ensureTranscriptDevPreview(bootstrap, {
                 previewUrlHint: previewUrl,
                 portHint: port,
+                conversation: this.host.transcriptLastConv?.id === summary.id
+                    ? this.host.transcriptLastConv
+                    : undefined,
             });
             if (!readyUrl || !this.matchesActivePreviewSummary(summary)) {
                 return;
@@ -1960,7 +1963,10 @@ export class MobileProjectsTranscriptSurfacesUi {
 
         const bootstrap = this.host.projectBootstrap;
         if (bootstrap && this.bootstrapAppliesToProject(project)) {
-            void ensureTranscriptDevPreview(bootstrap).then(readyUrl => {
+            const conversation = this.host.transcriptLastConv?.id === summary.id
+                ? this.host.transcriptLastConv
+                : undefined;
+            void ensureTranscriptDevPreview(bootstrap, { conversation }).then(readyUrl => {
                 if (!readyUrl || !this.matchesActivePreviewSummary(summary)) {
                     return;
                 }

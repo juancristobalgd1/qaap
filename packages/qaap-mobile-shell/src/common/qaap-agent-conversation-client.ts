@@ -281,6 +281,7 @@ export interface QaapCreateConversationBody {
     readonly contextPreamble?: string;
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
+    readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
     /**
      * When `true`, the server provisions an isolated git worktree (new branch off HEAD of
      * {@link cwd}) and the conversation runs there instead of the main working tree.

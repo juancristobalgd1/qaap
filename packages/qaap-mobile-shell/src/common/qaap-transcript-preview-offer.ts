@@ -234,12 +234,14 @@ export async function resolveReadyTranscriptPreviewUrlFromProbe(
 }
 
 function conversationAgentFinishedTool(conv: QaapAgentConversationDTO): boolean {
-    const agentMessage = [...conv.messages].reverse().find(message => message.role === 'agent');
-    return !!agentMessage?.segments?.some(segment => segment.type === 'tool' && segment.finished);
+    return latestAgentTraceSegments(conv).some(segment => segment.type === 'tool' && segment.finished);
 }
 
 /** True when default dev ports may be probed (avoids opening a stale server mid-turn). */
 export function conversationShouldProbeDefaultDevPreviewPorts(conv: QaapAgentConversationDTO): boolean {
+    if (conversationEverRequestedDevPreview(conv)) {
+        return true;
+    }
     if (findTranscriptPreviewPortHint(conv) !== undefined) {
         return true;
     }

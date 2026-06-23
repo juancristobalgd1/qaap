@@ -893,7 +893,11 @@ export class QaapAgentTaskRunner {
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt };
         }
-        const workflowPrompt = appendAgentDefaultWorkflowToPrompt(runnerPrompt, id);
+        const workflowPrompt = appendAgentDefaultWorkflowToPrompt(
+            runnerPrompt,
+            id,
+            { gitAvailable: cwd ? fs.existsSync(path.join(path.resolve(cwd), '.git')) : true },
+        );
         // Inject important project context for every agent: cross-project context from the request
         // body plus the per-project info artifact read from the workspace.
         const agentPrompt = prependAgentTaskContextToPrompt(workflowPrompt, contextPreamble, cwd ? this.readProjectInfo(cwd) : undefined);

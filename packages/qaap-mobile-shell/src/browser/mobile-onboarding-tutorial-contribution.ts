@@ -23,6 +23,12 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileHaptics } from './mobile-haptics';
+import {
+    hasBlockingAgentConversationWork,
+    isMobileOnboardingSessionSkipped,
+    markMobileOnboardingSessionSkipped,
+    shouldDeferMobileOnboardingTutorial,
+} from '../common/mobile-onboarding-tutorial-guard';
 
 // Breakpoint matches `mobile-workbench.css` and {@link MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY} in core.
 
@@ -85,16 +91,20 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
     protected steps: TutorialStep[] = [];
     protected reflowRaf = 0;
     protected active = false;
+    protected deferTimer: number | undefined;
+    protected blockObserver: MutationObserver | undefined;
+    protected apiWatchTimer: number | undefined;
 
     onDidInitializeLayout(_app: FrontendApplication): void {
         this.mobileMq?.addEventListener('change', this.onMediaChange);
         if (this.mobileMq?.matches) {
-            this.maybeStartFirstRun().catch(() => { /* swallow: tutorial is best-effort */ });
+            void this.maybeStartFirstRun();
         }
     }
 
     onStop(): void {
         this.mobileMq?.removeEventListener('change', this.onMediaChange);
+        this.stopDeferWatch();
         this.dismiss(false);
         this.toDispose.dispose();
     }
@@ -118,11 +128,90 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
 
     protected async maybeStartFirstRun(): Promise<void> {
         const seen = await this.storage.getData<boolean>(MobileOnboardingTutorialContribution.STORAGE_KEY, false);
-        if (!seen && this.mobileMq?.matches) {
-            // Wait a frame so the shell finishes its mobile layout transition before we measure
-            // targets (bottom bar, edge zones, …) for the spotlight.
-            requestAnimationFrame(() => this.start(false));
+        if (seen || !this.mobileMq?.matches || isMobileOnboardingSessionSkipped()) {
+            return;
         }
+        this.scheduleFirstRunWhenIdle();
+    }
+
+    protected scheduleFirstRunWhenIdle(): void {
+        if (this.active || this.deferTimer !== undefined) {
+            return;
+        }
+        this.startDeferWatch();
+        const attempt = (): void => {
+            void (async (): Promise<void> => {
+                this.deferTimer = undefined;
+                if (!this.mobileMq?.matches || this.active || isMobileOnboardingSessionSkipped()) {
+                    this.stopDeferWatch();
+                    return;
+                }
+                const blocking = shouldDeferMobileOnboardingTutorial()
+                    || await hasBlockingAgentConversationWork();
+                if (blocking) {
+                    this.deferTimer = window.setTimeout(attempt, 2000);
+                    return;
+                }
+                this.stopDeferWatch();
+                requestAnimationFrame(() => this.start(false));
+            })();
+        };
+        this.deferTimer = window.setTimeout(attempt, 0);
+    }
+
+    protected startDeferWatch(): void {
+        if (this.blockObserver || typeof MutationObserver === 'undefined' || typeof document === 'undefined') {
+            return;
+        }
+        this.blockObserver = new MutationObserver(() => {
+            void this.handleBlockingAgentWorkDetected();
+        });
+        this.blockObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'hidden'],
+        });
+    }
+
+    protected stopDeferWatch(): void {
+        this.blockObserver?.disconnect();
+        this.blockObserver = undefined;
+        this.stopApiWatch();
+        if (this.deferTimer !== undefined) {
+            window.clearTimeout(this.deferTimer);
+            this.deferTimer = undefined;
+        }
+    }
+
+    protected startApiWatch(): void {
+        if (this.apiWatchTimer !== undefined) {
+            return;
+        }
+        const tick = (): void => {
+            void this.handleBlockingAgentWorkDetected();
+        };
+        this.apiWatchTimer = window.setInterval(tick, 2000);
+        tick();
+    }
+
+    protected stopApiWatch(): void {
+        if (this.apiWatchTimer !== undefined) {
+            window.clearInterval(this.apiWatchTimer);
+            this.apiWatchTimer = undefined;
+        }
+    }
+
+    protected async handleBlockingAgentWorkDetected(): Promise<void> {
+        const blocking = shouldDeferMobileOnboardingTutorial()
+            || await hasBlockingAgentConversationWork();
+        if (!blocking) {
+            return;
+        }
+        if (this.active) {
+            this.dismiss(false);
+        }
+        this.scheduleFirstRunWhenIdle();
     }
 
     /**
@@ -134,6 +223,24 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         if (typeof document === 'undefined' || !this.mobileMq?.matches) {
             return;
         }
+        if (!replay && shouldDeferMobileOnboardingTutorial()) {
+            this.scheduleFirstRunWhenIdle();
+            return;
+        }
+        if (!replay) {
+            void hasBlockingAgentConversationWork().then(blocking => {
+                if (blocking) {
+                    this.scheduleFirstRunWhenIdle();
+                    return;
+                }
+                this.openTutorial(replay);
+            });
+            return;
+        }
+        this.openTutorial(replay);
+    }
+
+    protected openTutorial(replay: boolean): void {
         if (this.active && replay) {
             // Reset to first step on explicit replay.
             this.currentIndex = 0;
@@ -148,6 +255,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         this.currentIndex = 0;
         this.ensureOverlayElements();
         this.renderCurrentStep();
+        this.startApiWatch();
         window.addEventListener('resize', this.scheduleReflow, { passive: true });
         window.addEventListener('orientationchange', this.scheduleReflow, { passive: true });
         document.addEventListener('keydown', this.onKeyDown);
@@ -155,9 +263,13 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
 
     protected dismiss(markSeen: boolean): void {
         if (!this.active) {
+            if (!markSeen) {
+                this.stopDeferWatch();
+            }
             return;
         }
         this.active = false;
+        this.stopDeferWatch();
         window.removeEventListener('resize', this.scheduleReflow);
         window.removeEventListener('orientationchange', this.scheduleReflow);
         document.removeEventListener('keydown', this.onKeyDown);
@@ -174,6 +286,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         this.tooltip = undefined;
         this.demoLayer = undefined;
         if (markSeen) {
+            markMobileOnboardingSessionSkipped();
             this.storage.setData(MobileOnboardingTutorialContribution.STORAGE_KEY, true)
                 .catch(() => { /* swallow: storage failures should not block the UI */ });
         }

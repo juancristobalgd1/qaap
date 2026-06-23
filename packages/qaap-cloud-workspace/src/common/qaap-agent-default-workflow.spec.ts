@@ -36,4 +36,10 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         const twice = appendAgentDefaultWorkflowToPrompt(once, 'codex');
         expect(twice).to.equal(once);
     });
+
+    it('omits git workflow steps when git is unavailable', () => {
+        const block = buildAgentDefaultWorkflowPromptBlock({ gitAvailable: false });
+        expect(block).to.include('not be a git repository');
+        expect(block).not.to.include('inspect git status');
+    });
 });

@@ -13,7 +13,7 @@ export interface QaapAgentToolApprovalRules {
 }
 
 export const DEFAULT_APPROVE_FOR_ME_TOOL_RULES: QaapAgentToolApprovalRules = {
-    shell: false,
+    shell: true,
     network: false,
 };
 

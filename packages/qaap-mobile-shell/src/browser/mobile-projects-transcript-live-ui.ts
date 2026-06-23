@@ -638,7 +638,7 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         this.transcriptDevPreviewBootstrapConversationId = conv.id;
-        void ensureTranscriptDevPreview(bootstrap).then(readyUrl => {
+        void ensureTranscriptDevPreview(bootstrap, { conversation: conv }).then(readyUrl => {
             if (readyUrl && this.host.transcriptOpenSummaryId === conv.id) {
                 void this.openReadyTranscriptPreviewUrl(readyUrl, conv);
                 return;

@@ -5,8 +5,52 @@
 
 import { expect } from 'chai';
 import { MobileProjectsBackgroundTaskUi } from './mobile-projects-background-task-ui';
+import type { MobileProjectEntry } from './mobile-projects-types';
 
 describe('MobileProjectsBackgroundTaskUi', () => {
+
+    it('ensureInlineComposerCwd prefers open workspace when hub project differs (QA-001)', async () => {
+        const mockup: MobileProjectEntry = {
+            id: 'mockup',
+            name: 'Mockup',
+            color: '#000',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: '',
+            tokens: '—',
+            cost: '—',
+            pinned: false,
+            isCurrent: false,
+        };
+        const prepared = new Map<string, string>();
+        const projectsService = {
+            getCurrentWorkspaceCwd: () => '/tmp/qaap-ui-ws-empty',
+            projectMatchesCurrentWorkspace: (project: MobileProjectEntry) => project.id === 'mockup' && project.isCurrent === true,
+            getProjectCwd: () => '/Users/jc/.qaap/workspaces/u/Mockup',
+            prepareProjectCwd: async () => undefined,
+        };
+        const ui = new MobileProjectsBackgroundTaskUi({
+            projects: [],
+            preparedCwdByProjectId: prepared,
+            justAddedTaskId: undefined,
+            agentsHubShellActive: false,
+            projectsService: projectsService as never,
+            delegate: {},
+            transcriptSheetUi: {} as never,
+            transcriptLiveUi: {} as never,
+            shouldUseAgentsHubLanding: () => false,
+            renderSubtitle: () => undefined,
+            renderList: () => undefined,
+            seedTranscriptOptimisticSubmit: () => undefined,
+        });
+
+        const cwd = await ui.ensureInlineComposerCwd(mockup);
+        expect(cwd).to.equal('/tmp/qaap-ui-ws-empty');
+        expect(prepared.get('mockup')).to.equal('/tmp/qaap-ui-ws-empty');
+    });
 
     it('auto-enables worktree when another conversation is streaming in the same cwd', () => {
         const ui = new MobileProjectsBackgroundTaskUi({

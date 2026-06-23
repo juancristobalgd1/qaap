@@ -36,6 +36,7 @@ import {
     StoredMobileProject,
 } from './mobile-projects-types';
 import { normalizeWorkHubViewId } from '../common/qaap-work-hub-surfaces';
+import { findProjectMatchingWorkspaceCwd } from '../common/qaap-composer-workspace-project';
 import { isValidHubUserRepositoryProjectCandidate } from '../common/qaap-hub-project-eligibility';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import {
@@ -1095,6 +1096,50 @@ export class MobileProjectsService {
         }
         const projectKey = this.getProjectWorkspaceMatchKey(project);
         return !!projectKey && projectKey === this.getCurrentWorkspaceMatchKey();
+    }
+
+    /**
+     * Project the sticky composer should target: the workspace open in this window, including
+     * ephemeral folders excluded from the hub browse list (empty temp dirs, QA-001).
+     */
+    resolveCurrentWorkspaceProject(projects: readonly MobileProjectEntry[]): MobileProjectEntry | undefined {
+        const workspaceCwd = this.getCurrentWorkspaceCwd();
+        const matched = findProjectMatchingWorkspaceCwd(
+            projects,
+            workspaceCwd,
+            project => this.getProjectCwd(project),
+            project => this.projectMatchesCurrentWorkspace(project),
+        );
+        if (matched) {
+            return matched;
+        }
+        return this.buildEphemeralCurrentWorkspaceEntry();
+    }
+
+    protected buildEphemeralCurrentWorkspaceEntry(): MobileProjectEntry | undefined {
+        const uri = this.workspaceService.workspace?.resource;
+        if (!uri || uri.scheme !== 'file') {
+            return undefined;
+        }
+        const id = `ws:${uri.toString()}`;
+        const name = this.resolveDisplayName(id, this.labelProvider.getName(uri));
+        return {
+            id,
+            name,
+            color: mobileProjectColorForName(name),
+            branch: uri.path.base,
+            status: 'working',
+            task: nls.localize('qaap/mobileProjects/currentTask', 'Active workspace'),
+            progress: 0.35,
+            agents: [{ role: 'ai', color: '#3B6FA0' }],
+            lastActive: nls.localize('qaap/mobileProjects/lastActiveNow', 'now'),
+            lastActiveAt: new Date().toISOString(),
+            tokens: '—',
+            cost: '—',
+            pinned: false,
+            uri,
+            isCurrent: true,
+        };
     }
 
     protected async loadSessionMap(): Promise<Map<string, QaapProjectSessionSummary>> {

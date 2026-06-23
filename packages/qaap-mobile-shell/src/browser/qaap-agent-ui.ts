@@ -247,14 +247,11 @@ export function populateAgentToolbarButton(
     chevron.setAttribute('aria-hidden', 'true');
     const model = options.modelLabel?.trim();
     if (model) {
-        const identity = document.createElement('span');
-        identity.className = 'theia-mobile-projects-sticky-composer-agent-identity';
-        appendAgentBrandIcon(identity, options.agentId, 'sm');
+        appendAgentBrandIcon(button, options.agentId, 'sm');
         const labelEl = document.createElement('span');
         labelEl.className = 'theia-mobile-projects-sticky-composer-agent-label';
         labelEl.textContent = model;
-        identity.append(labelEl);
-        button.append(identity, chevron);
+        button.append(labelEl, chevron);
         button.classList.remove('theia-mod-logo-only');
     } else {
         appendAgentBrandIcon(button, options.agentId, 'sm');

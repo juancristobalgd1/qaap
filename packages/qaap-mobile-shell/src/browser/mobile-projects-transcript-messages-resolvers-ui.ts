@@ -9,6 +9,7 @@ import { formatToolActivityLabel, parseDiffStatsFromText } from '../common/qaap-
 import { resolveTranscriptActivityNavigationItems, type TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment, extractTranscriptDiffCard } from '../common/qaap-agent-transcript-segments';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { isAgentToolResultFailure } from '../common/qaap-transcript-content-display';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 
@@ -223,14 +224,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
 
 
     transcriptToolResultFailed(result: string | undefined): boolean {
-        if (!result?.trim()) {
-            return false;
-        }
-        if (/tool_use_error|InputValidationError/i.test(result)) {
-            return true;
-        }
-        return /\b(error|failed|failure|exit\s+[1-9]\d*|code\s+[1-9]\d*)\b/i.test(result)
-            && !/\b0\s+failed\b/i.test(result);
+        return isAgentToolResultFailure(result);
     }
 
 

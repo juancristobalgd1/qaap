@@ -23,7 +23,6 @@ import {
     QaapMonorepoAppCandidate,
     QaapProjectDescriptor,
     QaapProjectKind,
-    isMonorepoDescriptor,
 } from './qaap-project-bootstrap-types';
 import { probeQaapDevPreviewPort, toDevPreviewUrl, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import {
@@ -47,6 +46,7 @@ import {
     resolveBootstrapDevTarget,
     resolveBootstrapInstallTarget,
 } from '../common/qaap-project-bootstrap-scaffold-plan';
+import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
 
 /** Terminal titles created by {@link QaapProjectBootstrapService.spawnCommand}. */
 const BOOTSTRAP_DEV_TERMINAL_TITLE_PREFIX = 'Dev (';
@@ -81,11 +81,11 @@ const TERMINAL_READY_DELAY_MS = 120;
 const PORT_IN_USE_ADDR_REGEX = /(?:127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]|::1):(\d{2,5})/i;
 
 /** After this delay, open the hinted preview URL even when stdout never prints a parseable URL. */
-const DEV_PREVIEW_FALLBACK_MS = 6000;
+const DEV_PREVIEW_FALLBACK_MS = 2500;
 
 /** Poll the backend probe before opening preview (Replit-style: wait until the port responds). */
-const DEV_PREVIEW_OPEN_PROBE_ATTEMPTS = 30;
-const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 500;
+const DEV_PREVIEW_OPEN_PROBE_ATTEMPTS = 40;
+const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 250;
 
 /** Delay before auto-attaching or restarting a remembered dev port after workspace load. */
 const DEV_PREVIEW_WARMUP_DELAY_MS = 800;
@@ -219,8 +219,15 @@ export class QaapProjectBootstrapService {
                     phase: this._phase,
                     descriptor: this._descriptor?.name,
                     selectedApp: this._selectedApp?.relativePath,
+                    scaffoldRelativePath: this._descriptor?.scaffoldRelativePath,
+                    previewUrl: this._previewUrl,
                     forwardedPorts: this._forwardedPorts,
+                    nodeModulesPresent: this._descriptor?.nodeModulesPresent,
+                    needsInstall: this._needsInstall,
                 }),
+                refresh: () => this.refreshFromCurrentWorkspace(),
+                runDevServer: () => this.runDevServer(),
+                runInstall: () => this.runInstall(),
                 feed: (chunk: string) => this.scanForDevUrl(chunk),
                 setRunning: () => this.setPhase('running'),
                 clearPorts: () => this.clearForwardedPorts(),
@@ -251,6 +258,11 @@ export class QaapProjectBootstrapService {
     /** Current bootstrap state for UI contributions and AI tools. */
     getStateSnapshot(): QaapBootstrapStateChange {
         return this.buildStateChange(this._phase);
+    }
+
+    /** True when install finished (or was skipped) and a dev script can be spawned. */
+    hasRunnableDevPlan(): boolean {
+        return this.resolveDevPlan() !== undefined;
     }
 
     /**
@@ -389,6 +401,14 @@ export class QaapProjectBootstrapService {
     async runInstall(): Promise<void> {
         const descriptor = this._descriptor;
         if (!descriptor || this._phase === 'installing') {
+            return;
+        }
+        if (descriptor.nodeModulesPresent && !this._needsInstall) {
+            this.persistPhase('ready-to-run');
+            this.setPhase('ready-to-run');
+            if (this.resolveDevPlan()) {
+                await this.runDevServer();
+            }
             return;
         }
         const installId = ++this.installGeneration;
@@ -649,7 +669,7 @@ export class QaapProjectBootstrapService {
                 ? undefined
                 : persisted.lastPort;
         }
-        if (!this._selectedApp && isMonorepoDescriptor(descriptor) && descriptor.apps.length === 1) {
+        if (!this._selectedApp && descriptor.apps.length === 1) {
             // Only one runnable app — pick it implicitly so the user gets one-tap "Run & Preview".
             this._selectedApp = descriptor.apps[0];
         }
@@ -658,7 +678,7 @@ export class QaapProjectBootstrapService {
             // the spawned terminal is gone, the dev URL no longer responds, and the user is back
             // at "ready to launch". Downgrade them so the banner reappears with a `Run & Preview`
             // (or `Install`) action instead of silently restoring a dead `running` state.
-            const restored = this.normalizeRestoredPhase(persisted.phase, descriptor);
+            const restored = normalizePersistedBootstrapPhase(persisted.phase, descriptor.nodeModulesPresent);
             this.setPhase(restored);
             this.scheduleDevPreviewWarmup();
             return;
@@ -669,18 +689,11 @@ export class QaapProjectBootstrapService {
 
     /**
      * Maps a persisted phase to the phase we should boot into. Terminal phases (`dismissed`,
-     * `ready-to-run`, `detected`, failures) round-trip unchanged; transient ones collapse to the
+     * `ready-to-run`, failures) round-trip unchanged; transient ones collapse to the
      * appropriate "actionable" phase based on whether `node_modules` is on disk now.
      */
     protected normalizeRestoredPhase(phase: QaapBootstrapPhase, descriptor: QaapProjectDescriptor): QaapBootstrapPhase {
-        switch (phase) {
-            case 'running':
-            case 'starting':
-            case 'installing':
-                return descriptor.nodeModulesPresent ? 'ready-to-run' : 'detected';
-            default:
-                return phase;
-        }
+        return normalizePersistedBootstrapPhase(phase, descriptor.nodeModulesPresent);
     }
 
     protected scanDevOutput(data: string, plan: { expectedPort?: number }): void {
@@ -901,7 +914,7 @@ export class QaapProjectBootstrapService {
         this.devPreviewFallbackTimers.push(
             window.setTimeout(() => {
                 void tryOpen();
-            }, 4500),
+            }, 1200),
             window.setTimeout(() => {
                 void tryOpen();
             }, DEV_PREVIEW_FALLBACK_MS),

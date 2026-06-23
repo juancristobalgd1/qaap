@@ -61,6 +61,9 @@ export function isAgentMessageVisuallySettled(message: QaapAgentMessageDTO): boo
 export function resolveTranscriptEffectiveStatus(
     conv: QaapAgentConversationDTO,
 ): QaapAgentConversationDTO['status'] {
+    if (conv.status === 'failed') {
+        return 'failed';
+    }
     if (hasUnfinishedAgentWork(conv)) {
         return 'streaming';
     }
@@ -82,7 +85,11 @@ export function isTranscriptSummaryAgentWorking(
     conv: QaapAgentConversationDTO | undefined,
 ): boolean {
     if (conv && conv.id === summary.id) {
-        return resolveTranscriptEffectiveStatus(conv) === 'streaming';
+        const effective = resolveTranscriptEffectiveStatus(conv);
+        if (effective === 'failed') {
+            return false;
+        }
+        return effective === 'streaming';
     }
     return summary.status === 'streaming';
 }

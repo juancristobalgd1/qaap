@@ -29,7 +29,8 @@ import {
 } from '../common/qaap-agent-task-client';
 import { shouldRouteSubmitToTheiaCoder } from '../common/qaap-agent-submit-routing';
 import { applyBackendInteractionModeToPrompt } from '../common/qaap-sticky-composer-mode';
-import { reconcileAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
+import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
+import { reconcileAgentToolApprovalRules } from '../common/qaap-agent-tool-approval-rules';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -80,6 +81,11 @@ export class MobileProjectsBackgroundTaskUi {
     constructor(protected readonly host: MobileProjectsBackgroundTaskHost) { }
 
     async ensureInlineComposerCwd(project: MobileProjectEntry): Promise<string | undefined> {
+        const workspaceCwd = this.host.projectsService.getCurrentWorkspaceCwd();
+        if (workspaceCwd && !this.host.projectsService.projectMatchesCurrentWorkspace(project)) {
+            this.host.preparedCwdByProjectId.set(project.id, workspaceCwd);
+            return workspaceCwd;
+        }
         let cwd = this.host.projectsService.getProjectCwd(project);
         if (!cwd && project.github) {
             MobileSnackbar.show(
@@ -109,6 +115,7 @@ export class MobileProjectsBackgroundTaskUi {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
+            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
@@ -139,6 +146,7 @@ export class MobileProjectsBackgroundTaskUi {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
+            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
@@ -189,6 +197,7 @@ export class MobileProjectsBackgroundTaskUi {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
+            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
@@ -209,8 +218,10 @@ export class MobileProjectsBackgroundTaskUi {
         const agent = await this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId ?? QAAP_COMPOSER_DEFAULT_AGENT_ID);
         const outbound = await this.resolveOutboundMessage(draft, options);
         const agentModel = resolveAgentModelForSubmit(agent, cwd, options.agentModel);
-        const approvalPolicyId = options.approvalPolicyId
-            ?? reconcileAgentApprovalPolicyId(undefined, cwd);
+        const approvalPolicyId = (options.approvalPolicyId
+            ?? reconcileAgentApprovalPolicyId(undefined, cwd)) as QaapAgentApprovalPolicyId;
+        const toolApprovalRules = options.toolApprovalRules
+            ?? reconcileAgentToolApprovalRules(approvalPolicyId, cwd, undefined);
         const contextPreamble = await this.host.backgroundContext?.resolve({
             text: draft,
             variables: options.variables,
@@ -222,6 +233,7 @@ export class MobileProjectsBackgroundTaskUi {
             message: outbound,
             interactionModeId: options.modeId,
             approvalPolicyId,
+            toolApprovalRules,
             ...(useWorktree ? { worktree: true } : {}),
             ...(contextPreamble ? { contextPreamble } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),

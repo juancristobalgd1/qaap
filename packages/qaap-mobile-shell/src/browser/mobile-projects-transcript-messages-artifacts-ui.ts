@@ -7,6 +7,10 @@ import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, conversationToSummary, restoreConversationCheckpoint } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
+import {
+    extractLastFailedToolFromMessage,
+    resolveAgentTurnFailureTechnicalContent,
+} from '../common/qaap-agent-failure-message';
 import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptStreamingBootstrapTimeline, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
@@ -245,7 +249,20 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
 
         if (error) {
-            body.append(this.toolUi.createTranscriptAgentFailureDialog(error));
+            const failedTool = extractLastFailedToolFromMessage({
+                role: 'agent',
+                content: '',
+                segments,
+            });
+            const canRetry = conv?.status === 'failed' && !!this.host.retryOpenFailedConversationTask;
+            body.append(this.toolUi.createTranscriptAgentFailureDialog(
+                error,
+                resolveAgentTurnFailureTechnicalContent({ role: 'agent', content: '', segments }),
+                {
+                    failedToolName: failedTool?.name,
+                    onRetry: canRetry ? () => this.host.retryOpenFailedConversationTask?.() : undefined,
+                },
+            ));
         }
         row.append(body);
         if (streaming) {

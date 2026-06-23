@@ -7,6 +7,8 @@ import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from './qaap-agent
 import {
     mergeSegmentTraceEvents,
     hasActiveQaapTraceWork,
+    resolveAgentMessageDisplayContent,
+    resolveQaapTranscriptTrace,
     type QaapTranscriptTraceEventDTO,
 } from './qaap-transcript-trace-model';
 
@@ -100,6 +102,51 @@ export function preferTraceFirstAgentMessageStorage(message: QaapAgentMessageDTO
     }
     const { segments: _segments, ...withoutSegments } = message;
     return withoutSegments;
+}
+
+/**
+ * Enrich agent rows for REST/detail consumers: derive {@link content} and legacy {@link segments}
+ * from traceEvents when the AG-UI wire path left them empty.
+ */
+export function materializeAgentMessageForApi(message: QaapAgentMessageDTO): QaapAgentMessageDTO {
+    if (message.role !== 'agent') {
+        return message;
+    }
+    const trace = resolveQaapTranscriptTrace(message);
+    let next = message;
+    const content = resolveAgentMessageDisplayContent(message);
+    if (content && content !== message.content) {
+        next = { ...next, content };
+    }
+    if (!(next.segments?.length) && trace.segments.length > 0) {
+        next = { ...next, segments: [...trace.segments] };
+    }
+    return next;
+}
+
+export function materializeConversationForApi(conversation: QaapAgentConversationDTO): QaapAgentConversationDTO {
+    return materializeConversationForApiWithChanges(conversation).conversation;
+}
+
+export function materializeConversationForApiWithChanges(
+    conversation: QaapAgentConversationDTO,
+): BackfillConversationTraceResult {
+    let changed = false;
+    const messages = conversation.messages.map(message => {
+        const materialized = materializeAgentMessageForApi(message);
+        if (materialized.content !== message.content
+            || (materialized.segments?.length ?? 0) !== (message.segments?.length ?? 0)) {
+            changed = true;
+        }
+        return materialized;
+    });
+    if (!changed) {
+        return { conversation, changed: false };
+    }
+    return {
+        conversation: { ...conversation, messages },
+        changed: true,
+    };
 }
 
 export function backfillConversationTraceEvents(

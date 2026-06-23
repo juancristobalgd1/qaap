@@ -26,6 +26,10 @@ import {
     shouldDeferTranscriptRowHeavyContent,
 } from './qaap-transcript-row-defer';
 import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import {
+    extractLastFailedToolFromMessage,
+    resolveAgentTurnFailureTechnicalContent,
+} from '../common/qaap-agent-failure-message';
 import type { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
@@ -121,7 +125,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 row.setAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, msg.id);
             }
         } else if (msg.role === 'agent' && msg.error?.trim()) {
-            row = this.createTranscriptAgentFailureRow(msg, { deferHeavyContent });
+            row = this.createTranscriptAgentFailureRow(msg, normalized, { deferHeavyContent });
             if (msg.id) {
                 row.setAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, msg.id);
             }
@@ -601,6 +605,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     createTranscriptAgentFailureRow(
         msg: QaapAgentMessageDTO,
+        conv?: QaapAgentConversationDTO,
         options?: { readonly deferHeavyContent?: boolean },
     ): HTMLElement {
         const row = document.createElement('div');
@@ -610,7 +615,16 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         const body = document.createElement('div');
         body.className = 'theia-mobile-agent-transcript-segments';
-        body.append(this.toolUi.createTranscriptAgentFailureDialog(msg.error ?? '', msg.content));
+        const failedTool = extractLastFailedToolFromMessage(msg);
+        const canRetry = conv?.status === 'failed' && !!this.host.retryOpenFailedConversationTask;
+        body.append(this.toolUi.createTranscriptAgentFailureDialog(
+            msg.error ?? '',
+            resolveAgentTurnFailureTechnicalContent(msg),
+            {
+                failedToolName: failedTool?.name,
+                onRetry: canRetry ? () => this.host.retryOpenFailedConversationTask?.() : undefined,
+            },
+        ));
         row.append(body);
         return row;
     }

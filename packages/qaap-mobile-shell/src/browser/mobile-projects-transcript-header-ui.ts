@@ -132,6 +132,9 @@ export class MobileProjectsTranscriptHeaderUi {
         summary?: QaapAgentConversationSummaryDTO,
     ): string {
         const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
+        if (summary?.status === 'failed' || effectiveStatus === 'failed') {
+            return nls.localize('qaap/mobileProjects/chatStatusFailed', 'Failed');
+        }
         if (effectiveStatus === 'streaming') {
             if (this.resolveTranscriptStreamTimedOut(summary)) {
                 return nls.localize('qaap/mobileProjects/chatStatusTimedOut', 'Sin respuesta');
@@ -141,9 +144,6 @@ export class MobileProjectsTranscriptHeaderUi {
         }
         if (effectiveStatus === 'settled') {
             return nls.localize('qaap/mobileProjects/chatStatusFinalizing', 'Finalizing');
-        }
-        if (summary?.status === 'failed') {
-            return nls.localize('qaap/mobileProjects/chatStatusFailed', 'Failed');
         }
         if (summary?.priority) {
             return nls.localize('qaap/mobileProjects/chatStatusNeedsYou', 'Needs you');
@@ -205,14 +205,15 @@ export class MobileProjectsTranscriptHeaderUi {
     }
 
     activeChatStatusIcon(summary?: QaapAgentConversationSummaryDTO): string {
-        if (this.resolveActiveChatEffectiveStatus(summary) === 'streaming') {
+        const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
+        if (summary?.status === 'failed' || effectiveStatus === 'failed') {
+            return 'codicon-error';
+        }
+        if (effectiveStatus === 'streaming') {
             if (this.resolveTranscriptStreamTimedOut(summary)) {
                 return 'codicon-warning';
             }
             return 'codicon-loading';
-        }
-        if (summary?.status === 'failed') {
-            return 'codicon-error';
         }
         if (summary?.priority) {
             return 'codicon-warning';
@@ -224,14 +225,15 @@ export class MobileProjectsTranscriptHeaderUi {
         project: MobileProjectEntry,
         summary?: QaapAgentConversationSummaryDTO,
     ): string {
-        if (this.resolveActiveChatEffectiveStatus(summary) === 'streaming') {
+        const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
+        if (summary?.status === 'failed' || effectiveStatus === 'failed') {
+            return 'theia-mod-failed';
+        }
+        if (effectiveStatus === 'streaming') {
             if (this.resolveTranscriptStreamTimedOut(summary)) {
                 return 'theia-mod-needs-input';
             }
             return 'theia-mod-running';
-        }
-        if (summary?.status === 'failed') {
-            return 'theia-mod-failed';
         }
         if (summary?.priority || project.status === 'review') {
             return 'theia-mod-needs-input';
@@ -246,12 +248,18 @@ export class MobileProjectsTranscriptHeaderUi {
         project: MobileProjectEntry,
         summary?: QaapAgentConversationSummaryDTO,
     ): string {
+        const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
+        const failed = summary?.status === 'failed' || effectiveStatus === 'failed';
         const timestamp = summary?.updatedAt ?? (project.lastActiveAt ? Date.parse(project.lastActiveAt) : undefined);
         if (timestamp && Number.isFinite(timestamp)) {
+            const since = this.formatActiveChatSince(timestamp);
+            if (failed) {
+                return nls.localize('qaap/mobileProjects/chatFailedActivity', 'Failed {0}', since);
+            }
             return nls.localize(
                 'qaap/mobileProjects/chatLastActivity',
                 'Active {0}',
-                this.formatActiveChatSince(timestamp),
+                since,
             );
         }
         if (project.lastActive && project.lastActive !== '—') {

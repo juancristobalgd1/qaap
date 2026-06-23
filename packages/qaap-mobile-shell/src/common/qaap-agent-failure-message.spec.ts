@@ -7,10 +7,12 @@ import { expect } from 'chai';
 import {
     detectAgentFailureKind,
     extractAgentLogFailureHint,
+    extractLastFailedToolFromMessage,
     formatStoredAgentFailureMessage,
     localizeAgentFailureMessage,
     localizeGenericAgentFailureMessage,
     resolveAgentTurnFailureMessage,
+    resolveAgentTurnFailureTechnicalContent,
 } from './qaap-agent-failure-message';
 
 describe('qaap-agent-failure-message', () => {
@@ -80,5 +82,89 @@ describe('qaap-agent-failure-message', () => {
             .to.equal(localizeGenericAgentFailureMessage('failed', 1));
         expect(formatStoredAgentFailureMessage('Agent interrupted.'))
             .to.equal(localizeGenericAgentFailureMessage('interrupted'));
+    });
+
+    it('extractLastFailedToolFromMessage returns the last tool with error output', () => {
+        const failed = extractLastFailedToolFromMessage({
+            role: 'agent',
+            content: '',
+            segments: [
+                {
+                    type: 'tool',
+                    toolUseId: 't1',
+                    name: 'Write',
+                    args: '{}',
+                    finished: true,
+                    result: 'ok',
+                },
+                {
+                    type: 'tool',
+                    toolUseId: 't2',
+                    name: 'Bash',
+                    args: '{"command":"qaiq run"}',
+                    finished: true,
+                    result: 'Error: command not found: qaiq\nexit code 127',
+                },
+            ],
+        });
+        expect(failed?.name).to.equal('Bash');
+        expect(failed?.exitCode).to.equal(127);
+    });
+
+    it('extractLastFailedToolFromMessage ignores glob hits with error in file paths', () => {
+        const failed = extractLastFailedToolFromMessage({
+            role: 'agent',
+            content: '',
+            segments: [{
+                type: 'tool',
+                toolUseId: 't1',
+                name: 'Glob',
+                args: '{}',
+                finished: true,
+                result: [
+                    'package.json',
+                    'node_modules/postcss/lib/css-syntax-error.js',
+                ].join('\n'),
+            }],
+        });
+        expect(failed).to.equal(undefined);
+    });
+
+    it('resolveAgentTurnFailureMessage prefers failed tool context over generic copy', () => {
+        const friendly = resolveAgentTurnFailureMessage('', {
+            state: 'failed',
+            exitCode: 1,
+            agentMessage: {
+                role: 'agent',
+                content: '',
+                segments: [{
+                    type: 'tool',
+                    toolUseId: 't1',
+                    name: 'Bash',
+                    args: '{}',
+                    finished: true,
+                    result: 'Error: command not found: qaiq',
+                }],
+            },
+        });
+        expect(friendly).to.contain('Bash');
+        expect(friendly).to.contain('command not found: qaiq');
+    });
+
+    it('resolveAgentTurnFailureTechnicalContent prefers failed tool stderr', () => {
+        const technical = resolveAgentTurnFailureTechnicalContent({
+            role: 'agent',
+            content: '',
+            error: 'Bash failed: command not found',
+            segments: [{
+                type: 'tool',
+                toolUseId: 't1',
+                name: 'Bash',
+                args: '{}',
+                finished: true,
+                result: 'Error: command not found: qaiq',
+            }],
+        });
+        expect(technical).to.equal('Error: command not found: qaiq');
     });
 });

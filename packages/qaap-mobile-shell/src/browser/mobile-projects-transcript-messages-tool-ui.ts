@@ -78,7 +78,14 @@ export class MobileProjectsTranscriptMessagesToolUi {
         this.contentUi.renderTranscriptMarkdown(host, clean, { defer: options?.defer });
     }
 
-    createTranscriptAgentFailureDialog(error: string, technicalContent?: string): HTMLElement {
+    createTranscriptAgentFailureDialog(
+        error: string,
+        technicalContent?: string,
+        options?: {
+            readonly failedToolName?: string;
+            readonly onRetry?: () => void | Promise<void>;
+        },
+    ): HTMLElement {
         const formatted = formatStoredAgentFailureMessage(error);
         const details = document.createElement('details');
         details.className = 'theia-mobile-agent-shell-window theia-mod-failed theia-mod-turn-failure';
@@ -95,10 +102,20 @@ export class MobileProjectsTranscriptMessagesToolUi {
         icon.className = 'theia-mobile-agent-shell-icon codicon codicon-warning';
         icon.setAttribute('aria-hidden', 'true');
         iconWrap.append(icon);
+        const titleWrap = document.createElement('span');
+        titleWrap.className = 'theia-mobile-agent-turn-failure-title-wrap';
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-shell-title';
         label.textContent = nls.localize('qaap/mobileProjects/transcriptTurnFailed', 'Task failed');
-        summary.append(chevron, iconWrap, label);
+        titleWrap.append(label);
+        const failedToolName = options?.failedToolName?.trim();
+        if (failedToolName) {
+            const toolLine = document.createElement('span');
+            toolLine.className = 'theia-mobile-agent-turn-failure-tool';
+            toolLine.textContent = failedToolName;
+            titleWrap.append(toolLine);
+        }
+        summary.append(chevron, iconWrap, titleWrap);
         this.appendTranscriptShellSummaryTail(summary, {
             finished: true,
             failed: true,
@@ -122,6 +139,21 @@ export class MobileProjectsTranscriptMessagesToolUi {
                 this.contentUi.cleanTranscriptDisplayText(technical),
                 'theia-mobile-agent-shell-output',
             ));
+        }
+        if (options?.onRetry) {
+            const actions = document.createElement('div');
+            actions.className = 'theia-mobile-agent-activity-error-panel-actions theia-mobile-agent-turn-failure-actions';
+            const retryBtn = document.createElement('button');
+            retryBtn.type = 'button';
+            retryBtn.className = 'theia-mobile-agent-activity-error-panel-action theia-mod-retry codicon codicon-refresh';
+            retryBtn.textContent = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
+            retryBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void Promise.resolve(options.onRetry!());
+            });
+            actions.append(retryBtn);
+            body.append(actions);
         }
         details.append(summary, body);
         return details;

@@ -49,7 +49,7 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         for (const summary of this.conversations.listAllSummaries()) {
             const previous = this.priorStatus.get(summary.id);
             this.priorStatus.set(summary.id, summary.status);
-            if (previous !== 'streaming' || summary.status === 'streaming' || summary.status === 'failed') {
+            if (previous !== 'streaming' || summary.status === 'streaming') {
                 continue;
             }
             if (this.autopilotInFlight.has(summary.id)) {
@@ -75,7 +75,7 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             return;
         }
         await this.bootstrap.refreshFromCurrentWorkspace();
-        const readyUrl = await ensureTranscriptDevPreview(this.bootstrap);
+        const readyUrl = await ensureTranscriptDevPreview(this.bootstrap, { conversation });
         if (readyUrl) {
             await this.bootstrap.focusPreview().catch(() => undefined);
             return;

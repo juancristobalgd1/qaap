@@ -15,9 +15,8 @@ export interface QaapInteractiveApprovalOptions {
 
 /**
  * Whether a VPS agent run can pause mid-turn for tool permission approval.
- * True for "request approval", explicit YOLO-off, and "approve for me" when shell
- * or network are not both auto-approved — those presets still hit Bash/WebFetch
- * prompts that headless QAIQ cannot answer without the stdio control protocol.
+ * True for "request approval", explicit YOLO-off, and "approve for me" when shell is not
+ * auto-approved — without shell, headless QAIQ cannot run Bash without the stdio control protocol.
  */
 export function usesInteractiveAgentApprovals(options: QaapInteractiveApprovalOptions): boolean {
     if (options.autoApprove === false || options.approvalPolicyId === 'request-approval') {
@@ -30,6 +29,10 @@ export function usesInteractiveAgentApprovals(options: QaapInteractiveApprovalOp
         return false;
     }
     const rules = reconcileAgentToolApprovalRules(policyId, options.cwd, options.toolApprovalRules);
+    // approve-for-me with shell auto uses headless QAIQ --allowed-tools (incl. Bash), not stdio control.
+    if (policyId === 'approve-for-me' && rules.shell === true) {
+        return false;
+    }
     return !(rules.shell && rules.network);
 }
 

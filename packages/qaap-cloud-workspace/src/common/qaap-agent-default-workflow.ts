@@ -41,11 +41,20 @@ export function buildAgentParallelToolsPromptBlock(): string {
     ].join('\n');
 }
 
-export function buildAgentDefaultWorkflowPromptBlock(): string {
+export interface QaapAgentDefaultWorkflowOptions {
+    /** When false, omit git-status/branch instructions (ephemeral workspaces without `.git`). */
+    readonly gitAvailable?: boolean;
+}
+
+export function buildAgentDefaultWorkflowPromptBlock(options: QaapAgentDefaultWorkflowOptions = {}): string {
+    const gitAvailable = options.gitAvailable !== false;
+    const gitLine = gitAvailable
+        ? 'Use the current repository context, inspect git status before changing files, and create or use an appropriate branch for the task.'
+        : 'This workspace may not be a git repository yet — skip branch, PR, and git-history steps; implement the requested change directly in the workspace.';
     return [
         DEFAULT_WORKFLOW_MARKER,
         'For coding tasks, work toward a reviewable pull request by default unless the user asks for a different outcome.',
-        'Use the current repository context, inspect git status before changing files, and create or use an appropriate branch for the task.',
+        gitLine,
         'Start every task by using Read, Glob, or Grep on the repository — never end a turn with only planning/thinking text.',
         'Implement the change, run the most relevant verification you can find, and summarize the result with changed files and test status.',
         'When GitHub credentials and remotes are available, push the branch and open or update a PR. Otherwise leave the branch PR-ready and state the exact next command or blocker.',
@@ -63,11 +72,15 @@ export function buildAgentDevPreviewPromptBlock(): string {
     ].join('\n');
 }
 
-export function appendAgentDefaultWorkflowToPrompt(prompt: string, agentId: string): string {
+export function appendAgentDefaultWorkflowToPrompt(
+    prompt: string,
+    agentId: string,
+    options: QaapAgentDefaultWorkflowOptions = {},
+): string {
     if (agentId === SHELL_AGENT_ID || prompt.includes(DEFAULT_WORKFLOW_MARKER)) {
         return prompt;
     }
-    const blocks = [buildAgentDefaultWorkflowPromptBlock()];
+    const blocks = [buildAgentDefaultWorkflowPromptBlock(options)];
     if (!prompt.includes(PARALLEL_TOOLS_MARKER)) {
         blocks.push(buildAgentParallelToolsPromptBlock());
     }

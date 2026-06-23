@@ -79,8 +79,9 @@ export function appendStickyComposerWorkspaceContextField(
     bar: HTMLElement,
     pill: HTMLButtonElement,
     kind: StickyComposerWorkspaceFieldKind,
+    options?: { readonly divider?: boolean },
 ): void {
-    if (bar.childElementCount > 0) {
+    if (bar.childElementCount > 0 && options?.divider !== false) {
         appendStickyComposerContextDivider(bar);
     }
     const field = document.createElement('div');

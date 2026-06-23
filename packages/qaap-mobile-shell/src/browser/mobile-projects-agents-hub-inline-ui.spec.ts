@@ -53,7 +53,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
 
     function createHost(overrides: Partial<MobileProjectsAgentsHubInlineHost> = {}): MobileProjectsAgentsHubInlineHost {
         const scroll = document.createElement('div');
-        return {
+        const { projectsService: projectsServiceOverride, ...restOverrides } = overrides;
+        const base: MobileProjectsAgentsHubInlineHost = {
             homeMode: true,
             hubView: 'tasks',
             visible: true,
@@ -108,7 +109,10 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             tasksHubUi: {} as MobileProjectsAgentsHubInlineHost['tasksHubUi'],
             headerExecutionTabsHost: document.createElement('div'),
             preparedCwdByProjectId: new Map(),
-            projectsService: {} as MobileProjectsAgentsHubInlineHost['projectsService'],
+            projectsService: {
+                resolveCurrentWorkspaceProject: () => undefined,
+                getProjectCwd: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['projectsService'],
             transcriptSheetUi: {} as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
             executionSurfaceTabsUi: {} as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
             transcriptComposerUi: {} as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
@@ -134,7 +138,15 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             onNewClick: async () => undefined,
             onStartNewProject: async () => undefined,
             onOpenLocalWorkspaceFolder: async () => undefined,
-            ...overrides,
+        };
+        return {
+            ...base,
+            ...restOverrides,
+            projectsService: {
+                resolveCurrentWorkspaceProject: () => undefined,
+                getProjectCwd: () => undefined,
+                ...(projectsServiceOverride as object | undefined),
+            } as unknown as MobileProjectsAgentsHubInlineHost['projectsService'],
         };
     }
 

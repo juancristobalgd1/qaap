@@ -46,4 +46,26 @@ describe('qaap-sticky-composer-workspace-bar', () => {
         expect(bar.querySelector('.theia-mod-branch')).to.not.equal(null);
         expect(bar.querySelector('.theia-mod-destination')).to.not.equal(null);
     });
+
+    it('omits the divider when appendStickyComposerWorkspaceContextField divider is false', () => {
+        const bar = renderStickyComposerWorkspaceBar({
+            view: { projectName: 'Demo', branchName: 'main' },
+            includeProject: false,
+            onOpenProject: () => undefined,
+            onOpenBranch: () => undefined,
+        });
+        appendStickyComposerWorkspaceContextField(
+            bar,
+            createStickyComposerWorkspacePill({
+                iconClass: 'codicon-device-desktop',
+                label: 'Local',
+                ariaLabel: 'Run in: Local',
+                fieldKind: 'destination',
+                onClick: () => undefined,
+            }),
+            'destination',
+            { divider: false },
+        );
+        expect(bar.querySelectorAll('.theia-mobile-projects-sticky-composer-context-divider').length).to.equal(0);
+    });
 });

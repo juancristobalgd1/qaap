@@ -23,6 +23,8 @@
     "ui-tests": "npm run build && playwright test --config=./configs/playwright.config.ts",
     "ui-tests:qaap-mobile": "npm run build && playwright test --config=./configs/playwright.qaap-mobile.config.ts --grep @qaap-mobile",
     "rioja-e2e-eval": "node scripts/qaap-rioja-e2e-eval.mjs",
+    "rioja-ui-flow-eval": "node scripts/qaap-rioja-ui-flow-eval.mjs",
+    "rioja-agent-e2e": "node scripts/qaap-rioja-ui-flow-eval.mjs && node scripts/qaap-rioja-e2e-eval.mjs",
     "ui-tests-electron": "npm run build && cross-env USE_ELECTRON=true playwright test --config=./configs/playwright.config.ts",
     "ui-tests-ci": "npm run build && playwright test --config=./configs/playwright.ci.config.ts",
     "ui-tests-headful": "npm run build && playwright test --config=./configs/playwright.headful.config.ts",

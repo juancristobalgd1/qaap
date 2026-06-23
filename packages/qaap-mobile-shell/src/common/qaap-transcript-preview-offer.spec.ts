@@ -139,7 +139,7 @@ describe('qaap-transcript-preview-offer', () => {
         expect(transcriptPreviewProbePorts(conv)[0]).to.equal(5173);
     });
 
-    it('transcriptPreviewProbePorts skips default ports while agent is still working', () => {
+    it('transcriptPreviewProbePorts includes default ports when user requested preview', () => {
         const conv: QaapAgentConversationDTO = {
             id: 'c4',
             cwd: '/repo',
@@ -152,6 +152,34 @@ describe('qaap-transcript-preview-offer', () => {
                 id: 'u1',
                 role: 'user',
                 content: 'levanta la app',
+                createdAt: 1,
+            }, {
+                id: 'a1',
+                role: 'agent',
+                content: '',
+                createdAt: 2,
+                segments: [{
+                    type: 'thinking',
+                    content: 'Revisando el proyecto…',
+                }],
+            }],
+        };
+        expect(transcriptPreviewProbePorts(conv)[0]).to.equal(5173);
+    });
+
+    it('transcriptPreviewProbePorts skips default ports mid-turn without preview intent', () => {
+        const conv: QaapAgentConversationDTO = {
+            id: 'c4b',
+            cwd: '/repo',
+            agentId: 'qaiq',
+            title: 'Run',
+            status: 'streaming',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'Añade una sección FAQ al footer',
                 createdAt: 1,
             }, {
                 id: 'a1',

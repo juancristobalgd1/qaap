@@ -11,6 +11,7 @@ import {
 } from '../common/qaap-agent-conversation-client';
 import {
     buildAgentsHubIdleConversationSummary,
+    isAgentsHubIdleConversationSummary,
     QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
 } from '../common/qaap-agents-hub-landing';
@@ -190,8 +191,17 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined {
-        if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject) {
+        const openSummary = this.host.transcriptOpenSummary;
+        const hasLiveTranscript = this.host.agentsHubInlineActive
+            && this.host.transcriptOpenProject
+            && openSummary
+            && !isAgentsHubIdleConversationSummary(openSummary);
+        if (hasLiveTranscript) {
             return this.host.transcriptOpenProject;
+        }
+        const fromWorkspace = this.host.projectsService.resolveCurrentWorkspaceProject(this.host.projects);
+        if (fromWorkspace) {
+            return fromWorkspace;
         }
         if (this.host.agentsHubSelectedProjectId) {
             const selected = this.host.projects.find(project => project.id === this.host.agentsHubSelectedProjectId);

@@ -315,8 +315,11 @@ export class MobileProjectsHomeHubUi {
     }
 
     resolveHomePinnedProject(): MobileProjectEntry | undefined {
-        return this.host.projects.find(project => project.isCurrent)
-            ?? this.host.projects.find(project => project.pinned)
+        const fromWorkspace = this.host.projectsService.resolveCurrentWorkspaceProject(this.host.projects);
+        if (fromWorkspace) {
+            return fromWorkspace;
+        }
+        return this.host.projects.find(project => project.pinned)
             ?? this.host.projects[0];
     }
 

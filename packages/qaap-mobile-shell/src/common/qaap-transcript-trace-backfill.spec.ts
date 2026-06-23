@@ -8,6 +8,7 @@ import {
     backfillAgentMessageTraceEvents,
     backfillConversationTraceEvents,
     compactAgentMessageTraceStorage,
+    materializeAgentMessageForApi,
     preferTraceFirstAgentMessageStorage,
     settleTraceEvents,
 } from './qaap-transcript-trace-backfill';
@@ -118,5 +119,21 @@ describe('qaap-transcript-trace-backfill', () => {
         });
         expect(compact.segments).to.equal(undefined);
         expect(compact.traceEvents?.[0]?.type).to.equal('assistant_text');
+    });
+
+    it('materializeAgentMessageForApi derives content and legacy segments from traceEvents', () => {
+        const materialized = materializeAgentMessageForApi({
+            id: 'a1',
+            role: 'agent',
+            content: '',
+            createdAt: 1,
+            traceEvents: [
+                { type: 'thought', id: 'thought-0', content: 'Planning', status: 'completed' },
+                { type: 'tool_call', id: 'tool-1', name: 'Write', args: '{}', status: 'completed' },
+                { type: 'assistant_text', id: 'text-0', content: 'Landing creada.', status: 'completed' },
+            ],
+        });
+        expect(materialized.content).to.equal('Landing creada.');
+        expect(materialized.segments?.some(segment => segment.type === 'tool' && segment.name === 'Write')).to.equal(true);
     });
 });

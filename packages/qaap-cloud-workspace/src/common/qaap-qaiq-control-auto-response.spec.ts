@@ -8,6 +8,7 @@ import { resolveQaiqControlRequestAutoAction } from './qaap-qaiq-control-auto-re
 
 describe('qaap-qaiq-control-auto-response', () => {
     const approveForMeCommand = 'qaiq --permission-mode default --allowed-tools Read,Grep,Glob,LS,Edit,Write,NotebookEdit';
+    const approveForMeShellCommand = 'qaiq --permission-mode default --allowed-tools Read,Grep,Glob,LS,Edit,Write,NotebookEdit,Bash';
 
     it('queues manual approvals when auto-approve is off', () => {
         expect(resolveQaiqControlRequestAutoAction(approveForMeCommand, false, {
@@ -17,13 +18,20 @@ describe('qaap-qaiq-control-auto-response', () => {
     });
 
     it('queues WebSearch under approve-for-me allowed-tools so the user can grant it', () => {
-        expect(resolveQaiqControlRequestAutoAction(approveForMeCommand, true, {
+        expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, true, {
             requestId: 'req-1',
             toolName: 'WebSearch',
         })).to.equal('queue');
     });
 
-    it('queues Bash under approve-for-me allowed-tools so the user can grant it', () => {
+    it('allows Bash when shell scope is enabled in approve-for-me allowed-tools', () => {
+        expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, true, {
+            requestId: 'req-1',
+            toolName: 'Bash',
+        })).to.equal('allow');
+    });
+
+    it('queues Bash when shell scope is disabled in approve-for-me allowed-tools', () => {
         expect(resolveQaiqControlRequestAutoAction(approveForMeCommand, true, {
             requestId: 'req-1',
             toolName: 'Bash',

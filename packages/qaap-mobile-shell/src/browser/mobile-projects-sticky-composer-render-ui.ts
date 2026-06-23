@@ -408,6 +408,9 @@ export class MobileProjectsStickyComposerRenderUi {
                     approvalPolicyId: showApprovalPolicy
                         ? reconcileAgentApprovalPolicyId(this.host.stickyComposerApprovalPolicyId, cwd)
                         : undefined,
+                    toolApprovalRules: showApprovalPolicy
+                        ? this.host.stickyComposerToolApprovalRules
+                        : undefined,
                     agentModel: readStoredAgentModel(cwd, selectedAgentId),
                 });
                 void done.finally(() => this.renderStickyComposer());

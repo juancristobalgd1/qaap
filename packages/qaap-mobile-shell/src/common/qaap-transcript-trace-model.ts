@@ -252,3 +252,18 @@ export function resolveAgentMessageSegments(
     }
     return resolveQaapTranscriptTrace(message as QaapAgentMessageDTO).segments;
 }
+
+/** Plain reply text for list previews and REST consumers — prefers stored content, then assistant_text rows. */
+export function resolveAgentMessageDisplayContent(
+    message: Pick<QaapAgentMessageDTO, 'content' | 'traceEvents' | 'segments' | 'role'>,
+): string {
+    if (message.content?.trim()) {
+        return message.content.trim();
+    }
+    const text = resolveQaapTranscriptTrace(message as QaapAgentMessageDTO).events
+        .filter((event): event is Extract<QaapTranscriptTraceEventDTO, { type: 'assistant_text' }> => event.type === 'assistant_text')
+        .map(event => event.content.trim())
+        .filter(Boolean)
+        .join('\n\n');
+    return text.trim();
+}

@@ -1501,6 +1501,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
+            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
@@ -1521,6 +1522,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
+            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
@@ -1600,6 +1602,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
+            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: AIVariableResolutionRequest[];
@@ -1792,6 +1795,15 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.conversations?.recordSnapshot({ ...summary, status: 'streaming', updatedAt: Date.now() });
         this.renderList();
         void this.transcriptLiveUi.resyncOpenTranscriptStreamAfterTimeout(project, summary);
+    }
+
+    retryOpenFailedConversationTask(): void {
+        const project = this.transcriptController.state.transcriptOpenProject;
+        const summary = this.transcriptController.state.transcriptOpenSummary;
+        if (!project || !summary || summary.status !== 'failed') {
+            return;
+        }
+        void this.onRetryConversation(project, summary);
     }
 
     protected async onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void> {

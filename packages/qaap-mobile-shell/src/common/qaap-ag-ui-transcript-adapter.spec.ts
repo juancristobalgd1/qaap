@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { applyQaapJsonPatch } from './qaap-ag-ui-json-patch';
 import {
     QAAP_AG_UI_AGENT_TRACE_ACTIVITY_TYPE,
+    buildAgentMessageFromAgUiStructuredLog,
     createQaapAgUiTraceReducer,
     reduceQaapAgUiTranscriptEvent,
 } from './qaap-ag-ui-transcript-adapter';
@@ -134,5 +135,18 @@ describe('qaap-ag-ui-transcript-adapter', () => {
         }, options);
         expect(patched.next).to.equal(state);
         expect(patched.delta.kind).to.equal('noop');
+    });
+
+    it('buildAgentMessageFromAgUiStructuredLog replays mock QAIQ assistant NDJSON', () => {
+        const log = [
+            '{"type":"system","subtype":"init","cwd":"/tmp/ws","session_id":"mock","tools":["Write"],"model":"mock"}',
+            '{"type":"assistant","timestamp_ms":1,"message":{"content":[{"type":"thinking","thinking":"Plan"}]}}',
+            '{"type":"assistant","timestamp_ms":2,"message":{"content":[{"type":"tool_use","id":"tu1","name":"Write","input":{"file_path":"index.html"}}]}}',
+            '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"ok"}]}}',
+            '{"type":"assistant","timestamp_ms":3,"message":{"content":[{"type":"text","text":"Hecho."}]}}',
+        ].join('\n');
+        const message = buildAgentMessageFromAgUiStructuredLog('qaiq', 'agent-1', 1, log);
+        expect(message?.content).to.equal('Hecho.');
+        expect(message?.traceEvents?.some(event => event.type === 'tool_call' && event.name === 'Write')).to.equal(true);
     });
 });

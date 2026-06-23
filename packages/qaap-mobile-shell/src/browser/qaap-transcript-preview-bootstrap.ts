@@ -4,21 +4,30 @@
 // *****************************************************************************
 
 import { normalizePreviewUrlForSameOrigin, parsePreviewProxyPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
 import { resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
+import {
+    resolveReadyTranscriptPreviewUrlFromProbe,
+    type TranscriptPreviewPortProbeResult,
+} from '../common/qaap-transcript-preview-offer';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { probeQaapDevPreviewPort, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 
 const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);
 const BOOTSTRAP_PREVIEW_WAIT_MS = 180_000;
-const PROBE_POLL_ATTEMPTS = 90;
-const PROBE_POLL_INTERVAL_MS = 500;
+const PROBE_POLL_ATTEMPTS = 60;
+const PROBE_POLL_INTERVAL_MS = 250;
+/** Common Vite/Next ports when the scaffold kind implies a dev server but no hint was printed yet. */
+const DEFAULT_SCAFFOLD_PROBE_PORTS = [5173, 5174, 3000, 4173, 8080];
 
 export interface EnsureTranscriptDevPreviewOptions {
     readonly portHint?: number;
     readonly previewUrlHint?: string;
     /** When set, only wait for an hinted port — never start bootstrap install/dev. */
     readonly waitForHintOnly?: boolean;
+    /** When set, probe transcript-derived ports before spawning install/dev. */
+    readonly conversation?: QaapAgentConversationDTO;
 }
 
 /** Parses a proxied or direct localhost preview URL into a dev-server port. */
@@ -48,6 +57,59 @@ async function probeReadyPreviewUrl(port: number): Promise<string | undefined> {
         return undefined;
     }
     return normalizePreviewUrlForSameOrigin(probe.previewUrl);
+}
+
+async function probeTranscriptConversationPorts(
+    conversation: QaapAgentConversationDTO | undefined,
+): Promise<string | undefined> {
+    if (!conversation) {
+        return undefined;
+    }
+    return resolveReadyTranscriptPreviewUrlFromProbe(
+        conversation,
+        async (port: number): Promise<TranscriptPreviewPortProbeResult> => {
+            const probe = await probeQaapDevPreviewPort(port);
+            return {
+                ready: probe.ready,
+                previewUrl: normalizePreviewUrlForSameOrigin(probe.previewUrl),
+            };
+        },
+    );
+}
+
+function collectBootstrapProbePorts(
+    bootstrap: QaapProjectBootstrapService,
+): readonly number[] {
+    const snapshot = bootstrap.getStateSnapshot();
+    const ports: number[] = [];
+    const push = (port: number | undefined): void => {
+        if (port !== undefined && !ports.includes(port)) {
+            ports.push(port);
+        }
+    };
+    push(snapshot.existingServerPort);
+    push(snapshot.lastPort);
+    push(snapshot.selectedApp?.expectedPort);
+    push(snapshot.descriptor?.expectedPort);
+    for (const app of snapshot.descriptor?.apps ?? []) {
+        push(app.expectedPort);
+    }
+    for (const port of DEFAULT_SCAFFOLD_PROBE_PORTS) {
+        push(port);
+    }
+    return ports;
+}
+
+async function probeBootstrapListeningPorts(
+    bootstrap: QaapProjectBootstrapService,
+): Promise<string | undefined> {
+    for (const port of collectBootstrapProbePorts(bootstrap)) {
+        const readyUrl = await probeReadyPreviewUrl(port);
+        if (readyUrl) {
+            return readyUrl;
+        }
+    }
+    return undefined;
 }
 
 function waitForBootstrapPreviewUrl(
@@ -82,6 +144,11 @@ export async function ensureTranscriptDevPreview(
     bootstrap: QaapProjectBootstrapService,
     options: EnsureTranscriptDevPreviewOptions = {},
 ): Promise<string | undefined> {
+    const fromConversation = await probeTranscriptConversationPorts(options.conversation);
+    if (fromConversation) {
+        return fromConversation;
+    }
+
     const portHint = options.portHint ?? extractDevPreviewPortFromUrl(options.previewUrlHint);
 
     if (portHint !== undefined) {
@@ -108,6 +175,11 @@ export async function ensureTranscriptDevPreview(
     }
     if (!snapshot.descriptor) {
         return undefined;
+    }
+
+    const alreadyListening = await probeBootstrapListeningPorts(bootstrap);
+    if (alreadyListening) {
+        return alreadyListening;
     }
 
     if (snapshot.previewUrl && snapshot.phase === 'running') {

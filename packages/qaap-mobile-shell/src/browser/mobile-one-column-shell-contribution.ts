@@ -1590,18 +1590,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     protected async resolveCurrentProjectForAgent(): Promise<MobileProjectEntry | undefined> {
         try {
             const projects = await this.projectsService.loadProjects();
-            const currentName = this.projectsService.getCurrentWorkspaceName()?.toLowerCase();
-            const currentCwd = this.projectsService.getCurrentWorkspaceCwd()?.toLowerCase();
-            return projects.find(project => project.isCurrent)
-                ?? projects.find(project => this.projectsService.projectMatchesCurrentWorkspace(project))
-                ?? projects.find(project => !!currentName && project.name.toLowerCase() === currentName)
-                ?? projects.find(project => {
-                    if (!currentCwd) {
-                        return false;
-                    }
-                    const projectCwd = this.projectsService.getProjectCwd(project)?.toLowerCase();
-                    return !!projectCwd && projectCwd === currentCwd;
-                });
+            return this.projectsService.resolveCurrentWorkspaceProject(projects);
         } catch {
             return undefined;
         }
@@ -1741,7 +1730,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 await this.projectBootstrap.runInstall();
                 return;
             }
-            if (descriptor?.devCommand && (phase === 'ready-to-run' || phase === 'starting' || phase === 'run-failed')) {
+            if (this.projectBootstrap.hasRunnableDevPlan()
+                && (phase === 'ready-to-run' || phase === 'starting' || phase === 'run-failed')) {
                 await this.projectBootstrap.runDevServer();
                 return;
             }

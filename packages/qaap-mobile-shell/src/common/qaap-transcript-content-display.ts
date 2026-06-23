@@ -54,3 +54,62 @@ export function isTranscriptErrorOutput(content: string): boolean {
         || /^(?:\w+)?(?:Error|Exception):\s/m.test(content)
         || /^\s*at\s+(?:\S+\.)?\S+\s*\(/m.test(content);
 }
+
+/** Path-like stdout line from Glob/Grep/LS — not an error summary. */
+export function isLikelyToolResultPathLine(line: string): boolean {
+    const trimmed = line.trim();
+    if (!trimmed) {
+        return false;
+    }
+    if (/^\(.*Results are truncated/i.test(trimmed)) {
+        return true;
+    }
+    if (/^[\w./-]*node_modules\//.test(trimmed) || /\/node_modules\//.test(trimmed)) {
+        return true;
+    }
+    if (/^(?:package\.json|index\.html|src\/|README(?:\.md)?)$/i.test(trimmed)) {
+        return true;
+    }
+    if (/^[\w./-]+\.(?:js|ts|tsx|jsx|mjs|cjs|json|md|css|html|txt|yml|yaml|map)$/i.test(trimmed)) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Whether a finished tool's stdout/stderr indicates failure.
+ * Ignores {@code error} substrings inside file paths (e.g. css-syntax-error.js).
+ */
+export function isAgentToolResultFailure(result: string | undefined): boolean {
+    if (!result?.trim()) {
+        return false;
+    }
+    if (/tool_use_error|InputValidationError/i.test(result)) {
+        return true;
+    }
+    if (isTranscriptErrorOutput(result)) {
+        return true;
+    }
+    if (/\b(?:exit\s+code|exited with (?:code )?)\s*[1-9]\d*\b/i.test(result)) {
+        return true;
+    }
+    if (/\bfatal:\s/i.test(result)) {
+        return true;
+    }
+    if (/\bcommand not found\b/i.test(result)) {
+        return true;
+    }
+    for (const line of result.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || isLikelyToolResultPathLine(trimmed)) {
+            continue;
+        }
+        if (/^(?:Error|Fatal):\s/i.test(trimmed)) {
+            return true;
+        }
+        if (/\b(error|failed|failure)\b/i.test(trimmed) && !/\b0\s+failed\b/i.test(trimmed)) {
+            return true;
+        }
+    }
+    return false;
+}

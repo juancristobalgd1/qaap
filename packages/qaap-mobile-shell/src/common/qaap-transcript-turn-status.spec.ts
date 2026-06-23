@@ -228,4 +228,29 @@ describe('qaap-transcript-turn-status', () => {
         expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'settled' }, undefined)).to.equal(false);
         expect(isTranscriptSummaryAgentWorking(summary, undefined)).to.equal(true);
     });
+
+    it('resolveTranscriptEffectiveStatus keeps failed over unfinished trace work', () => {
+        const failedWithRunningTool = conv({
+            status: 'failed',
+            messages: [
+                { id: 'u1', role: 'user', content: 'run tests', createdAt: 1 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: '',
+                    createdAt: 2,
+                    error: 'Bash failed: command not found',
+                    segments: [{
+                        type: 'tool',
+                        toolUseId: 't1',
+                        name: 'Bash',
+                        args: '{"command":"npm test"}',
+                        finished: false,
+                    }],
+                },
+            ],
+        });
+        expect(resolveTranscriptEffectiveStatus(failedWithRunningTool)).to.equal('failed');
+        expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'failed' }, failedWithRunningTool)).to.equal(false);
+    });
 });

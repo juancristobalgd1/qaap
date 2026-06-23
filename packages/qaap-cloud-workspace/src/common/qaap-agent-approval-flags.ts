@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { usesInteractiveAgentApprovals } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-interactive-approvals';
+
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import {
     formatQaiqInteractionFlags,
@@ -19,7 +19,7 @@ import type { QaapAgentToolApprovalRules } from './qaap-agent-conversation';
 export type { QaapAgentToolApprovalRules };
 
 export const DEFAULT_APPROVE_FOR_ME_TOOL_RULES: QaapAgentToolApprovalRules = {
-    shell: false,
+    shell: true,
     network: false,
 };
 
@@ -55,11 +55,20 @@ export function shouldUseInteractiveAgentApprovals(options: QaapAgentApprovalFla
 
 /** QAIQ headless runs need stdio pause-and-wait whenever shell/network are not fully bypassed. */
 export function shouldUseQaiqStdioApprovals(options: QaapAgentApprovalFlagOptions): boolean {
-    return usesInteractiveAgentApprovals({
-        approvalPolicyId: options.approvalPolicyId,
-        autoApprove: options.autoApprove,
-        toolApprovalRules: options.toolApprovalRules,
-    });
+    if (shouldUseInteractiveAgentApprovals(options)) {
+        return true;
+    }
+    const policyId = options.approvalPolicyId ?? 'approve-for-me';
+    if (policyId === 'full-access') {
+        return false;
+    }
+    const rules = resolveEffectiveToolApprovalRules(policyId, options.toolApprovalRules)
+        ?? DEFAULT_APPROVE_FOR_ME_TOOL_RULES;
+    // Match applyAgentApprovalPolicyToCommand: approve-for-me + shell auto uses --allowed-tools Bash.
+    if (policyId === 'approve-for-me' && rules.shell === true) {
+        return false;
+    }
+    return !(rules.shell && rules.network);
 }
 
 /**

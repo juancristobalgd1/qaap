@@ -4,6 +4,9 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import { isAgentToolResultFailure, isTranscriptErrorOutput } from './qaap-transcript-content-display';
+import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
 export type QaapAgentFailureKind =
     | 'quota'
@@ -255,10 +258,86 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
     return trimmed;
 }
 
+export interface QaapAgentFailedToolContext {
+    readonly name: string;
+    readonly args?: string;
+    readonly result?: string;
+    readonly exitCode?: number;
+}
+
 export interface QaapAgentTurnFailureOptions {
     readonly log?: string;
     readonly state?: QaapAgentTurnFailureState;
     readonly exitCode?: number;
+    readonly agentMessage?: Pick<QaapAgentMessageDTO, 'segments' | 'traceEvents' | 'role' | 'content'>;
+}
+
+function parseExitCodeFromToolResult(result: string | undefined): number | undefined {
+    if (!result?.trim()) {
+        return undefined;
+    }
+    const match = /(?:exit(?:\s+code)?|code)\s*[:=]?\s*(\d+)/i.exec(result)
+        ?? /exited with (?:code )?(\d+)/i.exec(result);
+    if (!match) {
+        return undefined;
+    }
+    const code = Number(match[1]);
+    return Number.isFinite(code) ? code : undefined;
+}
+
+function isFailedToolSegment(
+    segment: { readonly finished?: boolean; readonly result?: string },
+): boolean {
+    if (!segment.finished) {
+        return false;
+    }
+    const result = segment.result?.trim() ?? '';
+    if (!result) {
+        return true;
+    }
+    return isAgentToolResultFailure(result) || isTranscriptErrorOutput(result);
+}
+
+/** Last tool call that likely caused the turn failure — prefers traceEvents/segments on the agent message. */
+export function extractLastFailedToolFromMessage(
+    message: Pick<QaapAgentMessageDTO, 'segments' | 'traceEvents' | 'role' | 'content'> | undefined,
+): QaapAgentFailedToolContext | undefined {
+    if (!message || message.role !== 'agent') {
+        return undefined;
+    }
+    const segments = resolveAgentMessageSegments(message);
+    for (let index = segments.length - 1; index >= 0; index--) {
+        const segment = segments[index];
+        if (segment.type !== 'tool' || !isFailedToolSegment(segment)) {
+            continue;
+        }
+        const result = segment.result?.trim() ?? '';
+        return {
+            name: segment.name,
+            args: segment.args,
+            result: result || undefined,
+            exitCode: parseExitCodeFromToolResult(result),
+        };
+    }
+    return undefined;
+}
+
+/** Technical body for failure details — prefers persisted content, then failed tool stdout/stderr. */
+export function resolveAgentTurnFailureTechnicalContent(
+    message: Pick<QaapAgentMessageDTO, 'content' | 'segments' | 'traceEvents' | 'role' | 'error'> | undefined,
+    log?: string,
+): string | undefined {
+    const persisted = message?.content?.trim();
+    const summary = message?.error?.trim();
+    if (persisted && persisted !== summary) {
+        return persisted;
+    }
+    const failedTool = extractLastFailedToolFromMessage(message);
+    if (failedTool?.result?.trim()) {
+        return failedTool.result;
+    }
+    const trimmedLog = log?.trim();
+    return trimmedLog || undefined;
 }
 
 /**
@@ -281,6 +360,37 @@ export function resolveAgentTurnFailureMessage(
             'qaap/agentFailure/logHint',
             'The agent hit an error: {0}',
             logHint,
+        );
+    }
+    const failedTool = extractLastFailedToolFromMessage(resolvedOptions.agentMessage);
+    if (failedTool) {
+        const toolLog = failedTool.result ?? log;
+        const toolKind = detectAgentFailureKind(toolLog);
+        if (toolKind) {
+            return localizeAgentFailureMessage(toolKind);
+        }
+        const toolHint = extractAgentLogFailureHint(toolLog);
+        if (toolHint) {
+            return nls.localize(
+                'qaap/agentFailure/toolFailedWithHint',
+                '{0} failed: {1}',
+                failedTool.name,
+                toolHint,
+            );
+        }
+        const exitCode = failedTool.exitCode ?? resolvedOptions.exitCode;
+        if (exitCode !== undefined && exitCode !== 0) {
+            return nls.localize(
+                'qaap/agentFailure/toolExitCode',
+                '{0} exited with code {1}.',
+                failedTool.name,
+                exitCode,
+            );
+        }
+        return nls.localize(
+            'qaap/agentFailure/toolFailedGeneric',
+            '{0} did not complete successfully.',
+            failedTool.name,
         );
     }
     if (resolvedOptions.state) {

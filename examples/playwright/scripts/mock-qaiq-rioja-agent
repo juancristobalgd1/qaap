@@ -60,19 +60,45 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     exit 0
 fi
 
-if [[ "${1:-}" != "--print" ]]; then
-    echo "mock-qaiq-rioja-agent: unsupported invocation: $*" >&2
+has_flag() {
+    local needle="$1"
+    shift
+    for arg in "$@"; do
+        if [[ "$arg" == "$needle" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+if ! has_flag --print "$@"; then
+    echo "mock-qaiq-rioja-agent: unsupported invocation (missing --print): $*" >&2
     exit 1
 fi
 
-PROMPT="${@: -1}"
+if has_flag --input-format "$@"; then
+  PROMPT="$(cat)"
+else
+  PROMPT="${@: -1}"
+fi
 PROMPT="${PROMPT#\'}"
 PROMPT="${PROMPT%\'}"
 
+if [[ -z "${PROMPT//[[:space:]]/}" ]]; then
+    echo "mock-qaiq-rioja-agent: empty prompt" >&2
+    exit 1
+fi
 emit_json '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"mock-rioja","tools":["Write","Bash"],"model":"mock/qaiq-rioja"}'
 
+# Qaap injects operating rules (e.g. "sin frameworks") into the task context — match user intent only.
+USER_PROMPT="$PROMPT"
+while [[ "$USER_PROMPT" == *"---"* ]]; do
+    USER_PROMPT="${USER_PROMPT##*---}"
+    USER_PROMPT="${USER_PROMPT#"${USER_PROMPT%%[![:space:]]*}"}"
+done
+
 VANILLA_MODE=0
-if printf '%s' "$PROMPT" | grep -Eiq 'vanilla|html \+ css|html\+css|sin frameworks|sin dependencias|no frameworks|no dependencies|no bundler|no npm'; then
+if printf '%s' "$USER_PROMPT" | grep -Eiq 'vanilla|html \+ css|html\+css|sin frameworks|sin dependencias|no frameworks|no dependencies|no bundler|no npm'; then
     VANILLA_MODE=1
 fi
 

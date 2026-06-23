@@ -151,7 +151,11 @@ export class MobileProjectsComposerHeaderUi {
         if (this.host.shouldUseAgentsHubLanding()) {
             return this.host.resolveHomePinnedProject();
         }
-        return this.host.projectNavigationUi.resolveSelectedProject(projects);
+        const fromExpanded = this.host.projectNavigationUi.resolveSelectedProject(projects);
+        if (fromExpanded) {
+            return fromExpanded;
+        }
+        return this.host.projectsService.resolveCurrentWorkspaceProject(projects);
     }
 
     preferComposerSurface(surface: QaapComposerSurface, projectCwd?: string): void {
