@@ -234,16 +234,22 @@ describe('qaap-transcript-timeline-render-bench', () => {
         const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
         expect(details).to.not.equal(null);
 
-        // Simulate that the thinking was previously shown live (auto-expanded).
-        // This sets the condition that used to cause the re-open bug: the old
-        // code would re-open the details on every sync because the toggle
-        // handler cleared `thinkingUserExpanded` on close.
+        // Simulate the state that occurs after the thinking was auto-expanded
+        // live and then the user collapsed it:
+        // - `thinkingWasLive='1'`: the sync previously auto-expanded it.
+        // - `thinkingUserToggled='1'`: the user manually collapsed it.
+        // - `open=false`: the details is currently collapsed.
+        // The old code cleared `thinkingUserExpanded` on close, so the next
+        // sync would re-open because `thinkingWasLive='1'`. The new code uses
+        // `thinkingUserToggled` which is never cleared, so the user's choice
+        // is respected.
         details!.dataset.thinkingWasLive = '1';
+        details!.dataset.thinkingUserToggled = '1';
+        details!.open = false;
 
-        // Patch with changed segments to force a sync — the thinking should
-        // auto-expand (programmatic toggle, not user toggle).
-        const expandedSegments: QaapAgentMessageSegmentDTO[] = [
-            { type: 'thinking', content: 'Planning the work.' },
+        // Patch with changed thinking content to force a per-item sync.
+        const patchedSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work. Now let me read the file.' },
             {
                 type: 'tool',
                 name: 'Read',
@@ -253,21 +259,40 @@ describe('qaap-transcript-timeline-render-bench', () => {
                 finished: true,
             },
         ];
-        artifactsUi.patchStreamingActivityTimeline(row, expandedSegments);
-        const detailsAfterExpand = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        expect(detailsAfterExpand?.open).to.equal(true);
-        expect(detailsAfterExpand?.dataset.thinkingUserToggled).to.equal(undefined);
-        const copyAfterExpand = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
-        expect(copyAfterExpand?.classList.contains('theia-mod-thinking-open')).to.equal(true);
+        artifactsUi.patchStreamingActivityTimeline(row, patchedSegments);
+        const detailsAfterPatch = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        // The user's collapse must be respected — no re-open.
+        expect(detailsAfterPatch?.open).to.equal(false);
+        expect(detailsAfterPatch?.dataset.thinkingUserToggled).to.equal('1');
+        // The copy element should reflect the closed state.
+        const copyAfterPatch = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        expect(copyAfterPatch?.classList.contains('theia-mod-thinking-open')).to.equal(false);
+    });
 
-        // User collapses the thinking details.
-        detailsAfterExpand!.open = false;
-        expect(detailsAfterExpand?.dataset.thinkingUserToggled).to.equal('1');
-
-        // Patch again with different segments to force another sync — the
-        // user's collapse must be respected (no re-open).
-        const collapsedSegments: QaapAgentMessageSegmentDTO[] = [
+    it('auto-expands thinking with thinkingWasLive and no user toggle', () => {
+        const artifactsUi = createArtifactsUi();
+        const initialSegments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: undefined,
+                finished: false,
+            },
+        ];
+        const row = createStreamingRow(artifactsUi, initialSegments);
+        const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        expect(details).to.not.equal(null);
+
+        // Simulate: thinking was previously live (auto-expanded), user has NOT
+        // toggled. The sync should auto-expand it.
+        details!.dataset.thinkingWasLive = '1';
+        details!.open = false;
+
+        const patchedSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work. Now let me read the file.' },
             {
                 type: 'tool',
                 name: 'Read',
@@ -276,14 +301,12 @@ describe('qaap-transcript-timeline-render-bench', () => {
                 result: 'ok',
                 finished: true,
             },
-            { type: 'text', content: 'Done.' },
         ];
-        artifactsUi.patchStreamingActivityTimeline(row, collapsedSegments);
-        const detailsAfterCollapse = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        expect(detailsAfterCollapse?.open).to.equal(false);
-        expect(detailsAfterCollapse?.dataset.thinkingUserToggled).to.equal('1');
-        const copyAfterCollapse = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
-        expect(copyAfterCollapse?.classList.contains('theia-mod-thinking-open')).to.equal(false);
+        artifactsUi.patchStreamingActivityTimeline(row, patchedSegments);
+        const detailsAfterPatch = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        expect(detailsAfterPatch?.open).to.equal(true);
+        const copyAfterPatch = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        expect(copyAfterPatch?.classList.contains('theia-mod-thinking-open')).to.equal(true);
     });
 
     it('renders expandable grouped terminal steps with command details', () => {
