@@ -2152,10 +2152,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.transcriptSurfacesUi.disposeTranscriptTerminalSlides(workspaceKey);
     }
 
-    prepareTranscriptTerminalsForPageUnload(): void {
-        this.transcriptSurfacesUi.prepareTranscriptTerminalsForPageUnload();
-    }
-
     protected syncSearchChrome(): void {
         this.repoFiltersUi.syncSearchChrome();
     }
