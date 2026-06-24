@@ -11,6 +11,7 @@ import {
 const SHELL_AGENT_ID = 'shell';
 const DEFAULT_WORKFLOW_MARKER = '[QAAP default agent workflow]';
 const PARALLEL_TOOLS_MARKER = '[QAAP parallel tools]';
+const SEARCH_HYGIENE_MARKER = '[QAAP search hygiene]';
 const DEV_PREVIEW_MARKER = '[QAAP dev preview]';
 const BENIGN_CODE_EDIT_MARKER = '[QAAP benign code edit policy]';
 
@@ -44,6 +45,15 @@ export function buildAgentParallelToolsPromptBlock(): string {
 export interface QaapAgentDefaultWorkflowOptions {
     /** When false, omit git-status/branch instructions (ephemeral workspaces without `.git`). */
     readonly gitAvailable?: boolean;
+}
+
+export function buildAgentSearchHygienePromptBlock(): string {
+    return [
+        SEARCH_HYGIENE_MARKER,
+        'Scope Grep and Glob to project source (src/, app/, components/, pages/) — never search **/*.js or **/* at the repo root.',
+        'Exclude node_modules, .git, dist, build, and .next (use grep glob/type filters or narrow paths).',
+        'Read package.json or list the project root first when you need to learn the layout.',
+    ].join('\n');
 }
 
 export function buildAgentDefaultWorkflowPromptBlock(options: QaapAgentDefaultWorkflowOptions = {}): string {
@@ -83,6 +93,9 @@ export function appendAgentDefaultWorkflowToPrompt(
     const blocks = [buildAgentDefaultWorkflowPromptBlock(options)];
     if (!prompt.includes(PARALLEL_TOOLS_MARKER)) {
         blocks.push(buildAgentParallelToolsPromptBlock());
+    }
+    if (!prompt.includes(SEARCH_HYGIENE_MARKER)) {
+        blocks.push(buildAgentSearchHygienePromptBlock());
     }
     if (!prompt.includes(DEV_PREVIEW_MARKER)) {
         blocks.push(buildAgentDevPreviewPromptBlock());

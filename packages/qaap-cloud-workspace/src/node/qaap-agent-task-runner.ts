@@ -872,10 +872,10 @@ export class QaapAgentTaskRunner {
      * A template's `{prompt}` placeholder is replaced with a POSIX shell-quoted prompt;
      * without a placeholder the prompt is appended.
      *
-     * QAIQ + interactive approvals ("request approval" preset / YOLO off) switches to the
-     * SDK stdio permission flow: the prompt moves to stdin (`stdinPrompt`) and the CLI is
-     * launched with {@link QAIQ_STDIO_APPROVAL_FLAGS} so permission checks pause and wait
-     * for a `control_response` instead of auto-denying in headless mode.
+     * QAIQ + explicit "request approval" uses the SDK stdio permission flow: the prompt moves to stdin
+     * ({@code stdinPrompt}) and the CLI is launched with {@link QAIQ_STDIO_APPROVAL_FLAGS}.
+     * Default {@code approve-for-me} / {@code full-access} stay non-interactive (OpenCode-style):
+     * {@code --dangerously-skip-permissions}, stream-json on stdout, blocked headless tools at CLI.
      */
     protected buildAgentCommand(
         prompt: string,

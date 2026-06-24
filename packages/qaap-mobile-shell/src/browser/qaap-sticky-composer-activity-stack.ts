@@ -26,11 +26,6 @@ export interface StickyComposerActivityStackOptions {
     diffStats?: { readonly added: number; readonly removed: number };
     filesExpanded?: boolean;
     onFilesExpandedChange?: (expanded: boolean) => void;
-    streamingActivity?: {
-        readonly title: string;
-        readonly detail?: string;
-        readonly stalled?: boolean;
-    };
     agentWorking?: boolean;
     onStop?: () => void;
     onUndoAll?: () => void;
@@ -75,73 +70,11 @@ function stickyComposerCommitMenuOptions(): StickyComposerCommitMenuOption[] {
 export function buildStickyComposerActivityStackFingerprint(options: StickyComposerActivityStackOptions): string {
     const entries = options.queueEntries ?? [];
     const drafts = entries.map(entry => entry.draft).join('\x00');
-    const streaming = options.streamingActivity;
     return [
         entries.length,
         options.queueExpanded ? 1 : 0,
         drafts,
-        streaming?.title ?? '',
-        streaming?.detail ?? '',
-        streaming?.stalled ? 1 : 0,
     ].join('|');
-}
-
-export function renderStickyComposerStreamingSection(
-    options: StickyComposerActivityStackOptions,
-): HTMLElement | undefined {
-    const activity = options.streamingActivity;
-    if (!activity?.title.trim()) {
-        return undefined;
-    }
-    const section = document.createElement('div');
-    section.className = 'theia-mobile-sticky-composer-activity-section theia-mod-streaming';
-    section.classList.toggle('theia-mod-stalled', !!activity.stalled);
-    const row = document.createElement('div');
-    row.className = 'theia-mobile-sticky-composer-streaming-row';
-    const label = document.createElement('div');
-    label.className = 'theia-mobile-sticky-composer-streaming-activity';
-    label.textContent = activity.stalled ? activity.title : `${activity.title}…`;
-    row.append(label);
-    if (activity.detail?.trim()) {
-        const detail = document.createElement('div');
-        detail.className = 'theia-mobile-sticky-composer-streaming-detail';
-        detail.textContent = activity.detail;
-        row.append(detail);
-    }
-    section.append(row);
-    return section;
-}
-
-export function patchStickyComposerStreamingSection(
-    section: HTMLElement,
-    options: StickyComposerActivityStackOptions,
-): boolean {
-    const activity = options.streamingActivity;
-    if (!activity?.title.trim()) {
-        return false;
-    }
-    section.classList.toggle('theia-mod-stalled', !!activity.stalled);
-    const label = section.querySelector<HTMLElement>('.theia-mobile-sticky-composer-streaming-activity');
-    const detail = section.querySelector<HTMLElement>('.theia-mobile-sticky-composer-streaming-detail');
-    if (label) {
-        label.textContent = activity.stalled ? activity.title : `${activity.title}…`;
-    }
-    if (activity.detail?.trim()) {
-        if (detail) {
-            detail.textContent = activity.detail;
-        } else {
-            const row = section.querySelector('.theia-mobile-sticky-composer-streaming-row');
-            if (row) {
-                const next = document.createElement('div');
-                next.className = 'theia-mobile-sticky-composer-streaming-detail';
-                next.textContent = activity.detail;
-                row.append(next);
-            }
-        }
-    } else {
-        detail?.remove();
-    }
-    return true;
 }
 
 /** In-place queue stack refresh — avoids replaceWith flicker during SSE ticks. */
@@ -312,21 +245,15 @@ export function renderStickyComposerChangesPill(options: StickyComposerActivityS
 }
 
 export function renderStickyComposerActivityStack(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
-    const streamingSection = renderStickyComposerStreamingSection(options);
     const queueSection = options.queueEntries?.length
         ? renderStickyComposerQueueSection(options)
         : undefined;
-    if (!streamingSection && !queueSection) {
+    if (!queueSection) {
         return undefined;
     }
     const stack = document.createElement('div');
     stack.className = 'theia-mobile-sticky-composer-activity-stack';
-    if (streamingSection) {
-        stack.append(streamingSection);
-    }
-    if (queueSection) {
-        stack.append(queueSection);
-    }
+    stack.append(queueSection);
     return stack;
 }
 

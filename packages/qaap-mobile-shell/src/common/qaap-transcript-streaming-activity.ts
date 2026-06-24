@@ -59,7 +59,7 @@ export function resolveTranscriptStreamingActivityFromSegments(
     if (hasText) {
         return {
             kind: 'writing',
-            title: nls.localize('qaap/mobileProjects/transcriptActivityWriting', 'Writing the response'),
+            title: nls.localize('qaap/mobileProjects/transcriptActivityWriting', 'Preparing the response'),
             detail: nls.localize('qaap/mobileProjects/transcriptActivityWritingDetail', 'Composing the next visible update.'),
         };
     }

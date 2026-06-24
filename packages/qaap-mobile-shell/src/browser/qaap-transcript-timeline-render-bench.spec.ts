@@ -615,8 +615,8 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(askRow?.textContent).to.equal('Asked a question');
 
         const writingRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Writing');
-        expect(writingRow?.textContent).to.equal('Writing response');
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Preparing');
+        expect(writingRow?.textContent).to.equal('Preparing the response');
     });
 
     it('renders compact grep matches inside search expand', () => {

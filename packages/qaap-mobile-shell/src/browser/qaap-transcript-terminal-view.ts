@@ -54,6 +54,11 @@ function markTerminalRestorable(terminal: TerminalWidget): void {
     }
 }
 
+/** Persists terminal widget state before a same-tab reload (F5). */
+export function markTranscriptTerminalRestorable(terminal: TerminalWidget): void {
+    markTerminalRestorable(terminal);
+}
+
 function installTranscriptTerminalWheelScrollBridge(mountHost: HTMLElement): Disposable {
     const onWheel = (event: WheelEvent): void => {
         if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {

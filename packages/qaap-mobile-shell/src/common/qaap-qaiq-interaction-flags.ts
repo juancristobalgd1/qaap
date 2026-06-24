@@ -30,9 +30,9 @@ export function formatQaiqInteractionFlags(options: QaapQaiqInteractionFlagOptio
         return '--permission-mode default';
     }
     if (options.approvalPolicyId === 'approve-for-me') {
-        return '--permission-mode acceptEdits';
+        return '--dangerously-skip-permissions';
     }
-    return '--permission-mode bypassPermissions';
+    return '--dangerously-skip-permissions';
 }
 
 export function normalizeInteractionModeId(modeId: string | undefined): QaapComposerInteractionModeId {
@@ -42,7 +42,8 @@ export function normalizeInteractionModeId(modeId: string | undefined): QaapComp
     return 'agent';
 }
 
-/** QAIQ permission flags are authoritative — do not also inject {@code --dangerously-skip-permissions}. */
+/** QAIQ permission / skip flags are authoritative — do not also inject legacy duplicates. */
 export function qaiqCommandUsesInteractionFlags(command: string): boolean {
-    return /\b(qaiq|openclaude)\b/.test(command) && /--permission-mode\b/.test(command);
+    return /\b(qaiq|openclaude)\b/.test(command)
+        && (/--permission-mode\b/.test(command) || /--dangerously-skip-permissions\b/.test(command));
 }

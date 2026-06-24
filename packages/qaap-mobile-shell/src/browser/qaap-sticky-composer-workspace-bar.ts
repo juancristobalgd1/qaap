@@ -13,13 +13,6 @@ export interface StickyComposerWorkspaceBarView {
 
 export type StickyComposerWorkspaceFieldKind = 'project' | 'branch' | 'destination';
 
-export function appendStickyComposerContextDivider(container: HTMLElement): void {
-    const divider = document.createElement('span');
-    divider.className = 'theia-mobile-projects-sticky-composer-context-divider';
-    divider.setAttribute('aria-hidden', 'true');
-    container.append(divider);
-}
-
 export function createStickyComposerWorkspacePill(options: {
     readonly iconClass: string;
     readonly label: string;
@@ -43,9 +36,6 @@ export function renderStickyComposerWorkspaceBar(options: {
     bar.className = 'theia-mobile-projects-sticky-composer-workspace-bar theia-mobile-projects-sticky-composer-workspace-context-bar';
 
     const appendField = (pill: HTMLButtonElement, kind: StickyComposerWorkspaceFieldKind): void => {
-        if (bar.childElementCount > 0) {
-            appendStickyComposerContextDivider(bar);
-        }
         const field = document.createElement('div');
         field.className = `theia-mobile-projects-sticky-composer-context-field theia-mod-${kind}`;
         field.append(pill);

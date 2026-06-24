@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import {
     formatQaiqInteractionFlags,
@@ -14,6 +13,7 @@ import {
     applyAutoApproveToCommand,
     commandHasAutoApproveFlags,
 } from './qaap-agent-auto-approve';
+import { QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS } from './qaap-agent-subagent-policy';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-conversation';
 
 export type { QaapAgentToolApprovalRules };
@@ -53,27 +53,17 @@ export function shouldUseInteractiveAgentApprovals(options: QaapAgentApprovalFla
     return options.autoApprove === false || options.approvalPolicyId === 'request-approval';
 }
 
-/** QAIQ headless runs need stdio pause-and-wait whenever shell/network are not fully bypassed. */
+/** QAIQ stdio pause-and-wait is only for explicit interactive presets — not default headless runs. */
 export function shouldUseQaiqStdioApprovals(options: QaapAgentApprovalFlagOptions): boolean {
-    if (shouldUseInteractiveAgentApprovals(options)) {
-        return true;
-    }
-    const policyId = options.approvalPolicyId ?? 'approve-for-me';
-    if (policyId === 'full-access') {
-        return false;
-    }
-    const rules = resolveEffectiveToolApprovalRules(policyId, options.toolApprovalRules)
-        ?? DEFAULT_APPROVE_FOR_ME_TOOL_RULES;
-    // Match applyAgentApprovalPolicyToCommand: approve-for-me + shell auto uses --allowed-tools Bash.
-    if (policyId === 'approve-for-me' && rules.shell === true) {
-        return false;
-    }
-    return !(rules.shell && rules.network);
+    return options.autoApprove === false || options.approvalPolicyId === 'request-approval';
 }
 
 /**
  * Apply composer approval presets to an agent command. Replaces the old binary auto-approve injection
  * so {@code approve-for-me} can auto-approve edits while still prompting for shell/network when configured.
+ *
+ * QAIQ headless runs use {@code --dangerously-skip-permissions} (OpenCode-style) plus
+ * {@link QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS} — Qaap only launches, enriches the prompt, and paints stream-json.
  */
 export function applyAgentApprovalPolicyToCommand(
     command: string,
@@ -113,35 +103,46 @@ function applyQaiqApprovalFlags(
     rules: QaapAgentToolApprovalRules | undefined,
 ): string {
     const withoutLegacy = stripQaiqPermissionFlags(command);
+    let next: string;
     if (policyId === 'approve-for-me' && rules) {
-        const flags = formatQaiqApproveForMeFlags(rules);
-        return injectAfterPattern(withoutLegacy, /\b(qaiq|openclaude)\b/, flags);
+        next = injectAfterPattern(withoutLegacy, /\b(qaiq|openclaude)\b/, formatQaiqApproveForMeFlags(rules));
+    } else {
+        const qaiqOptions: QaapQaiqInteractionFlagOptions = {
+            interactionModeId: options.interactionModeId,
+            approvalPolicyId: policyId,
+            autoApprove: true,
+        };
+        const flags = formatQaiqInteractionFlags(qaiqOptions);
+        next = flags
+            ? injectAfterPattern(withoutLegacy, /\b(qaiq|openclaude)\b/, flags)
+            : withoutLegacy;
     }
-    const qaiqOptions: QaapQaiqInteractionFlagOptions = {
-        interactionModeId: options.interactionModeId,
-        approvalPolicyId: policyId,
-        autoApprove: true,
-    };
-    const flags = formatQaiqInteractionFlags(qaiqOptions);
-    if (!flags) {
-        return withoutLegacy;
-    }
-    return injectAfterPattern(withoutLegacy, /\b(qaiq|openclaude)\b/, flags);
+    return ensureQaiqBlockedHeadlessTools(next);
 }
 
-function formatQaiqApproveForMeFlags(rules: QaapAgentToolApprovalRules): string {
-    if (rules.network) {
-        return '--permission-mode bypassPermissions';
+function formatQaiqApproveForMeFlags(_rules: QaapAgentToolApprovalRules): string {
+    // Headless VPS runs match OpenCode: auto-approve real tools, block delegation noise at CLI.
+    return '--dangerously-skip-permissions';
+}
+
+function ensureQaiqBlockedHeadlessTools(command: string): string {
+    const required = QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS.split(',');
+    const match = /--disallowed-tools\s+([^\s-][^\s]*)/.exec(command);
+    if (!match) {
+        return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, `--disallowed-tools ${QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS}`);
     }
-    const readTools = 'Read,Grep,Glob,LS';
-    const editTools = 'Edit,Write,NotebookEdit';
-    // Subagents bypass stdio control_request — block at the CLI so headless turns finish.
-    const disallowedSubagents = '--disallowed-tools Agent,Task';
-    if (rules.shell) {
-        return `--permission-mode default --allowed-tools ${readTools},${editTools},Bash ${disallowedSubagents}`;
+    const existing = new Set(match[1].split(',').map(tool => tool.trim()).filter(Boolean));
+    let changed = false;
+    for (const tool of required) {
+        if (!existing.has(tool)) {
+            existing.add(tool);
+            changed = true;
+        }
     }
-    // Read-only exploration without prompts; Bash stays gated (stdio approvals when needed).
-    return `--permission-mode default --allowed-tools ${readTools},${editTools} ${disallowedSubagents}`;
+    if (!changed) {
+        return command;
+    }
+    return command.replace(match[0], `--disallowed-tools ${[...existing].join(',')}`);
 }
 
 function applyClaudeApprovalFlags(

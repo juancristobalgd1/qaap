@@ -68,4 +68,16 @@ describe('qaap-sticky-composer-workspace-bar', () => {
         );
         expect(bar.querySelectorAll('.theia-mobile-projects-sticky-composer-context-divider').length).to.equal(0);
     });
+
+    it('renders branch without destination when only the branch field is needed', () => {
+        const bar = renderStickyComposerWorkspaceBar({
+            view: { projectName: 'Demo', branchName: 'fix/critical-bugs' },
+            includeProject: false,
+            onOpenProject: () => undefined,
+            onOpenBranch: () => undefined,
+        });
+        bar.classList.add('theia-mod-branch-only');
+        expect(bar.querySelector('.theia-mod-branch')).to.not.equal(null);
+        expect(bar.querySelector('.theia-mod-destination')).to.equal(null);
+    });
 });

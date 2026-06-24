@@ -78,4 +78,40 @@ describe('qaap-transcript-tool-ui-payloads', () => {
         );
         expect(payload?.kind).to.equal('question_flow');
     });
+
+    it('parses AskUserQuestion parameters envelope with stringified questions', () => {
+        const questions = [{
+            question: 'What is the most important untested behavior in this codebase?',
+            header: 'Identify gaps',
+            multiSelect: false,
+            options: [
+                { label: 'Missing tests', description: 'Missing tests' },
+                { label: 'Other', description: 'Other' },
+            ],
+        }];
+        const payload = tryParseAskUserQuestionArgs(JSON.stringify({
+            name: 'AskUserQuestion',
+            parameters: {
+                questions: JSON.stringify(questions),
+            },
+        }));
+        expect(payload?.kind).to.equal('question_flow');
+        expect(payload && payload.kind === 'question_flow' ? payload.questions[0]?.header : undefined)
+            .to.equal('Identify gaps');
+    });
+
+    it('strips checkpoint tails glued to AskUserQuestion JSON', () => {
+        const args = `${JSON.stringify({
+            name: 'AskUserQuestion',
+            parameters: {
+                questions: [{
+                    question: 'Which area?',
+                    header: 'Scope',
+                    options: [{ label: 'Tests' }],
+                }],
+            },
+        })}Checkpoint: Add tests (+638/-250)`;
+        const payload = tryParseAskUserQuestionArgs(args);
+        expect(payload?.kind).to.equal('question_flow');
+    });
 });

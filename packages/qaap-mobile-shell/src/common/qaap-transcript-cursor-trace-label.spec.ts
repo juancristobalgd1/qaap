@@ -14,7 +14,7 @@ describe('formatTranscriptCursorTraceRowText', () => {
     it('joins verb, detail, and tail with spaces', () => {
         expect(formatTranscriptCursorTraceRowText('Ran', 'ls -la /workspace', 'cd, npm')).to.equal('Ran ls -la /workspace cd, npm');
         expect(formatTranscriptCursorTraceRowText('Read', '3 files')).to.equal('Read 3 files');
-        expect(formatTranscriptCursorTraceRowText('Writing', 'response')).to.equal('Writing response');
+        expect(formatTranscriptCursorTraceRowText('Preparing', 'the response')).to.equal('Preparing the response');
     });
 });
 

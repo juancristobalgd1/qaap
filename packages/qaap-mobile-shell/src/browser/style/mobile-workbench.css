@@ -5396,6 +5396,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-bar {
   flex-direction: row;
   align-items: stretch;
+  justify-content: flex-start;
   gap: 0;
   padding: 0;
   overflow-x: visible;
@@ -5524,15 +5525,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   margin-left: auto;
 }
 
-.theia-mobile-projects-sticky-composer-context-divider {
-  flex: 0 0 1px;
-  align-self: stretch;
-  width: 1px;
-  min-height: 20px;
-  margin: 0 6px;
-  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
-}
-
 .theia-mobile-projects-sticky-composer-workspace-context-bar {
   gap: 0;
   padding: 3px 4px;
@@ -5545,12 +5537,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mobile-projects-sticky-composer-context-field {
   flex: 1 1 0;
   min-width: 0;
-}
-
-.theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mobile-projects-sticky-composer-context-divider {
-  margin: 4px 0;
-  min-height: 18px;
-  align-self: center;
 }
 
 .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mobile-projects-sticky-composer-workspace-pill {
@@ -20272,7 +20258,7 @@ body>.theia-mobile-transcript-files-menu {
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-row,
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-label {
-  gap: 0;
+  gap: 0.35em;
   font-size: 18px;
   line-height: 1.45;
   font-weight: 600;
@@ -20280,11 +20266,11 @@ body>.theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-verb {
-  margin-right: 9px;
+  margin-right: 0;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-detail:not(.theia-mod-pill) {
-  margin-left: -9px;
+  margin-left: 0;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-detail.theia-mod-pill,
@@ -20402,7 +20388,7 @@ body>.theia-mobile-transcript-files-menu {
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-row,
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-label {
-  gap: 0;
+  gap: 0.35em;
   align-items: center;
   min-width: 0;
   font-size: 14px;

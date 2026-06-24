@@ -16,7 +16,7 @@ function isTranscriptTimelinePlanningItem(item: TranscriptActivityNavigationItem
 }
 
 function isTranscriptTimelineAnswerItem(item: TranscriptActivityNavigationItem): boolean {
-    return item.verb === 'Writing';
+    return item.verb === 'Preparing';
 }
 
 function isTranscriptTimelineActionItem(item: TranscriptActivityNavigationItem): boolean {

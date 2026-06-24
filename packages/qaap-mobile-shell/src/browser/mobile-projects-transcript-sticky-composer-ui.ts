@@ -1529,7 +1529,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
             } catch {
                 /* submitBackgroundAgentTask surfaces errors */
             } finally {
-                this.host.stickyComposerRenderUi.renderStickyComposer();
+                if (this.host.transcriptComposerHost?.isConnected) {
+                    this.remountTranscriptStickyComposer();
+                } else {
+                    this.host.stickyComposerRenderUi.renderStickyComposer();
+                }
             }
             return;
         }

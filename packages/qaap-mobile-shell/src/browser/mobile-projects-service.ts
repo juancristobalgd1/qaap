@@ -1197,9 +1197,6 @@ export class MobileProjectsService {
     }
 
     protected async loadGithubProjects(sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean): Promise<MobileProjectEntry[]> {
-        if (readQaapSignedIn()) {
-            await syncQaapAuthSessionFromServer();
-        }
         if (!readQaapSignedIn()) {
             return [];
         }

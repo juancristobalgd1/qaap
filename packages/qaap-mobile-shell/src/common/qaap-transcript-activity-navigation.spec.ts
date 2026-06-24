@@ -10,7 +10,7 @@ const deps = {
     localizeActivityLabel: (label: string) => label,
     formatToolActivityLabel: (toolName: string) => `Running: ${toolName}`,
     localizePlanningLabel: () => 'Planning next steps',
-    localizeWritingLabel: () => 'Writing response',
+    localizeWritingLabel: () => 'Preparing the response',
     localizeFailedLabel: (detail: string) => `Failed: ${detail}`,
     extractToolPath: (argsJson: string) => {
         try {
@@ -259,7 +259,7 @@ describe('qaap-transcript-activity-navigation', () => {
         ], deps, false, { streaming: true });
         expect(withTool).to.have.length(2);
         expect(withTool[0]?.state).to.equal('running');
-        expect(withTool[1]?.label).to.equal('Writing response');
+        expect(withTool[1]?.label).to.equal('Preparing the response');
         expect(withTool[1]?.state).to.equal('waiting');
     });
 

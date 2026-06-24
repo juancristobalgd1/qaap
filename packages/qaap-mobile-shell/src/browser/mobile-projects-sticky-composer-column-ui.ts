@@ -264,6 +264,8 @@ export class MobileProjectsStickyComposerColumnUi {
                     'destination',
                     { divider: false },
                 );
+            } else {
+                branchWorkspaceBar.classList.add('theia-mod-branch-only');
             }
         }
 
