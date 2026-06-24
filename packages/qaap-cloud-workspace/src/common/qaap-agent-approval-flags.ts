@@ -14,7 +14,7 @@ import {
     applyAutoApproveToCommand,
     commandHasAutoApproveFlags,
 } from './qaap-agent-auto-approve';
-import { QAAP_QAIQ_BLOCKED_DELEGATION_TOOLS } from './qaap-agent-subagent-policy';
+import { QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS } from './qaap-agent-subagent-policy';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-conversation';
 
 export type { QaapAgentToolApprovalRules };
@@ -119,7 +119,7 @@ function applyQaiqApprovalFlags(
             ? injectAfterPattern(withoutLegacy, /\b(qaiq|openclaude)\b/, flags)
             : withoutLegacy;
     }
-    return ensureQaiqBlockedDelegationTools(next);
+    return ensureQaiqBlockedHeadlessTools(next);
 }
 
 function formatQaiqApproveForMeFlags(rules: QaapAgentToolApprovalRules): string {
@@ -128,20 +128,20 @@ function formatQaiqApproveForMeFlags(rules: QaapAgentToolApprovalRules): string 
     }
     const readTools = 'Read,Grep,Glob,LS';
     const editTools = 'Edit,Write,NotebookEdit';
-    // Delegation tools bypass stdio control_request — block at the CLI so headless turns finish.
-    const disallowedDelegation = `--disallowed-tools ${QAAP_QAIQ_BLOCKED_DELEGATION_TOOLS}`;
+    // Headless-blocked tools bypass stdio control_request — block at the CLI so turns finish.
+    const disallowedHeadless = `--disallowed-tools ${QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS}`;
     if (rules.shell) {
-        return `--permission-mode default --allowed-tools ${readTools},${editTools},Bash ${disallowedDelegation}`;
+        return `--permission-mode default --allowed-tools ${readTools},${editTools},Bash ${disallowedHeadless}`;
     }
     // Read-only exploration without prompts; Bash stays gated (stdio approvals when needed).
-    return `--permission-mode default --allowed-tools ${readTools},${editTools} ${disallowedDelegation}`;
+    return `--permission-mode default --allowed-tools ${readTools},${editTools} ${disallowedHeadless}`;
 }
 
-function ensureQaiqBlockedDelegationTools(command: string): string {
-    const required = QAAP_QAIQ_BLOCKED_DELEGATION_TOOLS.split(',');
+function ensureQaiqBlockedHeadlessTools(command: string): string {
+    const required = QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS.split(',');
     const match = /--disallowed-tools\s+([^\s-][^\s]*)/.exec(command);
     if (!match) {
-        return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, `--disallowed-tools ${QAAP_QAIQ_BLOCKED_DELEGATION_TOOLS}`);
+        return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, `--disallowed-tools ${QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS}`);
     }
     const existing = new Set(match[1].split(',').map(tool => tool.trim()).filter(Boolean));
     let changed = false;

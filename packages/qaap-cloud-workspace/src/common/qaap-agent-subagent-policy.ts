@@ -5,10 +5,16 @@
 
 export const SUBAGENT_POLICY_MARKER = '[QAAP direct execution policy]';
 
-/** QAIQ CLI {@code --disallowed-tools} list for delegation tools that waste turns in VPS runs. */
-export const QAAP_QAIQ_BLOCKED_DELEGATION_TOOLS = 'Agent,Task,Skill';
+/** QAIQ CLI {@code --disallowed-tools} list for tools that waste turns or stall headless VPS runs. */
+export const QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS = 'Agent,Task,Skill,AskUserQuestion';
 
-export const DELEGATION_TOOL_NAMES = new Set(['Agent', 'Task', 'Skill']);
+/** @deprecated Use {@link QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS}. */
+export const QAAP_QAIQ_BLOCKED_DELEGATION_TOOLS = QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS;
+
+const BLOCKED_HEADLESS_TOOL_NAMES = new Set(['Agent', 'Task', 'Skill', 'AskUserQuestion']);
+
+/** @deprecated Use {@link isBlockedHeadlessTool}. */
+export const DELEGATION_TOOL_NAMES = BLOCKED_HEADLESS_TOOL_NAMES;
 
 /** Common hallucinated subagent types that Qaap/QAIQ never exposes in cloud runs. */
 const UNAVAILABLE_SUBAGENT_TYPES = new Set([
@@ -30,9 +36,10 @@ const UNAVAILABLE_SKILL_NAMES = new Set([
 export function buildAgentDirectExecutionPromptBlock(): string {
     return [
         SUBAGENT_POLICY_MARKER,
-        'Qaap runs a single agent conversation — Agent/Task subagents and the Skill tool are not available.',
+        'Qaap runs a single headless VPS conversation — Agent/Task subagents, Skill, and AskUserQuestion are not available.',
         'Never call Agent or Task with subagent_type (web-dev, react-debug, explore, claude-code-guide, etc.).',
         'Never call Skill to load skill packs (claude-code-guide, cursor-guide, etc.) — they are not mounted in VPS runs.',
+        'Never call AskUserQuestion — there is no interactive question UI mid-turn. Make reasonable assumptions from the user prompt and continue.',
         'Do the work directly with Read, Grep, Glob, Write, Edit, and one-shot Bash instead of delegating.',
     ].join('\n');
 }
@@ -75,8 +82,12 @@ export function isKnownUnavailableSkillName(skillName: string | undefined): bool
     return UNAVAILABLE_SKILL_NAMES.has(skillName.toLowerCase());
 }
 
+export function isBlockedHeadlessTool(toolName: string): boolean {
+    return BLOCKED_HEADLESS_TOOL_NAMES.has(toolName.trim());
+}
+
 export function isBlockedDelegationTool(toolName: string): boolean {
-    return DELEGATION_TOOL_NAMES.has(toolName.trim());
+    return isBlockedHeadlessTool(toolName);
 }
 
 export function buildSubagentDeniedMessage(
@@ -84,6 +95,11 @@ export function buildSubagentDeniedMessage(
     toolInput?: Record<string, unknown>,
 ): string {
     const normalizedToolName = toolName.trim();
+    if (normalizedToolName === 'AskUserQuestion') {
+        return 'AskUserQuestion is not available in Qaap VPS runs. '
+            + 'There is no interactive question UI mid-turn — make reasonable assumptions from the user prompt '
+            + 'and continue with Read, Write, Edit, and Bash; do not retry AskUserQuestion.';
+    }
     if (normalizedToolName === 'Skill') {
         const skillName = extractRequestedSkillName(toolInput);
         if (skillName && isKnownUnavailableSkillName(skillName)) {
@@ -106,9 +122,9 @@ export function buildSubagentDeniedMessage(
         return `${toolName} subagent "${subagentType}" is not available in Qaap. `
             + 'Do the work directly in this conversation with Read, Write, Edit, and Bash; do not retry the call unchanged.';
     }
-    if (isBlockedDelegationTool(normalizedToolName)) {
-        return `${toolName} subagents are not available in Qaap. `
-            + 'Do the work directly in this conversation instead of delegating to a subagent, and do not retry the call unchanged.';
+    if (isBlockedHeadlessTool(normalizedToolName)) {
+        return `${toolName} is not available in Qaap VPS runs. `
+            + 'Do the work directly in this conversation instead of delegating or prompting the user mid-turn, and do not retry the call unchanged.';
     }
     return `${toolName} is not available in this run. `
         + 'Continue with direct tools (Read, Write, Edit, Bash) instead.';

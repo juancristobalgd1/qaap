@@ -70,6 +70,14 @@ describe('qaap-qaiq-control-auto-response', () => {
         })).to.equal('deny');
     });
 
+    it('denies AskUserQuestion even in bypassPermissions mode', () => {
+        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
+            requestId: 'req-1',
+            toolName: 'AskUserQuestion',
+            toolInput: { questions: 'Which framework?' },
+        })).to.equal('deny');
+    });
+
     it('denies long-lived dev-server shell commands even with auto-approve', () => {
         expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
             requestId: 'req-1',

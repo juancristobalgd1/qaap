@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
-import { buildSubagentDeniedMessage, isBlockedDelegationTool } from './qaap-agent-subagent-policy';
+import { buildSubagentDeniedMessage, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 export type QaapQaiqControlAutoAction = 'allow' | 'deny' | 'queue';
@@ -33,7 +33,7 @@ function isShellTool(toolName: string): boolean {
  *
  * Tools the policy auto-allows resolve immediately; gated shell/network tools are
  * queued to the approvals UI so the user can grant them mid-turn (the runner applies
- * a grace timeout so an unattended run still finishes). Delegation tools (Agent/Task/Skill)
+ * a grace timeout so an unattended run still finishes). Headless-blocked tools (Agent/Task/Skill/AskUserQuestion)
  * and the dev-server guard auto-deny — those can never be approved interactively.
  */
 export function resolveQaiqControlRequestAutoAction(
@@ -48,8 +48,8 @@ export function resolveQaiqControlRequestAutoAction(
         return 'deny';
     }
     const toolName = request.toolName?.trim() ?? '';
-    // Delegation tools bypass useful stdio control once running — deny even in bypassPermissions.
-    if (toolName && isBlockedDelegationTool(toolName)) {
+    // Headless-blocked tools bypass useful stdio control once running — deny even in bypassPermissions.
+    if (toolName && isBlockedHeadlessTool(toolName)) {
         return 'deny';
     }
     if (/(?:^|\s)--permission-mode\s+bypassPermissions(?:\s|$)/.test(command)) {
@@ -68,7 +68,7 @@ export function resolveQaiqControlRequestAutoAction(
     return 'allow';
 }
 
-/** Deny guidance for tools that can never be approved mid-turn (delegation tools). */
+/** Deny guidance for tools that can never be approved mid-turn (headless-blocked tools). */
 export function buildQaiqAutoDeniedToolMessage(
     toolName: string,
     toolInput?: Record<string, unknown>,

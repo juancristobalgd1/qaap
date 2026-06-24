@@ -11,6 +11,7 @@ import {
 const SHELL_AGENT_ID = 'shell';
 const DEFAULT_WORKFLOW_MARKER = '[QAAP default agent workflow]';
 const PARALLEL_TOOLS_MARKER = '[QAAP parallel tools]';
+const SEARCH_HYGIENE_MARKER = '[QAAP search hygiene]';
 const DEV_PREVIEW_MARKER = '[QAAP dev preview]';
 const BENIGN_CODE_EDIT_MARKER = '[QAAP benign code edit policy]';
 
@@ -38,6 +39,15 @@ export function buildAgentParallelToolsPromptBlock(): string {
         PARALLEL_TOOLS_MARKER,
         'When you need several independent operations (Read, Grep, Glob, list files), call them in the same tool batch — never serialize independent reads or searches.',
         'Only run tools sequentially when a later call depends on an earlier result. Never write to the same file in parallel.',
+    ].join('\n');
+}
+
+export function buildAgentSearchHygienePromptBlock(): string {
+    return [
+        SEARCH_HYGIENE_MARKER,
+        'Scope Grep and Glob to project source (src/, app/, components/, pages/) — never search **/*.js or **/* at the repo root.',
+        'Exclude node_modules, .git, dist, build, and .next (use grep glob/type filters or narrow paths).',
+        'Read package.json or list the project root first when you need to learn the layout.',
     ].join('\n');
 }
 
@@ -70,6 +80,9 @@ export function appendAgentDefaultWorkflowToPrompt(prompt: string, agentId: stri
     const blocks = [buildAgentDefaultWorkflowPromptBlock()];
     if (!prompt.includes(PARALLEL_TOOLS_MARKER)) {
         blocks.push(buildAgentParallelToolsPromptBlock());
+    }
+    if (!prompt.includes(SEARCH_HYGIENE_MARKER)) {
+        blocks.push(buildAgentSearchHygienePromptBlock());
     }
     if (!prompt.includes(DEV_PREVIEW_MARKER)) {
         blocks.push(buildAgentDevPreviewPromptBlock());

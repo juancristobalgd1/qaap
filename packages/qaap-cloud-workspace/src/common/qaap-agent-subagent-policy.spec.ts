@@ -44,6 +44,12 @@ describe('qaap-agent-subagent-policy', () => {
         expect(message).to.include('do not retry Skill');
     });
 
+    it('buildSubagentDeniedMessage blocks AskUserQuestion in VPS runs', () => {
+        const message = buildSubagentDeniedMessage('AskUserQuestion', { questions: 'pick a color' });
+        expect(message).to.include('AskUserQuestion');
+        expect(message).to.include('do not retry AskUserQuestion');
+    });
+
     it('extractRequestedSkillName reads skill from tool input', () => {
         expect(extractRequestedSkillName({ skillName: 'react-doctor' })).to.equal('react-doctor');
         expect(isKnownUnavailableSkillName('claude-code-guide')).to.equal(true);

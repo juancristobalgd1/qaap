@@ -48,15 +48,15 @@ describe('qaap-agent-approval-flags', () => {
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
-        expect(command).to.include('--disallowed-tools Agent,Task,Skill');
+        expect(command).to.include('--disallowed-tools Agent,Task,Skill,AskUserQuestion');
     });
 
-    it('full-access still blocks delegation tools on QAIQ', () => {
+    it('full-access still blocks headless tools on QAIQ', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'full-access', autoApprove: true },
         );
-        expect(command).to.include('--disallowed-tools Agent,Task,Skill');
+        expect(command).to.include('--disallowed-tools Agent,Task,Skill,AskUserQuestion');
     });
 
     it('approve-for-me uses acceptEdits for Claude instead of full skip', () => {
