@@ -439,6 +439,15 @@ export function canStreamPatchAgentSegmentsInPlace(
             }
             return false;
         }
+        if (p.type === 'thinking' && n.type === 'thinking') {
+            const previous = p.content ?? '';
+            const incoming = n.content ?? '';
+            if (incoming.startsWith(previous) && incoming.length > previous.length) {
+                sawChange = true;
+                continue;
+            }
+            return false;
+        }
         if (p.type === 'tool' && n.type === 'tool') {
             if (canPatchToolSegmentGrowth(p, n)) {
                 sawChange = true;
