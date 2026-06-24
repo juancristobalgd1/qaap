@@ -23,6 +23,8 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         expect(result).to.include('[QAAP dev preview]');
         expect(result).to.include('[QAAP benign code edit policy]');
         expect(result).to.include('[QAAP direct execution policy]');
+        expect(result).to.include('QAIQ is a Claude Code / OpenClaude CLI');
+        expect(result).to.include('not the in-browser Theia Coder agent');
         expect(result).to.include('do not refuse with a report-only workaround');
         expect(result).to.include('Fix the bug');
     });

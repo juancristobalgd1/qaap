@@ -5,16 +5,17 @@
 
 export const SUBAGENT_POLICY_MARKER = '[QAAP direct execution policy]';
 
-/** QAIQ CLI {@code --disallowed-tools} list for tools that waste turns or stall headless VPS runs. */
-export const QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS = 'Agent,Task,Skill,AskUserQuestion';
+import { isBlockedHeadlessTool, isBlockedTheiaTool } from './qaap-qaiq-tool-policy';
 
-/** @deprecated Use {@link QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS}. */
-export const QAAP_QAIQ_BLOCKED_DELEGATION_TOOLS = QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS;
+export {
+    QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS,
+    isBlockedDelegationTool,
+    isBlockedHeadlessTool,
+    isBlockedTheiaTool,
+} from './qaap-qaiq-tool-policy';
 
-const BLOCKED_HEADLESS_TOOL_NAMES = new Set(['Agent', 'Task', 'Skill', 'AskUserQuestion']);
-
-/** @deprecated Use {@link isBlockedHeadlessTool}. */
-export const DELEGATION_TOOL_NAMES = BLOCKED_HEADLESS_TOOL_NAMES;
+/** @deprecated Use {@link QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS} from qaap-qaiq-tool-policy. */
+export { QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS as QAAP_QAIQ_BLOCKED_DELEGATION_TOOLS } from './qaap-qaiq-tool-policy';
 
 /** Common hallucinated subagent types that Qaap/QAIQ never exposes in cloud runs. */
 const UNAVAILABLE_SUBAGENT_TYPES = new Set([
@@ -36,7 +37,9 @@ const UNAVAILABLE_SKILL_NAMES = new Set([
 export function buildAgentDirectExecutionPromptBlock(): string {
     return [
         SUBAGENT_POLICY_MARKER,
-        'Qaap runs a single headless VPS conversation — Agent/Task subagents, Skill, and AskUserQuestion are not available.',
+        'QAIQ is a Claude Code / OpenClaude CLI on the VPS — not the in-browser Theia Coder agent.',
+        'Never use Theia Coder functions (~{getFileContent}, ~{runTask}, qaap_bootstrap_*, launch configs, IDE skills, or MCP bridges).',
+        'Qaap runs a single headless conversation — Agent/Task subagents, Skill, and AskUserQuestion are not available.',
         'Never call Agent or Task with subagent_type (web-dev, react-debug, explore, claude-code-guide, etc.).',
         'Never call Skill to load skill packs (claude-code-guide, cursor-guide, etc.) — they are not mounted in VPS runs.',
         'Never call AskUserQuestion — there is no interactive question UI mid-turn. Make reasonable assumptions from the user prompt and continue.',
@@ -82,19 +85,15 @@ export function isKnownUnavailableSkillName(skillName: string | undefined): bool
     return UNAVAILABLE_SKILL_NAMES.has(skillName.toLowerCase());
 }
 
-export function isBlockedHeadlessTool(toolName: string): boolean {
-    return BLOCKED_HEADLESS_TOOL_NAMES.has(toolName.trim());
-}
-
-export function isBlockedDelegationTool(toolName: string): boolean {
-    return isBlockedHeadlessTool(toolName);
-}
-
 export function buildSubagentDeniedMessage(
     toolName: string,
     toolInput?: Record<string, unknown>,
 ): string {
     const normalizedToolName = toolName.trim();
+    if (isBlockedTheiaTool(normalizedToolName)) {
+        return `${toolName} is a Theia Coder / IDE tool and is not available to QAIQ on the VPS. `
+            + 'Use Read, Write, Edit, Grep, Glob, and Bash directly — do not retry IDE bridge tools.';
+    }
     if (normalizedToolName === 'AskUserQuestion') {
         return 'AskUserQuestion is not available in Qaap VPS runs. '
             + 'There is no interactive question UI mid-turn — make reasonable assumptions from the user prompt '

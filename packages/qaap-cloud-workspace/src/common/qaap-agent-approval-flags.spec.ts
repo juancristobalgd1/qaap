@@ -28,7 +28,10 @@ describe('qaap-agent-approval-flags', () => {
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
         expect(command).to.include('--dangerously-skip-permissions');
-        expect(command).to.include('--disallowed-tools Agent,Task,Skill,AskUserQuestion');
+        expect(command).to.include('--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite');
+        expect(command).to.include('--disallowed-tools');
+        expect(command).to.include('Agent');
+        expect(command).to.include('Skill');
         expect(command).not.to.include('--allowed-tools');
     });
 
@@ -46,7 +49,16 @@ describe('qaap-agent-approval-flags', () => {
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
-        expect(command).to.include('--disallowed-tools Agent,Task,Skill,AskUserQuestion');
+        expect(command).to.include('--disallowed-tools');
+        expect(command).to.include('AskUserQuestion');
+    });
+
+    it('full-access includes network tools in the QAIQ core allowlist', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "qaiq --print -p 'hi'",
+            { agentId: 'qaiq', approvalPolicyId: 'full-access', autoApprove: true },
+        );
+        expect(command).to.include('--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,WebFetch,WebSearch');
     });
 
     it('full-access still blocks headless tools on QAIQ', () => {
@@ -54,7 +66,7 @@ describe('qaap-agent-approval-flags', () => {
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'full-access', autoApprove: true },
         );
-        expect(command).to.include('--disallowed-tools Agent,Task,Skill,AskUserQuestion');
+        expect(command).to.include('--disallowed-tools');
     });
 
     it('approve-for-me uses acceptEdits for Claude when shell is disabled', () => {
@@ -152,12 +164,23 @@ describe('qaap-agent-approval-flags', () => {
         })).to.equal(false);
     });
 
-    it('approve-for-me with shell disabled needs QAIQ stdio for gated Bash', () => {
+    it('approve-for-me with shell disabled omits Bash from the QAIQ tool allowlist', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "qaiq --print -p 'hi'",
+            {
+                agentId: 'qaiq',
+                approvalPolicyId: 'approve-for-me',
+                autoApprove: true,
+                toolApprovalRules: { shell: false, network: false },
+            },
+        );
+        expect(command).to.include('--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite');
+        expect(command).not.to.include(',Bash');
         expect(shouldUseQaiqStdioApprovals({
             agentId: 'qaiq',
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
             toolApprovalRules: { shell: false, network: false },
-        })).to.equal(true);
+        })).to.equal(false);
     });
 });

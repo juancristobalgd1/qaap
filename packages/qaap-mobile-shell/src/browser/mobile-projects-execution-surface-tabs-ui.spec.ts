@@ -94,7 +94,6 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             cardMenuUi: {
                 closeCardMenu: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['cardMenuUi'],
-            isAgentWorking: () => false,
             ...overrides,
         };
     }
@@ -136,7 +135,59 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }
     });
 
-    it('allows opening Changes when a streaming turn is visually settled', () => {
+    it('keeps all execution tabs in the overflow menu while the agent is streaming', () => {
+        const project: MobileProjectEntry = {
+            id: 'p1',
+            name: 'Demo',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        };
+        const summary = {
+            id: 'conv-1',
+            cwd: '/tmp/demo',
+            agentId: 'qaiq',
+            title: 'Build page',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+        };
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost({
+            transcriptOpenProject: project,
+            transcriptOpenSummary: summary,
+            transcriptLastConv: {
+                id: 'conv-1',
+                cwd: '/tmp/demo',
+                agentId: 'qaiq',
+                title: 'Build page',
+                status: 'streaming',
+                createdAt: 1,
+                updatedAt: 2,
+                messages: [{
+                    id: 'a1',
+                    role: 'agent',
+                    content: 'Working…',
+                    createdAt: 2,
+                }],
+            },
+            projects: [project],
+        }));
+
+        expect(ui.executionSurfaceTabSpecs().map(spec => spec.id)).to.deep.equal([
+            'messages', 'plan', 'review', 'preview', 'files', 'terminal',
+        ]);
+    });
+
+    it('allows opening Changes while the agent is still streaming', () => {
         const project: MobileProjectEntry = {
             id: 'p1',
             name: 'Demo',
@@ -183,7 +234,6 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 }],
             },
             projects: [project],
-            isAgentWorking: () => true,
         });
         const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
 

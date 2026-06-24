@@ -14,6 +14,9 @@ import {
     commandHasAutoApproveFlags,
 } from './qaap-agent-auto-approve';
 import { QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS } from './qaap-agent-subagent-policy';
+import {
+    formatQaiqCoreToolsFlag,
+} from './qaap-qaiq-tool-policy';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-conversation';
 
 export type { QaapAgentToolApprovalRules };
@@ -117,7 +120,22 @@ function applyQaiqApprovalFlags(
             ? injectAfterPattern(withoutLegacy, /\b(qaiq|openclaude)\b/, flags)
             : withoutLegacy;
     }
-    return ensureQaiqBlockedHeadlessTools(next);
+    return ensureQaiqCoreTools(ensureQaiqBlockedHeadlessTools(next), policyId, rules);
+}
+
+function ensureQaiqCoreTools(
+    command: string,
+    policyId: QaapAgentApprovalPolicyId,
+    rules: QaapAgentToolApprovalRules | undefined,
+): string {
+    const network = policyId === 'full-access' || rules?.network === true;
+    const shell = policyId !== 'request-approval' && rules?.shell !== false;
+    const flag = formatQaiqCoreToolsFlag({ network, shell });
+    const existing = /--tools\s+[^\s-][^\s]*/.exec(command);
+    if (existing) {
+        return command.replace(existing[0], flag);
+    }
+    return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, flag);
 }
 
 function formatQaiqApproveForMeFlags(_rules: QaapAgentToolApprovalRules): string {
@@ -228,6 +246,7 @@ function stripQaiqPermissionFlags(command: string): string {
         /--permission-mode\s+(?:default|acceptEdits|bypassPermissions|plan|dontAsk)\b/g,
         /--allowed-tools\s+[^\s-][^\s]*/g,
         /--disallowed-tools\s+[^\s-][^\s]*/g,
+        /--tools\s+[^\s-][^\s]*/g,
     ]);
 }
 

@@ -86,6 +86,29 @@ describe('qaap-qaiq-control-auto-response', () => {
         })).to.equal('deny');
     });
 
+    it('denies Theia Coder bridge tools even in bypassPermissions mode', () => {
+        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
+            requestId: 'req-1',
+            toolName: 'qaap_bootstrap_run_dev',
+        })).to.equal('deny');
+        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
+            requestId: 'req-2',
+            toolName: 'getWorkspaceFileList',
+        })).to.equal('deny');
+    });
+
+    it('denies tools outside the --tools allowlist when present', () => {
+        const command = 'qaiq --permission-mode default --tools Read,Write,Edit,Bash,Grep,Glob';
+        expect(resolveQaiqControlRequestAutoAction(command, true, {
+            requestId: 'req-1',
+            toolName: 'Agent',
+        })).to.equal('deny');
+        expect(resolveQaiqControlRequestAutoAction(command, true, {
+            requestId: 'req-2',
+            toolName: 'TodoWrite',
+        })).to.equal('deny');
+    });
+
     it('denies long-lived dev-server shell commands even with auto-approve', () => {
         expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
             requestId: 'req-1',

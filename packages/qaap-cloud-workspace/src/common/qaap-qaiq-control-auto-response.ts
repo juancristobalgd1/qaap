@@ -5,6 +5,7 @@
 
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
 import { buildSubagentDeniedMessage, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
+import { parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 export type QaapQaiqControlAutoAction = 'allow' | 'deny' | 'queue';
@@ -50,6 +51,10 @@ export function resolveQaiqControlRequestAutoAction(
     const toolName = request.toolName?.trim() ?? '';
     // Headless-blocked tools bypass useful stdio control once running — deny even in bypassPermissions.
     if (toolName && isBlockedHeadlessTool(toolName)) {
+        return 'deny';
+    }
+    const coreTools = parseQaiqCoreTools(command);
+    if (toolName && coreTools && !coreTools.has(toolName)) {
         return 'deny';
     }
     if (/(?:^|\s)--permission-mode\s+bypassPermissions(?:\s|$)/.test(command)) {

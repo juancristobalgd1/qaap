@@ -165,12 +165,125 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(row.querySelector('.theia-mobile-agent-activity-thinking')).to.not.equal(null);
         expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking')?.open).to.equal(false);
         const thinkingSummary = row.querySelector('.theia-mobile-agent-activity-thinking-summary');
-        expect(thinkingSummary?.querySelector('.theia-mobile-agent-activity-detail')).to.equal(null);
+        // Thinking excerpt preview is shown in the summary when the details is collapsed
+        const thinkingExcerpt = thinkingSummary?.querySelector('.theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt');
+        expect(thinkingExcerpt).to.not.equal(null);
+        expect(thinkingExcerpt?.textContent).to.include('Let me think about this step by step.');
         expect(thinkingSummary?.querySelector('.theia-mobile-agent-activity-tail')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-activity-thinking-body')?.textContent).to.include('Let me think about this step by step.');
         expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill')?.textContent).to.equal('page.tsx');
         expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill .theia-mobile-agent-activity-file-chip .codicon-file-code')).to.not.equal(null);
         expect(row.querySelector('.theia-mobile-agent-activity-file-chip-label')?.textContent).to.equal('page.tsx');
+    });
+
+    it('preserves the thinking excerpt element across streaming patches', () => {
+        const artifactsUi = createArtifactsUi();
+        const segmentsBefore: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Let me think about this step by step.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: undefined,
+                finished: false,
+            },
+        ];
+        const row = createStreamingRow(artifactsUi, segmentsBefore);
+        const excerptBefore = row.querySelector<HTMLElement>(
+            '.theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt',
+        );
+        expect(excerptBefore).to.not.equal(null);
+
+        // Patch with a changed segment (tool finished) to force a real sync.
+        const segmentsAfter: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Let me think about this step by step.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        artifactsUi.patchStreamingActivityTimeline(row, segmentsAfter);
+        const excerptAfter = row.querySelector<HTMLElement>(
+            '.theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt',
+        );
+        expect(excerptAfter).to.not.equal(null);
+        // The excerpt element should be reused, not removed and recreated.
+        expect(excerptAfter).to.equal(excerptBefore);
+        expect(excerptAfter?.textContent).to.include('Let me think about this step by step.');
+    });
+
+    it('respects user collapse of previously-live thinking across streaming patches', () => {
+        const artifactsUi = createArtifactsUi();
+        const initialSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: undefined,
+                finished: false,
+            },
+        ];
+        const row = createStreamingRow(artifactsUi, initialSegments);
+        const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        expect(details).to.not.equal(null);
+
+        // Simulate that the thinking was previously shown live (auto-expanded).
+        // This sets the condition that used to cause the re-open bug: the old
+        // code would re-open the details on every sync because the toggle
+        // handler cleared `thinkingUserExpanded` on close.
+        details!.dataset.thinkingWasLive = '1';
+
+        // Patch with changed segments to force a sync — the thinking should
+        // auto-expand (programmatic toggle, not user toggle).
+        const expandedSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        artifactsUi.patchStreamingActivityTimeline(row, expandedSegments);
+        const detailsAfterExpand = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        expect(detailsAfterExpand?.open).to.equal(true);
+        expect(detailsAfterExpand?.dataset.thinkingUserToggled).to.equal(undefined);
+        const copyAfterExpand = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        expect(copyAfterExpand?.classList.contains('theia-mod-thinking-open')).to.equal(true);
+
+        // User collapses the thinking details.
+        detailsAfterExpand!.open = false;
+        expect(detailsAfterExpand?.dataset.thinkingUserToggled).to.equal('1');
+
+        // Patch again with different segments to force another sync — the
+        // user's collapse must be respected (no re-open).
+        const collapsedSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'Done.' },
+        ];
+        artifactsUi.patchStreamingActivityTimeline(row, collapsedSegments);
+        const detailsAfterCollapse = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        expect(detailsAfterCollapse?.open).to.equal(false);
+        expect(detailsAfterCollapse?.dataset.thinkingUserToggled).to.equal('1');
+        const copyAfterCollapse = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        expect(copyAfterCollapse?.classList.contains('theia-mod-thinking-open')).to.equal(false);
     });
 
     it('renders expandable grouped terminal steps with command details', () => {

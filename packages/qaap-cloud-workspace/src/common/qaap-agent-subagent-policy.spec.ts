@@ -50,6 +50,12 @@ describe('qaap-agent-subagent-policy', () => {
         expect(message).to.include('do not retry AskUserQuestion');
     });
 
+    it('buildSubagentDeniedMessage blocks Theia Coder tools', () => {
+        const message = buildSubagentDeniedMessage('qaap_bootstrap_install');
+        expect(message).to.include('Theia Coder');
+        expect(message).to.include('qaap_bootstrap_install');
+    });
+
     it('extractRequestedSkillName reads skill from tool input', () => {
         expect(extractRequestedSkillName({ skillName: 'react-doctor' })).to.equal('react-doctor');
         expect(isKnownUnavailableSkillName('claude-code-guide')).to.equal(true);

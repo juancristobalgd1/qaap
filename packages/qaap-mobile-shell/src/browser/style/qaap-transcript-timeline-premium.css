@@ -107,6 +107,50 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Blinking cursor for the active streaming step — Codex-style `▍` caret
+ * appended after the active row's text, showing where the model is writing.
+ * ------------------------------------------------------------------------- */
+
+@keyframes qaap-trace-cursor-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  95% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming
+  .theia-mobile-agent-activity-item.theia-mod-active
+  .theia-mobile-agent-activity-copy::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 1px;
+  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 80%, var(--theia-foreground));
+  font-weight: 400;
+  font-size: 0.85em;
+  animation: qaap-trace-cursor-blink 1s steps(1) infinite;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Hide the cursor when the active item has an open thinking details —
+   the thinking body has its own live indicator. The `theia-mod-thinking-open`
+   class is toggled on `.theia-mobile-agent-activity-copy` by the sync logic
+   to mirror the `<details>` open state (CSS has no parent selector). */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming
+  .theia-mobile-agent-activity-item.theia-mod-active
+  .theia-mobile-agent-activity-copy.theia-mod-thinking-open::after {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
  * Activity icon: smooth state-colour transition.
  * No spinner rings, no halos, no rotating borders — Codex uses a simple
  * animated bullet/dot, not decorative rings.
@@ -266,6 +310,29 @@
   color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 80%, var(--theia-foreground));
   font-weight: 560;
   font-style: italic;
+}
+
+/* Thinking excerpt preview: dim italic text after the verb showing a brief
+   snippet of the model's reasoning. Visible even when the <details> is
+   collapsed, so the user can see what the model was thinking about. */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt {
+  font-size: 12px;
+  font-weight: 400;
+  font-style: italic;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 70%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Hide the excerpt when the thinking details is open (the full body is
+   visible, so the preview is redundant). */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking[open] .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt {
+  display: none;
 }
 
 /* Live thinking: shimmer the verb text */
@@ -449,6 +516,9 @@
     .theia-mobile-agent-activity-timeline-summary-icon,
   .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
     .theia-mobile-agent-activity-timeline-summary-chevron,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming
+    .theia-mobile-agent-activity-item.theia-mod-active
+    .theia-mobile-agent-activity-copy::after,
   .theia-mobile-agent-stream-line .theia-mobile-agent-stream-dot {
     animation: none !important;
     transition: none !important;

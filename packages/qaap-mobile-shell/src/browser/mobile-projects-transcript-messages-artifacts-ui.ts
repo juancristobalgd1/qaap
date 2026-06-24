@@ -3088,7 +3088,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             details.removeAttribute('data-transcript-thinking-segment');
         }
         const summaryEl = details.querySelector<HTMLElement>('.theia-mobile-agent-activity-thinking-summary');
-        summaryEl?.querySelector('.theia-mobile-agent-activity-detail')?.remove();
         summaryEl?.querySelector('.theia-mobile-agent-activity-tail')?.remove();
         copy.querySelector(':scope > .theia-mobile-agent-activity-meta')?.remove();
         details.querySelector(':scope > .theia-mobile-agent-activity-meta')?.remove();
@@ -3103,6 +3102,27 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (verbEl) {
             verbEl.textContent = item.verb ?? nls.localize('qaap/mobileProjects/transcriptThinking', 'Thinking');
             verbEl.classList.toggle('theia-mod-shimmer', shimmerActive);
+        }
+        // Add a dim excerpt preview after the verb so the user can see what the
+        // model was reasoning about, even when the thinking step is collapsed.
+        // This matches Codex/Claude Desktop which show a brief reasoning snippet.
+        const excerptEl = rowEl?.querySelector<HTMLElement>('.theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt');
+        if (rowEl && item.thinkingContent) {
+            const excerpt = excerptTranscriptThought(item.thinkingContent, 120);
+            if (excerpt) {
+                let detail = excerptEl;
+                if (!detail) {
+                    detail = document.createElement('span');
+                    detail.className = 'theia-mobile-agent-activity-detail theia-mod-thinking-excerpt';
+                    rowEl.append(document.createTextNode(' '), detail);
+                }
+                detail.textContent = excerpt;
+                detail.classList.toggle('theia-mod-shimmer', shimmerActive);
+            } else {
+                excerptEl?.remove();
+            }
+        } else {
+            excerptEl?.remove();
         }
         const metaText = formatTranscriptActivityStepMeta(item.durationMs, item.timestamp);
         let meta = rowEl?.querySelector<HTMLElement>('.theia-mobile-agent-activity-meta');
@@ -3122,16 +3142,37 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             bodyEl.textContent = this.contentUi.cleanTranscriptDisplayText(item.thinkingContent);
         }
         details.classList.toggle('theia-mod-live', shimmerActive);
-        if (!details.dataset.thinkingUserExpanded) {
-            details.open = shimmerActive;
+        // Track if the thinking was ever shown live so we can keep it expanded
+        // after the model finishes thinking (don't auto-collapse reasoning).
+        if (shimmerActive) {
+            details.dataset.thinkingWasLive = '1';
         }
+        if (!details.dataset.thinkingUserToggled) {
+            // Auto-expand while live; keep expanded after thinking was live;
+            // for completed thinking loaded from history, start collapsed but
+            // with the excerpt preview visible in the summary row.
+            const desiredOpen = shimmerActive || details.dataset.thinkingWasLive === '1';
+            if (details.open !== desiredOpen) {
+                // Mark this as a programmatic toggle so the listener below
+                // does not treat it as a user interaction.
+                details.dataset.thinkingProgrammaticToggle = '1';
+                details.open = desiredOpen;
+            }
+        }
+        // Reflect the open state on the copy element so CSS can hide the
+        // streaming cursor when the thinking body is already visible.
+        copy.classList.toggle('theia-mod-thinking-open', details.open);
         if (!details.dataset.thinkingToggleBound) {
             details.dataset.thinkingToggleBound = '1';
             details.addEventListener('toggle', () => {
-                if (details.open) {
-                    details.dataset.thinkingUserExpanded = '1';
-                } else {
-                    details.removeAttribute('data-thinking-user-expanded');
+                if (details.dataset.thinkingProgrammaticToggle) {
+                    details.removeAttribute('data-thinking-programmatic-toggle');
+                    copy.classList.toggle('theia-mod-thinking-open', details.open);
+                    return;
+                }
+                details.dataset.thinkingUserToggled = '1';
+                copy.classList.toggle('theia-mod-thinking-open', details.open);
+                if (!details.open) {
                     this.guardTranscriptActivityExpandClose(copy);
                 }
             });
