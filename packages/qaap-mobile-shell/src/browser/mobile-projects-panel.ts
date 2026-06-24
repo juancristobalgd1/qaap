@@ -685,6 +685,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.cardMenuUi.handleDocumentPointerDown(ev);
     };
 
+    protected refreshProjectsInFlight: Promise<void> | undefined;
+
     protected readonly onAuthSessionChanged = (): void => {
         this.panelLifecycleUi.updateAccountAvatar();
         this.sessionsSidebar?.updateAccountAvatar();
@@ -692,7 +694,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             this.resetInboxPullRequestState();
             void this.refreshInboxPullRequests(undefined, true);
         }
-        void this.refreshProjects();
+        if (this.refreshProjectsInFlight) {
+            return;
+        }
+        this.refreshProjectsInFlight = this.refreshProjects().finally(() => {
+            this.refreshProjectsInFlight = undefined;
+        });
     };
 
     protected readonly onAccountClick = (): void => {

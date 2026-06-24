@@ -127,12 +127,31 @@ export function readQaapAuthSessionId(): string | undefined {
     }
 }
 
+function qaapAuthUsersEqual(a: QaapAuthUser | undefined, b: QaapAuthUser): boolean {
+    if (!a) {
+        return false;
+    }
+    return a.provider === b.provider
+        && a.login === b.login
+        && a.name === b.name
+        && a.avatarUrl === b.avatarUrl;
+}
+
 export function writeQaapAuthSession(provider: QaapAuthProvider, user?: QaapAuthUser, sessionId?: string): void {
     if (typeof window === 'undefined' || !window.localStorage) {
         return;
     }
-    const previousLogin = readQaapAuthUser()?.login;
+    const previousUser = readQaapAuthUser();
+    const previousLogin = previousUser?.login;
     const profile = user ?? placeholderQaapAuthUser(provider);
+    const nextSessionId = sessionId ?? readQaapAuthSessionId();
+    const sessionUnchanged = readQaapSignedIn()
+        && readQaapAuthProvider() === provider
+        && qaapAuthUsersEqual(previousUser, profile)
+        && readQaapAuthSessionId() === nextSessionId;
+    if (sessionUnchanged) {
+        return;
+    }
     if (previousLogin && profile.login && previousLogin !== profile.login) {
         window.dispatchEvent(new CustomEvent('qaap-auth-user-changed', {
             detail: { previousLogin, nextLogin: profile.login },
@@ -141,8 +160,8 @@ export function writeQaapAuthSession(provider: QaapAuthProvider, user?: QaapAuth
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_SIGNED_IN_KEY), JSON.stringify(true));
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_PROVIDER_KEY), JSON.stringify(provider));
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_USER_KEY), JSON.stringify(profile));
-    if (sessionId) {
-        window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_SESSION_ID_KEY), JSON.stringify(sessionId));
+    if (nextSessionId) {
+        window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_SESSION_ID_KEY), JSON.stringify(nextSessionId));
     }
     window.dispatchEvent(new CustomEvent('qaap-auth-session-changed'));
 }
@@ -162,6 +181,9 @@ export function clearQaapAuthSession(): void {
         if (key && (key.includes('qaap.auth') || key.endsWith(QAAP_AUTH_SIGNED_IN_KEY) || key.endsWith(QAAP_AUTH_PROVIDER_KEY) || key.endsWith(QAAP_AUTH_USER_KEY))) {
             keysToRemove.push(key);
         }
+    }
+    if (keysToRemove.length === 0) {
+        return;
     }
     for (const key of keysToRemove) {
         window.localStorage.removeItem(key);
