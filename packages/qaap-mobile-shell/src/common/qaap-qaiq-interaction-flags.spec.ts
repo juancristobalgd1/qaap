@@ -22,9 +22,9 @@ describe('qaap-qaiq-interaction-flags', () => {
         expect(formatQaiqInteractionFlags({ autoApprove: false }))
             .to.equal('--permission-mode default');
         expect(formatQaiqInteractionFlags({ approvalPolicyId: 'approve-for-me' }))
-            .to.equal('--permission-mode acceptEdits');
+            .to.equal('--dangerously-skip-permissions');
         expect(formatQaiqInteractionFlags({ approvalPolicyId: 'full-access' }))
-            .to.equal('--permission-mode bypassPermissions');
+            .to.equal('--dangerously-skip-permissions');
     });
 
     it('normalizeInteractionModeId falls back to agent', () => {

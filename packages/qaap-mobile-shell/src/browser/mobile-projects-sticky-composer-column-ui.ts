@@ -263,6 +263,8 @@ export class MobileProjectsStickyComposerColumnUi {
                     }),
                     'destination',
                 );
+            } else {
+                branchWorkspaceBar.classList.add('theia-mod-branch-only');
             }
         }
 
@@ -274,10 +276,7 @@ export class MobileProjectsStickyComposerColumnUi {
         agentBtn.classList.add('theia-mod-field-agent');
         agentField.append(agentBtn, usageBadge);
         if (options.showWorkspaceBar) {
-            const trayDivider = document.createElement('span');
-            trayDivider.className = 'theia-mobile-projects-sticky-composer-context-divider';
-            trayDivider.setAttribute('aria-hidden', 'true');
-            contextFields.append(trayDivider, agentField);
+            contextFields.append(agentField);
             toolbar.prepend(contextFields);
         } else {
             trayRight.append(agentBtn, usageBadge);

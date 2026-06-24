@@ -138,6 +138,7 @@ export class MobileProjectsComposerHeaderUi {
         this.host.root.style.setProperty('--theia-mobile-projects-fab-lift', '0px');
     }
 
+    /** Branch (+ project tray) stay visible for idle and active conversations; only the destination pill is idle-only. */
     shouldShowComposerWorkspaceBar(_summary?: QaapAgentConversationSummaryDTO): boolean {
         return true;
     }

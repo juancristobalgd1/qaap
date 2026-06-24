@@ -158,25 +158,12 @@ export function resolveTranscriptTraceDisplayPhase(
     return 'acting';
 }
 
-/** True while the turn is streaming but no tool or substantive answer has arrived yet. */
+/** @deprecated Bootstrap lifecycle rows removed — keep false so callers skip filler chrome. */
 export function shouldShowTranscriptStreamingBootstrapTimeline(
-    segments: readonly ThinkingPhaseSegment[],
-    streaming: boolean,
+    _segments: readonly ThinkingPhaseSegment[],
+    _streaming: boolean,
 ): boolean {
-    if (!streaming) {
-        return false;
-    }
-    if (segments.some(segment => segment.type === 'tool')) {
-        return false;
-    }
-    if (hasActiveTranscriptToolSegment(segments)) {
-        return false;
-    }
-    const textChars = resolveTranscriptAgentTextChars(segments);
-    if (textChars > 0 && !isTranscriptShortTextPreamble(segments)) {
-        return false;
-    }
-    return true;
+    return false;
 }
 
 /** Show bootstrap lifecycle steps during thinking-only streaming; otherwise hide redundant thinking chrome. */

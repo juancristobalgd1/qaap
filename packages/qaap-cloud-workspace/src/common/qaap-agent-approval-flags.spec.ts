@@ -22,28 +22,26 @@ describe('qaap-agent-approval-flags', () => {
             .to.deep.equal({ shell: true, network: false });
     });
 
-    it('approve-for-me allows read-only exploration for QAIQ', () => {
+    it('approve-for-me uses OpenCode-style skip for QAIQ headless runs', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
-        expect(command).to.include('--allowed-tools');
-        expect(command).to.include('Read');
-        expect(command).to.include('Grep');
-        expect(command).not.to.include('acceptEdits');
+        expect(command).to.include('--dangerously-skip-permissions');
+        expect(command).to.include('--disallowed-tools Agent,Task,Skill,AskUserQuestion');
+        expect(command).not.to.include('--allowed-tools');
     });
 
-    it('approve-for-me strips template acceptEdits before injecting allowed-tools', () => {
+    it('approve-for-me strips template acceptEdits before injecting skip-permissions', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --permission-mode acceptEdits --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
-        expect(command).to.include('--permission-mode default');
-        expect(command).to.include('--allowed-tools');
+        expect(command).to.include('--dangerously-skip-permissions');
         expect(command).not.to.include('acceptEdits');
     });
 
-    it('approve-for-me blocks QAIQ subagent tools under allowed-tools', () => {
+    it('approve-for-me blocks QAIQ headless tools under skip-permissions', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
@@ -107,11 +105,16 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.include('--full-auto');
     });
 
-    it('default approve-for-me still needs QAIQ stdio for gated shell', () => {
+    it('default approve-for-me does not use QAIQ stdio on headless runs', () => {
         expect(shouldUseQaiqStdioApprovals({
             agentId: 'qaiq',
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
+        })).to.equal(false);
+        expect(shouldUseQaiqStdioApprovals({
+            agentId: 'qaiq',
+            approvalPolicyId: 'request-approval',
+            autoApprove: false,
         })).to.equal(true);
         expect(shouldUseInteractiveAgentApprovals({
             agentId: 'qaiq',

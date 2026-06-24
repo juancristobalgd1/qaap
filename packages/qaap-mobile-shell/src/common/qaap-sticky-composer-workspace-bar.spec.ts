@@ -24,7 +24,7 @@ describe('qaap-sticky-composer-workspace-bar', () => {
         disableJSDOM = undefined;
     });
 
-    it('separates branch and destination with a divider in the workspace context bar', () => {
+    it('renders branch and destination fields in the workspace context bar', () => {
         const bar = renderStickyComposerWorkspaceBar({
             view: { projectName: 'Demo', branchName: 'main' },
             includeProject: false,
@@ -42,8 +42,20 @@ describe('qaap-sticky-composer-workspace-bar', () => {
             }),
             'destination',
         );
-        expect(bar.querySelectorAll('.theia-mobile-projects-sticky-composer-context-divider').length).to.equal(1);
+        expect(bar.querySelectorAll('.theia-mobile-projects-sticky-composer-context-divider').length).to.equal(0);
         expect(bar.querySelector('.theia-mod-branch')).to.not.equal(null);
         expect(bar.querySelector('.theia-mod-destination')).to.not.equal(null);
+    });
+
+    it('renders branch without destination when only the branch field is needed', () => {
+        const bar = renderStickyComposerWorkspaceBar({
+            view: { projectName: 'Demo', branchName: 'fix/critical-bugs' },
+            includeProject: false,
+            onOpenProject: () => undefined,
+            onOpenBranch: () => undefined,
+        });
+        bar.classList.add('theia-mod-branch-only');
+        expect(bar.querySelector('.theia-mod-branch')).to.not.equal(null);
+        expect(bar.querySelector('.theia-mod-destination')).to.equal(null);
     });
 });
