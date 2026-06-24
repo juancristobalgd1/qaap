@@ -6,7 +6,9 @@
 import { expect } from 'chai';
 import {
     buildSubagentDeniedMessage,
+    extractRequestedSkillName,
     extractRequestedSubagentType,
+    isKnownUnavailableSkillName,
     isKnownUnavailableSubagentType,
 } from './qaap-agent-subagent-policy';
 import { buildQaiqAutoDeniedToolMessage } from './qaap-qaiq-control-auto-response';
@@ -34,6 +36,17 @@ describe('qaap-agent-subagent-policy', () => {
     it('buildQaiqAutoDeniedToolMessage delegates to subagent policy', () => {
         expect(buildQaiqAutoDeniedToolMessage('Task', { subagent_type: 'react-debug' }))
             .to.include('react-debug');
+    });
+
+    it('buildSubagentDeniedMessage names unavailable Skill lookups explicitly', () => {
+        const message = buildSubagentDeniedMessage('Skill', { skill: 'claude-code-guide' });
+        expect(message).to.include('claude-code-guide');
+        expect(message).to.include('do not retry Skill');
+    });
+
+    it('extractRequestedSkillName reads skill from tool input', () => {
+        expect(extractRequestedSkillName({ skillName: 'react-doctor' })).to.equal('react-doctor');
+        expect(isKnownUnavailableSkillName('claude-code-guide')).to.equal(true);
     });
 
 });

@@ -4,14 +4,13 @@
 // *****************************************************************************
 
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
-import { buildSubagentDeniedMessage } from './qaap-agent-subagent-policy';
+import { buildSubagentDeniedMessage, isBlockedDelegationTool } from './qaap-agent-subagent-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 export type QaapQaiqControlAutoAction = 'allow' | 'deny' | 'queue';
 
 const NETWORK_TOOL_NAMES = new Set(['WebSearch', 'WebFetch', 'Fetch']);
 const SHELL_TOOL_NAMES = new Set(['Bash', 'Shell', 'ShellCommand', 'run_terminal_cmd']);
-const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
 
 function parseAllowedTools(command: string): Set<string> | undefined {
     const match = /--allowed-tools\s+([^\s-][^\s]*)/.exec(command);
@@ -29,17 +28,13 @@ function isShellTool(toolName: string): boolean {
     return SHELL_TOOL_NAMES.has(toolName.trim());
 }
 
-function isSubagentTool(toolName: string): boolean {
-    return SUBAGENT_TOOL_NAMES.has(toolName.trim());
-}
-
 /**
  * Resolve a QAIQ stdio `control_request` against the spawned CLI flags.
  *
  * Tools the policy auto-allows resolve immediately; gated shell/network tools are
  * queued to the approvals UI so the user can grant them mid-turn (the runner applies
- * a grace timeout so an unattended run still finishes). Only subagents and the
- * dev-server guard auto-deny — those can never be approved interactively.
+ * a grace timeout so an unattended run still finishes). Delegation tools (Agent/Task/Skill)
+ * and the dev-server guard auto-deny — those can never be approved interactively.
  */
 export function resolveQaiqControlRequestAutoAction(
     command: string,
@@ -52,17 +47,16 @@ export function resolveQaiqControlRequestAutoAction(
     if (findQaiqDevServerGuardDenial(request)) {
         return 'deny';
     }
+    const toolName = request.toolName?.trim() ?? '';
+    // Delegation tools bypass useful stdio control once running — deny even in bypassPermissions.
+    if (toolName && isBlockedDelegationTool(toolName)) {
+        return 'deny';
+    }
     if (/(?:^|\s)--permission-mode\s+bypassPermissions(?:\s|$)/.test(command)) {
         return 'allow';
     }
-    const toolName = request.toolName?.trim() ?? '';
     if (!toolName) {
         return 'allow';
-    }
-    // Subagents bypass the stdio control protocol once running, so approving them
-    // interactively cannot work — deny with guidance instead.
-    if (isSubagentTool(toolName)) {
-        return 'deny';
     }
     const allowedTools = parseAllowedTools(command);
     if (allowedTools) {
@@ -74,7 +68,7 @@ export function resolveQaiqControlRequestAutoAction(
     return 'allow';
 }
 
-/** Deny guidance for tools that can never be approved mid-turn (subagents). */
+/** Deny guidance for tools that can never be approved mid-turn (delegation tools). */
 export function buildQaiqAutoDeniedToolMessage(
     toolName: string,
     toolInput?: Record<string, unknown>,
