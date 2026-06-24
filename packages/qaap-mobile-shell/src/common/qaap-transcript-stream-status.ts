@@ -166,7 +166,10 @@ export function shouldShowTranscriptStreamingBootstrapTimeline(
     return false;
 }
 
-/** Show bootstrap lifecycle steps during thinking-only streaming; otherwise hide redundant thinking chrome. */
+/** Show the inline timeline whenever there is visible activity — including
+ *  the thinking phase, so the user sees the model's reasoning as a step in
+ *  the timeline with its icon. Falls back to the thought brief only when
+ *  there is no thinking content yet (e.g. empty streaming turn). */
 export function shouldShowTranscriptInlineTimeline(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
@@ -174,10 +177,14 @@ export function shouldShowTranscriptInlineTimeline(
     if (shouldShowTranscriptStreamingBootstrapTimeline(segments, streaming)) {
         return true;
     }
-    return resolveTranscriptTraceDisplayPhase(segments, streaming) !== 'thinking';
+    const phase = resolveTranscriptTraceDisplayPhase(segments, streaming);
+    if (phase === 'thinking') {
+        return resolveTranscriptThinkingChars(segments) > 0;
+    }
+    return true;
 }
 
-/** Expanded checklist while tools run; collapsed once settled (Cursor keeps summary visible). */
+/** Expanded checklist while tools run or model thinks; collapsed once settled (Cursor keeps summary visible). */
 export function shouldExpandTranscriptInlineTimeline(
     segments: readonly ThinkingPhaseSegment[],
     streaming: boolean,
@@ -185,7 +192,11 @@ export function shouldExpandTranscriptInlineTimeline(
     if (shouldShowTranscriptStreamingBootstrapTimeline(segments, streaming)) {
         return true;
     }
-    return resolveTranscriptTraceDisplayPhase(segments, streaming) === 'acting';
+    const phase = resolveTranscriptTraceDisplayPhase(segments, streaming);
+    if (phase === 'thinking') {
+        return resolveTranscriptThinkingChars(segments) > 0;
+    }
+    return phase === 'acting';
 }
 
 /** Short duration label for thought headers — Cursor uses seconds for brief thinks. */
