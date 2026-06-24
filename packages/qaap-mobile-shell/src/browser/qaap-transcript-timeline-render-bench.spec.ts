@@ -309,6 +309,98 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(copyAfterPatch?.classList.contains('theia-mod-thinking-open')).to.equal(true);
     });
 
+    it('auto-collapses thinking when the model starts writing its final response', () => {
+        const artifactsUi = createArtifactsUi();
+        const initialSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const row = createStreamingRow(artifactsUi, initialSegments);
+        const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        expect(details).to.not.equal(null);
+
+        // Simulate: thinking was previously live (auto-expanded), user has NOT
+        // toggled. The thinking should currently be expanded.
+        details!.dataset.thinkingWasLive = '1';
+        details!.open = true;
+
+        // Patch with a text segment that exceeds the short-preamble threshold
+        // (TRANSCRIPT_TEXT_PREAMBLE_MAX_CHARS = 40). This transitions the
+        // message into the "writing" phase, so the chain of thought should
+        // auto-collapse to give the summary focus.
+        const writingSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'I have read the file and I am now writing the final summary for the user.' },
+        ];
+        artifactsUi.patchStreamingActivityTimeline(row, writingSegments);
+        const detailsAfterWriting = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        // The thinking should auto-collapse when writing starts.
+        expect(detailsAfterWriting?.open).to.equal(false);
+        expect(detailsAfterWriting?.dataset.thinkingCollapsedForWriting).to.equal('1');
+        const copyAfterWriting = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        expect(copyAfterWriting?.classList.contains('theia-mod-thinking-open')).to.equal(false);
+    });
+
+    it('keeps thinking expanded while tools are still acting after thinking', () => {
+        const artifactsUi = createArtifactsUi();
+        const initialSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const row = createStreamingRow(artifactsUi, initialSegments);
+        const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        expect(details).to.not.equal(null);
+
+        // Simulate: thinking was previously live (auto-expanded). Also sync
+        // the copy class to match the open state (as the real sync would).
+        details!.dataset.thinkingWasLive = '1';
+        details!.open = true;
+        const copy = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        copy?.classList.add('theia-mod-thinking-open');
+
+        // Patch with changed thinking content and an unfinished tool — the
+        // model is still acting, so the thinking should stay expanded.
+        const actingSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work. Now let me read the file.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: undefined,
+                finished: false,
+            },
+        ];
+        artifactsUi.patchStreamingActivityTimeline(row, actingSegments);
+        const detailsAfterActing = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
+        expect(detailsAfterActing?.open).to.equal(true);
+        expect(detailsAfterActing?.dataset.thinkingCollapsedForWriting).to.equal(undefined);
+        const copyAfterActing = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        expect(copyAfterActing?.classList.contains('theia-mod-thinking-open')).to.equal(true);
+    });
+
     it('renders expandable grouped terminal steps with command details', () => {
         const artifactsUi = createArtifactsUi();
         const segments: QaapAgentMessageSegmentDTO[] = [

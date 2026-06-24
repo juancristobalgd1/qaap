@@ -13,7 +13,7 @@ import {
 } from '../common/qaap-agent-failure-message';
 import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
+import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
@@ -2388,7 +2388,16 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             && !this.resolveTranscriptStreamVisualIdle(options?.segments ?? [], !!options?.streaming);
         const tierClass = transcriptTimelineTierClassName(tier);
         const contentFingerprint = fingerprintTranscriptActivityItemContent(item);
-        const itemFingerprint = fingerprintTranscriptActivityItemSlot(item, isActive, tierClass, shimmerActive);
+        // For thinking items, include the overall message display phase in the
+        // fingerprint so that a transition from acting → writing (or → settled)
+        // forces a re-sync even when the thinking content itself hasn't changed.
+        // This is what triggers the auto-collapse of the chain of thought once
+        // the model starts writing its final response.
+        const isThinkingItem = !!(item.thinkingContent || item.navigate === 'thought');
+        const phaseSuffix = isThinkingItem
+            ? `|phase:${resolveTranscriptTraceDisplayPhase(options?.segments ?? [], !!options?.streaming)}`
+            : '';
+        const itemFingerprint = fingerprintTranscriptActivityItemSlot(item, isActive, tierClass, shimmerActive) + phaseSuffix;
         if (li.getAttribute(TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR) === itemFingerprint) {
             recordTranscriptRenderMetric('timeline_item_sync_skipped');
             return;
@@ -3143,15 +3152,29 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         details.classList.toggle('theia-mod-live', shimmerActive);
         // Track if the thinking was ever shown live so we can keep it expanded
-        // after the model finishes thinking (don't auto-collapse reasoning).
+        // while tools run after thinking (don't auto-collapse reasoning mid-turn).
         if (shimmerActive) {
             details.dataset.thinkingWasLive = '1';
         }
+        // Detect the overall message phase: while the model is writing its
+        // final text response (or once the turn has settled), auto-collapse
+        // the chain of thought so the summary takes focus. While tools are
+        // still acting, keep the reasoning visible.
+        const segments = options?.segments ?? [];
+        const phase = resolveTranscriptTraceDisplayPhase(segments, !!options?.streaming);
+        const writingOrSettled = phase === 'writing' || phase === 'settled';
+        if (writingOrSettled) {
+            details.dataset.thinkingCollapsedForWriting = '1';
+        }
         if (!details.dataset.thinkingUserToggled) {
-            // Auto-expand while live; keep expanded after thinking was live;
-            // for completed thinking loaded from history, start collapsed but
-            // with the excerpt preview visible in the summary row.
-            const desiredOpen = shimmerActive || details.dataset.thinkingWasLive === '1';
+            // Auto-expand while live; keep expanded while tools act after
+            // thinking; collapse once the model starts writing the summary
+            // (or the turn settles). For completed thinking loaded from
+            // history, start collapsed but with the excerpt preview visible
+            // in the summary row.
+            const collapsedForWriting = details.dataset.thinkingCollapsedForWriting === '1';
+            const desiredOpen = shimmerActive
+                || (details.dataset.thinkingWasLive === '1' && !collapsedForWriting);
             if (details.open !== desiredOpen) {
                 // Mark this as a programmatic toggle so the listener below
                 // does not treat it as a user interaction.
