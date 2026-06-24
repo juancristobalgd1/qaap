@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     isAgentToolResultFailure,
+    isLikelyReadToolFileContent,
     isTranscriptErrorOutput,
     isTranscriptTerminalOutputText,
     looksLikeTranscriptMarkdown,
@@ -57,5 +58,25 @@ describe('qaap-transcript-content-display', () => {
         expect(isAgentToolResultFailure(globOutput)).to.equal(false);
         expect(isAgentToolResultFailure('fatal: not a git repository')).to.equal(true);
         expect(isAgentToolResultFailure('git log --oneline -10\nError: Exit code 128')).to.equal(true);
+    });
+
+    it('isLikelyReadToolFileContent detects Claude/QAIQ Read payloads', () => {
+        const readOutput = [
+            '<path>/repo/src/Canvas.tsx</path>',
+            '<type>file</type>',
+            '<content>',
+            '1: import { useState } from \'react\';',
+            '2: const [webglError, setWebglError] = useState<string | null>(null);',
+            '3: error={webglError}',
+            '</content>',
+            '(End of file - total 3 lines)',
+        ].join('\n');
+        expect(isLikelyReadToolFileContent(readOutput)).to.equal(true);
+        expect(isAgentToolResultFailure(readOutput, { toolName: 'Read' })).to.equal(false);
+    });
+
+    it('isAgentToolResultFailure still flags real Read failures', () => {
+        expect(isAgentToolResultFailure('<tool_use_error>File not found</tool_use_error>', { toolName: 'Read' })).to.equal(true);
+        expect(isAgentToolResultFailure('Error: File does not exist: /missing.ts', { toolName: 'Read' })).to.equal(true);
     });
 });

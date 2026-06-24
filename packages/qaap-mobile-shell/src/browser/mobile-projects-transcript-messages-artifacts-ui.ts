@@ -227,7 +227,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 if (!shouldRenderTranscriptToolSegmentInline({
                     activityTimelineShown,
                     finished: segment.finished,
-                    resultFailed: this.resolversUi.transcriptToolResultFailed(segment.result),
+                    resultFailed: this.resolversUi.transcriptToolResultFailed(segment.result, segment.name),
                     toolKind: classifyTranscriptToolActivityKind(segment.name),
                     hasToolOutput: !!segment.result?.trim(),
                 })) {
@@ -2820,7 +2820,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             segment?: QaapAgentMessageSegmentDTO,
         ): TranscriptActivityTerminalExpandEntry => {
             const rawOutput = segment?.type === 'tool' ? segment.result : entry.output;
-            const failed = this.resolversUi.transcriptToolResultFailed(rawOutput);
+            const failed = this.resolversUi.transcriptToolResultFailed(rawOutput, segment?.type === 'tool' ? segment.name : undefined);
             const finished = entry.finished ?? (segment?.type === 'tool' ? segment.finished : true);
             const output = rawOutput?.trim() && !/^ok$/i.test(rawOutput.trim())
                 ? this.resolversUi.formatTranscriptToolResult(rawOutput)

@@ -55,6 +55,29 @@ export function isTranscriptErrorOutput(content: string): boolean {
         || /^\s*at\s+(?:\S+\.)?\S+\s*\(/m.test(content);
 }
 
+/**
+ * Claude / QAIQ Read success payloads: numbered source lines and optional
+ * {@code <path>}/{@code <content>} wrappers. Must not run stderr keyword heuristics
+ * on this body — identifiers like {@code webglError} or {@code error=} are normal.
+ */
+export function isLikelyReadToolFileContent(result: string): boolean {
+    const trimmed = result.trim();
+    if (!trimmed) {
+        return false;
+    }
+    if (/\(End of file - total \d+ lines?\)/i.test(trimmed)) {
+        return true;
+    }
+    if (/<path>[\s\S]+<\/path>[\s\S]*<content>[\s\S]+<\/content>/i.test(trimmed)) {
+        return true;
+    }
+    if (/<type>file<\/type>/i.test(trimmed) && /<content>/i.test(trimmed)) {
+        return true;
+    }
+    const numberedLines = trimmed.split('\n').filter(line => /^\d+:\s/.test(line.trim())).length;
+    return numberedLines >= 2;
+}
+
 /** Path-like stdout line from Glob/Grep/LS — not an error summary. */
 export function isLikelyToolResultPathLine(line: string): boolean {
     const trimmed = line.trim();
@@ -76,18 +99,37 @@ export function isLikelyToolResultPathLine(line: string): boolean {
     return false;
 }
 
+export interface AgentToolResultFailureOptions {
+    /** When set to a Read-like tool, file payloads skip keyword heuristics. */
+    readonly toolName?: string;
+}
+
+function isPureReadToolName(toolName: string | undefined): boolean {
+    if (!toolName?.trim()) {
+        return false;
+    }
+    const name = toolName.trim().toLowerCase();
+    return name === 'read' || name.endsWith('.read') || name.includes('fileread');
+}
+
 /**
  * Whether a finished tool's stdout/stderr indicates failure.
- * Ignores {@code error} substrings inside file paths (e.g. css-syntax-error.js).
+ * Ignores {@code error} substrings inside file paths (e.g. css-syntax-error.js)
+ * and inside Read tool file payloads (e.g. {@code webglError}, {@code error=}).
  */
-export function isAgentToolResultFailure(result: string | undefined): boolean {
+export function isAgentToolResultFailure(
+    result: string | undefined,
+    options: AgentToolResultFailureOptions = {},
+): boolean {
     if (!result?.trim()) {
         return false;
     }
     if (/tool_use_error|InputValidationError/i.test(result)) {
         return true;
     }
-    if (isTranscriptErrorOutput(result)) {
+    const readFilePayload = isLikelyReadToolFileContent(result)
+        || (isPureReadToolName(options.toolName) && /^\d+:\s/m.test(result));
+    if (isTranscriptErrorOutput(result) && !readFilePayload) {
         return true;
     }
     if (/\b(?:exit\s+code|exited with (?:code )?)\s*[1-9]\d*\b/i.test(result)) {
@@ -98,6 +140,9 @@ export function isAgentToolResultFailure(result: string | undefined): boolean {
     }
     if (/\bcommand not found\b/i.test(result)) {
         return true;
+    }
+    if (readFilePayload) {
+        return false;
     }
     for (const line of result.split('\n')) {
         const trimmed = line.trim();

@@ -286,7 +286,7 @@ function parseExitCodeFromToolResult(result: string | undefined): number | undef
 }
 
 function isFailedToolSegment(
-    segment: { readonly finished?: boolean; readonly result?: string },
+    segment: { readonly name?: string; readonly finished?: boolean; readonly result?: string },
 ): boolean {
     if (!segment.finished) {
         return false;
@@ -295,7 +295,7 @@ function isFailedToolSegment(
     if (!result) {
         return true;
     }
-    return isAgentToolResultFailure(result) || isTranscriptErrorOutput(result);
+    return isAgentToolResultFailure(result, { toolName: segment.name }) || isTranscriptErrorOutput(result);
 }
 
 /** Last tool call that likely caused the turn failure — prefers traceEvents/segments on the agent message. */

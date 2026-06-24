@@ -300,7 +300,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
             return this.createTranscriptReadLine(segment);
         }
 
-        const failed = this.resolversUi.transcriptToolResultFailed(segment.result);
+        const failed = this.resolversUi.transcriptToolResultFailed(segment.result, segment.name);
         const head = this.createTranscriptToolHead({
             kind,
             toolName: segment.name,
@@ -1079,7 +1079,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
     createTranscriptShellDetails(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): HTMLElement {
         const details = document.createElement('details');
         details.className = 'theia-mobile-agent-shell-window';
-        const failed = this.resolversUi.transcriptToolResultFailed(segment.result);
+        const failed = this.resolversUi.transcriptToolResultFailed(segment.result, segment.name);
         details.open = this.resolversUi.shouldOpenTranscriptToolDetails(segment);
         if (segment.finished) {
             details.classList.add(failed ? 'theia-mod-failed' : 'theia-mod-done');

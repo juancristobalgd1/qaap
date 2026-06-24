@@ -47,7 +47,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
             extractToolPath: args => this.extractTranscriptToolPath(args),
             extractToolCommand: args => this.extractTranscriptToolCommand(args),
             resolveToolKind: name => this.resolveTranscriptToolKind(name),
-            isToolResultFailed: result => this.transcriptToolResultFailed(result),
+            isToolResultFailed: (result, toolName) => this.transcriptToolResultFailed(result, toolName),
             resolveStepDurationMs: options?.resolveStepDurationMs,
             resolveStepTimestamp: options?.resolveStepTimestamp,
         }, includeThinkingSteps, options);
@@ -98,7 +98,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
             }
             checks.push({
                 command: this.compactTranscriptCommand(command),
-                state: !segment.finished ? 'running' : this.transcriptToolResultFailed(segment.result) ? 'failed' : 'passed',
+                state: !segment.finished ? 'running' : this.transcriptToolResultFailed(segment.result, segment.name) ? 'failed' : 'passed',
             });
         }
         return checks;
@@ -223,15 +223,15 @@ export class MobileProjectsTranscriptMessagesResolversUi {
     }
 
 
-    transcriptToolResultFailed(result: string | undefined): boolean {
-        return isAgentToolResultFailure(result);
+    transcriptToolResultFailed(result: string | undefined, toolName?: string): boolean {
+        return isAgentToolResultFailure(result, { toolName });
     }
 
 
-    shouldOpenTranscriptToolDetails(segment: { readonly finished: boolean; readonly result?: string }): boolean {
+    shouldOpenTranscriptToolDetails(segment: { readonly name?: string; readonly finished: boolean; readonly result?: string }): boolean {
         return shouldOpenTranscriptToolDetailsSegment({
             finished: segment.finished,
-            resultFailed: this.transcriptToolResultFailed(segment.result),
+            resultFailed: this.transcriptToolResultFailed(segment.result, segment.name),
         });
     }
 

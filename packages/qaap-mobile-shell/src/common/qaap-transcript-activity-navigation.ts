@@ -76,7 +76,7 @@ export interface TranscriptActivityNavigationDeps {
     readonly extractToolPath: (argsJson: string) => string | undefined;
     readonly extractToolCommand?: (argsJson: string) => string | undefined;
     readonly resolveToolKind: (toolName: string) => string;
-    readonly isToolResultFailed: (result?: string) => boolean;
+    readonly isToolResultFailed: (result?: string, toolName?: string) => boolean;
     readonly resolveStepDurationMs?: (
         segmentIndex: number,
         segment: QaapAgentMessageSegmentDTO,
@@ -133,7 +133,7 @@ function resolveToolStepState(
         }
         return 'running';
     }
-    if (deps.isToolResultFailed(segment.result)) {
+    if (deps.isToolResultFailed(segment.result, segment.name)) {
         return 'error';
     }
     if (detectTranscriptToolRetryHint(segment.result)) {
@@ -223,7 +223,7 @@ export function resolveTranscriptActivityNavigationItems(
         } else if ((kind === 'reading' || kind === 'editing' || kind === 'searching') && filePath) {
             navigate = 'file';
         }
-        const errorSummary = deps.isToolResultFailed(segment.result)
+        const errorSummary = deps.isToolResultFailed(segment.result, segment.name)
             ? excerptTranscriptToolError(segment.result)
             : undefined;
         const state = resolveToolStepState(segment, options, deps, previousFailed);
@@ -235,7 +235,7 @@ export function resolveTranscriptActivityNavigationItems(
         });
         const rowLabel = formatTranscriptCursorTraceRowText(cursorParts.verb, cursorParts.detail);
         const editDiff = kind === 'editing' ? resolveEditDiffStats(segment) : {};
-        const resultFailed = deps.isToolResultFailed(segment.result);
+        const resultFailed = deps.isToolResultFailed(segment.result, segment.name);
         items.push({
             label: resolveToolStepLabel(rowLabel || baseLabel, state, errorSummary, deps),
             state,
