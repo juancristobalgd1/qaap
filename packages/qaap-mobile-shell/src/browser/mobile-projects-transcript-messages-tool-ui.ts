@@ -245,7 +245,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
         detail.className = 'theia-mobile-agent-read-line-detail';
         detail.textContent = formatReadToolDetailFromArgs(segment.args)
             ?? (fullPath ? this.resolversUi.splitTranscriptFilePath(fullPath).fileName : '');
-        line.append(verb, detail);
+        line.append(verb, document.createTextNode(' '), detail);
         if (fullPath) {
             this.attachTranscriptFileOpenAction(line, fullPath);
         }

@@ -45,6 +45,7 @@ import {
 import {
     createTranscriptTerminalStagingHost,
     createTranscriptTerminalSurface,
+    markTranscriptTerminalRestorable,
     scheduleTranscriptTerminalResize,
     type TranscriptTerminalPersistedWorkspace,
     type TranscriptTerminalSurface,
@@ -1769,6 +1770,18 @@ export class MobileProjectsTranscriptSurfacesUi {
             }
         }
         this.host.transcriptTerminalSlidesByWorkspace.clear();
+    }
+
+    /** Marks open transcript terminals restorable and persists workspace tabs before reload. */
+    prepareTranscriptTerminalsForPageUnload(): void {
+        for (const [workspaceKey, state] of this.host.transcriptTerminalSlidesByWorkspace) {
+            for (const surface of state.surfaces) {
+                if (!surface.terminal.isDisposed) {
+                    markTranscriptTerminalRestorable(surface.terminal);
+                }
+            }
+            void this.persistTranscriptTerminalWorkspace(workspaceKey);
+        }
     }
 
     createTranscriptPreviewLoading(_conv: QaapAgentConversationDTO | undefined): HTMLElement {

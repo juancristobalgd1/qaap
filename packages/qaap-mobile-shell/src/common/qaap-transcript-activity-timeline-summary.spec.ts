@@ -25,7 +25,7 @@ describe('qaap-transcript-activity-timeline-summary', () => {
         const items: TranscriptActivityNavigationItem[] = [
             { label: 'Thinking', state: 'success', verb: 'Thinking', navigate: 'thought' },
             { label: 'Edited foo.ts', state: 'success', verb: 'Edited', detail: 'foo.ts', toolKind: 'editing' },
-            { label: 'Writing response', state: 'success', verb: 'Writing', detail: 'response' },
+            { label: 'Preparing the response', state: 'success', verb: 'Preparing', detail: 'the response' },
         ];
         expect(resolveTranscriptActivityTimelineSummaryText([], items))
             .to.equal('Edited foo.ts');

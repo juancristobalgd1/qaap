@@ -2688,7 +2688,28 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 tailEl.textContent = tailText;
             }
         }
+        this.ensureTranscriptActivityVerbDetailSpacing(rowEl);
         return true;
+    }
+
+    protected ensureTranscriptActivityVerbDetailSpacing(rowEl: HTMLElement): void {
+        const verbEl = rowEl.querySelector('.theia-mobile-agent-activity-verb');
+        const detailEl = rowEl.querySelector('.theia-mobile-agent-activity-detail');
+        if (!verbEl || !detailEl) {
+            return;
+        }
+        if (verbEl.nextSibling === detailEl) {
+            verbEl.after(document.createTextNode(' '));
+            return;
+        }
+        let cursor: ChildNode | null = verbEl.nextSibling;
+        while (cursor && cursor !== detailEl) {
+            if (cursor.nodeType === Node.TEXT_NODE && /\s/.test(cursor.textContent ?? '')) {
+                return;
+            }
+            cursor = cursor.nextSibling;
+        }
+        verbEl.after(document.createTextNode(' '));
     }
 
     protected appendTranscriptActivityEditDiffTail(
@@ -2740,7 +2761,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         item: TranscriptActivityTimelineItem,
         options?: TranscriptActivityTimelineOptions,
     ): TranscriptActivityExpandContent {
-        if (content.kind === 'text' || content.kind === 'todo' || content.kind === 'search-matches') {
+        if (content.kind === 'text' || content.kind === 'todo' || content.kind === 'search-matches' || content.kind === 'question_flow') {
             return content;
         }
         if (content.kind === 'read') {
@@ -2945,6 +2966,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         if (content.kind === 'todo') {
             body.append(this.toolUi.createTranscriptActivityTodoExpandPanel(content.items));
+            return;
+        }
+        if (content.kind === 'question_flow') {
+            body.append(buildTranscriptToolUiPayloadElement(content.payload));
             return;
         }
         body.append(this.toolUi.createTranscriptActivityTerminalExpandPanel(content.entries));

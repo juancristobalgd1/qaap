@@ -12,6 +12,12 @@ import {
 } from './qaap-agent-transcript-segments';
 import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
 import { parseTranscriptSearchMatches, type TranscriptSearchMatch } from './qaap-transcript-search-matches-core';
+import {
+    isAskUserQuestionToolName,
+    stripTranscriptToolPayloadTextNoise,
+    tryParseAskUserQuestionArgs,
+    type TranscriptToolUiQuestionFlowPayload,
+} from './qaap-transcript-tool-ui-payloads';
 
 export interface TranscriptActivityExpandDeps {
     extractToolPath(argsJson: string): string | undefined;
@@ -47,7 +53,8 @@ export type TranscriptActivityExpandContent =
     | { readonly kind: 'edit-group'; readonly entries: readonly TranscriptActivityEditExpandEntry[] }
     | { readonly kind: 'terminal'; readonly entry: TranscriptActivityTerminalExpandEntry }
     | { readonly kind: 'terminal-group'; readonly entries: readonly TranscriptActivityTerminalExpandEntry[] }
-    | { readonly kind: 'todo'; readonly items: readonly QaapTranscriptTodoItem[] };
+    | { readonly kind: 'todo'; readonly items: readonly QaapTranscriptTodoItem[] }
+    | { readonly kind: 'question_flow'; readonly payload: TranscriptToolUiQuestionFlowPayload };
 
 export function normalizeTranscriptTerminalToolOutput(result: string | undefined): string | undefined {
     const raw = result?.trim();
@@ -199,6 +206,20 @@ export function resolveTranscriptActivityExpandContent(
         const result = segment.result?.trim();
         return result ? { kind: 'text', text: result } : undefined;
     }
+    if (isAskUserQuestionToolName(segment.name)) {
+        const fromArgs = tryParseAskUserQuestionArgs(segment.args);
+        if (fromArgs) {
+            return { kind: 'question_flow', payload: fromArgs };
+        }
+        const result = segment.result?.trim();
+        if (result) {
+            const fromResult = tryParseAskUserQuestionArgs(stripTranscriptToolPayloadTextNoise(result));
+            if (fromResult) {
+                return { kind: 'question_flow', payload: fromResult };
+            }
+        }
+        return undefined;
+    }
     const fallback = segment.result?.trim();
     return fallback && !/^ok$/i.test(fallback) ? { kind: 'text', text: fallback } : undefined;
 }
@@ -237,8 +258,11 @@ export function resolveTranscriptActivityExpandBody(
     if (content.kind === 'todo') {
         return content.items.map(item => item.label).join('\n');
     }
+    if (content.kind === 'question_flow') {
+        return content.payload.questions.map(question => question.question).join('\n');
+    }
     return content.entries
-        .map(entry => [entry.command, entry.output].filter(Boolean).join('\n'))
+        .map((entry: TranscriptActivityTerminalExpandEntry) => [entry.command, entry.output].filter(Boolean).join('\n'))
         .join('\n\n');
 }
 
@@ -257,6 +281,9 @@ export function shouldShowTranscriptActivityExpandContent(
     }
     if (content.kind === 'todo') {
         return content.items.length >= 1;
+    }
+    if (content.kind === 'question_flow') {
+        return content.payload.questions.length >= 1;
     }
     if (content.kind === 'read-group') {
         return content.entries.length >= 2;

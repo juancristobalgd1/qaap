@@ -274,8 +274,8 @@ export function resolveTranscriptActivityNavigationItems(
     } else if (textChars > 0) {
         items.push({
             label: deps.localizeWritingLabel(),
-            verb: 'Writing',
-            detail: 'response',
+            verb: 'Preparing',
+            detail: 'the response',
             state: resolveWritingStepState(segments, options),
             durationMs: undefined,
         });

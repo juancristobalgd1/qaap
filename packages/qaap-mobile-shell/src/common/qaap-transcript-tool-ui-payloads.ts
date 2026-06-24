@@ -120,9 +120,53 @@ function parseOptionList(record: Record<string, unknown>): TranscriptToolUiOptio
     };
 }
 
+/** Cursor / AG-UI envelopes and checkpoint tails must not block question-flow cards. */
+export function stripTranscriptToolPayloadTextNoise(text: string): string {
+    const trimmed = text.trim();
+    if (!trimmed) {
+        return trimmed;
+    }
+    const checkpointIdx = trimmed.search(/Checkpoint:\s/i);
+    const withoutCheckpoint = checkpointIdx > 0 ? trimmed.slice(0, checkpointIdx).trim() : trimmed;
+    const jsonStart = withoutCheckpoint.indexOf('{');
+    const jsonEnd = withoutCheckpoint.lastIndexOf('}');
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        return withoutCheckpoint.slice(jsonStart, jsonEnd + 1).trim();
+    }
+    return withoutCheckpoint;
+}
+
+export function isAskUserQuestionToolName(toolName: string | undefined): boolean {
+    const key = (toolName ?? '').toLowerCase().replace(/[_-]+/g, '');
+    return key.includes('askuserquestion') || key.includes('questionflow');
+}
+
+function coerceQuestionsArray(value: unknown): unknown[] | undefined {
+    if (Array.isArray(value)) {
+        return value;
+    }
+    if (typeof value === 'string' && value.trim()) {
+        try {
+            const parsed: unknown = JSON.parse(value.trim());
+            return Array.isArray(parsed) ? parsed : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+    return undefined;
+}
+
+function unwrapAskUserQuestionArgsRecord(record: Record<string, unknown>): Record<string, unknown> {
+    const parameters = record.parameters;
+    if (isRecord(parameters)) {
+        return parameters;
+    }
+    return record;
+}
+
 function parseQuestionFlow(record: Record<string, unknown>): TranscriptToolUiQuestionFlowPayload | undefined {
-    const questionsRaw = record.questions;
-    if (!Array.isArray(questionsRaw) || questionsRaw.length === 0) {
+    const questionsRaw = coerceQuestionsArray(record.questions);
+    if (!questionsRaw?.length) {
         return undefined;
     }
     const questions: TranscriptToolUiQuestionFlowPayload['questions'][number][] = [];
@@ -231,17 +275,17 @@ export function tryParseTranscriptToolUiPayload(value: unknown): TranscriptToolU
 }
 
 export function tryParseTranscriptToolUiPayloadFromText(text: string): TranscriptToolUiPayload | undefined {
-    const record = tryParseJsonRecord(text);
+    const record = tryParseJsonRecord(stripTranscriptToolPayloadTextNoise(text));
     return record ? tryParseTranscriptToolUiPayload(record) : undefined;
 }
 
 /** Claude `AskUserQuestion` tool args → question flow card. */
 export function tryParseAskUserQuestionArgs(args: string): TranscriptToolUiQuestionFlowPayload | undefined {
-    const record = tryParseJsonRecord(args);
+    const record = tryParseJsonRecord(stripTranscriptToolPayloadTextNoise(args));
     if (!record) {
         return undefined;
     }
-    return parseQuestionFlow(record);
+    return parseQuestionFlow(unwrapAskUserQuestionArgsRecord(record));
 }
 
 export function resolveTranscriptToolUiPayloadFromSegment(

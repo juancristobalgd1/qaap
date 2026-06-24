@@ -656,6 +656,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
             stalled: health.stalled,
             timedOut: health.timedOut,
         });
+        if (activity.kind === 'writing') {
+            return undefined;
+        }
         if (segments.length === 0) {
             const bootstrap = resolveTranscriptStreamingBootstrapActivityItems(summary.agentId ?? conv?.agentId, {
                 stalled: health.stalled,

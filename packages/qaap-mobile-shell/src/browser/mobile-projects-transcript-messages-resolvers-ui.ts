@@ -37,7 +37,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
             localizeActivityLabel: label => this.host.projectRowsUi.localizeActivityLabel(label),
             formatToolActivityLabel,
             localizePlanningLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityPlanningMoves', 'Planning next moves'),
-            localizeWritingLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityResponseReady', 'Writing response'),
+            localizeWritingLabel: () => nls.localize('qaap/mobileProjects/transcriptActivityResponseReady', 'Preparing the response'),
             localizeFailedLabel: detail => nls.localize(
                 'qaap/mobileProjects/transcriptActivityFailed',
                 'Failed: {0}',
