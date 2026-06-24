@@ -118,9 +118,11 @@ describe('qaap-transcript-stream-status', () => {
         expect(resolveTranscriptTraceDisplayPhase([], true)).to.equal('thinking');
         expect(resolveTranscriptTraceDisplayPhase([{ type: 'thinking', content: 'plan' }], true)).to.equal('thinking');
         expect(shouldShowTranscriptInlineTimeline([{ type: 'thinking', content: 'plan' }], true)).to.equal(true);
+        expect(shouldExpandTranscriptInlineTimeline([{ type: 'thinking', content: 'plan' }], true)).to.equal(true);
+        expect(shouldShowTranscriptInlineTimeline([], true)).to.equal(false);
+        expect(shouldExpandTranscriptInlineTimeline([], true)).to.equal(false);
         expect(resolveTranscriptTraceDisplayPhase([{ type: 'tool' }], true)).to.equal('acting');
         expect(shouldExpandTranscriptInlineTimeline([{ type: 'tool' }], true)).to.equal(true);
-        expect(shouldExpandTranscriptInlineTimeline([], true)).to.equal(true);
         expect(resolveTranscriptTraceDisplayPhase([
             { type: 'text', content: "I'll" },
         ], true)).to.equal('acting');

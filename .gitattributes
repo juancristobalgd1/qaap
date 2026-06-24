@@ -1,1 +1,2 @@
 dev-packages/*/bin/*.js text eol=lf
+packages/qaap-mobile-shell/src/common/qaap-*-icon-assets.ts text eol=lf

@@ -54,6 +54,7 @@
     "mini-css-extract-plugin": "^2.10.2",
     "node-loader": "^2.1.0",
     "path-browserify": "^1.0.1",
+    "resolve-package-path": "^4.0.3",
     "semver": "^7.7.4",
     "source-map": "^0.6.1",
     "source-map-loader": "^2.0.2",

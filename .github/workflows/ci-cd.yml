@@ -46,6 +46,7 @@ jobs:
         shell: bash
         run: |
           npm ci
+          node node_modules/electron/install.js
           ./scripts/check_git_status.sh
 
       - name: Lint
@@ -84,6 +85,7 @@ jobs:
         shell: bash
         run: |
           npm ci
+          node node_modules/electron/install.js
           npm run build
           git status
           ./scripts/check_git_status.sh
