@@ -1,0 +1,456 @@
+/* *****************************************************************************
+ * Qaap transcript timeline — Codex Desktop-style polish layer.
+ *
+ * Aligns the cursor-trace activity timeline with the visual language of
+ * Codex Desktop's TUI transcript:
+ *   - Flat, borderless container (no glassmorphism, no card glow)
+ *   - Text shimmer: a sweeping highlight band across the CHARACTERS of the
+ *     active verb/label (not a background sweep) — matches Codex's
+ *     `shimmer_spans()` which animates per-character foreground brightness
+ *   - Simple animated bullet for live states (no rotating rings, no halos)
+ *   - Codex-style result markers: green ✓ for success, red ✗ for error
+ *   - Subtle `  └ ` detail prefix for sub-items (dim, monospace)
+ *   - Compact elapsed-time meta in dim tabular-nums (Codex `fmt_elapsed_compact`)
+ *   - Minimal fade-in for new items (opacity only, no slide/scale)
+ *   - Flat hover (background lift only, no translateX or elevation)
+ *   - Smooth colour morph on state change
+ *
+ * All rules are scoped to `.theia-mod-cursor-trace` so they only affect the
+ * inline transcript timeline.  Existing selectors in `mobile-workbench.css`
+ * are progressively enhanced — this file loads after it.
+ *
+ * Note: in cursor-trace mode the timeline marker is the
+ * `.theia-mobile-agent-activity-icon` codicon span, not a `::before` dot
+ * (the `::before` dot is suppressed with `display: none !important` in
+ * `mobile-workbench.css`).
+ * ***************************************************************************** */
+
+/* ---------------------------------------------------------------------------
+ * Keyframes
+ * ------------------------------------------------------------------------- */
+
+/* Codex-style text shimmer: a brightness band sweeps across the text.
+   This animates background-position on a gradient-clip text fill, mirroring
+   Codex TUI's per-character `shimmer_spans()` sweep. */
+@keyframes qaap-trace-text-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* Simple bullet pulse for live states — a dim-to-bright opacity cycle,
+   matching Codex's `animated_activity_indicator` blink/shimmer on the `•`. */
+@keyframes qaap-trace-bullet-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Subtle fade-in for new items — opacity only, no slide or scale.
+   Codex appends cells without dramatic entrance animations. */
+@keyframes qaap-trace-item-fade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Rail flow while streaming — a slow vertical gradient shift on the
+   connecting line, subtler than Codex (which has no rail) but keeping
+   the existing rail visible without a static look. */
+@keyframes qaap-trace-rail-flow {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 -20px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Container: flatten to Codex-style — remove card chrome, glassmorphism,
+ * and glow.  Keep a very subtle surface tint and thin border so the
+ * timeline reads as a distinct region without looking like a heavy card.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace {
+  border: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.18)) 35%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: border-color 200ms ease;
+}
+
+/* While streaming, slightly brighten the border — Codex's active state is
+   conveyed through the spinner/shimmer, not card glow. */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming {
+  border-color: color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.18)) 50%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * New item entrance: subtle fade-in only (no slide-up, no scale).
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item {
+  animation: qaap-trace-item-fade 200ms ease-out both;
+}
+
+/* ---------------------------------------------------------------------------
+ * Activity icon: smooth state-colour transition.
+ * No spinner rings, no halos, no rotating borders — Codex uses a simple
+ * animated bullet/dot, not decorative rings.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-icon {
+  transition:
+    color 240ms ease,
+    background-color 240ms ease,
+    opacity 240ms ease;
+}
+
+/* Live states: subtle opacity pulse on the icon (Codex-style bullet blink).
+   This replaces the previous rotating spinner ring with a simpler,
+   terminal-like animation. */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming
+  .theia-mobile-agent-activity-item.theia-mod-active.theia-mod-running
+  .theia-mobile-agent-activity-icon,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming
+  .theia-mobile-agent-activity-item.theia-mod-active.theia-mod-thinking
+  .theia-mobile-agent-activity-icon,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming
+  .theia-mobile-agent-activity-item.theia-mod-active.theia-mod-streaming
+  .theia-mobile-agent-activity-icon,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming
+  .theia-mobile-agent-activity-item.theia-mod-active.theia-mod-retrying
+  .theia-mobile-agent-activity-icon {
+  animation: qaap-trace-bullet-pulse 1.4s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+ * Text shimmer on the active verb/label — Codex's signature effect.
+ * A brightness band sweeps across the text characters via gradient-clip.
+ * This overrides the existing `.theia-mod-shimmer` background-clip text
+ * animation in mobile-workbench.css with a Codex-aligned timing and
+ * colour ramp (dim → bright → dim).
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-verb.theia-mod-shimmer,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-label.theia-mod-shimmer,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-row.theia-mod-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--theia-descriptionForeground, #888) 0%,
+    var(--theia-descriptionForeground, #888) 35%,
+    var(--theia-foreground, #fff) 50%,
+    var(--theia-descriptionForeground, #888) 65%,
+    var(--theia-descriptionForeground, #888) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-trace-text-shimmer 2s linear infinite;
+}
+
+/* Summary label shimmer while streaming (the collapsed timeline header). */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-timeline-summary-label.theia-mod-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--theia-descriptionForeground, #888) 0%,
+    var(--theia-descriptionForeground, #888) 35%,
+    var(--theia-foreground, #fff) 50%,
+    var(--theia-descriptionForeground, #888) 65%,
+    var(--theia-descriptionForeground, #888) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-trace-text-shimmer 2s linear infinite;
+}
+
+/* ---------------------------------------------------------------------------
+ * Codex-style result markers: green ✓ for success, red ✗ for error.
+ * The base styles already colour the codicon, but we reinforce the Codex
+ * palette: success uses a bright green, error uses a bright red, both
+ * with bold weight like Codex's `✓.green().bold()` and `✗.red().bold()`.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-icon.theia-mod-success.codicon {
+  color: var(--theia-charts-green, #4caf7c);
+  font-weight: 700;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-icon.theia-mod-error.codicon {
+  color: var(--theia-errorForeground, #f14c4c);
+  font-weight: 700;
+}
+
+/* Warning: amber/yellow like Codex's warning indicators */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-icon.theia-mod-warning.codicon {
+  color: color-mix(in srgb, var(--q-accent, #E58E40) 90%, var(--theia-foreground));
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------------
+ * Detail prefix: Codex uses `  └ ` (dim) for sub-item indentation.
+ * The existing `.theia-mobile-agent-activity-detail` and result-preview
+ * already handle layout; we just reinforce the dim, monospace aesthetic
+ * for command output and error details to match Codex's dim output lines.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-result-preview {
+  border-left: 2px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.22)) 50%, transparent);
+  padding-left: 8px;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 80%, transparent);
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-error-detail {
+  border-left: 2px solid color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 40%, transparent);
+  padding-left: 8px;
+  color: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 80%, var(--theia-descriptionForeground));
+}
+
+/* ---------------------------------------------------------------------------
+ * Elapsed-time meta: Codex displays `(12s)` / `(1m 03s)` in dim text.
+ * The existing `.theia-mobile-agent-activity-meta` and
+ * `.theia-mobile-agent-stream-meta` already show durations; we just
+ * reinforce the dim, tabular-nums, compact style.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-meta {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 65%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Thinking / reasoning step: Codex and Claude Desktop show the model's
+ * reasoning text inline while the model is thinking, in a dim italic style
+ * with a subtle left border.  The <details> auto-opens while live (see
+ * syncTranscriptActivityThinkingCopy), so we style the body to read like
+ * Codex's dim commentary text — not a heavy card.
+ * ------------------------------------------------------------------------- */
+
+/* Thinking summary row: dim verb with shimmer when live */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking-summary {
+  align-items: center;
+  gap: 6px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-verb {
+  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 80%, var(--theia-foreground));
+  font-weight: 560;
+  font-style: italic;
+}
+
+/* Live thinking: shimmer the verb text */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking.theia-mod-live
+  .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-verb {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 60%, var(--theia-foreground)) 0%,
+    color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 60%, var(--theia-foreground)) 35%,
+    var(--theia-foreground, #fff) 50%,
+    color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 60%, var(--theia-foreground)) 65%,
+    color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 60%, var(--theia-foreground)) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-trace-text-shimmer 2s linear infinite;
+}
+
+/* Thinking chevron: blue accent when live */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking.theia-mod-live
+  .theia-mobile-agent-activity-thinking-chevron {
+  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 80%, var(--theia-foreground));
+}
+
+/* Thinking body: dim italic text with a subtle blue left border —
+   matches Codex's dim commentary and Claude Desktop's reasoning panel. */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking-body {
+  margin-top: 4px;
+  margin-left: 4px;
+  padding: 6px 10px;
+  border-radius: 0 6px 6px 0;
+  border-left: 2px solid color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 35%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 4%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-style: italic;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 82%, var(--theia-foreground));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+/* Live thinking body: slightly brighter border + background while streaming */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking.theia-mod-live
+  .theia-mobile-agent-activity-thinking-body {
+  border-left-color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 55%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 6%, transparent);
+}
+
+/* Smooth reveal when the thinking details opens */
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-thinking[open] .theia-mobile-agent-activity-thinking-body {
+  animation: qaap-trace-item-fade 180ms ease-out both;
+}
+
+/* ---------------------------------------------------------------------------
+ * Rail: subtle flowing gradient while streaming.
+ * Flatter than before — just a slow opacity shimmer on the existing rail,
+ * not a dashed marching-ants pattern.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming[open]
+  .theia-mobile-agent-activity-timeline-open-panel > .theia-mobile-agent-activity-list::before {
+  background-image: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.22)) 60%, transparent) 10px,
+    color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.22)) 60%, transparent) calc(100% - 10px),
+    transparent
+  );
+  background-size: 100% 20px;
+  animation: qaap-trace-rail-flow 2.5s linear infinite;
+  opacity: 0.7;
+}
+
+/* ---------------------------------------------------------------------------
+ * Hover: flat background lift only — no translateX, no box-shadow elevation.
+ * Codex is a TUI so there's no hover effect; we keep a minimal one for
+ * touch/desktop usability without breaking the flat aesthetic.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-item.theia-mod-clickable {
+  transition: background-color 140ms ease;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-item.theia-mod-clickable:hover {
+  background: color-mix(in srgb, var(--theia-list-hoverBackground, rgba(128, 128, 128, 0.08)) 60%, transparent);
+  transform: none;
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Live streaming dot (the standalone "Working…" row): simple bullet pulse.
+ * No orbiting ring — just an opacity pulse matching Codex's `•` blink.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-stream-line .theia-mobile-agent-stream-dot {
+  transition: background-color 240ms ease;
+}
+
+.theia-mobile-agent-stream-line:has(.theia-mobile-agent-stream-label.theia-mod-shimmer)
+  .theia-mobile-agent-stream-dot {
+  animation: qaap-trace-bullet-pulse 1.4s ease-in-out infinite;
+}
+
+/* Thinking state: blue dot */
+.theia-mobile-agent-stream-line.theia-mod-thinking .theia-mobile-agent-stream-dot {
+  background: var(--theia-focusBorder, #4c9aff);
+}
+
+/* ---------------------------------------------------------------------------
+ * Summary icon + chevron: smooth transitions (kept from before — these
+ * are subtle and don't conflict with the Codex aesthetic).
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-timeline-summary-icon {
+  transition:
+    color 200ms ease,
+    background-color 200ms ease;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-timeline-summary-chevron {
+  transition: transform 200ms ease;
+}
+
+/* ---------------------------------------------------------------------------
+ * Active step border accent: keep the existing left-border indicator
+ * from mobile-workbench.css but make it subtler — a thin accent line
+ * rather than a bold one, closer to Codex's minimal active-row styling.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+  .theia-mobile-agent-activity-item.theia-mod-active {
+  border-left: 2px solid color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 70%, transparent);
+  padding-left: 8px;
+  margin-left: -2px;
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion: disable all decorative animations
+ * ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-item,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-icon,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-verb.theia-mod-shimmer,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-label.theia-mod-shimmer,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-row.theia-mod-shimmer,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-timeline-summary-label.theia-mod-shimmer,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-thinking.theia-mod-live
+    .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-verb,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-thinking[open] .theia-mobile-agent-activity-thinking-body,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-timeline-open-panel
+    > .theia-mobile-agent-activity-list::before,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-timeline-summary-icon,
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace
+    .theia-mobile-agent-activity-timeline-summary-chevron,
+  .theia-mobile-agent-stream-line .theia-mobile-agent-stream-dot {
+    animation: none !important;
+    transition: none !important;
+  }
+}

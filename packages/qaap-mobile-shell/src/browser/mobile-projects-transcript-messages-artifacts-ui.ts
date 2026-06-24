@@ -3123,7 +3123,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         details.classList.toggle('theia-mod-live', shimmerActive);
         if (!details.dataset.thinkingUserExpanded) {
-            details.open = false;
+            details.open = shimmerActive;
         }
         if (!details.dataset.thinkingToggleBound) {
             details.dataset.thinkingToggleBound = '1';

@@ -5437,7 +5437,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: inline-flex;
   flex: 0 1 auto;
   width: auto;
-  max-width: 100%;
+  max-width: min(42vw, 168px);
   min-width: 0;
   height: 28px;
   padding: 0 6px 0 4px;
@@ -5462,11 +5462,16 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mobile-projects-sticky-composer-workspace-pill.theia-mod-branch .theia-mobile-projects-sticky-composer-workspace-pill-label,
-.theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mod-branch .theia-mobile-projects-sticky-composer-workspace-pill-label,
-.theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mod-destination .theia-mobile-projects-sticky-composer-workspace-pill-label {
+.theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mod-branch .theia-mobile-projects-sticky-composer-workspace-pill-label {
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
+}
+
+.theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mod-destination .theia-mobile-projects-sticky-composer-workspace-pill-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
 }
 
 .theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mobile-projects-sticky-composer-workspace-pill .theia-mobile-projects-sticky-composer-workspace-pill-icon {
@@ -5476,11 +5481,16 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mobile-projects-sticky-composer-workspace-pill .theia-mobile-projects-sticky-composer-workspace-pill-chevron {
   flex: 0 0 auto;
-  margin-left: 0;
-  padding-left: 0;
   align-self: center;
   font-size: 11px;
   line-height: 1;
+}
+
+.theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-pill.theia-mod-branch .theia-mobile-projects-sticky-composer-workspace-pill-chevron,
+.theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mod-branch .theia-mobile-projects-sticky-composer-workspace-pill-chevron,
+.theia-mobile-projects-sticky-composer-inner.theia-mod-workspace-bar-below .theia-mobile-projects-sticky-composer-workspace-context-bar .theia-mod-destination .theia-mobile-projects-sticky-composer-workspace-pill-chevron {
+  margin-left: auto;
+  padding-left: 2px;
 }
 
 .theia-mobile-projects-sticky-composer-workspace-bar {
