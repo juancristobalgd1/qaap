@@ -10,12 +10,10 @@ import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import {
     QAAP_AUTH_API_PATH,
     QAAP_AUTH_SESSION_COOKIE,
-    QAAP_AUTH_SESSION_HEADER,
     QAAP_GITHUB_API_PATH,
     QAAP_GITHUB_OAUTH_CALLBACK_PATH,
     QAAP_GITHUB_OAUTH_START_PATH,
@@ -26,6 +24,13 @@ import {
     type QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
+    QAAP_ANONYMOUS_USER_LOGIN,
+    isPathUnderUserWorkspace,
+    parseGithubFullNameFromWorkspacePath,
+    resolveQaapReposRoot,
+    resolveRepositoryWorkspacePath,
+} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import {
     createGithubRepository,
     exchangeGithubCode,
     fetchGithubPullRequests,
@@ -35,7 +40,8 @@ import {
     mergeGithubPullRequest,
 } from './qaap-github-api';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
-import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
+import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
@@ -49,20 +55,14 @@ const SKIP_AUTH_DEV_USER = {
     name: 'Dev User',
 };
 
-type GithubAuthResult =
-    | { readonly kind: 'ok'; readonly session: QaapGithubStoredSession }
-    | { readonly kind: 'skip' }
-    | { readonly kind: 'unauthorized' };
-// Production deployments mount `/workspace` for the container; local dev (macOS/Windows) cannot
-// create folders at the filesystem root, so fall back to a writable per-user directory by default.
-const QAAP_REPOS_ROOT = process.env.QAAP_REPOS_ROOT
-    || (process.env.NODE_ENV === 'production' ? '/workspace/repos' : path.join(os.homedir(), '.qaap', 'workspaces'));
-
 @injectable()
 export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
+
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
 
     @inject(QaapProjectSessionStore)
     protected readonly projectSessions: QaapProjectSessionStore;
@@ -88,7 +88,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected handleProjectSessions(req: Request, res: Response): void {
-        const auth = this.authenticateGithub(req);
+        const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
@@ -101,7 +101,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected handleUpsertProjectSession(req: Request, res: Response): void {
-        const auth = this.authenticateGithub(req);
+        const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
@@ -172,6 +172,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         try {
             const accessToken = await exchangeGithubCode(config, code);
             const user = await fetchGithubUser(accessToken);
+            const previousSessionId = this.auth.resolveSessionId(req);
+            if (previousSessionId) {
+                this.sessions.deleteSession(previousSessionId);
+            }
             const sessionId = this.sessions.createSession({ accessToken, user });
             this.setSessionCookie(res, sessionId);
             console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
@@ -186,21 +190,21 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     protected handleAuthConfig(_req: Request, res: Response): void {
         res.json({
             githubOAuth: !!readQaapGithubOAuthConfig(),
-            skipAuth: this.isSkipAuthEnabled(),
+            skipAuth: this.auth.isSkipAuthEnabled(),
         });
     }
 
     protected handleAuthSession(req: Request, res: Response): void {
-        const stored = this.resolveGithubSession(req);
+        const stored = this.auth.resolveGithubSession(req);
         if (stored) {
             res.json({
                 signedIn: true,
-                user: stored.user,
-                sessionId: this.resolveSessionId(req),
+                user: stored.stored.user,
+                sessionId: stored.sessionId,
             });
             return;
         }
-        if (this.isSkipAuthEnabled()) {
+        if (this.auth.isSkipAuthEnabled()) {
             res.json({ signedIn: true, user: SKIP_AUTH_DEV_USER });
             return;
         }
@@ -208,13 +212,13 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected handleSignOut(req: Request, res: Response): void {
-        this.sessions.deleteSession(this.resolveSessionId(req));
+        this.sessions.deleteSession(this.auth.resolveSessionId(req));
         this.clearSessionCookie(res);
         res.json({ ok: true });
     }
 
     protected async handleGithubRepositories(req: Request, res: Response): Promise<void> {
-        const auth = this.authenticateGithub(req);
+        const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
@@ -234,7 +238,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleGithubPullRequests(req: Request, res: Response): Promise<void> {
-        const auth = this.authenticateGithub(req);
+        const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in', signedIn: false, pullRequests: [] });
             return;
@@ -245,10 +249,13 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         const stored = auth.session;
         try {
-            const hubRepositories = this.parseGithubReposQuery(req.query.repos);
+            const hubRepositories = await this.filterAccessibleRepositories(
+                stored.accessToken,
+                this.parseGithubReposQuery(req.query.repos),
+            );
             const repository = hubRepositories.length > 0
                 ? undefined
-                : await this.getCurrentWorkspaceRepository(stored.accessToken);
+                : await this.getCurrentWorkspaceRepository(stored.accessToken, auth.userLogin);
             const scanTargets = hubRepositories.length > 0
                 ? hubRepositories
                 : (repository ? [repository] : []);
@@ -297,7 +304,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleMergeGithubPullRequest(req: Request, res: Response): Promise<void> {
-        const auth = this.authenticateGithub(req);
+        const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
@@ -316,7 +323,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
-            const repository = await this.getCurrentWorkspaceRepository(stored.accessToken);
+            const repository = await this.getCurrentWorkspaceRepository(stored.accessToken, auth.userLogin);
             if (!repository) {
                 res.status(409).json({ error: 'Open a GitHub repository workspace before merging a pull request' });
                 return;
@@ -337,7 +344,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleOpenGithubRepository(req: Request, res: Response): Promise<void> {
-        const auth = this.authenticateGithub(req);
+        const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
@@ -354,16 +361,18 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
-            const repositories = await fetchGithubRepositories(stored.accessToken);
-            const repository = repositories.find(repo =>
-                repo.owner.toLowerCase() === owner.toLowerCase()
-                && repo.name.toLowerCase() === repoName.toLowerCase()
-            );
+            const repository = await this.resolveAccessibleRepository(stored.accessToken, owner, repoName);
             if (!repository) {
-                res.status(404).json({ error: 'Repository not available for this GitHub session' });
+                this.auth.logSecurityEvent('ownership_denied', {
+                    action: 'open_repository',
+                    userLogin: stored.user.login,
+                    owner,
+                    repo: repoName,
+                });
+                res.status(403).json({ error: 'Forbidden' });
                 return;
             }
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken);
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin);
             res.json({
                 repository,
                 workspaceUri: FileUri.create(workspacePath).toString(),
@@ -375,7 +384,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleCreateGithubRepository(req: Request, res: Response): Promise<void> {
-        const auth = this.authenticateGithub(req);
+        const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
@@ -397,7 +406,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 private: body.private ?? true,
                 description: typeof body.description === 'string' ? body.description.trim() : undefined,
             });
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken);
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin);
             res.json({
                 repository,
                 workspaceUri: FileUri.create(workspacePath).toString(),
@@ -409,7 +418,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleCloneGithubRepository(req: Request, res: Response): Promise<void> {
-        const stored = this.resolveGithubSession(req);
+        const auth = this.auth.authenticate(req);
         const body = (req.body ?? {}) as Partial<QaapGithubOpenRepositoryRequest>;
         const parsed = this.parseGithubRepositoryInput(typeof body.repository === 'string' ? body.repository : '');
         if (!parsed) {
@@ -418,20 +427,35 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         try {
             let repository: QaapGithubRepositorySummary;
-            if (stored) {
-                const repositories = await fetchGithubRepositories(stored.accessToken);
-                repository = repositories.find(repo =>
-                    repo.owner.toLowerCase() === parsed.owner.toLowerCase()
-                    && repo.name.toLowerCase() === parsed.name.toLowerCase()
-                ) ?? await fetchGithubRepository(stored.accessToken, parsed.owner, parsed.name);
+            let accessToken: string | undefined;
+            let userLogin: string;
+            if (auth.kind === 'authenticated') {
+                accessToken = auth.session.accessToken;
+                userLogin = auth.userLogin;
+                const accessible = await this.resolveAccessibleRepository(accessToken, parsed.owner, parsed.name);
+                if (!accessible) {
+                    this.auth.logSecurityEvent('ownership_denied', {
+                        action: 'clone_repository',
+                        userLogin,
+                        owner: parsed.owner,
+                        repo: parsed.name,
+                    });
+                    res.status(403).json({ error: 'Forbidden' });
+                    return;
+                }
+                repository = accessible;
+            } else if (auth.kind === 'skip') {
+                userLogin = auth.userLogin;
+                repository = await fetchGithubRepository(undefined, parsed.owner, parsed.name);
             } else {
                 repository = await fetchGithubRepository(undefined, parsed.owner, parsed.name);
                 if (repository.private) {
                     res.status(401).json({ error: 'Sign in with GitHub to clone private repositories' });
                     return;
                 }
+                userLogin = QAAP_ANONYMOUS_USER_LOGIN;
             }
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored?.accessToken);
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, accessToken, userLogin);
             res.json({
                 repository,
                 workspaceUri: FileUri.create(workspacePath).toString(),
@@ -485,12 +509,25 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         return { owner: cleanOwner, name: cleanName };
     }
 
-    protected async getCurrentWorkspaceRepository(accessToken: string): Promise<QaapGithubRepositorySummary | undefined> {
+    protected readonly reposRoot = resolveQaapReposRoot();
+
+    protected async getCurrentWorkspaceRepository(
+        accessToken: string,
+        userLogin: string,
+    ): Promise<QaapGithubRepositorySummary | undefined> {
         const workspaceUri = await this.workspaceServer.getMostRecentlyUsedWorkspace();
         if (!workspaceUri) {
             return undefined;
         }
         const workspacePath = FileUri.fsPath(workspaceUri);
+        if (!isPathUnderUserWorkspace(workspacePath, this.reposRoot, userLogin)) {
+            return undefined;
+        }
+        const parsedFullName = parseGithubFullNameFromWorkspacePath(workspacePath);
+        if (parsedFullName) {
+            const [owner, name] = parsedFullName.split('/');
+            return this.resolveAccessibleRepository(accessToken, owner, name);
+        }
         const gitRoot = await this.findGitRoot(workspacePath);
         if (!gitRoot) {
             return undefined;
@@ -500,7 +537,31 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         if (!parsed) {
             return undefined;
         }
-        return fetchGithubRepository(accessToken, parsed.owner, parsed.name);
+        return this.resolveAccessibleRepository(accessToken, parsed.owner, parsed.name);
+    }
+
+    protected async resolveAccessibleRepository(
+        accessToken: string,
+        owner: string,
+        name: string,
+    ): Promise<QaapGithubRepositorySummary | undefined> {
+        const repositories = await fetchGithubRepositories(accessToken);
+        return repositories.find(repo =>
+            repo.owner.toLowerCase() === owner.toLowerCase()
+            && repo.name.toLowerCase() === name.toLowerCase()
+        );
+    }
+
+    protected async filterAccessibleRepositories(
+        accessToken: string,
+        candidates: QaapGithubRepositorySummary[],
+    ): Promise<QaapGithubRepositorySummary[]> {
+        if (candidates.length === 0) {
+            return [];
+        }
+        const accessible = await fetchGithubRepositories(accessToken);
+        const allowed = new Set(accessible.map(repo => repo.fullName.toLowerCase()));
+        return candidates.filter(repo => allowed.has(repo.fullName.toLowerCase()));
     }
 
     protected async findGitRoot(workspacePath: string): Promise<string | undefined> {
@@ -520,10 +581,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     protected async ensureRepositoryWorkspace(
         repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name' | 'cloneUrl'>,
         accessToken: string | undefined,
+        userLogin: string,
     ): Promise<string> {
-        const ownerDir = this.safePathSegment(repository.owner);
-        const repoDir = this.safePathSegment(repository.name);
-        const target = path.join(QAAP_REPOS_ROOT, ownerDir, repoDir);
+        const target = resolveRepositoryWorkspacePath(this.reposRoot, userLogin, repository.owner, repository.name);
         await fs.mkdir(path.dirname(target), { recursive: true });
         if (await this.isGitRepository(target)) {
             await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken);
@@ -624,69 +684,6 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         // Theia restores the most recent workspace when there is no hash. Use
         // the explicit empty-window hash to avoid reopening a stale workspace.
         res.redirect(302, `${target.toString()}#${THEIA_EMPTY_WINDOW_HASH}`);
-    }
-
-    protected isSkipAuthEnabled(): boolean {
-        return process.env.QAAP_SKIP_AUTH === 'true' || process.env.QAAP_SKIP_AUTH === '1';
-    }
-
-    protected authenticateGithub(req: Request): GithubAuthResult {
-        const session = this.resolveGithubSession(req);
-        if (session) {
-            return { kind: 'ok', session };
-        }
-        if (this.isSkipAuthEnabled()) {
-            return { kind: 'skip' };
-        }
-        return { kind: 'unauthorized' };
-    }
-
-    /** Returns a persisted GitHub OAuth session, ignoring stale cookie/header ids. */
-    protected resolveGithubSession(req: Request): QaapGithubStoredSession | undefined {
-        const sessionId = this.resolveSessionId(req);
-        return sessionId ? this.sessions.getSession(sessionId) : undefined;
-    }
-
-    protected resolveSessionId(req: Request): string | undefined {
-        const cookieId = this.readSessionIdFromCookie(req);
-        if (cookieId && this.sessions.getSession(cookieId)) {
-            return cookieId;
-        }
-        const headerId = this.readSessionIdFromHeader(req);
-        if (headerId && this.sessions.getSession(headerId)) {
-            return headerId;
-        }
-        return undefined;
-    }
-
-    protected readSessionIdFromCookie(req: Request): string | undefined {
-        const cookieHeader = req.headers.cookie;
-        if (!cookieHeader || typeof cookieHeader !== 'string') {
-            return undefined;
-        }
-        for (const part of cookieHeader.split(';')) {
-            const trimmed = part.trim();
-            const eq = trimmed.indexOf('=');
-            if (eq <= 0) {
-                continue;
-            }
-            const name = trimmed.slice(0, eq);
-            if (name === QAAP_AUTH_SESSION_COOKIE) {
-                const value = trimmed.slice(eq + 1);
-                if (value) {
-                    return decodeURIComponent(value);
-                }
-            }
-        }
-        return undefined;
-    }
-
-    protected readSessionIdFromHeader(req: Request): string | undefined {
-        const sessionHeader = req.headers[QAAP_AUTH_SESSION_HEADER];
-        if (typeof sessionHeader === 'string' && sessionHeader.length > 0) {
-            return sessionHeader;
-        }
-        return undefined;
     }
 
     protected sessionCookieFlags(): string {

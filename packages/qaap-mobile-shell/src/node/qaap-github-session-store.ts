@@ -79,7 +79,12 @@ export class QaapGithubSessionStore {
         return this.sessions.get(sessionId);
     }
 
-    /** First persisted session — used for webhook file previews when no browser cookie is present. */
+    /** All persisted sessions — for server-side repository access resolution only. */
+    listSessions(): QaapGithubStoredSession[] {
+        return [...this.sessions.values()];
+    }
+
+    /** @deprecated Never use for request handling — leaks cross-tenant tokens. */
     getAnySession(): QaapGithubStoredSession | undefined {
         return this.sessions.values().next().value;
     }

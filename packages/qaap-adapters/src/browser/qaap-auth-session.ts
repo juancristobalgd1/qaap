@@ -131,7 +131,13 @@ export function writeQaapAuthSession(provider: QaapAuthProvider, user?: QaapAuth
     if (typeof window === 'undefined' || !window.localStorage) {
         return;
     }
+    const previousLogin = readQaapAuthUser()?.login;
     const profile = user ?? placeholderQaapAuthUser(provider);
+    if (previousLogin && profile.login && previousLogin !== profile.login) {
+        window.dispatchEvent(new CustomEvent('qaap-auth-user-changed', {
+            detail: { previousLogin, nextLogin: profile.login },
+        }));
+    }
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_SIGNED_IN_KEY), JSON.stringify(true));
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_PROVIDER_KEY), JSON.stringify(provider));
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_USER_KEY), JSON.stringify(profile));

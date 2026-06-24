@@ -53,11 +53,19 @@ import {
     writeLocalProjectSessions,
 } from './mobile-projects-session-cache';
 import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
+import {
+    MOBILE_PROJECTS_CUSTOM_PROJECTS_BASE,
+    MOBILE_PROJECTS_DISPLAY_NAMES_BASE,
+    MOBILE_PROJECTS_HIDDEN_IDS_BASE,
+    MOBILE_PROJECTS_PINNED_IDS_BASE,
+    mobileProjectsUserStorageKey,
+} from './mobile-projects-user-storage';
+import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
-const HIDDEN_PROJECT_IDS_STORAGE_KEY = 'qaap.mobileProjects.hiddenIds';
-const PINNED_PROJECT_IDS_STORAGE_KEY = 'qaap.mobileProjects.pinnedIds';
-const DISPLAY_NAMES_STORAGE_KEY = 'qaap.mobileProjects.displayNames';
-const CUSTOM_PROJECTS_STORAGE_KEY = 'qaap.mobileProjects.customProjects';
+const HIDDEN_PROJECT_IDS_STORAGE_KEY = MOBILE_PROJECTS_HIDDEN_IDS_BASE;
+const PINNED_PROJECT_IDS_STORAGE_KEY = MOBILE_PROJECTS_PINNED_IDS_BASE;
+const DISPLAY_NAMES_STORAGE_KEY = MOBILE_PROJECTS_DISPLAY_NAMES_BASE;
+const CUSTOM_PROJECTS_STORAGE_KEY = MOBILE_PROJECTS_CUSTOM_PROJECTS_BASE;
 
 @injectable()
 export class MobileProjectsService {
@@ -85,7 +93,7 @@ export class MobileProjectsService {
             return new Set();
         }
         try {
-            const raw = localStorage.getItem(HIDDEN_PROJECT_IDS_STORAGE_KEY);
+            const raw = localStorage.getItem(mobileProjectsUserStorageKey(HIDDEN_PROJECT_IDS_STORAGE_KEY));
             if (!raw) {
                 return new Set();
             }
@@ -103,7 +111,7 @@ export class MobileProjectsService {
         if (typeof localStorage === 'undefined') {
             return;
         }
-        localStorage.setItem(HIDDEN_PROJECT_IDS_STORAGE_KEY, JSON.stringify([...ids]));
+        localStorage.setItem(mobileProjectsUserStorageKey(HIDDEN_PROJECT_IDS_STORAGE_KEY), JSON.stringify([...ids]));
     }
 
     protected readPinnedProjectIds(): Set<string> {
@@ -111,7 +119,7 @@ export class MobileProjectsService {
             return new Set();
         }
         try {
-            const raw = localStorage.getItem(PINNED_PROJECT_IDS_STORAGE_KEY);
+            const raw = localStorage.getItem(mobileProjectsUserStorageKey(PINNED_PROJECT_IDS_STORAGE_KEY));
             if (!raw) {
                 return new Set();
             }
@@ -129,7 +137,7 @@ export class MobileProjectsService {
         if (typeof localStorage === 'undefined') {
             return;
         }
-        localStorage.setItem(PINNED_PROJECT_IDS_STORAGE_KEY, JSON.stringify([...ids]));
+        localStorage.setItem(mobileProjectsUserStorageKey(PINNED_PROJECT_IDS_STORAGE_KEY), JSON.stringify([...ids]));
     }
 
     protected isPinned(id: string, pinnedIds: Set<string>, defaultPinned: boolean): boolean {
@@ -361,7 +369,7 @@ export class MobileProjectsService {
             return {};
         }
         try {
-            const raw = localStorage.getItem(DISPLAY_NAMES_STORAGE_KEY);
+            const raw = localStorage.getItem(mobileProjectsUserStorageKey(DISPLAY_NAMES_STORAGE_KEY));
             if (!raw) {
                 return {};
             }
@@ -379,7 +387,7 @@ export class MobileProjectsService {
         if (typeof localStorage === 'undefined') {
             return;
         }
-        localStorage.setItem(DISPLAY_NAMES_STORAGE_KEY, JSON.stringify(names));
+        localStorage.setItem(mobileProjectsUserStorageKey(DISPLAY_NAMES_STORAGE_KEY), JSON.stringify(names));
     }
 
     protected readCustomProjects(): StoredMobileProject[] {
@@ -387,7 +395,7 @@ export class MobileProjectsService {
             return [];
         }
         try {
-            const raw = localStorage.getItem(CUSTOM_PROJECTS_STORAGE_KEY);
+            const raw = localStorage.getItem(mobileProjectsUserStorageKey(CUSTOM_PROJECTS_STORAGE_KEY));
             if (!raw) {
                 return [];
             }
@@ -402,7 +410,7 @@ export class MobileProjectsService {
         if (typeof localStorage === 'undefined') {
             return;
         }
-        localStorage.setItem(CUSTOM_PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+        localStorage.setItem(mobileProjectsUserStorageKey(CUSTOM_PROJECTS_STORAGE_KEY), JSON.stringify(projects));
     }
 
     async importGithubProject(project: MobileProjectEntry): Promise<MobileProjectEntry[] | undefined> {
@@ -1216,12 +1224,10 @@ export class MobileProjectsService {
 
     protected currentGithubRepositoryFullName(): string | undefined {
         const current = this.workspaceService.workspace?.resource;
-        const segments = current?.path.toString().split('/').filter(Boolean) ?? [];
-        const reposIndex = segments.lastIndexOf('repos');
-        if (reposIndex < 0 || segments.length <= reposIndex + 2) {
+        if (!current) {
             return undefined;
         }
-        return `${segments[reposIndex + 1]}/${segments[reposIndex + 2]}`.toLowerCase();
+        return parseGithubFullNameFromWorkspacePath(current.path.toString());
     }
 
     protected githubRepositoryToProject(repo: QaapGithubRepositorySummary, pinnedIds: Set<string>, currentFullName?: string): MobileProjectEntry {

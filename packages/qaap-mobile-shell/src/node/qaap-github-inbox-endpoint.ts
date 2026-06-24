@@ -11,7 +11,8 @@ import {
     QAAP_GITHUB_API_PATH,
     type QaapGithubPullRequestSummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { fetchGithubPullRequestFiles } from './qaap-github-api';
+import { fetchGithubPullRequestFiles, fetchGithubRepositories } from './qaap-github-api';
+import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 
@@ -51,12 +52,15 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
 
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
+
     configure(app: Application): void {
         app.post(`${QAAP_GITHUB_API_PATH}/webhook`, (req, res) => {
             void this.handleWebhook(req, res);
         });
         app.get(`${QAAP_GITHUB_API_PATH}/inbox/stream`, (req, res) => {
-            this.handleInboxStream(req, res);
+            void this.handleInboxStream(req, res);
         });
     }
 
@@ -75,13 +79,15 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
         const owner = body.repository.owner.login;
         const repo = body.repository.name;
         const pull = body.pull_request;
-        const stored = this.sessions.getAnySession();
         let filesPreview: QaapGithubPullRequestSummary['filesPreview'] = [];
-        if (stored && pull.state === 'open') {
-            try {
-                filesPreview = await fetchGithubPullRequestFiles(stored.accessToken, owner, repo, pull.number);
-            } catch {
-                filesPreview = [];
+        if (pull.state === 'open') {
+            const accessToken = await this.resolveWebhookAccessToken(owner, repo, pull.number);
+            if (accessToken) {
+                try {
+                    filesPreview = await fetchGithubPullRequestFiles(accessToken, owner, repo, pull.number);
+                } catch {
+                    filesPreview = [];
+                }
             }
         }
         const summary: QaapGithubPullRequestSummary = {
@@ -121,7 +127,26 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
         }
     }
 
-    protected handleInboxStream(req: Request, res: Response): void {
+    protected async handleInboxStream(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            res.status(200).set({
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache, no-transform',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no',
+            });
+            res.end();
+            return;
+        }
+        const allowedRepos = new Set(
+            (await fetchGithubRepositories(auth.session.accessToken).catch(() => []))
+                .map(repo => repo.fullName.toLowerCase()),
+        );
         res.status(200).set({
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache, no-transform',
@@ -132,6 +157,12 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
         res.write(': qaap-github-inbox stream\n\n');
 
         const subscription = this.hub.onDidChange(event => {
+            if (event.type === 'pull_request') {
+                const fullName = `${event.pullRequest.owner}/${event.pullRequest.repo}`.toLowerCase();
+                if (!allowedRepos.has(fullName)) {
+                    return;
+                }
+            }
             res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
         });
         const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), SSE_HEARTBEAT_MS);
@@ -142,5 +173,18 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
         };
         req.on('close', cleanup);
         res.on('close', cleanup);
+    }
+
+    /** Resolve a GitHub token that can read the webhook repository (org or user-owned). */
+    protected async resolveWebhookAccessToken(owner: string, repo: string, prNumber: number): Promise<string | undefined> {
+        for (const session of this.sessions.listSessions()) {
+            try {
+                await fetchGithubPullRequestFiles(session.accessToken, owner, repo, prNumber);
+                return session.accessToken;
+            } catch {
+                /* try next session */
+            }
+        }
+        return undefined;
     }
 }

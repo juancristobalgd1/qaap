@@ -34,6 +34,8 @@ export interface QaapParallelRunVariantStats {
 
 export interface QaapParallelRun {
     readonly id: string;
+    /** GitHub/GitLab login that started this parallel run. */
+    readonly ownerLogin?: string;
     /** Base repository root the worktrees are derived from. */
     readonly cwd: string;
     readonly prompt: string;

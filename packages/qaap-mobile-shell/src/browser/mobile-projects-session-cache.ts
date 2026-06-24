@@ -4,17 +4,19 @@
 // *****************************************************************************
 
 import type { QaapProjectSessionSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-
-const LOCAL_CACHE_KEY = 'qaap.mobileProjects.sessionCache.v1';
+import {
+    MOBILE_PROJECTS_SESSION_CACHE_BASE,
+    mobileProjectsUserStorageKey,
+} from './mobile-projects-user-storage';
 
 /** Browser-local mirror of hub session rows (merged with server on load). */
-export function readLocalProjectSessions(): Map<string, QaapProjectSessionSummary> {
+export function readLocalProjectSessions(userLogin?: string): Map<string, QaapProjectSessionSummary> {
     const map = new Map<string, QaapProjectSessionSummary>();
     if (typeof localStorage === 'undefined') {
         return map;
     }
     try {
-        const raw = localStorage.getItem(LOCAL_CACHE_KEY);
+        const raw = localStorage.getItem(mobileProjectsUserStorageKey(MOBILE_PROJECTS_SESSION_CACHE_BASE, userLogin));
         if (!raw) {
             return map;
         }
@@ -34,22 +36,25 @@ export function readLocalProjectSessions(): Map<string, QaapProjectSessionSummar
     return map;
 }
 
-export function writeLocalProjectSessions(map: Map<string, QaapProjectSessionSummary>): void {
+export function writeLocalProjectSessions(map: Map<string, QaapProjectSessionSummary>, userLogin?: string): void {
     if (typeof localStorage === 'undefined') {
         return;
     }
-    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify([...map.values()]));
+    localStorage.setItem(
+        mobileProjectsUserStorageKey(MOBILE_PROJECTS_SESSION_CACHE_BASE, userLogin),
+        JSON.stringify([...map.values()]),
+    );
 }
 
-export function patchLocalProjectSession(patch: QaapProjectSessionSummary): void {
-    const map = readLocalProjectSessions();
+export function patchLocalProjectSession(patch: QaapProjectSessionSummary, userLogin?: string): void {
+    const map = readLocalProjectSessions(userLogin);
     const existing = map.get(patch.repoKey);
     map.set(patch.repoKey, {
         ...existing,
         ...patch,
         lastActiveAt: patch.lastActiveAt ?? new Date().toISOString(),
     });
-    writeLocalProjectSessions(map);
+    writeLocalProjectSessions(map, userLogin);
 }
 
 export function mergeSessionMaps(

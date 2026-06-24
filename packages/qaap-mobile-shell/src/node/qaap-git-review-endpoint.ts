@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { execFile } from 'child_process';
@@ -21,6 +21,7 @@ import {
     type QaapGitHistoryCommit,
     type QaapGitHistoryResponse,
 } from '../common/qaap-git-review';
+import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -34,6 +35,9 @@ const COMMIT_CONTEXT_DIFF_LIMIT = 24_000;
  */
 @injectable()
 export class QaapGitReviewEndpoint implements BackendApplicationContribution {
+
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
 
     configure(app: Application): void {
         app.get(`${QAAP_GIT_REVIEW_API_PATH}/changes`, (req, res) => {
@@ -239,19 +243,22 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
 
     protected async resolveRepositoryBody(req: Request, res: Response): Promise<string | undefined> {
         const raw = typeof req.body?.root === 'string' ? req.body.root : '';
-        return this.resolveRepositoryRoot(raw, res);
+        return this.resolveRepositoryRoot(raw, req, res);
     }
 
     /** Validate the client-supplied repository root and confirm it is a git work tree. */
     protected async resolveRepository(req: Request, res: Response): Promise<string | undefined> {
         const raw = typeof req.query.root === 'string' ? req.query.root : '';
-        return this.resolveRepositoryRoot(raw, res);
+        return this.resolveRepositoryRoot(raw, req, res);
     }
 
-    protected async resolveRepositoryRoot(raw: string, res: Response): Promise<string | undefined> {
+    protected async resolveRepositoryRoot(raw: string, req: Request, res: Response): Promise<string | undefined> {
         const root = raw ? path.resolve(raw) : '';
         if (!root || !path.isAbsolute(root) || !this.isExistingDirectory(root)) {
             res.status(400).json({ error: 'Missing or invalid "root" query parameter.' });
+            return undefined;
+        }
+        if (!this.auth.assertWorkspacePathOwned(req, res, root, 'git_review')) {
             return undefined;
         }
         try {

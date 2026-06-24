@@ -10,7 +10,12 @@ import {
     QAAP_PARALLEL_RUN_API_PATH,
     type QaapChooseParallelVariantRequest,
     type QaapCreateParallelRunRequest,
+    type QaapParallelRun,
 } from '../common/qaap-parallel-run';
+import {
+    QaapGithubAuthGuard,
+    type QaapGithubAuthContext,
+} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 import { QaapParallelRunStore } from './qaap-parallel-run-store';
 
 /** HTTP surface for parallel agent runs (variants in isolated git worktrees). */
@@ -19,6 +24,9 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
 
     @inject(QaapParallelRunStore)
     protected readonly store: QaapParallelRunStore;
+
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
 
     configure(app: Application): void {
         app.post(QAAP_PARALLEL_RUN_API_PATH, (req, res) => {
@@ -36,13 +44,24 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleCreate(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapCreateParallelRunRequest>;
         if (typeof body.cwd !== 'string' || typeof body.prompt !== 'string' || !Array.isArray(body.agents)) {
             res.status(400).json({ error: '"cwd", "prompt" and "agents" are required.' });
             return;
         }
+        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
+            this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
+            return;
+        }
         try {
-            const run = await this.store.create({ cwd: body.cwd, prompt: body.prompt, agents: body.agents });
+            const run = await this.store.create(
+                { cwd: body.cwd, prompt: body.prompt, agents: body.agents },
+                this.auth.resolveUserLogin(ctx),
+            );
             res.status(201).json(run);
         } catch (error) {
             res.status(400).json({ error: this.errorMessage(error) });
@@ -50,10 +69,18 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleGet(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         try {
             const run = await this.store.get(req.params.id);
             if (!run) {
                 res.status(404).json({ error: 'Parallel run not found.' });
+                return;
+            }
+            if (!this.ownsParallelRun(ctx, run)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { parallelRunId: req.params.id });
                 return;
             }
             res.json(run);
@@ -63,6 +90,19 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleChoose(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const existing = await this.store.get(req.params.id);
+        if (!existing) {
+            res.status(404).json({ error: 'Parallel run not found.' });
+            return;
+        }
+        if (!this.ownsParallelRun(ctx, existing)) {
+            this.auth.denyForbidden(res, req, 'agent_task', { parallelRunId: req.params.id });
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapChooseParallelVariantRequest>;
         if (typeof body.conversationId !== 'string' || typeof body.action !== 'string') {
             res.status(400).json({ error: '"conversationId" and "action" are required.' });
@@ -77,12 +117,47 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleDelete(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const existing = await this.store.get(req.params.id);
+        if (!existing) {
+            res.status(404).json({ error: 'Parallel run not found.' });
+            return;
+        }
+        if (!this.ownsParallelRun(ctx, existing)) {
+            this.auth.denyForbidden(res, req, 'agent_task', { parallelRunId: req.params.id });
+            return;
+        }
         try {
             await this.store.remove(req.params.id);
             res.json({ ok: true });
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
+    }
+
+    protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {
+        const ctx = this.auth.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return undefined;
+        }
+        return ctx;
+    }
+
+    protected ownsParallelRun(ctx: QaapGithubAuthContext, run: QaapParallelRun): boolean {
+        if (ctx.kind === 'skip') {
+            return true;
+        }
+        if (ctx.kind === 'unauthorized') {
+            return false;
+        }
+        if (run.ownerLogin) {
+            return run.ownerLogin === ctx.userLogin;
+        }
+        return this.auth.ownsWorkspacePath(ctx, run.cwd);
     }
 
     protected errorMessage(error: unknown): string {

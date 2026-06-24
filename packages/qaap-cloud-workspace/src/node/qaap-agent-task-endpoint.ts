@@ -17,6 +17,11 @@ import {
 } from '../common/qaap-agent-task';
 import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import {
+    QaapGithubAuthGuard,
+    type QaapGithubAuthContext,
+} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 
 /** Keep SSE connections warm through proxies that idle-kill silent sockets. */
 const SSE_HEARTBEAT_MS = 25_000;
@@ -34,6 +39,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     @inject(QaapAgentTaskRunner)
     protected readonly runner: QaapAgentTaskRunner;
 
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
+
     configure(app: Application): void {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
             const agent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
@@ -44,9 +52,17 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.json({ agent, models: this.runner.listModelsForAgent(agent) });
         });
         app.get(QAAP_AGENT_TASK_API_PATH, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
             const cwd = typeof req.query.cwd === 'string' ? req.query.cwd : undefined;
+            if (cwd && !this.auth.ownsWorkspacePath(ctx, cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { cwd });
+                return;
+            }
             res.json({
-                tasks: this.runner.listForCwd(cwd),
+                tasks: this.filterTasks(ctx, this.runner.listForCwd(cwd)),
                 agentConfigured: this.runner.isAgentConfigured(),
                 agents: this.runner.listAgents(),
                 defaultAgent: this.runner.defaultAgent(),
@@ -55,9 +71,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         });
         // Cross-project dashboard feed — `/all` and `/stream` are static segments routed before
         // the `/:id` handler below so they never collide with a task id.
-        app.get(`${QAAP_AGENT_TASK_API_PATH}/all`, (_req, res) => {
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/all`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
             res.json({
-                groups: this.runner.listAllGroupedByCwd(),
+                groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()),
                 agentConfigured: this.runner.isAgentConfigured(),
                 agents: this.runner.listAgents(),
                 defaultAgent: this.runner.defaultAgent(),
@@ -68,10 +88,18 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             this.handleStream(req, res);
         });
         app.post(`${QAAP_AGENT_TASK_API_PATH}/warm`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
             const body = (req.body ?? {}) as { cwd?: unknown };
             const cwd = typeof body.cwd === 'string' ? body.cwd.trim() : '';
             if (!cwd) {
                 res.status(400).json({ error: '"cwd" is required.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { cwd });
                 return;
             }
             try {
@@ -90,6 +118,19 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             void this.handleDetail(req, res);
         });
         app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/cancel`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
+                return;
+            }
             const task = this.runner.cancel(req.params.id);
             if (!task) {
                 res.status(404).json({ error: 'Task not found.' });
@@ -129,10 +170,15 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             }
         });
 
-        wss.on('connection', (client: WsClient) => {
+        wss.on('connection', (client: WsClient, request: import('http').IncomingMessage) => {
+            const ctx = this.auth.authenticate(request as unknown as Request);
+            if (ctx.kind === 'unauthorized') {
+                client.close(4401, 'Not signed in');
+                return;
+            }
             const snapshot = {
                 type: 'snapshot',
-                groups: this.runner.listAllGroupedByCwd(),
+                groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()),
                 agentConfigured: this.runner.isAgentConfigured(),
                 agents: this.runner.listAgents(),
                 defaultAgent: this.runner.defaultAgent(),
@@ -141,6 +187,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
 
             const subscription = this.runner.onDidChangeTask(event => {
                 if (client.readyState !== WsClient.OPEN) {
+                    return;
+                }
+                if (!this.auth.ownsWorkspacePath(ctx, event.task.cwd)) {
                     return;
                 }
                 const msg = event.type === 'output'
@@ -188,9 +237,17 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     }
 
     protected handleCreate(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapCreateAgentTaskRequest>;
         if (typeof body.cwd !== 'string' || (typeof body.command !== 'string' && typeof body.prompt !== 'string')) {
             res.status(400).json({ error: '"cwd" and one of "command" or "prompt" are required.' });
+            return;
+        }
+        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
+            this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
             return;
         }
         // Helper-CLI calls authenticate via the shared token header; ignore parentId from regular UI calls.
@@ -220,9 +277,17 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleDetail(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const detail = await this.runner.detail(req.params.id);
         if (!detail) {
             res.status(404).json({ error: 'Task not found.' });
+            return;
+        }
+        if (!this.auth.ownsWorkspacePath(ctx, detail.cwd)) {
+            this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
             return;
         }
         res.json(detail);
@@ -233,6 +298,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
      * to refresh card status live without polling each project.
      */
     protected handleStream(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         res.status(200).set({
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache, no-transform',
@@ -245,6 +314,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         res.write(': qaap-agent-tasks stream\n\n');
 
         const subscription = this.runner.onDidChangeTask(event => {
+            if (!this.auth.ownsWorkspacePath(ctx, event.task.cwd)) {
+                return;
+            }
             const data = event.type === 'output' ? { ...event.task, chunk: event.chunk } : event.task;
             res.write(`event: ${event.type}\ndata: ${JSON.stringify(data)}\n\n`);
         });
@@ -256,5 +328,28 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         };
         req.on('close', cleanup);
         res.on('close', cleanup);
+    }
+
+    protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {
+        const ctx = this.auth.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return undefined;
+        }
+        return ctx;
+    }
+
+    protected filterTasks(ctx: QaapGithubAuthContext, tasks: QaapAgentTask[]): QaapAgentTask[] {
+        return tasks.filter(task => this.auth.ownsWorkspacePath(ctx, task.cwd));
+    }
+
+    protected filterTaskGroups(ctx: QaapGithubAuthContext, groups: QaapAgentTaskCwdGroup[]): QaapAgentTaskCwdGroup[] {
+        return groups
+            .filter(group => this.auth.ownsWorkspacePath(ctx, group.cwd))
+            .map(group => ({
+                ...group,
+                tasks: group.tasks.filter(task => this.auth.ownsWorkspacePath(ctx, task.cwd)),
+            }))
+            .filter(group => group.tasks.length > 0);
     }
 }

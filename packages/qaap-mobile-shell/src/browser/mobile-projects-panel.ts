@@ -692,6 +692,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             this.resetInboxPullRequestState();
             void this.refreshInboxPullRequests(undefined, true);
         }
+        void this.refreshProjects();
     };
 
     protected readonly onAccountClick = (): void => {
@@ -2161,6 +2162,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected disposeTranscriptTerminalSlides(workspaceKey?: TranscriptWorkspaceSurfaceKey): void {
         this.transcriptSurfacesUi.disposeTranscriptTerminalSlides(workspaceKey);
+    }
+
+    prepareTranscriptTerminalsForPageUnload(): void {
+        this.transcriptSurfacesUi.prepareTranscriptTerminalsForPageUnload();
     }
 
     protected syncSearchChrome(): void {
