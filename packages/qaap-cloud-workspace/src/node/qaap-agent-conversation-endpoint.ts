@@ -25,7 +25,12 @@ import {
 } from '../common/qaap-agent-conversation-ws';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
+import {
+    QaapGithubAuthGuard,
+    type QaapGithubAuthContext,
+} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 import type { QaapAgUiEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
+import type { QaapAgentConversation, QaapAgentConversationCwdGroup } from '../common/qaap-agent-conversation';
 
 const SSE_HEARTBEAT_MS = 25_000;
 /** Ping interval for WebSocket connections — keeps the socket alive through proxies. */
@@ -47,15 +52,33 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     @inject(QaapConversationWorktreeService)
     protected readonly worktrees: QaapConversationWorktreeService;
 
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
+
     configure(app: Application): void {
         // List for one cwd (or all).
         app.get(QAAP_AGENT_CONVERSATION_API_PATH, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
             const cwd = typeof req.query.cwd === 'string' ? req.query.cwd : undefined;
-            res.json({ conversations: this.store.list(cwd) } satisfies QaapAgentConversationListResponse);
+            if (cwd && !this.auth.ownsWorkspacePath(ctx, cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_conversation', { cwd });
+                return;
+            }
+            const conversations = this.store.list(cwd).filter(summary => this.auth.ownsWorkspacePath(ctx, summary.cwd));
+            res.json({ conversations } satisfies QaapAgentConversationListResponse);
         });
         // Cross-project dashboard feed — static segments before the `:id` handler.
-        app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/all`, (_req, res) => {
-            res.json({ groups: this.store.listAllGroupedByCwd() } satisfies QaapAgentConversationAllResponse);
+        app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/all`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            res.json({
+                groups: this.filterGroups(ctx, this.store.listAllGroupedByCwd()),
+            } satisfies QaapAgentConversationAllResponse);
         });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
@@ -64,34 +87,52 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             void this.handleCreate(req, res);
         });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
-            const conv = this.store.get(req.params.id);
+            const conv = this.getConversationIfOwned(req, res, req.params.id);
             if (!conv) {
-                res.status(404).json({ error: 'Conversation not found.' });
                 return;
             }
             res.json(conv);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/messages`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
             this.handlePostMessage(req, res);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/ag-ui/events`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
             this.handlePostAgUiEvent(req, res);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/preview-bootstrap-failure`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
             this.handlePostPreviewBootstrapFailure(req, res);
         });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
             this.handleUpdate(req, res);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/fork`, (req, res) => {
-            const conv = this.store.fork(req.params.id);
+            const conv = this.getConversationIfOwned(req, res, req.params.id);
             if (!conv) {
+                return;
+            }
+            const forked = this.store.fork(req.params.id);
+            if (!forked) {
                 res.status(404).json({ error: 'Conversation not found.' });
                 return;
             }
-            res.status(201).json(conv);
+            res.status(201).json(forked);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/cancel`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
             const conv = this.store.cancel(req.params.id);
             if (!conv) {
                 res.status(404).json({ error: 'Conversation not found.' });
@@ -100,6 +141,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             res.json(conv);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/retry`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
             try {
                 const conv = this.store.retry(req.params.id);
                 res.json(conv);
@@ -111,6 +155,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/checkpoints/:checkpointId/restore`, (req, res) => {
             void (async () => {
+                if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                    return;
+                }
                 try {
                     const conv = await this.store.restoreCheckpoint(req.params.id, req.params.checkpointId);
                     if (!conv) {
@@ -125,6 +172,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/messages/:messageId/rewind`, (req, res) => {
             void (async () => {
+                if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                    return;
+                }
                 try {
                     const conv = await this.store.rewindToMessage(req.params.id, req.params.messageId);
                     if (!conv) {
@@ -140,6 +190,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             })();
         });
         app.delete(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
             const ok = this.store.delete(req.params.id);
             res.status(ok ? 204 : 404).end();
         });
@@ -171,15 +224,23 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
         });
 
-        wss.on('connection', (client: WsClient) => {
+        wss.on('connection', (client: WsClient, request: import('http').IncomingMessage) => {
+            const ctx = this.auth.authenticate(request as unknown as Request);
+            if (ctx.kind === 'unauthorized') {
+                client.close(4401, 'Not signed in');
+                return;
+            }
             const snapshot = {
                 type: 'snapshot',
-                groups: this.store.listAllGroupedByCwd(),
+                groups: this.filterGroups(ctx, this.store.listAllGroupedByCwd()),
             };
             client.send(JSON.stringify(snapshot));
 
             const subscription = this.store.onDidChange(event => {
                 if (client.readyState !== WsClient.OPEN) {
+                    return;
+                }
+                if ('cwd' in event && typeof event.cwd === 'string' && !this.auth.ownsWorkspacePath(ctx, event.cwd)) {
                     return;
                 }
                 client.send(JSON.stringify(event));
@@ -221,9 +282,17 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     protected async handleCreate(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapCreateAgentConversationRequest>;
         if (typeof body.cwd !== 'string' || !body.cwd) {
             res.status(400).json({ error: '"cwd" is required.' });
+            return;
+        }
+        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
+            this.auth.denyForbidden(res, req, 'agent_conversation', { cwd: body.cwd });
             return;
         }
         try {
@@ -380,6 +449,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     /** SSE feed of conversation events used by every connected client for live updates. */
     protected handleStream(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         res.status(200).set({
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache, no-transform',
@@ -390,6 +463,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         res.write(': qaap-agent-conversations stream\n\n');
 
         const subscription = this.store.onDidChange(event => {
+            if ('cwd' in event && typeof event.cwd === 'string' && !this.auth.ownsWorkspacePath(ctx, event.cwd)) {
+                return;
+            }
             res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
         });
         const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), SSE_HEARTBEAT_MS);
@@ -400,5 +476,41 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         };
         req.on('close', cleanup);
         res.on('close', cleanup);
+    }
+
+    protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {
+        const ctx = this.auth.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return undefined;
+        }
+        return ctx;
+    }
+
+    protected getConversationIfOwned(req: Request, res: Response, conversationId: string): QaapAgentConversation | undefined {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return undefined;
+        }
+        const conv = this.store.get(conversationId);
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation not found.' });
+            return undefined;
+        }
+        if (!this.auth.ownsWorkspacePath(ctx, conv.cwd)) {
+            this.auth.denyForbidden(res, req, 'agent_conversation', { conversationId });
+            return undefined;
+        }
+        return conv;
+    }
+
+    protected filterGroups(ctx: QaapGithubAuthContext, groups: QaapAgentConversationCwdGroup[]): QaapAgentConversationCwdGroup[] {
+        return groups
+            .filter(group => this.auth.ownsWorkspacePath(ctx, group.cwd))
+            .map(group => ({
+                ...group,
+                conversations: group.conversations.filter(summary => this.auth.ownsWorkspacePath(ctx, summary.cwd)),
+            }))
+            .filter(group => group.conversations.length > 0);
     }
 }

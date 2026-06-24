@@ -206,6 +206,9 @@ export async function signOutQaapAuth(): Promise<void> {
         /* still clear local session */
     }
     clearQaapAuthSession();
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('qaap-mobile-projects-cache-clear'));
+    }
 }
 
 /** Apply server session to local storage; returns true when signed in. */

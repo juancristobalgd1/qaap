@@ -69,7 +69,7 @@ export class QaapParallelRunStore {
         });
     }
 
-    async create(request: QaapCreateParallelRunRequest): Promise<QaapParallelRun> {
+    async create(request: QaapCreateParallelRunRequest, ownerLogin?: string): Promise<QaapParallelRun> {
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
             throw new Error('A valid absolute "cwd" directory is required.');
@@ -124,7 +124,14 @@ export class QaapParallelRunStore {
             throw error;
         }
 
-        const run: QaapParallelRun = { id, cwd, prompt, createdAt: Date.now(), variants };
+        const run: QaapParallelRun = {
+            id,
+            ...(ownerLogin ? { ownerLogin } : {}),
+            cwd,
+            prompt,
+            createdAt: Date.now(),
+            variants,
+        };
         this.runs.set(id, run);
         await this.persist();
         void this.pushLiveStats(id);

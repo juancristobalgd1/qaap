@@ -130,11 +130,12 @@ export class QaapWorkHubRoutineStore {
         return this.routines.get(id);
     }
 
-    create(body: QaapCreateWorkHubRoutineBody): QaapWorkHubRoutine {
+    create(body: QaapCreateWorkHubRoutineBody, ownerLogin?: string): QaapWorkHubRoutine {
         const now = Date.now();
         const trigger = body.trigger ?? 'manual';
         const routine: QaapWorkHubRoutine = {
             id: randomUUID(),
+            ...(ownerLogin ? { ownerLogin } : {}),
             title: body.title.trim(),
             prompt: body.prompt.trim(),
             cwd: body.cwd.trim(),

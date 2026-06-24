@@ -26,6 +26,8 @@ export type QaapWorkHubRoutineLastRunState = 'running' | 'completed' | 'failed';
 
 export interface QaapWorkHubRoutine {
     readonly id: string;
+    /** GitHub/GitLab login that owns this routine (multi-tenant isolation). */
+    readonly ownerLogin?: string;
     readonly title: string;
     readonly prompt: string;
     /** Absolute path where the VPS agent runs. */

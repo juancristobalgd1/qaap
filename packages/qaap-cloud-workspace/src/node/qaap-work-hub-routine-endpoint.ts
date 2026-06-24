@@ -10,8 +10,13 @@ import {
     QAAP_WORK_HUB_ROUTINE_API_PATH,
     type QaapCreateWorkHubRoutineBody,
     type QaapUpdateWorkHubRoutineBody,
+    type QaapWorkHubRoutine,
     type QaapWorkHubRoutineListResponse,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-routine';
+import {
+    QaapGithubAuthGuard,
+    type QaapGithubAuthContext,
+} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
@@ -28,10 +33,17 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
     @inject(QaapAgentTaskRunner)
     protected readonly taskRunner: QaapAgentTaskRunner;
 
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
+
     configure(app: Application): void {
-        app.get(QAAP_WORK_HUB_ROUTINE_API_PATH, (_req, res) => {
+        app.get(QAAP_WORK_HUB_ROUTINE_API_PATH, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
             res.json({
-                routines: this.store.list(),
+                routines: this.filterRoutines(ctx, this.store.list()),
                 agentConfigured: this.taskRunner.isAgentConfigured(),
                 defaultAgent: this.taskRunner.defaultAgent(),
             } satisfies QaapWorkHubRoutineListResponse);
@@ -51,6 +63,10 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
     }
 
     protected handleCreate(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapCreateWorkHubRoutineBody>;
         if (typeof body.title !== 'string' || typeof body.prompt !== 'string' || typeof body.cwd !== 'string') {
             res.status(400).json({ error: '"title", "prompt", and "cwd" are required.' });
@@ -60,7 +76,12 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
             res.status(400).json({ error: 'Fields cannot be empty.' });
             return;
         }
+        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
+            this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
+            return;
+        }
         try {
+            const ownerLogin = this.auth.resolveUserLogin(ctx);
             const routine = this.store.create({
                 title: body.title,
                 prompt: body.prompt,
@@ -74,7 +95,7 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
                 runMode: body.runMode,
                 enabled: body.enabled,
                 autoApprove: body.autoApprove,
-            });
+            }, ownerLogin);
             res.status(201).json(routine);
         } catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -82,7 +103,16 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
     }
 
     protected handleUpdate(req: Request, res: Response): void {
+        const routine = this.getRoutineIfOwned(req, res, req.params.id);
+        if (!routine) {
+            return;
+        }
+        const ctx = this.requireAuth(req, res)!;
         const body = (req.body ?? {}) as QaapUpdateWorkHubRoutineBody;
+        if (body.cwd !== undefined && !this.auth.ownsWorkspacePath(ctx, body.cwd)) {
+            this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
+            return;
+        }
         const updated = this.store.update(req.params.id, body);
         if (!updated) {
             res.status(404).json({ error: 'Routine not found.' });
@@ -92,6 +122,9 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
     }
 
     protected handleDelete(req: Request, res: Response): void {
+        if (!this.getRoutineIfOwned(req, res, req.params.id)) {
+            return;
+        }
         if (!this.store.delete(req.params.id)) {
             res.status(404).json({ error: 'Routine not found.' });
             return;
@@ -100,6 +133,9 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
     }
 
     protected handleRun(req: Request, res: Response): void {
+        if (!this.getRoutineIfOwned(req, res, req.params.id)) {
+            return;
+        }
         try {
             const routine = this.runner.runNow(req.params.id);
             res.json(routine);
@@ -111,5 +147,48 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
             }
             res.status(500).json({ error: message });
         }
+    }
+
+    protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {
+        const ctx = this.auth.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return undefined;
+        }
+        return ctx;
+    }
+
+    protected getRoutineIfOwned(req: Request, res: Response, routineId: string): QaapWorkHubRoutine | undefined {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return undefined;
+        }
+        const routine = this.store.get(routineId);
+        if (!routine) {
+            res.status(404).json({ error: 'Routine not found.' });
+            return undefined;
+        }
+        if (!this.ownsRoutine(ctx, routine)) {
+            this.auth.denyForbidden(res, req, 'agent_task', { routineId });
+            return undefined;
+        }
+        return routine;
+    }
+
+    protected filterRoutines(ctx: QaapGithubAuthContext, routines: QaapWorkHubRoutine[]): QaapWorkHubRoutine[] {
+        return routines.filter(routine => this.ownsRoutine(ctx, routine));
+    }
+
+    protected ownsRoutine(ctx: QaapGithubAuthContext, routine: QaapWorkHubRoutine): boolean {
+        if (ctx.kind === 'skip') {
+            return true;
+        }
+        if (ctx.kind === 'unauthorized') {
+            return false;
+        }
+        if (routine.ownerLogin) {
+            return routine.ownerLogin === ctx.userLogin;
+        }
+        return this.auth.ownsWorkspacePath(ctx, routine.cwd);
     }
 }
