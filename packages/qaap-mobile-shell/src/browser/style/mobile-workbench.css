@@ -3499,14 +3499,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 /*
- * Bottom-anchor the transcript (chat-app style): `margin-top: auto` on the first row pushes a short
- * conversation down so the latest message hugs the composer (no dead black gap), while a long
- * conversation has no free space so it collapses to 0 and scrolls from the top normally — avoiding
- * the `justify-content: flex-end` bug where the first message becomes unreachable. Applies to both
- * the inline transcript and the full-screen sheet, whose scroller is this same list.
+ * Keep the first message at the top of the transcript. Previously `margin-top: auto` bottom-anchored
+ * short conversations, but that made the first user bubble of a new conversation start at the bottom
+ * of the scrollport. The conversation now grows downward from the top, and the scroll/auto-follow
+ * code keeps the latest message visible as it streams.
  */
 .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript:not(.theia-mod-virtual-scroll)> :first-child {
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .theia-mobile-agents-hub-inline-transcript[hidden] {
