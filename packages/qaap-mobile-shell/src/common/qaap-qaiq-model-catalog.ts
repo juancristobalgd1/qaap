@@ -5,6 +5,7 @@
 
 import type { QaapQaiqModelOption } from './qaap-agent-task-client';
 import {
+    formatQaiqModelProviderLabel,
     listByokModelsFromDescriptor,
     parseTheiaLanguageModelId,
     QAAP_QAIQ_BYOK_PROVIDERS,
@@ -13,7 +14,6 @@ import {
 } from './qaap-qaiq-byok-provider-registry';
 
 export type { QaapPreferenceReader } from './qaap-qaiq-byok-provider-registry';
-export { formatQaiqModelProviderLabel } from './qaap-qaiq-byok-provider-registry';
 
 type AliasMap = Record<string, { readonly selectedModel?: string } | undefined>;
 
@@ -135,4 +135,13 @@ export function groupQaiqModelsByProvider(models: readonly QaapQaiqModelOption[]
         grouped.set(provider, list);
     }
     return grouped;
+}
+
+/** Formats a selected model label so its provider is visible, e.g. "Anthropic · claude-4-sonnet". */
+export function formatQaiqModelSelectionLabel(model: { readonly vendor: string; readonly modelId: string }): string {
+    const vendor = model.vendor?.trim();
+    if (!vendor || vendor === 'unknown') {
+        return model.modelId;
+    }
+    return `${formatQaiqModelProviderLabel(vendor)} · ${model.modelId}`;
 }
