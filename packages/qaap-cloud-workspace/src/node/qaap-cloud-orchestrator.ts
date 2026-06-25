@@ -20,12 +20,12 @@ export class QaapCloudOrchestrator {
     @inject(QaapDockerOrchestrator)
     protected readonly docker: QaapDockerOrchestrator;
 
-    async ensure(request: QaapCloudWorkspaceEnsureRequest): Promise<QaapCloudWorkspaceSummary> {
+    async ensure(request: QaapCloudWorkspaceEnsureRequest, ownerLogin?: string): Promise<QaapCloudWorkspaceSummary> {
         if (!request.workspaceUri) {
-            return this.store.ensure(request);
+            return this.store.ensure(request, ownerLogin);
         }
         if (!this.docker.isEnabled()) {
-            return this.store.ensure(request);
+            return this.store.ensure(request, ownerLogin);
         }
         try {
             const dockerResult = await this.docker.ensureContainer(request.repoKey, request.workspaceUri);
@@ -33,14 +33,14 @@ export class QaapCloudOrchestrator {
                 containerRef: dockerResult.containerId,
                 status: 'ready',
                 provider: 'docker',
-            });
+            }, ownerLogin);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             return this.store.ensureWithContainer(request, {
                 status: 'error',
                 provider: 'docker',
                 error: message,
-            });
+            }, ownerLogin);
         }
     }
 }

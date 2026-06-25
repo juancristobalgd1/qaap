@@ -216,6 +216,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleImprovePrompt(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapImproveComposerPromptRequestBody>;
         const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
         const agentId = typeof body.agentId === 'string' ? body.agentId.trim() : '';
@@ -223,12 +227,17 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: '"prompt" and "agentId" are required.' });
             return;
         }
+        const cwd = typeof body.cwd === 'string' ? body.cwd.trim() : undefined;
+        if (cwd && !this.auth.ownsWorkspacePath(ctx, cwd)) {
+            this.auth.denyForbidden(res, req, 'agent_task', { cwd });
+            return;
+        }
         try {
             const improved = await this.runner.improveComposerPrompt({
                 prompt,
                 agentId,
                 agentModel: body.agentModel,
-                cwd: typeof body.cwd === 'string' ? body.cwd.trim() : undefined,
+                cwd,
             });
             res.json({ improved });
         } catch (error) {

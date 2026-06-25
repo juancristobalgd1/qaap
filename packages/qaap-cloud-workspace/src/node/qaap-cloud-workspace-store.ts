@@ -29,15 +29,19 @@ export function qaapCloudProviderMode(): QaapCloudWorkspaceSummary['provider'] {
 @injectable()
 export class QaapCloudWorkspaceStore {
 
-    async list(): Promise<QaapCloudWorkspaceSummary[]> {
+    async list(ownerLogin?: string): Promise<QaapCloudWorkspaceSummary[]> {
         const all = await this.readAll();
-        return Object.values(all).sort((a, b) =>
+        const values = Object.values(all);
+        const filtered = ownerLogin
+            ? values.filter(w => w.ownerLogin === ownerLogin)
+            : values;
+        return filtered.sort((a, b) =>
             (b.lastOpenedAt ?? '').localeCompare(a.lastOpenedAt ?? ''));
     }
 
-    async ensure(request: QaapCloudWorkspaceEnsureRequest): Promise<QaapCloudWorkspaceSummary> {
+    async ensure(request: QaapCloudWorkspaceEnsureRequest, ownerLogin?: string): Promise<QaapCloudWorkspaceSummary> {
         const all = await this.readAll();
-        const existing = Object.values(all).find(w => w.repoKey === request.repoKey);
+        const existing = Object.values(all).find(w => w.repoKey === request.repoKey && w.ownerLogin === ownerLogin);
         if (existing) {
             const updated: QaapCloudWorkspaceSummary = {
                 ...existing,
@@ -56,6 +60,7 @@ export class QaapCloudWorkspaceStore {
             provider: qaapCloudProviderMode(),
             workspaceUri: request.workspaceUri,
             lastOpenedAt: new Date().toISOString(),
+            ...(ownerLogin ? { ownerLogin } : {}),
         };
         all[row.id] = row;
         await this.writeAll(all);
@@ -65,9 +70,10 @@ export class QaapCloudWorkspaceStore {
     async ensureWithContainer(
         request: QaapCloudWorkspaceEnsureRequest,
         patch: Partial<Pick<QaapCloudWorkspaceSummary, 'containerRef' | 'status' | 'provider' | 'error'>>,
+        ownerLogin?: string,
     ): Promise<QaapCloudWorkspaceSummary> {
         const all = await this.readAll();
-        const existing = Object.values(all).find(w => w.repoKey === request.repoKey);
+        const existing = Object.values(all).find(w => w.repoKey === request.repoKey && w.ownerLogin === ownerLogin);
         const base: QaapCloudWorkspaceSummary = existing ?? {
             id: `cw_${crypto.randomBytes(8).toString('hex')}`,
             repoKey: request.repoKey,
@@ -75,6 +81,7 @@ export class QaapCloudWorkspaceStore {
             provider: qaapCloudProviderMode(),
             workspaceUri: request.workspaceUri,
             lastOpenedAt: new Date().toISOString(),
+            ...(ownerLogin ? { ownerLogin } : {}),
         };
         const updated: QaapCloudWorkspaceSummary = {
             ...base,

@@ -29,6 +29,7 @@ export interface QaapCloudWorkspaceSummary {
     readonly previewPort?: number;
     readonly lastOpenedAt?: string;
     readonly error?: string;
+    readonly ownerLogin?: string;
 }
 
 export interface QaapDeployRunRequest {

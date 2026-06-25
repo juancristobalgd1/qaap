@@ -15,6 +15,7 @@ export interface QaapPreviewShareEntry {
     readonly token: string;
     readonly port: number;
     readonly repoKey?: string;
+    readonly ownerLogin?: string;
     readonly createdAt: string;
 }
 
@@ -23,13 +24,14 @@ const STORE_PATH = path.join(os.homedir(), '.qaap', 'preview-shares.json');
 @injectable()
 export class QaapPreviewShareStore {
 
-    async create(port: number, repoKey: string | undefined, publicOrigin: string): Promise<QaapPreviewShareSummary> {
+    async create(port: number, repoKey: string | undefined, publicOrigin: string, ownerLogin?: string): Promise<QaapPreviewShareSummary> {
         const token = crypto.randomBytes(12).toString('base64url');
         const publicUrl = buildQaapPublicPreviewShareUrl(publicOrigin, token);
         const entry: QaapPreviewShareEntry = {
             token,
             port,
             repoKey,
+            ...(ownerLogin ? { ownerLogin } : {}),
             createdAt: new Date().toISOString(),
         };
         const all = await this.readAll();

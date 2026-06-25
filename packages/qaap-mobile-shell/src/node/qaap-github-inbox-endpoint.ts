@@ -178,6 +178,9 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
     /** Resolve a GitHub token that can read the webhook repository (org or user-owned). */
     protected async resolveWebhookAccessToken(owner: string, repo: string, prNumber: number): Promise<string | undefined> {
         for (const session of this.sessions.listSessions()) {
+            if (session.user.login.toLowerCase() !== owner.toLowerCase()) {
+                continue;
+            }
             try {
                 await fetchGithubPullRequestFiles(session.accessToken, owner, repo, prNumber);
                 return session.accessToken;

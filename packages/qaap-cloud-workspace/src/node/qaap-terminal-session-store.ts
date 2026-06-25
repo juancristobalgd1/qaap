@@ -17,24 +17,32 @@ const STORE_PATH = path.join(os.homedir(), '.qaap', 'terminal-sessions.json');
 @injectable()
 export class QaapTerminalSessionStore {
 
-    async get(workspaceKey: string): Promise<QaapTerminalSessionRecord[]> {
+    async get(workspaceKey: string, ownerLogin?: string): Promise<QaapTerminalSessionRecord[]> {
         const all = await this.readAll();
-        return all[workspaceKey]?.terminals ?? [];
+        const entry = all[workspaceKey];
+        if (!entry) {
+            return [];
+        }
+        if (ownerLogin && entry.ownerLogin && entry.ownerLogin !== ownerLogin) {
+            return [];
+        }
+        return entry.terminals ?? [];
     }
 
-    async upsert(request: QaapTerminalSessionsUpsertRequest): Promise<void> {
+    async upsert(request: QaapTerminalSessionsUpsertRequest, ownerLogin?: string): Promise<void> {
         const all = await this.readAll();
         all[request.workspaceKey] = {
             updatedAt: new Date().toISOString(),
             terminals: request.terminals,
+            ...(ownerLogin ? { ownerLogin } : {}),
         };
         await this.writeAll(all);
     }
 
-    protected async readAll(): Promise<Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[] }>> {
+    protected async readAll(): Promise<Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>> {
         try {
             const raw = await fs.readFile(STORE_PATH, 'utf8');
-            const parsed = JSON.parse(raw) as Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[] }>;
+            const parsed = JSON.parse(raw) as Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>;
             return parsed && typeof parsed === 'object' ? parsed : {};
         } catch {
             return {};
@@ -42,7 +50,7 @@ export class QaapTerminalSessionStore {
     }
 
     protected async writeAll(
-        data: Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[] }>,
+        data: Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>,
     ): Promise<void> {
         await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
         await fs.writeFile(STORE_PATH, JSON.stringify(data, undefined, 2), 'utf8');

@@ -29,6 +29,7 @@ import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { normalizeQaapPublicUrl } from '@theia/qaap-mobile-shell/lib/node/qaap-github-oauth-config';
+import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 
 @injectable()
 export class QaapCloudWorkspaceEndpoint implements BackendApplicationContribution {
@@ -57,6 +58,9 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
     @inject(QaapPreviewShareProxyContribution)
     protected readonly shareProxy: QaapPreviewShareProxyContribution;
 
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
+
     configure(app: Application): void {
         app.use(json());
         app.get(`${QAAP_CLOUD_API_PATH}/workspaces`, (req, res) => { void this.handleListWorkspaces(req, res); });
@@ -80,7 +84,11 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
      * auto-trigger to avoid asking the user to start the MCP server in environments where it
      * would just hang or fail later inside a tool call.
      */
-    protected async handleCdpStatus(_req: Request, res: Response): Promise<void> {
+    protected async handleCdpStatus(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const reachable = await this.probeCdpEndpoint();
         const body: QaapCdpStatusResponse = { reachable, endpoint: QAAP_CDP_PROBE_URL };
         res.json(body);
@@ -97,28 +105,46 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         });
     }
 
-    protected async handleListWorkspaces(_req: Request, res: Response): Promise<void> {
-        res.json({ workspaces: await this.workspaces.list() });
+    protected async handleListWorkspaces(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        res.json({ workspaces: await this.workspaces.list(ownerLogin) });
     }
 
     protected async handleEnsureWorkspace(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapCloudWorkspaceEnsureRequest>;
         if (!body.repoKey || typeof body.repoKey !== 'string') {
             res.status(400).json({ error: 'repoKey is required' });
             return;
         }
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
         const workspace = await this.orchestrator.ensure({
             repoKey: body.repoKey,
             workspaceUri: body.workspaceUri,
             githubFullName: body.githubFullName,
-        });
+        }, ownerLogin);
         res.json({ workspace });
     }
 
     protected async handleDeployRun(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapDeployRunRequest>;
         if (!body.provider || !body.workspaceKey || !body.workspaceRoot) {
             res.status(400).json({ error: 'provider, workspaceKey, and workspaceRoot are required' });
+            return;
+        }
+        if (ctx.kind !== 'skip' && !this.auth.ownsWorkspacePath(ctx, body.workspaceRoot)) {
+            this.auth.denyForbidden(res, req, 'workspace_path', { workspaceKey: body.workspaceKey });
             return;
         }
         const result = await this.deployRunner.run({
@@ -130,7 +156,11 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         res.json(result);
     }
 
-    protected async handlePushVapid(_req: Request, res: Response): Promise<void> {
+    protected async handlePushVapid(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         res.json({
             publicKey: this.webPush.getPublicKey(),
             enabled: this.webPush.isConfigured(),
@@ -138,8 +168,12 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
     }
 
     protected async handlePushSubscribe(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapPushSubscribeRequest>;
-        const login = body.userLogin?.trim() || 'anonymous';
+        const login = ctx.kind === 'authenticated' ? ctx.userLogin : (ctx.kind === 'skip' ? ctx.userLogin : 'anonymous');
         if (!body.subscription?.endpoint || !body.subscription.keys?.p256dh || !body.subscription.keys.auth) {
             res.status(400).json({ error: 'subscription is required' });
             return;
@@ -149,21 +183,30 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
     }
 
     protected async handlePushNotify(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapPushNotifyRequest>;
         if (!body.title || !body.body) {
             res.status(400).json({ error: 'title and body are required' });
             return;
         }
+        const targetLogin = ctx.kind === 'authenticated' ? ctx.userLogin : (ctx.kind === 'skip' ? ctx.userLogin : body.userLogin);
         const stats = await this.webPush.notify({
             title: body.title,
             body: body.body,
             tag: body.tag,
-            userLogin: body.userLogin,
+            userLogin: targetLogin,
         });
         res.json(stats);
     }
 
     protected async handleCreateShare(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapPreviewShareCreateRequest>;
         const port = typeof body.port === 'number' ? body.port : Number(body.port);
         if (!Number.isInteger(port) || port < 1024) {
@@ -171,7 +214,8 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             return;
         }
         const origin = this.resolvePublicOrigin(req);
-        const summary = await this.shares.create(port, body.repoKey, origin);
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        const summary = await this.shares.create(port, body.repoKey, origin, ownerLogin);
         if (body.repoKey) {
             await this.workspaces.updatePreviewPort(body.repoKey, port);
         }
@@ -179,48 +223,69 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
     }
 
     protected async handleGetTerminalSessions(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const workspaceKey = typeof req.query.workspaceKey === 'string' ? req.query.workspaceKey : '';
         if (!workspaceKey) {
             res.status(400).json({ error: 'workspaceKey is required' });
             return;
         }
-        res.json({ workspaceKey, terminals: await this.terminals.get(workspaceKey) });
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        res.json({ workspaceKey, terminals: await this.terminals.get(workspaceKey, ownerLogin) });
     }
 
     protected async handleUpsertTerminalSessions(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const body = (req.body ?? {}) as Partial<QaapTerminalSessionsUpsertRequest>;
         if (!body.workspaceKey || !Array.isArray(body.terminals)) {
             res.status(400).json({ error: 'workspaceKey and terminals are required' });
             return;
         }
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
         await this.terminals.upsert({
             workspaceKey: body.workspaceKey,
             terminals: body.terminals,
-        });
+        }, ownerLogin);
         res.json({ ok: true });
     }
 
     protected async handleGetDeployEnv(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const workspaceKey = typeof req.query.workspaceKey === 'string' ? req.query.workspaceKey : 'default';
-        res.json({ vars: await this.readDeployEnv(workspaceKey) });
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        res.json({ vars: await this.readDeployEnv(workspaceKey, ownerLogin) });
     }
 
     protected async handleSetDeployEnv(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
         const workspaceKey = typeof req.body?.workspaceKey === 'string' ? req.body.workspaceKey : 'default';
         const vars = Array.isArray(req.body?.vars) ? req.body.vars as QaapDeployEnvVar[] : [];
-        await this.writeDeployEnv(workspaceKey, vars.filter(v => v.key?.trim()));
-        res.json({ vars: await this.readDeployEnv(workspaceKey) });
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        await this.writeDeployEnv(workspaceKey, vars.filter(v => v.key?.trim()), ownerLogin);
+        res.json({ vars: await this.readDeployEnv(workspaceKey, ownerLogin) });
     }
 
-    protected deployEnvPath(workspaceKey: string): string {
+    protected deployEnvPath(workspaceKey: string, ownerLogin?: string): string {
         const safe = workspaceKey.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80);
-        return `${process.env.HOME ?? ''}/.qaap/deploy-env/${safe}.json`;
+        const userSegment = ownerLogin ? `${ownerLogin.replace(/[^a-zA-Z0-9._-]+/g, '_')}/` : '';
+        return `${process.env.HOME ?? ''}/.qaap/deploy-env/${userSegment}${safe}.json`;
     }
 
-    protected async readDeployEnv(workspaceKey: string): Promise<QaapDeployEnvVar[]> {
+    protected async readDeployEnv(workspaceKey: string, ownerLogin?: string): Promise<QaapDeployEnvVar[]> {
         try {
             const fs = await import('fs/promises');
-            const raw = await fs.readFile(this.deployEnvPath(workspaceKey), 'utf8');
+            const raw = await fs.readFile(this.deployEnvPath(workspaceKey, ownerLogin), 'utf8');
             const parsed = JSON.parse(raw) as { vars?: QaapDeployEnvVar[] };
             return Array.isArray(parsed.vars) ? parsed.vars : [];
         } catch {
@@ -228,12 +293,21 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         }
     }
 
-    protected async writeDeployEnv(workspaceKey: string, vars: QaapDeployEnvVar[]): Promise<void> {
+    protected async writeDeployEnv(workspaceKey: string, vars: QaapDeployEnvVar[], ownerLogin?: string): Promise<void> {
         const fs = await import('fs/promises');
         const path = await import('path');
-        const file = this.deployEnvPath(workspaceKey);
+        const file = this.deployEnvPath(workspaceKey, ownerLogin);
         await fs.mkdir(path.dirname(file), { recursive: true });
         await fs.writeFile(file, JSON.stringify({ vars }, undefined, 2), 'utf8');
+    }
+
+    protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {
+        const ctx = this.auth.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return undefined;
+        }
+        return ctx;
     }
 
     protected resolvePublicOrigin(req: Request): string {
