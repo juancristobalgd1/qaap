@@ -28,7 +28,7 @@ export class QaapCloudOrchestrator {
             return this.store.ensure(request, ownerLogin);
         }
         try {
-            const dockerResult = await this.docker.ensureContainer(request.repoKey, request.workspaceUri);
+            const dockerResult = await this.docker.ensureContainer(request.repoKey, request.workspaceUri, ownerLogin);
             return this.store.ensureWithContainer(request, {
                 containerRef: dockerResult.containerId,
                 status: 'ready',

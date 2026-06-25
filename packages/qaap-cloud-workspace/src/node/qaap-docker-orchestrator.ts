@@ -20,7 +20,7 @@ export interface QaapDockerEnsureResult {
     readonly hostPath: string;
 }
 
-/** One Docker container per repo/workspace when `QAAP_CLOUD_MODE=docker`. */
+/** One Docker container per user+repo/workspace when `QAAP_CLOUD_MODE=docker`. */
 @injectable()
 export class QaapDockerOrchestrator {
 
@@ -37,9 +37,9 @@ export class QaapDockerOrchestrator {
         return this.docker;
     }
 
-    async ensureContainer(repoKey: string, workspaceUri: string): Promise<QaapDockerEnsureResult> {
+    async ensureContainer(repoKey: string, workspaceUri: string, ownerLogin?: string): Promise<QaapDockerEnsureResult> {
         const hostPath = this.hostPathFromUri(workspaceUri);
-        const name = this.containerNameFor(repoKey);
+        const name = this.containerNameFor(repoKey, ownerLogin);
         const docker = await this.getDocker();
         let container: Dockerode.Container;
         try {
@@ -71,18 +71,22 @@ export class QaapDockerOrchestrator {
         };
     }
 
-    async stopContainer(repoKey: string): Promise<void> {
+    async stopContainer(repoKey: string, ownerLogin?: string): Promise<void> {
         const docker = await this.getDocker();
         try {
-            const container = docker.getContainer(this.containerNameFor(repoKey));
+            const container = docker.getContainer(this.containerNameFor(repoKey, ownerLogin));
             await container.stop({ t: 10 });
         } catch {
             /* already stopped */
         }
     }
 
-    protected containerNameFor(repoKey: string): string {
-        const hash = crypto.createHash('sha256').update(repoKey).digest('hex').slice(0, 12);
+    protected containerNameFor(repoKey: string, ownerLogin?: string): string {
+        // Namespace containers by owner so two users opening the same repo never
+        // share a container, filesystem mount or processes. Anonymous sessions get
+        // their own bucket as well.
+        const tenant = ownerLogin && ownerLogin.trim() ? ownerLogin.trim().toLowerCase() : '__anonymous__';
+        const hash = crypto.createHash('sha256').update(`${tenant}\u0000${repoKey}`).digest('hex').slice(0, 12);
         return `${QAAP_CONTAINER_PREFIX}${hash}`;
     }
 
