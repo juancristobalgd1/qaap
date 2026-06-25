@@ -312,6 +312,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
             const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
+            const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
             const conv = this.store.create({
                 cwd,
                 ...(baseCwd ? { parallelBaseCwd: baseCwd } : {}),
@@ -326,7 +327,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 interactionModeId: body.interactionModeId,
                 approvalPolicyId,
                 ...(toolApprovalRules ? { toolApprovalRules } : {}),
-            });
+            }, ownerLogin);
             res.status(201).json(conv);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : String(error) });

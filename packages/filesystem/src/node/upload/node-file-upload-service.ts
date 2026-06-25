@@ -64,13 +64,23 @@ export class NodeFileUploadService implements BackendApplicationContribution {
         }
         try {
             const target = FileUri.fsPath(fields.uri);
+            // Reject path traversal attempts — the resolved target must not escape via ..
+            const resolved = path.resolve(target);
+            if (resolved !== target && !resolved.startsWith(target + path.sep) && target !== resolved) {
+                // path.resolve normalizes .. segments; if the result differs significantly, reject
+                const normalizedTarget = path.normalize(target);
+                if (normalizedTarget !== resolved && !resolved.startsWith(path.dirname(normalizedTarget))) {
+                    response.sendStatus(403); // forbidden
+                    return;
+                }
+            }
             if (!fields.leaveInTemp) {
-                await fs.move(request.file.path, target, { overwrite: true });
+                await fs.move(request.file.path, resolved, { overwrite: true });
             } else {
                 // leave the file where it is, just rename it to its original name
                 fs.rename(request.file.path, request.file.path.replace(request.file.filename, request.file.originalname));
             }
-            response.status(200).send(target); // ok
+            response.status(200).send(resolved); // ok
         } catch (error) {
             console.error(error);
             if (error.message) {

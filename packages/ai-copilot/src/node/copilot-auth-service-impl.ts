@@ -61,6 +61,9 @@ export class CopilotAuthServiceImpl implements CopilotAuthService {
 
     setClient(client: CopilotAuthServiceClient | undefined): void {
         this.client = client;
+        // Invalidate cached state so each frontend connection re-reads credentials
+        // from the keystore instead of sharing a stale singleton cache.
+        this.cachedState = undefined;
     }
 
     protected getOAuthEndpoints(enterpriseUrl?: string): { deviceCodeUrl: string; accessTokenUrl: string } {

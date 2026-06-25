@@ -43,6 +43,8 @@ export interface QaapAgentTask {
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     /** @deprecated Use {@link agentModel}. Kept for persisted tasks and older clients. */
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
+    /** Login of the user who owns this task — used for multi-tenant isolation. */
+    readonly ownerLogin?: string;
 }
 
 /** A task plus its captured stdout/stderr log. */

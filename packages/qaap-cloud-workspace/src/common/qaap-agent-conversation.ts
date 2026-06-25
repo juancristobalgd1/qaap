@@ -139,6 +139,8 @@ export interface QaapAgentConversation {
     readonly contextWindowSize?: number;
     /** When true, {@link contextUsage} is absent and the UI may show a transcript-based estimate. */
     readonly contextUsageEstimated?: boolean;
+    /** Login of the user who owns this conversation — used for multi-tenant isolation. */
+    readonly ownerLogin?: string;
 }
 
 /** Summary row used by list endpoints — omits messages to keep payloads small. */

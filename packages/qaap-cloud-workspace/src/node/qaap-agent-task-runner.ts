@@ -819,7 +819,7 @@ export class QaapAgentTaskRunner {
     }
 
     /** Validate the request, spawn the process and start tracking the task. */
-    create(request: QaapCreateAgentTaskRequest): QaapAgentTask {
+    create(request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask {
         const prompt = (request.prompt ?? '').trim();
         const rawCommand = (request.command ?? '').trim();
         if (!prompt && !rawCommand) {
@@ -845,6 +845,7 @@ export class QaapAgentTaskRunner {
             createdAt: Date.now(),
             parentId,
             autoApprove,
+            ...(ownerLogin ? { ownerLogin } : {}),
             ...(() => {
                 const agentModel = this.resolveAgentModelForRequest(request, prompt || rawCommand);
                 return agentModel ? { agentModel, qaiqModel: agentModel } : {};

@@ -265,6 +265,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             ? body.parentId
             : undefined;
         try {
+            const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
             const task = this.runner.create({
                 command: body.command,
                 prompt: body.prompt,
@@ -278,7 +279,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 autoApprove: body.autoApprove,
                 interactionModeId: body.interactionModeId,
                 approvalPolicyId: body.approvalPolicyId,
-            });
+            }, ownerLogin);
             res.status(201).json(task);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : String(error) });

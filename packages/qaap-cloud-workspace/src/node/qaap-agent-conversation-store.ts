@@ -232,7 +232,7 @@ export class QaapAgentConversationStore {
         return undefined;
     }
 
-    create(request: QaapCreateAgentConversationRequest): QaapAgentConversation {
+    create(request: QaapCreateAgentConversationRequest, ownerLogin?: string): QaapAgentConversation {
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
             throw new Error('A valid absolute "cwd" directory is required.');
@@ -254,6 +254,7 @@ export class QaapAgentConversationStore {
             createdAt: now,
             updatedAt: now,
             messages: [],
+            ...(ownerLogin ? { ownerLogin } : {}),
             ...(request.parallelRunId ? { parallelRunId: request.parallelRunId } : {}),
             ...(request.parallelBaseCwd ? { parallelBaseCwd: request.parallelBaseCwd } : {}),
             ...(request.worktreeBranch ? { worktreeBranch: request.worktreeBranch } : {}),
