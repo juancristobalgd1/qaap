@@ -246,26 +246,46 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     }
 
     protected handleCreate(req: Request, res: Response): void {
-        const ctx = this.requireAuth(req, res);
-        if (!ctx) {
-            return;
-        }
         const body = (req.body ?? {}) as Partial<QaapCreateAgentTaskRequest>;
         if (typeof body.cwd !== 'string' || (typeof body.command !== 'string' && typeof body.prompt !== 'string')) {
             res.status(400).json({ error: '"cwd" and one of "command" or "prompt" are required.' });
             return;
         }
-        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
-            this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
+        // Two authentication paths:
+        //  1. A signed-in browser session (cookie/header) — the normal UI path.
+        //  2. The `qaap-task` helper CLI spawned inside an agent, which carries a per-user token
+        //     but no session. The token resolves to exactly one owner, so we authenticate as that
+        //     owner and scope the sub-task to them. This prevents cross-user task spawning.
+        const helperToken = req.header(HELPER_TOKEN_HEADER);
+        const helperOwner = helperToken ? this.runner.resolveHelperTokenOwner(helperToken) : undefined;
+        const ctx = this.auth.authenticate(req);
+
+        let ownerLogin: string | undefined;
+        let parentId: string | undefined;
+        if (ctx.kind === 'authenticated') {
+            if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
+                return;
+            }
+            ownerLogin = ctx.userLogin;
+            // Only honor parentId when the helper token belongs to this same user.
+            parentId = helperOwner?.ownerLogin === ctx.userLogin ? body.parentId : undefined;
+        } else if (ctx.kind === 'skip') {
+            ownerLogin = undefined;
+            parentId = helperOwner ? body.parentId : undefined;
+        } else if (helperOwner) {
+            // Helper-CLI callback authenticated purely by its per-user token.
+            ownerLogin = helperOwner.ownerLogin;
+            if (!this.auth.loginOwnsWorkspacePath(ownerLogin, body.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
+                return;
+            }
+            parentId = body.parentId;
+        } else {
+            res.status(401).json({ error: 'Not signed in' });
             return;
         }
-        // Helper-CLI calls authenticate via the shared token header; ignore parentId from regular UI calls.
-        const helperToken = req.header(HELPER_TOKEN_HEADER);
-        const parentId = helperToken && this.runner.verifyHelperToken(helperToken)
-            ? body.parentId
-            : undefined;
         try {
-            const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
             const task = this.runner.create({
                 command: body.command,
                 prompt: body.prompt,

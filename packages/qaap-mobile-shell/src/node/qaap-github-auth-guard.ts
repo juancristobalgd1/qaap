@@ -82,6 +82,18 @@ export class QaapGithubAuthGuard {
         return isPathUnderUserWorkspace(targetPath, this.reposRoot, ctx.userLogin);
     }
 
+    /**
+     * Ownership check for a known login without an HTTP session context — used by trusted
+     * server-to-server callers (e.g. the agent helper CLI authenticated by a per-user token).
+     * An undefined/empty login (shared/anonymous bucket) is treated as unscoped and allowed.
+     */
+    loginOwnsWorkspacePath(userLogin: string | undefined, targetPath: string): boolean {
+        if (!userLogin?.trim()) {
+            return true;
+        }
+        return isPathUnderUserWorkspace(targetPath, this.reposRoot, userLogin);
+    }
+
     /** Returns false and sends 403 when the path is outside the user's workspace tree. */
     assertWorkspacePathOwned(req: Request, res: Response, targetPath: string, action: QaapSecurityEventAction): boolean {
         const ctx = this.authenticate(req);

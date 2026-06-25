@@ -153,8 +153,10 @@ const QUEUED_APPROVAL_GRACE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
 const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
 
-/** Auth token file shared between the backend and the `qaap-task` helper. */
+/** Legacy single-token file (pre per-user tokens); retained only for directory creation. */
 const TOKEN_PATH = path.join(os.homedir(), '.qaap', 'task-token');
+/** Per-user helper-CLI tokens: `{ "<ownerLogin>": "<token>" }` (empty key = shared/anonymous). */
+const TOKENS_PATH = path.join(os.homedir(), '.qaap', 'task-tokens.json');
 /** Helper-CLI install location; agents get this dir prepended to their PATH. */
 const HELPER_BIN_DIR = path.join(os.homedir(), '.qaap', 'bin');
 const HELPER_BIN_PATH = path.join(HELPER_BIN_DIR, 'qaap-task');
@@ -270,8 +272,11 @@ export class QaapAgentTaskRunner {
     protected readonly qaiqStdioTasks = new Set<string>();
     /** Agents whose CLI was found on PATH at startup, keyed by id. */
     protected readonly detectedAgents = new Map<string, AgentCandidate>();
-    /** Random token shared with spawned agents so they can call back via `qaap-task`. */
-    protected helperToken = '';
+    /**
+     * Per-owner helper-CLI tokens so a spawned agent can only call back as its own user.
+     * Key is the owner login (`''` for shared/anonymous/skip-auth); value is the secret token.
+     */
+    protected readonly helperTokens = new Map<string, string>();
     /** URL spawned agents POST sub-tasks to. Bound from the backend's listen port. */
     protected helperApiUrl = '';
     /** Best-effort `package.json#name` per cwd; lazily populated. */
@@ -304,7 +309,7 @@ export class QaapAgentTaskRunner {
     protected ensureHelperCli(): void {
         try {
             fs.mkdirSync(path.dirname(TOKEN_PATH), { recursive: true });
-            this.helperToken = this.loadOrCreateToken();
+            this.loadHelperTokens();
             fs.mkdirSync(HELPER_BIN_DIR, { recursive: true });
             fs.writeFileSync(HELPER_BIN_PATH, HELPER_CLI_SOURCE, { mode: 0o755 });
         } catch (error) {
@@ -312,36 +317,74 @@ export class QaapAgentTaskRunner {
         }
     }
 
-    protected loadOrCreateToken(): string {
+    /** Load persisted per-owner helper tokens (best-effort; tokens are re-created lazily if missing). */
+    protected loadHelperTokens(): void {
         try {
-            const existing = fs.readFileSync(TOKEN_PATH, 'utf8').trim();
-            if (existing) {
-                return existing;
+            const raw = fs.readFileSync(TOKENS_PATH, 'utf8');
+            const parsed = JSON.parse(raw) as Record<string, unknown>;
+            for (const [owner, token] of Object.entries(parsed)) {
+                if (typeof token === 'string' && token) {
+                    this.helperTokens.set(owner, token);
+                }
             }
         } catch {
-            /* fall through to create */
+            /* no prior tokens — created on demand */
         }
-        const token = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
-        fs.writeFileSync(TOKEN_PATH, token, { mode: 0o600 });
+    }
+
+    protected persistHelperTokens(): void {
+        try {
+            const obj: Record<string, string> = {};
+            for (const [owner, token] of this.helperTokens) {
+                obj[owner] = token;
+            }
+            fs.writeFileSync(TOKENS_PATH, JSON.stringify(obj), { mode: 0o600 });
+        } catch {
+            /* persistence is best-effort */
+        }
+    }
+
+    /** Get-or-create the helper token bound to `ownerLogin` (`undefined` → shared/anonymous bucket). */
+    protected helperTokenForOwner(ownerLogin?: string): string {
+        const key = ownerLogin?.trim() ?? '';
+        let token = this.helperTokens.get(key);
+        if (!token) {
+            token = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+            this.helperTokens.set(key, token);
+            this.persistHelperTokens();
+        }
         return token;
     }
 
-    /** True when the caller presents the same helper-CLI token written at startup. */
-    verifyHelperToken(presented: string | undefined): boolean {
-        if (!presented || !this.helperToken) {
-            return false;
+    /**
+     * Reverse-lookup the owner that a presented helper token belongs to. Returns `{ ownerLogin }`
+     * (with `ownerLogin` undefined for the shared bucket) when the token matches exactly one owner,
+     * or `undefined` when no token matches. Comparison is constant-time per candidate.
+     */
+    resolveHelperTokenOwner(presented: string | undefined): { ownerLogin: string | undefined } | undefined {
+        if (!presented) {
+            return undefined;
         }
-        // Constant-time compare to avoid token-length oracles.
         const a = Buffer.from(presented);
-        const b = Buffer.from(this.helperToken);
-        if (a.length !== b.length) {
-            return false;
+        for (const [owner, token] of this.helperTokens) {
+            const b = Buffer.from(token);
+            if (a.length !== b.length) {
+                continue;
+            }
+            let diff = 0;
+            for (let i = 0; i < a.length; i++) {
+                diff |= a[i] ^ b[i];
+            }
+            if (diff === 0) {
+                return { ownerLogin: owner || undefined };
+            }
         }
-        let diff = 0;
-        for (let i = 0; i < a.length; i++) {
-            diff |= a[i] ^ b[i];
-        }
-        return diff === 0;
+        return undefined;
+    }
+
+    /** True when the presented token matches any provisioned helper token. */
+    verifyHelperToken(presented: string | undefined): boolean {
+        return !!this.resolveHelperTokenOwner(presented);
     }
 
     /** Called by the backend application once the HTTP server is listening on `port`. */
@@ -1563,7 +1606,7 @@ export class QaapAgentTaskRunner {
                 env.IS_SANDBOX = '1';
             }
         }
-        this.applyHelperEnv(env, task.id, task.autoApprove);
+        this.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove);
         return env;
     }
 
@@ -1683,11 +1726,13 @@ export class QaapAgentTaskRunner {
      * Callers can use this to expose `qaap-task` to any spawned process — agent tasks, interactive
      * terminals, etc.
      */
-    applyHelperEnv(env: NodeJS.ProcessEnv, parentTaskId?: string, autoApprove?: boolean): boolean {
-        if (!this.helperToken || !this.helperApiUrl) {
+    applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean {
+        if (!this.helperApiUrl) {
             return false;
         }
-        env.QAAP_TASK_TOKEN = this.helperToken;
+        // Seed the token bound to this task's owner so a spawned agent can only fan out
+        // sub-tasks as its own user (the endpoint resolves the owner from the token).
+        env.QAAP_TASK_TOKEN = this.helperTokenForOwner(ownerLogin);
         env.QAAP_TASK_API_URL = this.helperApiUrl;
         if (parentTaskId) {
             env.QAAP_TASK_PARENT_ID = parentTaskId;
