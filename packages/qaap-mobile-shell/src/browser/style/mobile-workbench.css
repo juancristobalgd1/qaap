@@ -14078,6 +14078,17 @@ body.theia-mobile-mod-active-transcript #theia-top-panel {
   overflow-anchor: none;
 }
 
+/*
+ * Full-screen transcript overlay: the composer floats with position:absolute bottom:0,
+ * so the transcript needs bottom padding equal to the composer height + 8px gap to keep
+ * content from scrolling behind it. --qaap-transcript-composer-height is measured by
+ * observeTranscriptComposerSize() via ResizeObserver.
+ */
+.theia-mobile-agent-transcript-root .theia-mobile-agent-log-sheet.theia-mod-transcript .theia-mobile-agent-transcript {
+  padding-bottom: calc(var(--qaap-transcript-composer-height, 0px) + 8px);
+  scroll-padding-bottom: calc(var(--qaap-transcript-composer-height, 0px) + 8px);
+}
+
 .theia-mobile-agent-transcript.theia-mod-virtual-scroll {
   display: block;
   gap: 0;
