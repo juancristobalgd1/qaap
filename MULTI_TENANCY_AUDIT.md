@@ -73,20 +73,13 @@ Leyenda: ✅ aislado · 🟡 parcial · ❌ no aislado (fuga posible en backend 
 
 Antes el contenedor se nombraba sólo por `repoKey`, de modo que dos usuarios con el mismo repo compartían contenedor, procesos, FS y mounts. **Corregido**: `containerNameFor(repoKey, ownerLogin)` ahora namespaces por usuario (hash de `tenant\0repoKey`), y `QaapCloudOrchestrator.ensure` propaga `ownerLogin` a `ensureContainer`/`stopContainer`.
 
-### C-2 · Secrets/OAuth en keystore global y fijo
+### C-2 · Secrets/OAuth en keystore global y fijo · ✅ CORREGIDO
 
 `packages/ai-copilot/src/node/copilot-auth-service-impl.ts`
 
-```ts
-await this.keyStoreService.setPassword(
-    this.oauthConfig.keystoreService,  // 'theia-copilot-auth' (fijo)
-    this.oauthConfig.keystoreAccount,  // 'github-copilot' (fijo)
-    JSON.stringify(credentials));
-```
+Antes el `keystoreAccount` era fijo (`'github-copilot'`), de modo que el token OAuth de un usuario era legible por otro en el mismo backend. **Corregido**: `setOwnerLogin(login)` se añadió a la interfaz `CopilotAuthService` y su implementación compute `keystoreAccount` como `${baseAccount}:${ownerLogin}`. Una contribución frontend (`QaapCopilotOwnerBinding`) llama `setOwnerLogin` con el login de la sesión Qaap al arrancar, propagándolo via RPC al backend per-conexión. Cada usuario ahora lee/escribe su propio entry del keystore del SO.
 
-El token del usuario A es legible por el usuario B en el mismo backend. FIX-10 sólo invalidó el cache en memoria.
-
-### C-3 · Terminales adjuntables por id sin verificación de usuario
+### C-3 · Terminales adjuntables por id sin verificación de usuario · ⏸ DIFERIDO A OPCIÓN A
 
 `packages/terminal/src/node/terminal-backend-contribution.ts`
 
@@ -99,19 +92,17 @@ service.registerChannelHandler(`${terminalsPath}/:id`, (params, channel) => {
 
 Cualquier cliente conectado puede adjuntarse a la terminal de otro usuario conociendo/iterando el id numérico.
 
+**Decisión**: Diferido a Opción A (contenedor por usuario). `ShellTerminalServer` y `TerminalBackendContribution` son singletons de core Theia (`terminal-backend-module.ts:58,86`); el `ProcessManager` es compartido y la capa RPC de Theia no transporta la sesión GitHub de Qaap. Un fix en backend compartido requeriría plomear la sesión en la capa de mensajería de core — invasivo y alto riesgo de regresión. El límite de contenedor de Opción A aísla terminales/procesos "gratis".
+
 ### C-4 · Persistencia global única para tasks/conversaciones · ❌ DESCARTADO (no es fuga)
 
 `qaap-agent-conversation-store.ts` y `qaap-agent-task-runner.ts` usan un archivo JSON global. **Sin embargo**, el control de acceso lo hace el endpoint con `ownsWorkspacePath(ctx, cwd)` (list/get/stream), y cada `cwd` vive bajo `users/{login}/`. Dos usuarios no comparten cwd, por lo que no hay lectura cruzada. La persistencia física compartida es aceptable mientras el acceso siga validado por ruta. (Defensa en profundidad opcional: filtrar también por `ownerLogin` en el store.)
 
-### C-5 · Token compartido del helper CLI de agentes
+### C-5 · Token compartido del helper CLI de agentes · ✅ CORREGIDO
 
 `qaap-agent-task-runner.ts`
 
-```ts
-const TOKEN_PATH = path.join(os.homedir(), '.qaap', 'task-token');
-```
-
-Un único token de proceso para el helper `qaap-task`, común a todos los usuarios.
+Antes existía un único token de proceso para el helper `qaap-task`, común a todos los usuarios. **Corregido**: los tokens ahora son por usuario (`helperTokens` map, `helperTokenForOwner`, `resolveHelperTokenOwner`). El endpoint `handleCreate` autentica callbacks del helper CLI por token per-user y scopea sub-tasks al owner del token.
 
 ### C-6 · Skills desde HOME compartido
 
@@ -169,14 +160,14 @@ Backend compartido para la orquestación/cloud (ya con `ownerLogin`) + contenedo
 
 ### P0 — Bloqueantes de seguridad
 
-1. **C-2 secrets**: derivar la cuenta de keystore por usuario (`<service>:<userLogin>`), o mover credenciales a almacenamiento por-usuario. (Si Opción A: keystore por contenedor.)
-2. **C-3 terminales**: asociar cada terminal a una sesión/usuario y verificar propiedad en `attach`/canal `:id`.
-3. **C-1 contenedores**: incluir `ownerLogin` en `containerNameFor`.
+1. ~~**C-2 secrets**: derivar la cuenta de keystore por usuario~~ ✅ CORREGIDO
+2. **C-3 terminales**: asociar cada terminal a una sesión/usuario y verificar propiedad en `attach`/canal `:id`. ⏸ DIFERIDO a Opción A
+3. ~~**C-1 contenedores**: incluir `ownerLogin` en `containerNameFor`~~ ✅ CORREGIDO
 
 ### P1 — Aislamiento de datos
 
-1. **C-4 persistencia**: rutas de store por usuario (`~/.qaap/<userLogin>/...`) o filtrar SIEMPRE por `ownerLogin` (corregir `ConversationStore.list` para filtrar por owner, no por cwd).
-2. **C-5 task-token**: token por usuario.
+1. **C-4 persistencia**: ❌ DESCARTADO (no es fuga, ver §3).
+2. ~~**C-5 task-token**: token por usuario~~ ✅ CORREGIDO
 3. **C-7 temporales**: segmentar `os.tmpdir()` por usuario.
 
 ### P2 — Configuración y capacidades

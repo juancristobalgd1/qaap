@@ -55,9 +55,26 @@ export class CopilotAuthServiceImpl implements CopilotAuthService {
 
     protected client: CopilotAuthServiceClient | undefined;
     protected cachedState: CopilotAuthState | undefined;
+    protected ownerLogin: string | undefined;
 
     protected readonly onAuthStateChangedEmitter = new Emitter<CopilotAuthState>();
     readonly onAuthStateChanged: Event<CopilotAuthState> = this.onAuthStateChangedEmitter.event;
+
+    setOwnerLogin(login: string | undefined): void {
+        const normalized = login?.trim().toLowerCase() || undefined;
+        if (normalized !== this.ownerLogin) {
+            this.ownerLogin = normalized;
+            // Invalidate cached state so the next read picks up the correct
+            // user-scoped keystore entry.
+            this.cachedState = undefined;
+        }
+    }
+
+    protected get keystoreAccount(): string {
+        return this.ownerLogin
+            ? `${this.oauthConfig.keystoreAccount}:${this.ownerLogin}`
+            : this.oauthConfig.keystoreAccount;
+    }
 
     setClient(client: CopilotAuthServiceClient | undefined): void {
         this.client = client;
@@ -153,7 +170,7 @@ export class CopilotAuthServiceImpl implements CopilotAuthService {
 
                 await this.keyStoreService.setPassword(
                     this.oauthConfig.keystoreService,
-                    this.oauthConfig.keystoreAccount,
+                    this.keystoreAccount,
                     JSON.stringify(credentials)
                 );
 
@@ -223,13 +240,13 @@ export class CopilotAuthServiceImpl implements CopilotAuthService {
         }
 
         try {
-            const stored = await this.keyStoreService.getPassword(this.oauthConfig.keystoreService, this.oauthConfig.keystoreAccount);
+            const stored = await this.keyStoreService.getPassword(this.oauthConfig.keystoreService, this.keystoreAccount);
             if (stored) {
                 const credentials: StoredCredentials = JSON.parse(stored);
                 // Tokens from the current OAuth App start with 'gho_'; other prefixes (e.g. 'ghu_') indicate a token from the previous GitHub App (Iv-prefixed client ID).
                 if (!credentials.accessToken.startsWith('gho_')) {
                     console.info('Copilot: clearing outdated GitHub App token. Please sign in again.');
-                    await this.keyStoreService.deletePassword(this.oauthConfig.keystoreService, this.oauthConfig.keystoreAccount);
+                    await this.keyStoreService.deletePassword(this.oauthConfig.keystoreService, this.keystoreAccount);
                     this.cachedState = { isAuthenticated: false, migrationRequired: true };
                     return this.cachedState;
                 }
@@ -250,7 +267,7 @@ export class CopilotAuthServiceImpl implements CopilotAuthService {
 
     async getAccessToken(): Promise<string | undefined> {
         try {
-            const stored = await this.keyStoreService.getPassword(this.oauthConfig.keystoreService, this.oauthConfig.keystoreAccount);
+            const stored = await this.keyStoreService.getPassword(this.oauthConfig.keystoreService, this.keystoreAccount);
             if (stored) {
                 const credentials: StoredCredentials = JSON.parse(stored);
                 return credentials.accessToken;
@@ -263,7 +280,7 @@ export class CopilotAuthServiceImpl implements CopilotAuthService {
 
     async signOut(): Promise<void> {
         try {
-            await this.keyStoreService.deletePassword(this.oauthConfig.keystoreService, this.oauthConfig.keystoreAccount);
+            await this.keyStoreService.deletePassword(this.oauthConfig.keystoreService, this.keystoreAccount);
         } catch (error) {
             console.warn('Failed to delete Copilot credentials:', error);
         }

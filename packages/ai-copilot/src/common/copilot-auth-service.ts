@@ -94,6 +94,14 @@ export interface CopilotAuthService {
     signOut(): Promise<void>;
 
     /**
+     * Set the owner login for per-user keystore isolation.
+     * When set, credentials are stored under a user-scoped keystore account
+     * so that multiple authenticated users on a shared backend do not share
+     * the same OAuth token entry.
+     */
+    setOwnerLogin(login: string | undefined): void;
+
+    /**
      * Set the client to receive auth state change notifications.
      */
     setClient(client: CopilotAuthServiceClient | undefined): void;

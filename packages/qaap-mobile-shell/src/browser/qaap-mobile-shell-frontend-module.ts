@@ -97,6 +97,7 @@ import { QaapPushNotificationContribution } from './qaap-push-notification-contr
 import { QaapAgentCompletionContribution } from './qaap-agent-completion-contribution';
 import { QaapAgentDevPreviewAutopilotContribution } from './qaap-agent-dev-preview-autopilot-contribution';
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
+import { QaapCopilotOwnerBinding } from './qaap-copilot-owner-binding';
 import { QaapMobileAppPreferenceContribution } from './qaap-mobile-app-preferences';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
@@ -269,4 +270,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapMobileAppTesterContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapMobileAppTesterContribution);
+
+    bind(QaapCopilotOwnerBinding).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapCopilotOwnerBinding);
 });
