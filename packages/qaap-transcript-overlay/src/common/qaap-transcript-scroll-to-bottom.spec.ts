@@ -51,6 +51,17 @@ describe('qaap-transcript-scroll-to-bottom', () => {
         })).to.equal(true);
     });
 
+    it('hasTranscriptScrollableContentState is false when overflow is only composer padding', () => {
+        expect(hasTranscriptScrollableContentState({
+            emptyChat: false,
+            hasConversationMessages: true,
+            scrollTop: 0,
+            clientHeight: 400,
+            scrollHeight: 484,
+            nearBottomThresholdPx: 84,
+        })).to.equal(false);
+    });
+
     it('resolveTranscriptNearBottomThresholdPx includes composer clearance', () => {
         expect(resolveTranscriptNearBottomThresholdPx(180, 180, 220)).to.equal(236);
     });

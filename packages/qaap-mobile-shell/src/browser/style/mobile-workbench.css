@@ -3499,13 +3499,17 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 /*
- * Keep the first message at the top of the transcript. Previously `margin-top: auto` bottom-anchored
- * short conversations, but that made the first user bubble of a new conversation start at the bottom
- * of the scrollport. The conversation now grows downward from the top, and the scroll/auto-follow
- * code keeps the latest message visible as it streams.
+ * Real conversation messages grow downward from the top so the first user bubble of a new
+ * conversation appears at the top of the scrollport. The idle / quick-action shell is the
+ * exception: when no messages exist yet, its empty placeholder (prompt chips like "Fix bug")
+ * must stay anchored near the composer, visually integrated with the input zone.
  */
 .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript:not(.theia-mod-virtual-scroll)> :first-child {
   margin-top: 0;
+}
+
+.theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript:not(.theia-mod-virtual-scroll)>.theia-mobile-agent-transcript-empty:first-child {
+  margin-top: auto;
 }
 
 .theia-mobile-agents-hub-inline-transcript[hidden] {

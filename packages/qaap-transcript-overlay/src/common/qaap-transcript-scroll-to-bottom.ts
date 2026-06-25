@@ -45,7 +45,12 @@ export function hasTranscriptScrollableContentState(
     if (isTranscriptEmptyChatState(state)) {
         return false;
     }
-    return state.scrollHeight - state.clientHeight > minOverflowPx;
+    // The transcript list has generous bottom padding to clear the sticky composer. Without
+    // compensating for it, that padding alone registers as ~84px of "scrollable" overflow and the
+    // jump-to-bottom button appears even when every message is already visible. Use the same
+    // near-bottom threshold (which already accounts for that padding) as the overflow floor.
+    const overflowThreshold = state.nearBottomThresholdPx ?? minOverflowPx;
+    return state.scrollHeight - state.clientHeight > overflowThreshold;
 }
 
 export function isTranscriptAtMaxScroll(
