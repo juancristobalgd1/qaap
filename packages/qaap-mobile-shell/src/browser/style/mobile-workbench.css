@@ -22239,13 +22239,6 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
 }
 
-/* Empty chat — composer height + 8px gap above the composer; chips use sticky + list padding above. */
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript.theia-mod-empty-chat,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript>.theia-mobile-agent-transcript.theia-mod-empty-chat {
-  padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
-  scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
-}
-
 .theia-mobile-agent-transcript-chat-input {
   flex: 0 0 auto;
   padding: 0;
