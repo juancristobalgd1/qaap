@@ -40,8 +40,9 @@ import {
     createToolApprovalRuleToggle,
 } from './qaap-agent-ui';
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
+import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
 import {
-    formatQaiqModelProviderLabel,
+    formatQaiqModelSelectionLabel,
     filterQaiqModelsWithConfiguredCredentials,
     groupQaiqModelsByProvider,
     listQaiqModelsFromPreferences,
@@ -79,28 +80,28 @@ export interface ComposerAgentPickerChrome {
 }
 
 export interface MobileProjectsStickyComposerSheetsHost {
-stickyComposerAgentSheet: HTMLElement | undefined;
-stickyComposerModeSheet: HTMLElement | undefined;
-stickyComposerApprovalSheet: HTMLElement | undefined;
-stickyComposerWorkspaceSheet: HTMLElement | undefined;
-stickyComposerContextUsageSheet: HTMLElement | undefined;
-stickyComposerSurface: QaapComposerSurface;
-stickyComposerPinnedAgentId: string | undefined;
-stickyComposerModeId: string | undefined;
-stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
-stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
-preparedCwdByProjectId: Map<string, string>;
-projectsService: MobileProjectsService;
-chatAgentService?: import('@theia/ai-chat/lib/common/chat-agent-service').ChatAgentService;
-activeTasks?: import('./mobile-projects-active-tasks').MobileProjectsActiveTasks;
+    stickyComposerAgentSheet: HTMLElement | undefined;
+    stickyComposerModeSheet: HTMLElement | undefined;
+    stickyComposerApprovalSheet: HTMLElement | undefined;
+    stickyComposerWorkspaceSheet: HTMLElement | undefined;
+    stickyComposerContextUsageSheet: HTMLElement | undefined;
+    stickyComposerSurface: QaapComposerSurface;
+    stickyComposerPinnedAgentId: string | undefined;
+    stickyComposerModeId: string | undefined;
+    stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
+    stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
+    preparedCwdByProjectId: Map<string, string>;
+    projectsService: MobileProjectsService;
+    chatAgentService?: import('@theia/ai-chat/lib/common/chat-agent-service').ChatAgentService;
+    activeTasks?: import('./mobile-projects-active-tasks').MobileProjectsActiveTasks;
     readPreference?: (key: string) => unknown;
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
-stickyComposerQaiqModels: QaapQaiqModelOption[];
-stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
-stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
-stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
-closeTranscriptComposerSheets(): void;
-agentsHubShellActive?: boolean;
+    stickyComposerQaiqModels: QaapQaiqModelOption[];
+    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
+    stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
+    closeTranscriptComposerSheets(): void;
+    agentsHubShellActive?: boolean;
 }
 
 export class MobileProjectsStickyComposerSheetsUi {
@@ -807,7 +808,7 @@ export class MobileProjectsStickyComposerSheetsUi {
             const storedModel = readStoredAgentModel(options.cwd, agentId);
             let displayLabel = label;
             if (storedModel?.modelId && agentSelected) {
-                displayLabel = `${label} · ${storedModel.modelId}`;
+                displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;
             }
             chrome.list.append(createAgentSheetOptionButton({
                 agentId,

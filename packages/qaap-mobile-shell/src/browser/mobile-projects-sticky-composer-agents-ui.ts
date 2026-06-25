@@ -20,22 +20,23 @@ import {
     type QaapAgentTaskListSnapshot,
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
+import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 
 export interface MobileProjectsStickyComposerAgentsHost {
-stickyComposerPinnedAgentId: string | undefined;
-stickyComposerBackendAgents: QaapAgentTaskAgentOption[];
-stickyComposerQaiqModels: QaapQaiqModelOption[];
-preparedCwdByProjectId: Map<string, string>;
-projectsService: MobileProjectsService;
-chatAgentService?: ChatAgentService;
-activeTasks?: MobileProjectsActiveTasks;
-stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
-loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot>;
-resolveConversationAgentLabel(agentId: string | undefined): string;
+    stickyComposerPinnedAgentId: string | undefined;
+    stickyComposerBackendAgents: QaapAgentTaskAgentOption[];
+    stickyComposerQaiqModels: QaapQaiqModelOption[];
+    preparedCwdByProjectId: Map<string, string>;
+    projectsService: MobileProjectsService;
+    chatAgentService?: ChatAgentService;
+    activeTasks?: MobileProjectsActiveTasks;
+    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot>;
+    resolveConversationAgentLabel(agentId: string | undefined): string;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
 }
 
@@ -81,7 +82,8 @@ export class MobileProjectsStickyComposerAgentsUi {
         const cwd = composerCwd ?? (project
             ? (this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id))
             : undefined);
-        return readStoredAgentModel(cwd, agentId)?.modelId;
+        const model = readStoredAgentModel(cwd, agentId);
+        return model ? formatQaiqModelSelectionLabel(model) : undefined;
     }
     reconcileStickyComposerPinnedAgent(
         current: string | undefined,

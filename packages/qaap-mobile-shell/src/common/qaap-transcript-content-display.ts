@@ -55,6 +55,39 @@ export function isTranscriptErrorOutput(content: string): boolean {
         || /^\s*at\s+(?:\S+\.)?\S+\s*\(/m.test(content);
 }
 
+/** Strip Claude/QAIQ Read line prefixes ({@code 1:}, {@code 42→}) before heuristics. */
+export function stripToolResultLineNumberPrefixes(text: string): string {
+    const lines = text.split('\n');
+    const stripped = lines.map(line => line.replace(/^\s*\d+[→:|]\s?/, ''));
+    return stripped.some((line, index) => line !== lines[index]) ? stripped.join('\n') : text;
+}
+
+/**
+ * Multi-line source dumps from Read or shell {@code cat}/{@code head} — not stderr.
+ * Identifiers like {@code webglError} must not trip failure keyword scans.
+ */
+export function isLikelySourceFileDump(result: string): boolean {
+    const trimmed = result.trim();
+    if (!trimmed) {
+        return false;
+    }
+    const lines = trimmed.split('\n').map(line => line.trim()).filter(Boolean);
+    if (lines.length < 6) {
+        return false;
+    }
+    const sourceLinePattern = /^(?:import\s+|export\s+(?:default\s+)?(?:const|function|class|type|interface)?|const\s+|let\s+|var\s+|function\s+|interface\s+|type\s+|class\s+|\/\/|\/\*|\*\s|@\w+|return\s|if\s*\(|else\s*\{|for\s*\(|while\s*\(|switch\s*\(|use(?:State|Effect|Callback|Ref|Memo)\s*\()/;
+    const sourceLines = lines.filter(line => sourceLinePattern.test(line)).length;
+    if (sourceLines >= 4) {
+        return true;
+    }
+    if (lines.length >= 10
+        && /\bimport\s+.+\s+from\s+['"]/.test(trimmed)
+        && /\b(?:export|const|function|interface|type)\b/.test(trimmed)) {
+        return true;
+    }
+    return false;
+}
+
 /**
  * Claude / QAIQ Read success payloads: numbered source lines and optional
  * {@code <path>}/{@code <content>} wrappers. Must not run stderr keyword heuristics
@@ -75,7 +108,24 @@ export function isLikelyReadToolFileContent(result: string): boolean {
         return true;
     }
     const numberedLines = trimmed.split('\n').filter(line => /^\d+:\s/.test(line.trim())).length;
-    return numberedLines >= 2;
+    if (numberedLines >= 2) {
+        return true;
+    }
+    const stripped = stripToolResultLineNumberPrefixes(trimmed);
+    if (stripped !== trimmed && trimmed.split('\n').filter(line => /^\s*\d+[→:|]/.test(line)).length >= 2) {
+        return true;
+    }
+    return isLikelySourceFileDump(trimmed) || isLikelySourceFileDump(stripped);
+}
+
+function shouldSkipToolOutputKeywordFailureScan(result: string, toolName?: string): boolean {
+    if (isLikelyReadToolFileContent(result)) {
+        return true;
+    }
+    if (isPureReadToolName(toolName) && /^\d+:\s/m.test(result)) {
+        return true;
+    }
+    return false;
 }
 
 /** Path-like stdout line from Glob/Grep/LS — not an error summary. */
@@ -127,9 +177,8 @@ export function isAgentToolResultFailure(
     if (/tool_use_error|InputValidationError/i.test(result)) {
         return true;
     }
-    const readFilePayload = isLikelyReadToolFileContent(result)
-        || (isPureReadToolName(options.toolName) && /^\d+:\s/m.test(result));
-    if (isTranscriptErrorOutput(result) && !readFilePayload) {
+    const skipKeywordScan = shouldSkipToolOutputKeywordFailureScan(result, options.toolName);
+    if (isTranscriptErrorOutput(result) && !skipKeywordScan) {
         return true;
     }
     if (/\b(?:exit\s+code|exited with (?:code )?)\s*[1-9]\d*\b/i.test(result)) {
@@ -141,7 +190,7 @@ export function isAgentToolResultFailure(
     if (/\bcommand not found\b/i.test(result)) {
         return true;
     }
-    if (readFilePayload) {
+    if (skipKeywordScan) {
         return false;
     }
     for (const line of result.split('\n')) {

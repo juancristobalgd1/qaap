@@ -7,9 +7,11 @@ import { expect } from 'chai';
 import {
     isAgentToolResultFailure,
     isLikelyReadToolFileContent,
+    isLikelySourceFileDump,
     isTranscriptErrorOutput,
     isTranscriptTerminalOutputText,
     looksLikeTranscriptMarkdown,
+    stripToolResultLineNumberPrefixes,
 } from './qaap-transcript-content-display';
 
 describe('qaap-transcript-content-display', () => {
@@ -78,5 +80,47 @@ describe('qaap-transcript-content-display', () => {
     it('isAgentToolResultFailure still flags real Read failures', () => {
         expect(isAgentToolResultFailure('<tool_use_error>File not found</tool_use_error>', { toolName: 'Read' })).to.equal(true);
         expect(isAgentToolResultFailure('Error: File does not exist: /missing.ts', { toolName: 'Read' })).to.equal(true);
+    });
+
+    it('isLikelySourceFileDump detects shell cat/head dumps without line numbers', () => {
+        const bashCatOutput = [
+            'import { forwardRef, useState, useEffect, useRef, useCallback } from \'react\';',
+            'import { useApp } from \'../../store\';',
+            'import type { TextOverlay } from \'../../store\';',
+            'import { GRADIENTS, MESH_GRADIENTS, PATTERNS, WALLPAPERS } from \'../../data/backgrounds\';',
+            'import { probeWebGLSupport } from \'../../utils/webgl\';',
+            '',
+            'interface CanvasProps {',
+            '  textOverlays: TextOverlay[];',
+            '  onUpdateText: (id: string, updates: Partial<TextOverlay>) => void;',
+            '}',
+            '',
+            'export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ textOverlays }, ref) => {',
+            '  const [webglError, setWebglError] = useState<string | null>(null);',
+            '  const evaluateWebGL = useCallback(() => {',
+            '    setWebglError(result.supported ? null : result.error ?? \'WebGL not available\');',
+            '  }, []);',
+            '});',
+        ].join('\n');
+        expect(isLikelySourceFileDump(bashCatOutput)).to.equal(true);
+        expect(isLikelyReadToolFileContent(bashCatOutput)).to.equal(true);
+        expect(isAgentToolResultFailure(bashCatOutput, { toolName: 'Bash' })).to.equal(false);
+        expect(isTranscriptErrorOutput(bashCatOutput)).to.equal(false);
+    });
+
+    it('stripToolResultLineNumberPrefixes normalizes QAIQ arrow line markers', () => {
+        const numbered = [
+            '1→import { useState } from \'react\';',
+            '2→const [webglError, setWebglError] = useState<string | null>(null);',
+        ].join('\n');
+        const stripped = stripToolResultLineNumberPrefixes(numbered);
+        expect(stripped).to.include('import { useState }');
+        expect(stripped).to.not.include('1→');
+        expect(isLikelyReadToolFileContent(numbered)).to.equal(true);
+    });
+
+    it('isAgentToolResultFailure still flags real Bash failures', () => {
+        expect(isAgentToolResultFailure('bash: line 1: npm: command not found', { toolName: 'Bash' })).to.equal(true);
+        expect(isAgentToolResultFailure('Error: Exit code 1\nnpm ERR! Test failed', { toolName: 'Bash' })).to.equal(true);
     });
 });

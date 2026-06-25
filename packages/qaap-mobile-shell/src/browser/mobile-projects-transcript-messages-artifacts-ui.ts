@@ -2272,7 +2272,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         options?: TranscriptActivityTimelineOptions & { readonly includeThinkingSteps?: boolean },
     ): HTMLElement | undefined {
         const variant = options?.variant ?? 'inline';
-        const includeThinkingSteps = options?.includeThinkingSteps ?? variant === 'plan';
+        const includeThinkingSteps = options?.includeThinkingSteps ?? (variant === 'inline' || variant === 'plan');
         const items = this.resolveTranscriptActivityItemsForDisplay(segments, {
             stalled: options?.stalled,
             includeThinkingSteps,
@@ -3263,9 +3263,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             copy,
             isActive,
             isActive
-                && !!options?.streaming
-                && !options?.stalled
-                && isTranscriptActivityLiveState(item.state),
+            && !!options?.streaming
+            && !options?.stalled
+            && isTranscriptActivityLiveState(item.state),
             !!options?.stalled,
         );
         this.syncTranscriptActivityRunningBadge(copy, item, isActive, options);
