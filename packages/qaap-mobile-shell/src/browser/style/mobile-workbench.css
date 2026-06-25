@@ -5288,12 +5288,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 /*
- * Keep the last transcript items above the sticky composer action pills
- * (Changes / Commit / Stop) so they never look clipped behind the input chrome.
+ * The transcript ends 8px above the sticky composer's top border — content does NOT
+ * scroll behind the frosted-glass input. The 8px gap gives a small visual breathing
+ * room between the last message and the composer chrome.
  */
 .theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agent-transcript {
-  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-  scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 8px;
+  scroll-padding-bottom: 8px;
 }
 
 .theia-mobile-projects-sticky-composer {
@@ -22242,24 +22243,21 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 /*
- * Composer clearance for the inline transcript lives on the LIST (the scroller), not real-chat, so
- * the content scrolls behind the floating composer (frosted-glass reveal) and the last message
- * clears it at rest. `--theia-mobile-projects-fab-lift` is the measured composer height.
+ * Codex inline transcript — same 8px gap above the composer as the general rule.
+ * Content does not scroll behind the floating composer.
  */
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript,
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript>.theia-mobile-agent-transcript {
   box-sizing: border-box;
-  padding-bottom: max(var(--theia-mobile-projects-fab-lift, 0px),
-      var(--qaap-chat-edge-scroll-padding-bottom-composer));
-  scroll-padding-bottom: max(var(--theia-mobile-projects-fab-lift, 0px),
-      var(--qaap-chat-edge-scroll-padding-bottom-composer));
+  padding-bottom: 8px;
+  scroll-padding-bottom: 8px;
 }
 
-/* Empty chat — composer clearance only (no fade stack); chips use sticky + list padding above. */
+/* Empty chat — 8px gap above the composer; chips use sticky + list padding above. */
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript.theia-mod-empty-chat,
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript>.theia-mobile-agent-transcript.theia-mod-empty-chat {
-  padding-bottom: var(--theia-mobile-projects-fab-lift, 0px);
-  scroll-padding-bottom: var(--theia-mobile-projects-fab-lift, 0px);
+  padding-bottom: 8px;
+  scroll-padding-bottom: 8px;
 }
 
 .theia-mobile-agent-transcript-chat-input {
