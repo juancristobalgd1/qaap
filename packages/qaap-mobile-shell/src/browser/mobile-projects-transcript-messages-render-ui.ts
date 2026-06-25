@@ -163,6 +163,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const messageHost = this.resolveTranscriptMessageHost(host);
         messageHost.classList.remove('theia-mod-empty-chat');
         messageHost.classList.add('theia-mod-virtual-scroll');
+        this.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
 
         const list = this.host.transcriptUi.mount(messageHost, normalized, index => {
             const current = this.host.transcriptLastConv;
@@ -206,16 +207,13 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             messageHost.classList.remove('theia-mod-virtual-scroll');
             messageHost.replaceChildren();
             messageHost.classList.toggle('theia-mod-empty-chat', true);
+            this.host.transcriptComposerHost?.classList.toggle('theia-mod-show-quick-actions', true);
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = undefined;
             const project = this.host.transcriptOpenProject;
             if (project && this.workHub.shouldEmbedAgentsHubRecentsInWorkspaceTranscript()) {
                 messageHost.append(this.workHub.createAgentsHubRecentsBlock(project));
             }
-            const empty = document.createElement('div');
-            empty.className = 'theia-mobile-agent-transcript-empty';
-            empty.append(this.workHub.createAgentsHubQuickActionsBlock());
-            messageHost.append(empty);
             this.host.transcriptUserScrollPinDispose.dispose();
             this.host.transcriptUserScrollPinDispose = new DisposableCollection(
                 attachTranscriptScrollToBottomButton(host),
@@ -225,6 +223,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (isEmptyChat) {
             this.host.transcriptUi.disposeList();
             messageHost.classList.remove('theia-mod-virtual-scroll', 'theia-mod-empty-chat');
+            this.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
             messageHost.replaceChildren();
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = undefined;
@@ -246,6 +245,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         messageHost.classList.remove('theia-mod-virtual-scroll');
         messageHost.replaceChildren();
         messageHost.classList.toggle('theia-mod-empty-chat', false);
+        this.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
         for (let index = 0; index < conv.messages.length; index++) {
             messageHost.append(this.createTranscriptMessageRowAtIndex(conv, index));
         }
@@ -583,7 +583,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return;
         }
         messageHost.classList.remove('theia-mod-empty-chat');
-        messageHost.querySelector('.theia-mobile-agent-transcript-empty')?.remove();
+        this.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
     }
 
     syncTranscriptActivityRow(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {

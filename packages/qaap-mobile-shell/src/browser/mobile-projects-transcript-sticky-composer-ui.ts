@@ -1092,7 +1092,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const conv = this.host.transcriptLastConv?.id === summary.id
             ? this.host.transcriptLastConv
             : this.host.conversations?.threadStore.getDocument(summary.id)
-                ?? await getConversation(summary.id).catch(() => undefined);
+            ?? await getConversation(summary.id).catch(() => undefined);
         if (!conv || conv.id !== summary.id) {
             return false;
         }
@@ -1256,8 +1256,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
         this.composerActivityGitFilesByConversationId.delete(summary.id);
         this.host.stickyComposerContextUsageDispose.dispose();
         host.replaceChildren();
+        host.classList.remove('theia-mod-show-quick-actions');
         const shell = document.createElement('div');
         shell.className = 'theia-mobile-projects-sticky-composer';
+        shell.append(this.workHub.createAgentsHubQuickActionsBlock());
         const isLegacyTheiaChat = summary.source === 'theia-chat';
         const pinnedId = this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary);
         const modes = resolveStickyComposerModes(pinnedId, this.host.chatAgentService);
