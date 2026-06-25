@@ -17,8 +17,8 @@
 import multer = require('multer');
 import path = require('path');
 import os = require('os');
-import express = require('@theia/core/shared/express');
 import fs = require('@theia/core/shared/fs-extra');
+import express = require('@theia/core/shared/express');
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { injectable } from '@theia/core/shared/inversify';
 import { HTTP_FILE_UPLOAD_PATH } from '../../common/file-upload';
@@ -64,15 +64,12 @@ export class NodeFileUploadService implements BackendApplicationContribution {
         }
         try {
             const target = FileUri.fsPath(fields.uri);
-            // Reject path traversal attempts — the resolved target must not escape via ..
+            // Reject path traversal — normalized path must match resolved path
             const resolved = path.resolve(target);
-            if (resolved !== target && !resolved.startsWith(target + path.sep) && target !== resolved) {
-                // path.resolve normalizes .. segments; if the result differs significantly, reject
-                const normalizedTarget = path.normalize(target);
-                if (normalizedTarget !== resolved && !resolved.startsWith(path.dirname(normalizedTarget))) {
-                    response.sendStatus(403); // forbidden
-                    return;
-                }
+            const normalized = path.normalize(target);
+            if (normalized !== resolved) {
+                response.sendStatus(403); // forbidden
+                return;
             }
             if (!fields.leaveInTemp) {
                 await fs.move(request.file.path, resolved, { overwrite: true });
