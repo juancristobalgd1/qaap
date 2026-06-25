@@ -5,11 +5,13 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
+import * as path from 'path';
 import URI from '@theia/core/lib/common/uri';
 import { Path } from '@theia/core/lib/common/path';
 import { DefaultSkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Skill } from '@theia/ai-core/lib/common/skill';
+import { readQaapAuthUser } from '@theia/qaap-adapters/src/browser/qaap-auth-session';
 
 /** Cursor / Claude Code / Codex skill folders (same layout as SKILL.md directories). */
 const QAAP_BUILTIN_SKILL_DIRECTORY_TILDES = [
@@ -24,7 +26,13 @@ const QAAP_BUILTIN_SKILL_DIRECTORY_TILDES = [
 export class QaapSkillService extends DefaultSkillService {
 
     protected getQaapBuiltinSkillDirectories(homePath: string): string[] {
-        return QAAP_BUILTIN_SKILL_DIRECTORY_TILDES.map(dir => Path.untildify(dir, homePath));
+        const dirs = QAAP_BUILTIN_SKILL_DIRECTORY_TILDES.map(dir => Path.untildify(dir, homePath));
+        // Add per-user skill directory so users don't share custom skills on a shared backend.
+        const user = readQaapAuthUser();
+        if (user?.login?.trim()) {
+            dirs.push(path.join(homePath, '.qaap', 'users', user.login.trim().toLowerCase(), 'skills'));
+        }
+        return dirs;
     }
 
     protected override async update(): Promise<void> {

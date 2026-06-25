@@ -31,7 +31,7 @@ export interface QaapConversationWorktree {
 @injectable()
 export class QaapConversationWorktreeService {
 
-    async create(baseCwd: string): Promise<QaapConversationWorktree> {
+    async create(baseCwd: string, ownerLogin?: string): Promise<QaapConversationWorktree> {
         const cwd = path.resolve(baseCwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
             throw new Error('A valid absolute "cwd" directory is required.');
@@ -39,7 +39,8 @@ export class QaapConversationWorktreeService {
         await this.assertGitRepo(cwd);
         const slug = randomUUID().slice(0, 8);
         const branch = `qaap/worktree/${slug}`;
-        const worktreePath = path.join(os.tmpdir(), 'qaap-worktrees', slug);
+        const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
+        const worktreePath = path.join(os.tmpdir(), 'qaap-worktrees', tenant, slug);
         await this.git(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
         return { worktreePath, branch };
     }

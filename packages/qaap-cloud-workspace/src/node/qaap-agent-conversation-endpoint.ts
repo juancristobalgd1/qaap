@@ -305,7 +305,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             let baseCwd: string | undefined;
             let worktreeBranch: string | undefined;
             if (body.worktree === true) {
-                const worktree = await this.worktrees.create(body.cwd);
+                const worktreeOwnerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+                const worktree = await this.worktrees.create(body.cwd, worktreeOwnerLogin);
                 baseCwd = body.cwd;
                 cwd = worktree.worktreePath;
                 worktreeBranch = worktree.branch;

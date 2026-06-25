@@ -104,20 +104,15 @@ Cualquier cliente conectado puede adjuntarse a la terminal de otro usuario conoc
 
 Antes existía un único token de proceso para el helper `qaap-task`, común a todos los usuarios. **Corregido**: los tokens ahora son por usuario (`helperTokens` map, `helperTokenForOwner`, `resolveHelperTokenOwner`). El endpoint `handleCreate` autentica callbacks del helper CLI por token per-user y scopea sub-tasks al owner del token.
 
-### C-6 · Skills desde HOME compartido
+### C-6 · Skills desde HOME compartido · ✅ CORREGIDO
 
 `packages/qaap-ai-config/src/browser/qaap-skill-service.ts`
 
-```ts
-'~/.cursor/skills', '~/.claude/skills', '~/.codex/skills', '~/.agents/skills'
-```
+Los directorios `~/.cursor/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills` son del HOME del backend y visibles para todos los usuarios. **Corregido**: `getQaapBuiltinSkillDirectories` ahora añade un path por usuario (`~/.qaap/users/{login}/skills`) usando `readQaapAuthUser()`, de modo que cada usuario tiene sus propios skills además de los del sistema.
 
-Skills globales del SO, visibles para todos los usuarios del backend.
+### C-7 · Directorios temporales compartidos · ✅ CORREGIDO
 
-### C-7 · Directorios temporales compartidos
-
-Uploads y worktrees de parallel-run usan `os.tmpdir()` sin segmento por usuario:
-`qaap-parallel-run-store.ts` → `path.join(os.tmpdir(), 'qaap-parallel', slug)`.
+`qaap-parallel-run-store.ts` y `qaap-conversation-worktree.ts` usaban `os.tmpdir()` sin segmento por usuario. **Corregido**: ambos ahora segmentan por `ownerLogin` (`os.tmpdir()/qaap-parallel/{tenant}/{slug}` y `os.tmpdir()/qaap-worktrees/{tenant}/{slug}`). Los worktrees de cada usuario viven bajo su propio subdirectorio temporal.
 
 ---
 
@@ -168,11 +163,11 @@ Backend compartido para la orquestación/cloud (ya con `ownerLogin`) + contenedo
 
 1. **C-4 persistencia**: ❌ DESCARTADO (no es fuga, ver §3).
 2. ~~**C-5 task-token**: token por usuario~~ ✅ CORREGIDO
-3. **C-7 temporales**: segmentar `os.tmpdir()` por usuario.
+3. ~~**C-7 temporales**: segmentar `os.tmpdir()` por usuario~~ ✅ CORREGIDO
 
 ### P2 — Configuración y capacidades
 
-1. **C-6 skills** y MCP/preferences: por usuario (o por contenedor en Opción A).
+1. ~~**C-6 skills** y MCP/preferences~~: skills por usuario ✅ CORREGIDO. MCP/preferences pendiente.
 2. **Eventos en tiempo real**: verificación de destinatario en todos los streams SSE/WS, no sólo inbox.
 
 ### P3 — Validación

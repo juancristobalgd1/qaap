@@ -86,7 +86,8 @@ export class QaapParallelRunStore {
 
         const id = randomUUID();
         const slug = id.slice(0, 8);
-        const root = path.join(os.tmpdir(), 'qaap-parallel', slug);
+        const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
+        const root = path.join(os.tmpdir(), 'qaap-parallel', tenant, slug);
         const variants: QaapParallelRunVariant[] = [];
         try {
             for (const agentId of agents) {
