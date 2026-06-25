@@ -167,8 +167,8 @@ Backend compartido para la orquestación/cloud (ya con `ownerLogin`) + contenedo
 
 ### P2 — Configuración y capacidades
 
-1. ~~**C-6 skills** y MCP/preferences~~: skills por usuario ✅ CORREGIDO. MCP/preferences pendiente.
-2. **Eventos en tiempo real**: verificación de destinatario en todos los streams SSE/WS, no sólo inbox.
+1. ~~**C-6 skills** y MCP/preferences~~: skills por usuario ✅ CORREGIDO. MCP runtime aislado per-conexión; config de preferencias compartida → defer a Opción A (mismo patrón que C-3).
+2. ~~**Eventos en tiempo real**: verificación de destinatario en todos los streams SSE/WS~~ ✅ CORREGIDO. SSE y WS de tasks y conversations ya filtraban por `ownsWorkspacePath`; fix: WS `cancel` ahora verifica ownership antes de cancelar; SSE/WS de conversations ahora usa `eventIsOwned` que cubre `created`/`updated` (cwd dentro de `conversation`) además de eventos con cwd top-level.
 
 ### P3 — Validación
 

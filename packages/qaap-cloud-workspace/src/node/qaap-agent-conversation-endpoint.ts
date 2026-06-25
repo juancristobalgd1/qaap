@@ -33,7 +33,7 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
-import type { QaapAgentConversation, QaapAgentConversationCwdGroup } from '../common/qaap-agent-conversation';
+import type { QaapAgentConversation, QaapAgentConversationCwdGroup, QaapAgentConversationEvent } from '../common/qaap-agent-conversation';
 
 const SSE_HEARTBEAT_MS = 25_000;
 /** Ping interval for WebSocket connections — keeps the socket alive through proxies. */
@@ -243,7 +243,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 if (client.readyState !== WsClient.OPEN) {
                     return;
                 }
-                if ('cwd' in event && typeof event.cwd === 'string' && !this.auth.ownsWorkspacePath(ctx, event.cwd)) {
+                if (!this.eventIsOwned(ctx, event)) {
                     return;
                 }
                 client.send(JSON.stringify(event));
@@ -256,7 +256,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                         return;
                     }
                     if (parsed.op === 'cancel') {
-                        this.store.cancel(parsed.conversationId);
+                        const conv = this.store.get(parsed.conversationId);
+                        if (conv && this.auth.ownsWorkspacePath(ctx, conv.cwd)) {
+                            this.store.cancel(parsed.conversationId);
+                        }
                         return;
                     }
                     if (parsed.op === 'ping' && client.readyState === WsClient.OPEN) {
@@ -466,7 +469,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         res.write(': qaap-agent-conversations stream\n\n');
 
         const subscription = this.store.onDidChange(event => {
-            if ('cwd' in event && typeof event.cwd === 'string' && !this.auth.ownsWorkspacePath(ctx, event.cwd)) {
+            if (!this.eventIsOwned(ctx, event)) {
                 return;
             }
             res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
@@ -515,6 +518,17 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 conversations: group.conversations.filter(summary => this.auth.ownsWorkspacePath(ctx, summary.cwd)),
             }))
             .filter(group => group.conversations.length > 0);
+    }
+
+    protected eventIsOwned(ctx: QaapGithubAuthContext, event: QaapAgentConversationEvent): boolean {
+        if (event.type === 'created' || event.type === 'updated') {
+            return this.auth.ownsWorkspacePath(ctx, event.conversation.cwd);
+        }
+        if (event.type === 'deleted' || event.type === 'message' || event.type === 'message_delta') {
+            return this.auth.ownsWorkspacePath(ctx, event.cwd);
+        }
+        // 'parallel-run' events don't carry a cwd — broadcast to all.
+        return true;
     }
 }
 
