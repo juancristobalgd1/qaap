@@ -5,3 +5,5 @@
 
 /** Built-in prompt fragment injected into Coder agent variants. */
 export const QAAP_CODER_DEV_WORKFLOW_FRAGMENT_ID = 'qaap-coder-dev-workflow';
+/** Built-in prompt fragment instructing the Coder agent to analyze and think before acting. */
+export const QAAP_CODER_ANALYZE_THINK_FRAGMENT_ID = 'qaap-coder-analyze-think';

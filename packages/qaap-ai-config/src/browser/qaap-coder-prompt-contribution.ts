@@ -21,11 +21,12 @@ import {
 } from '@theia/qaap-mobile-shell/lib/browser/qaap-bootstrap-tools-common';
 import { QAAP_PICK_ELEMENT_TOOL_ID } from '@theia/qaap-adapters/lib/browser/qaap-element-picker-tools-common';
 import { QAAP_BOOTSTRAP_VARIABLE } from '@theia/qaap-mobile-shell/lib/browser/qaap-bootstrap-variable-contribution';
-import { QAAP_CODER_DEV_WORKFLOW_FRAGMENT_ID } from '../common/qaap-coder-prompt-ids';
+import { QAAP_CODER_ANALYZE_THINK_FRAGMENT_ID, QAAP_CODER_DEV_WORKFLOW_FRAGMENT_ID } from '../common/qaap-coder-prompt-ids';
 import { QAAP_CODER_PLAN_MODE_FRAGMENT_ID } from '../common/qaap-plan-prompt-ids';
 
 const WORKFLOW_APPEND = `\n\n{{prompt:${QAAP_CODER_DEV_WORKFLOW_FRAGMENT_ID}}}\n`;
 const PLAN_APPEND = `\n\n{{prompt:${QAAP_CODER_PLAN_MODE_FRAGMENT_ID}}}\n`;
+const ANALYZE_THINK_PREPEND = `{{prompt:${QAAP_CODER_ANALYZE_THINK_FRAGMENT_ID}}}\n\n`;
 
 const QAAP_CODER_PLAN_MODE_TEMPLATE = `## Qaap plan mode (visible before multi-file edits)
 
@@ -34,6 +35,16 @@ When the user asks for a non-trivial change (3+ files, refactors, or new feature
 1. **Plan first** — Reply with a short markdown plan: goal, files to touch, risks, and test/preview steps. Do **not** edit files until the user confirms or says "go".
 2. **Scope cap** — If the plan would touch more than ~8 files, split into phases and ask which phase to run first.
 3. **After approval** — Execute one phase at a time; re-check \`qaap_bootstrap_status\` before claiming preview is ready.`;
+
+const QAAP_CODER_ANALYZE_THINK_TEMPLATE = `## Qaap analyze before acting
+
+Before invoking any tool, editing any file, or running any command:
+
+1. **Analyze the request** — Read the user's message carefully and determine what they are actually asking for. Distinguish greetings, questions, and explicit tasks.
+2. **Think before acting** — Decide whether the request is clear enough to proceed safely. Do not assume intent.
+3. **Greetings and unclear input** — If the user only greets you (e.g. "hola", "hello", "hi") or asks a vague question without a concrete task, respond with a greeting and ask what they need. Do NOT read files, edit files, run commands, or perform any work until the user gives you a clear task.
+4. **If unclear or incomplete** — Ask the user for clarification instead of guessing or performing unnecessary work.
+5. **If clear and actionable** — Proceed with the minimal appropriate action and explain what you are doing.`;
 
 const QAAP_CODER_DEV_WORKFLOW_TEMPLATE = `## Qaap dev preview (web UI workspaces)
 
@@ -69,6 +80,10 @@ export class QaapCoderPromptContribution implements FrontendApplicationContribut
             id: QAAP_CODER_PLAN_MODE_FRAGMENT_ID,
             template: QAAP_CODER_PLAN_MODE_TEMPLATE,
         });
+        this.promptService.addBuiltInPromptFragment({
+            id: QAAP_CODER_ANALYZE_THINK_FRAGMENT_ID,
+            template: QAAP_CODER_ANALYZE_THINK_TEMPLATE,
+        });
 
         const variants: BasePromptFragment[] = [
             getCoderAgentModePromptTemplate(),
@@ -79,7 +94,7 @@ export class QaapCoderPromptContribution implements FrontendApplicationContribut
         for (const variant of variants) {
             const patched: BasePromptFragment = {
                 ...variant,
-                template: variant.template + WORKFLOW_APPEND + PLAN_APPEND,
+                template: ANALYZE_THINK_PREPEND + variant.template + WORKFLOW_APPEND + PLAN_APPEND,
             };
             const isDefault = variant.id === getCoderAgentModePromptTemplate().id;
             this.promptService.addBuiltInPromptFragment(patched, CODER_SYSTEM_PROMPT_ID, isDefault);

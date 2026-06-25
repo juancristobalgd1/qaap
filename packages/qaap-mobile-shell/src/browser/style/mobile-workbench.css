@@ -3500,16 +3500,12 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 /*
  * Real conversation messages grow downward from the top so the first user bubble of a new
- * conversation appears at the top of the scrollport. The idle / quick-action shell is the
- * exception: when no messages exist yet, its empty placeholder (prompt chips like "Fix bug")
- * must stay anchored near the composer, visually integrated with the input zone.
+ * conversation appears at the top of the scrollport. The idle / quick-action shell
+ * (`.theia-mod-empty-chat`) is excluded — its prompt chips must stay anchored near the composer
+ * via the existing `margin-top: auto` + `position: sticky` rules below.
  */
-.theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript:not(.theia-mod-virtual-scroll)> :first-child {
+.theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript:not(.theia-mod-virtual-scroll):not(.theia-mod-empty-chat)> :first-child {
   margin-top: 0;
-}
-
-.theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript:not(.theia-mod-virtual-scroll)>.theia-mobile-agent-transcript-empty:first-child {
-  margin-top: auto;
 }
 
 .theia-mobile-agents-hub-inline-transcript[hidden] {
