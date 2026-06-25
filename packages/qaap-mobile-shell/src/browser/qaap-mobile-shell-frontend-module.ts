@@ -16,6 +16,7 @@ import '../../src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
 import '../../src/browser/style/qaap-transcript-timeline-premium.css';
+import '../../src/browser/style/qaap-agent-setup-animations.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';

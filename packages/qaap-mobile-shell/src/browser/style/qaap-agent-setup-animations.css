@@ -1,0 +1,138 @@
+/* *****************************************************************************
+ * Qaap agent setup animations — CloudCode-style clean state indicators.
+ *
+ * Ported from Robrusi/CloudCode components/chat/message-setup.tsx:
+ *   - Per-letter shimmer: a brightness wave travels across the text characters
+ *     with staggered delays (CSS equivalent of CloudCode's ShimmerText React
+ *     component, adapted for DOM manipulation).
+ *   - Unicode spinner: monospace spinner frames cycling at a fixed interval.
+ *   - Setup phrases: whimsical rotating text shown while the agent prepares.
+ *
+ * Scoped to `.qaap-agent-setup` so they only affect the setup animation area.
+ * ***************************************************************************** */
+
+/* ---------------------------------------------------------------------------
+ * Per-letter shimmer keyframe — brightness + subtle vertical bounce.
+ * CloudCode uses animation-delay per span to create a travelling wave.
+ * ------------------------------------------------------------------------- */
+
+@keyframes qaap-setup-letter-shimmer {
+  0% {
+    opacity: 0.4;
+    transform: translateY(0);
+  }
+
+  20% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+
+  45% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  70%,
+  100% {
+    opacity: 0.5;
+    transform: translateY(0);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Setup animation container — flex row with spinner + shimmer text.
+ * ------------------------------------------------------------------------- */
+
+.qaap-agent-setup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 22px;
+  padding: 2px 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Unicode spinner — monospace frame cycling.
+ * ------------------------------------------------------------------------- */
+
+.qaap-agent-setup-spinner {
+  flex: none;
+  font-family: var(--theia-editor-font-family, 'Menlo', 'Monaco', monospace);
+  font-size: 14px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--theia-descriptionForeground, #888) 80%, var(--theia-foreground));
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Shimmer text — per-letter spans with staggered animation delays.
+ * The container clips overflow so long phrases don't wrap during rotation.
+ * ------------------------------------------------------------------------- */
+
+.qaap-agent-setup-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: color-mix(in srgb, var(--theia-descriptionForeground, #888) 88%, var(--theia-foreground));
+}
+
+.qaap-agent-setup-letter {
+  display: inline-block;
+  animation: qaap-setup-letter-shimmer 2.4s ease-in-out infinite;
+}
+
+/* When a real status is shown, brighten the text and slow the shimmer */
+.qaap-agent-setup.theia-mod-real-status .qaap-agent-setup-letter {
+  animation-duration: 3s;
+  color: color-mix(in srgb, var(--theia-foreground) 82%, var(--theia-descriptionForeground));
+}
+
+/* Stream meta (elapsed time + tokens) inside the setup animation */
+.qaap-agent-setup .theia-mobile-agent-stream-meta {
+  flex: none;
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 70%, transparent);
+  white-space: nowrap;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Unicode spinner inside the stream line (acting/writing phases) */
+.theia-mobile-agent-stream-line .qaap-unicode-spinner {
+  flex: none;
+  font-family: var(--theia-editor-font-family, 'Menlo', 'Monaco', monospace);
+  font-size: 14px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--theia-descriptionForeground, #888) 80%, var(--theia-foreground));
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Override the old CSS dot animation — the unicode spinner replaces it */
+.theia-mobile-agent-stream-line .theia-mobile-agent-stream-dot:not(.qaap-unicode-spinner) {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion — disable all decorative animations.
+ * ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .qaap-agent-setup-letter {
+    animation: none !important;
+    opacity: 0.8;
+  }
+
+  .qaap-agent-setup-spinner {
+    animation: none !important;
+  }
+}

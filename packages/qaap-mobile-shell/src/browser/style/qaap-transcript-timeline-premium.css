@@ -88,19 +88,18 @@
  * ------------------------------------------------------------------------- */
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace {
-  border: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.18)) 35%, transparent);
-  border-radius: 6px;
+  border: none;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  transition: border-color 200ms ease;
+  transition: none;
 }
 
-/* While streaming, slightly brighten the border — Codex's active state is
-   conveyed through the spinner/shimmer, not card glow. */
+/* While streaming, no border change — keep it flat */
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming {
-  border-color: color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.18)) 50%, transparent);
+  border: none;
 }
 
 /* ---------------------------------------------------------------------------
@@ -229,7 +228,7 @@
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-icon.theia-mod-error.codicon {
-  color: var(--theia-errorForeground, #f14c4c);
+  color: color-mix(in srgb, var(--q-accent, #E58E40) 90%, var(--theia-foreground));
   font-weight: 700;
 }
 
@@ -272,6 +271,40 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Time badges — transparent, borderless, inline-aligned.
+ * Override the pill/badge styling from mobile-workbench.css so duration
+ * badges read as plain dim text, not boxed chips.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-meta,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-mcp-badge,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-diff-stats {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  display: inline !important;
+  align-self: baseline !important;
+  vertical-align: baseline !important;
+  margin-left: 6px;
+}
+
+.theia-mobile-agent-stream-meta {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+
+.theia-mobile-agent-thought-brief-meta {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+
+/* ---------------------------------------------------------------------------
  * Thinking / reasoning step: Codex and Claude Desktop show the model's
  * reasoning text inline while the model is thinking, in a dim italic style
  * with a subtle left border.  The <details> auto-opens while live (see
@@ -279,10 +312,18 @@
  * Codex's dim commentary text — not a heavy card.
  * ------------------------------------------------------------------------- */
 
-/* Thinking summary row: dim verb with shimmer when live */
+/* Thinking summary row: dim verb with shimmer when live.
+   Stack vertically: verb on top, excerpt below — reads like a chain of thought. */
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking-summary {
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-row {
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-verb {
@@ -291,25 +332,22 @@
   font-style: italic;
 }
 
-/* Thinking excerpt preview: dim italic text after the verb showing a brief
-   snippet of the model's reasoning. Visible even when the <details> is
-   collapsed, so the user can see what the model was thinking about. */
+/* Thinking excerpt preview: dim italic text below the verb showing a brief
+   snippet of the model's reasoning. Always visible — even when the <details>
+   is open — so the user can always see what the model was thinking about.
+   Displayed as a block below the verb row, reading like a chain of thought. */
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt {
+  display: block;
   font-size: 12px;
   font-weight: 400;
   font-style: italic;
-  color: color-mix(in srgb, var(--theia-descriptionForeground) 70%, transparent);
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 65%, transparent);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  flex: 1 1 auto;
-}
-
-/* Hide the excerpt when the thinking details is open (the full body is
-   visible, so the preview is redundant). */
-.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking[open] .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt {
-  display: none;
+  width: 100%;
+  padding-left: 2px;
 }
 
 /* Live thinking: shimmer the verb text */
@@ -333,21 +371,22 @@
 }
 
 /* Thinking body: dim italic text with a subtle blue left border —
-   matches Codex's dim commentary and Claude Desktop's reasoning panel. */
+   matches Codex's dim commentary and Claude Desktop's reasoning panel.
+   More compact and readable than before. */
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking-body {
-  margin-top: 4px;
-  margin-left: 4px;
-  padding: 6px 10px;
-  border-radius: 0 6px 6px 0;
-  border-left: 2px solid color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 35%, transparent);
-  background: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 4%, transparent);
-  font-size: 12.5px;
-  line-height: 1.5;
+  margin-top: 3px;
+  margin-left: 2px;
+  padding: 5px 8px;
+  border-radius: 0 4px 4px 0;
+  border-left: 2px solid color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 28%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 3%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
   font-style: italic;
-  color: color-mix(in srgb, var(--theia-descriptionForeground) 82%, var(--theia-foreground));
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 78%, var(--theia-foreground));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 200px;
+  max-height: 180px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
@@ -356,8 +395,8 @@
 
 /* Live thinking body: slightly brighter border + background while streaming */
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking.theia-mod-live .theia-mobile-agent-activity-thinking-body {
-  border-left-color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 55%, transparent);
-  background: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 6%, transparent);
+  border-left-color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 48%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 5%, transparent);
 }
 
 /* Smooth reveal when the thinking details opens */
@@ -425,6 +464,7 @@
   transition:
     color 200ms ease,
     background-color 200ms ease;
+  position: relative;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-chevron {
@@ -452,12 +492,12 @@
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace>summary {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   min-height: 0;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.18)) 65%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--theia-editorWidget-background, #1e1e1e) 88%, var(--theia-foreground) 3%);
+  padding: 6px 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open]>summary {
@@ -471,21 +511,21 @@
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-sticky-bar {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   min-height: 0;
-  padding: 9px 10px;
-  border: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.18)) 65%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--theia-editorWidget-background, #1e1e1e) 88%, var(--theia-foreground) 3%);
+  padding: 6px 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-list {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
   margin: 0;
-  padding: 0 0 0 22px;
+  padding: 0 0 0 20px;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-list::before {
@@ -503,9 +543,9 @@
   display: grid;
   grid-template-columns: 17px minmax(0, 1fr);
   align-items: start;
-  column-gap: 8px;
-  min-height: 22px;
-  padding: 0;
+  column-gap: 7px;
+  min-height: 20px;
+  padding: 1px 0;
   margin: 0;
   border: 0;
   background: transparent;
@@ -626,6 +666,152 @@
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-clickable:hover {
   background: color-mix(in srgb, var(--theia-list-hoverBackground, rgba(128, 128, 128, 0.08)) 65%, transparent);
   border-radius: 7px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-verb {
+  color: color-mix(in srgb, var(--theia-foreground) 78%, var(--theia-descriptionForeground));
+  font-weight: 600;
+  font-style: normal;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-detail.theia-mod-thinking-duration {
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 86%, transparent);
+  font-style: normal;
+}
+
+/* ---------------------------------------------------------------------------
+ * CloudCode-style tool umbrella groups — explore vs modify visual cues.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-tool-group.theia-mod-explore .theia-mobile-agent-tool-group-label::before {
+  content: '\eb21';
+  /* codicon-search */
+  font-family: var(--theia-code-icon-font-family, codicon);
+  font-size: 14px;
+  margin-right: 6px;
+  opacity: 0.7;
+  vertical-align: -1px;
+}
+
+.theia-mobile-agent-tool-group.theia-mod-modify .theia-mobile-agent-tool-group-label::before {
+  content: '\ea73';
+  /* codicon-edit */
+  font-family: var(--theia-code-icon-font-family, codicon);
+  font-size: 14px;
+  margin-right: 6px;
+  opacity: 0.7;
+  vertical-align: -1px;
+}
+
+/* Subtle accent for modify groups */
+.theia-mobile-agent-tool-group.theia-mod-modify>summary {
+  color: color-mix(in srgb, var(--theia-foreground) 90%, var(--theia-textLink-foreground, #4daafc));
+}
+
+/* Strip container spacing */
+.theia-mobile-agent-tool-pills-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Timeline summary — borderless, transparent, no pill/chip styling.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace>summary.theia-mobile-agent-activity-timeline-summary {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-icon {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming .theia-mobile-agent-activity-timeline-summary-icon {
+  background: transparent !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-stalled .theia-mobile-agent-activity-timeline-summary-icon {
+  background: transparent !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-count {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-status {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * Summary icon: show snake spinner during streaming, trace-glyph when settled.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-icon.theia-mod-spinner-active::before,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-icon.theia-mod-spinner-active::after {
+  display: none !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--theia-editor-font-family, 'Menlo', 'Monaco', monospace);
+  font-size: 16px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 82%, var(--theia-foreground));
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-stalled .theia-mobile-agent-activity-timeline-summary-spinner {
+  color: color-mix(in srgb, var(--q-accent, #E58E40) 88%, var(--theia-foreground));
+}
+
+/* Snake spinner inside activity item icons (active steps during streaming) */
+.theia-mobile-agent-activity-icon .theia-mobile-agent-activity-icon-spinner {
+  font-family: var(--theia-editor-font-family, 'Menlo', 'Monaco', monospace);
+  font-size: 14px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 82%, var(--theia-foreground));
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-stalled .theia-mobile-agent-activity-icon .theia-mobile-agent-activity-icon-spinner {
+  color: color-mix(in srgb, var(--q-accent, #E58E40) 88%, var(--theia-foreground));
+}
+
+/* Snake spinner inside the thought brief icon (during streaming) */
+.theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-icon {
+  position: relative;
+}
+
+.theia-mobile-agent-thought-brief-icon.theia-mod-spinner-active::before,
+.theia-mobile-agent-thought-brief-icon.theia-mod-spinner-active::after {
+  display: none !important;
+}
+
+.theia-mobile-agent-thought-brief-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--theia-editor-font-family, 'Menlo', 'Monaco', monospace);
+  font-size: 16px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 82%, var(--theia-foreground));
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ---------------------------------------------------------------------------
