@@ -138,10 +138,12 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
     }
 
     it('keeps empty landing chats as chat prompts without the project creation hero', () => {
-        const { renderUi } = createRenderUi();
+        const { renderUi, host } = createRenderUi();
         const chatHost = document.createElement('div');
         chatHost.className = 'theia-mobile-agent-transcript-real-chat';
         document.body.append(chatHost);
+        const composerHost = document.createElement('div');
+        host.transcriptComposerHost = composerHost;
 
         const conv: QaapAgentConversationDTO = {
             id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
@@ -158,7 +160,8 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
 
         expect(messageHost.querySelector('.theia-mobile-agents-hub-landing-hero')).to.equal(null);
-        expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-actions')).to.not.equal(null);
+        expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty')).to.equal(null);
+        expect(composerHost.classList.contains('theia-mod-show-quick-actions')).to.equal(true);
     });
 
     it('clears streaming activity row when switching to an empty conversation', () => {
@@ -249,7 +252,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
                 role: 'user',
                 content: '',
                 createdAt: Date.now(),
-            optimisticImagePreviews: [{ src: 'data:image/png;base64,ZmFrZQ==', fileName: 'shot.png' }],
+                optimisticImagePreviews: [{ src: 'data:image/png;base64,ZmFrZQ==', fileName: 'shot.png' }],
             }],
         };
         renderUi.renderTranscriptMessages(chatHost, conv);

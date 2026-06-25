@@ -5329,23 +5329,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
     padding-top: 4px;
   }
 
-  .theia-mobile-agent-transcript-empty-actions {
-    --qaap-empty-actions-edge-inset: env(safe-area-inset-right, 0px);
-    width: calc(100% + 2 * var(--theia-mobile-work-hub-pad-x, 16px));
-    margin-inline-start: calc(-1 * max(var(--theia-mobile-work-hub-pad-x, 16px), env(safe-area-inset-left, 0px)));
-    margin-inline-end: calc(-1 * max(var(--theia-mobile-work-hub-pad-x, 16px), env(safe-area-inset-right, 0px)));
-    padding-inline-start: env(safe-area-inset-left, 0px);
-    scroll-padding-inline-start: env(safe-area-inset-left, 0px);
-  }
-
-  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-inline-active .theia-mobile-agent-transcript-empty-actions,
-  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-shell-active .theia-mobile-agent-transcript-empty-actions,
-  .theia-mobile-projects.theia-mod-home.theia-mod-hub-repos.theia-mod-project-detail .theia-mobile-agent-transcript-empty-actions {
-    width: calc(100% + 2 * var(--theia-mobile-execution-chrome-pad-x, 12px));
-    margin-inline-start: calc(-1 * max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-left, 0px)));
-    margin-inline-end: calc(-1 * max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-right, 0px)));
-  }
-
   .theia-mobile-projects-sticky-composer-column,
   .theia-mobile-projects-sticky-composer-inner,
   .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
@@ -16869,35 +16852,26 @@ body>.theia-mobile-transcript-files-menu {
 }
 
 /*
- * Empty quick actions: list padding-bottom clears the floating composer; margin-top: auto + sticky
- * keeps the chip row hugging that lip (do not also margin-bottom: fab-lift — that double-counts).
+ * Composer-hosted quick actions: the chip row lives inside the composer shell (above the card)
+ * so it always tracks the composer's top border. Hidden by default; shown only when the composer
+ * host carries .theia-mod-show-quick-actions (toggled by transcript render when the chat is empty).
+ * Padding is zeroed because the composer shell already provides horizontal inset.
  */
-.theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty {
-  position: sticky;
-  bottom: 0;
-  z-index: 7;
-  margin-top: auto;
-  margin-bottom: 0;
-  padding-bottom: 0;
-  pointer-events: none;
+.theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
+  display: none;
+  --qaap-empty-actions-edge-inset: 0;
+  padding: 0 0 6px;
+  padding-inline-start: 0;
+  scroll-padding-inline-start: 0;
+  scroll-padding-inline-end: 0;
 }
 
-/*
- * Full-screen overlay: the composer floats with position:absolute bottom:0 over the scroll area.
- * Sticky bottom:0 would put quick actions behind the composer. Lift them to composer-height + 8px
- * so they sit just above the composer's top border. --qaap-transcript-composer-clear is measured
- * by observeTranscriptComposerSize() via ResizeObserver.
- */
-.theia-mobile-agent-transcript-root .theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty {
-  bottom: calc(var(--qaap-transcript-composer-clear, 0px) + 8px);
+.theia-mod-show-quick-actions .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
+  display: flex;
 }
 
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript.theia-mod-empty-chat) .theia-mobile-projects-scroll {
   padding-bottom: 0;
-}
-
-.theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty-actions {
-  pointer-events: auto;
 }
 
 .theia-mobile-agent-transcript-empty-actions {
@@ -22232,7 +22206,8 @@ body>.theia-mobile-transcript-files-menu {
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-projects-sticky-composer-workspace-bar,
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-mode-banner,
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-transcript-follow-up-queue,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-activity-stack {
+.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-sticky-composer-activity-stack,
+.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) .theia-mobile-agent-transcript-empty-actions {
   pointer-events: auto;
 }
 
@@ -22253,21 +22228,22 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 /*
- * Codex inline transcript — same 8px gap above the composer as the general rule.
+ * Codex inline transcript — the codex composer is position:absolute (overlays the
+ * scroll area), so padding-bottom must include the composer height plus an 8px gap.
  * Content does not scroll behind the floating composer.
  */
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript,
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript>.theia-mobile-agent-transcript {
   box-sizing: border-box;
-  padding-bottom: 8px;
-  scroll-padding-bottom: 8px;
+  padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
+  scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
 }
 
-/* Empty chat — 8px gap above the composer; chips use sticky + list padding above. */
+/* Empty chat — composer height + 8px gap above the composer; chips use sticky + list padding above. */
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript.theia-mod-empty-chat,
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript>.theia-mobile-agent-transcript.theia-mod-empty-chat {
-  padding-bottom: 8px;
-  scroll-padding-bottom: 8px;
+  padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
+  scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
 }
 
 .theia-mobile-agent-transcript-chat-input {

@@ -13,7 +13,9 @@
 | Breakpoint matches `MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY` (767px / coarse pointer).
 |-----------------------------------------------------------------------------*/
 
-@media (max-width: 767px), (pointer: coarse) {
+@media (max-width: 767px),
+(pointer: coarse) {
+
   /*
    * Flex / Lumino height chain — scroll hosts need a bounded height before
    * overflow-y can engage (file tree, AI chat, output, terminal, mini-browser).
@@ -165,10 +167,7 @@
    * Extra scroll band at the bottom of the terminal while the virtual keyboard is open
    * (`--theia-mobile-terminal-scroll-padding` from MobileKeyboardHelper).
    */
-  #theia-app-shell.theia-mod-mobile-terminal-keyboard
-    #theia-bottom-content-panel
-    .terminal-container
-    .xterm-viewport {
+  #theia-app-shell.theia-mod-mobile-terminal-keyboard #theia-bottom-content-panel .terminal-container .xterm-viewport {
     box-sizing: border-box;
     padding-bottom: var(--theia-mobile-terminal-scroll-padding, 0px) !important;
     scroll-padding-bottom: var(--theia-mobile-terminal-scroll-padding, 0px);
@@ -207,14 +206,14 @@
    */
   #theia-app-shell .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container,
   #theia-app-shell .lm-DockPanel-tabBar[data-orientation="horizontal"],
-  #theia-app-shell .theia-mobile-bottom-chrome-host > #theia-statusBar,
+  #theia-app-shell .theia-mobile-bottom-chrome-host>#theia-statusBar,
   #theia-app-shell .theia-mobile-keyboard-accessory-page,
   #theia-app-shell .theia-statusBar-track {
     touch-action: pan-x !important;
     overflow-y: hidden !important;
   }
 
-  /* Empty-chat suggestion slider — horizontal only (nested inside vertical transcript). */
+  /* Empty-chat quick action slider — horizontal swipe inside the composer shell. */
   .theia-mobile-agent-transcript-empty-actions {
     overflow-x: auto !important;
     overflow-y: hidden !important;
@@ -233,7 +232,7 @@
   }
 
   #theia-app-shell .theia-mobile-bottom-activity-bar,
-  #theia-app-shell .theia-mobile-bottom-chrome-host > #theia-mobile-bottom-bar {
+  #theia-app-shell .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar {
     touch-action: manipulation !important;
     overflow-y: hidden !important;
   }
@@ -258,9 +257,7 @@
    * Execution surfaces (Changes / Preview / Files / diff hub) delegate scroll to
    * nested hosts — do not re-enable overflow on the outer projects scroll shell.
    */
-  #theia-app-shell
-    .theia-mobile-projects.theia-mod-project-detail.theia-mod-project-surface-tools
-    .theia-mobile-projects-scroll,
+  #theia-app-shell .theia-mobile-projects.theia-mod-project-detail.theia-mod-project-surface-tools .theia-mobile-projects-scroll,
   #theia-app-shell .theia-mobile-projects.theia-mod-hub-diff .theia-mobile-projects-scroll {
     overflow: hidden !important;
     overflow-y: hidden !important;
