@@ -197,12 +197,7 @@ export function traceEventsToSegments(
                     ? [{ type: 'text', content: event.message }]
                     : [];
             case 'checkpoint':
-                return [{
-                    type: 'text',
-                    content: `Checkpoint: ${event.label}${event.added !== undefined || event.removed !== undefined
-                        ? ` (+${event.added ?? 0}/-${event.removed ?? 0})`
-                        : ''}`,
-                }];
+                return [];
             default: {
                 const exhaustive: never = event;
                 return exhaustive;

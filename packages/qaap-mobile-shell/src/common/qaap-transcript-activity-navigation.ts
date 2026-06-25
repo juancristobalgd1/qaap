@@ -432,18 +432,7 @@ export function resolveTranscriptLifecycleActivityItems(
     }
     return traceEvents.flatMap((event): TranscriptActivityNavigationItem[] => {
         if (event.type === 'checkpoint') {
-            const stats = event.added !== undefined || event.removed !== undefined
-                ? `+${event.added ?? 0}/-${event.removed ?? 0}`
-                : undefined;
-            return [{
-                label: stats ? `Checkpoint: ${event.label} (${stats})` : `Checkpoint: ${event.label}`,
-                state: 'success',
-                verb: 'Checkpoint',
-                detail: event.label,
-                tail: stats,
-                timestamp: event.capturedAt,
-                checkpointId: event.id,
-            }];
+            return [];
         }
         if (event.type === 'run_cancelled') {
             return [{
