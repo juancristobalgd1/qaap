@@ -16882,6 +16882,16 @@ body>.theia-mobile-transcript-files-menu {
   pointer-events: none;
 }
 
+/*
+ * Full-screen overlay: the composer floats with position:absolute bottom:0 over the scroll area.
+ * Sticky bottom:0 would put quick actions behind the composer. Lift them to composer-height + 8px
+ * so they sit just above the composer's top border. --qaap-transcript-composer-clear is measured
+ * by observeTranscriptComposerSize() via ResizeObserver.
+ */
+.theia-mobile-agent-transcript-root .theia-mobile-agent-transcript.theia-mod-empty-chat .theia-mobile-agent-transcript-empty {
+  bottom: calc(var(--qaap-transcript-composer-clear, 0px) + 8px);
+}
+
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript.theia-mod-empty-chat) .theia-mobile-projects-scroll {
   padding-bottom: 0;
 }
