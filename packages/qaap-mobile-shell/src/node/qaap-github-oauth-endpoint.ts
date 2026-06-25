@@ -39,6 +39,7 @@ import {
     fetchGithubUser,
     mergeGithubPullRequest,
 } from './qaap-github-api';
+import { seedEmptyRepository } from './qaap-github-seed-empty-repository';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -597,6 +598,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }
         }
         await this.runGit(['clone', repository.cloneUrl, target], accessToken);
+        try {
+            await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken));
+        } catch (err) {
+            console.warn('[qaap-oauth] Failed to seed empty repository; workspace will rely on static detection:', err instanceof Error ? err.message : String(err));
+        }
         return target;
     }
 
@@ -626,8 +632,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const gitArgs = accessToken
             ? [
                 '-c',
-                `http.https://github.com/.extraheader=AUTHORIZATION: basic ${
-                    Buffer.from(`x-access-token:${accessToken}`).toString('base64')
+                `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${accessToken}`).toString('base64')
                 }`,
                 ...args,
             ]
