@@ -83,4 +83,37 @@ describe('QAIQ explicit model selection end-to-end', () => {
         expect(env.OPENAI_BASE_URL).to.equal('https://router.huggingface.co/v1');
         expect(buildQaiqTemplateFlags(model)).to.equal('--provider openai --model meta-llama/Llama-3.2-3B-Instruct');
     });
+
+    it('uses matching custom OpenAI-compatible endpoint credentials', () => {
+        const model = {
+            provider: 'openai' as const,
+            vendor: 'qaap-custom-openai',
+            modelId: 'deepseek-remote',
+        };
+        const env: NodeJS.ProcessEnv = {};
+        const readPref = (key: string): unknown => {
+            if (key === 'ai-features.openAiCustom.customOpenAiModels') {
+                return [
+                    {
+                        id: 'qwen-local',
+                        model: 'qwen2.5-coder',
+                        url: 'https://qwen.example/v1',
+                        apiKey: 'sk-qwen',
+                    },
+                    {
+                        id: 'deepseek-remote',
+                        model: 'deepseek-coder',
+                        url: 'https://deepseek.example/v1',
+                        apiKey: 'sk-deepseek',
+                    },
+                ];
+            }
+            return undefined;
+        };
+        const binding = bindingFromQaiqModelSelection(model, readPref);
+        applyQaapQaiqCredentialEnv(env, binding, readPref);
+        expect(env.OPENAI_API_KEY).to.equal('sk-deepseek');
+        expect(env.OPENAI_BASE_URL).to.equal('https://deepseek.example/v1');
+        expect(formatQaiqProviderFlags(binding)).to.equal('--provider openai --model deepseek-coder');
+    });
 });

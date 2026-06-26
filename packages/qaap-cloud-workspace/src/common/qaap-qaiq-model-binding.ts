@@ -5,6 +5,9 @@
 
 import {
     applyByokCredentialEnv,
+    customOpenAiModelId,
+    findCustomOpenAiEndpointForModelId,
+    QAAP_CUSTOM_OPENAI_VENDOR,
     parseTheiaLanguageModelId as parseRegistryLanguageModelId,
     QAAP_QAIQ_BYOK_PROVIDERS,
     resolveVendorForModelId,
@@ -23,6 +26,7 @@ export type QaapModelVendor =
     | 'openai'
     | 'mistral'
     | 'huggingface'
+    | 'qaap-custom-openai'
     | 'unknown';
 
 export interface QaapQaiqModelBinding {
@@ -117,10 +121,20 @@ export function normalizeQaiqModelBinding(
     binding: QaapQaiqModelBinding,
     readPref: QaapPreferenceReader,
 ): QaapQaiqModelBinding {
+    if (binding.vendor === QAAP_CUSTOM_OPENAI_VENDOR) {
+        const endpoint = findCustomOpenAiEndpointForModelId(readPref, binding.modelId);
+        const modelId = endpoint ? customOpenAiModelId(endpoint) : undefined;
+        return modelId ? { ...binding, modelId } : binding;
+    }
     if (binding.vendor && binding.vendor !== 'unknown') {
         return binding;
     }
     const vendor = resolveVendorForModelId(readPref, binding.modelId);
+    if (vendor === QAAP_CUSTOM_OPENAI_VENDOR) {
+        const endpoint = findCustomOpenAiEndpointForModelId(readPref, binding.modelId);
+        const modelId = endpoint ? customOpenAiModelId(endpoint) : undefined;
+        return modelId ? { ...binding, vendor: vendor as QaapModelVendor, modelId } : { ...binding, vendor: vendor as QaapModelVendor };
+    }
     return vendor ? { ...binding, vendor: vendor as QaapModelVendor } : binding;
 }
 
@@ -144,5 +158,20 @@ export function applyQaapQaiqModelEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqM
 
 /** Map QAAP provider credentials for the resolved vendor (NVIDIA NIM, OpenRouter, etc.). */
 export function applyQaapQaiqCredentialEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding, readPref: QaapPreferenceReader): void {
+    if (binding.vendor === QAAP_CUSTOM_OPENAI_VENDOR) {
+        const endpoint = findCustomOpenAiEndpointForModelId(readPref, binding.modelId);
+        if (!endpoint) {
+            return;
+        }
+        const apiKey = typeof endpoint.apiKey === 'string' ? endpoint.apiKey.trim() : '';
+        const url = typeof endpoint.url === 'string' ? endpoint.url.trim() : '';
+        if (apiKey) {
+            env.OPENAI_API_KEY = apiKey;
+        }
+        if (url) {
+            env.OPENAI_BASE_URL = url;
+        }
+        return;
+    }
     applyByokCredentialEnv(env, binding.vendor, readPref);
 }

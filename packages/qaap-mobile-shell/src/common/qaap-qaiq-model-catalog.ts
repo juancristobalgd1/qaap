@@ -7,6 +7,7 @@ import type { QaapQaiqModelOption } from './qaap-agent-task-client';
 import {
     formatQaiqModelProviderLabel,
     listByokModelsFromDescriptor,
+    listCustomOpenAiModels,
     parseTheiaLanguageModelId,
     QAAP_QAIQ_BYOK_PROVIDERS,
     vendorHasByokCredential,
@@ -121,6 +122,9 @@ export function listQaiqModelsFromPreferences(
         for (const model of listByokModelsFromDescriptor(readPref, provider, readEnv)) {
             add(model);
         }
+    }
+    for (const model of listCustomOpenAiModels(readPref, readEnv)) {
+        add(model);
     }
 
     return [...deduped.values()];

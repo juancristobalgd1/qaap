@@ -10,6 +10,19 @@ export type QaapQaiqProviderId = QaapQaiqModelOption['provider'];
 
 export type QaapPreferenceReader = (key: string) => unknown;
 
+export const QAAP_CUSTOM_OPENAI_VENDOR = 'qaap-custom-openai';
+export const QAAP_CUSTOM_OPENAI_ENDPOINTS_PREF = 'ai-features.openAiCustom.customOpenAiModels';
+export const QAAP_CUSTOM_OPENAI_MODEL_PREF = 'ai-features.openAiCustom.customOpenAiModel';
+export const QAAP_CUSTOM_OPENAI_BASE_URL_PREF = 'ai-features.openAiCustom.customOpenAiBaseUrl';
+export const QAAP_CUSTOM_OPENAI_API_KEY_PREF = 'ai-features.openAiCustom.customOpenAiApiKey';
+
+export interface QaapCustomOpenAiEndpointPreference {
+    readonly id?: unknown;
+    readonly model?: unknown;
+    readonly url?: unknown;
+    readonly apiKey?: unknown;
+}
+
 /** Maps a Settings BYOK vendor to QAIQ composer models and runtime credentials. Add new providers here. */
 export interface QaapQaiqByokProviderDescriptor {
     /** Primary vendor prefix in Theia language model ids (`vendor/model`). */
@@ -217,6 +230,11 @@ export function vendorHasByokCredential(
     vendor: string,
     readEnv?: (key: string) => string | undefined,
 ): boolean {
+    if (vendor.trim().toLowerCase() === QAAP_CUSTOM_OPENAI_VENDOR) {
+        return listCustomOpenAiEndpoints(readPref).some(endpoint =>
+            typeof endpoint.apiKey === 'string' && endpoint.apiKey.trim()
+        ) || !!readEnv?.('OPENAI_API_KEY')?.trim();
+    }
     const descriptor = findQaiqByokProvider(vendor);
     return !!descriptor && providerHasByokCredentialOrEnv(readPref, descriptor, readEnv);
 }
@@ -283,6 +301,86 @@ export function listByokModelsFromDescriptor(
     }));
 }
 
+export function listCustomOpenAiEndpoints(readPref: QaapPreferenceReader): QaapCustomOpenAiEndpointPreference[] {
+    const value = readPref(QAAP_CUSTOM_OPENAI_ENDPOINTS_PREF);
+    const endpoints = Array.isArray(value)
+        ? value.filter((entry): entry is QaapCustomOpenAiEndpointPreference => !!entry && typeof entry === 'object')
+        : [];
+    const qaapEndpoint = readQaapCustomOpenAiEndpoint(readPref);
+    if (!qaapEndpoint) {
+        return endpoints;
+    }
+    const qaapId = typeof qaapEndpoint.id === 'string' ? qaapEndpoint.id : undefined;
+    return [
+        qaapEndpoint,
+        ...endpoints.filter(endpoint => typeof endpoint.id !== 'string' || endpoint.id !== qaapId),
+    ];
+}
+
+function readQaapCustomOpenAiEndpoint(readPref: QaapPreferenceReader): QaapCustomOpenAiEndpointPreference | undefined {
+    const model = readString(readPref, QAAP_CUSTOM_OPENAI_MODEL_PREF);
+    const url = readString(readPref, QAAP_CUSTOM_OPENAI_BASE_URL_PREF);
+    const apiKey = readString(readPref, QAAP_CUSTOM_OPENAI_API_KEY_PREF);
+    if (!model && !url && !apiKey) {
+        return undefined;
+    }
+    return {
+        id: model ? `${QAAP_CUSTOM_OPENAI_VENDOR}/${model}` : QAAP_CUSTOM_OPENAI_VENDOR,
+        model,
+        url,
+        apiKey,
+    };
+}
+
+export function customOpenAiModelId(endpoint: QaapCustomOpenAiEndpointPreference): string | undefined {
+    const model = typeof endpoint.model === 'string' ? endpoint.model.trim() : '';
+    if (!model) {
+        return undefined;
+    }
+    return model;
+}
+
+export function customOpenAiEndpointMatchesModelId(endpoint: QaapCustomOpenAiEndpointPreference, modelId: string): boolean {
+    const trimmed = modelId.trim();
+    if (!trimmed) {
+        return false;
+    }
+    const model = customOpenAiModelId(endpoint);
+    const id = typeof endpoint.id === 'string' ? endpoint.id.trim() : '';
+    return trimmed === model
+        || trimmed === id
+        || trimmed === `${QAAP_CUSTOM_OPENAI_VENDOR}/${model}`
+        || (!!id && trimmed === `${QAAP_CUSTOM_OPENAI_VENDOR}/${id}`);
+}
+
+export function findCustomOpenAiEndpointForModelId(
+    readPref: QaapPreferenceReader,
+    modelId: string,
+): QaapCustomOpenAiEndpointPreference | undefined {
+    return listCustomOpenAiEndpoints(readPref).find(endpoint => customOpenAiEndpointMatchesModelId(endpoint, modelId));
+}
+
+export function listCustomOpenAiModels(
+    readPref: QaapPreferenceReader,
+    readEnv?: (key: string) => string | undefined,
+): QaapQaiqModelOption[] {
+    return listCustomOpenAiEndpoints(readPref).reduce<QaapQaiqModelOption[]>((acc, endpoint) => {
+        const modelId = customOpenAiModelId(endpoint);
+        const url = typeof endpoint.url === 'string' ? endpoint.url.trim() : '';
+        const hasKey = typeof endpoint.apiKey === 'string' && endpoint.apiKey.trim() || !!readEnv?.('OPENAI_API_KEY')?.trim();
+        if (!modelId || !url || !hasKey) {
+            return acc;
+        }
+        acc.push({
+            vendor: QAAP_CUSTOM_OPENAI_VENDOR,
+            provider: 'openai',
+            modelId,
+            label: modelId,
+        });
+        return acc;
+    }, []);
+}
+
 export function resolveVendorForModelId(
     readPref: QaapPreferenceReader,
     modelId: string,
@@ -296,6 +394,11 @@ export function resolveVendorForModelId(
         return parsed.vendor;
     }
     const bareModelId = parsed?.modelId ?? trimmed;
+    for (const endpoint of listCustomOpenAiEndpoints(readPref)) {
+        if (customOpenAiEndpointMatchesModelId(endpoint, bareModelId) || customOpenAiEndpointMatchesModelId(endpoint, trimmed)) {
+            return QAAP_CUSTOM_OPENAI_VENDOR;
+        }
+    }
     for (const provider of QAAP_QAIQ_BYOK_PROVIDERS) {
         const ids = listByokModelIds(readPref, provider);
         if (ids.some(id => id === bareModelId || id === trimmed)) {
@@ -316,6 +419,14 @@ export function parseTheiaLanguageModelId(raw: string | undefined): QaapQaiqMode
     }
     const vendorKey = trimmed.slice(0, slash).toLowerCase();
     const rest = trimmed.slice(slash + 1);
+    if (vendorKey === QAAP_CUSTOM_OPENAI_VENDOR) {
+        return {
+            vendor: QAAP_CUSTOM_OPENAI_VENDOR,
+            provider: 'openai',
+            modelId: rest,
+            label: rest,
+        };
+    }
     const descriptor = findQaiqByokProvider(vendorKey);
     if (descriptor) {
         return {
@@ -329,6 +440,9 @@ export function parseTheiaLanguageModelId(raw: string | undefined): QaapQaiqMode
 }
 
 export function formatQaiqModelProviderLabel(vendor: string): string {
+    if (vendor === QAAP_CUSTOM_OPENAI_VENDOR) {
+        return 'Custom OpenAI';
+    }
     const descriptor = findQaiqByokProvider(vendor);
     if (descriptor) {
         return descriptor.label;
@@ -344,6 +458,21 @@ export function applyByokCredentialEnv(
     vendor: string,
     readPref: QaapPreferenceReader,
 ): void {
+    if (vendor === QAAP_CUSTOM_OPENAI_VENDOR) {
+        const endpoint = listCustomOpenAiEndpoints(readPref).find(candidate => !!customOpenAiModelId(candidate));
+        if (!endpoint) {
+            return;
+        }
+        const apiKey = typeof endpoint.apiKey === 'string' ? endpoint.apiKey.trim() : '';
+        const url = typeof endpoint.url === 'string' ? endpoint.url.trim() : '';
+        if (apiKey) {
+            env.OPENAI_API_KEY = apiKey;
+        }
+        if (url) {
+            env.OPENAI_BASE_URL = url;
+        }
+        return;
+    }
     const descriptor = findQaiqByokProvider(vendor);
     if (!descriptor?.credentialEnv) {
         return;

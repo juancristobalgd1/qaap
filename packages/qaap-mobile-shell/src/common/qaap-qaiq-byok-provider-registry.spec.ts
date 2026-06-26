@@ -1,9 +1,16 @@
 import { expect } from 'chai';
 import {
     applyByokCredentialEnv,
+    findCustomOpenAiEndpointForModelId,
     findQaiqByokProvider,
     formatQaiqModelProviderLabel,
+    listCustomOpenAiModels,
     parseTheiaLanguageModelId,
+    QAAP_CUSTOM_OPENAI_API_KEY_PREF,
+    QAAP_CUSTOM_OPENAI_BASE_URL_PREF,
+    QAAP_CUSTOM_OPENAI_ENDPOINTS_PREF,
+    QAAP_CUSTOM_OPENAI_MODEL_PREF,
+    QAAP_CUSTOM_OPENAI_VENDOR,
     resolveVendorForModelId,
 } from './qaap-qaiq-byok-provider-registry';
 
@@ -45,5 +52,77 @@ describe('qaap-qaiq-byok-provider-registry', () => {
         };
         expect(resolveVendorForModelId(readPref, 'Qwen/Qwen3-Coder-Next')).to.equal('huggingface');
         expect(resolveVendorForModelId(readPref, 'huggingface/Qwen/Qwen3-Coder-Next')).to.equal('huggingface');
+    });
+
+    it('maps custom OpenAI-compatible endpoints for QAIQ', () => {
+        const readPref = (key: string): unknown => {
+            if (key === QAAP_CUSTOM_OPENAI_ENDPOINTS_PREF) {
+                return [
+                    {
+                        id: 'qwen-local',
+                        model: 'qwen2.5-coder',
+                        url: 'https://qwen.example/v1',
+                        apiKey: 'sk-qwen',
+                    },
+                    {
+                        id: 'deepseek-remote',
+                        model: 'deepseek-coder',
+                        url: 'https://deepseek.example/v1',
+                        apiKey: 'sk-deepseek',
+                    },
+                ];
+            }
+            return undefined;
+        };
+        expect(parseTheiaLanguageModelId(`${QAAP_CUSTOM_OPENAI_VENDOR}/qwen2.5-coder`)).to.deep.include({
+            vendor: QAAP_CUSTOM_OPENAI_VENDOR,
+            provider: 'openai',
+            modelId: 'qwen2.5-coder',
+        });
+        expect(listCustomOpenAiModels(readPref)).to.deep.equal([{
+            vendor: QAAP_CUSTOM_OPENAI_VENDOR,
+            provider: 'openai',
+            modelId: 'qwen2.5-coder',
+            label: 'qwen2.5-coder',
+        }, {
+            vendor: QAAP_CUSTOM_OPENAI_VENDOR,
+            provider: 'openai',
+            modelId: 'deepseek-coder',
+            label: 'deepseek-coder',
+        }]);
+        expect(resolveVendorForModelId(readPref, 'qwen2.5-coder')).to.equal(QAAP_CUSTOM_OPENAI_VENDOR);
+        expect(resolveVendorForModelId(readPref, 'deepseek-remote')).to.equal(QAAP_CUSTOM_OPENAI_VENDOR);
+        expect(findCustomOpenAiEndpointForModelId(readPref, 'deepseek-remote')?.url).to.equal('https://deepseek.example/v1');
+
+        const env: NodeJS.ProcessEnv = {};
+        applyByokCredentialEnv(env, QAAP_CUSTOM_OPENAI_VENDOR, readPref);
+        expect(env.OPENAI_API_KEY).to.equal('sk-qwen');
+        expect(env.OPENAI_BASE_URL).to.equal('https://qwen.example/v1');
+    });
+
+    it('maps simple AI Features custom endpoint fields for QAIQ', () => {
+        const readPref = (key: string): unknown => {
+            if (key === QAAP_CUSTOM_OPENAI_MODEL_PREF) {
+                return 'deepseek-coder';
+            }
+            if (key === QAAP_CUSTOM_OPENAI_BASE_URL_PREF) {
+                return 'https://simple.example/v1';
+            }
+            if (key === QAAP_CUSTOM_OPENAI_API_KEY_PREF) {
+                return 'sk-simple';
+            }
+            return undefined;
+        };
+        expect(listCustomOpenAiModels(readPref)).to.deep.equal([{
+            vendor: QAAP_CUSTOM_OPENAI_VENDOR,
+            provider: 'openai',
+            modelId: 'deepseek-coder',
+            label: 'deepseek-coder',
+        }]);
+
+        const env: NodeJS.ProcessEnv = {};
+        applyByokCredentialEnv(env, QAAP_CUSTOM_OPENAI_VENDOR, readPref);
+        expect(env.OPENAI_API_KEY).to.equal('sk-simple');
+        expect(env.OPENAI_BASE_URL).to.equal('https://simple.example/v1');
     });
 });

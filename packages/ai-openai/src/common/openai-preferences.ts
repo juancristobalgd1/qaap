@@ -63,7 +63,8 @@ Best effort is made to convert non-conformant schemas, but errors are still poss
             type: 'array',
             title: AI_CORE_PREFERENCES_TITLE,
             markdownDescription: nls.localize('theia/ai/openai/customEndpoints/mdDescription',
-                'Integrate custom models compatible with the OpenAI API, for example via `vllm`. The required attributes are `model` and `url`.\
+                'Custom OpenAI-compatible LLM models. Add one entry per model with its `model` name, `url`, and optional `apiKey`.\
+            This supports multiple custom providers/endpoints in the same list, similar to the model lists for OpenRouter, NVIDIA, Hugging Face, and other providers.\
             \n\
             Optionally, you can\
             \n\
@@ -94,14 +95,15 @@ Best effort is made to convert non-conformant schemas, but errors are still poss
             default: [],
             items: {
                 type: 'object',
+                required: ['model', 'url'],
                 properties: {
                     model: {
                         type: 'string',
-                        title: nls.localize('theia/ai/openai/customEndpoints/modelId/title', 'Model ID')
+                        title: nls.localize('theia/ai/openai/customEndpoints/modelId/title', 'Model Name')
                     },
                     url: {
                         type: 'string',
-                        title: nls.localize('theia/ai/openai/customEndpoints/url/title', 'The Open AI API compatible endpoint where the model is hosted')
+                        title: nls.localize('theia/ai/openai/customEndpoints/url/title', 'API Base URL')
                     },
                     id: {
                         type: 'string',
@@ -110,7 +112,7 @@ Best effort is made to convert non-conformant schemas, but errors are still poss
                     apiKey: {
                         type: ['string', 'boolean'],
                         title: nls.localize('theia/ai/openai/customEndpoints/apiKey/title',
-                            'Either the key to access the API served at the given url or `true` to use the global OpenAI API key'),
+                            'API Key, or `true` to use the global OpenAI API key'),
                     },
                     apiVersion: {
                         type: ['string', 'boolean'],
