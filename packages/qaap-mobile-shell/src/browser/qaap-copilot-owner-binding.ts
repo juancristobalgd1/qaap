@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { CopilotAuthService } from '@theia/ai-copilot/src/common/copilot-auth-service';
 import { readQaapAuthUser } from '@theia/qaap-adapters/src/browser/qaap-auth-session';
@@ -17,11 +17,23 @@ import { readQaapAuthUser } from '@theia/qaap-adapters/src/browser/qaap-auth-ses
 @injectable()
 export class QaapCopilotOwnerBinding implements FrontendApplicationContribution {
 
-    @inject(CopilotAuthService)
-    protected readonly authService: CopilotAuthService;
+    protected authServiceResolver: (() => Promise<CopilotAuthService>) | undefined;
+
+    setAuthServiceResolver(resolver: () => Promise<CopilotAuthService>): void {
+        this.authServiceResolver = resolver;
+    }
 
     onStart(): void {
+        const resolver = this.authServiceResolver;
+        if (!resolver) {
+            console.warn('[qaap-copilot-owner-binding] CopilotAuthService resolver not configured');
+            return;
+        }
         const user = readQaapAuthUser();
-        this.authService.setOwnerLogin(user?.login);
+        // CopilotAuthService is a dynamic value with async dependencies (RemoteConnectionProvider),
+        // so we resolve it lazily to avoid synchronous resolution errors.
+        resolver()
+            .then(authService => authService.setOwnerLogin(user?.login))
+            .catch(e => console.warn('[qaap-copilot-owner-binding] CopilotAuthService not available', e));
     }
 }

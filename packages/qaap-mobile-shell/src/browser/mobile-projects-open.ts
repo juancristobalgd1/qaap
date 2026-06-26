@@ -170,8 +170,8 @@ export function installMobileWorkHubBootGuard(): void {
     if (peekPreferDesktopIde() || hasPendingHubAction) {
         return;
     }
-    // Mobile and desktop both boot into the hub; the IDE is only shown after an explicit in-session
-    // "Open IDE" action.
+    // Work Hub is the default surface on every viewport. The guard is lifted once the
+    // Work Hub/Agents shell has mounted; the classic IDE skips it via `preferDesktopIde`.
     document.documentElement.classList.add(QAAP_MOBILE_WORK_HUB_BOOT_CLASS);
 }
 

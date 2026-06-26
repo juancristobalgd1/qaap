@@ -665,6 +665,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.workHubDiff.setDelegate(this);
         this.landing.syncFromStorage();
         installMobileWorkHubBootGuard();
+        this.armBootGuardSafetyTimeout();
         switch (resolveInitialLandingBodyClass(this.mobileMq?.matches === true)) {
             case 'agents':
                 this.landingLeftThisSession = true;
@@ -675,6 +676,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 document.body.classList.add('theia-mobile-mod-landing');
                 break;
             case 'none':
+                setMobileWorkHubComposerHeaderChrome(false);
                 break;
         }
         this.mobileMq?.addEventListener('change', this.onMediaChange);
@@ -689,6 +691,17 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         if (this.mobileMq?.matches || shouldPreferWorkHubAgentsLayout() || shouldBootstrapMobileAgentsChat()) {
             window.requestAnimationFrame(() => this.onMediaChange());
         }
+    }
+
+    /** Safety net: if the boot guard is still active after 15s, clear it so the user doesn't see a blank screen. */
+    protected armBootGuardSafetyTimeout(): void {
+        const timeout = window.setTimeout(() => {
+            if (document.documentElement.classList.contains('theia-mobile-workhub-boot')) {
+                console.warn('[qaap-mobile-shell] Boot guard still active after 15s — clearing to prevent blank screen');
+                clearMobileWorkHubBootGuard();
+            }
+        }, 15000);
+        this.toDispose.push(Disposable.create(() => window.clearTimeout(timeout)));
     }
 
     /** Persist Agents surface choice so reload / wide viewport does not fall back to the IDE. */

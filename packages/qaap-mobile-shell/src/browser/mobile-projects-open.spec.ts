@@ -8,6 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     clearPreferAgentsSurface,
     clearPreferDesktopIde,
+    installMobileWorkHubBootGuard,
     markMobileProjectsHomeVisible,
     markMobileProjectsPanelDismiss,
     markPreferAgentsSurface,
@@ -33,6 +34,7 @@ describe('mobile-projects-open work hub bootstrap', () => {
     beforeEach(() => {
         storage.clear();
         document.body.className = '';
+        document.documentElement.className = '';
         const sessionStorage = {
             getItem: (key: string) => storage.get(key) ?? null,
             setItem: (key: string, value: string) => { storage.set(key, value); },
@@ -83,6 +85,17 @@ describe('mobile-projects-open work hub bootstrap', () => {
         expect(shouldBootstrapMobileAgentsChat()).to.equal(false);
     });
 
+    it('installs the Work Hub boot guard on desktop viewports by default', () => {
+        installMobileWorkHubBootGuard();
+        expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+    });
+
+    it('does not install the Work Hub boot guard when desktop IDE is active', () => {
+        markPreferDesktopIde();
+        installMobileWorkHubBootGuard();
+        expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(false);
+    });
+
 });
 
 describe('mobile-shell-landing-state', () => {
@@ -106,6 +119,8 @@ describe('mobile-shell-landing-state', () => {
         };
         (global as unknown as { sessionStorage: Storage }).sessionStorage = sessionStorage as Storage;
         Object.defineProperty(window, 'sessionStorage', { value: sessionStorage, configurable: true });
+        clearPreferDesktopIde();
+        clearPreferAgentsSurface();
         window.location.hash = '#/Users/jc/.qaap/workspaces/demo/Mockup';
     });
 

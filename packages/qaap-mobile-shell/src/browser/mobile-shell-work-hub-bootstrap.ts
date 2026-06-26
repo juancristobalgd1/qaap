@@ -111,6 +111,7 @@ export class MobileShellWorkHubBootstrapController {
         }
         if (!this.host.shouldActivateMobileLayout()) {
             clearMobileWorkHubBootGuard();
+            setMobileWorkHubComposerHeaderChrome(false);
             void this.host.ensureWelcomeInMainArea();
             window.requestAnimationFrame(() => { void this.host.ensureDesktopSidePanelSizes(); });
         }
@@ -255,6 +256,11 @@ export class MobileShellWorkHubBootstrapController {
         } finally {
             if (epoch === this.sessionState.agentsBootstrapEpoch) {
                 this.sessionState.agentsBootstrapStarted = false;
+            }
+            // Safety: if bootstrap was aborted or failed, clear the boot guard so the user doesn't
+            // see a permanent blank screen. The 15s safety timeout in onStart is the ultimate fallback.
+            if (document.documentElement.classList.contains('theia-mobile-workhub-boot')) {
+                clearMobileWorkHubBootGuard();
             }
         }
     }

@@ -99,16 +99,19 @@ import { QaapAgentDevPreviewAutopilotContribution } from './qaap-agent-dev-previ
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapCopilotOwnerBinding } from './qaap-copilot-owner-binding';
 import { QaapMobileAppPreferenceContribution } from './qaap-mobile-app-preferences';
+import { CopilotAuthService } from '@theia/ai-copilot/src/common/copilot-auth-service';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { DebugFrontendContribution } from '@theia/memory-inspector/lib/browser/memory-inspector-frontend-contribution';
 import { FileNavigatorWidget } from '@theia/navigator/lib/browser/navigator-widget';
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
+import { NavigatorTabBarDecorator } from '@theia/navigator/lib/browser/navigator-tab-bar-decorator';
 import { QaapAiChatMobileContribution } from './qaap-ai-chat-mobile-contribution';
 import { QaapOutlineMobileContribution } from './qaap-outline-mobile-contribution';
 import { QaapMemoryInspectorMobileContribution } from './qaap-memory-inspector-mobile-contribution';
 import { QaapScmContribution } from './qaap-scm-contribution';
 import { QaapFileNavigatorContribution } from './qaap-file-navigator-contribution';
+import { QaapNavigatorTabBarDecorator } from './qaap-navigator-tab-bar-decorator';
 import { createQaapFileNavigatorWidget } from './qaap-navigator-widget-factory';
 import { QaapVsxExtensionsMobileContribution } from './qaap-vsx-extensions-mobile-contribution';
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
@@ -254,6 +257,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapFileNavigatorContribution).toSelf().inSingletonScope();
     rebind(FileNavigatorContribution).toService(QaapFileNavigatorContribution);
 
+    bind(QaapNavigatorTabBarDecorator).toSelf().inSingletonScope();
+    rebind(NavigatorTabBarDecorator).toService(QaapNavigatorTabBarDecorator);
+
     bind(QaapVsxExtensionsMobileContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapVsxExtensionsMobileContribution);
 
@@ -271,6 +277,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapMobileAppTesterContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapMobileAppTesterContribution);
 
-    bind(QaapCopilotOwnerBinding).toSelf().inSingletonScope();
+    bind(QaapCopilotOwnerBinding).toDynamicValue(ctx => {
+        const binding = new QaapCopilotOwnerBinding();
+        binding.setAuthServiceResolver(() => ctx.container.getAsync<CopilotAuthService>(CopilotAuthService));
+        return binding;
+    }).inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapCopilotOwnerBinding);
 });
