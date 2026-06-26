@@ -33,7 +33,7 @@ import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcri
 import {
     isTranscriptComposerVisualIdle,
 } from '../common/qaap-transcript-stream-status';
-import { resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking } from '../common/qaap-transcript-turn-status';
+import { resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import { resolveLatestRestorableCheckpoint } from '../common/qaap-transcript-checkpoint-restore';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
@@ -253,6 +253,29 @@ export class MobileProjectsTranscriptStickyComposerUi {
     /** Prefer the live inline/overlay host — mount-time chatHost can go stale after renderList(). */
     protected resolveComposerTranscriptChatHost(fallback?: HTMLElement): HTMLElement | undefined {
         return this.host.resolveActiveTranscriptChatHost() ?? fallback;
+    }
+
+    protected syncTranscriptComposerQuickActionsVisibility(
+        host: HTMLElement,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void {
+        const current = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : this.host.transcriptLiveUi.peekCachedOpenTranscript(summary.id);
+        const conv = current ?? {
+            id: summary.id,
+            cwd: summary.cwd,
+            agentId: summary.agentId,
+            title: summary.title,
+            status: summary.status,
+            createdAt: summary.createdAt,
+            updatedAt: summary.updatedAt,
+            messages: [],
+        };
+        host.classList.toggle(
+            'theia-mod-show-quick-actions',
+            shouldShowTranscriptEmptyQuickActions(conv, current),
+        );
     }
 
     async onTranscriptComposerAttach(
@@ -1236,6 +1259,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             && this.host.transcriptComposerHost === host
             && host.childElementCount > 0;
         if (composerStable) {
+            this.syncTranscriptComposerQuickActionsVisibility(host, summary);
             this.host.transcriptComposerSendRefresh?.();
             this.refreshComposerActivityStack();
             return;
@@ -1256,7 +1280,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         this.composerActivityGitFilesByConversationId.delete(summary.id);
         this.host.stickyComposerContextUsageDispose.dispose();
         host.replaceChildren();
-        host.classList.remove('theia-mod-show-quick-actions');
+        this.syncTranscriptComposerQuickActionsVisibility(host, summary);
         const shell = document.createElement('div');
         shell.className = 'theia-mobile-projects-sticky-composer';
         shell.append(this.workHub.createAgentsHubQuickActionsBlock());
@@ -1444,6 +1468,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         shell.append(column);
         host.append(shell);
+        this.syncTranscriptComposerQuickActionsVisibility(host, summary);
         this.syncComposerActivityFingerprint(summary, project);
         if (this.host.transcriptLastConv?.id === summary.id) {
             this.host.transcriptLiveUi.syncTranscriptPendingApproval(this.host.transcriptLastConv);

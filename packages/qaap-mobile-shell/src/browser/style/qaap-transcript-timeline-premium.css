@@ -838,3 +838,163 @@
     transition: none !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Work Hub transcript v2 polish: denser, calmer, and cheaper to paint.
+ * ------------------------------------------------------------------------- */
+
+.theia-mobile-agent-transcript-msg,
+.theia-mobile-agent-transcript-user-wrap {
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-agent-transcript-msg:not(.theia-mod-streaming),
+.theia-mobile-agent-transcript-user-wrap:not(.theia-mod-streaming) {
+  content-visibility: auto;
+  contain: layout style paint;
+  contain-intrinsic-size: auto 160px;
+}
+
+.theia-mobile-agent-transcript-segments {
+  min-width: 0;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace {
+  margin: 6px 0 12px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace>summary,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-sticky-bar {
+  min-height: 30px !important;
+  gap: 10px !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-label,
+.theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-title {
+  font-size: 13px !important;
+  line-height: 1.35;
+  font-weight: 560;
+  letter-spacing: 0 !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-status {
+  font-size: 11px;
+  font-weight: 520;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-chevron {
+  font-size: 13px;
+  opacity: 0.72;
+}
+
+.theia-mobile-agent-trace-glyph {
+  width: 20px !important;
+  height: 20px !important;
+  filter: none !important;
+}
+
+.theia-mobile-agent-trace-glyph::before {
+  left: 7px;
+  top: 6px;
+  width: 11px;
+  height: 13px;
+  border-width: 1.5px;
+  border-radius: 4px;
+}
+
+.theia-mobile-agent-trace-glyph::after {
+  left: 2px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+  border-radius: 4px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] .theia-mobile-agent-activity-timeline-open-panel>.theia-mobile-agent-activity-list {
+  padding: 8px 0 10px !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] .theia-mobile-agent-activity-timeline-open-panel>.theia-mobile-agent-activity-list::before {
+  left: 10px;
+  top: 16px;
+  bottom: 16px;
+  background: color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.24)) 64%, transparent);
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-timeline-current,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-timeline-recent,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-timeline-history {
+  min-height: 30px;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-icon {
+  width: 20px;
+  height: 20px;
+  font-size: 15px;
+  opacity: 0.82;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-icon.codicon {
+  font-size: 15px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-active .theia-mobile-agent-activity-icon {
+  opacity: 1;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-row,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-label {
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-weight: 520;
+  letter-spacing: 0 !important;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-detail.theia-mod-pill,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-tail,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-meta,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-mcp-badge,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-diff-stats {
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-result-preview,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-error-detail {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-history-gap {
+  opacity: 0.78;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-active {
+  background: color-mix(in srgb, var(--theia-foreground) 4%, transparent) !important;
+  border-radius: 6px;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming .theia-mobile-agent-activity-item.theia-mod-active.theia-mod-running .theia-mobile-agent-activity-icon,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming .theia-mobile-agent-activity-item.theia-mod-active.theia-mod-thinking .theia-mobile-agent-activity-icon,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming .theia-mobile-agent-activity-item.theia-mod-active.theia-mod-streaming .theia-mobile-agent-activity-icon,
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming .theia-mobile-agent-activity-item.theia-mod-active.theia-mod-retrying .theia-mobile-agent-activity-icon {
+  animation-duration: 1.8s;
+}
+
+@media (max-width: 640px) {
+
+  .theia-mobile-agent-transcript-msg:not(.theia-mod-streaming),
+  .theia-mobile-agent-transcript-user-wrap:not(.theia-mod-streaming) {
+    contain-intrinsic-size: auto 190px;
+  }
+
+  .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-detail.theia-mod-pill {
+    max-width: min(210px, 58vw);
+  }
+}

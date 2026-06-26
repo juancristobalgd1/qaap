@@ -16840,15 +16840,90 @@ body>.theia-mobile-transcript-files-menu {
 .theia-mobile-agent-transcript.theia-mod-empty-chat {
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
+  justify-content: center;
+  align-items: center;
   flex: 1 1 auto;
   min-height: 0;
   gap: 0;
-  padding-bottom: 0;
+  padding: clamp(24px, 8vh, 72px) 18px calc(var(--qaap-transcript-composer-height, 0px) + 96px);
 }
 
 .theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) {
   justify-content: flex-start;
+  align-items: stretch;
+}
+
+.theia-mobile-agent-transcript-empty-welcome {
+  width: min(100%, 520px);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.theia-mobile-agent-transcript-empty-logo {
+  width: clamp(48px, 8vw, 72px);
+  height: clamp(48px, 8vw, 72px);
+  margin-bottom: 2px;
+  background-image: var(--theia-workbench-brand-logo-url);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  opacity: 0.82;
+  filter: drop-shadow(0 10px 28px color-mix(in srgb, var(--theia-foreground) 12%, transparent));
+}
+
+.theia-mobile-agent-transcript-empty-title {
+  margin: 0;
+  max-width: 14em;
+  color: color-mix(in srgb, var(--theia-foreground) 92%, var(--theia-descriptionForeground));
+  font-size: clamp(24px, 4.4vw, 36px);
+  font-weight: 620;
+  line-height: 1.08;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.theia-mobile-agent-transcript-empty-subtitle {
+  margin: 0;
+  max-width: 34em;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 88%, var(--theia-foreground));
+  font-size: clamp(13px, 1.7vw, 15px);
+  font-weight: 450;
+  line-height: 1.5;
+  letter-spacing: 0;
+  text-wrap: pretty;
+}
+
+.theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) .theia-mobile-agent-transcript-empty-welcome {
+  margin: clamp(12px, 4vh, 32px) auto clamp(20px, 5vh, 40px);
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .theia-mobile-agent-transcript.theia-mod-empty-chat {
+    padding: clamp(18px, 6vh, 52px) 16px calc(var(--qaap-transcript-composer-height, 0px) + 82px);
+  }
+
+  .theia-mobile-agent-transcript-empty-logo {
+    width: 54px;
+    height: 54px;
+  }
+
+  .theia-mobile-agent-transcript-empty-title {
+    font-size: clamp(22px, 7vw, 30px);
+  }
+
+  .theia-mobile-agent-transcript-empty-subtitle {
+    max-width: 28em;
+    font-size: 13px;
+  }
 }
 
 /*

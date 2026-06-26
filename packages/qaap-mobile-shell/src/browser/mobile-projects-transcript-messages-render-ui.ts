@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import { nls } from '@theia/core/lib/common/nls';
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
 import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
@@ -157,6 +158,33 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         return footers;
     }
 
+    protected createTranscriptEmptyWelcome(): HTMLElement {
+        const welcome = document.createElement('section');
+        welcome.className = 'theia-mobile-agent-transcript-empty-welcome';
+        welcome.setAttribute(
+            'aria-label',
+            nls.localize('qaap/mobileProjects/transcriptEmptyWelcomeAria', 'Qaaq welcome'),
+        );
+
+        const logo = document.createElement('div');
+        logo.className = 'theia-mobile-agent-transcript-empty-logo';
+        logo.setAttribute('aria-hidden', 'true');
+
+        const title = document.createElement('h2');
+        title.className = 'theia-mobile-agent-transcript-empty-title';
+        title.textContent = nls.localize('qaap/mobileProjects/transcriptEmptyWelcomeTitle', 'Ready when you are.');
+
+        const subtitle = document.createElement('p');
+        subtitle.className = 'theia-mobile-agent-transcript-empty-subtitle';
+        subtitle.textContent = nls.localize(
+            'qaap/mobileProjects/transcriptEmptyWelcomeSubtitle',
+            'Describe the outcome. Qaaq will plan, execute, and keep every step visible.',
+        );
+
+        welcome.append(logo, title, subtitle);
+        return welcome;
+    }
+
     renderTranscriptMessagesVirtual(host: HTMLElement, conv: QaapAgentConversationDTO): void {
         const normalized = normalizeAgentConversationFailures(conv);
         this.host.transcriptLastConv = normalized;
@@ -207,6 +235,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             messageHost.classList.remove('theia-mod-virtual-scroll');
             messageHost.replaceChildren();
             messageHost.classList.toggle('theia-mod-empty-chat', true);
+            messageHost.append(this.createTranscriptEmptyWelcome());
             this.host.transcriptComposerHost?.classList.toggle('theia-mod-show-quick-actions', true);
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = undefined;

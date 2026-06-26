@@ -23,7 +23,7 @@ describe('qaap-transcript-timeline-visibility', () => {
         expect(policy.visibleItems).to.have.length(12);
     });
 
-    it('collapses long traces while keeping active, error, and last completed steps', () => {
+    it('collapses long traces while keeping active, error, and recent completed steps', () => {
         const items = [
             ...Array.from({ length: 18 }, (_, index) => item(`read-${index}`, 'success')),
             item('npm test failed', 'error'),
@@ -35,10 +35,23 @@ describe('qaap-transcript-timeline-visibility', () => {
         expect(policy.hiddenCount).to.be.greaterThan(0);
         expect(policy.visibleItems.map(entry => entry.label)).to.include.members([
             'npm test failed',
+            'cleanup-1',
+            'cleanup-2',
             'cleanup-3',
             'Editing app.tsx',
         ]);
-        expect(policy.visibleItems).to.have.length(3);
+        expect(policy.visibleItems).to.have.length(5);
+    });
+
+    it('collapses medium traces before they dominate the transcript', () => {
+        const items = Array.from({ length: 15 }, (_, index) => item(`step-${index}`, 'success'));
+        const policy = resolveTranscriptTimelineVisibilityPolicy(items);
+        expect(policy.collapsed).to.equal(true);
+        expect(policy.visibleItems.map(entry => entry.label)).to.deep.equal([
+            'step-12',
+            'step-13',
+            'step-14',
+        ]);
     });
 
     it('still honors an explicit maxVisibleItems cap for plan traces', () => {

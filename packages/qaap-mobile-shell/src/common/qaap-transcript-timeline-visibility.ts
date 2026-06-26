@@ -6,7 +6,8 @@
 import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
 import { isTranscriptActivityLiveState } from './qaap-transcript-activity-step-state';
 
-export const TRANSCRIPT_TIMELINE_COLLAPSE_THRESHOLD = 20;
+export const TRANSCRIPT_TIMELINE_COLLAPSE_THRESHOLD = 14;
+export const TRANSCRIPT_TIMELINE_RECENT_COMPLETED_COUNT = 3;
 
 export interface TranscriptTimelineVisibilityPolicy {
     readonly visibleItems: readonly TranscriptActivityNavigationItem[];
@@ -18,14 +19,18 @@ function findActiveIndex(items: readonly TranscriptActivityNavigationItem[]): nu
     return items.findIndex(item => isTranscriptActivityLiveState(item.state));
 }
 
-function findLastCompletedIndex(items: readonly TranscriptActivityNavigationItem[]): number {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
+function findRecentCompletedIndices(
+    items: readonly TranscriptActivityNavigationItem[],
+    count = TRANSCRIPT_TIMELINE_RECENT_COMPLETED_COUNT,
+): readonly number[] {
+    const indices: number[] = [];
+    for (let index = items.length - 1; index >= 0 && indices.length < count; index -= 1) {
         const state = items[index]?.state;
         if (state === 'success' || state === 'streaming') {
-            return index;
+            indices.unshift(index);
         }
     }
-    return -1;
+    return indices;
 }
 
 function findLastErrorIndex(items: readonly TranscriptActivityNavigationItem[]): number {
@@ -38,8 +43,8 @@ function findLastErrorIndex(items: readonly TranscriptActivityNavigationItem[]):
 }
 
 /**
- * Cursor-style collapse once a turn exceeds {@link TRANSCRIPT_TIMELINE_COLLAPSE_THRESHOLD} steps.
- * Keeps the live step, the latest error, and the latest completed step visible.
+ * Collapse noisy traces once a turn exceeds {@link TRANSCRIPT_TIMELINE_COLLAPSE_THRESHOLD} steps.
+ * Keeps the live step, the latest error, and a small tail of completed work visible.
  */
 export function resolveTranscriptTimelineVisibilityPolicy(
     items: readonly TranscriptActivityNavigationItem[],
@@ -77,8 +82,7 @@ export function resolveTranscriptTimelineVisibilityPolicy(
     if (errorIndex >= 0) {
         keep.add(errorIndex);
     }
-    const completedIndex = findLastCompletedIndex(items);
-    if (completedIndex >= 0) {
+    for (const completedIndex of findRecentCompletedIndices(items)) {
         keep.add(completedIndex);
     }
     if (keep.size === 0) {
