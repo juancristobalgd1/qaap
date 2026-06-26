@@ -5,6 +5,7 @@
 
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { injectable } from '@theia/core/shared/inversify';
+import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 
 /**
  * HTTP contract with `@theia/qaap-cloud-workspace`. The string is duplicated here on purpose:
@@ -16,6 +17,7 @@ const WS_PATH = `${AGENT_TASK_API_PATH}/ws`;
 
 /** Exponential backoff cap for WebSocket reconnects. */
 const RECONNECT_MAX_MS = 30_000;
+const ACTIVE_TASKS_BACKGROUND_CHANGE_COALESCE_MS = 120;
 
 /** Task row as shown in the mobile Projects panel (mirrors VPS agent-task API). */
 export interface MobileProjectTaskView {
@@ -96,6 +98,10 @@ export class MobileProjectsActiveTasks {
     protected agents: MobileProjectAgentDescriptor[] = [];
     protected agentConfigured = false;
     protected defaultAgentId = 'shell';
+    protected readonly changeScheduler = new QaapChatViewStreamUpdateScheduler(
+        () => this.onDidChangeEmitter.fire(),
+        () => this.resolveChangeCoalesceDelayMs(),
+    );
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
     /** Fires whenever the set of active tasks changes (task created, completed, or cancelled). */
@@ -262,7 +268,7 @@ export class MobileProjectsActiveTasks {
         const current = lookupByCwd(this.activeByCwd, cwd);
         if (type === 'created') {
             if (current?.taskId === task.id) {
-                this.onDidChangeEmitter.fire();
+                this.scheduleDidChange();
                 return;
             }
             this.activeByCwd.set(cwd, {
@@ -284,7 +290,7 @@ export class MobileProjectsActiveTasks {
                 });
             }
         }
-        this.onDidChangeEmitter.fire();
+        this.scheduleDidChange();
     }
 
     protected upsertTaskList(task: TaskEventPayload): void {
@@ -316,7 +322,7 @@ export class MobileProjectsActiveTasks {
         for (const [cwd, info] of next) {
             this.activeByCwd.set(cwd, info);
         }
-        this.onDidChangeEmitter.fire();
+        this.scheduleDidChange();
     }
 
     protected replaceTasks(next: Map<string, MobileProjectTaskView[]>): void {
@@ -327,7 +333,18 @@ export class MobileProjectsActiveTasks {
         for (const [cwd, tasks] of next) {
             this.tasksByCwd.set(cwd, tasks);
         }
-        this.onDidChangeEmitter.fire();
+        this.scheduleDidChange();
+    }
+
+    protected scheduleDidChange(): void {
+        this.changeScheduler.schedule();
+    }
+
+    protected resolveChangeCoalesceDelayMs(): number {
+        if (typeof document !== 'undefined' && document.hidden) {
+            return ACTIVE_TASKS_BACKGROUND_CHANGE_COALESCE_MS;
+        }
+        return 0;
     }
 }
 

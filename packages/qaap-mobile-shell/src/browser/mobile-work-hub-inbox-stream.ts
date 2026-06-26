@@ -10,9 +10,11 @@ import {
     type QaapGithubInboxEvent,
     type QaapGithubPullRequestSummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 
 const INBOX_STREAM_URL = `${QAAP_GITHUB_API_PATH}/inbox/stream`;
 const RECONNECT_DELAY_MS = 5_000;
+const INBOX_BACKGROUND_CHANGE_COALESCE_MS = 120;
 
 async function inboxStreamEndpointAvailable(): Promise<boolean> {
     try {
@@ -35,6 +37,10 @@ export class MobileWorkHubInboxStream {
     protected started = false;
     protected streamUnavailable = false;
     protected readonly pullByKey = new Map<string, QaapGithubPullRequestSummary>();
+    protected readonly changeScheduler = new QaapChatViewStreamUpdateScheduler(
+        () => this.onDidChangeEmitter.fire(),
+        () => this.resolveChangeCoalesceDelayMs(),
+    );
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
@@ -50,6 +56,7 @@ export class MobileWorkHubInboxStream {
     stop(): void {
         this.started = false;
         this.closeStream();
+        this.changeScheduler.dispose();
         this.pullByKey.clear();
     }
 
@@ -72,7 +79,7 @@ export class MobileWorkHubInboxStream {
                 this.onPullRequestEvent(ev as MessageEvent<string>);
             });
             source.addEventListener('inbox_refresh', () => {
-                this.onDidChangeEmitter.fire();
+                this.scheduleDidChange();
             });
             source.onerror = () => {
                 this.closeStream();
@@ -106,10 +113,21 @@ export class MobileWorkHubInboxStream {
             } else {
                 this.pullByKey.set(key, payload.pullRequest);
             }
-            this.onDidChangeEmitter.fire();
+            this.scheduleDidChange();
         } catch {
             /* ignore malformed events */
         }
+    }
+
+    protected scheduleDidChange(): void {
+        this.changeScheduler.schedule();
+    }
+
+    protected resolveChangeCoalesceDelayMs(): number {
+        if (typeof document !== 'undefined' && document.hidden) {
+            return INBOX_BACKGROUND_CHANGE_COALESCE_MS;
+        }
+        return 0;
     }
 
     protected closeStream(): void {

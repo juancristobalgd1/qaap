@@ -4,7 +4,33 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { cwdMatchesProject, normalizeCwd, sortTasks, toTaskView } from './mobile-projects-active-tasks';
+import {
+    cwdMatchesProject,
+    MobileProjectsActiveTasks,
+    normalizeCwd,
+    sortTasks,
+    toTaskView,
+} from './mobile-projects-active-tasks';
+
+class TestActiveTasks extends MobileProjectsActiveTasks {
+    protected override resolveChangeCoalesceDelayMs(): number {
+        return 0;
+    }
+
+    flushChanges(): void {
+        this.changeScheduler.flushNow();
+    }
+
+    fireCreated(id: string): void {
+        this.applyEvent('created', {
+            id,
+            cwd: '/repo/mobile',
+            state: 'running',
+            title: id,
+            createdAt: Date.now(),
+        });
+    }
+}
 
 describe('normalizeCwd', () => {
     it('strips trailing slashes', () => {
@@ -107,5 +133,25 @@ describe('toTaskView', () => {
     it('normalizes cwd in the returned view', () => {
         const view = toTaskView({ id: 'x', cwd: '/a/b/', state: 'running', createdAt: 1000 });
         expect(view.cwd).to.equal('/a/b');
+    });
+});
+
+describe('MobileProjectsActiveTasks', () => {
+
+    it('coalesces bursty active-task changes into one UI notification per frame', () => {
+        const activeTasks = new TestActiveTasks();
+        let changeCount = 0;
+        activeTasks.onDidChange(() => { changeCount++; });
+
+        activeTasks.fireCreated('task-1');
+        activeTasks.fireCreated('task-2');
+        activeTasks.fireCreated('task-3');
+
+        expect(activeTasks.getForCwd('/repo/mobile')?.activeCount).to.equal(3);
+        expect(changeCount).to.equal(0);
+
+        activeTasks.flushChanges();
+
+        expect(changeCount).to.equal(1);
     });
 });
