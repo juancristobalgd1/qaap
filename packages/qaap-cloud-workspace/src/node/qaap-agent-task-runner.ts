@@ -1668,19 +1668,41 @@ export class QaapAgentTaskRunner {
     }
 
     protected applyProviderPreferenceEnv(env: NodeJS.ProcessEnv): void {
-        if (!this.preferenceService) {
-            return;
-        }
+        const diskSettings = this.readUserSettingsFromDisk();
         for (const mapping of AGENT_ENV_PREFS) {
             if (env[mapping.env]?.trim()) {
                 continue;
             }
-            const value = this.preferenceService.get<string>(mapping.pref);
+            let value = this.preferenceService?.get<string>(mapping.pref);
+            if (typeof value !== 'string' || !value.trim()) {
+                const diskValue = diskSettings[mapping.pref];
+                if (typeof diskValue === 'string' && diskValue.trim()) {
+                    value = diskValue.trim();
+                }
+            }
             if (typeof value === 'string' && value.trim()) {
                 env[mapping.env] = value.trim();
             }
         }
         this.applyOpenRouterOpenAiCompatEnv(env);
+    }
+
+    /** Fallback when the backend PreferenceService has no User provider (common in VPS containers). */
+    protected readUserSettingsFromDisk(): Record<string, unknown> {
+        try {
+            const settingsPath = path.join(os.homedir(), '.theia', 'settings.json');
+            if (!fs.existsSync(settingsPath)) {
+                return {};
+            }
+            const raw = fs.readFileSync(settingsPath, 'utf8');
+            if (!raw.trim()) {
+                return {};
+            }
+            return JSON.parse(raw) as Record<string, unknown>;
+        } catch (error) {
+            console.warn('[qaap-agent-tasks] failed to read user settings from disk:', error instanceof Error ? error.message : String(error));
+            return {};
+        }
     }
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map OpenRouter prefs when needed. */
