@@ -1705,13 +1705,17 @@ export class QaapAgentTaskRunner {
     }
 
     /** Fallback when the backend PreferenceService has no User provider (common in VPS containers).
-     *  When ownerLogin is provided, reads from the per-user settings file instead of the shared
-     *  ~/.theia/settings.json so API keys don't leak across users. */
+     *  When ownerLogin is provided, prefers the per-user settings file; falls back to the shared
+     *  ~/.theia/settings.json so single-user VPS deployments keep working with Settings → AI. */
     protected readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
         try {
-            const settingsPath = ownerLogin?.trim()
+            const userSettingsPath = ownerLogin?.trim()
                 ? path.join(os.homedir(), '.qaap', 'users', ownerLogin.trim().toLowerCase(), 'settings.json')
-                : path.join(os.homedir(), '.theia', 'settings.json');
+                : undefined;
+            const sharedSettingsPath = path.join(os.homedir(), '.theia', 'settings.json');
+            const settingsPath = userSettingsPath && fs.existsSync(userSettingsPath)
+                ? userSettingsPath
+                : sharedSettingsPath;
             if (!fs.existsSync(settingsPath)) {
                 return {};
             }
