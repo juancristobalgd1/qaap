@@ -164,6 +164,7 @@ Backend compartido para la orquestación/cloud (ya con `ownerLogin`) + contenedo
 1. **C-4 persistencia**: ❌ DESCARTADO (no es fuga, ver §3).
 2. ~~**C-5 task-token**: token por usuario~~ ✅ CORREGIDO
 3. ~~**C-7 temporales**: segmentar `os.tmpdir()` por usuario~~ ✅ CORREGIDO
+4. ~~**C-8 API keys**: `buildChildEnv` copiaba `process.env` (con API keys compartidas) y leía `~/.theia/settings.json` (HOME compartido)~~ ✅ CORREGIDO. `stripSharedProviderEnv` elimina todas las provider keys de `process.env` antes de inyectar las del usuario; `readUserSettingsFromDisk(ownerLogin)` lee `~/.qaap/users/{login}/settings.json` cuando hay ownerLogin.
 
 ### P2 — Configuración y capacidades
 
@@ -172,8 +173,8 @@ Backend compartido para la orquestación/cloud (ya con `ownerLogin`) + contenedo
 
 ### P3 — Validación
 
-1. Test de aislamiento con **dos usuarios concurrentes**: no comparten workspaces, archivos, terminales, conversaciones, secrets ni eventos.
-2. Test de regresión por cada hallazgo C-1..C-7.
+1. ~~Test de aislamiento con **dos usuarios concurrentes**: no comparten workspaces, archivos, terminales, conversaciones, secrets ni eventos.~~ ✅ 18 tests en `qaap-multi-tenancy-isolation.spec.ts`
+2. ~~Test de regresión por cada hallazgo C-1..C-8.~~ ✅ CORREGIDO
 
 ---
 

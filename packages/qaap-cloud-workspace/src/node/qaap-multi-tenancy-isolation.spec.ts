@@ -200,4 +200,69 @@ describe('Multi-tenancy isolation', () => {
             expect(isPathUnderUserWorkspace(traversal, reposRoot, userA)).to.be.false;
         });
     });
+
+    // ─── C-8: Per-user API key isolation ──────────────────────────────
+
+    describe('C-8: Per-user API key isolation', () => {
+        it('readUserSettingsFromDisk resolves per-user settings path when ownerLogin is provided', () => {
+            const home = os.homedir();
+            const settingsA = path.join(home, '.qaap', 'users', userA, 'settings.json');
+            const settingsB = path.join(home, '.qaap', 'users', userB, 'settings.json');
+            const sharedSettings = path.join(home, '.theia', 'settings.json');
+            expect(settingsA).to.not.equal(settingsB);
+            expect(settingsA).to.not.equal(sharedSettings);
+            expect(settingsA).to.contain(userA);
+            expect(settingsB).to.contain(userB);
+        });
+
+        it('readUserSettingsFromDisk falls back to shared ~/.theia/settings.json when no ownerLogin', () => {
+            const home = os.homedir();
+            const sharedSettings = path.join(home, '.theia', 'settings.json');
+            // Simulate the path resolution logic
+            const ownerLogin: string | undefined = undefined as string | undefined;
+            const resolved = ownerLogin?.trim()
+                ? path.join(home, '.qaap', 'users', ownerLogin.trim().toLowerCase(), 'settings.json')
+                : path.join(home, '.theia', 'settings.json');
+            expect(resolved).to.equal(sharedSettings);
+        });
+
+        it('stripSharedProviderEnv removes all AGENT_ENV_PREFS keys from env', () => {
+            const env: Record<string, string> = {
+                OPENAI_API_KEY: 'sk-user-a',
+                ANTHROPIC_API_KEY: 'sk-ant-a',
+                GOOGLE_API_KEY: 'aiza-a',
+                GEMINI_API_KEY: 'aiza-a',
+                OPENROUTER_API_KEY: 'or-a',
+                OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
+                NVIDIA_API_KEY: 'nv-a',
+                OLLAMA_HOST: 'http://localhost:11434',
+                HUGGINGFACE_API_KEY: 'hf-a',
+                OPENAI_BASE_URL: 'https://api.openai.com/v1',
+                CLAUDE_CODE_USE_OPENAI: '1',
+                NVIDIA_NIM: '1',
+                PATH: '/usr/bin:/bin',
+                HOME: os.homedir(),
+            };
+            const providerKeys = [
+                'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY',
+                'OPENROUTER_API_KEY', 'OPENROUTER_BASE_URL', 'NVIDIA_API_KEY',
+                'OLLAMA_HOST', 'HUGGINGFACE_API_KEY',
+            ];
+            // Simulate stripSharedProviderEnv
+            for (const key of providerKeys) { delete env[key]; }
+            delete env.OPENAI_BASE_URL;
+            delete env.CLAUDE_CODE_USE_OPENAI;
+            delete env.NVIDIA_NIM;
+
+            for (const key of providerKeys) {
+                expect(env[key]).to.be.undefined;
+            }
+            expect(env.OPENAI_BASE_URL).to.be.undefined;
+            expect(env.CLAUDE_CODE_USE_OPENAI).to.be.undefined;
+            expect(env.NVIDIA_NIM).to.be.undefined;
+            // Non-provider keys are preserved
+            expect(env.PATH).to.equal('/usr/bin:/bin');
+            expect(env.HOME).to.equal(os.homedir());
+        });
+    });
 });

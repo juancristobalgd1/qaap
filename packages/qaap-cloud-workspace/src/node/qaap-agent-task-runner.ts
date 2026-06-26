@@ -1139,7 +1139,7 @@ export class QaapAgentTaskRunner {
 
     protected previewProviderEnv(): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
-        this.applyProviderPreferenceEnv(env);
+        this.applyProviderPreferenceEnv(env, undefined);
         return env;
     }
 
@@ -1586,7 +1586,11 @@ export class QaapAgentTaskRunner {
     protected buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
         env.PWD = task.cwd;
-        this.applyProviderPreferenceEnv(env);
+        // Strip shared provider API keys from process.env so per-user settings
+        // are the sole source. Without this, User B's agent would inherit User
+        // A's keys (or operator-level keys) from the shared backend process.
+        this.stripSharedProviderEnv(env);
+        this.applyProviderPreferenceEnv(env, task.ownerLogin);
         const binding = this.resolveAgentBindingForTask(task);
         if (binding) {
             applyQaapQaiqModelEnv(env, binding);
@@ -1667,8 +1671,8 @@ export class QaapAgentTaskRunner {
         }
     }
 
-    protected applyProviderPreferenceEnv(env: NodeJS.ProcessEnv): void {
-        const diskSettings = this.readUserSettingsFromDisk();
+    protected applyProviderPreferenceEnv(env: NodeJS.ProcessEnv, ownerLogin?: string): void {
+        const diskSettings = this.readUserSettingsFromDisk(ownerLogin);
         for (const mapping of AGENT_ENV_PREFS) {
             if (env[mapping.env]?.trim()) {
                 continue;
@@ -1687,10 +1691,27 @@ export class QaapAgentTaskRunner {
         this.applyOpenRouterOpenAiCompatEnv(env);
     }
 
-    /** Fallback when the backend PreferenceService has no User provider (common in VPS containers). */
-    protected readUserSettingsFromDisk(): Record<string, unknown> {
+    /** Remove provider API keys inherited from the shared process.env so they
+     *  don't leak across users. Operator-level keys are intentionally stripped;
+     *  each user must configure their own keys via per-user settings. */
+    protected stripSharedProviderEnv(env: NodeJS.ProcessEnv): void {
+        for (const mapping of AGENT_ENV_PREFS) {
+            delete env[mapping.env];
+        }
+        // Also strip compat-derived keys that would short-circuit per-user resolution.
+        delete env.OPENAI_BASE_URL;
+        delete env.CLAUDE_CODE_USE_OPENAI;
+        delete env.NVIDIA_NIM;
+    }
+
+    /** Fallback when the backend PreferenceService has no User provider (common in VPS containers).
+     *  When ownerLogin is provided, reads from the per-user settings file instead of the shared
+     *  ~/.theia/settings.json so API keys don't leak across users. */
+    protected readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
         try {
-            const settingsPath = path.join(os.homedir(), '.theia', 'settings.json');
+            const settingsPath = ownerLogin?.trim()
+                ? path.join(os.homedir(), '.qaap', 'users', ownerLogin.trim().toLowerCase(), 'settings.json')
+                : path.join(os.homedir(), '.theia', 'settings.json');
             if (!fs.existsSync(settingsPath)) {
                 return {};
             }
