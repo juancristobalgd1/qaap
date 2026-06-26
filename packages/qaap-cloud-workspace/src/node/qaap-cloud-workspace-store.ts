@@ -94,15 +94,16 @@ export class QaapCloudWorkspaceStore {
         return updated;
     }
 
-    async updatePreviewPort(repoKey: string, port: number): Promise<void> {
+    async updatePreviewPort(repoKey: string, port: number, ownerLogin?: string): Promise<boolean> {
         const all = await this.readAll();
         for (const [id, row] of Object.entries(all)) {
-            if (row.repoKey === repoKey) {
+            if (row.repoKey === repoKey && row.ownerLogin === ownerLogin) {
                 all[id] = { ...row, previewPort: port, lastOpenedAt: new Date().toISOString() };
                 await this.writeAll(all);
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     protected async readAll(): Promise<Record<string, QaapCloudWorkspaceSummary>> {

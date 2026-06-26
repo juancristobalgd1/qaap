@@ -12,8 +12,8 @@ import type { QaapDeployEnvVar, QaapDeployRunRequest, QaapDeployRunResponse } fr
 @injectable()
 export class QaapDeployRunner {
 
-    async run(request: QaapDeployRunRequest): Promise<QaapDeployRunResponse> {
-        const envMap = await this.loadEnv(request.workspaceKey);
+    async run(request: QaapDeployRunRequest, ownerLogin?: string): Promise<QaapDeployRunResponse> {
+        const envMap = await this.loadEnv(request.workspaceKey, ownerLogin);
         const env = { ...process.env, ...Object.fromEntries(envMap.entries()) };
         if (request.provider === 'vercel') {
             return this.runCli(request, env, [
@@ -57,14 +57,15 @@ export class QaapDeployRunner {
         return match?.[0];
     }
 
-    protected deployEnvPath(workspaceKey: string): string {
+    protected deployEnvPath(workspaceKey: string, ownerLogin?: string): string {
         const safe = workspaceKey.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80);
-        return `${process.env.HOME ?? ''}/.qaap/deploy-env/${safe}.json`;
+        const userSegment = ownerLogin ? `${ownerLogin.replace(/[^a-zA-Z0-9._-]+/g, '_')}/` : '';
+        return `${process.env.HOME ?? ''}/.qaap/deploy-env/${userSegment}${safe}.json`;
     }
 
-    protected async loadEnv(workspaceKey: string): Promise<Map<string, string>> {
+    protected async loadEnv(workspaceKey: string, ownerLogin?: string): Promise<Map<string, string>> {
         try {
-            const raw = await fs.readFile(this.deployEnvPath(workspaceKey), 'utf8');
+            const raw = await fs.readFile(this.deployEnvPath(workspaceKey, ownerLogin), 'utf8');
             const parsed = JSON.parse(raw) as { vars?: QaapDeployEnvVar[] };
             const vars = Array.isArray(parsed.vars) ? parsed.vars : [];
             return new Map(vars.filter(v => v.key?.trim()).map(v => [v.key, v.value]));

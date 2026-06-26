@@ -13,6 +13,45 @@ import {
     resolveUserReposRoot,
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import type {
+    QaapCloudWorkspaceSummary,
+    QaapTerminalSessionRecord,
+} from '../common/qaap-cloud-api-types';
+import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
+import { QaapDeployRunner } from './qaap-deploy-runner';
+import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
+
+type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
+
+class InMemoryCloudWorkspaceStore extends QaapCloudWorkspaceStore {
+    data: Record<string, QaapCloudWorkspaceSummary> = {};
+
+    protected override async readAll(): Promise<Record<string, QaapCloudWorkspaceSummary>> {
+        return { ...this.data };
+    }
+
+    protected override async writeAll(data: Record<string, QaapCloudWorkspaceSummary>): Promise<void> {
+        this.data = { ...data };
+    }
+}
+
+class InMemoryTerminalSessionStore extends QaapTerminalSessionStore {
+    data: Record<string, TerminalStoreEntry> = {};
+
+    protected override async readAll(): Promise<Record<string, TerminalStoreEntry>> {
+        return { ...this.data };
+    }
+
+    protected override async writeAll(data: Record<string, TerminalStoreEntry>): Promise<void> {
+        this.data = { ...data };
+    }
+}
+
+class InspectableDeployRunner extends QaapDeployRunner {
+    pathFor(workspaceKey: string, ownerLogin?: string): string {
+        return this.deployEnvPath(workspaceKey, ownerLogin);
+    }
+}
 
 /**
  * Multi-tenancy isolation regression tests.
@@ -198,6 +237,83 @@ describe('Multi-tenancy isolation', () => {
         it('path traversal attempts are rejected', () => {
             const traversal = path.join(resolveUserReposRoot(reposRoot, userA), '..', '..', userB, 'octocat', 'hello-world');
             expect(isPathUnderUserWorkspace(traversal, reposRoot, userA)).to.be.false;
+        });
+    });
+
+    // ─── Cloud workspace metadata scoping ────────────────────────────
+
+    describe('Cloud workspace metadata scoping', () => {
+        it('updates preview ports only on the matching owner workspace', async () => {
+            const store = new InMemoryCloudWorkspaceStore();
+            await store.ensure({ repoKey: 'octocat/hello-world' }, userA);
+            await store.ensure({ repoKey: 'octocat/hello-world' }, userB);
+
+            const updated = await store.updatePreviewPort('octocat/hello-world', 5173, userB);
+
+            const workspacesA = await store.list(userA);
+            const workspacesB = await store.list(userB);
+            expect(updated).to.be.true;
+            expect(workspacesA).to.have.length(1);
+            expect(workspacesB).to.have.length(1);
+            expect(workspacesA[0].previewPort).to.be.undefined;
+            expect(workspacesB[0].previewPort).to.equal(5173);
+        });
+
+        it('refuses preview port updates when only another owner has the repoKey', async () => {
+            const store = new InMemoryCloudWorkspaceStore();
+            await store.ensure({ repoKey: 'octocat/hello-world' }, userA);
+
+            const updated = await store.updatePreviewPort('octocat/hello-world', 5173, userB);
+
+            const workspacesA = await store.list(userA);
+            expect(updated).to.be.false;
+            expect(workspacesA[0].previewPort).to.be.undefined;
+        });
+    });
+
+    // ─── Terminal session metadata scoping ───────────────────────────
+
+    describe('Terminal session metadata scoping', () => {
+        it('keeps terminal sessions separate for the same workspaceKey across users', async () => {
+            const store = new InMemoryTerminalSessionStore();
+            const terminalA: QaapTerminalSessionRecord = { id: 'term-a', title: 'Alice shell' };
+            const terminalB: QaapTerminalSessionRecord = { id: 'term-b', title: 'Bob shell' };
+
+            await store.upsert({ workspaceKey: 'octocat/hello-world', terminals: [terminalA] }, userA);
+            await store.upsert({ workspaceKey: 'octocat/hello-world', terminals: [terminalB] }, userB);
+
+            expect(await store.get('octocat/hello-world', userA)).to.deep.equal([terminalA]);
+            expect(await store.get('octocat/hello-world', userB)).to.deep.equal([terminalB]);
+        });
+
+        it('does not expose legacy unowned terminal sessions to authenticated users', async () => {
+            const store = new InMemoryTerminalSessionStore();
+            const legacyTerminal: QaapTerminalSessionRecord = { id: 'legacy', title: 'Legacy shell' };
+            store.data['octocat/hello-world'] = {
+                updatedAt: new Date().toISOString(),
+                terminals: [legacyTerminal],
+            };
+
+            expect(await store.get('octocat/hello-world', userA)).to.deep.equal([]);
+            expect(await store.get('octocat/hello-world')).to.deep.equal([legacyTerminal]);
+        });
+    });
+
+    // ─── Deploy environment scoping ──────────────────────────────────
+
+    describe('Deploy environment scoping', () => {
+        it('resolves deploy env files under per-user directories', () => {
+            const runner = new InspectableDeployRunner();
+
+            const envA = runner.pathFor('octocat/hello-world', userA);
+            const envB = runner.pathFor('octocat/hello-world', userB);
+            const shared = runner.pathFor('octocat/hello-world');
+
+            expect(envA).to.not.equal(envB);
+            expect(envA).to.not.equal(shared);
+            expect(envB).to.not.equal(shared);
+            expect(envA).to.contain(userA);
+            expect(envB).to.contain(userB);
         });
     });
 

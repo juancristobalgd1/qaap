@@ -147,12 +147,13 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             this.auth.denyForbidden(res, req, 'workspace_path', { workspaceKey: body.workspaceKey });
             return;
         }
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
         const result = await this.deployRunner.run({
             provider: body.provider,
             workspaceKey: body.workspaceKey,
             workspaceRoot: body.workspaceRoot,
             projectName: body.projectName,
-        });
+        }, ownerLogin);
         res.json(result);
     }
 
@@ -215,10 +216,14 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         }
         const origin = this.resolvePublicOrigin(req);
         const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
-        const summary = await this.shares.create(port, body.repoKey, origin, ownerLogin);
         if (body.repoKey) {
-            await this.workspaces.updatePreviewPort(body.repoKey, port);
+            const updated = await this.workspaces.updatePreviewPort(body.repoKey, port, ownerLogin);
+            if (!updated) {
+                res.status(403).json({ error: 'repoKey is not owned by the authenticated user' });
+                return;
+            }
         }
+        const summary = await this.shares.create(port, body.repoKey, origin, ownerLogin);
         res.json({ share: summary });
     }
 

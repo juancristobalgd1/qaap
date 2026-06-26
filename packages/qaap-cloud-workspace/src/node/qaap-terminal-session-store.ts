@@ -19,11 +19,11 @@ export class QaapTerminalSessionStore {
 
     async get(workspaceKey: string, ownerLogin?: string): Promise<QaapTerminalSessionRecord[]> {
         const all = await this.readAll();
-        const entry = all[workspaceKey];
+        const entry = all[this.storageKey(workspaceKey, ownerLogin)];
         if (!entry) {
             return [];
         }
-        if (ownerLogin && entry.ownerLogin && entry.ownerLogin !== ownerLogin) {
+        if (ownerLogin && entry.ownerLogin !== ownerLogin) {
             return [];
         }
         return entry.terminals ?? [];
@@ -31,12 +31,17 @@ export class QaapTerminalSessionStore {
 
     async upsert(request: QaapTerminalSessionsUpsertRequest, ownerLogin?: string): Promise<void> {
         const all = await this.readAll();
-        all[request.workspaceKey] = {
+        all[this.storageKey(request.workspaceKey, ownerLogin)] = {
             updatedAt: new Date().toISOString(),
             terminals: request.terminals,
             ...(ownerLogin ? { ownerLogin } : {}),
         };
         await this.writeAll(all);
+    }
+
+    protected storageKey(workspaceKey: string, ownerLogin?: string): string {
+        const owner = ownerLogin?.trim().toLowerCase();
+        return owner ? `user:${encodeURIComponent(owner)}:${workspaceKey}` : workspaceKey;
     }
 
     protected async readAll(): Promise<Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>> {
