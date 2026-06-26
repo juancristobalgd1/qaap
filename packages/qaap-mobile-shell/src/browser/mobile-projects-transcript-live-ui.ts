@@ -72,7 +72,7 @@ import { scheduleTranscriptIdleWork, type TranscriptIdleWorkHandle } from '../co
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
-import { resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
+import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import {
     QaapTranscriptLiveController,
     type QaapTranscriptLiveRefreshOptions,
@@ -603,7 +603,8 @@ export class MobileProjectsTranscriptLiveUi {
             this.host.transcriptLastStatus = resolveTranscriptEffectiveStatus(this.host.transcriptLastConv);
         }
         const settled = this.host.transcriptOpenSummary;
-        if (settled && this.host.transcriptHeaderUi.resolveActiveChatEffectiveStatus(settled) !== 'streaming') {
+        const activeConv = this.host.transcriptLastConv?.id === settled?.id ? this.host.transcriptLastConv : undefined;
+        if (settled && !isTranscriptAgentExecutionBusy(settled, activeConv)) {
             void this.host.transcriptStickyComposerUi.flushTranscriptFollowUpQueue(project, settled);
         }
         void this.finalizeTranscriptDevPreviewAfterSettle();

@@ -8,6 +8,7 @@ import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client'
 import {
     isAgentMessageVisuallySettled,
     isConversationTurnVisuallySettled,
+    resolveTranscriptAgentExecutionState,
     isTranscriptAgentTailStreaming,
     isTranscriptSummaryAgentWorking,
     resolveTranscriptEffectiveStatus,
@@ -207,7 +208,7 @@ describe('qaap-transcript-turn-status', () => {
         expect(shouldShowTranscriptEmptyQuickActions(waitingForAgent)).to.equal(false);
     });
 
-    it('isTranscriptSummaryAgentWorking respects visually settled streaming turns', () => {
+    it('keeps visually settled streaming turns busy until the backend reaches ready', () => {
         const summary = { id: 'c1', status: 'streaming' as const };
         const settledTurn = conv({
             messages: [
@@ -224,9 +225,15 @@ describe('qaap-transcript-turn-status', () => {
                 },
             ],
         });
-        expect(isTranscriptSummaryAgentWorking(summary, settledTurn)).to.equal(false);
-        expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'settled' }, undefined)).to.equal(false);
+        expect(resolveTranscriptEffectiveStatus(settledTurn)).to.equal('settled');
+        expect(resolveTranscriptAgentExecutionState(summary, settledTurn)).to.deep.equal({
+            phase: 'finalizing',
+            busy: true,
+        });
+        expect(isTranscriptSummaryAgentWorking(summary, settledTurn)).to.equal(true);
+        expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'settled' }, undefined)).to.equal(true);
         expect(isTranscriptSummaryAgentWorking(summary, undefined)).to.equal(true);
+        expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'idle' }, { ...settledTurn, status: 'idle' })).to.equal(false);
     });
 
     it('resolveTranscriptEffectiveStatus keeps failed over unfinished trace work', () => {

@@ -6,6 +6,13 @@
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { hasActiveQaapTraceWork, resolveQaapTranscriptTrace } from './qaap-transcript-trace-model';
 
+export type TranscriptAgentExecutionPhase = 'working' | 'finalizing' | 'ready' | 'failed';
+
+export interface TranscriptAgentExecutionState {
+    readonly phase: TranscriptAgentExecutionPhase;
+    readonly busy: boolean;
+}
+
 export function hasUnfinishedAgentWork(conv: QaapAgentConversationDTO): boolean {
     return conv.messages.some(message => message.role === 'agent' && hasUnfinishedAgentMessageWork(message));
 }
@@ -57,7 +64,7 @@ export function isAgentMessageVisuallySettled(message: QaapAgentMessageDTO): boo
     return !!(message.content?.trim());
 }
 
-/** UI-facing status — maps visually settled streaming turns to idle for chrome/composer. */
+/** Render-facing status — a visually complete streaming turn renders as settled, not as token stream. */
 export function resolveTranscriptEffectiveStatus(
     conv: QaapAgentConversationDTO,
 ): QaapAgentConversationDTO['status'] {
@@ -70,13 +77,54 @@ export function resolveTranscriptEffectiveStatus(
     if (conv.status !== 'streaming') {
         return conv.status;
     }
-    // When the turn is visually settled but the backend VPS task is still attached (e.g. a dev
-    // server keeps the process alive after the model finished the turn), return 'settled' so
-    // the UI can show background-activity indicators instead of falsely appearing idle.
+    // When the turn is visually settled but the backend task is still attached, return 'settled'
+    // for transcript rendering only. Execution chrome must use resolveTranscriptAgentExecutionState.
     if (isConversationTurnVisuallySettled(conv)) {
         return 'settled';
     }
     return 'streaming';
+}
+
+/** Single source of truth for visual agent execution chrome: Stop, composer glow, header state. */
+export function resolveTranscriptAgentExecutionState(
+    summary: Pick<QaapAgentConversationSummaryDTO, 'id' | 'status'> | undefined,
+    conv: QaapAgentConversationDTO | undefined,
+): TranscriptAgentExecutionState {
+    if (conv && (!summary || conv.id === summary.id)) {
+        if (conv.status === 'failed') {
+            return { phase: 'failed', busy: false };
+        }
+        if (hasUnfinishedAgentWork(conv)) {
+            return { phase: 'working', busy: true };
+        }
+        if (conv.status === 'streaming') {
+            return {
+                phase: isConversationTurnVisuallySettled(conv) ? 'finalizing' : 'working',
+                busy: true,
+            };
+        }
+        if (conv.status === 'settled') {
+            return { phase: 'finalizing', busy: true };
+        }
+        return { phase: 'ready', busy: false };
+    }
+    if (summary?.status === 'failed') {
+        return { phase: 'failed', busy: false };
+    }
+    if (summary?.status === 'streaming') {
+        return { phase: 'working', busy: true };
+    }
+    if (summary?.status === 'settled') {
+        return { phase: 'finalizing', busy: true };
+    }
+    return { phase: 'ready', busy: false };
+}
+
+export function isTranscriptAgentExecutionBusy(
+    summary: Pick<QaapAgentConversationSummaryDTO, 'id' | 'status'> | undefined,
+    conv: QaapAgentConversationDTO | undefined,
+): boolean {
+    return resolveTranscriptAgentExecutionState(summary, conv).busy;
 }
 
 /** True while the UI should treat the conversation as an in-flight agent turn (composer stop, stall watch). */
@@ -84,14 +132,7 @@ export function isTranscriptSummaryAgentWorking(
     summary: Pick<QaapAgentConversationSummaryDTO, 'id' | 'status'>,
     conv: QaapAgentConversationDTO | undefined,
 ): boolean {
-    if (conv && conv.id === summary.id) {
-        const effective = resolveTranscriptEffectiveStatus(conv);
-        if (effective === 'failed') {
-            return false;
-        }
-        return effective === 'streaming';
-    }
-    return summary.status === 'streaming';
+    return isTranscriptAgentExecutionBusy(summary, conv);
 }
 
 /**

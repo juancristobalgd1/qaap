@@ -29,11 +29,7 @@ import {
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
-import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
-import {
-    isTranscriptComposerVisualIdle,
-} from '../common/qaap-transcript-stream-status';
-import { resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
+import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import { resolveLatestRestorableCheckpoint } from '../common/qaap-transcript-checkpoint-restore';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
@@ -965,9 +961,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
             return false;
         }
         if (this.host.transcriptLastConv?.id === summary.id) {
-            return resolveTranscriptEffectiveStatus(this.host.transcriptLastConv) !== 'streaming';
+            return !isTranscriptAgentExecutionBusy(summary, this.host.transcriptLastConv);
         }
-        return summary.status !== 'streaming';
+        return !isTranscriptAgentExecutionBusy(summary, undefined);
     }
 
     async flushTranscriptFollowUpQueue(
@@ -1024,22 +1020,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     isTranscriptStickyComposerAgentBeamIdle(): boolean {
-        if (!this.isTranscriptStickyComposerAgentWorking()) {
-            return false;
-        }
-        const summary = this.host.transcriptComposerSummary;
-        if (!summary) {
-            return true;
-        }
-        const conv = this.host.transcriptLastConv?.id === summary.id
-            ? this.host.transcriptLastConv
-            : undefined;
-        const segments = conv ? resolveTranscriptStreamingAgentSegments(conv) : [];
-        return isTranscriptComposerVisualIdle(
-            segments,
-            conv ? resolveTranscriptEffectiveStatus(conv) === 'streaming' : summary.status === 'streaming',
-            this.host.transcriptLastStreamProgressAt,
-        );
+        return false;
     }
 
     applyTranscriptComposerPrefsFromConversation(

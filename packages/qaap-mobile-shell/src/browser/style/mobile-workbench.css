@@ -23990,7 +23990,7 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
    .qaap-border-beam-bloom = glow desenfocado que persigue el haz. El ángulo gira en el host
    (custom property registrada, inherits: true) para que las 3 capas compartan la misma fase.
    La clase theia-mod-agent-working la togglea updateSend() en mobile-projects-sticky-composer-column-ui.ts.
-   theia-mod-agent-working-idle mantiene un borde estático sin beam durante thinking-only. */
+   El transcript mantiene esa clase durante todo el ciclo busy: working → finalizing → ready. */
 @property --qaap-border-beam-angle {
   syntax: '<angle>';
   initial-value: 0deg;

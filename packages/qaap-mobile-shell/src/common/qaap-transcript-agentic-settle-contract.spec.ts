@@ -6,7 +6,7 @@
 /**
  * Agentic workspace contract #1:
  * When a turn is visually complete but the VPS task is still attached (status=streaming),
- * every UI surface must agree on "settled/finalizing" — never show live-working chrome.
+ * every UI surface must agree on "finalizing": settled transcript render, but busy chrome.
  */
 
 import { expect } from 'chai';
@@ -14,6 +14,7 @@ import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client'
 import { resolveTranscriptStreamHealth } from './qaap-transcript-stream-health';
 import {
     isConversationTurnVisuallySettled,
+    resolveTranscriptAgentExecutionState,
     isTranscriptAgentTailStreaming,
     isTranscriptSummaryAgentWorking,
     resolveTranscriptEffectiveStatus,
@@ -64,11 +65,15 @@ describe('qaap-transcript-agentic-settle-contract', () => {
         expect(resolveTranscriptEffectiveStatus(conv)).to.equal('settled');
     });
 
-    it('does not treat settled turns as agent-working for composer chrome', () => {
+    it('keeps finalizing turns agent-working for composer chrome and Stop', () => {
         const conv = visuallyCompleteStreamingTurn();
         const summary = { id: conv.id, status: 'streaming' as const };
-        expect(isTranscriptSummaryAgentWorking(summary, conv)).to.equal(false);
-        expect(isTranscriptSummaryAgentWorking({ id: conv.id, status: 'settled' }, undefined)).to.equal(false);
+        expect(resolveTranscriptAgentExecutionState(summary, conv)).to.deep.equal({
+            phase: 'finalizing',
+            busy: true,
+        });
+        expect(isTranscriptSummaryAgentWorking(summary, conv)).to.equal(true);
+        expect(isTranscriptSummaryAgentWorking({ id: conv.id, status: 'settled' }, undefined)).to.equal(true);
     });
 
     it('does not keep transcript tail in streaming rendering mode once settled', () => {
