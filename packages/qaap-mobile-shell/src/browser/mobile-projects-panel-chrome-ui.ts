@@ -20,6 +20,7 @@ export interface MobileProjectsPanelChromeHost {
     headerBackBtn: HTMLButtonElement;
     sessionsMenuBtn: HTMLButtonElement;
     headerNewChatBtn: HTMLButtonElement;
+    headerOverflowMenuBtn: HTMLButtonElement;
     titleEl: HTMLHeadingElement;
     titleAttentionEl: HTMLSpanElement;
     headerExecutionCluster: HTMLElement;
@@ -43,6 +44,7 @@ export interface MobileProjectsPanelChromeHost {
     handleHeaderBackClick(): void;
     openWorkHubSessionsSidebar(): void;
     onHeaderNewChatClick(): Promise<void>;
+    onHeaderOverflowMenuClick(event: MouseEvent): void;
     workHubSearchUi: import('./mobile-projects-work-hub-search-ui').MobileProjectsWorkHubSearchUi;
     onNewClick(): Promise<void>;
     onTitleTap(): void;
@@ -142,6 +144,16 @@ export class MobileProjectsPanelChromeUi {
             event.stopPropagation();
             void this.host.onHeaderNewChatClick();
         });
+        this.host.headerOverflowMenuBtn = document.createElement('button');
+        this.host.headerOverflowMenuBtn.type = 'button';
+        this.host.headerOverflowMenuBtn.className = 'theia-workbench-nav-btn qaap-work-hub-toolbar-menu-button codicon codicon-ellipsis';
+        this.host.headerOverflowMenuBtn.hidden = true;
+        this.host.headerOverflowMenuBtn.setAttribute('aria-hidden', 'true');
+        this.host.headerOverflowMenuBtn.title = nls.localize('qaap/workHubToolbar/moreActions', 'More actions');
+        this.host.headerOverflowMenuBtn.setAttribute('aria-label', this.host.headerOverflowMenuBtn.title);
+        this.host.headerOverflowMenuBtn.setAttribute('aria-haspopup', 'menu');
+        this.host.headerOverflowMenuBtn.setAttribute('aria-expanded', 'false');
+        this.host.headerOverflowMenuBtn.addEventListener('click', event => this.host.onHeaderOverflowMenuClick(event));
 
         this.host.searchToggleBtn = document.createElement('button');
         this.host.searchToggleBtn.type = 'button';
@@ -156,7 +168,7 @@ export class MobileProjectsPanelChromeUi {
         });
 
         this.host.headerExecutionCluster.append(
-            this.host.headerNewChatBtn,
+            this.host.headerOverflowMenuBtn,
             this.host.headerExecutionTabsHost,
         );
         actions.append(

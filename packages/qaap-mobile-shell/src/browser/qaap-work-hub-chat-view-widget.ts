@@ -24,6 +24,7 @@ import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { Widget as LuminoWidget } from '@lumino/widgets';
+import { Message } from '@lumino/messaging';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
@@ -36,7 +37,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import { MobileProjectsPanel } from './mobile-projects-panel';
+import { MobileProjectsHeaderOverflowMenuItem, MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
 import { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsHubView } from './mobile-projects-types';
@@ -146,6 +147,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     ) {
         super(treeWidget, inputWidget);
         this.node.classList.add('qaap-work-hub-chat-view-widget');
+        this.node.tabIndex = -1;
     }
 
     @postConstruct()
@@ -217,6 +219,9 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 openWorkHubPreferencesSheet: query => this.openWorkHubPreferencesSheet(query),
                 openWorkHubAiConfigurationSheet: tabId => this.openWorkHubAiConfigurationSheet(tabId),
             },
+            panelOptions: {
+                headerOverflowMenuGroups: () => this.createIdeHeaderOverflowMenuGroups(),
+            },
         });
 
         this.workHubPanel = factory.create(true);
@@ -232,6 +237,23 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
         this.installToolbarOverflowMenu();
         window.requestAnimationFrame(() => this.installToolbarOverflowMenu());
         this.toDispose.push(this.progressBarFactory({ container: this.node, insertMode: 'prepend', locationId: 'ai-chat' }));
+    }
+
+    protected override onActivateRequest(msg: Message): void {
+        super.onActivateRequest(msg);
+        this.focusWorkHubChatView();
+    }
+
+    protected focusWorkHubChatView(): void {
+        const target = this.workHubPanel?.node.querySelector<HTMLElement>(
+            'textarea, input, [contenteditable="true"], button:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ) ?? this.node;
+        target.focus({ preventScroll: true });
+        window.requestAnimationFrame(() => {
+            if (!this.node.contains(document.activeElement)) {
+                this.node.focus({ preventScroll: true });
+            }
+        });
     }
 
     protected navigateWorkHub(view: MobileProjectsHubView): void {
@@ -264,8 +286,43 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
         await this.aiConfigurationSheet.show(tabId);
     }
 
+    protected createIdeHeaderOverflowMenuGroups(): MobileProjectsHeaderOverflowMenuItem[][] {
+        return [
+            [
+                this.createIdeCommandMenuItem('Navigate Back', 'codicon-arrow-left', ChatCommands.AI_CHAT_NAVIGATE_BACK.id),
+                this.createIdeCommandMenuItem('Navigate Forward', 'codicon-arrow-right', ChatCommands.AI_CHAT_NAVIGATE_FORWARD.id),
+            ],
+            [
+                this.createIdeCommandMenuItem('Session Settings', 'codicon-bracket', ChatCommands.EDIT_SESSION_SETTINGS.id),
+            ],
+            [
+                this.createIdeCommandMenuItem('Summarize Current Session', 'codicon-go-to-editing-session', ChatCommands.AI_CHAT_SUMMARIZE_CURRENT_SESSION.id),
+                this.createIdeCommandMenuItem('Open Current Summary', 'codicon-note', ChatCommands.AI_CHAT_OPEN_SUMMARY_FOR_CURRENT_SESSION.id),
+                this.createIdeCommandMenuItem(
+                    this.isLocked ? 'Turn Auto Scrolling On' : 'Turn Auto Scrolling Off',
+                    this.isLocked ? 'codicon-lock' : 'codicon-unlock',
+                    this.isLocked ? ChatCommands.SCROLL_UNLOCK_WIDGET.id : ChatCommands.SCROLL_LOCK_WIDGET.id,
+                ),
+            ],
+        ];
+    }
+
+    protected createIdeCommandMenuItem(label: string, icon: string, command: string): MobileProjectsHeaderOverflowMenuItem {
+        return {
+            label,
+            icon,
+            command,
+            isVisible: () => this.commands.isVisible(command, this),
+            isEnabled: () => this.commands.isEnabled(command, this),
+            run: () => this.commands.executeCommand(command, this),
+        };
+    }
+
     protected installToolbarOverflowMenu(): void {
         if (this.toolbarMenuButton || !this.workHubPanel?.node.isConnected) {
+            return;
+        }
+        if (this.workHubPanel.node.querySelector('.qaap-work-hub-toolbar-menu-button')) {
             return;
         }
         const cluster = this.workHubPanel.node.querySelector<HTMLElement>('.theia-mobile-projects-header-execution-cluster');

@@ -16,6 +16,7 @@ import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcri
 export interface MobileProjectsHubHeaderHost {
     sessionsMenuBtn: HTMLButtonElement;
     headerNewChatBtn: HTMLButtonElement;
+    headerOverflowMenuBtn: HTMLButtonElement;
     headerBackBtn: HTMLButtonElement;
     titleBlock: HTMLElement;
     titleEl: HTMLHeadingElement;
@@ -64,6 +65,8 @@ export class MobileProjectsHubHeaderUi {
         const showNewChatBtn = showSessionsMenu && this.resolveHeaderNewChatVisible();
         this.host.headerNewChatBtn.hidden = !showNewChatBtn;
         this.host.headerNewChatBtn.setAttribute('aria-hidden', showNewChatBtn ? 'false' : 'true');
+        this.host.headerOverflowMenuBtn.hidden = !showSessionsMenu;
+        this.host.headerOverflowMenuBtn.setAttribute('aria-hidden', showSessionsMenu ? 'false' : 'true');
         const showHeaderBack = inProjectDetail
             || inProjectDiff
             || this.host.hubQueryUi.isSidebarSecondaryHubView()

@@ -45,6 +45,7 @@ describe('MobileProjectsHubHeaderUi', () => {
         return {
             sessionsMenuBtn: document.createElement('button'),
             headerNewChatBtn: document.createElement('button'),
+            headerOverflowMenuBtn: document.createElement('button'),
             headerBackBtn: document.createElement('button'),
             titleBlock: document.createElement('div'),
             titleEl: document.createElement('h1'),

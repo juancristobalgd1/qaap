@@ -34,7 +34,7 @@ import { QaapBackgroundContextProvider } from './qaap-background-context-provide
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 import { MobileProjectsService } from './mobile-projects-service';
-import { MobileProjectsPanel } from './mobile-projects-panel';
+import { MobileProjectsPanel, type MobileProjectsPanelOptions } from './mobile-projects-panel';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
@@ -115,6 +115,7 @@ export interface MobileProjectsPanelFactoryDeps {
 export interface MobileProjectsPanelFactoryOptions {
     deps: MobileProjectsPanelFactoryDeps;
     delegate: MobileProjectsPanelFactoryDelegate;
+    panelOptions?: Pick<MobileProjectsPanelOptions, 'headerOverflowMenuGroups'>;
 }
 
 /** DI wiring for {@link MobileProjectsPanel} — kept out of the shell contribution orchestrator. */
@@ -122,10 +123,12 @@ export class MobileProjectsPanelFactory {
 
     protected readonly deps: MobileProjectsPanelFactoryDeps;
     protected readonly delegate: MobileProjectsPanelFactoryDelegate;
+    protected readonly panelOptions: MobileProjectsPanelFactoryOptions['panelOptions'];
 
     constructor(options: MobileProjectsPanelFactoryOptions) {
         this.deps = options.deps;
         this.delegate = options.delegate;
+        this.panelOptions = options.panelOptions;
     }
 
     create(homeMode: boolean): MobileProjectsPanel {
@@ -255,6 +258,7 @@ export class MobileProjectsPanelFactory {
                 projectBootstrap: deps.projectBootstrap,
                 agUiFrontendTools: deps.agUiFrontendTools,
                 composerEditorContextService: deps.composerEditorContextService,
+                headerOverflowMenuGroups: this.panelOptions?.headerOverflowMenuGroups,
             },
         );
     }

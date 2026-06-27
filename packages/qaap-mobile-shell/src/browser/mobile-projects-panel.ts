@@ -7,6 +7,7 @@ import { Event as TheiaEvent } from '@theia/core/lib/common/event';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { MessageService } from '@theia/core/lib/common/message-service';
+import { nls } from '@theia/core/lib/common/nls';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import * as markdownit from '@theia/core/shared/markdown-it';
 import * as markdownitemoji from '@theia/core/shared/markdown-it-emoji';
@@ -379,6 +380,8 @@ export interface MobileProjectsPanelOptions {
     openPreferencesSheet?: (query?: string) => Promise<void>;
     /** Opens AI Configuration (agents, MCP, prompts) inside the Work Hub overlay. */
     openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
+    /** Extra header overflow menu groups for embedding surfaces such as the IDE AI Chat slot. */
+    headerOverflowMenuGroups?: () => MobileProjectsHeaderOverflowMenuItem[][];
     /** Persistent dev-server orchestration for transcript Preview tab. */
     projectBootstrap?: QaapProjectBootstrapService;
     /** AG-UI frontend tool registry for live transcript tool execution. */
@@ -392,6 +395,15 @@ export interface MobileProjectsPanelOptions {
     ) => Promise<string>;
     /** Bridges Monaco editor selection into sticky/transcript composer context chips. */
     composerEditorContextService?: import('./qaap-composer-editor-context-service').QaapComposerEditorContextService;
+}
+
+export interface MobileProjectsHeaderOverflowMenuItem {
+    label: string;
+    icon: string;
+    command?: string;
+    isVisible?: () => boolean;
+    isEnabled?: () => boolean;
+    run?: () => void | Promise<void>;
 }
 
 type WorkHubSearchTarget =
@@ -442,6 +454,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerBackBtn: HTMLButtonElement;
     protected readonly sessionsMenuBtn: HTMLButtonElement;
     protected readonly headerNewChatBtn: HTMLButtonElement;
+    protected readonly headerOverflowMenuBtn: HTMLButtonElement;
     protected readonly newFabBtn: HTMLButtonElement;
     protected readonly headerSurfacePickerHost: HTMLElement;
     protected readonly headerExecutionCluster: HTMLElement;
@@ -623,6 +636,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected executionTabOverflowMenu: HTMLElement | undefined;
     protected executionTabOverflowAnchor: HTMLElement | undefined;
     protected executionTabOverflowDispose: Disposable = Disposable.NULL;
+    protected headerOverflowMenu: HTMLElement | undefined;
+    protected headerOverflowMenuDismiss: Disposable = Disposable.NULL;
     protected openRepoDialog: MobileOpenRepositoryDialog | undefined;
     protected dragDismissDispose: Disposable = Disposable.NULL;
     protected pullToRefreshDispose: Disposable = Disposable.NULL;
@@ -661,6 +676,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly composerPromptImprover: MobileProjectsPanelOptions['composerPromptImprover'];
     protected readonly openPreferencesSheet: MobileProjectsPanelOptions['openPreferencesSheet'];
     protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
+    protected readonly headerOverflowMenuGroups: MobileProjectsPanelOptions['headerOverflowMenuGroups'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
     readonly agUiFrontendTools: MobileProjectsPanelOptions['agUiFrontendTools'];
     protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
@@ -777,6 +793,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.composerPromptImprover = options.composerPromptImprover;
         this.openPreferencesSheet = options.openPreferencesSheet;
         this.openAiConfigurationSheet = options.openAiConfigurationSheet;
+        this.headerOverflowMenuGroups = options.headerOverflowMenuGroups;
         this.projectBootstrap = options.projectBootstrap;
         this.agUiFrontendTools = options.agUiFrontendTools;
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
@@ -902,6 +919,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     dispose(): void {
+        this.closeHeaderOverflowMenu();
+        this.headerOverflowMenu?.remove();
+        this.headerOverflowMenu = undefined;
         this.composerEditorContextService?.registerPanelDelegate(undefined);
         this.hubListRenderScheduler.dispose();
         this.panelLifecycleUi.dispose();
@@ -1441,6 +1461,190 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async onHeaderNewChatClick(): Promise<void> {
         await this.onWorkHubSessionsSidebarNewChat();
+    }
+
+    protected onHeaderOverflowMenuClick(event: MouseEvent): void {
+        event.preventDefault();
+        event.stopPropagation();
+        if (this.headerOverflowMenu?.classList.contains('theia-mod-open')) {
+            this.closeHeaderOverflowMenu();
+            return;
+        }
+        this.openHeaderOverflowMenu();
+    }
+
+    protected openHeaderOverflowMenu(): void {
+        const menu = this.ensureHeaderOverflowMenu();
+        this.renderHeaderOverflowMenuItems(menu);
+        if (!menu.childElementCount) {
+            return;
+        }
+        this.headerOverflowMenuBtn.setAttribute('aria-expanded', 'true');
+        menu.hidden = false;
+        menu.classList.add('theia-mod-open');
+        this.positionHeaderOverflowMenu();
+
+        const onDismiss = (event: Event): void => {
+            const target = event.target;
+            if (target instanceof Node && (menu.contains(target) || this.headerOverflowMenuBtn.contains(target))) {
+                return;
+            }
+            this.closeHeaderOverflowMenu();
+        };
+        const onReposition = (): void => this.positionHeaderOverflowMenu();
+        window.setTimeout(() => window.addEventListener('pointerdown', onDismiss, true), 0);
+        window.addEventListener('resize', onReposition);
+        window.addEventListener('scroll', onReposition, true);
+        this.headerOverflowMenuDismiss.dispose();
+        this.headerOverflowMenuDismiss = Disposable.create(() => {
+            window.removeEventListener('pointerdown', onDismiss, true);
+            window.removeEventListener('resize', onReposition);
+            window.removeEventListener('scroll', onReposition, true);
+        });
+    }
+
+    protected ensureHeaderOverflowMenu(): HTMLElement {
+        if (this.headerOverflowMenu) {
+            return this.headerOverflowMenu;
+        }
+        const menu = document.createElement('div');
+        menu.className = 'qaap-work-hub-toolbar-menu';
+        menu.hidden = true;
+        menu.setAttribute('role', 'menu');
+        menu.setAttribute('aria-label', this.headerOverflowMenuBtn.title);
+        document.body.append(menu);
+        this.headerOverflowMenu = menu;
+        return menu;
+    }
+
+    protected closeHeaderOverflowMenu(): void {
+        this.headerOverflowMenuBtn?.setAttribute('aria-expanded', 'false');
+        if (this.headerOverflowMenu) {
+            this.headerOverflowMenu.hidden = true;
+            this.headerOverflowMenu.classList.remove('theia-mod-open');
+            this.headerOverflowMenu.style.top = '';
+            this.headerOverflowMenu.style.left = '';
+        }
+        this.headerOverflowMenuDismiss.dispose();
+        this.headerOverflowMenuDismiss = Disposable.NULL;
+    }
+
+    protected positionHeaderOverflowMenu(): void {
+        const menu = this.headerOverflowMenu;
+        if (!menu || menu.hidden) {
+            return;
+        }
+        const margin = 8;
+        const gap = 6;
+        const anchor = this.headerOverflowMenuBtn.getBoundingClientRect();
+        const menuWidth = Math.max(menu.offsetWidth || menu.scrollWidth, 220);
+        const menuHeight = menu.offsetHeight || menu.scrollHeight;
+        let left = anchor.right - menuWidth;
+        left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
+        const below = anchor.bottom + gap;
+        const above = anchor.top - menuHeight - gap;
+        const top = below + menuHeight <= window.innerHeight - margin ? below : Math.max(margin, above);
+        menu.style.top = `${Math.round(top)}px`;
+        menu.style.left = `${Math.round(left)}px`;
+    }
+
+    protected renderHeaderOverflowMenuItems(menu: HTMLElement): void {
+        menu.replaceChildren();
+        const appendItem = (label: string, icon: string, run: () => void | Promise<void>, enabled = true): void => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'qaap-work-hub-toolbar-menu-item';
+            item.setAttribute('role', 'menuitem');
+            item.disabled = !enabled;
+            const iconEl = document.createElement('span');
+            iconEl.className = `codicon ${icon}`;
+            iconEl.setAttribute('aria-hidden', 'true');
+            const labelEl = document.createElement('span');
+            labelEl.textContent = label;
+            item.append(iconEl, labelEl);
+            item.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (item.disabled) {
+                    return;
+                }
+                this.closeHeaderOverflowMenu();
+                void Promise.resolve(run()).catch(() => undefined);
+            });
+            menu.append(item);
+        };
+        appendItem(
+            nls.localize('qaap/workHubToolbar/newChat', 'New Chat'),
+            'codicon-add',
+            () => this.openHeaderNewChat(),
+            this.isHeaderNewChatVisible(),
+        );
+        appendItem(
+            nls.localize('qaap/workHubToolbar/showChats', 'Show Chats'),
+            'codicon-history',
+            () => this.openWorkHubSessionsSidebar(),
+        );
+        if (this.openAiConfigurationSheet) {
+            this.appendHeaderOverflowSeparator(menu);
+            appendItem(
+                nls.localize('qaap/workHubToolbar/aiSettings', 'AI Settings'),
+                'codicon-settings-gear',
+                () => this.openAiConfigurationSheet?.(),
+            );
+        }
+        if (this.openPreferencesSheet) {
+            appendItem(
+                nls.localize('qaap/workHubToolbar/preferences', 'Preferences'),
+                'codicon-tools',
+                () => this.openPreferencesSheet?.(),
+            );
+        }
+        for (const group of this.headerOverflowMenuGroups?.() ?? []) {
+            const visibleItems = group.filter(item => this.isHeaderOverflowMenuItemVisible(item));
+            if (!visibleItems.length) {
+                continue;
+            }
+            this.appendHeaderOverflowSeparator(menu);
+            for (const item of visibleItems) {
+                appendItem(
+                    item.label,
+                    item.icon,
+                    () => {
+                        if (item.run) {
+                            return item.run();
+                        }
+                        if (item.command) {
+                            return this.commands.executeCommand(item.command);
+                        }
+                    },
+                    this.isHeaderOverflowMenuItemEnabled(item),
+                );
+            }
+        }
+    }
+
+    protected isHeaderOverflowMenuItemVisible(item: MobileProjectsHeaderOverflowMenuItem): boolean {
+        if (item.isVisible) {
+            return item.isVisible();
+        }
+        return item.command ? this.commands.isVisible(item.command) : true;
+    }
+
+    protected isHeaderOverflowMenuItemEnabled(item: MobileProjectsHeaderOverflowMenuItem): boolean {
+        if (item.isEnabled) {
+            return item.isEnabled();
+        }
+        return item.command ? this.commands.isEnabled(item.command) : true;
+    }
+
+    protected appendHeaderOverflowSeparator(menu: HTMLElement): void {
+        if (!menu.childElementCount) {
+            return;
+        }
+        const separator = document.createElement('div');
+        separator.className = 'qaap-work-hub-toolbar-menu-separator';
+        separator.setAttribute('role', 'separator');
+        menu.append(separator);
     }
 
     async openHeaderNewChat(): Promise<void> {
