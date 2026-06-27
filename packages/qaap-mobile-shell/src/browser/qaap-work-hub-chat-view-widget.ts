@@ -221,13 +221,14 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
             },
             panelOptions: {
                 headerOverflowMenuGroups: () => this.createIdeHeaderOverflowMenuGroups(),
-                sessionsSidebarContainer: () => this.node,
+                sessionsSidebarContainer: () => this.workHubPanel?.node,
             },
         });
 
         this.workHubPanel = factory.create(true);
         this.workHubPanel.node.classList.add('qaap-work-hub-chat-view-panel');
         host.node.appendChild(this.workHubPanel.node);
+        this.resetWorkHubHostScroll(host.node);
         this.toDispose.push(Disposable.create(() => {
             this.workHubPanel?.dispose();
             this.workHubPanel?.node.parentElement?.removeChild(this.workHubPanel.node);
@@ -235,6 +236,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
         }));
 
         void this.workHubPanel.show({ preferredHubView: 'tasks' });
+        window.requestAnimationFrame(() => this.resetWorkHubHostScroll(host.node));
         this.installToolbarOverflowMenu();
         window.requestAnimationFrame(() => this.installToolbarOverflowMenu());
         this.toDispose.push(this.progressBarFactory({ container: this.node, insertMode: 'prepend', locationId: 'ai-chat' }));
@@ -246,6 +248,10 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     }
 
     protected focusWorkHubChatView(): void {
+        const host = this.node.querySelector<HTMLElement>('.qaap-work-hub-chat-view-host');
+        if (host) {
+            this.resetWorkHubHostScroll(host);
+        }
         const target = this.workHubPanel?.node.querySelector<HTMLElement>(
             'textarea, input, [contenteditable="true"], button:not(:disabled), [tabindex]:not([tabindex="-1"])',
         ) ?? this.node;
@@ -255,6 +261,11 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 this.node.focus({ preventScroll: true });
             }
         });
+    }
+
+    protected resetWorkHubHostScroll(host: HTMLElement): void {
+        host.scrollLeft = 0;
+        host.scrollTop = 0;
     }
 
     protected navigateWorkHub(view: MobileProjectsHubView): void {

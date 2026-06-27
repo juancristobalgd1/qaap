@@ -797,7 +797,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.openPreferencesSheet = options.openPreferencesSheet;
         this.openAiConfigurationSheet = options.openAiConfigurationSheet;
         this.headerOverflowMenuGroups = options.headerOverflowMenuGroups;
-        this.sessionsSidebarContainer = options.sessionsSidebarContainer;
+        this.sessionsSidebarContainer = options.sessionsSidebarContainer ?? (() => this.shouldEmbedSessionsSidebarInPanel() ? this.root : undefined);
         this.projectBootstrap = options.projectBootstrap;
         this.agUiFrontendTools = options.agUiFrontendTools;
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
@@ -1657,6 +1657,15 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     isHeaderNewChatVisible(): boolean {
         return this.hubHeaderUi.resolveHeaderNewChatVisible();
+    }
+
+    protected shouldEmbedSessionsSidebarInPanel(): boolean {
+        if (!this.homeMode) {
+            return false;
+        }
+        return window.matchMedia?.('(max-width: 767px), (pointer: coarse)').matches === true
+            || document.body.classList.contains('theia-mobile-mod-workhub-no-bottom-chrome')
+            || document.body.classList.contains('theia-mobile-mod-desktop-ide');
     }
 
     /** Mockup `newChat()`: misma vista vacía que Agents (idle), no una sesión paralela. */

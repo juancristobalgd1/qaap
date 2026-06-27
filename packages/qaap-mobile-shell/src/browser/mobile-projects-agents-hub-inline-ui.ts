@@ -255,6 +255,7 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.agentsHubInlineExecutionRoot?.isConnected
             && this.host.agentsHubInlineChatHost?.isConnected
         ) {
+            this.applyAgentsHubExecutionPanelSizing(this.host.agentsHubInlineExecutionRoot);
             const liveTranscriptOpen = this.host.agentsHubInlineActive && !!this.host.transcriptOpenSummaryId;
             if (!liveTranscriptOpen) {
                 this.renderAgentsHubShellChat(this.host.agentsHubInlineChatHost, project, summary);
@@ -271,6 +272,7 @@ export class MobileProjectsAgentsHubInlineUi {
         }
         const executionRoot = document.createElement('div');
         executionRoot.className = 'theia-mobile-agents-hub-inline-execution';
+        this.applyAgentsHubExecutionPanelSizing(executionRoot);
         this.host.agentsHubInlineExecutionRoot = executionRoot;
 
         if (!this.host.transcriptPlanHost) {
@@ -312,6 +314,16 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
         }
         return chatHost;
+    }
+
+    protected applyAgentsHubExecutionPanelSizing(executionRoot: HTMLElement): void {
+        this.host.scroll.style.width = '100%';
+        this.host.scroll.style.maxWidth = '100%';
+        this.host.scroll.style.alignSelf = 'stretch';
+        this.host.scroll.style.alignItems = 'stretch';
+        executionRoot.style.width = '100%';
+        executionRoot.style.maxWidth = '100%';
+        executionRoot.style.alignSelf = 'stretch';
     }
 
     protected createAgentsHubNoProjectOnboarding(): HTMLElement {

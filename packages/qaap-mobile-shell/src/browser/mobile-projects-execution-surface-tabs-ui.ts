@@ -59,6 +59,8 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     agentsHubInlineExecutionRoot: HTMLElement | undefined;
     agentsHubInlineTabStrip: HTMLElement | undefined;
     stickyComposerHost: HTMLElement;
+    transcriptComposerMountKey?: string | undefined;
+    stickyComposerSheetsUi?: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     root: HTMLElement;
     scroll: HTMLElement;
     executionTabOverflowMenu: HTMLElement | undefined;
@@ -269,6 +271,12 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         if (this.host.agentsHubShellActive) {
             this.host.stickyComposerHost.hidden = !showMessages;
             this.host.root.classList.toggle('theia-mod-sticky-composer', showMessages);
+            this.host.stickyComposerHost.classList.toggle('theia-mod-show-quick-actions', showMessages);
+            if (!showMessages) {
+                this.host.stickyComposerHost.replaceChildren();
+                this.host.transcriptComposerMountKey = undefined;
+                this.host.stickyComposerSheetsUi?.closeStickyComposerSheets();
+            }
         }
         this.host.agentsHubInlineExecutionRoot?.setAttribute('data-active-surface', tab);
         this.host.transcriptSheet?.querySelector('.theia-mobile-agent-log-sheet')?.setAttribute('data-active-surface', tab);
@@ -426,6 +434,19 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         const selectBtn = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select');
         selectBtn?.setAttribute('aria-expanded', 'false');
         this.applyExecutionSurfaceIconSelectDisplay(strip, activeTab);
+        this.centerExecutionSurfaceActiveControl(strip);
+    }
+
+    protected centerExecutionSurfaceActiveControl(strip: HTMLElement): void {
+        window.requestAnimationFrame(() => {
+            const active = strip.querySelector<HTMLElement>(
+                '.theia-mobile-transcript-tab-icon-select[data-surface-active="true"], .theia-mobile-transcript-tab.theia-mod-active',
+            );
+            if (!active?.isConnected) {
+                return;
+            }
+            active.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+        });
     }
 
     resolveExecutionSurfaceIconSelectDisplayTab(activeTab: TranscriptTab): TranscriptTab {

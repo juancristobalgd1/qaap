@@ -52,6 +52,12 @@
   overflow: hidden;
 }
 
+.qaap-work-hub-chat-view-host {
+  position: relative;
+  overflow: clip;
+  overscroll-behavior: none;
+}
+
 .qaap-work-hub-chat-view-widget {
   position: relative;
 }
@@ -61,9 +67,10 @@
 }
 
 .qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects {
-  position: relative;
-  inset: auto;
+  position: absolute;
+  inset: 0;
   display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   max-width: none;
@@ -80,17 +87,109 @@
   display: none;
 }
 
-.qaap-work-hub-chat-view-widget>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded {
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel>.theia-mobile-sheet-grabber {
+  display: none !important;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-chat {
+  --theia-mobile-execution-header-pad-top: 4px;
+  --theia-mobile-execution-header-pad-bottom: 4px;
+  --theia-mobile-execution-header-title-row: 32px;
+  --theia-mobile-execution-header-subtitle-gap: 0px;
+  --theia-mobile-execution-header-subtitle-row: 0px;
+  --theia-mobile-execution-header-text-block: var(--theia-mobile-execution-header-title-row);
+  --theia-mobile-execution-header-block: calc(var(--theia-mobile-execution-header-pad-top) + var(--theia-mobile-execution-header-title-row) + var(--theia-mobile-execution-header-pad-bottom));
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-chat>.theia-mobile-projects-header {
+  box-shadow: none;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-header-execution-cluster {
+  justify-content: center;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster {
+  justify-content: center;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-header-execution-tabs,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-tabs.theia-mod-header-inline,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-tabs,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-tabs.theia-mod-header-inline,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-tabs,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-tabs.theia-mod-header-inline {
+  justify-content: center;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-scroll,
+body.theia-mobile-mod-desktop-ide .qaap-work-hub-chat-view-widget .theia-mobile-projects-scroll,
+body.theia-mobile-mod-workhub-no-bottom-chrome .qaap-work-hub-chat-view-widget .theia-mobile-projects-scroll {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  align-self: stretch !important;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-agents-hub-inline-execution,
+.qaap-work-hub-chat-view-widget .theia-mobile-agents-hub-inline-transcript,
+.qaap-work-hub-chat-view-widget .theia-mobile-agent-transcript-real-chat,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-plan,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-review,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-preview,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-files-host,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-terminal-host,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-transcript,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agent-transcript-real-chat,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-plan,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-review,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-preview,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-files-host,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-terminal-host,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-transcript,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agent-transcript-real-chat,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-plan,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-review,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-preview,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-files-host,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-terminal-host {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  align-self: stretch !important;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-projects-scroll,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-projects-scroll {
+  align-items: stretch !important;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.qaap-work-hub-chat-view-widget>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: min(360px, 86%);
+  inset: 0;
+  width: 100%;
   height: 100% !important;
   min-height: 0;
   max-height: 100%;
-  z-index: 80;
+  z-index: 120;
 }
 
-.qaap-work-hub-chat-view-widget>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel {
+.qaap-work-hub-chat-view-widget>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel {
+  width: 100% !important;
+  max-width: 100% !important;
   height: 100% !important;
   max-height: 100%;
 }
@@ -111,6 +210,11 @@ body.theia-mod-mobile-ai-chat-fullwidth .lm-TabBar.theia-app-right.theia-app-sid
 
 body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepanel-toolbar {
   display: none !important;
+}
+
+#theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-sidepanel-toolbar {
+  display: none !important;
+  pointer-events: none !important;
 }
 
 @media (max-width: 767px),
@@ -24813,4 +24917,62 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] .theia-mobile-agent-activity-timeline-open-panel>.theia-mobile-agent-activity-list {
     padding: 2px 0 4px 16px;
   }
+}
+
+/* IDE chat panel: execution surfaces must fill and stay centered after view changes. */
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll {
+  width: 100% !important;
+  max-width: 100% !important;
+  align-self: stretch !important;
+  align-items: stretch !important;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll>.theia-mobile-agents-hub-inline-execution,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll>.theia-mobile-agents-hub-inline-execution,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll>.theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-plan,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll>.theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-review,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll>.theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-preview,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll>.theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-files-host,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools>.theia-mobile-projects-scroll>.theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-terminal-host {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  align-self: stretch !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* IDE chat panel: the composer belongs only to Chat, never tool surfaces. */
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-tools {
+  --theia-mobile-execution-header-pad-top: 4px;
+  --theia-mobile-execution-header-pad-bottom: 4px;
+  --theia-mobile-execution-header-title-row: 32px;
+  --theia-mobile-execution-header-subtitle-gap: 0px;
+  --theia-mobile-execution-header-subtitle-row: 0px;
+  --theia-mobile-execution-header-text-block: var(--theia-mobile-execution-header-title-row);
+  --theia-mobile-execution-header-block: calc(var(--theia-mobile-execution-header-pad-top) + var(--theia-mobile-execution-header-title-row) + var(--theia-mobile-execution-header-pad-bottom));
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-tools>.theia-mobile-projects-header {
+  box-shadow: none;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-tools>.theia-mobile-projects-sticky-composer,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-tools .theia-mobile-projects-sticky-composer,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-tools .theia-mobile-agent-transcript-empty-actions {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-tools.theia-mod-sticky-composer {
+  display: flex;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-tools>.theia-mobile-projects-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }

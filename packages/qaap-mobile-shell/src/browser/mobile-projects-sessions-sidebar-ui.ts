@@ -181,7 +181,10 @@ export class MobileProjectsSessionsSidebarUi {
                 onAutomations: () => { void this.onWorkHubSessionsSidebarAutomations(); },
                 isEmbedded: () => this.host.sessionsSidebarContainer?.() !== undefined,
             });
-            (this.host.sessionsSidebarContainer?.() ?? document.body).append(this.host.sessionsSidebar.node);
+        }
+        const container = this.host.sessionsSidebarContainer?.() ?? document.body;
+        if (this.host.sessionsSidebar.node.parentElement !== container) {
+            container.append(this.host.sessionsSidebar.node);
         }
         return this.host.sessionsSidebar;
     }
