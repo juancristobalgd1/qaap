@@ -382,6 +382,8 @@ export interface MobileProjectsPanelOptions {
     openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
     /** Extra header overflow menu groups for embedding surfaces such as the IDE AI Chat slot. */
     headerOverflowMenuGroups?: () => MobileProjectsHeaderOverflowMenuItem[][];
+    /** Container used by the sessions sidebar; defaults to document.body for the full WorkHub shell. */
+    sessionsSidebarContainer?: () => HTMLElement | undefined;
     /** Persistent dev-server orchestration for transcript Preview tab. */
     projectBootstrap?: QaapProjectBootstrapService;
     /** AG-UI frontend tool registry for live transcript tool execution. */
@@ -677,6 +679,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly openPreferencesSheet: MobileProjectsPanelOptions['openPreferencesSheet'];
     protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
     protected readonly headerOverflowMenuGroups: MobileProjectsPanelOptions['headerOverflowMenuGroups'];
+    protected readonly sessionsSidebarContainer: MobileProjectsPanelOptions['sessionsSidebarContainer'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
     readonly agUiFrontendTools: MobileProjectsPanelOptions['agUiFrontendTools'];
     protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
@@ -794,6 +797,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.openPreferencesSheet = options.openPreferencesSheet;
         this.openAiConfigurationSheet = options.openAiConfigurationSheet;
         this.headerOverflowMenuGroups = options.headerOverflowMenuGroups;
+        this.sessionsSidebarContainer = options.sessionsSidebarContainer;
         this.projectBootstrap = options.projectBootstrap;
         this.agUiFrontendTools = options.agUiFrontendTools;
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;

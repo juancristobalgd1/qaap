@@ -221,6 +221,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
             },
             panelOptions: {
                 headerOverflowMenuGroups: () => this.createIdeHeaderOverflowMenuGroups(),
+                sessionsSidebarContainer: () => this.node,
             },
         });
 

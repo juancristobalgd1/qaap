@@ -115,7 +115,7 @@ export interface MobileProjectsPanelFactoryDeps {
 export interface MobileProjectsPanelFactoryOptions {
     deps: MobileProjectsPanelFactoryDeps;
     delegate: MobileProjectsPanelFactoryDelegate;
-    panelOptions?: Pick<MobileProjectsPanelOptions, 'headerOverflowMenuGroups'>;
+    panelOptions?: Pick<MobileProjectsPanelOptions, 'headerOverflowMenuGroups' | 'sessionsSidebarContainer'>;
 }
 
 /** DI wiring for {@link MobileProjectsPanel} — kept out of the shell contribution orchestrator. */
@@ -259,6 +259,7 @@ export class MobileProjectsPanelFactory {
                 agUiFrontendTools: deps.agUiFrontendTools,
                 composerEditorContextService: deps.composerEditorContextService,
                 headerOverflowMenuGroups: this.panelOptions?.headerOverflowMenuGroups,
+                sessionsSidebarContainer: this.panelOptions?.sessionsSidebarContainer,
             },
         );
     }

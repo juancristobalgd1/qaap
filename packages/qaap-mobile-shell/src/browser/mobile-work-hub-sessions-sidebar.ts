@@ -38,6 +38,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onExtensions?: () => void;
     onAutomations?: () => void;
     onStartNewProject?: () => void;
+    isEmbedded?: () => boolean;
     /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
     shouldSkipSessionListRefresh?(): boolean;
     /** Throttle/defer live sidebar sync during SSE (e.g. user tap guard). */
@@ -218,9 +219,12 @@ export class MobileWorkHubSessionsSidebar {
         clearDesktopSessionsSidebarCollapsed(this.delegate.storageScope?.());
         this.root.hidden = false;
         this.root.setAttribute('aria-hidden', 'false');
+        this.root.classList.toggle('theia-mod-embedded', this.delegate.isEmbedded?.() === true);
         void this.root.offsetWidth;
         this.root.classList.add('theia-mod-visible');
-        document.body.classList.add(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
+        if (this.delegate.isEmbedded?.() !== true) {
+            document.body.classList.add(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
+        }
         document.addEventListener('keydown', this.onKeyDown, true);
         this.guardSidebarCloseButton(this.closeBtn);
         this.installLeftEdgeSwipeDismiss();
@@ -267,7 +271,9 @@ export class MobileWorkHubSessionsSidebar {
         this.visible = false;
         this.root.classList.remove('theia-mod-visible');
         this.root.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
+        if (this.delegate.isEmbedded?.() !== true) {
+            document.body.classList.remove(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
+        }
         document.removeEventListener('keydown', this.onKeyDown, true);
         window.setTimeout(() => {
             if (!this.visible) {

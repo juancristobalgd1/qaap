@@ -42,6 +42,7 @@ sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
 sessionsSidebarExpandedProjectIds: Set<string>;
 sessionsSidebarVisibleConversationCountByProjectId: Map<string, number>;
 sessionsSidebarAccordionDefaultsApplied: boolean;
+sessionsSidebarContainer?: () => HTMLElement | undefined;
 projects: MobileProjectEntry[];
 query: string;
 transcriptOpenSummaryId: string | undefined;
@@ -178,8 +179,9 @@ export class MobileProjectsSessionsSidebarUi {
                 onSearch: () => { void this.openSessionsSidebarSearch(); },
                 onExtensions: () => { void this.host.commands.executeCommand('workbench.view.extensions'); },
                 onAutomations: () => { void this.onWorkHubSessionsSidebarAutomations(); },
+                isEmbedded: () => this.host.sessionsSidebarContainer?.() !== undefined,
             });
-            document.body.append(this.host.sessionsSidebar.node);
+            (this.host.sessionsSidebarContainer?.() ?? document.body).append(this.host.sessionsSidebar.node);
         }
         return this.host.sessionsSidebar;
     }

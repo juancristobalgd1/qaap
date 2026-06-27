@@ -52,6 +52,10 @@
   overflow: hidden;
 }
 
+.qaap-work-hub-chat-view-widget {
+  position: relative;
+}
+
 .qaap-work-hub-chat-view-widget.chat-view-widget {
   padding: 0;
 }
@@ -74,6 +78,21 @@
 
 .qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects[hidden] {
   display: none;
+}
+
+.qaap-work-hub-chat-view-widget>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(360px, 86%);
+  height: 100% !important;
+  min-height: 0;
+  max-height: 100%;
+  z-index: 80;
+}
+
+.qaap-work-hub-chat-view-widget>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel {
+  height: 100% !important;
+  max-height: 100%;
 }
 
 .qaap-work-hub-chat-view-widget .theia-mobile-projects-new-chat-btn {
