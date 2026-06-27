@@ -7,7 +7,7 @@
 import { CommandRegistry, DisposableCollection, nls } from '@theia/core/lib/common';
 import { ApplicationShell, CommonCommands, Widget } from '@theia/core/lib/browser';
 import { Message } from '@theia/core/lib/browser/widgets/widget';
-import { collapseLeftPanelIfMobileOneColumn, matchesMobileNarrowViewport, matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { collapseLeftPanelIfMobileOneColumn, matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
@@ -40,11 +40,9 @@ function createWorkbenchHistoryNavBtn(iconClasses: string, title: string): HTMLB
 
 export class QaapWorkbenchNavControlsWidget extends Widget {
     protected readonly toDispose = new DisposableCollection();
-    protected readonly toggleBtn: HTMLButtonElement;
     protected readonly projectNameEl: HTMLSpanElement;
 
     constructor(
-        protected readonly commands: CommandRegistry,
         protected readonly projectsService: MobileProjectsService,
         protected readonly workspaceService: WorkspaceService
     ) {
@@ -52,36 +50,17 @@ export class QaapWorkbenchNavControlsWidget extends Widget {
         node.classList.add('theia-workbench-nav-controls');
         super({ node });
         this.id = 'theia:workbench-nav';
-        this.toggleBtn = createWorkbenchNavBtn(
-            'codicon codicon-layout-sidebar-left theia-mod-mobile-sessions-sidebar',
-            nls.localize('qaap/sessionsSidebar/open', 'Open session history')
-        );
         this.projectNameEl = document.createElement('span');
         this.projectNameEl.className = 'theia-workbench-current-project-name';
         this.projectNameEl.setAttribute('aria-hidden', 'true');
         this.projectNameEl.dataset.branch = '';
-        node.append(this.toggleBtn, this.projectNameEl);
-        this.toggleBtn.addEventListener('click', this.onToggleClick);
-        const refresh = (): void => this.updateEnabledStates();
-        this.toDispose.push(this.commands.onDidExecuteCommand(refresh));
-        this.toDispose.push(this.commands.onCommandsChanged(refresh));
+        node.append(this.projectNameEl);
         this.toDispose.push(this.workspaceService.onWorkspaceChanged(() => this.updateProjectName()));
         this.toDispose.push(this.workspaceService.onWorkspaceLocationChanged(() => this.updateProjectName()));
     }
 
-    protected readonly onToggleClick = (): void => {
-        if (matchesMobileOneColumnLayout()
-            && this.workspaceService.opened
-            && this.commands.isEnabled('qaap.mobile.toggleSessionsSidebar')) {
-            void this.commands.executeCommand('qaap.mobile.toggleSessionsSidebar');
-            return;
-        }
-        this.runIfEnabled(CommonCommands.TOGGLE_LEFT_PANEL.id);
-    };
-
     protected override onAfterAttach(msg: Message): void {
         super.onAfterAttach(msg);
-        this.updateEnabledStates();
         this.updateProjectName();
     }
 
@@ -90,31 +69,7 @@ export class QaapWorkbenchNavControlsWidget extends Widget {
             return;
         }
         this.toDispose.dispose();
-        this.toggleBtn.removeEventListener('click', this.onToggleClick);
         super.dispose();
-    }
-
-    protected runIfEnabled(commandId: string): void {
-        if (!this.commands.isEnabled(commandId)) {
-            return;
-        }
-        void this.commands.executeCommand(commandId).catch(() => undefined);
-    }
-
-    protected updateEnabledStates(): void {
-        const mobileSessions = matchesMobileNarrowViewport()
-            && this.workspaceService.opened
-            && this.commands.isEnabled('qaap.mobile.toggleSessionsSidebar');
-        if (mobileSessions) {
-            this.toggleBtn.classList.add('theia-mod-mobile-sessions-sidebar');
-            this.toggleBtn.classList.remove('codicon-layout-sidebar-left');
-            this.toggleBtn.classList.add('codicon-menu');
-            this.toggleBtn.disabled = false;
-            return;
-        }
-        this.toggleBtn.classList.remove('theia-mod-mobile-sessions-sidebar', 'codicon-menu');
-        this.toggleBtn.classList.add('codicon-layout-sidebar-left');
-        this.toggleBtn.disabled = !this.commands.isEnabled(CommonCommands.TOGGLE_LEFT_PANEL.id);
     }
 
     protected updateProjectName(): void {

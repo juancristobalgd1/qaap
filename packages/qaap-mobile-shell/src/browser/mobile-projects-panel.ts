@@ -1443,6 +1443,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.onWorkHubSessionsSidebarNewChat();
     }
 
+    async openHeaderNewChat(): Promise<void> {
+        await this.onHeaderNewChatClick();
+    }
+
+    isHeaderNewChatVisible(): boolean {
+        return this.hubHeaderUi.resolveHeaderNewChatVisible();
+    }
+
     /** Mockup `newChat()`: misma vista vacía que Agents (idle), no una sesión paralela. */
     protected async openEmptyMobileChatSheet(project: MobileProjectEntry): Promise<void> {
         await this.sessionsSidebarUi.openEmptyMobileChatSheet(project);

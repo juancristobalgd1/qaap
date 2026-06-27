@@ -41,6 +41,131 @@
     transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* AI Chat panel replacement: mount Work Hub as the full panel body, not as a mobile overlay sheet. */
+.qaap-work-hub-chat-view-widget,
+.qaap-work-hub-chat-view-widget>.lm-Panel,
+.qaap-work-hub-chat-view-host {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.qaap-work-hub-chat-view-widget.chat-view-widget {
+  padding: 0;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects {
+  position: relative;
+  inset: auto;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects[hidden] {
+  display: none;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-new-chat-btn {
+  display: none !important;
+}
+
+/* Work Hub owns the AI Chat slot, so the side-panel overflow tab would only block app chrome. */
+#shell-tab-chat-view-widget-hidden {
+  display: none !important;
+}
+
+body.theia-mod-mobile-ai-chat-fullwidth .lm-TabBar.theia-app-right.theia-app-sides {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepanel-toolbar {
+  display: none !important;
+}
+
+.qaap-work-hub-toolbar-menu-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+}
+
+.qaap-work-hub-toolbar-menu-button[aria-expanded='true'] {
+  color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-work-hub-toolbar-menu {
+  position: fixed;
+  z-index: 9680;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 6px;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.24));
+  border-radius: 12px;
+  background: var(--theia-dropdown-background, var(--theia-editor-background));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+}
+
+.qaap-work-hub-toolbar-menu[hidden] {
+  display: none !important;
+}
+
+.qaap-work-hub-toolbar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.qaap-work-hub-toolbar-menu-item:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.qaap-work-hub-toolbar-menu-item:not(:disabled):hover,
+.qaap-work-hub-toolbar-menu-item:not(:disabled):focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  outline: none;
+}
+
+.qaap-work-hub-toolbar-menu-item .codicon {
+  flex: 0 0 auto;
+  width: 16px;
+  color: var(--theia-descriptionForeground);
+  text-align: center;
+}
+
+.qaap-work-hub-toolbar-menu-separator {
+  height: 1px;
+  margin: 4px 4px;
+  background: var(--theia-panel-border, rgba(128, 128, 128, 0.18));
+}
+
 @media (max-width: 767px),
 (pointer: coarse) {
 
@@ -14428,7 +14553,7 @@ body.theia-mobile-mod-active-transcript #theia-top-panel {
   left: 0;
   right: auto;
   bottom: auto;
-  z-index: 2;
+  z-index: 9670;
   pointer-events: auto;
 }
 
