@@ -27,7 +27,6 @@ export interface StickyComposerActivityStackOptions {
     filesExpanded?: boolean;
     onFilesExpandedChange?: (expanded: boolean) => void;
     agentWorking?: boolean;
-    onStop?: () => void;
     onUndoAll?: () => void;
     onKeepAll?: () => void;
     onRestoreCheckpoint?: () => void;
@@ -218,15 +217,6 @@ export function patchStickyComposerChangesPillHost(
 
     if (hasRestoreCheckpoint && existingRestoreBtn instanceof HTMLButtonElement) {
         existingRestoreBtn.disabled = !!options.restoreCheckpointBusy || !!options.agentWorking;
-    }
-
-    const existingStop = row.querySelector(':scope > .theia-mobile-sticky-composer-activity-stop');
-    if (options.agentWorking && options.onStop) {
-        if (!existingStop) {
-            return false;
-        }
-    } else if (existingStop) {
-        existingStop.remove();
     }
 
     return true;
@@ -462,21 +452,6 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
     const nextActions = renderChangesNextActions(options);
     if (nextActions) {
         row.append(nextActions);
-    }
-
-    if (options.agentWorking && options.onStop) {
-        const stopBtn = document.createElement('button');
-        stopBtn.type = 'button';
-        stopBtn.className = 'theia-mobile-sticky-composer-activity-stop';
-        stopBtn.title = nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run');
-        stopBtn.setAttribute('aria-label', stopBtn.title);
-        stopBtn.textContent = nls.localize('qaap/mobileProjects/stickyComposerFilesStop', 'Stop');
-        stopBtn.addEventListener('click', ev => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            options.onStop?.();
-        });
-        row.append(stopBtn);
     }
 
     section.append(row);

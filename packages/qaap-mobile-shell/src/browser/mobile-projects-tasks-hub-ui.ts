@@ -191,23 +191,6 @@ export class MobileProjectsTasksHubUi {
             'aria-label',
             nls.localize('qaap/agentsHub/quickActions', 'Quick actions'),
         );
-        const editBtn = document.createElement('button');
-        editBtn.type = 'button';
-        editBtn.className = 'theia-mobile-agent-transcript-empty-action';
-        const editIconWrap = document.createElement('span');
-        editIconWrap.className = 'theia-mobile-agent-transcript-empty-action-icon';
-        const editIcon = document.createElement('i');
-        editIcon.className = 'codicon codicon-edit';
-        editIcon.setAttribute('aria-hidden', 'true');
-        editIconWrap.append(editIcon);
-        const editLabel = document.createElement('span');
-        editLabel.className = 'theia-mobile-agent-transcript-empty-action-label';
-        editLabel.textContent = nls.localize('qaap/agentsHub/editProject', 'Edit');
-        editBtn.append(editIconWrap, editLabel);
-        bindStickyComposerControlClick(editBtn, () => {
-            void this.host.openDesktopIdeFromAgentsHub();
-        });
-        container.append(editBtn);
         for (const action of QAAP_AGENTS_HUB_QUICK_ACTIONS) {
             const btn = document.createElement('button');
             btn.type = 'button';

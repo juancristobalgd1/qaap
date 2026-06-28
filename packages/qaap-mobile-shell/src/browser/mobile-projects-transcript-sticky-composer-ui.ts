@@ -679,7 +679,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
             filesExpanded: this.peekTranscriptComposerChangedFilesExpanded(summary.id),
             onFilesExpandedChange: expanded => { this.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
             agentWorking,
-            onStop: () => { void this.host.onCancelConversation(project, summary); },
             onReview: () => {
                 this.host.executionSurfaceTabsUi.selectTranscriptTab('review', project, summary);
             },

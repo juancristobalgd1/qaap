@@ -66,19 +66,6 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.exist;
         });
 
-        it('renders Stop beside the Changes pill while the agent is working', () => {
-            const host = renderStickyComposerChangesPill({
-                diffStats: { added: 2, removed: 0 },
-                agentWorking: true,
-                onStop: () => undefined,
-                onReview: () => undefined,
-            });
-            document.body.append(host!);
-
-            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.exist;
-            expect(host!.querySelector('.theia-mobile-sticky-composer-activity-stop')?.textContent).to.equal('Stop');
-        });
-
         it('renders the commit split-button beside the Changes pill and fires the workflow actions', () => {
             const actions: string[] = [];
             const host = renderStickyComposerChangesPill({
