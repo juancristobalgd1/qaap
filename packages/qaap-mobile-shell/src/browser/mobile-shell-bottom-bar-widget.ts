@@ -33,6 +33,7 @@ export interface ShellWithMaximizedOverlay {
 }
 
 export type MobileBottomButtonId =
+    | 'editor'
     | 'projects'
     | 'agent'
     | 'preview'

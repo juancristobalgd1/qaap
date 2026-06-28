@@ -384,6 +384,13 @@ export interface MobileProjectsPanelOptions {
     headerOverflowMenuGroups?: () => MobileProjectsHeaderOverflowMenuItem[][];
     /** Container used by the sessions sidebar; defaults to document.body for the full WorkHub shell. */
     sessionsSidebarContainer?: () => HTMLElement | undefined;
+    /** IDE mobile view selector mounted in the WorkHub header. */
+    mobileIdeViewPicker?: {
+        isVisible(): boolean;
+        getOptions(): Array<{ id: string; label: string; icon: string }>;
+        getActiveId(): string;
+        onSelect(id: string): void | Promise<void>;
+    };
     /** Persistent dev-server orchestration for transcript Preview tab. */
     projectBootstrap?: QaapProjectBootstrapService;
     /** AG-UI frontend tool registry for live transcript tool execution. */
@@ -458,10 +465,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerNewChatBtn: HTMLButtonElement;
     protected readonly headerOverflowMenuBtn: HTMLButtonElement;
     protected readonly newFabBtn: HTMLButtonElement;
+    protected readonly headerIdeViewPickerHost: HTMLElement;
     protected readonly headerSurfacePickerHost: HTMLElement;
     protected readonly headerExecutionCluster: HTMLElement;
     protected readonly headerExecutionTabsHost: HTMLElement;
     protected headerSurfacePicker?: QaapSegmentedFieldController<QaapComposerSurface>;
+    protected headerIdeViewPickerBtn: HTMLButtonElement | undefined;
+    protected headerIdeViewPickerMenu: HTMLElement | undefined;
+    protected headerIdeViewPickerDismiss: Disposable = Disposable.NULL;
     protected headerExecutionTabsProjectId: string | undefined;
     protected filter: MobileProjectFilter = 'all';
     protected hubView: MobileProjectsHubView = 'tasks';
@@ -680,6 +691,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
     protected readonly headerOverflowMenuGroups: MobileProjectsPanelOptions['headerOverflowMenuGroups'];
     protected readonly sessionsSidebarContainer: MobileProjectsPanelOptions['sessionsSidebarContainer'];
+    protected readonly mobileIdeViewPicker: MobileProjectsPanelOptions['mobileIdeViewPicker'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
     readonly agUiFrontendTools: MobileProjectsPanelOptions['agUiFrontendTools'];
     protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
@@ -798,6 +810,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.openAiConfigurationSheet = options.openAiConfigurationSheet;
         this.headerOverflowMenuGroups = options.headerOverflowMenuGroups;
         this.sessionsSidebarContainer = options.sessionsSidebarContainer ?? (() => this.shouldEmbedSessionsSidebarInPanel() ? this.root : undefined);
+        this.mobileIdeViewPicker = options.mobileIdeViewPicker;
         this.projectBootstrap = options.projectBootstrap;
         this.agUiFrontendTools = options.agUiFrontendTools;
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
@@ -924,8 +937,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     dispose(): void {
         this.closeHeaderOverflowMenu();
+        this.closeHeaderIdeViewPickerMenu();
         this.headerOverflowMenu?.remove();
         this.headerOverflowMenu = undefined;
+        this.headerIdeViewPickerMenu?.remove();
+        this.headerIdeViewPickerMenu = undefined;
+        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
         this.composerEditorContextService?.registerPanelDelegate(undefined);
         this.hubListRenderScheduler.dispose();
         this.panelLifecycleUi.dispose();
@@ -937,6 +954,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     hide(): void {
+        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
+        this.closeHeaderIdeViewPickerMenu();
         this.panelLifecycleUi.hide();
     }
 
@@ -978,6 +997,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected renderHeader(): void {
         this.hubHeaderUi.renderHeader();
+        this.syncHeaderIdeViewPicker();
     }
 
     /** Agents hub: account lives in the sessions sidebar Settings control, not the header. */
@@ -1465,6 +1485,158 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async onHeaderNewChatClick(): Promise<void> {
         await this.onWorkHubSessionsSidebarNewChat();
+    }
+
+    protected syncHeaderIdeViewPicker(): void {
+        const picker = this.mobileIdeViewPicker;
+        const visible = !!picker?.isVisible() && this.visible && this.homeMode;
+        this.headerIdeViewPickerHost.hidden = !visible;
+        this.headerIdeViewPickerHost.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        document.body.classList.toggle('theia-mobile-mod-ide-header-view-picker', visible);
+        if (!visible || !picker) {
+            this.headerIdeViewPickerHost.replaceChildren();
+            this.headerIdeViewPickerBtn = undefined;
+            this.closeHeaderIdeViewPickerMenu();
+            return;
+        }
+        const options = picker.getOptions();
+        const activeId = picker.getActiveId();
+        const active = options.find(option => option.id === activeId) ?? options[0];
+        if (!active) {
+            this.headerIdeViewPickerHost.replaceChildren();
+            this.headerIdeViewPickerBtn = undefined;
+            return;
+        }
+        if (!this.headerIdeViewPickerBtn) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'theia-workbench-nav-btn theia-mobile-projects-ide-view-picker-btn';
+            btn.setAttribute('aria-haspopup', 'menu');
+            btn.setAttribute('aria-expanded', 'false');
+            btn.addEventListener('click', event => this.onHeaderIdeViewPickerClick(event));
+            this.headerIdeViewPickerBtn = btn;
+            this.headerIdeViewPickerHost.replaceChildren(btn);
+        }
+        this.headerIdeViewPickerBtn.title = active.label;
+        this.headerIdeViewPickerBtn.setAttribute('aria-label', active.label);
+        this.headerIdeViewPickerBtn.replaceChildren(
+            this.createHeaderIdeViewIcon(active.icon),
+            this.createHeaderIdeViewChevron(),
+        );
+    }
+
+    protected createHeaderIdeViewIcon(icon: string): HTMLElement {
+        const span = document.createElement('span');
+        span.className = `codicon ${icon} theia-mobile-projects-ide-view-picker-icon`;
+        span.setAttribute('aria-hidden', 'true');
+        return span;
+    }
+
+    protected createHeaderIdeViewChevron(): HTMLElement {
+        const span = document.createElement('span');
+        span.className = 'codicon codicon-chevron-down theia-mobile-projects-ide-view-picker-chevron';
+        span.setAttribute('aria-hidden', 'true');
+        return span;
+    }
+
+    protected onHeaderIdeViewPickerClick(event: MouseEvent): void {
+        event.preventDefault();
+        event.stopPropagation();
+        if (this.headerIdeViewPickerMenu?.classList.contains('theia-mod-open')) {
+            this.closeHeaderIdeViewPickerMenu();
+            return;
+        }
+        this.openHeaderIdeViewPickerMenu();
+    }
+
+    protected openHeaderIdeViewPickerMenu(): void {
+        const picker = this.mobileIdeViewPicker;
+        const btn = this.headerIdeViewPickerBtn;
+        if (!picker || !btn) {
+            return;
+        }
+        const menu = this.ensureHeaderIdeViewPickerMenu();
+        menu.replaceChildren();
+        const activeId = picker.getActiveId();
+        for (const option of picker.getOptions()) {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'qaap-work-hub-toolbar-menu-item theia-mobile-projects-ide-view-picker-item';
+            item.setAttribute('role', 'menuitem');
+            item.setAttribute('aria-current', option.id === activeId ? 'true' : 'false');
+            item.append(this.createHeaderIdeViewIcon(option.icon), document.createTextNode(option.label));
+            item.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.closeHeaderIdeViewPickerMenu();
+                void Promise.resolve(picker.onSelect(option.id)).then(() => this.syncHeaderIdeViewPicker());
+            });
+            menu.append(item);
+        }
+        btn.setAttribute('aria-expanded', 'true');
+        menu.hidden = false;
+        menu.classList.add('theia-mod-open');
+        this.positionHeaderIdeViewPickerMenu();
+
+        const onDismiss = (event: Event): void => {
+            const target = event.target;
+            if (target instanceof Node && (menu.contains(target) || btn.contains(target))) {
+                return;
+            }
+            this.closeHeaderIdeViewPickerMenu();
+        };
+        const onReposition = (): void => this.positionHeaderIdeViewPickerMenu();
+        window.setTimeout(() => window.addEventListener('pointerdown', onDismiss, true), 0);
+        window.addEventListener('resize', onReposition);
+        window.addEventListener('scroll', onReposition, true);
+        this.headerIdeViewPickerDismiss.dispose();
+        this.headerIdeViewPickerDismiss = Disposable.create(() => {
+            window.removeEventListener('pointerdown', onDismiss, true);
+            window.removeEventListener('resize', onReposition);
+            window.removeEventListener('scroll', onReposition, true);
+        });
+    }
+
+    protected ensureHeaderIdeViewPickerMenu(): HTMLElement {
+        if (this.headerIdeViewPickerMenu) {
+            return this.headerIdeViewPickerMenu;
+        }
+        const menu = document.createElement('div');
+        menu.className = 'qaap-work-hub-toolbar-menu theia-mobile-projects-ide-view-picker-menu';
+        menu.hidden = true;
+        menu.setAttribute('role', 'menu');
+        menu.setAttribute('aria-label', nls.localize('qaap/mobileBottomBar/viewSelector', 'View'));
+        document.body.append(menu);
+        this.headerIdeViewPickerMenu = menu;
+        return menu;
+    }
+
+    protected closeHeaderIdeViewPickerMenu(): void {
+        this.headerIdeViewPickerBtn?.setAttribute('aria-expanded', 'false');
+        if (this.headerIdeViewPickerMenu) {
+            this.headerIdeViewPickerMenu.hidden = true;
+            this.headerIdeViewPickerMenu.classList.remove('theia-mod-open');
+            this.headerIdeViewPickerMenu.style.top = '';
+            this.headerIdeViewPickerMenu.style.left = '';
+        }
+        this.headerIdeViewPickerDismiss.dispose();
+        this.headerIdeViewPickerDismiss = Disposable.NULL;
+    }
+
+    protected positionHeaderIdeViewPickerMenu(): void {
+        const menu = this.headerIdeViewPickerMenu;
+        const btn = this.headerIdeViewPickerBtn;
+        if (!menu || !btn || menu.hidden) {
+            return;
+        }
+        const margin = 8;
+        const gap = 6;
+        const anchor = btn.getBoundingClientRect();
+        const menuWidth = Math.max(menu.offsetWidth || menu.scrollWidth, 220);
+        let left = anchor.right - menuWidth;
+        left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
+        menu.style.top = `${Math.round(anchor.bottom + gap)}px`;
+        menu.style.left = `${Math.round(left)}px`;
     }
 
     protected onHeaderOverflowMenuClick(event: MouseEvent): void {

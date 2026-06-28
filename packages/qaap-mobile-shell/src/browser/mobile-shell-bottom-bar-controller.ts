@@ -15,6 +15,8 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MobileHaptics } from './mobile-haptics';
 import { installMobileHorizontalTouchScroll } from './mobile-horizontal-touch-scroll';
 import {
+    clearPreferAgentsSurface,
+    markPreferDesktopIde,
     peekPreferDesktopIde,
     setMobileLandingHubListChrome,
     setMobileWorkHubComposerHeaderChrome,
@@ -24,7 +26,7 @@ import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-project
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import type { MobileProjectsService } from './mobile-projects-service';
 import { MobileSnackbar } from './mobile-snackbar';
-import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
+import { dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     BottomBarSecondaryItem,
@@ -467,6 +469,19 @@ export class MobileShellBottomBarController {
         ];
     }
 
+    getMobileIdeHeaderViewButtons(): MobileBottomButton[] {
+        return [
+            { id: 'editor', label: nls.localize('qaap/mobileBottomBar/editor', 'Editor'), icon: 'codicon-layout' },
+            ...this.getMobileBottomButtons().filter(def => (
+                def.id === 'agent'
+                || def.id === 'preview'
+                || def.id === 'terminal'
+                || def.id === 'explore'
+                || def.id === 'pr'
+            )),
+        ];
+    }
+
     isMobileBottomButtonActive(id: MobileBottomButtonId): boolean {
         if (!this.host.isMobileWorkHubLandingVisible()) {
             switch (id) {
@@ -509,6 +524,13 @@ export class MobileShellBottomBarController {
                     && this.host.getProjectsPanel()?.getHubView() === 'routines';
             case 'projects':
                 return !!this.host.getProjectsPanel()?.isVisible();
+            case 'editor':
+                return !this.host.getProjectsPanel()?.isVisible()
+                    && !this.host.isPullRequestPanelShown()
+                    && !this.host.isMobileAgentSheetVisible()
+                    && !this.host.isMobileExploreSheetVisible()
+                    && !this.host.getActivePreviewWidget()
+                    && !this.isTerminalBottomPanelOpen();
             case 'pr':
                 return this.host.isPullRequestPanelShown();
             case 'agent':
@@ -533,6 +555,15 @@ export class MobileShellBottomBarController {
             return true;
         }
         return !!(this.commands.getCommand(WORKBENCH_TOGGLE_TERMINAL) && this.commands.isEnabled(WORKBENCH_TOGGLE_TERMINAL));
+    }
+
+    async activateMobileIdeHeaderView(id: MobileBottomButtonId): Promise<void> {
+        const def = this.getMobileIdeHeaderViewButtons().find(candidate => candidate.id === id);
+        if (!def) {
+            return;
+        }
+        const anchor = document.createElement('button');
+        await this.onMobileBottomButtonClick(def, anchor);
     }
 
     /** Show or hide the bottom terminal panel (same behavior as the workbench top-bar terminal control). */
@@ -1018,6 +1049,30 @@ export class MobileShellBottomBarController {
             await this.host.toggleProjectsPanel();
             return;
         }
+        if (def.id === 'editor') {
+            if (this.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND) && this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
+                await this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
+                return;
+            }
+            clearPreferAgentsSurface();
+            markPreferDesktopIde();
+            setMobileWorkHubComposerHeaderChrome(false);
+            setMobileWorkHubHideBottomChrome(false);
+            document.body.classList.add('theia-mobile-mod-desktop-ide');
+            document.body.classList.remove('theia-mobile-mod-landing');
+            this.host.hideProjectsPanel();
+            this.host.hidePullRequestPanel();
+            await this.host.dismissSheetsAsync();
+            await this.host.collapseMobileSidePanels();
+            if (this.isTerminalBottomPanelOpen()) {
+                this.restoreMobileBottomPanelFromMaximized();
+                await this.shell.collapsePanel('bottom');
+            }
+            this.host.settleMobileSidePanelsCollapsed();
+            this.host.relayoutMainPreviewWidgets();
+            this.host.scheduleSnapAndUiRefresh();
+            return;
+        }
         if (def.id === 'pr') {
             await this.host.togglePullRequestPanel();
             return;
@@ -1033,6 +1088,11 @@ export class MobileShellBottomBarController {
         }
         if (def.id === 'agent') {
             this.host.hidePullRequestPanel();
+            if (this.commands.getCommand(WORKBENCH_AI_CHAT_TOGGLE) && this.commands.isEnabled(WORKBENCH_AI_CHAT_TOGGLE)) {
+                await this.commands.executeCommand(WORKBENCH_AI_CHAT_TOGGLE);
+                this.host.scheduleSnapAndUiRefresh();
+                return;
+            }
             await this.host.toggleMobileAgentSheet();
             return;
         }

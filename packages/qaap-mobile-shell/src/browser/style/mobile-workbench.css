@@ -241,7 +241,7 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
 
 .qaap-work-hub-toolbar-menu {
   position: fixed;
-  z-index: 10020;
+  z-index: 2147483010;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -252,6 +252,8 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
   border-radius: 12px;
   background: var(--theia-dropdown-background, var(--theia-editor-background));
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .qaap-work-hub-toolbar-menu[hidden] {
@@ -274,6 +276,8 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
   font-weight: 500;
   text-align: left;
   cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .qaap-work-hub-toolbar-menu-item:disabled {
@@ -548,6 +552,32 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
 
   .theia-workbench-right-controls .theia-workbench-account-avatar .theia-workbench-account-initials {
     font-size: 11px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-mobile-view-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 40px;
+    min-height: 36px;
+    margin: 0 2px;
+    padding: 0 8px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-mobile-view-picker-btn[hidden] {
+    display: none !important;
+  }
+
+  .theia-workbench-mobile-view-picker-icon {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .theia-workbench-mobile-view-picker-chevron {
+    font-size: 13px;
+    line-height: 1;
+    opacity: 0.9;
   }
 
   #theia-statusBar {
@@ -975,6 +1005,21 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
   .theia-workbench-right-controls .theia-workbench-account-avatar .codicon,
   .theia-workbench-right-controls .theia-workbench-account-avatar .theia-workbench-account-fallback-icon {
     color: inherit;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-mobile-view-picker-btn {
+    width: 48px;
+    height: 44px;
+    min-width: 48px;
+    min-height: 44px;
+    margin: 0 4px 0 0;
+    padding: 0 8px;
+    border-radius: var(--q-radius-icon, 10px);
+    color: var(--qaap-ink, var(--theia-foreground, var(--q-text)));
+  }
+
+  .theia-workbench-right-controls .theia-workbench-mobile-view-picker-btn:hover:not(:disabled) {
+    background: var(--qaap-line-soft, var(--theia-toolbar-hoverBackground, var(--q-line-soft)));
   }
 
   .theia-mobile-projects-header-actions .theia-workbench-nav-btn.theia-workbench-account-btn {
@@ -2211,6 +2256,45 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-bottom-chrome-host {
   flex-shrink: 0;
 }
 
+.theia-mobile-projects-header-ide-view-picker {
+  flex: 0 0 auto;
+}
+
+.theia-mobile-projects-header-ide-view-picker[hidden] {
+  display: none !important;
+}
+
+.theia-mobile-projects-ide-view-picker-btn {
+  gap: 3px;
+  min-width: 40px;
+  padding: 0 8px;
+}
+
+.theia-mobile-projects-ide-view-picker-icon {
+  font-size: 18px;
+}
+
+.theia-mobile-projects-ide-view-picker-chevron {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.theia-mobile-projects-ide-view-picker-menu .theia-mobile-projects-ide-view-picker-item[aria-current='true'] {
+  color: var(--q-accent, var(--qaap-accent, var(--theia-button-background)));
+}
+
+body.theia-mobile-mod-ide-header-view-picker .theia-mobile-bottom-chrome-host > #theia-mobile-bottom-bar {
+  display: none !important;
+}
+
+body.theia-mobile-mod-ide-header-view-picker {
+  --theia-mobile-bottom-chrome-reserved: var(--theia-mobile-status-chrome-height, 34px);
+}
+
+.theia-workbench-mobile-view-picker-menu .theia-workbench-mobile-view-picker-item[aria-current='true'] {
+  color: var(--q-accent, var(--qaap-accent, var(--theia-button-background)));
+}
+
 .theia-mobile-projects-header-surface-picker .theia-qaap-segmented-field.theia-mod-header-surface {
   gap: 0;
 }
@@ -3387,6 +3471,10 @@ body.theia-mobile-mod-desktop-ide.theia-mobile-mod-workhub-no-bottom-chrome #the
 body.theia-mobile-mod-desktop-ide.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-bottom-chrome-host,
 body.theia-mobile-mod-desktop-ide.theia-mobile-mod-workhub-no-bottom-chrome #theia-statusBar {
   display: flex !important;
+  pointer-events: none !important;
+}
+
+body.theia-mobile-mod-desktop-ide.theia-mobile-mod-workhub-no-bottom-chrome #theia-statusBar {
   pointer-events: auto !important;
 }
 
@@ -14216,6 +14304,21 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-bottom-chrome-host,
 body.theia-mobile-mod-workhub-no-bottom-chrome #theia-statusBar {
   display: none !important;
   pointer-events: none !important;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host {
+  display: flex !important;
+  pointer-events: none !important;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host > #theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host > #theia-statusBar {
+  display: block !important;
+  pointer-events: auto !important;
 }
 
 body.theia-mobile-mod-workhub-no-bottom-chrome.theia-mobile-mod-landing-hub-list #theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-home,

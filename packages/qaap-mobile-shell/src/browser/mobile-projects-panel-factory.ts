@@ -115,7 +115,7 @@ export interface MobileProjectsPanelFactoryDeps {
 export interface MobileProjectsPanelFactoryOptions {
     deps: MobileProjectsPanelFactoryDeps;
     delegate: MobileProjectsPanelFactoryDelegate;
-    panelOptions?: Pick<MobileProjectsPanelOptions, 'headerOverflowMenuGroups' | 'sessionsSidebarContainer'>;
+    panelOptions?: Pick<MobileProjectsPanelOptions, 'headerOverflowMenuGroups' | 'sessionsSidebarContainer' | 'mobileIdeViewPicker'>;
 }
 
 /** DI wiring for {@link MobileProjectsPanel} — kept out of the shell contribution orchestrator. */
@@ -260,6 +260,7 @@ export class MobileProjectsPanelFactory {
                 composerEditorContextService: deps.composerEditorContextService,
                 headerOverflowMenuGroups: this.panelOptions?.headerOverflowMenuGroups,
                 sessionsSidebarContainer: this.panelOptions?.sessionsSidebarContainer,
+                mobileIdeViewPicker: this.panelOptions?.mobileIdeViewPicker,
             },
         );
     }

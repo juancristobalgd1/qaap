@@ -98,7 +98,7 @@ import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/b
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
-import { QaapWorkbenchHistoryNavWidget } from './qaap-workbench-top-bar-widgets';
+import { QaapWorkbenchHistoryNavWidget, QaapWorkbenchRightControlsWidget } from './qaap-workbench-top-bar-widgets';
 import {
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
     QAAP_WORK_HUB_OVERVIEW_COMMAND,
@@ -453,6 +453,14 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 onExitActiveTranscript: () => { void this.transcriptChrome.onExitActiveTranscript(); },
                 openWorkHubPreferencesSheet: query => this.openWorkHubPreferencesSheet(query),
                 openWorkHubAiConfigurationSheet: tabId => this.openWorkHubAiConfigurationSheet(tabId),
+            },
+            panelOptions: {
+                mobileIdeViewPicker: {
+                    isVisible: () => this.mobileActive && !peekPreferDesktopIde(),
+                    getOptions: () => this.bottomBarController.getMobileIdeHeaderViewButtons(),
+                    getActiveId: () => this.resolveMobileIdeHeaderViewId(),
+                    onSelect: id => this.activateMobileIdeHeaderView(id as MobileBottomButtonId),
+                },
             },
         });
     }
@@ -1170,6 +1178,21 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 && !peekPreferDesktopIde(),
             isVisible: () => this.workspaceService.opened && this.shouldActivateWorkHubLayout(),
         });
+        registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.options' }, {
+            execute: () => this.bottomBarController.getMobileIdeHeaderViewButtons(),
+            isEnabled: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
+            isVisible: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
+        });
+        registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.active' }, {
+            execute: () => this.resolveMobileIdeHeaderViewId(),
+            isEnabled: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
+            isVisible: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
+        });
+        registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.activate' }, {
+            execute: (id: MobileBottomButtonId) => this.activateMobileIdeHeaderView(id),
+            isEnabled: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
+            isVisible: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
+        });
     }
 
     protected openDesktopIde(): void {
@@ -1503,7 +1526,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         for (const widget of toArray(this.shell.topPanel.widgets)) {
             if (widget instanceof QaapWorkbenchHistoryNavWidget) {
                 widget.refreshChrome();
-                return;
+            }
+            if (widget instanceof QaapWorkbenchRightControlsWidget) {
+                widget.refreshChrome();
             }
         }
     }
@@ -1567,6 +1592,18 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     protected async onMobileBottomButtonClick(def: MobileBottomButton, btn: HTMLButtonElement): Promise<void> {
         return this.bottomBarController.onMobileBottomButtonClick(def, btn);
+    }
+
+    protected resolveMobileIdeHeaderViewId(): MobileBottomButtonId {
+        const active = this.bottomBarController.getMobileIdeHeaderViewButtons()
+            .find(def => this.bottomBarController.isMobileBottomButtonActive(def.id));
+        return active?.id ?? 'editor';
+    }
+
+    protected async activateMobileIdeHeaderView(id: MobileBottomButtonId): Promise<void> {
+        await this.bottomBarController.activateMobileIdeHeaderView(id);
+        this.refreshBottomBar();
+        this.refreshWorkbenchTopBar();
     }
 
     protected relayoutMainPreviewWidgets(): void {

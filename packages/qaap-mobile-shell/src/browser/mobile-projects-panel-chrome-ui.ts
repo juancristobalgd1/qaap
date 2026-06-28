@@ -28,6 +28,7 @@ export interface MobileProjectsPanelChromeHost {
     subtitleEl: HTMLElement;
     accountBtn: HTMLButtonElement;
     accountAvatar: HTMLElement;
+    headerIdeViewPickerHost: HTMLElement;
     headerSurfacePickerHost: HTMLElement;
     searchToggleBtn: HTMLButtonElement;
     filtersHost: HTMLElement;
@@ -127,6 +128,9 @@ export class MobileProjectsPanelChromeUi {
         this.host.accountAvatar.setAttribute('aria-hidden', 'true');
         this.host.accountBtn.appendChild(this.host.accountAvatar);
         this.host.accountBtn.addEventListener('click', this.host.onAccountClick);
+        this.host.headerIdeViewPickerHost = document.createElement('div');
+        this.host.headerIdeViewPickerHost.className = 'theia-mobile-projects-header-ide-view-picker';
+        this.host.headerIdeViewPickerHost.hidden = true;
         this.host.headerSurfacePickerHost = document.createElement('div');
         this.host.headerSurfacePickerHost.className = 'theia-mobile-projects-header-surface-picker';
         this.host.headerSurfacePickerHost.hidden = true;
@@ -172,6 +176,7 @@ export class MobileProjectsPanelChromeUi {
             this.host.headerExecutionTabsHost,
         );
         actions.append(
+            this.host.headerIdeViewPickerHost,
             this.host.headerSurfacePickerHost,
             this.host.searchToggleBtn,
             this.host.accountBtn,
