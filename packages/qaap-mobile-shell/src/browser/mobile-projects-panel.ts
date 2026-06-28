@@ -73,6 +73,7 @@ import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import {
     buildQaapAccountMenuEntries,
+    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
     toggleQaapAccountMenu,
 } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
@@ -1352,6 +1353,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     openWorkHubSessionsSidebar(): void {
         this.sessionsSidebarUi.openWorkHubSessionsSidebar();
+    }
+
+    async openDesktopIdeFromAgentsHub(): Promise<void> {
+        if (!this.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+            || !this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
+            return;
+        }
+        await this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
     }
 
     toggleWorkHubSessionsSidebar(): void {

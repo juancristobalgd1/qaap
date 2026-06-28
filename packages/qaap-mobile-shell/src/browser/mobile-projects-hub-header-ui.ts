@@ -65,8 +65,9 @@ export class MobileProjectsHubHeaderUi {
         const showNewChatBtn = showSessionsMenu && this.resolveHeaderNewChatVisible();
         this.host.headerNewChatBtn.hidden = !showNewChatBtn;
         this.host.headerNewChatBtn.setAttribute('aria-hidden', showNewChatBtn ? 'false' : 'true');
-        this.host.headerOverflowMenuBtn.hidden = !showSessionsMenu;
-        this.host.headerOverflowMenuBtn.setAttribute('aria-hidden', showSessionsMenu ? 'false' : 'true');
+        const showOverflowMenuBtn = showSessionsMenu && this.resolveHeaderOverflowMenuVisible();
+        this.host.headerOverflowMenuBtn.hidden = !showOverflowMenuBtn;
+        this.host.headerOverflowMenuBtn.setAttribute('aria-hidden', showOverflowMenuBtn ? 'false' : 'true');
         const showHeaderBack = inProjectDetail
             || inProjectDiff
             || this.host.hubQueryUi.isSidebarSecondaryHubView()
@@ -154,6 +155,10 @@ export class MobileProjectsHubHeaderUi {
             return false;
         }
         return this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'messages';
+    }
+
+    resolveHeaderOverflowMenuVisible(): boolean {
+        return this.resolveHeaderNewChatVisible();
     }
 
     protected resolveHeaderNewChatProject(): MobileProjectEntry | undefined {

@@ -103,4 +103,21 @@ describe('MobileProjectsHubHeaderUi', () => {
         const ui = new MobileProjectsHubHeaderUi(createHost());
         expect(ui.resolveHeaderNewChatVisible()).to.equal(false);
     });
+
+    it('shows the header overflow menu only when the chat execution surface is active', () => {
+        const current = project('mockup', 'Mockup');
+        const ui = new MobileProjectsHubHeaderUi(createHost({
+            agentsHubInlineActive: true,
+            transcriptOpenProject: current,
+            activeTab: 'messages',
+        }));
+        expect(ui.resolveHeaderOverflowMenuVisible()).to.equal(true);
+
+        const terminalUi = new MobileProjectsHubHeaderUi(createHost({
+            agentsHubInlineActive: true,
+            transcriptOpenProject: current,
+            activeTab: 'terminal',
+        }));
+        expect(terminalUi.resolveHeaderOverflowMenuVisible()).to.equal(false);
+    });
 });

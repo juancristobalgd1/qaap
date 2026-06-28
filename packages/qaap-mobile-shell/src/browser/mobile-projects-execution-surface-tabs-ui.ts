@@ -81,6 +81,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     isProjectDetailView(): boolean;
+    openDesktopIdeFromAgentsHub(): Promise<void>;
     projects: MobileProjectEntry[];
     closeCardMenu(): void;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
@@ -591,6 +592,23 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             }
             this.openExecutionTabOverflowMenu(trigger, menu);
         });
+
+        const editorItem = document.createElement('button');
+        editorItem.type = 'button';
+        editorItem.className = 'theia-mobile-transcript-tab-icon-select-option';
+        editorItem.setAttribute('role', 'menuitem');
+        editorItem.title = nls.localize('qaap/mobileProjects/tabEditor', 'Editor');
+        editorItem.setAttribute('aria-label', editorItem.title);
+        appendExecutionSurfaceTabIcon(editorItem, 'codicon-layout', '');
+        const editorLabel = document.createElement('span');
+        editorLabel.textContent = editorItem.title;
+        editorItem.append(editorLabel);
+        editorItem.addEventListener('click', event => {
+            event.stopPropagation();
+            this.closeExecutionTabOverflowMenu();
+            void this.host.openDesktopIdeFromAgentsHub();
+        });
+        menu.append(editorItem);
 
         for (const spec of menuOptions) {
             const item = document.createElement('button');
