@@ -276,6 +276,10 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     protected readonly onAiChatClick = (): void => {
         if (matchesMobileOneColumnLayout()) {
             collapseLeftPanelIfMobileOneColumn(this.shell);
+            if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE) && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+                void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'agent');
+                return;
+            }
         }
         this.runIfEnabled(WORKBENCH_AI_CHAT_TOGGLE);
     };

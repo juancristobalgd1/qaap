@@ -1088,12 +1088,10 @@ export class MobileShellBottomBarController {
         }
         if (def.id === 'agent') {
             this.host.hidePullRequestPanel();
-            if (this.commands.getCommand(WORKBENCH_AI_CHAT_TOGGLE) && this.commands.isEnabled(WORKBENCH_AI_CHAT_TOGGLE)) {
-                await this.commands.executeCommand(WORKBENCH_AI_CHAT_TOGGLE);
-                this.host.scheduleSnapAndUiRefresh();
-                return;
-            }
-            await this.host.toggleMobileAgentSheet();
+            await this.host.openMobileWorkHubLanding('tasks');
+            await this.host.collapseMobileSidePanels();
+            this.host.settleMobileSidePanelsCollapsed();
+            this.host.scheduleSnapAndUiRefresh();
             return;
         }
         if (def.id === 'preview') {

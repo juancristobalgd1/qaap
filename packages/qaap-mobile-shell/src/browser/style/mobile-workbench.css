@@ -1491,6 +1491,12 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-bottom-chrome-host {
   pointer-events: none;
 }
 
+body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) {
+  transform: translate3d(100%, 0, 0) !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 #theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden),
 #theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden) {
   transform: translate3d(0, 0, 0);
