@@ -5,10 +5,14 @@
 // *****************************************************************************
 
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { QuickInputService } from '@theia/core';
+import { QuickInputService, QuickPickItem, QuickPickSeparator } from '@theia/core';
 import { nls } from '@theia/core/lib/common/nls';
 import { MobileProjectEntry } from './mobile-projects-types';
 import { MobileProjectsService } from './mobile-projects-service';
+
+interface QaapProjectSwitcherPick extends QuickPickItem {
+    run: () => Promise<void>;
+}
 
 @injectable()
 export class QaapProjectSwitcherService {
@@ -25,20 +29,60 @@ export class QaapProjectSwitcherService {
 
     async showProjectPicker(): Promise<void> {
         const projects = await this.projectsService.loadProjects();
-        if (projects.length === 0) {
-            return;
+        const items: Array<QaapProjectSwitcherPick | QuickPickSeparator> = [
+            {
+                label: nls.localize('qaap/projectSwitcher/addRepository', 'Add repository'),
+                description: nls.localize('qaap/projectSwitcher/addRepositoryDescription', 'Clone an existing GitHub repository'),
+                iconClasses: ['codicon', 'codicon-repo-clone'],
+                alwaysShow: true,
+                run: async () => {
+                    const updatedProjects = await this.projectsService.cloneGithubProject();
+                    await this.openNewestProject(updatedProjects);
+                },
+            },
+            {
+                label: nls.localize('qaap/projectSwitcher/addNewProject', 'Add new project'),
+                description: nls.localize('qaap/projectSwitcher/addNewProjectDescription', 'Create a new private GitHub repository'),
+                iconClasses: ['codicon', 'codicon-new-folder'],
+                alwaysShow: true,
+                run: async () => {
+                    const updatedProjects = await this.projectsService.createGithubProject();
+                    await this.openNewestProject(updatedProjects);
+                },
+            },
+        ];
+        if (projects.length > 0) {
+            items.push(
+                { type: 'separator', label: nls.localize('qaap/projectSwitcher/openRepositories', 'Open repositories') },
+                ...projects.map(project => ({
+                    label: project.github?.fullName ?? project.name,
+                    description: this.getProjectDescription(project),
+                    detail: project.task && project.task !== '-' && project.task !== '\u2014' ? project.task : undefined,
+                    iconClasses: ['codicon', project.github ? 'codicon-github' : 'codicon-repo'],
+                    run: async () => this.projectsService.openInCurrentWindow(project),
+                } satisfies QaapProjectSwitcherPick)),
+            );
         }
-        const selected = await this.quickInputService.showQuickPick(projects.map(project => ({
-            label: project.github?.fullName ?? project.name,
-            description: this.getProjectDescription(project),
-            detail: project.task && project.task !== '-' && project.task !== '\u2014' ? project.task : undefined,
-            execute: () => this.projectsService.openInCurrentWindow(project),
-        })), {
-            placeholder: nls.localize('qaap/projectSwitcher/placeholder', 'Select a repository to open in this workspace'),
-            matchOnDescription: true,
-            matchOnDetail: true,
-        });
-        selected?.execute?.();
+        document.body.classList.add('theia-mobile-mod-project-switcher-quickpick');
+        try {
+            const selected = await this.quickInputService.showQuickPick<QaapProjectSwitcherPick>(items, {
+                title: nls.localize('qaap/projectSwitcher/title', 'Switch project'),
+                placeholder: nls.localize('qaap/projectSwitcher/placeholder', 'Search repositories or choose an action'),
+                matchOnDescription: true,
+                matchOnDetail: true,
+                ignoreFocusOut: true,
+            });
+            await selected?.run();
+        } finally {
+            document.body.classList.remove('theia-mobile-mod-project-switcher-quickpick');
+        }
+    }
+
+    protected async openNewestProject(projects: MobileProjectEntry[] | undefined): Promise<void> {
+        const project = projects?.[0];
+        if (project) {
+            await this.projectsService.openInCurrentWindow(project);
+        }
     }
 
     protected getProjectDescription(project: MobileProjectEntry): string {
