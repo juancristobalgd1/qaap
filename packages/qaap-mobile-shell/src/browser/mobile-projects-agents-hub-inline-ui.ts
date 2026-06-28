@@ -474,6 +474,7 @@ export class MobileProjectsAgentsHubInlineUi {
         summary: QaapAgentConversationSummaryDTO,
     ): void {
         const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project);
+        this.syncAgentsHubInlineSurfaceMode(activeTab);
         const projectChanged = this.agentsHubExecutionHeaderProjectId !== project.id;
         this.agentsHubExecutionHeaderProjectId = project.id;
         const existingStrip = this.host.agentsHubInlineTabStrip;
@@ -501,6 +502,12 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.executionSurfaceTabsUi.syncExecutionSurfaceChrome(project);
         this.host.root.classList.add('theia-mod-agents-hub-inline-active');
         this.host.root.classList.add('theia-mod-agents-hub-shell-active');
+    }
+
+    protected syncAgentsHubInlineSurfaceMode(activeTab: string): void {
+        const isMessages = activeTab === 'messages';
+        this.host.root.classList.toggle('theia-mod-project-surface-chat', isMessages);
+        this.host.root.classList.toggle('theia-mod-project-surface-tools', !isMessages);
     }
 
     teardownAgentsHubExecutionShell(): void {

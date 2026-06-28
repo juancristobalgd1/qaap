@@ -439,6 +439,8 @@ interface QaapDiffProjectTab {
 /** Tabs of the transcript sheet (execution view). 'messages' is the chat tab. */
 type TranscriptTab = ExecutionSurfaceTabId;
 
+const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
+
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     /** Max conversation rows per repo card before "More" expands the list. */
@@ -1356,11 +1358,18 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     async openDesktopIdeFromAgentsHub(): Promise<void> {
+        if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
+            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+            await this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');
+            this.hide();
+            return;
+        }
         if (!this.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
             || !this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
             return;
         }
         await this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
+        this.hide();
     }
 
     toggleWorkHubSessionsSidebar(): void {
