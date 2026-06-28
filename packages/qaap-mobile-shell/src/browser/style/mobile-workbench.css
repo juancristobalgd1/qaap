@@ -918,8 +918,11 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
     max-width: 100%;
     margin: 0;
     padding-left: 0;
+    border: 0;
+    background: none;
     overflow: hidden;
     color: var(--qaap-ink, var(--theia-foreground, var(--q-text)));
+    cursor: pointer;
     font-family: var(--q-font-sans, var(--qaap-font-sans, var(--theia-ui-font-family)));
     font-size: 13px;
     font-weight: 700;
@@ -968,6 +971,9 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
 
   .theia-workbench-nav-controls .theia-workbench-current-project-name:not([hidden]) {
     background: none;
+  }
+  .theia-workbench-nav-controls .theia-workbench-current-project-name:hover {
+    color: var(--theia-textLink-foreground, var(--qaap-ink, var(--theia-foreground, var(--q-text))));
   }
 
   .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-account-btn {

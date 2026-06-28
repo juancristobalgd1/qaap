@@ -72,7 +72,7 @@ else
     exit 1
 fi
 
-SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -p "$PORT" "${SSH_IDENTITY[@]}")
+SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -p "$PORT" "${SSH_IDENTITY[@]}")
 
 NO_CACHE_FLAG=""
 if [[ "$NO_CACHE" -eq 1 ]]; then

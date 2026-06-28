@@ -50,10 +50,13 @@
 }
 
 .theia-workbench-current-project-name {
+  border: 0;
+  background: transparent;
   flex: 0 1 auto;
   min-width: 0;
   margin-left: var(--q-space-3, 6px);
   padding-right: var(--q-space-2, 4px);
+  font: inherit;
   font-size: var(--theia-ui-font-size1, 13px);
   font-weight: 600;
   line-height: 1.2;
@@ -61,8 +64,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
   user-select: none;
+}
+
+.theia-workbench-current-project-name:hover {
+  color: var(--theia-textLink-foreground, var(--theia-titleBar-activeForeground, var(--theia-foreground)));
 }
 
 .theia-workbench-nav-btn {

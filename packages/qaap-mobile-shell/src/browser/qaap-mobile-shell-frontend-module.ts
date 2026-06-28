@@ -65,6 +65,8 @@ import {
 } from './mobile-project-ai-chat-input-widget';
 import { MobileProjectsService } from './mobile-projects-service';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
+import { QaapProjectSwitcherContribution } from './qaap-project-switcher-contribution';
+import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QaapProjectBootstrapContribution } from './qaap-project-bootstrap-contribution';
@@ -151,6 +153,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapScmContribution).toSelf().inSingletonScope();
     rebind(ScmContribution).toService(QaapScmContribution);
     bind(MobileProjectsService).toSelf().inSingletonScope();
+    bind(QaapProjectSwitcherService).toSelf().inSingletonScope();
+    bind(QaapProjectSwitcherContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapProjectSwitcherContribution);
+    bind(CommandContribution).toService(QaapProjectSwitcherContribution);
     bind(MobileProjectsReadmeContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileProjectsReadmeContribution);
     bind(MobileOneColumnShellContribution).toSelf().inSingletonScope();

@@ -15,6 +15,7 @@ import { buildQaapAccountMenuEntries, dismissQaapAccountMenu, toggleQaapAccountM
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
 import { MobileProjectsService } from './mobile-projects-service';
 import type { MobileBottomButton, MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
+import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 
 const WORKBENCH_NAV_GO_BACK = 'textEditor.commands.go.back';
 const WORKBENCH_NAV_GO_FORWARD = 'textEditor.commands.go.forward';
@@ -44,24 +45,31 @@ function createWorkbenchHistoryNavBtn(iconClasses: string, title: string): HTMLB
 
 export class QaapWorkbenchNavControlsWidget extends Widget {
     protected readonly toDispose = new DisposableCollection();
-    protected readonly projectNameEl: HTMLSpanElement;
+    protected readonly projectNameEl: HTMLButtonElement;
 
     constructor(
         protected readonly projectsService: MobileProjectsService,
-        protected readonly workspaceService: WorkspaceService
+        protected readonly workspaceService: WorkspaceService,
+        protected readonly projectSwitcher: QaapProjectSwitcherService,
     ) {
         const node = document.createElement('motion.div');
         node.classList.add('theia-workbench-nav-controls');
         super({ node });
         this.id = 'theia:workbench-nav';
-        this.projectNameEl = document.createElement('span');
+        this.projectNameEl = document.createElement('button');
+        this.projectNameEl.type = 'button';
         this.projectNameEl.className = 'theia-workbench-current-project-name';
-        this.projectNameEl.setAttribute('aria-hidden', 'true');
+        this.projectNameEl.setAttribute('aria-label', nls.localize('qaap/projectSwitcher/title', 'Switch project'));
         this.projectNameEl.dataset.branch = '';
+        this.projectNameEl.addEventListener('click', this.onProjectNameClick);
         node.append(this.projectNameEl);
         this.toDispose.push(this.workspaceService.onWorkspaceChanged(() => this.updateProjectName()));
         this.toDispose.push(this.workspaceService.onWorkspaceLocationChanged(() => this.updateProjectName()));
     }
+
+    protected readonly onProjectNameClick = (): void => {
+        void this.projectSwitcher.showProjectPicker();
+    };
 
     protected override onAfterAttach(msg: Message): void {
         super.onAfterAttach(msg);
@@ -73,6 +81,7 @@ export class QaapWorkbenchNavControlsWidget extends Widget {
             return;
         }
         this.toDispose.dispose();
+        this.projectNameEl.removeEventListener('click', this.onProjectNameClick);
         super.dispose();
     }
 

@@ -10,6 +10,7 @@ import { ApplicationShell, Widget } from '@theia/core/lib/browser';
 import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-top-bar-factory';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsService } from './mobile-projects-service';
+import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 import {
     QaapWorkbenchHistoryNavWidget,
     QaapWorkbenchNavControlsWidget,
@@ -25,8 +26,11 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
 
+    @inject(QaapProjectSwitcherService)
+    protected readonly projectSwitcher: QaapProjectSwitcherService;
+
     createLeadingTopBarWidget(commands: CommandRegistry): Widget {
-        return new QaapWorkbenchNavControlsWidget(this.projectsService, this.workspaceService);
+        return new QaapWorkbenchNavControlsWidget(this.projectsService, this.workspaceService, this.projectSwitcher);
     }
 
     createTrailingTopBarWidgets(commands: CommandRegistry, shell: ApplicationShell): Widget[] {

@@ -46,3 +46,25 @@
   font-family: var(--theia-ui-font-family);
   font-size: var(--theia-statusBar-font-size);
 }
+
+#theia-statusBar .qaap-status-project-switcher {
+  font-weight: 600;
+  max-width: min(220px, 40vw);
+}
+
+#theia-statusBar .qaap-status-project-switcher > span:not(.codicon) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#theia-statusBar .qaap-status-project-switcher + #status-bar-scm\.status\.0 {
+  margin-left: calc(-1 * var(--theia-ui-padding));
+}
+
+#theia-statusBar .qaap-status-project-switcher:hover,
+#theia-statusBar .qaap-status-project-switcher:hover + #status-bar-scm\.status\.0,
+#theia-statusBar .qaap-status-project-switcher:has(+ #status-bar-scm\.status\.0:hover),
+#theia-statusBar .qaap-status-project-switcher + #status-bar-scm\.status\.0:hover {
+  background: var(--theia-statusBarItem-compactHoverBackground, var(--theia-statusBarItem-hoverBackground, rgba(255, 255, 255, 0.12)));
+}
