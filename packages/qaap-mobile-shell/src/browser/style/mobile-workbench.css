@@ -3553,7 +3553,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects-sticky-composer,
 body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects-sticky-composer {
   margin-top: auto;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + 10px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Transcript sheet on body (z-index 12950) must not cover the Work Hub landing (9550). */
@@ -14316,6 +14316,26 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-bottom-chrome-host,
 body.theia-mobile-mod-workhub-no-bottom-chrome #theia-statusBar {
   display: none !important;
   pointer-events: none !important;
+}
+
+body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) {
+  --theia-mobile-bottom-chrome-reserved: var(--theia-mobile-status-chrome-height, 28px);
+}
+
+body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host {
+  display: flex !important;
+  pointer-events: none !important;
+}
+
+body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host > #theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host > #theia-statusBar,
+body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) #theia-statusBar {
+  display: block !important;
+  pointer-events: auto !important;
 }
 
 body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host {

@@ -1506,41 +1506,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected syncHeaderIdeViewPicker(): void {
-        const picker = this.mobileIdeViewPicker;
-        const visible = !!picker?.isVisible() && this.visible && this.homeMode;
-        this.headerIdeViewPickerHost.hidden = !visible;
-        this.headerIdeViewPickerHost.setAttribute('aria-hidden', visible ? 'false' : 'true');
-        document.body.classList.toggle('theia-mobile-mod-ide-header-view-picker', visible);
-        if (!visible || !picker) {
-            this.headerIdeViewPickerHost.replaceChildren();
-            this.headerIdeViewPickerBtn = undefined;
-            this.closeHeaderIdeViewPickerMenu();
-            return;
-        }
-        const options = picker.getOptions();
-        const activeId = picker.getActiveId();
-        const active = options.find(option => option.id === activeId) ?? options[0];
-        if (!active) {
-            this.headerIdeViewPickerHost.replaceChildren();
-            this.headerIdeViewPickerBtn = undefined;
-            return;
-        }
-        if (!this.headerIdeViewPickerBtn) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'theia-workbench-nav-btn theia-mobile-projects-ide-view-picker-btn';
-            btn.setAttribute('aria-haspopup', 'menu');
-            btn.setAttribute('aria-expanded', 'false');
-            btn.addEventListener('click', event => this.onHeaderIdeViewPickerClick(event));
-            this.headerIdeViewPickerBtn = btn;
-            this.headerIdeViewPickerHost.replaceChildren(btn);
-        }
-        this.headerIdeViewPickerBtn.title = active.label;
-        this.headerIdeViewPickerBtn.setAttribute('aria-label', active.label);
-        this.headerIdeViewPickerBtn.replaceChildren(
-            this.createHeaderIdeViewIcon(active.icon),
-            this.createHeaderIdeViewChevron(),
-        );
+        this.headerIdeViewPickerHost.hidden = true;
+        this.headerIdeViewPickerHost.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
+        this.headerIdeViewPickerHost.replaceChildren();
+        this.headerIdeViewPickerBtn = undefined;
+        this.closeHeaderIdeViewPickerMenu();
     }
 
     protected createHeaderIdeViewIcon(icon: string): HTMLElement {

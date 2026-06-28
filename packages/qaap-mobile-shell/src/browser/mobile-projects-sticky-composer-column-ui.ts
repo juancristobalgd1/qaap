@@ -25,9 +25,7 @@ import {
     type StickyComposerContextChipView,
 } from './qaap-sticky-composer-context-ui';
 import {
-    appendStickyComposerWorkspaceContextField,
     createStickyComposerWorkspacePill,
-    renderStickyComposerWorkspaceBar,
 } from './qaap-sticky-composer-workspace-bar';
 import {
     createContextUsageIndicatorBadge,
@@ -206,13 +204,12 @@ export class MobileProjectsStickyComposerColumnUi {
             });
         }
 
-        let branchWorkspaceBar: HTMLElement | undefined;
         const contextFields = document.createElement('div');
         contextFields.className = 'theia-mobile-projects-sticky-composer-context-fields';
         const agentField = document.createElement('div');
         agentField.className = 'theia-mobile-projects-sticky-composer-context-field theia-mod-agent';
         if (options.showWorkspaceBar) {
-            wrap.classList.add('theia-mod-workspace-bar-below', 'theia-mod-workspace-context');
+            wrap.classList.add('theia-mod-workspace-context');
             const workspaceView = this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceBarView(options.project);
             const projectPill = createStickyComposerWorkspacePill({
                 iconClass: 'codicon-folder',
@@ -232,41 +229,6 @@ export class MobileProjectsStickyComposerColumnUi {
             projectField.append(projectPill);
             contextFields.append(projectField);
             toolbar.classList.add('theia-mod-has-workspace-pill', 'theia-mod-workspace-context-tray');
-            branchWorkspaceBar = renderStickyComposerWorkspaceBar({
-                view: workspaceView,
-                includeProject: false,
-                onOpenProject: anchor => {
-                    this.host.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(
-                        options.project,
-                        options.transcriptOverlay === true,
-                        anchor,
-                    );
-                },
-                onOpenBranch: anchor => {
-                    this.host.stickyComposerWorkspaceUi.openComposerWorkspaceBranchSheet(
-                        options.project,
-                        options.transcriptOverlay === true,
-                        anchor,
-                    );
-                },
-            });
-            if (options.workspaceDestination) {
-                const destination = options.workspaceDestination;
-                appendStickyComposerWorkspaceContextField(
-                    branchWorkspaceBar,
-                    createStickyComposerWorkspacePill({
-                        iconClass: destination.iconClass,
-                        label: destination.label,
-                        ariaLabel: nls.localize('qaap/composerWorkspace/destinationAria', 'Run in: {0}', destination.label),
-                        fieldKind: 'destination',
-                        onClick: anchor => destination.onOpen(anchor),
-                    }),
-                    'destination',
-                    { divider: false },
-                );
-            } else {
-                branchWorkspaceBar.classList.add('theia-mod-branch-only');
-            }
         }
 
         toolbar.append(...toolbarItems);
@@ -559,15 +521,6 @@ export class MobileProjectsStickyComposerColumnUi {
         card.append(stage);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
         wrap.append(card);
-        if (branchWorkspaceBar) {
-            wrap.append(branchWorkspaceBar);
-            void this.host.stickyComposerWorkspaceUi.refreshComposerWorkspaceBranch(options.project).then(branch => {
-                const label = branchWorkspaceBar!.querySelector('.theia-mobile-projects-sticky-composer-workspace-pill-label.theia-mod-mono');
-                if (label) {
-                    label.textContent = branch;
-                }
-            });
-        }
         column.append(wrap);
         return column;
     }
