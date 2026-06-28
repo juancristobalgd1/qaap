@@ -1218,6 +1218,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     ): void {
         title.classList.remove('theia-mod-shimmer');
         if (options.thinkingActive && options.turnStartMs !== undefined) {
+            title.classList.add('theia-mod-shimmer');
             const update = (): void => {
                 if (!title.isConnected) {
                     return;
@@ -1273,15 +1274,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const segments = options?.segments ?? [];
         const cursorTrace = timeline.classList.contains('theia-mod-cursor-trace');
         if (timeline instanceof HTMLDetailsElement) {
-            const autoExpanded = !!options?.streaming
-                || shouldExpandTranscriptInlineTimeline(segments, false);
+            const autoExpanded = options?.expanded
+                ?? (!!options?.streaming || shouldExpandTranscriptInlineTimeline(segments, false));
             this.bindTranscriptActivityTimelineToggle(timeline);
             const expanded = timeline.dataset.transcriptTimelineUserToggled === '1'
                 ? timeline.open
                 : autoExpanded;
-            if (!timeline.dataset.transcriptTimelineUserToggled
-                && !options?.streaming
-                && timeline.open !== autoExpanded) {
+            if (!timeline.dataset.transcriptTimelineUserToggled && timeline.open !== autoExpanded) {
                 timeline.open = autoExpanded;
             }
             timeline.classList.toggle('theia-mod-collapsed-history', policy.collapsed);
@@ -3242,7 +3241,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             && isTranscriptActivityLiveState(item.state)
             && !this.resolveTranscriptStreamVisualIdle(options?.segments ?? [], !!options?.streaming);
         if (verbEl) {
-            verbEl.textContent = nls.localize('qaap/mobileProjects/transcriptThought', 'Thought');
+            verbEl.textContent = nls.localize('qaap/mobileProjects/transcriptThinking', 'Thinking');
             verbEl.classList.toggle('theia-mod-shimmer', shimmerActive);
         }
         // Add a duration detail inline so the row reads like Devin's
@@ -3303,20 +3302,19 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const phase = resolveTranscriptTraceDisplayPhase(segments, !!options?.streaming);
         const isStreaming = !!options?.streaming;
         const writingOrSettled = phase === 'writing' || phase === 'settled';
-        if (writingOrSettled && !isStreaming) {
+        if (writingOrSettled) {
             details.dataset.thinkingCollapsedForWriting = '1';
         }
         if (!details.dataset.thinkingUserToggled) {
-            // Once opened during streaming, NEVER auto-close the thinking details
-            // until streaming ends. This prevents the accordion from flickering
-            // on every state change (thinking → acting → writing).
-            if (isStreaming) {
+            // Once opened during streaming, keep thinking visible while tools
+            // run; collapse only when the model starts writing the final text.
+            if (isStreaming && !writingOrSettled) {
                 if (details.dataset.thinkingWasLive === '1' && !details.open) {
                     details.dataset.thinkingProgrammaticToggle = '1';
                     details.open = true;
                 }
             } else {
-                // Streaming has ended — auto-collapse unless user toggled.
+                // Writing or settled — auto-collapse unless user toggled.
                 const collapsedForWriting = details.dataset.thinkingCollapsedForWriting === '1';
                 const desiredOpen = shimmerActive
                     || (details.dataset.thinkingWasLive === '1' && !collapsedForWriting);
