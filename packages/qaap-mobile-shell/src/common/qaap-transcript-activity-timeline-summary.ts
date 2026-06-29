@@ -72,39 +72,3 @@ export function resolveTranscriptActivityTimelineSummaryText(
     }
     return summary;
 }
-
-/** Live progress line under the summary — active step with ellipsis, not generic "Working". */
-export function resolveTranscriptActivityTimelineProgressText(
-    items: readonly TranscriptActivityNavigationItem[],
-    options?: {
-        readonly streaming?: boolean;
-        readonly stalled?: boolean;
-        readonly timedOut?: boolean;
-        readonly visualIdle?: boolean;
-    },
-): string {
-    if (!options?.streaming) {
-        return '';
-    }
-    if (options.stalled) {
-        return nls.localize('qaap/mobileProjects/transcriptActivityStillWorking', 'Still working');
-    }
-    if (options.timedOut) {
-        return nls.localize('qaap/mobileProjects/transcriptStreamTimedOut', 'El agente no respondió a tiempo');
-    }
-    const activeAction = [...items].reverse().find(item =>
-        isTranscriptActivityLiveState(item.state) && isTranscriptTimelineActionItem(item));
-    const activeAny = [...items].reverse().find(item => isTranscriptActivityLiveState(item.state));
-    const candidate = activeAction ?? activeAny;
-    if (candidate) {
-        const label = formatTranscriptActivityTimelineItemLabel(candidate);
-        if (label.endsWith('…')) {
-            return label;
-        }
-        return `${label}…`;
-    }
-    if (options.visualIdle) {
-        return '';
-    }
-    return nls.localize('qaap/mobileProjects/transcriptActivityWorking', 'Working');
-}

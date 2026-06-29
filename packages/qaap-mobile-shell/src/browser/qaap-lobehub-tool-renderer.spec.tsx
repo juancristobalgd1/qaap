@@ -208,6 +208,108 @@ describe('qaap-lobehub-tool-renderer', () => {
         });
     });
 
+    describe('render — WorkflowCollapse 3-level expansion', () => {
+        it('renders the expand-level toggle button and defaults to semi', () => {
+            const renderer = createRenderer();
+            const content = new ToolCallChatResponseContentImpl('id', 'search', '{"query":"hello"}', false);
+            const node = renderer.render(content, makeResponseNode(content));
+            const { container, root } = renderToContainer(node);
+
+            const expandBtn = container.querySelector('.qaap-lh-tool-expand-level');
+            expect(expandBtn, 'expand-level toggle should render').to.exist;
+            // Default expand level is 'semi' (scrollable preview).
+            const detail = container.querySelector('.qaap-lh-tool-detail');
+            expect(detail?.getAttribute('data-expand-level')).to.equal('semi');
+            // Semi state shows the 'expand-all' icon (expand to full).
+            expect(expandBtn!.querySelector('.codicon')?.classList.contains('codicon-expand-all')).to.equal(true);
+
+            flushSync(() => root.unmount());
+        });
+
+        it('cycles expand-level semi -> full on click', () => {
+            const renderer = createRenderer();
+            const content = new ToolCallChatResponseContentImpl('id', 'search', '{"query":"hello"}', false);
+            const node = renderer.render(content, makeResponseNode(content));
+            const { container, root } = renderToContainer(node);
+
+            const expandBtn = container.querySelector('.qaap-lh-tool-expand-level') as HTMLElement;
+            expect(expandBtn).to.exist;
+
+            // Click to cycle semi -> full.
+            expandBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+            flushSync(() => { });
+
+            const detail = container.querySelector('.qaap-lh-tool-detail');
+            expect(detail?.getAttribute('data-expand-level')).to.equal('full');
+            // Full state shows the 'collapse-all' icon (collapse back to semi).
+            const iconAfter = container.querySelector('.qaap-lh-tool-expand-level .codicon');
+            expect(iconAfter?.classList.contains('codicon-collapse-all')).to.equal(true);
+
+            flushSync(() => root.unmount());
+        });
+    });
+
+    describe('render — ScrollShadow (overflow-conditional fade)', () => {
+        it('marks scrollable hosts with qaap-lh-scroll-shadow + data-shadow attribute', () => {
+            const renderer = createRenderer();
+            const content = new ToolCallChatResponseContentImpl('id', 'search', '{"query":"hello"}', false);
+            const node = renderer.render(content, makeResponseNode(content));
+            const { container, root } = renderToContainer(node);
+
+            const detail = container.querySelector('.qaap-lh-tool-detail');
+            expect(detail?.classList.contains('qaap-lh-scroll-shadow'), 'detail has scroll-shadow marker').to.equal(true);
+            // data-shadow must be present so the CSS mask selectors can match.
+            expect(detail?.hasAttribute('data-shadow'), 'detail has data-shadow attr').to.equal(true);
+
+            const args = container.querySelector('.qaap-lh-tool-args');
+            expect(args?.classList.contains('qaap-lh-scroll-shadow'), 'args has scroll-shadow marker').to.equal(true);
+            expect(args?.hasAttribute('data-shadow'), 'args has data-shadow attr').to.equal(true);
+
+            flushSync(() => root.unmount());
+        });
+
+        it('defaults short (non-overflowing) content to data-shadow=none — no permanent fade', () => {
+            const renderer = createRenderer();
+            const content = new ToolCallChatResponseContentImpl('id', 'search', '{"q":"hi"}', false);
+            const node = renderer.render(content, makeResponseNode(content));
+            const { container, root } = renderToContainer(node);
+
+            // jsdom reports scrollHeight === clientHeight (0) for these
+            // elements, so the hook must classify them as 'none' — the
+            // regression we are guarding against is the old always-on mask
+            // that faded the edges of short content unconditionally.
+            const detail = container.querySelector('.qaap-lh-tool-detail');
+            expect(detail?.getAttribute('data-shadow')).to.equal('none');
+            const args = container.querySelector('.qaap-lh-tool-args');
+            expect(args?.getAttribute('data-shadow')).to.equal('none');
+
+            flushSync(() => root.unmount());
+        });
+
+        it('wraps result sub-containers in scroll-shadow hosts (no double mask on inner pre)', () => {
+            const renderer = createRenderer();
+            const content = new ToolCallChatResponseContentImpl(
+                'id', 'fail', '{}', true,
+                { content: [{ type: 'error', data: 'boom' }] } as unknown as ToolCallChatResponseContent['result']
+            );
+            const node = renderer.render(content, makeResponseNode(content));
+            const { container, root } = renderToContainer(node);
+
+            const details = container.querySelector('details.qaap-lh-tool-accordion')!;
+            details.setAttribute('open', '');
+            flushSync(() => { });
+
+            const errorResult = container.querySelector('.theia-toolCall-error-result');
+            expect(errorResult?.classList.contains('qaap-lh-scroll-shadow'), 'error host has marker').to.equal(true);
+            // The inner <pre> must NOT carry the scroll-shadow marker — only
+            // the host gets the mask, preventing the double-mask regression.
+            const innerPre = errorResult?.querySelector('pre');
+            expect(innerPre?.classList.contains('qaap-lh-scroll-shadow'), 'inner pre has no marker').to.equal(false);
+
+            flushSync(() => root.unmount());
+        });
+    });
+
     describe('render — stable refs / callbacks', () => {
         it('uses a stable ref callback identity across re-renders (no detach/attach churn)', () => {
             const renderer = createRenderer();

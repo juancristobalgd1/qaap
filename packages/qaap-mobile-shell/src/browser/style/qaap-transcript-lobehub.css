@@ -340,12 +340,17 @@
     qaap-lh-headline-in 0.2s ease-out;
 }
 
-/* Detail panel (expanded) — LobeHub AccordionItem body. */
+/* Detail panel (expanded) — LobeHub AccordionItem body.
+ * Card styling: subtle border + bg (LobeHub colorBorderSecondary + colorBgContainer). */
 .qaap-lh-tool-detail {
-  padding: 8px 4px 4px 32px;
+  padding: 8px;
+  margin-block-start: 4px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border: 1px solid var(--qaap-lh-border);
+  border-radius: var(--qaap-lh-radius);
+  background: var(--qaap-lh-bg-container);
   animation: qaap-lh-detail-in 0.2s ease-out;
 }
 
@@ -538,11 +543,138 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * ScrollShadow — LobeHub ScrollShadow fade mask on scrollable areas.
+ *
+ * LobeHub wraps long scrollable content (Thinking, WorkflowCollapse semi,
+ * tool args / result) in a <ScrollShadow> that paints a soft gradient fade at
+ * the top/bottom edges so the user perceives there is more content above/below.
+ *
+ * The fade is driven by a `data-shadow` attribute set by the
+ * `useScrollShadowRef` hook (qaap-lobehub-scroll-shadow.tsx), which only
+ * activates when the host actually overflows — so short content (the common
+ * case: a 1-line tool result) is never dimmed. The fade is 10px deep,
+ * matching LobeHub's ScrollShadow default.
+ *
+ *   data-shadow='top'    -> scrolled to bottom, fade top edge
+ *   data-shadow='bottom' -> scrolled to top, fade bottom edge
+ *   data-shadow='both'   -> middle, fade both edges
+ *   data-shadow='none'   -> content fits, no fade
+ * ------------------------------------------------------------------------- */
+
+@supports (mask-image: linear-gradient(#000, #000)) {
+  .qaap-lh-scroll-shadow {
+    --qaap-lh-scroll-fade: 10px;
+  }
+
+  .qaap-lh-scroll-shadow[data-shadow='top'] {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--qaap-lh-scroll-fade),
+      #000 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--qaap-lh-scroll-fade),
+      #000 100%
+    );
+  }
+
+  .qaap-lh-scroll-shadow[data-shadow='bottom'] {
+    mask-image: linear-gradient(
+      to bottom,
+      #000 0,
+      #000 calc(100% - var(--qaap-lh-scroll-fade)),
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      #000 0,
+      #000 calc(100% - var(--qaap-lh-scroll-fade)),
+      transparent 100%
+    );
+  }
+
+  .qaap-lh-scroll-shadow[data-shadow='both'] {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--qaap-lh-scroll-fade),
+      #000 calc(100% - var(--qaap-lh-scroll-fade)),
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--qaap-lh-scroll-fade),
+      #000 calc(100% - var(--qaap-lh-scroll-fade)),
+      transparent 100%
+    );
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * WorkflowCollapse 3-level expansion — LobeHub collapsed / semi / full.
+ *
+ * LobeHub's WorkflowCollapse cycles three expansion levels:
+ *   collapsed -> details closed (summary only)
+ *   semi      -> details open, content capped at min(40vh, 320px) + scroll
+ *   full      -> details open, no height cap (all content visible)
+ *
+ * The <details> element handles collapsed <-> open. The data-expand-level
+ * attribute on .qaap-lh-tool-detail controls semi vs full max-height.
+ * ------------------------------------------------------------------------- */
+
+.qaap-lh-tool-detail[data-expand-level='semi'] {
+  max-height: min(40vh, 320px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.qaap-lh-tool-detail[data-expand-level='full'] {
+  max-height: none;
+}
+
+/* Cyclic expand-level toggle button (semi <-> full) — LobeHub Maximize2/Minimize2.
+ * Sits at the right edge of the summary, separate from the chevron toggle. */
+.qaap-lh-tool-expand-level {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--qaap-lh-radius);
+  color: var(--qaap-lh-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--qaap-duration-fast) var(--qaap-ease),
+    background var(--qaap-duration-fast) var(--qaap-ease);
+}
+
+.qaap-lh-tool-accordion > summary:hover .qaap-lh-tool-expand-level,
+.qaap-lh-tool-accordion[open] .qaap-lh-tool-expand-level {
+  opacity: 1;
+}
+
+.qaap-lh-tool-expand-level:hover {
+  background: var(--qaap-lh-bg-elevated);
+}
+
+.qaap-lh-tool-expand-level .codicon {
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------------
  * Mobile narrow viewport — keep touch-friendly, compact
  * ------------------------------------------------------------------------- */
 
 @media (max-width: 767px), (pointer: coarse) {
-  .qaap-lh-tool-toggle {
+  .qaap-lh-tool-toggle,
+  .qaap-lh-tool-expand-level {
     opacity: 1;
   }
 

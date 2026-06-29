@@ -186,6 +186,10 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-pr-diff',
     '.qaap-project-bootstrap-picker',
     '.qaap-lh-tool-args',
+    // WorkflowCollapse semi level caps the detail panel at
+    // min(40vh, 320px) while its children (args 240px + result 320px + gaps)
+    // can exceed that, so the detail panel itself becomes the scroll host.
+    '.qaap-lh-tool-detail[data-expand-level="semi"]',
     '.qaap-lh-tool-result pre',
     '.qaap-lh-tool-result .theia-toolCall-text-result',
     '.qaap-lh-tool-result .theia-toolCall-default-result',

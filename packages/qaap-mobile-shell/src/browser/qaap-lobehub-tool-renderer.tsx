@@ -41,6 +41,10 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import * as React from '@theia/core/shared/react';
 import { ReactNode } from '@theia/core/shared/react';
 import { ResponseNode } from '@theia/ai-chat-ui/lib/browser/chat-tree-view';
+import {
+    QaapLobehubScrollShadowHost,
+    useScrollShadowRef
+} from './qaap-lobehub-scroll-shadow';
 
 @injectable()
 export class QaapLobehubToolRenderer implements ChatResponsePartRenderer<ToolCallChatResponseContent> {
@@ -112,16 +116,20 @@ export class QaapLobehubToolRenderer implements ChatResponsePartRenderer<ToolCal
                             </div>;
                         }
                         case 'text': {
-                            return <div key={`content-${idx}-${content.type}`} className='theia-toolCall-text-result'>
+                            return <QaapLobehubScrollShadowHost key={`content-${idx}-${content.type}`} className='theia-toolCall-text-result'>
                                 <MarkdownRender text={content.text} openerService={this.openerService} />
-                            </div>;
+                            </QaapLobehubScrollShadowHost>;
                         }
                         case 'error': {
-                            return <div key={`content-${idx}-${content.type}`} className='theia-toolCall-error-result'><pre>{content.data}</pre></div>;
+                            return <QaapLobehubScrollShadowHost key={`content-${idx}-${content.type}`} className='theia-toolCall-error-result'>
+                                <pre>{content.data}</pre>
+                            </QaapLobehubScrollShadowHost>;
                         }
                         case 'audio':
                         default: {
-                            return <div key={`content-${idx}-${content.type}`} className='theia-toolCall-default-result'><pre>{JSON.stringify(response, undefined, 2)}</pre></div>;
+                            return <QaapLobehubScrollShadowHost key={`content-${idx}-${content.type}`} className='theia-toolCall-default-result'>
+                                <pre>{JSON.stringify(response, undefined, 2)}</pre>
+                            </QaapLobehubScrollShadowHost>;
                         }
                     }
                 })}
@@ -382,6 +390,35 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
     const hasExpandableContent = !!resultNode || hasArgs;
     const defaultOpen = isRunning || (isPending && !response.finished);
 
+    // LobeHub WorkflowCollapse 3-level expansion: collapsed (details closed) ->
+    // semi (open, max-height min(40vh, 320px) + scroll) -> full (open, no cap).
+    // The <details> handles collapsed <-> open; expandLevel controls semi <-> full.
+    const [expandLevel, setExpandLevel] = React.useState<'semi' | 'full'>('semi');
+    const cycleExpandLevel = React.useCallback((event: React.MouseEvent) => {
+        event.stopPropagation();
+        event.preventDefault();
+        setExpandLevel(prev => prev === 'semi' ? 'full' : 'semi');
+    }, []);
+    const cycleExpandLevelOnKey = React.useCallback((event: React.KeyboardEvent) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.stopPropagation();
+            event.preventDefault();
+            setExpandLevel(prev => prev === 'semi' ? 'full' : 'semi');
+        }
+    }, []);
+    const handleDetailsToggle = React.useCallback((event: React.SyntheticEvent<HTMLDetailsElement>) => {
+        // Reset to 'semi' whenever the details is closed so reopening starts
+        // at the LobeHub semi level (scrollable preview).
+        if (!(event.target as HTMLDetailsElement).open) {
+            setExpandLevel('semi');
+        }
+    }, []);
+
+    // ScrollShadow refs — manage `data-shadow` so the CSS fade mask only
+    // appears when the host actually overflows (LobeHub ScrollShadow).
+    const detailScrollRef = useScrollShadowRef();
+    const argsScrollRef = useScrollShadowRef();
+
     const params = args ? Object.entries(args).slice(0, MAX_PARAMS) : [];
     const remainingCount = args ? Math.max(0, Object.keys(args).length - MAX_PARAMS) : 0;
 
@@ -430,17 +467,31 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
     return (
         <div className='qaap-lh-tool'>
             {hasExpandableContent ? (
-                <details className='qaap-lh-tool-accordion' open={defaultOpen}>
+                <details className='qaap-lh-tool-accordion' open={defaultOpen} onToggle={handleDetailsToggle}>
                     <summary
                         ref={setSummaryRef}
                         onMouseEnter={onSummaryHover}
                     >
                         {titleRow}
+                        <span className='qaap-lh-tool-expand-level'
+                            role='button'
+                            tabIndex={0}
+                            title={expandLevel === 'semi'
+                                ? nls.localize('qaap/lobehub/expandFull', 'Expand all')
+                                : nls.localize('qaap/lobehub/collapseSemi', 'Collapse to preview')}
+                            aria-label={expandLevel === 'semi'
+                                ? nls.localize('qaap/lobehub/expandFull', 'Expand all')
+                                : nls.localize('qaap/lobehub/collapseSemi', 'Collapse to preview')}
+                            onClick={cycleExpandLevel}
+                            onKeyDown={cycleExpandLevelOnKey}
+                        >
+                            <span className={codicon(expandLevel === 'semi' ? 'expand-all' : 'collapse-all')} />
+                        </span>
                         <span className='qaap-lh-tool-toggle'><span className={codicon('chevron-down')} /></span>
                     </summary>
-                    <div className='qaap-lh-tool-detail'>
+                    <div ref={detailScrollRef} className='qaap-lh-tool-detail qaap-lh-scroll-shadow' data-expand-level={expandLevel} data-shadow='none'>
                         {hasArgs && (
-                            <div className='qaap-lh-tool-args'>{response.arguments}</div>
+                            <div ref={argsScrollRef} className='qaap-lh-tool-args qaap-lh-scroll-shadow' data-shadow='none'>{response.arguments}</div>
                         )}
                         <div className='qaap-lh-tool-result'>{resultNode}</div>
                         <hr className='qaap-lh-tool-divider' />

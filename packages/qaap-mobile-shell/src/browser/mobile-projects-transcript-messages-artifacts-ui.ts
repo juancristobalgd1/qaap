@@ -32,7 +32,6 @@ import {
     transcriptTimelineTierClassName,
 } from '../common/qaap-transcript-timeline-tier';
 import {
-    resolveTranscriptActivityTimelineProgressText,
     resolveTranscriptActivityTimelineSummaryText,
 } from '../common/qaap-transcript-activity-timeline-summary';
 import { resolveTranscriptTimelineVisibilityPolicy } from '../common/qaap-transcript-timeline-visibility';
@@ -1346,21 +1345,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             timeline.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-count')
                 .forEach(count => count.textContent = String(visibleItems.length));
             const visualIdle = this.resolveTranscriptStreamVisualIdle(segments, !!options?.streaming);
-            const progressText = resolveTranscriptActivityTimelineProgressText(visibleItems, {
-                streaming: options?.streaming,
-                stalled: options?.stalled,
-                timedOut: options?.timedOut,
-                visualIdle,
-            });
             timeline.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-label').forEach(label => {
                 label.classList.toggle('theia-mod-shimmer', !!options?.streaming && !options?.stalled && !options?.timedOut && !visualIdle);
                 label.classList.toggle('theia-mod-stall', !!options?.stalled);
-            });
-            timeline.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-status').forEach(status => {
-                status.hidden = !progressText;
-                status.textContent = progressText;
-                status.classList.toggle('theia-mod-shimmer', !!options?.streaming && !options?.stalled && !options?.timedOut && !visualIdle && !!progressText);
-                status.classList.toggle('theia-mod-stall', !!options?.stalled);
             });
             const stickyBar = timeline.querySelector<HTMLElement>('.theia-mobile-agent-activity-timeline-sticky-bar');
             stickyBar?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
@@ -2544,15 +2531,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             const count = document.createElement('span');
             count.className = 'theia-mobile-agent-activity-timeline-summary-count';
             count.textContent = String(items.length);
-            const status = document.createElement('span');
-            status.className = 'theia-mobile-agent-activity-timeline-summary-status';
-            status.setAttribute('aria-live', 'polite');
-            status.setAttribute('role', 'log');
-            status.hidden = true;
             const chevron = document.createElement('span');
             chevron.className = 'theia-mobile-agent-activity-timeline-summary-chevron theia-mobile-agent-lobe-workflow-toggle codicon codicon-chevron-down';
             chevron.setAttribute('aria-hidden', 'true');
-            summary.append(summaryIcon, label, count, status, chevron);
+            summary.append(summaryIcon, label, count, chevron);
             const openPanel = document.createElement('div');
             openPanel.className = 'theia-mobile-agent-activity-timeline-open-panel';
             const stickyBar = document.createElement('button');
@@ -2566,15 +2548,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             stickyLabel.className = 'theia-mobile-agent-activity-timeline-summary-label';
             const stickyCount = document.createElement('span');
             stickyCount.className = 'theia-mobile-agent-activity-timeline-summary-count';
-            const stickyStatus = document.createElement('span');
-            stickyStatus.className = 'theia-mobile-agent-activity-timeline-summary-status';
-            stickyStatus.setAttribute('aria-live', 'polite');
-            stickyStatus.setAttribute('role', 'log');
-            stickyStatus.hidden = true;
             const stickyChevron = document.createElement('span');
             stickyChevron.className = 'theia-mobile-agent-activity-timeline-summary-chevron theia-mobile-agent-lobe-workflow-toggle codicon codicon-chevron-down';
             stickyChevron.setAttribute('aria-hidden', 'true');
-            stickyBar.append(stickyIcon, stickyLabel, stickyCount, stickyStatus, stickyChevron);
+            stickyBar.append(stickyIcon, stickyLabel, stickyCount, stickyChevron);
             const list = document.createElement('ol');
             list.className = 'theia-mobile-agent-activity-list';
             bindTranscriptActivityListKeyboard(list);

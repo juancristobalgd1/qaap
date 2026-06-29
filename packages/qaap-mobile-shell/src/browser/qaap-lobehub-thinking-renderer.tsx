@@ -25,6 +25,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import * as React from '@theia/core/shared/react';
 import { ReactNode } from '@theia/core/shared/react';
+import { useScrollShadowRef } from './qaap-lobehub-scroll-shadow';
 
 @injectable()
 export class QaapLobehubThinkingRenderer implements ChatResponsePartRenderer<ThinkingChatResponseContent> {
@@ -93,6 +94,10 @@ const LobehubThinking: React.FC<LobehubThinkingProps> = ({ content, openerServic
         ? <span className={`${codicon('loading')} theia-animation-spin`} />
         : <span className={codicon('lightbulb')} />;
 
+    // ScrollShadow — manage `data-shadow` so the CSS fade mask only appears
+    // when the thinking content actually overflows (LobeHub ScrollShadow).
+    const contentScrollRef = useScrollShadowRef();
+
     return (
         <div className='qaap-lh-thinking'>
             <details
@@ -108,7 +113,7 @@ const LobehubThinking: React.FC<LobehubThinkingProps> = ({ content, openerServic
                         </span>
                     </span>
                 </summary>
-                <div className='qaap-lh-thinking-content'>
+                <div ref={contentScrollRef} className='qaap-lh-thinking-content qaap-lh-scroll-shadow' data-shadow='none'>
                     <MarkdownRender text={content} openerService={openerService} />
                 </div>
             </details>

@@ -22,6 +22,15 @@ const OVERLAY_SCROLL_HOSTS = [
     '.qaap-project-bootstrap-picker',
 ] as const;
 
+/**
+ * LobeHub WorkflowCollapse semi level caps the detail panel at
+ * min(40vh, 320px) while its children (args 240px + result 320px + gaps)
+ * can exceed that, so the detail panel itself becomes the scroll host on
+ * mobile. Must stay registered in both the JS touch-pan fallback and the
+ * touch-scroll CSS (mobile-touch-accessibility rule).
+ */
+const QAAP_LOBEHUB_TOOL_DETAIL_SEMI = '.qaap-lh-tool-detail[data-expand-level="semi"]';
+
 describe('mobile-vertical-touch-scroll', () => {
 
     it('registers overlay scroll hosts for MutationObserver patching', () => {
@@ -63,5 +72,21 @@ describe('mobile-vertical-touch-scroll', () => {
         const transcript = { matches: () => false } as unknown as HTMLElement;
         expect(isMobileScrollCompositorExcluded(projectsScroll)).to.equal(true);
         expect(isMobileScrollCompositorExcluded(transcript)).to.equal(false);
+    });
+
+    it('registers the LobeHub WorkflowCollapse semi detail panel in the JS touch-pan fallback', () => {
+        // The detail panel becomes the scroll host when capped at
+        // min(40vh, 320px) but its children overflow — without this entry
+        // the iOS nested-scroll fallback never installs and the panel won't
+        // pan with the finger (mobile-touch-accessibility rule).
+        expect(MOBILE_VERTICAL_SCROLL_SELECTORS, 'semi detail panel missing from JS fallback').to.include(
+            QAAP_LOBEHUB_TOOL_DETAIL_SEMI,
+        );
+    });
+
+    it('lists the LobeHub WorkflowCollapse semi detail panel in qaap-mobile-touch-scroll.css', () => {
+        const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css');
+        const css = fs.readFileSync(cssPath, 'utf8');
+        expect(css, 'semi detail panel missing from touch-scroll CSS').to.include(QAAP_LOBEHUB_TOOL_DETAIL_SEMI);
     });
 });

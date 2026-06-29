@@ -6,7 +6,6 @@
 import { expect } from 'chai';
 import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
 import {
-    resolveTranscriptActivityTimelineProgressText,
     resolveTranscriptActivityTimelineSummaryText,
 } from './qaap-transcript-activity-timeline-summary';
 
@@ -29,18 +28,5 @@ describe('qaap-transcript-activity-timeline-summary', () => {
         ];
         expect(resolveTranscriptActivityTimelineSummaryText([], items))
             .to.equal('Edited foo.ts');
-    });
-
-    it('shows active step with ellipsis in the progress line', () => {
-        const items: TranscriptActivityNavigationItem[] = [
-            { label: 'Read page.tsx', state: 'running', verb: 'Read', detail: 'page.tsx', toolKind: 'reading' },
-        ];
-        expect(resolveTranscriptActivityTimelineProgressText(items, { streaming: true }))
-            .to.equal('Read page.tsx…');
-    });
-
-    it('falls back to Working only when no live step is known', () => {
-        expect(resolveTranscriptActivityTimelineProgressText([], { streaming: true }))
-            .to.equal('Working');
     });
 });
