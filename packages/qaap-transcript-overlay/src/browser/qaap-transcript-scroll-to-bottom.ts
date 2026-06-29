@@ -17,6 +17,7 @@ import {
     type TranscriptScrollFabMode,
 } from '../common/qaap-transcript-active-step';
 import { resolveScrollBehavior, scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
+import { clearTranscriptUserScrollIntent } from './qaap-transcript-scroll-intent';
 
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_BUTTON_CLASS = 'theia-mobile-agent-transcript-scroll-to-bottom';
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_ACTIVE_STEP_CLASS = 'theia-mod-active-step';
@@ -338,6 +339,7 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
             return;
         }
         const clickMode = fabMode;
+        clearTranscriptUserScrollIntent(scroller);
         hideButtonImmediately();
         if (clickMode === 'active-step') {
             const streamingRow = findTranscriptStreamingAgentRow(scroller);

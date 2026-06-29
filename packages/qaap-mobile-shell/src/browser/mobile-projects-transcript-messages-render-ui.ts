@@ -20,6 +20,10 @@ import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scr
 import { scrollElementToEnd, scrollElementToEndAfterLayout } from '../common/qaap-prefers-reduced-motion';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
+import {
+    attachTranscriptScrollIntentObserver,
+    shouldPauseTranscriptAutoFollow,
+} from './qaap-transcript-scroll-intent';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
 import {
@@ -158,6 +162,59 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         return footers;
     }
 
+    protected shouldFollowTranscriptTail(scroller: HTMLElement): boolean {
+        return isTranscriptScrollNearBottom(
+            scroller.scrollTop,
+            scroller.clientHeight,
+            scroller.scrollHeight,
+        ) && !shouldPauseTranscriptAutoFollow(scroller);
+    }
+
+    protected captureTranscriptScrollAnchor(scroller: HTMLElement): {
+        readonly top: number;
+        readonly element?: HTMLElement;
+        readonly offsetTop?: number;
+    } {
+        const scrollerRect = scroller.getBoundingClientRect();
+        const candidates = [...scroller.querySelectorAll<HTMLElement>(
+            '.theia-mobile-agent-transcript-msg, [data-transcript-message-id], [data-transcript-activity-row]',
+        )];
+        const element = candidates.find(candidate => candidate.getBoundingClientRect().bottom >= scrollerRect.top + 8);
+        return {
+            top: scroller.scrollTop,
+            element,
+            offsetTop: element ? element.getBoundingClientRect().top - scrollerRect.top : undefined,
+        };
+    }
+
+    protected restoreTranscriptScrollAnchor(
+        scroller: HTMLElement,
+        anchor: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,
+    ): void {
+        if (!anchor.element?.isConnected || anchor.offsetTop === undefined) {
+            scroller.scrollTop = anchor.top;
+            return;
+        }
+        const scrollerRect = scroller.getBoundingClientRect();
+        const currentOffset = anchor.element.getBoundingClientRect().top - scrollerRect.top;
+        scroller.scrollTop += currentOffset - anchor.offsetTop;
+    }
+
+    protected scrollTranscriptTurnStartIntoReadingPosition(messageHost: HTMLElement, row: HTMLElement): void {
+        const scrollerRect = messageHost.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const contextPx = Math.min(96, Math.max(40, Math.round(messageHost.clientHeight * 0.14)));
+        const nextTop = messageHost.scrollTop + rowRect.top - scrollerRect.top - contextPx;
+        messageHost.scrollTo({
+            top: Math.max(0, Math.min(nextTop, Math.max(0, messageHost.scrollHeight - messageHost.clientHeight))),
+            behavior: 'auto',
+        });
+    }
+
+    protected findLastUserMessageRow(messageHost: HTMLElement): HTMLElement | undefined {
+        return [...messageHost.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-user')].at(-1);
+    }
+
     protected createTranscriptEmptyWelcome(): HTMLElement {
         const welcome = document.createElement('section');
         welcome.className = 'theia-mobile-agent-transcript-empty-welcome';
@@ -201,7 +258,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return this.createTranscriptMessageRowAtIndex(current, index);
         });
 
-        const wasNearBottom = list.isNearBottom() || resolveTranscriptEffectiveStatus(normalized) === 'streaming';
+        const wasNearBottom = list.isNearBottom();
         list.setItemCount(normalized.messages.length);
         list.setFooter(this.buildTranscriptVirtualFooter(normalized));
         this.host.transcriptLastRenderedConversationId = normalized.id;
@@ -272,6 +329,18 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         this.host.transcriptUi.disposeList();
         messageHost.classList.remove('theia-mod-virtual-scroll');
+        const previousConversation = this.host.transcriptLastConv;
+        const sameConversation = previousConversation?.id === conv.id;
+        const previousLastMessageId = previousConversation?.messages.at(-1)?.id;
+        const nextLastMessage = conv.messages.at(-1);
+        const newTurnStarted = sameConversation
+            && nextLastMessage?.role === 'user'
+            && !!nextLastMessage.id
+            && nextLastMessage.id !== previousLastMessageId;
+        const shouldFollowTail = this.shouldFollowTranscriptTail(messageHost);
+        const anchor = shouldFollowTail || newTurnStarted
+            ? undefined
+            : this.captureTranscriptScrollAnchor(messageHost);
         messageHost.replaceChildren();
         messageHost.classList.toggle('theia-mod-empty-chat', false);
         this.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
@@ -291,7 +360,17 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 }
             }
         }
-        scrollElementToEndAfterLayout(messageHost);
+        if (newTurnStarted) {
+            const userRow = this.findLastUserMessageRow(messageHost);
+            if (userRow) {
+                this.scrollTranscriptTurnStartIntoReadingPosition(messageHost, userRow);
+            }
+        } else if (shouldFollowTail) {
+            scrollElementToEndAfterLayout(messageHost);
+        } else if (anchor) {
+            this.restoreTranscriptScrollAnchor(messageHost, anchor);
+            window.requestAnimationFrame(() => this.restoreTranscriptScrollAnchor(messageHost, anchor));
+        }
         this.attachTranscriptScrollChrome(host, messageHost, conv);
     }
 
@@ -303,6 +382,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptUserScrollPinDispose.dispose();
         this.host.transcriptUserScrollPinDispose = new DisposableCollection(
             attachTranscriptUserScrollPin(messageHost),
+            attachTranscriptScrollIntentObserver(messageHost),
             attachTranscriptActivityTimelineStickySummary(messageHost),
             attachTranscriptScrollToBottomButton(host),
             attachTranscriptRowDeferObserver(messageHost, {
@@ -357,11 +437,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             return this.tryPatchStreamingTranscriptVirtual(host, conv, patchKind);
         }
-        const wasNearBottom = isTranscriptScrollNearBottom(
-            messageHost.scrollTop,
-            messageHost.clientHeight,
-            messageHost.scrollHeight,
-        );
+        const shouldFollowTail = this.shouldFollowTranscriptTail(messageHost);
+        const anchor = shouldFollowTail ? undefined : this.captureTranscriptScrollAnchor(messageHost);
 
         if (patchKind === 'activity-only') {
             recordTranscriptRenderMetric('render_patch_activity');
@@ -369,8 +446,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             this.host.transcriptLastConv = conv;
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
-            if (wasNearBottom) {
+            if (shouldFollowTail) {
                 scrollElementToEnd(messageHost);
+            } else if (anchor) {
+                this.restoreTranscriptScrollAnchor(messageHost, anchor);
             }
             return true;
         }
@@ -393,8 +472,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 this.host.transcriptLastConv = conv;
                 this.host.transcriptLastRenderedConversationId = conv.id;
                 this.host.transcriptLastRenderedMessageId = lastAgent.id;
-                if (wasNearBottom) {
+                if (shouldFollowTail) {
                     scrollElementToEnd(messageHost);
+                } else if (anchor) {
+                    this.restoreTranscriptScrollAnchor(messageHost, anchor);
                 }
                 return true;
             }
@@ -431,8 +512,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptLastConv = conv;
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = lastAgent.id;
-        if (wasNearBottom) {
+        if (shouldFollowTail) {
             scrollElementToEnd(messageHost);
+        } else if (anchor) {
+            this.restoreTranscriptScrollAnchor(messageHost, anchor);
         }
         return true;
     }
