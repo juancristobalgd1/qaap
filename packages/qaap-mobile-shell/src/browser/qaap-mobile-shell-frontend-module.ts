@@ -16,6 +16,7 @@ import '../../src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
 import '../../src/browser/style/qaap-transcript-timeline-premium.css';
+import '../../src/browser/style/qaap-transcript-lobehub.css';
 import '../../src/browser/style/qaap-agent-setup-animations.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
@@ -84,6 +85,8 @@ import { QaapBackgroundContextProvider } from './qaap-background-context-provide
 import { QaapQaiqBashToolRenderer } from './qaap-qaiq-bash-tool-renderer';
 import { QaapQaiqGenericToolRenderer } from './qaap-qaiq-generic-tool-renderer';
 import { QaapMarkdownPartRenderer } from './qaap-markdown-part-renderer';
+import { QaapLobehubToolRenderer } from './qaap-lobehub-tool-renderer';
+import { QaapLobehubThinkingRenderer } from './qaap-lobehub-thinking-renderer';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { QaapTerminalFrontendContribution } from './qaap-terminal-frontend-contribution';
@@ -222,6 +225,14 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapMarkdownPartRenderer).toSelf().inSingletonScope();
     bind(ChatResponsePartRenderer).toService(QaapMarkdownPartRenderer);
+
+    // LobeHub-style inline trace renderers (priority 11): override the upstream
+    // generic toolcall (10) and thinking (10) renderers for plain content;
+    // QAIQ renderers (13) keep Claude Code tools.
+    bind(QaapLobehubToolRenderer).toSelf().inSingletonScope();
+    bind(ChatResponsePartRenderer).toService(QaapLobehubToolRenderer);
+    bind(QaapLobehubThinkingRenderer).toSelf().inSingletonScope();
+    bind(ChatResponsePartRenderer).toService(QaapLobehubThinkingRenderer);
 
     bind(QaapProjectBootstrapContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapProjectBootstrapContribution);

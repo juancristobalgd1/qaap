@@ -1,0 +1,497 @@
+/* *****************************************************************************
+ * Qaap transcript — LobeHub-style visual layer for inline trace chat.
+ *
+ * Re-implements the visual language of LobeHub's Trace Chat Message inline
+ * (src/features/Conversation/Messages/AssistantGroup) on top of QAAQ's
+ * existing transcript renderers, using Theia/Qaap CSS tokens only — no
+ * @lobehub/ui, antd-style, or framer-motion dependencies.
+ *
+ * Reference components (LobeHub canary):
+ *   - Tool/Inspector/StatusIndicator.tsx  -> .qaap-lh-statusBlock
+ *   - Tool/Inspector/ToolTitle.tsx        -> .qaap-lh-toolTitle / apiName / params
+ *   - Tool/Inspector/ExecutionTime.tsx    -> .qaap-lh-execTime
+ *   - components/Thinking/*               -> .qaap-lh-thinking / .qaap-lh-thinkingTitle
+ *   - components/WorkflowCollapse.tsx     -> expand/collapse + shiny headline
+ *   - styles/shinyText                    -> .qaap-lh-shiny
+ *
+ * All rules are scoped to .qaap-lh-* so they only affect the LobeHub-style
+ * renderers (qaap-lobehub-tool-renderer / qaap-lobehub-thinking-renderer).
+ * Upstream .theia-toolCall / .theia-thinking are left untouched.
+ * ***************************************************************************** */
+
+/* ---------------------------------------------------------------------------
+ * LobeHub semantic tokens — mapped to Qaap palette + a few additions
+ * (info / warning / purple are not in qaap-tokens; defined here per-scope).
+ * ------------------------------------------------------------------------- */
+
+.qaap-lh-tool,
+.qaap-lh-thinking {
+  --qaap-lh-info: #3b82f6;
+  --qaap-lh-purple: #7c3aed;
+  --qaap-lh-text-description: var(--qaap-muted);
+  --qaap-lh-text-secondary: var(--qaap-ink-2);
+  --qaap-lh-text-tertiary: var(--qaap-muted);
+  --qaap-lh-text-quaternary: var(--qaap-muted);
+  --qaap-lh-bg-container: var(--qaap-surface);
+  --qaap-lh-bg-elevated: var(--qaap-surface-alt);
+  --qaap-lh-border: var(--qaap-line);
+  --qaap-lh-success: var(--qaap-success);
+  --qaap-lh-error: var(--qaap-danger);
+  --qaap-lh-font-code: var(--qaap-font-mono);
+  --qaap-lh-radius: 8px;
+  --qaap-lh-gap: 6px;
+}
+
+.qaap-theme-dark .qaap-lh-tool,
+.qaap-theme-dark .qaap-lh-thinking {
+  --qaap-lh-info: #60a5fa;
+  --qaap-lh-purple: #a78bfa;
+}
+
+/* ---------------------------------------------------------------------------
+ * Keyframes
+ * ------------------------------------------------------------------------- */
+
+/* LobeHub shinyText: a brightness band sweeps across the text fill. */
+@keyframes qaap-lh-shiny {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* LobeHub NeuralNetworkLoading substitute: a slow pulsing dot for "working". */
+@keyframes qaap-lh-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* LobeHub headline slide-in (motion/react y: 8 -> 0). */
+@keyframes qaap-lh-headline-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Status block — 24x24 outlined chip (LobeHub Block variant="outlined")
+ * ------------------------------------------------------------------------- */
+
+.qaap-lh-statusBlock {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--qaap-lh-border);
+  border-radius: var(--qaap-lh-radius);
+  background: transparent;
+  font-size: 12px;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.qaap-lh-statusBlock .codicon,
+.qaap-lh-statusBlock .qaap-lh-dot {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.qaap-lh-statusBlock[data-state='success'] .codicon {
+  color: var(--qaap-lh-success);
+}
+
+.qaap-lh-statusBlock[data-state='error'] .codicon {
+  color: var(--qaap-lh-error);
+}
+
+.qaap-lh-statusBlock[data-state='pending'] .codicon {
+  color: var(--qaap-lh-info);
+}
+
+.qaap-lh-statusBlock[data-state='thinking'] .codicon {
+  color: var(--qaap-lh-purple);
+}
+
+.qaap-lh-statusBlock[data-state='working'] .qaap-lh-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--qaap-lh-text-secondary);
+  animation: qaap-lh-pulse 1.1s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+ * Shiny streaming text
+ * ------------------------------------------------------------------------- */
+
+.qaap-lh-shiny {
+  background: linear-gradient(
+    90deg,
+    var(--qaap-lh-text-tertiary) 0%,
+    var(--qaap-lh-text-secondary) 50%,
+    var(--qaap-lh-text-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: qaap-lh-shiny 1.6s linear infinite;
+}
+
+/* ---------------------------------------------------------------------------
+ * Tool call (inline trace)
+ * ------------------------------------------------------------------------- */
+
+.qaap-lh-tool {
+  margin-block: 6px;
+  color: var(--qaap-lh-text-description);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.qaap-lh-tool-accordion {
+  border-radius: var(--qaap-lh-radius);
+}
+
+.qaap-lh-tool-accordion > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--qaap-lh-gap);
+  min-width: 0;
+  padding: 4px;
+  border-radius: var(--qaap-lh-radius);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--qaap-duration-fast) var(--qaap-ease);
+}
+
+.qaap-lh-tool-accordion > summary::-webkit-details-marker,
+.qaap-lh-tool-accordion > summary::marker {
+  display: none;
+  content: '';
+}
+
+.qaap-lh-tool-accordion > summary:hover {
+  background: var(--qaap-lh-bg-elevated);
+}
+
+.qaap-lh-tool-header {
+  display: flex;
+  align-items: center;
+  gap: var(--qaap-lh-gap);
+  min-width: 0;
+  flex: 1;
+}
+
+.qaap-lh-toolTitle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--qaap-lh-text-description);
+}
+
+.qaap-lh-toolName {
+  color: var(--qaap-lh-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qaap-lh-chevron {
+  color: var(--qaap-lh-text-tertiary);
+  font-size: 12px;
+  flex: none;
+}
+
+.qaap-lh-apiName {
+  font-family: var(--qaap-lh-font-code);
+  color: var(--qaap-lh-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qaap-lh-params {
+  font-family: var(--qaap-lh-font-code);
+  font-size: 12px;
+  color: var(--qaap-lh-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qaap-lh-paramKey {
+  color: var(--qaap-lh-text-tertiary);
+}
+
+.qaap-lh-paramValue {
+  color: var(--qaap-lh-text-secondary);
+}
+
+.qaap-lh-execTime {
+  color: var(--qaap-lh-text-quaternary);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* Expand/collapse affordance on the right (LobeHub Maximize2/Minimize2). */
+.qaap-lh-tool-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--qaap-lh-radius);
+  color: var(--qaap-lh-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--qaap-duration-fast) var(--qaap-ease),
+    background var(--qaap-duration-fast) var(--qaap-ease);
+}
+
+.qaap-lh-tool-accordion > summary:hover .qaap-lh-tool-toggle,
+.qaap-lh-tool-accordion[open] .qaap-lh-tool-toggle {
+  opacity: 1;
+}
+
+.qaap-lh-tool-toggle:hover {
+  background: var(--qaap-lh-bg-container);
+}
+
+.qaap-lh-tool-toggle .codicon {
+  font-size: 12px;
+  transition: transform var(--qaap-duration-base) var(--qaap-ease);
+}
+
+.qaap-lh-tool-accordion[open] .qaap-lh-tool-toggle .codicon {
+  transform: rotate(180deg);
+}
+
+/* Detail panel (expanded). */
+.qaap-lh-tool-detail {
+  padding: 8px 4px 4px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qaap-lh-tool-args {
+  font-family: var(--qaap-lh-font-code);
+  font-size: 12px;
+  color: var(--qaap-lh-text-description);
+  background: var(--qaap-lh-bg-elevated);
+  border-radius: 6px;
+  padding: 8px;
+  overflow: auto;
+  max-height: 240px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.qaap-lh-tool-result {
+  font-weight: normal;
+  color: var(--qaap-lh-text-description);
+}
+
+.qaap-lh-tool-result pre {
+  margin: 0;
+  padding: 8px;
+  background: var(--qaap-lh-bg-elevated);
+  border-radius: 6px;
+  overflow: auto;
+  font-family: var(--qaap-lh-font-code);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.qaap-lh-tool-result .theia-toolCall-response-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qaap-lh-tool-result .theia-toolCall-text-result,
+.qaap-lh-tool-result .theia-toolCall-default-result,
+.qaap-lh-tool-result .theia-toolCall-error-result {
+  background: var(--qaap-lh-bg-elevated);
+  border-radius: 6px;
+  padding: 8px;
+  overflow: auto;
+  max-height: 320px;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.qaap-lh-tool-result .theia-toolCall-error-result pre {
+  background: transparent;
+  padding: 0;
+  color: var(--qaap-lh-error);
+}
+
+.qaap-lh-tool-divider {
+  border: none;
+  border-top: 1px dashed var(--qaap-lh-border);
+  margin: 8px 0 0 0;
+}
+
+/* Terminal states (denied / rejected) — compact, no expand. */
+.qaap-lh-tool-terminal {
+  display: flex;
+  align-items: center;
+  gap: var(--qaap-lh-gap);
+  padding: 4px;
+  border-radius: var(--qaap-lh-radius);
+  color: var(--qaap-lh-error);
+  cursor: default;
+}
+
+.qaap-lh-tool-terminal .qaap-lh-toolName {
+  color: var(--qaap-lh-error);
+}
+
+.qaap-lh-tool-terminal-reason {
+  color: var(--qaap-lh-text-description);
+  font-weight: normal;
+}
+
+/* Confirmation UI passthrough — keep upstream ToolConfirmation styling. */
+.qaap-lh-tool .theia-tool-confirmation {
+  margin: 6px 0 0 32px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Thinking / reasoning block
+ * ------------------------------------------------------------------------- */
+
+.qaap-lh-thinking {
+  margin-block: 6px;
+  color: var(--qaap-lh-text-description);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.qaap-lh-thinking-accordion > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--qaap-lh-gap);
+  min-width: 0;
+  padding: 4px;
+  border-radius: var(--qaap-lh-radius);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--qaap-duration-fast) var(--qaap-ease);
+}
+
+.qaap-lh-thinking-accordion > summary::-webkit-details-marker,
+.qaap-lh-thinking-accordion > summary::marker {
+  display: none;
+  content: '';
+}
+
+.qaap-lh-thinking-accordion > summary:hover {
+  background: var(--qaap-lh-bg-elevated);
+}
+
+.qaap-lh-thinkingTitle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.qaap-lh-thinkingLabel {
+  color: var(--qaap-lh-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qaap-lh-thinkingDuration {
+  color: var(--qaap-lh-text-quaternary);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.qaap-lh-thinking-content {
+  padding: 8px 8px 8px 32px;
+  max-height: min(40vh, 320px);
+  overflow: auto;
+  color: var(--qaap-lh-text-description);
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.qaap-lh-thinking-content pre {
+  margin: 0;
+  padding: 8px;
+  background: var(--qaap-lh-bg-elevated);
+  border-radius: 6px;
+  font-family: var(--qaap-lh-font-code);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+}
+
+/* ---------------------------------------------------------------------------
+ * Mobile narrow viewport — keep touch-friendly, compact
+ * ------------------------------------------------------------------------- */
+
+@media (max-width: 767px), (pointer: coarse) {
+  .qaap-lh-tool-toggle {
+    opacity: 1;
+  }
+
+  .qaap-lh-tool-detail,
+  .qaap-lh-thinking-content {
+    padding-inline-start: 24px;
+  }
+
+  .qaap-lh-tool-accordion > summary,
+  .qaap-lh-thinking-accordion > summary {
+    padding-block: 6px;
+  }
+}

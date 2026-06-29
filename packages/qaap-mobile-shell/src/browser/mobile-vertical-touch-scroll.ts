@@ -185,6 +185,12 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.qaap-diff-review-files',
     '.theia-mobile-pr-diff',
     '.qaap-project-bootstrap-picker',
+    '.qaap-lh-tool-args',
+    '.qaap-lh-tool-result pre',
+    '.qaap-lh-tool-result .theia-toolCall-text-result',
+    '.qaap-lh-tool-result .theia-toolCall-default-result',
+    '.qaap-lh-tool-result .theia-toolCall-error-result',
+    '.qaap-lh-thinking-content',
     '.gs-container',
     '.monaco-editor .overflow-guard',
 ] as const;

@@ -130,7 +130,13 @@
   .qaap-diff-review-hunks,
   .qaap-diff-review-files,
   .theia-mobile-pr-diff,
-  .qaap-project-bootstrap-picker {
+  .qaap-project-bootstrap-picker,
+  .qaap-lh-tool-args,
+  .qaap-lh-tool-result pre,
+  .qaap-lh-tool-result .theia-toolCall-text-result,
+  .qaap-lh-tool-result .theia-toolCall-default-result,
+  .qaap-lh-tool-result .theia-toolCall-error-result,
+  .qaap-lh-thinking-content {
     overflow-y: auto !important;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
