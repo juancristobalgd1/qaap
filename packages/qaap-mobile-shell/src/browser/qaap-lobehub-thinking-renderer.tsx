@@ -8,23 +8,29 @@
  * LobeHub-style thinking / reasoning block renderer for the QAAQ transcript.
  *
  * Re-implements the visual language of LobeHub's
- * `Messages/components/Thinking` (StatusIndicator + Title with shiny
- * "Thinking..." / "Thought for Xs" + expandable scrollable content) on top of
- * QAAQ's existing `ThinkingChatResponseContent` model. No parallel state.
+ * `features/Conversation/components/Thinking` (Accordion + StatusIndicator
+ * with Loader2Icon while thinking / AtomIcon when settled + Title with shiny
+ * "Deep Thinking..." / "Deeply Thought" + ScrollArea with markdown content)
+ * on top of QAAQ's existing `ThinkingChatResponseContent` model.
+ * No parallel state.
  *
  * Priority 11 wins over the upstream `ThinkingPartRenderer` (10).
  */
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';
+import { MarkdownRender } from '@theia/ai-chat-ui/lib/browser/chat-response-renderer/markdown-part-renderer';
 import { ChatResponseContent, ThinkingChatResponseContent } from '@theia/ai-chat/lib/common';
-import { codicon } from '@theia/core/lib/browser';
+import { codicon, OpenerService } from '@theia/core/lib/browser';
 import { nls } from '@theia/core/lib/common/nls';
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import * as React from '@theia/core/shared/react';
 import { ReactNode } from '@theia/core/shared/react';
 
 @injectable()
 export class QaapLobehubThinkingRenderer implements ChatResponsePartRenderer<ThinkingChatResponseContent> {
+
+    @inject(OpenerService)
+    protected openerService: OpenerService;
 
     canHandle(response: ChatResponseContent): number {
         if (ThinkingChatResponseContent.is(response)) {
@@ -34,47 +40,58 @@ export class QaapLobehubThinkingRenderer implements ChatResponsePartRenderer<Thi
     }
 
     render(response: ThinkingChatResponseContent): ReactNode {
-        return <LobehubThinking content={response.content} />;
+        return <LobehubThinking content={response.content} openerService={this.openerService} />;
     }
 }
 
 interface LobehubThinkingProps {
     content: string;
+    openerService: OpenerService;
 }
 
 /**
  * LobeHub-style thinking block.
  *
- * While there is no explicit "thinking now" signal on the QAAQ content model
- * (the upstream `ThinkingChatResponseContent` is a settled snapshot), we treat
- * the presence of content as "thought" — matching LobeHub's completed-state
- * title "Thought for Xs". The block is collapsible; open by default when
- * empty (still streaming) so the user sees the live trace.
+ * LobeHub's `Thinking` component (src/features/Conversation/components/Thinking):
+ *   - StatusIndicator: Loader2Icon (spin) while thinking, AtomIcon when settled
+ *     (purple when expanded, colorTextDescription when collapsed)
+ *   - Title: shiny "Deep Thinking..." while thinking, "Deeply Thought" when settled
+ *   - Accordion open while thinking, auto-collapses on settle; user can re-open
+ *   - Content: markdown rendered inside a ScrollArea (max-height min(40vh, 320px))
+ *
+ * QAAQ's `ThinkingChatResponseContent` is a settled snapshot with no explicit
+ * "thinking now" signal — we treat empty content as "thinking" (streaming)
+ * and non-empty as "thought" (settled), matching LobeHub's auto behaviour.
  */
-const LobehubThinking: React.FC<LobehubThinkingProps> = ({ content }) => {
+const LobehubThinking: React.FC<LobehubThinkingProps> = ({ content, openerService }) => {
     const hasContent = !!content && content.trim() !== '';
-    // No wall-clock duration is available on the content snapshot; LobeHub
-    // shows "Thought for Xs" only when duration is known. We omit the duration
-    // chip when unknown (LobeHub falls back to "Thought" without duration).
-    const thinkingLabel = hasContent
-        ? nls.localizeByDefault('Thought')
-        : nls.localizeByDefault('Thinking');
+    const isThinking = !hasContent;
 
-    // Open while there is no content yet (streaming), collapsed once settled.
-    const [open, setOpen] = React.useState(!hasContent);
+    // LobeHub i18n keys (packages/locales/src/default/components.ts):
+    //   'Thinking.thinking': 'Deep Thinking...'
+    //   'Thinking.thoughtWithDuration': 'Deeply Thought'
+    //   'Thinking.thought': 'Deeply Thought (in {{duration}} seconds)'
+    // QAAQ has no wall-clock duration on the snapshot, so we use
+    // thoughtWithDuration (the no-duration variant).
+    const thinkingLabel = isThinking
+        ? nls.localize('qaap/lobehub/thinking/thinking', 'Deep Thinking...')
+        : nls.localize('qaap/lobehub/thinking/thought', 'Deeply Thought');
+
+    // Open while thinking (streaming), auto-collapse once settled — mirrors
+    // LobeHub's `useEffect(() => setShowDetail(!!thinking), [thinking])`.
+    const [open, setOpen] = React.useState(isThinking);
     React.useEffect(() => {
         if (hasContent) {
-            // Auto-collapse once the reasoning settles — mirrors LobeHub's
-            // "expand while thinking, collapse after" auto behaviour. The user
-            // can still re-open.
             setOpen(false);
         }
     }, [hasContent]);
 
+    // LobeHub StatusIndicator: Loader2Icon (spin) while thinking,
+    // AtomIcon when settled. Codicon equivalents: loading (spin) / lightbulb.
     const statusState = 'thinking';
-    const statusIcon = hasContent
-        ? <span className={codicon('sparkle')} />
-        : <span className={`${codicon('loading')} theia-animation-spin`} />;
+    const statusIcon = isThinking
+        ? <span className={`${codicon('loading')} theia-animation-spin`} />
+        : <span className={codicon('lightbulb')} />;
 
     return (
         <div className='qaap-lh-thinking'>
@@ -86,13 +103,13 @@ const LobehubThinking: React.FC<LobehubThinkingProps> = ({ content }) => {
                 <summary>
                     <span className='qaap-lh-statusBlock' data-state={statusState}>{statusIcon}</span>
                     <span className='qaap-lh-thinkingTitle'>
-                        <span className={`qaap-lh-thinkingLabel ${!hasContent ? 'qaap-lh-shiny' : ''}`}>
+                        <span className={`qaap-lh-thinkingLabel ${isThinking ? 'qaap-lh-shiny' : ''}`}>
                             {thinkingLabel}
                         </span>
                     </span>
                 </summary>
                 <div className='qaap-lh-thinking-content'>
-                    <pre>{content}</pre>
+                    <MarkdownRender text={content} openerService={openerService} />
                 </div>
             </details>
         </div>

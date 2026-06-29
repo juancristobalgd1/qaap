@@ -28,6 +28,7 @@
 .qaap-lh-thinking {
   --qaap-lh-info: #3b82f6;
   --qaap-lh-purple: #7c3aed;
+  --qaap-lh-warning: #d97706;
   --qaap-lh-text-description: var(--qaap-muted);
   --qaap-lh-text-secondary: var(--qaap-ink-2);
   --qaap-lh-text-tertiary: var(--qaap-muted);
@@ -46,20 +47,26 @@
 .qaap-theme-dark .qaap-lh-thinking {
   --qaap-lh-info: #60a5fa;
   --qaap-lh-purple: #a78bfa;
+  --qaap-lh-warning: #fbbf24;
 }
 
 /* ---------------------------------------------------------------------------
  * Keyframes
  * ------------------------------------------------------------------------- */
 
-/* LobeHub shinyText: a brightness band sweeps across the text fill. */
+/* LobeHub shinyText (src/styles/loading.ts):
+ *   linear-gradient(120deg, transparent 40%, colorTextSecondary 50%, transparent 60%)
+ *   background-size: 200% 100%; animation: shine 1.5s linear infinite
+ *   0% { background-position: 100% } 100% { background-position: -100% }
+ *   base color: color-mix(in srgb, colorText 45%, transparent)
+ */
 @keyframes qaap-lh-shiny {
   0% {
-    background-position: 200% 0;
+    background-position: 100% 0;
   }
 
   100% {
-    background-position: -200% 0;
+    background-position: -100% 0;
   }
 }
 
@@ -67,8 +74,8 @@
 @keyframes qaap-lh-pulse {
   0%,
   100% {
-    opacity: 0.35;
-    transform: scale(0.85);
+    opacity: 0.3;
+    transform: scale(0.8);
   }
 
   50% {
@@ -77,7 +84,7 @@
   }
 }
 
-/* LobeHub headline slide-in (motion/react y: 8 -> 0). */
+/* LobeHub headline slide-in (motion/react y: 8 -> 0, opacity 0 -> 1). */
 @keyframes qaap-lh-headline-in {
   from {
     opacity: 0;
@@ -87,6 +94,17 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* LobeHub Accordion expand/collapse (motion/react height: 0 -> auto, opacity). */
+@keyframes qaap-lh-detail-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }
 
@@ -128,8 +146,21 @@
   color: var(--qaap-lh-info);
 }
 
+.qaap-lh-statusBlock[data-state='warning'] .codicon {
+  color: var(--qaap-lh-warning);
+}
+
+/* LobeHub Thinking StatusIndicator: purple when expanded (showDetail), muted otherwise. */
 .qaap-lh-statusBlock[data-state='thinking'] .codicon {
+  color: var(--qaap-lh-text-description);
+}
+
+.qaap-lh-thinking-accordion[open] .qaap-lh-statusBlock[data-state='thinking'] .codicon {
   color: var(--qaap-lh-purple);
+}
+
+.qaap-lh-statusBlock[data-state='working'] .codicon {
+  color: var(--qaap-lh-text-secondary);
 }
 
 .qaap-lh-statusBlock[data-state='working'] .qaap-lh-dot {
@@ -137,26 +168,32 @@
   height: 7px;
   border-radius: 50%;
   background: var(--qaap-lh-text-secondary);
-  animation: qaap-lh-pulse 1.1s ease-in-out infinite;
+  animation: qaap-lh-pulse 2s ease-in-out infinite;
 }
 
 /* ---------------------------------------------------------------------------
- * Shiny streaming text
+ * Shiny streaming text — LobeHub shinyTextStyles.shinyText
+ *   color: color-mix(in srgb, colorText 45%, transparent)
+ *   background: linear-gradient(120deg, transparent 40%, colorTextSecondary 50%, transparent 60%)
+ *   background-clip: text; background-size: 200% 100%
+ *   animation: shine 1.5s linear infinite
  * ------------------------------------------------------------------------- */
 
 .qaap-lh-shiny {
+  /* color-mix is supported in all evergreen browsers (Safari 16.4+, Chrome 111+, Firefox 113+). */
+  color: color-mix(in srgb, var(--qaap-ink-2) 45%, transparent);
   background: linear-gradient(
-    90deg,
-    var(--qaap-lh-text-tertiary) 0%,
+    120deg,
+    transparent 40%,
     var(--qaap-lh-text-secondary) 50%,
-    var(--qaap-lh-text-tertiary) 100%
+    transparent 60%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: qaap-lh-shiny 1.6s linear infinite;
+  animation: qaap-lh-shiny 1.5s linear infinite;
 }
 
 /* ---------------------------------------------------------------------------
@@ -224,8 +261,9 @@
 
 .qaap-lh-chevron {
   color: var(--qaap-lh-text-tertiary);
-  font-size: 12px;
+  font-size: 14px;
   flex: none;
+  margin-inline: 4px;
 }
 
 .qaap-lh-apiName {
@@ -295,12 +333,20 @@
   transform: rotate(180deg);
 }
 
-/* Detail panel (expanded). */
+/* LobeHub streaming headline motion (motion/react y: 8 -> 0, opacity 0 -> 1). */
+.qaap-lh-toolName.qaap-lh-shiny,
+.qaap-lh-thinkingLabel.qaap-lh-shiny {
+  animation: qaap-lh-shiny 1.5s linear infinite,
+    qaap-lh-headline-in 0.2s ease-out;
+}
+
+/* Detail panel (expanded) — LobeHub AccordionItem body. */
 .qaap-lh-tool-detail {
   padding: 8px 4px 4px 32px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  animation: qaap-lh-detail-in 0.2s ease-out;
 }
 
 .qaap-lh-tool-args {
@@ -453,27 +499,42 @@
   flex-shrink: 0;
 }
 
+/* LobeHub Thinking content: ScrollArea with max-height min(40vh, 320px),
+ * padding-block-end 8px, padding-inline 8px, colorTextDescription.
+ * Content rendered as markdown (MarkdownMessage) not <pre>. */
 .qaap-lh-thinking-content {
-  padding: 8px 8px 8px 32px;
+  padding: 4px 8px 8px 32px;
   max-height: min(40vh, 320px);
   overflow: auto;
   color: var(--qaap-lh-text-description);
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   overscroll-behavior-y: contain;
+  animation: qaap-lh-detail-in 0.2s ease-out;
 }
 
+.qaap-lh-thinking-content .theia-markdown,
+.qaap-lh-thinking-content .theia-markdown-container {
+  color: var(--qaap-lh-text-description);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.qaap-lh-thinking-content .theia-markdown p,
+.qaap-lh-thinking-content .theia-markdown li,
+.qaap-lh-thinking-content .theia-markdown h1,
+.qaap-lh-thinking-content .theia-markdown h2,
+.qaap-lh-thinking-content .theia-markdown h3,
+.qaap-lh-thinking-content .theia-markdown h4,
+.qaap-lh-thinking-content .theia-markdown h5,
+.qaap-lh-thinking-content .theia-markdown h6 {
+  color: var(--qaap-lh-text-description);
+}
+
+.qaap-lh-thinking-content code,
 .qaap-lh-thinking-content pre {
-  margin: 0;
-  padding: 8px;
-  background: var(--qaap-lh-bg-elevated);
-  border-radius: 6px;
   font-family: var(--qaap-lh-font-code);
   font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  cursor: text;
 }
 
 /* ---------------------------------------------------------------------------

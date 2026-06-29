@@ -278,14 +278,18 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
         [response, toolConfirmationManager, chatId, toolRequest]
     );
 
-    // Running elapsed timer (LobeHub ExecutionTime) — counts while executing.
+    // Running elapsed timer — mirrors LobeHub's ExecutionTime component
+    // (src/features/Conversation/Messages/AssistantGroup/Tool/Inspector/ExecutionTime.tsx):
+    //   - format: <1000ms -> "Xms"; <60s -> "X.Xs"; >=60s -> "XminYs"
+    //   - update interval: 100ms
+    //   - shows from the start (no >=1s gate; LobeHub shows "0ms" immediately)
     const isRunning = (confirmationState === 'allowed' || confirmationState === 'pending') && !response.finished && !requestCanceled;
-    const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
+    const [elapsedMs, setElapsedMs] = React.useState(0);
     const startRef = React.useRef<number | undefined>(undefined);
     React.useEffect(() => {
         if (!isRunning) {
             startRef.current = undefined;
-            setElapsedSeconds(0);
+            setElapsedMs(0);
             return;
         }
         if (startRef.current === undefined) {
@@ -293,14 +297,23 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
         }
         const tick = () => {
             const start = startRef.current ?? Date.now();
-            setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
+            setElapsedMs(Math.max(0, Date.now() - start));
         };
         tick();
-        const id = setInterval(tick, 1000);
+        const id = setInterval(tick, 100);
         return () => clearInterval(id);
     }, [isRunning]);
-    const showElapsed = isRunning && elapsedSeconds >= 1;
-    const elapsedText = showElapsed ? `${elapsedSeconds}s` : undefined;
+
+    const formatElapsedTime = (ms: number): string => {
+        if (ms < 1000) { return `${ms}ms`; }
+        const seconds = ms / 1000;
+        if (seconds < 60) { return `${seconds.toFixed(1)}s`; }
+        const totalSeconds = Math.floor(seconds);
+        const minutes = Math.floor(totalSeconds / 60);
+        const remainingSeconds = totalSeconds % 60;
+        return `${minutes}min${remainingSeconds}s`;
+    };
+    const elapsedText = isRunning ? formatElapsedTime(elapsedMs) : undefined;
 
     // Status block state (mirrors LobeHub StatusIndicator).
     const isDenied = confirmationState === 'denied';
@@ -330,19 +343,25 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
     const reasonText = formatReason(rejectionReason ?? deniedReason);
 
     let statusState: 'success' | 'error' | 'pending' | 'working' = 'working';
-    let statusIcon = <span className='qaap-lh-dot' />;
+    let statusIcon: React.ReactNode = <span className='qaap-lh-dot' />;
     if (isRejected || isDenied || isCanceledMidRun) {
+        // LobeHub StatusIndicator: X icon (colorError) for error / rejected / aborted.
         statusState = 'error';
         statusIcon = <span className={codicon('error')} />;
     } else if (isPending) {
+        // LobeHub StatusIndicator: HandIcon (colorInfo) for pending intervention.
+        statusIcon = <span className={codicon('info')} />;
         statusState = 'pending';
-        statusIcon = <span className={codicon('question')} />;
     } else if (isFinishedOk) {
+        // LobeHub StatusIndicator: Check icon (colorSuccess) for completed.
         statusState = 'success';
         statusIcon = <span className={codicon('check')} />;
     } else if (isAllowed && !response.finished) {
+        // LobeHub StatusIndicator: NeuralNetworkLoading for working state.
+        // We use a pulsing dot (CSS .qaap-lh-dot) as a lightweight substitute
+        // that avoids embedding an SVG neural network on every tool call.
         statusState = 'working';
-        statusIcon = <span className={`${codicon('loading')} theia-animation-spin`} />;
+        statusIcon = <span className='qaap-lh-dot' />;
     }
 
     // Terminal (non-expandable) states: denied / rejected / canceled.
@@ -383,7 +402,7 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
             <span className='qaap-lh-statusBlock' data-state={statusState}>{statusIcon}</span>
             <span className='qaap-lh-toolTitle'>
                 <span className={`qaap-lh-toolName ${isRunning ? 'qaap-lh-shiny' : ''}`}>{response.name}</span>
-                <span className='qaap-lh-chevron'>›</span>
+                <span className={`qaap-lh-chevron ${codicon('chevron-right')}`} />
                 <span className='qaap-lh-apiName'>{argsLabel || (isArgumentsStreaming ? '…' : '')}</span>
                 {params.length > 0 && (
                     <span className='qaap-lh-params'>
@@ -395,7 +414,11 @@ const LobehubToolCallContent: React.FC<LobehubToolCallContentProps> = ({
                                 {index < params.length - 1 && <span className='qaap-lh-paramKey'>, </span>}
                             </React.Fragment>
                         ))}
-                        {remainingCount > 0 && <span className='qaap-lh-paramKey'> +{remainingCount}</span>}
+                        {remainingCount > 0 && (
+                            <span className='qaap-lh-paramKey'>
+                                {' '}{nls.localize('qaap/lobehub/arguments/moreParams', '{0} params in total', remainingCount + params.length)}
+                            </span>
+                        )}
                         {')'}
                     </span>
                 )}
