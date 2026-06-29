@@ -3,29 +3,29 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
-import { LabelProvider } from '@theia/core/lib/browser';
-import { StorageService } from '@theia/core/lib/browser/storage-service';
-import { CommandRegistry } from '@theia/core/lib/common/command';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import { PreferenceService } from '@theia/core/lib/common/preferences';
-import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
-import { QuickInputService } from '@theia/core';
-import { AIVariableService, FrontendLanguageModelRegistry, PromptService } from '@theia/ai-core';
-import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
-import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
-import { ChatService } from '@theia/ai-chat';
-import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
-import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
-import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { EditorManager } from '@theia/editor/lib/browser';
-import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
-import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
-import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
-import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
-import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
+import type { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
+import type { LabelProvider } from '@theia/core/lib/browser';
+import type { StorageService } from '@theia/core/lib/browser/storage-service';
+import type { CommandRegistry } from '@theia/core/lib/common/command';
+import type { MessageService } from '@theia/core/lib/common/message-service';
+import type { PreferenceService } from '@theia/core/lib/common/preferences';
+import type { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
+import type { QuickInputService } from '@theia/core';
+import type { AIVariableService, FrontendLanguageModelRegistry, PromptService } from '@theia/ai-core';
+import type { SkillService } from '@theia/ai-core/lib/browser/skill-service';
+import type { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
+import type { ChatService } from '@theia/ai-chat';
+import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
+import type { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
+import type { FileService } from '@theia/filesystem/lib/browser/file-service';
+import type { EditorManager } from '@theia/editor/lib/browser';
+import type { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
+import type { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
+import type { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import type { WidgetManager } from '@theia/core/lib/browser/widget-manager';
+import type { WorkspaceService } from '@theia/workspace/lib/browser';
+import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
+import type { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { applyComposerAttachmentsToPrompt } from '../common/qaap-composer-attachment-prompt';
 import { expandComposerSkillSlashCommands } from '../common/qaap-composer-skill-submit';
@@ -34,7 +34,7 @@ import { QaapBackgroundContextProvider } from './qaap-background-context-provide
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 import { MobileProjectsService } from './mobile-projects-service';
-import { MobileProjectsPanel, type MobileProjectsPanelOptions } from './mobile-projects-panel';
+import type { MobileProjectsPanel, MobileProjectsPanelDelegate, MobileProjectsPanelOptions } from './mobile-projects-panel';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
@@ -116,6 +116,12 @@ export interface MobileProjectsPanelFactoryOptions {
     deps: MobileProjectsPanelFactoryDeps;
     delegate: MobileProjectsPanelFactoryDelegate;
     panelOptions?: Pick<MobileProjectsPanelOptions, 'headerOverflowMenuGroups' | 'sessionsSidebarContainer' | 'mobileIdeViewPicker'>;
+    createPanel?: (
+        projectsService: MobileProjectsService,
+        commands: CommandRegistry,
+        delegate: MobileProjectsPanelDelegate,
+        options: MobileProjectsPanelOptions,
+    ) => MobileProjectsPanel;
 }
 
 /** DI wiring for {@link MobileProjectsPanel} — kept out of the shell contribution orchestrator. */
@@ -124,17 +130,24 @@ export class MobileProjectsPanelFactory {
     protected readonly deps: MobileProjectsPanelFactoryDeps;
     protected readonly delegate: MobileProjectsPanelFactoryDelegate;
     protected readonly panelOptions: MobileProjectsPanelFactoryOptions['panelOptions'];
+    protected readonly createPanelInstance: NonNullable<MobileProjectsPanelFactoryOptions['createPanel']>;
 
     constructor(options: MobileProjectsPanelFactoryOptions) {
         this.deps = options.deps;
         this.delegate = options.delegate;
         this.panelOptions = options.panelOptions;
+        this.createPanelInstance = options.createPanel ?? ((projectsService, commands, delegate, panelOptions) => {
+            // Keep the heavy panel graph out of lightweight unit tests until a real panel is needed.
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const module = require('./mobile-projects-panel') as typeof import('./mobile-projects-panel');
+            return new module.MobileProjectsPanel(projectsService, commands, delegate, panelOptions);
+        });
     }
 
     create(homeMode: boolean): MobileProjectsPanel {
         const deps = this.deps;
         const delegate = this.delegate;
-        return new MobileProjectsPanel(
+        return this.createPanelInstance(
             deps.projectsService,
             deps.commands,
             {

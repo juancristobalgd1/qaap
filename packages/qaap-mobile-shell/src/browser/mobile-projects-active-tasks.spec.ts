@@ -13,6 +13,15 @@ import {
 } from './mobile-projects-active-tasks';
 
 class TestActiveTasks extends MobileProjectsActiveTasks {
+    constructor() {
+        super({
+            scheduleFrame: () => 1,
+            cancelFrame: () => undefined,
+            setTimeout: () => 1 as unknown as ReturnType<typeof setTimeout>,
+            clearTimeout: () => undefined,
+        });
+    }
+
     protected override resolveChangeCoalesceDelayMs(): number {
         return 0;
     }

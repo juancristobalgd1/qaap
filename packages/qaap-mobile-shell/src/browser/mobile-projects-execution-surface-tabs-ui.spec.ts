@@ -248,7 +248,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
         const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
 
-        const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option span'))
+        const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(label => label.textContent);
         expect(labels[0]).to.equal('Editor');
         expect(labels).to.include.members(['Chat', 'Plan', 'Changes', 'Preview', 'Files', 'Terminal']);

@@ -28,6 +28,13 @@ import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-proje
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { tryBuildTranscriptRichToolBody } from './qaap-transcript-rich-content-ui';
+import {
+    createLobeToolTitle,
+    createLobeTraceStatusIndicator,
+    parseLobeToolTitleParamSummary,
+    type LobeTraceStatus,
+    type LobeToolTitleParam,
+} from './mobile-projects-transcript-lobehub-ui';
 
 /** Sticky expand headers kick in once a grouped panel is long enough to scroll. */
 const TRANSCRIPT_EXPAND_STICKY_TERMINAL_MIN = 6;
@@ -203,7 +210,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
                 indicator.classList.add('theia-mod-thinking');
             }
             const title = document.createElement('span');
-            title.className = 'theia-mobile-agent-thought-brief-title';
+            title.className = 'theia-mobile-agent-thought-brief-title theia-mobile-agent-lobe-thinking-title';
             if (isStreaming) {
                 title.classList.add('theia-mod-shimmer');
             }
@@ -215,8 +222,11 @@ export class MobileProjectsTranscriptMessagesToolUi {
             chevron.setAttribute('aria-hidden', 'true');
             summary.append(indicator, title, chevron);
             const body = document.createElement('div');
-            body.className = 'theia-mobile-agent-thought-brief-body theia-mobile-agent-lobe-thinking-content';
-            body.textContent = this.contentUi.cleanTranscriptDisplayText(segment.content);
+            body.className = 'theia-mobile-agent-lobe-thinking-scroll';
+            const content = document.createElement('div');
+            content.className = 'theia-mobile-agent-thought-brief-body theia-mobile-agent-lobe-thinking-content';
+            content.textContent = this.contentUi.cleanTranscriptDisplayText(segment.content);
+            body.append(content);
             details.append(summary, body);
             return details;
         }
@@ -330,6 +340,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
 
         const failed = this.resolversUi.transcriptToolResultFailed(segment.result, segment.name);
         const head = this.createTranscriptToolHead({
+            args: segment.args,
             kind,
             toolName: segment.name,
             fullPath,
@@ -343,11 +354,10 @@ export class MobileProjectsTranscriptMessagesToolUi {
         });
 
         const details = document.createElement('details');
-        details.className = `theia-mobile-agent-tool-window theia-mod-${kind}`;
+        details.className = `theia-mobile-agent-tool-window theia-mobile-agent-lobe-trace-block theia-mod-${kind}`;
         const shouldOpen = this.resolversUi.shouldOpenTranscriptToolDetails(segment);
         details.open = shouldOpen;
         details.classList.add(!segment.finished ? 'theia-mod-running' : failed ? 'theia-mod-failed' : 'theia-mod-done');
-        details.classList.add('theia-mobile-agent-lobe-trace-block');
         details.append(head);
         const body = document.createElement('div');
         body.className = 'theia-mobile-agent-tool-body';
@@ -750,6 +760,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
     }
 
     createTranscriptToolHead(options: {
+        args?: string;
         kind: string;
         toolName: string;
         fullPath?: string;
@@ -774,23 +785,19 @@ export class MobileProjectsTranscriptMessagesToolUi {
         if (!options.showResultBody) {
             chevron.hidden = true;
         }
-        const icon = document.createElement('span');
-        icon.className = `theia-mobile-agent-tool-icon codicon ${this.transcriptToolIconClass(options.kind)}`;
-        icon.setAttribute('aria-hidden', 'true');
-        const title = document.createElement('span');
-        title.className = 'theia-mobile-agent-tool-title';
-        title.textContent = this.transcriptToolVerb(options.kind, options.toolName);
-        head.append(icon, title);
+        head.append(createLobeToolTitle(this.resolveLobeToolTitleOptions(options)));
         if (options.fullPath && options.kind === 'reading') {
             const { fileName, dirPath } = this.resolversUi.splitTranscriptFilePath(options.fullPath);
             const fileNameEl = document.createElement('span');
-            fileNameEl.className = 'theia-mobile-agent-tool-file-name';
+            fileNameEl.className = 'theia-mobile-agent-tool-file-name theia-mobile-agent-lobe-tool-api';
             fileNameEl.textContent = fileName;
+            fileNameEl.hidden = true;
             head.append(fileNameEl);
             if (dirPath) {
                 const dirEl = document.createElement('span');
-                dirEl.className = 'theia-mobile-agent-tool-file-dir';
+                dirEl.className = 'theia-mobile-agent-tool-file-dir theia-mobile-agent-lobe-tool-param';
                 dirEl.textContent = dirPath;
+                dirEl.hidden = true;
                 head.append(dirEl);
             }
             if (!options.showResultBody) {
@@ -798,8 +805,9 @@ export class MobileProjectsTranscriptMessagesToolUi {
             }
         } else if (options.target) {
             const chip = document.createElement('span');
-            chip.className = 'theia-mobile-agent-tool-target';
+            chip.className = 'theia-mobile-agent-tool-target theia-mobile-agent-lobe-tool-api';
             chip.textContent = options.target;
+            chip.hidden = true;
             head.append(chip);
         }
         if (options.hasResult && options.pureRead && options.result) {
@@ -875,19 +883,45 @@ export class MobileProjectsTranscriptMessagesToolUi {
         failed: boolean;
         kind?: string;
     }): HTMLElement {
-        const status = document.createElement('span');
-        status.className = 'theia-mobile-agent-lobe-status-indicator';
-        status.classList.add(!options.finished ? 'theia-mod-running' : options.failed ? 'theia-mod-failed' : 'theia-mod-done');
-        if (options.kind) {
-            status.classList.add(`theia-mod-${options.kind}`);
+        return createLobeTraceStatusIndicator(this.resolveLobeTraceStatus(options), options.kind);
+    }
+
+    protected resolveLobeTraceStatus(options: {
+        readonly finished: boolean;
+        readonly failed: boolean;
+    }): LobeTraceStatus {
+        if (!options.finished) {
+            return 'running';
         }
-        status.setAttribute('role', 'status');
-        status.setAttribute('aria-label', this.transcriptShellStateAriaLabel(options.finished, options.failed));
-        const icon = document.createElement('span');
-        icon.className = `codicon ${!options.finished ? 'codicon-loading' : options.failed ? 'codicon-error' : 'codicon-check'}`;
-        icon.setAttribute('aria-hidden', 'true');
-        status.append(icon);
-        return status;
+        return options.failed ? 'failed' : 'completed';
+    }
+
+    protected resolveLobeToolTitleOptions(options: {
+        readonly args?: string;
+        readonly finished: boolean;
+        readonly fullPath?: string;
+        readonly kind: string;
+        readonly target?: string;
+        readonly toolName: string;
+    }): Parameters<typeof createLobeToolTitle>[0] {
+        const pluginTitle = this.transcriptToolVerb(options.kind, options.toolName);
+        let apiName = options.target || options.toolName;
+        const parsedParams = parseLobeToolTitleParamSummary(options.args);
+        let params: readonly LobeToolTitleParam[] = parsedParams.params;
+        let remainingParamsCount = parsedParams.remainingParamsCount;
+        if (options.fullPath && options.kind === 'reading') {
+            const { fileName, dirPath } = this.resolversUi.splitTranscriptFilePath(options.fullPath);
+            apiName = fileName;
+            params = dirPath ? [{ key: 'path', value: dirPath }] : params;
+            remainingParamsCount = 0;
+        }
+        return {
+            apiName,
+            loading: !options.finished,
+            params,
+            pluginTitle,
+            remainingParamsCount,
+        };
     }
 
     /** Full shell-window text for clipboard: `$ command` plus any output block. */
@@ -931,16 +965,11 @@ export class MobileProjectsTranscriptMessagesToolUi {
         const chevron = document.createElement('span');
         chevron.className = 'theia-mobile-agent-tool-pill-chevron codicon codicon-chevron-right';
         chevron.setAttribute('aria-hidden', 'true');
-        const icon = document.createElement('span');
-        icon.className = `codicon ${this.transcriptToolIconClass(options.kind)} theia-mobile-agent-tool-pill-icon`;
-        icon.setAttribute('aria-hidden', 'true');
-        const verb = document.createElement('span');
-        verb.className = 'theia-mobile-agent-tool-pill-verb';
-        verb.textContent = options.verb;
-        const label = document.createElement('span');
-        label.className = 'theia-mobile-agent-tool-pill-label';
-        label.textContent = options.label;
-        summary.append(icon, verb, label);
+        summary.append(createLobeToolTitle({
+            apiName: options.label,
+            loading: !options.finished,
+            pluginTitle: options.verb,
+        }));
         if (options.kind === 'mcp') {
             summary.append(this.createTranscriptMcpBadge(options.mcpServer));
         }
@@ -976,25 +1005,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
             mcpServer?: string;
         },
     ): void {
-        const verb = summary.querySelector('.theia-mobile-agent-tool-pill-verb');
-        if (verb) {
-            verb.textContent = options.verb;
-        }
-        const labelEl = summary.querySelector('.theia-mobile-agent-tool-pill-label');
-        if (labelEl) {
-            labelEl.textContent = options.label;
-        }
-        summary.querySelector('.theia-mobile-agent-tool-pill-badge.theia-mod-mcp')?.remove();
-        if (options.kind === 'mcp') {
-            const label = summary.querySelector('.theia-mobile-agent-tool-pill-label');
-            label?.after(this.createTranscriptMcpBadge(options.mcpServer));
-        }
         summary.querySelector('.theia-mobile-agent-shell-tail')?.remove();
-        this.appendTranscriptToolPillSummaryTail(summary, {
-            finished: options.finished,
-            failed: options.failed,
-            copyFrom: options.copyFrom,
-        });
         const status = summary.querySelector<HTMLElement>('.theia-mobile-agent-lobe-status-indicator');
         if (status) {
             status.replaceWith(this.createTranscriptTraceStatusIndicator({
@@ -1003,6 +1014,24 @@ export class MobileProjectsTranscriptMessagesToolUi {
                 kind: options.kind,
             }));
         }
+        const title = summary.querySelector<HTMLElement>('.theia-mobile-agent-lobe-tool-title-root');
+        if (title) {
+            title.replaceWith(createLobeToolTitle({
+                apiName: options.label,
+                loading: !options.finished,
+                pluginTitle: options.verb,
+            }));
+        }
+        summary.querySelector('.theia-mobile-agent-tool-pill-badge.theia-mod-mcp')?.remove();
+        if (options.kind === 'mcp') {
+            const titleRoot = summary.querySelector('.theia-mobile-agent-lobe-tool-title-root');
+            titleRoot?.after(this.createTranscriptMcpBadge(options.mcpServer));
+        }
+        this.appendTranscriptToolPillSummaryTail(summary, {
+            finished: options.finished,
+            failed: options.failed,
+            copyFrom: options.copyFrom,
+        });
         const chevron = summary.querySelector('.theia-mobile-agent-tool-pill-chevron');
         if (chevron) {
             summary.append(chevron);
@@ -1043,16 +1072,11 @@ export class MobileProjectsTranscriptMessagesToolUi {
         const chevron = document.createElement('span');
         chevron.className = 'theia-mobile-agent-shell-chevron codicon codicon-chevron-right';
         chevron.setAttribute('aria-hidden', 'true');
-        const iconWrap = document.createElement('span');
-        iconWrap.className = 'theia-mobile-agent-shell-icon-wrap';
-        const icon = document.createElement('span');
-        icon.className = 'theia-mobile-agent-shell-icon codicon codicon-terminal';
-        icon.setAttribute('aria-hidden', 'true');
-        iconWrap.append(icon);
-        const label = document.createElement('span');
-        label.className = 'theia-mobile-agent-shell-title';
-        label.textContent = options.title;
-        summary.append(iconWrap, label);
+        summary.append(createLobeToolTitle({
+            apiName: options.title,
+            loading: !options.finished,
+            pluginTitle: nls.localize('qaap/mobileProjects/transcriptToolRan', 'Ran'),
+        }));
         if (options.exitCode !== undefined && options.finished) {
             const exitCode = document.createElement('span');
             exitCode.className = 'theia-mobile-agent-shell-exit-code';

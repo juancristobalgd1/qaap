@@ -79,7 +79,10 @@ export function bindStickyComposerControlClick(
     const activate = (ev: Event): void => {
         const wasPressed = pressed;
         pressed = false;
-        if (!wasPressed) {
+        const keyboardOrProgrammaticClick = ev.type === 'click'
+            && ev instanceof MouseEvent
+            && ev.detail === 0;
+        if (!wasPressed && !keyboardOrProgrammaticClick) {
             return;
         }
         const now = Date.now();

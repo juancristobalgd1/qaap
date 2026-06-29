@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import * as markdownit from '@theia/core/shared/markdown-it';
 import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import {
     enableTranscriptRenderMetrics,
@@ -58,6 +59,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
             projectRowsUi: {
                 localizeActivityLabel: (label: string) => label,
             },
+            transcriptMarkdownIt: markdownit({ linkify: false }),
         } as unknown as MobileProjectsTranscriptMessagesHost;
         const contentUi = new MobileProjectsTranscriptMessagesContentUi(host as never);
         const resolversUi = new MobileProjectsTranscriptMessagesResolversUi(host as never, contentUi);
@@ -99,6 +101,41 @@ describe('qaap-transcript-timeline-render-bench', () => {
             }],
         } as QaapAgentConversationDTO;
     }
+
+    it('folds short process prose into the Lobe-style workflow and keeps the final answer visible', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Need to review the pull request.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-1',
+                args: JSON.stringify({ path: 'package.json' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'Let me check the recent commits and PR details.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-2',
+                args: JSON.stringify({ path: 'src/app.ts' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'Let me read the key changed files to review the actual code changes.' },
+            { type: 'text', content: 'PR Review: Fix critical bugs\n\nSummary\nThis PR changes the transcript rendering.' },
+        ];
+        const row = artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, createCompletedConv(segments));
+        const visibleText = [...row.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-content')]
+            .map(element => element.textContent?.trim())
+            .filter(Boolean)
+            .join('\n');
+
+        expect(visibleText).to.not.include('Let me check');
+        expect(visibleText).to.not.include('Let me read');
+        expect(visibleText).to.include('PR Review: Fix critical bugs');
+    });
 
     it('skips redundant timeline syncs during duplicate SSE frames', () => {
         enableTranscriptRenderMetrics(true);
@@ -158,7 +195,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(row.querySelector('.theia-mobile-agent-technical-details')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-icon.theia-mobile-agent-trace-glyph')).to.not.equal(null);
         expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent).to.equal('Read page.tsx');
-        expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-timeline')?.open).to.equal(true);
+        expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-timeline')?.open).to.equal(false);
         expect(row.querySelector('.theia-mobile-agent-activity-icon.codicon-thinking')).to.not.equal(null);
         const verbs = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-verb')).map(el => el.textContent);
         expect(verbs).to.deep.equal(['Thinking', 'Read']);

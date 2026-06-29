@@ -56,7 +56,22 @@ describe('mobile-projects-panel-factory', () => {
             projectsService: {} as MobileProjectsService,
             commands: {} as CommandRegistry,
         } as MobileProjectsPanelFactoryDeps;
-        const factory = new MobileProjectsPanelFactory({ deps, delegate });
+        const factory = new MobileProjectsPanelFactory({
+            deps,
+            delegate,
+            createPanel: (_projectsService, _commands, _delegate, options) => {
+                const node = document.createElement('div');
+                if (options.homeMode) {
+                    node.classList.add('theia-mod-home');
+                } else {
+                    node.setAttribute('role', 'dialog');
+                }
+                return {
+                    node,
+                    isHomeMode: () => !!options.homeMode,
+                } as unknown as MobileProjectsPanelFactoryType['create'] extends (...args: never[]) => infer R ? R : never;
+            },
+        });
         return { factory, delegateCalls };
     };
 

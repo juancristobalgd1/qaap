@@ -439,7 +439,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
     }
 
     protected centerExecutionSurfaceActiveControl(strip: HTMLElement): void {
-        window.requestAnimationFrame(() => {
+        this.scheduleExecutionSurfaceFrame(() => {
             const active = strip.querySelector<HTMLElement>(
                 '.theia-mobile-transcript-tab-icon-select[data-surface-active="true"], .theia-mobile-transcript-tab.theia-mod-active',
             );
@@ -448,6 +448,14 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             }
             active.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
         });
+    }
+
+    protected scheduleExecutionSurfaceFrame(callback: () => void): void {
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(callback);
+            return;
+        }
+        window.setTimeout(callback, 0);
     }
 
     resolveExecutionSurfaceIconSelectDisplayTab(activeTab: TranscriptTab): TranscriptTab {
@@ -601,6 +609,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         editorItem.setAttribute('aria-label', editorItem.title);
         appendExecutionSurfaceTabIcon(editorItem, 'codicon-layout', '');
         const editorLabel = document.createElement('span');
+        editorLabel.className = 'theia-mobile-transcript-tab-icon-select-option-label';
         editorLabel.textContent = editorItem.title;
         editorItem.append(editorLabel);
         editorItem.addEventListener('click', event => {
@@ -621,6 +630,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             item.setAttribute('aria-label', spec.label);
             appendExecutionSurfaceTabIcon(item, spec.icon, '');
             const itemLabel = document.createElement('span');
+            itemLabel.className = 'theia-mobile-transcript-tab-icon-select-option-label';
             itemLabel.textContent = spec.label;
             item.append(itemLabel);
             item.addEventListener('click', event => {
@@ -652,7 +662,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         menu.hidden = false;
         menu.classList.add('theia-mod-open', 'theia-mod-floating');
         this.resolveExecutionTabOverflowMenuPortal(anchor).append(menu);
-        window.requestAnimationFrame(() => {
+        this.scheduleExecutionSurfaceFrame(() => {
             if (this.host.executionTabOverflowMenu === menu && this.host.executionTabOverflowAnchor === anchor) {
                 this.positionExecutionTabOverflowMenu(menu, anchor);
             }

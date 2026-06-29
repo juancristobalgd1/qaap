@@ -4,8 +4,12 @@
 // *****************************************************************************
 
 import { Emitter, Event } from '@theia/core/lib/common/event';
-import { injectable } from '@theia/core/shared/inversify';
-import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
+import { injectable, unmanaged } from '@theia/core/shared/inversify';
+import {
+    defaultQaapChatViewStreamUpdateClocks,
+    QaapChatViewStreamUpdateScheduler,
+    type QaapChatViewStreamUpdateClocks,
+} from '../common/qaap-chat-view-stream-update-scheduler';
 
 /**
  * HTTP contract with `@theia/qaap-cloud-workspace`. The string is duplicated here on purpose:
@@ -101,11 +105,14 @@ export class MobileProjectsActiveTasks {
     protected readonly changeScheduler = new QaapChatViewStreamUpdateScheduler(
         () => this.onDidChangeEmitter.fire(),
         () => this.resolveChangeCoalesceDelayMs(),
+        this.updateClocks,
     );
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
     /** Fires whenever the set of active tasks changes (task created, completed, or cancelled). */
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
+
+    constructor(@unmanaged() protected readonly updateClocks: QaapChatViewStreamUpdateClocks = defaultQaapChatViewStreamUpdateClocks) { }
 
     /** Idempotent — safe to call from multiple consumers. The first call opens the WebSocket. */
     start(): void {

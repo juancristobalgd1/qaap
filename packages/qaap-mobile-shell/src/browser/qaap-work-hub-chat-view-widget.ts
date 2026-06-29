@@ -154,6 +154,17 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected override init(): void {
         this.toDispose.pushAll([this.treeWidget, this.inputWidget]);
         this.chatSession = this.chatService.createSession();
+        // The Work Hub replaces the upstream chat body, but the inherited
+        // ChatViewWidget still owns an AIChatInputWidget. Bind it to a real
+        // model so asynchronous updates during frontend restore cannot render
+        // with an undefined chat model and blank the whole shell.
+        this.inputWidget.chatModel = this.chatSession.model;
+        this.inputWidget.pinnedAgent = this.chatSession.pinnedAgent;
+        this.inputWidget.onQuery = async () => { /* Work Hub uses its sticky composer. */ };
+        this.inputWidget.onUnpin = () => undefined;
+        this.inputWidget.onCancel = () => undefined;
+        this.inputWidget.onDeleteChangeSet = () => undefined;
+        this.inputWidget.onDeleteChangeSetElement = () => undefined;
 
         const layout = this.layout = new PanelLayout();
         const host = new LuminoWidget();
