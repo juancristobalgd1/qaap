@@ -198,6 +198,11 @@ export class MobileProjectsTranscriptMessagesToolUi {
             const isStreaming = !!options?.streaming;
             const details = document.createElement('details');
             details.className = 'theia-mobile-agent-transcript-details theia-mod-thinking theia-mobile-agent-lobe-trace-block';
+            // This branch renders archived thinking segments inside the
+            // "Technical details" card (createTranscriptTechnicalDetailsCard),
+            // which is only built for settled conversations — streaming never
+            // reaches here. The live open-while-thinking / auto-collapse-on-settle
+            // behaviour lives in createTranscriptThoughtBriefBlock instead.
             details.open = false;
             const summary = document.createElement('summary');
             summary.className = 'theia-mobile-agent-lobe-inspector';
@@ -214,9 +219,13 @@ export class MobileProjectsTranscriptMessagesToolUi {
             if (isStreaming) {
                 title.classList.add('theia-mod-shimmer');
             }
+            // LobeHub i18n keys: Thinking.thinking = "Deep Thinking...",
+            // Thinking.thoughtWithDuration = "Deeply Thought". Kept in sync
+            // with the streaming thought brief (refreshTranscriptThoughtBriefTitle)
+            // and the IDE React renderer (QaapLobehubThinkingRenderer).
             title.textContent = isStreaming
-                ? nls.localize('qaap/mobileProjects/transcriptThinking', 'Thinking')
-                : nls.localize('qaap/mobileProjects/transcriptThought', 'Thought');
+                ? nls.localize('qaap/lobehub/thinking/thinking', 'Deep Thinking...')
+                : nls.localize('qaap/lobehub/thinking/thought', 'Deeply Thought');
             const chevron = document.createElement('span');
             chevron.className = 'theia-mobile-agent-tool-chevron codicon codicon-chevron-right';
             chevron.setAttribute('aria-hidden', 'true');

@@ -1213,25 +1213,14 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         const meta = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-meta');
         meta?.remove();
-        // Sync the thought brief icon: snake spinner during streaming (including
-        // the Finalizing state where the backend is still streaming but the turn
-        // is visually settled), trace-glyph only when the backend is truly idle.
+        // Sync the thought brief icon: spinning loader (LobeHub Loader2) while
+        // the backend is still streaming (including the Finalizing state where
+        // the turn is visually settled but the backend is still active),
+        // lightbulb (LobeHub Atom) when the backend is truly idle.
         const backendStreaming = streaming || (!!options.conv && options.conv.status === 'streaming');
         const briefIcon = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-icon');
         if (briefIcon) {
-            const existingSpinner = transcriptSummarySpinners.get(briefIcon);
-            if (backendStreaming && !existingSpinner) {
-                const spinner = createUnicodeSpinner();
-                spinner.classList.add('theia-mobile-agent-thought-brief-spinner');
-                briefIcon.classList.add('theia-mod-spinner-active');
-                briefIcon.append(spinner);
-                transcriptSummarySpinners.set(briefIcon, spinner);
-            } else if (!backendStreaming && existingSpinner) {
-                destroyUnicodeSpinner(existingSpinner);
-                existingSpinner.remove();
-                transcriptSummarySpinners.delete(briefIcon);
-                briefIcon.classList.remove('theia-mod-spinner-active');
-            }
+            this.syncTranscriptThoughtBriefIcon(briefIcon, backendStreaming || thinkingActive);
         }
         const bodyWrap = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-body-wrap');
         if (thinking) {
@@ -1287,7 +1276,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 if (!title.isConnected) {
                     return;
                 }
-                title.textContent = nls.localize('qaap/mobileProjects/transcriptReasoning', 'Reasoning');
+                // LobeHub Thinking.thinking = "Deep Thinking..." — shown while
+                // the model is actively reasoning (streaming).
+                title.textContent = nls.localize('qaap/lobehub/thinking/thinking', 'Deep Thinking...');
             };
             update();
             if (block.dataset.thoughtLiveTimer !== '1') {
@@ -1313,11 +1304,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             return;
         }
         block.removeAttribute('data-thought-live-timer');
-        if (options.thinking) {
-            title.textContent = nls.localize('qaap/mobileProjects/transcriptReasoning', 'Reasoning');
-            return;
-        }
-        title.textContent = nls.localize('qaap/mobileProjects/transcriptReasoning', 'Reasoning');
+        // LobeHub Thinking.thoughtWithDuration = "Deeply Thought" — shown once
+        // reasoning has settled (whether or not thinking content is present).
+        // Kept in sync with the technical-details thinking branch and the IDE
+        // React renderer (QaapLobehubThinkingRenderer).
+        title.textContent = nls.localize('qaap/lobehub/thinking/thought', 'Deeply Thought');
     }
 
     protected syncTranscriptActivityTimelineElement(
@@ -1968,6 +1959,32 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
     }
 
+    protected createTranscriptThoughtBriefIcon(active: boolean): HTMLElement {
+        const icon = document.createElement('span');
+        icon.className = 'theia-mobile-agent-lobe-status-indicator theia-mod-thinking theia-mobile-agent-thought-brief-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        const glyph = document.createElement('span');
+        glyph.className = this.resolveTranscriptThoughtBriefIconClass(active);
+        icon.append(glyph);
+        return icon;
+    }
+
+    protected resolveTranscriptThoughtBriefIconClass(active: boolean): string {
+        // LobeHub: Loader2Icon (spin) while thinking, AtomIcon when settled.
+        // Codicon equivalents: `loading` (with theia-animation-spin) / `lightbulb`.
+        return active
+            ? 'codicon codicon-loading theia-animation-spin'
+            : 'codicon codicon-lightbulb';
+    }
+
+    protected syncTranscriptThoughtBriefIcon(icon: HTMLElement, active: boolean): void {
+        const glyph = icon.querySelector('.codicon');
+        if (!glyph) {
+            return;
+        }
+        glyph.className = this.resolveTranscriptThoughtBriefIconClass(active);
+    }
+
     createTranscriptThoughtBriefBlock(
         segments: QaapAgentMessageSegmentDTO[],
         options?: { readonly streaming?: boolean; readonly conv?: QaapAgentConversationDTO },
@@ -1997,16 +2014,16 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-thought-brief-summary';
-        const icon = document.createElement('span');
-        icon.className = 'theia-mobile-agent-trace-glyph theia-mobile-agent-thought-brief-icon';
-        icon.setAttribute('aria-hidden', 'true');
-        if (streaming || (!!options?.conv && options.conv.status === 'streaming')) {
-            const spinner = createUnicodeSpinner();
-            spinner.classList.add('theia-mobile-agent-thought-brief-spinner');
-            icon.classList.add('theia-mod-spinner-active');
-            icon.append(spinner);
-            transcriptSummarySpinners.set(icon, spinner);
-        }
+        // LobeHub Thinking StatusIndicator (src/features/Conversation/components/
+        // Thinking/StatusIndicator.tsx): a 24x24 outlined Block chip with
+        // Loader2Icon (spin) while thinking, AtomIcon when settled — purple when
+        // expanded, colorTextDescription when collapsed. Reuses the existing
+        // .theia-mobile-agent-lobe-status-indicator chip used by tool heads so the
+        // visual language is unified. The QAAQ "finalizing" state (backend still
+        // streaming but turn visually settled) keeps the spinning loader so the
+        // user still sees activity, matching the prior unicode-snake spinner.
+        const backendStreaming = streaming || (!!options?.conv && options.conv.status === 'streaming');
+        const icon = this.createTranscriptThoughtBriefIcon(backendStreaming || thinkingActive);
         const title = document.createElement('span');
         title.className = 'theia-mobile-agent-thought-brief-title';
         const chevron = document.createElement('span');

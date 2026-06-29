@@ -25137,6 +25137,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   --qaap-lobe-text: color-mix(in srgb, var(--theia-foreground) 84%, var(--theia-descriptionForeground));
   --qaap-lobe-secondary: color-mix(in srgb, var(--theia-descriptionForeground) 88%, transparent);
   --qaap-lobe-tertiary: color-mix(in srgb, var(--theia-descriptionForeground) 62%, transparent);
+  --qaap-lobe-purple: #7c3aed;
   gap: 14px;
   padding-inline: clamp(16px, 5vw, 32px);
 }
@@ -25345,6 +25346,39 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   color: var(--theia-editorWarning-foreground, #cca700);
   border-color: color-mix(in srgb, var(--theia-editorWarning-foreground, #cca700) 34%, transparent);
   background: color-mix(in srgb, var(--theia-editorWarning-foreground, #cca700) 7%, transparent);
+}
+
+/* LobeHub Thinking StatusIndicator: AtomIcon, purple when expanded (showDetail),
+   colorTextDescription when collapsed. Reused for the transcript thought-brief
+   so the reasoning block shares the tool call's chip visual language. */
+.theia-mobile-agent-lobe-status-indicator.theia-mod-thinking {
+  color: var(--qaap-lobe-secondary);
+  border-color: var(--qaap-lobe-border);
+  background: transparent;
+}
+
+.theia-mobile-agent-thought-brief[open]>.theia-mobile-agent-thought-brief-summary .theia-mobile-agent-lobe-status-indicator.theia-mod-thinking,
+.theia-mobile-agent-thought-brief[open] .theia-mobile-agent-thought-brief-summary .theia-mobile-agent-lobe-status-indicator.theia-mod-thinking {
+  color: var(--qaap-lobe-purple);
+  border-color: color-mix(in srgb, var(--qaap-lobe-purple) 40%, transparent);
+}
+
+/* The thought-brief icon container is reused as the LobeHub chip; reset the
+   legacy 23px glyph sizing so the codicon renders at chip scale (13px). */
+.theia-mobile-agent-thought-brief-icon.theia-mobile-agent-lobe-status-indicator {
+  font-size: 13px;
+  line-height: 1;
+  background: transparent !important;
+}
+
+.theia-mobile-agent-thought-brief-icon.theia-mobile-agent-lobe-status-indicator .codicon {
+  display: inline-flex;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.qaap-theme-dark .theia-mobile-agent-lobe-status-indicator.theia-mod-thinking {
+  --qaap-lobe-purple: #a78bfa;
 }
 
 @keyframes qaap-lobe-neural-pulse {
