@@ -74,14 +74,14 @@ function formatLobeToolParamValue(value: unknown): string {
 
 export function createLobeTraceStatusIndicator(status: LobeTraceStatus, kind?: string): HTMLElement {
     const block = document.createElement('span');
-    block.className = `theia-mobile-agent-lobe-status-indicator theia-mod-${status}`;
+    block.className = `theia-mobile-agent-lobe-status-indicator theia-mobile-agent-shadcn-status-indicator theia-mod-${status}`;
     if (kind) {
         block.classList.add(`theia-mod-${kind}`);
     }
     block.setAttribute('role', 'status');
     block.setAttribute('aria-label', status);
     const icon = document.createElement('span');
-    icon.className = 'theia-mobile-agent-lobe-status-icon';
+    icon.className = 'theia-mobile-agent-lobe-status-icon theia-mobile-agent-shadcn-status-icon';
     icon.setAttribute('aria-hidden', 'true');
     if (status === 'running') {
         icon.classList.add('theia-mod-neural-loading');
@@ -95,7 +95,7 @@ export function createLobeTraceStatusIndicator(status: LobeTraceStatus, kind?: s
 
 function createLobeNeuralLoadingDot(): HTMLElement {
     const dot = document.createElement('span');
-    dot.className = 'theia-mobile-agent-lobe-neural-dot';
+    dot.className = 'theia-mobile-agent-lobe-neural-dot theia-mobile-agent-shadcn-loading-dot';
     return dot;
 }
 
@@ -135,19 +135,19 @@ function resolveLobeStatusIconPaths(status: LobeTraceStatus): readonly string[] 
 
 export function createLobeToolTitle(options: LobeToolTitleOptions): HTMLElement {
     const root = document.createElement('span');
-    root.className = 'theia-mobile-agent-lobe-tool-title-root';
+    root.className = 'theia-mobile-agent-lobe-tool-title-root theia-mobile-agent-shadcn-tool-title-root';
     root.classList.toggle('theia-mod-loading', !!options.loading);
     root.classList.toggle('theia-mod-aborted', !!options.aborted);
 
     const plugin = document.createElement('span');
-    plugin.className = 'theia-mobile-agent-lobe-tool-plugin';
+    plugin.className = 'theia-mobile-agent-lobe-tool-plugin theia-mobile-agent-shadcn-tool-plugin';
     plugin.textContent = options.pluginTitle;
     const chevron = document.createElement('span');
-    chevron.className = 'theia-mobile-agent-lobe-tool-title-chevron';
+    chevron.className = 'theia-mobile-agent-lobe-tool-title-chevron theia-mobile-agent-shadcn-tool-title-chevron';
     chevron.setAttribute('aria-hidden', 'true');
     chevron.textContent = '›';
     const api = document.createElement('span');
-    api.className = 'theia-mobile-agent-lobe-tool-api';
+    api.className = 'theia-mobile-agent-lobe-tool-api theia-mobile-agent-shadcn-tool-api';
     api.textContent = options.apiName;
     root.append(plugin, chevron, api);
 
@@ -159,12 +159,12 @@ export function createLobeToolTitle(options: LobeToolTitleOptions): HTMLElement 
         root.append(open);
         params.forEach((param, index) => {
             const item = document.createElement('span');
-            item.className = 'theia-mobile-agent-lobe-tool-param';
+            item.className = 'theia-mobile-agent-lobe-tool-param theia-mobile-agent-shadcn-tool-param';
             const key = document.createElement('span');
-            key.className = 'theia-mobile-agent-lobe-tool-param-key';
+            key.className = 'theia-mobile-agent-lobe-tool-param-key theia-mobile-agent-shadcn-tool-param-key';
             key.textContent = `${param.key}:`;
             const value = document.createElement('span');
-            value.className = 'theia-mobile-agent-lobe-tool-param-value';
+            value.className = 'theia-mobile-agent-lobe-tool-param-value theia-mobile-agent-shadcn-tool-param-value';
             value.textContent = param.value;
             item.append(key, document.createTextNode(' '), value);
             root.append(item);
