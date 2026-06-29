@@ -65,7 +65,9 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             transcriptOpenSummaryId: undefined,
             transcriptPreviewRequestPending: false,
             transcriptPreviewRequestRunning: false,
-            transcriptMarkdownIt: undefined,
+            transcriptMarkdownIt: {
+                render: (content: string) => content,
+            },
             projectsService: {} as MobileProjectsTranscriptMessagesHost['projectsService'],
             projects: [],
             projectRowsUi: {
@@ -134,6 +136,19 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             createdAt: 0,
             updatedAt: Date.now(),
             messages: [],
+        };
+    }
+
+    function conversationWithMessages(messages: QaapAgentConversationDTO['messages']): QaapAgentConversationDTO {
+        return {
+            id: 'conv-scroll',
+            cwd: '/workspace',
+            agentId: 'codex',
+            title: 'Scroll',
+            status: 'streaming',
+            createdAt: 0,
+            updatedAt: Date.now(),
+            messages,
         };
     }
 
@@ -295,5 +310,31 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(img?.src).to.contain('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=');
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-user-attachment-title')?.textContent)
             .to.equal('huggingface-color.svg');
+    });
+
+    it('places a newly submitted user turn into reading position', () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        let scrollToCalls = 0;
+        messageHost.scrollTo = () => {
+            scrollToCalls++;
+        };
+
+        const previous = conversationWithMessages([
+            { id: 'user-1', role: 'user', content: 'First', createdAt: 1 },
+            { id: 'agent-1', role: 'agent', content: 'Done', createdAt: 2 },
+        ]);
+        host.transcriptLastConv = previous;
+        host.transcriptLastRenderedConversationId = previous.id;
+
+        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
+            ...previous.messages,
+            { id: 'user-2', role: 'user', content: 'Next', createdAt: 3 },
+        ]));
+
+        expect(scrollToCalls).to.equal(1);
     });
 });

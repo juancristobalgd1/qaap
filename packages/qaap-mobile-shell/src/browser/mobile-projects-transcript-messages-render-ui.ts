@@ -258,12 +258,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return this.createTranscriptMessageRowAtIndex(current, index);
         });
 
-        const wasNearBottom = list.isNearBottom();
+        const wasFollowingTail = list.isNearBottom() && !shouldPauseTranscriptAutoFollow(messageHost);
         list.setItemCount(normalized.messages.length);
         list.setFooter(this.buildTranscriptVirtualFooter(normalized));
         this.host.transcriptLastRenderedConversationId = normalized.id;
         this.host.transcriptLastRenderedMessageId = normalized.messages.at(-1)?.id;
-        if (wasNearBottom) {
+        if (wasFollowingTail) {
             list.scrollToEnd();
         }
         this.attachTranscriptScrollChrome(host, messageHost, conv);
@@ -282,10 +282,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return;
         }
         recordTranscriptRenderMetric('render_full');
+        const previousConversation = this.host.transcriptLastConv;
         this.host.transcriptLastConv = conv;
         const shouldVirtualize = this.host.transcriptUi.shouldVirtualize(conv);
         const messageHost = this.resolveTranscriptMessageHost(host);
-        const showQuickActions = shouldShowTranscriptEmptyQuickActions(conv, this.host.transcriptLastConv);
+        const showQuickActions = shouldShowTranscriptEmptyQuickActions(conv, previousConversation);
         const isEmptyChat = conv.messages.length === 0 && resolveTranscriptEffectiveStatus(conv) !== 'streaming';
         if (isEmptyChat && showQuickActions) {
             this.host.transcriptUi.disposeList();
@@ -329,7 +330,6 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         this.host.transcriptUi.disposeList();
         messageHost.classList.remove('theia-mod-virtual-scroll');
-        const previousConversation = this.host.transcriptLastConv;
         const sameConversation = previousConversation?.id === conv.id;
         const previousLastMessageId = previousConversation?.messages.at(-1)?.id;
         const nextLastMessage = conv.messages.at(-1);
@@ -549,7 +549,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (!list) {
             return false;
         }
-        const wasNearBottom = list.isNearBottom();
+        const messageHost = this.resolveTranscriptMessageHost(_host);
+        const wasFollowingTail = list.isNearBottom() && !shouldPauseTranscriptAutoFollow(messageHost);
 
         if (patchKind === 'activity-only') {
             this.host.transcriptLastConv = conv;
@@ -557,7 +558,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             list.setFooter(this.buildTranscriptVirtualFooter(conv));
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
-            if (wasNearBottom) {
+            if (wasFollowingTail) {
                 list.scrollToEnd();
             }
             return true;
@@ -579,7 +580,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 list.setFooter(this.buildTranscriptVirtualFooter(conv));
                 this.host.transcriptLastRenderedConversationId = conv.id;
                 this.host.transcriptLastRenderedMessageId = lastAgent.id;
-                if (wasNearBottom) {
+                if (wasFollowingTail) {
                     list.scrollToEnd();
                 }
                 return true;
@@ -599,7 +600,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         list.setFooter(this.buildTranscriptVirtualFooter(conv));
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = lastAgent.id;
-        if (wasNearBottom) {
+        if (wasFollowingTail) {
             list.scrollToEnd();
         }
         return true;

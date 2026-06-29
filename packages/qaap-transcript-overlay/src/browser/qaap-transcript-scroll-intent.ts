@@ -22,6 +22,13 @@ const INTERACTIVE_SELECTOR = [
 
 function eventHasUserIntent(event: Event): boolean {
     if (event instanceof KeyboardEvent) {
+        const key = event.key.toLowerCase();
+        if ((event.ctrlKey || event.metaKey) && ['f', 'g'].includes(key)) {
+            return true;
+        }
+        if (key === 'escape') {
+            return true;
+        }
         return ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar'].includes(event.key);
     }
     return true;
