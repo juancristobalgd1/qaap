@@ -25377,6 +25377,18 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   line-height: 1;
 }
 
+/* LobeHub ExecutionTime (Inspector/ExecutionTime.tsx): tabular-nums, 12px,
+   colorTextQuaternary, flex-shrink 0. Shown only while a tool is executing. */
+.theia-mobile-agent-lobe-exec-time {
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--qaap-lobe-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-inline-start: 2px;
+}
+
 .qaap-theme-dark .theia-mobile-agent-lobe-status-indicator.theia-mod-thinking {
   --qaap-lobe-purple: #a78bfa;
 }

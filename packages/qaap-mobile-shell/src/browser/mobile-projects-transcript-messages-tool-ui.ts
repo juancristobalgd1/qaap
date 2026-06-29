@@ -44,6 +44,104 @@ export const TRANSCRIPT_TOOL_RESULT_STREAM_CLASS = 'theia-mobile-agent-tool-resu
 /** Placeholder body mounted before tool stdout/result arrives (speculative pill). */
 export const TRANSCRIPT_TOOL_SPECULATIVE_CLASS = 'theia-mobile-agent-tool-pill-speculative';
 
+/** Live interval ids for the LobeHub ExecutionTime chips, keyed by the chip element.
+ *  Self-cleans when the element is disconnected from the DOM. */
+const transcriptToolExecutionTimers = new WeakMap<HTMLElement, number>();
+
+/** LobeHub ExecutionTime format (Inspector/ExecutionTime.tsx):
+ *  <1000ms -> "Xms"; <60s -> "X.Xs"; >=60s -> "XminYs". */
+export function formatTranscriptExecutionTime(ms: number): string {
+    if (ms < 1000) {
+        return `${ms}ms`;
+    }
+    const seconds = ms / 1000;
+    if (seconds < 60) {
+        return `${seconds.toFixed(1)}s`;
+    }
+    const totalSeconds = Math.floor(seconds);
+    const minutes = Math.floor(totalSeconds / 60);
+    const remainingSeconds = totalSeconds % 60;
+    return `${minutes}min${remainingSeconds}s`;
+}
+
+/**
+ * Mount / sync / unmount the LobeHub ExecutionTime chip inside a tool head.
+ *
+ * Mirrors `Inspector/ExecutionTime.tsx`: shows a live elapsed timer while the
+ * tool is executing (100ms tick), disappears once finished. The chip is
+ * inserted before `beforeEl` (the expand chevron) so it sits next to the title
+ * row, matching LobeHub's `Flexbox` ordering (title, execTime, toggle).
+ *
+ * The interval self-cleans when the chip is removed from the DOM (e.g. on a
+ * full re-render that discards the head), so no explicit teardown is needed at
+ * the call sites — calling this again with `running=false` clears it too.
+ */
+export function syncTranscriptToolExecutionTime(
+    parent: HTMLElement,
+    beforeEl: HTMLElement | null,
+    startedAt: number | undefined,
+    running: boolean,
+): void {
+    let chip = parent.querySelector<HTMLElement>('.theia-mobile-agent-lobe-exec-time');
+    if (!running || startedAt === undefined) {
+        if (chip) {
+            const id = transcriptToolExecutionTimers.get(chip);
+            if (id !== undefined) {
+                window.clearInterval(id);
+            }
+            transcriptToolExecutionTimers.delete(chip);
+            chip.remove();
+        }
+        return;
+    }
+    if (!chip) {
+        chip = document.createElement('span');
+        chip.className = 'theia-mobile-agent-lobe-exec-time';
+        chip.setAttribute('aria-hidden', 'true');
+        if (beforeEl && beforeEl.parentElement === parent) {
+            beforeEl.before(chip);
+        } else {
+            parent.append(chip);
+        }
+    }
+    // Restart the timer so a re-sync with a new startedAt re-bases the tick.
+    const prior = transcriptToolExecutionTimers.get(chip);
+    if (prior !== undefined) {
+        window.clearInterval(prior);
+    }
+    const chipRef = chip;
+    // Capture the clear fn at mount so the self-clean still works after the
+    // jsdom globals are torn down in unit tests (avoids `HTMLElement is not
+    // defined` uncaught exceptions from timers firing post-teardown).
+    const clearIntervalFn = window.clearInterval.bind(window);
+    const stopTimer = (): void => {
+        const id = transcriptToolExecutionTimers.get(chipRef);
+        if (id !== undefined) {
+            clearIntervalFn(id);
+        }
+        transcriptToolExecutionTimers.delete(chipRef);
+    };
+    const update = (): void => {
+        let alive = false;
+        try {
+            alive = chipRef.isConnected;
+        } catch {
+            alive = false;
+        }
+        if (!alive) {
+            stopTimer();
+            return;
+        }
+        try {
+            chipRef.textContent = `(${formatTranscriptExecutionTime(Math.max(0, Date.now() - startedAt))})`;
+        } catch {
+            stopTimer();
+        }
+    };
+    update();
+    transcriptToolExecutionTimers.set(chipRef, window.setInterval(update, 100));
+}
+
 export class MobileProjectsTranscriptMessagesToolUi {
     constructor(
         protected readonly host: MobileProjectsTranscriptMessagesHost,
@@ -963,6 +1061,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
         failed: boolean;
         copyFrom?: () => string;
         mcpServer?: string;
+        startedAt?: number;
     }): HTMLElement {
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-tool-pill-summary theia-mobile-agent-lobe-inspector';
@@ -987,6 +1086,9 @@ export class MobileProjectsTranscriptMessagesToolUi {
             failed: options.failed,
             copyFrom: options.copyFrom,
         });
+        // LobeHub ExecutionTime: live elapsed chip while the tool is running,
+        // inserted before the chevron so it sits next to the title row.
+        syncTranscriptToolExecutionTime(summary, chevron, options.startedAt, !options.finished);
         summary.append(chevron);
         return summary;
     }
@@ -1012,6 +1114,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
             failed: boolean;
             copyFrom?: () => string;
             mcpServer?: string;
+            startedAt?: number;
         },
     ): void {
         summary.querySelector('.theia-mobile-agent-shell-tail')?.remove();
@@ -1041,7 +1144,10 @@ export class MobileProjectsTranscriptMessagesToolUi {
             failed: options.failed,
             copyFrom: options.copyFrom,
         });
-        const chevron = summary.querySelector('.theia-mobile-agent-tool-pill-chevron');
+        const chevron = summary.querySelector<HTMLElement>('.theia-mobile-agent-tool-pill-chevron');
+        // LobeHub ExecutionTime: keep the live chip in sync with the running
+        // state. Cleared automatically once the tool finishes.
+        syncTranscriptToolExecutionTime(summary, chevron, options.startedAt, !options.finished);
         if (chevron) {
             summary.append(chevron);
         }
@@ -1070,6 +1176,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
         failed: boolean;
         exitCode?: number;
         copyFrom?: () => string;
+        startedAt?: number;
     }): HTMLElement {
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-shell-head theia-mobile-agent-lobe-inspector';
@@ -1104,6 +1211,8 @@ export class MobileProjectsTranscriptMessagesToolUi {
             copyFrom: options.copyFrom,
             showState: false,
         });
+        // LobeHub ExecutionTime: live elapsed chip while the command is running.
+        syncTranscriptToolExecutionTime(summary, chevron, options.startedAt, !options.finished);
         summary.append(chevron);
         return summary;
     }
@@ -1235,6 +1344,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
             finished: segment.finished,
             failed,
             exitCode,
+            startedAt: segment.startedAt,
             copyFrom: () => this.collectTranscriptShellBodyCopyText(body),
         });
         details.append(summary, body);

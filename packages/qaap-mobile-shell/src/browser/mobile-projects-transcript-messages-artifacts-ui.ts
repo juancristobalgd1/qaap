@@ -1877,6 +1877,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 label: rowParts.detail,
                 finished: descriptor.finished,
                 failed: descriptor.resultFailed,
+                startedAt: segment.startedAt,
                 mcpServer: descriptor.kind === 'mcp'
                     ? extractTranscriptMcpServerLabel(segment.args)
                     : undefined,
@@ -2274,6 +2275,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             finished,
             failed,
             mcpServer: kind === 'mcp' ? extractTranscriptMcpServerLabel(segment.args) : undefined,
+            startedAt: segment.startedAt,
             copyFrom: segment.result?.trim()
                 ? () => this.resolversUi.formatTranscriptToolResult(segment.result!)
                 : undefined,
