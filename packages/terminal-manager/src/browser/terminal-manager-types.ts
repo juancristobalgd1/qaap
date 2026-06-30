@@ -84,6 +84,12 @@ export namespace TerminalManagerCommands {
         category: 'Terminal Manager',
         label: 'Minimize Bottom Panel',
     }, 'theia/terminal-manager/minimizeBottomPanel');
+    export const MANAGER_CLOSE_BOTTOM_PANEL_TOOLBAR = Command.toLocalizedCommand({
+        id: 'terminal:manager-close-bottom-panel',
+        category: 'Terminal Manager',
+        label: 'Close Panel',
+        iconClass: codicon('close'),
+    }, 'theia/terminal-manager/closeBottomPanel');
     export const MANAGER_CLEAR_ALL = Command.toLocalizedCommand({
         id: 'terminal:manager-clear-all',
         category: 'Terminal Manager',

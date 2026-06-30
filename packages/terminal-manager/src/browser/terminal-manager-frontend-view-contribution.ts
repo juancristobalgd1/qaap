@@ -155,6 +155,11 @@ export class TerminalManagerFrontendViewContribution extends AbstractViewContrib
                 && widget.parent?.id === BOTTOM_AREA_ID
                 && this.shell.bottomPanel.hasClass(MAXIMIZED_CLASS),
         });
+        commands.registerCommand(TerminalManagerCommands.MANAGER_CLOSE_BOTTOM_PANEL_TOOLBAR, {
+            execute: () => this.closeBottomPanel(),
+            isVisible: widget => widget instanceof Widget
+                && widget.parent?.id === BOTTOM_AREA_ID,
+        });
         commands.registerCommand(TerminalManagerCommands.MANAGER_CLEAR_ALL, {
             isVisible: widget => widget instanceof TerminalManagerWidget,
             execute: async widget => {
@@ -216,6 +221,10 @@ export class TerminalManagerFrontendViewContribution extends AbstractViewContrib
 
     protected maximizeBottomPanel(): void {
         this.shell.bottomPanel.toggleMaximized();
+    }
+
+    protected closeBottomPanel(): void {
+        void this.shell.collapsePanel('bottom');
     }
 
     protected async createNewTerminalPage(): Promise<void> {
@@ -333,6 +342,12 @@ export class TerminalManagerFrontendViewContribution extends AbstractViewContrib
             command: TerminalManagerCommands.MANAGER_MINIMIZE_BOTTOM_PANEL_TOOLBAR.id,
             icon: codicon('chevron-down'),
             onDidChange: bottomPanelMaximizationChanged,
+        });
+        toolbar.registerItem({
+            id: TerminalManagerCommands.MANAGER_CLOSE_BOTTOM_PANEL_TOOLBAR.id,
+            command: TerminalManagerCommands.MANAGER_CLOSE_BOTTOM_PANEL_TOOLBAR.id,
+            icon: codicon('close'),
+            order: 'z',
         });
     }
 
