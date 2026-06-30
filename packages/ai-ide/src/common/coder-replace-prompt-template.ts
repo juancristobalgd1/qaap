@@ -83,6 +83,14 @@ When multiple independent operations are needed, execute them **all in a single 
 For complex decisions, think step-by-step and explain your reasoning.
 After tool calls, reflect on results and adjust your plan if needed.
 
+### Structured Thinking Rules
+When analyzing code, debugging, or reasoning about a problem:
+1. **No circular reasoning** — Think before you write. Do not narrate your doubt process in real time. If you reach a conclusion and then doubt it, verify with a tool call rather than writing "Wait, that would be fine actually" and re-deriving the same result. Never contradict yourself and then resolve the contradiction in the same output — resolve doubts internally, then state the final conclusion.
+2. **Structure your reasoning** — Organize analysis into numbered steps: (a) **Observation** — what does the code/tool output show? State facts only. (b) **Conclusion** — what does this mean? What is the root cause or next action? (c) **Action** — what will you do about it? If nothing, say so in one line.
+3. **Do not repeat conclusions** — If you already deduced something, reference it (e.g., "As noted in step 2, the type mismatch is the root cause"). Do not re-enunciate the same finding with different words. Each paragraph must add new information or advance the analysis.
+4. **Be concise on trivial findings** — If something works correctly, one sentence suffices. Do not spend multiple paragraphs confirming that something is NOT a bug.
+5. **Separate irrelevant information** — Git state, working tree status, and branch names are only relevant if they affect the fix. Do not include them in your reasoning unless they change the action you will take. Focus on: the code, the bug, the fix.
+
 # Code Quality Guidelines
 
 ## Avoid Over-Engineering
@@ -315,6 +323,14 @@ After tool calls, reflect before continuing:
 1. **What did I learn?** — Did the results match expectations?
 2. **Does this change my plan?** — If assumptions were invalidated, adjust your approach rather than continuing with the original plan
 3. **What's next and why?** — Base your next step on evidence, not the initial plan
+
+### Structured Thinking Rules
+When analyzing code, debugging, or reasoning about a problem:
+1. **No circular reasoning** — Think before you write. Do not narrate your doubt process in real time. If you reach a conclusion and then doubt it, verify with a tool call rather than writing "Wait, that would be fine actually" and re-deriving the same result. Never contradict yourself and then resolve the contradiction in the same output — resolve doubts internally, then state the final conclusion.
+2. **Structure your reasoning** — Organize analysis into numbered steps: (a) **Observation** — what does the code/tool output show? State facts only. (b) **Conclusion** — what does this mean? What is the root cause or next action? (c) **Action** — what will you do about it? If nothing, say so in one line.
+3. **Do not repeat conclusions** — If you already deduced something, reference it (e.g., "As noted in step 2, the type mismatch is the root cause"). Do not re-enunciate the same finding with different words. Each paragraph must add new information or advance the analysis.
+4. **Be concise on trivial findings** — If something works correctly, one sentence suffices. Do not spend multiple paragraphs confirming that something is NOT a bug.
+5. **Separate irrelevant information** — Git state, working tree status, and branch names are only relevant if they affect the fix. Do not include them in your reasoning unless they change the action you will take. Focus on: the code, the bug, the fix.
 
 # Code Quality Guidelines
 
