@@ -244,14 +244,14 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(reviewHost.hidden).to.equal(false);
     });
 
-    it('excludes Editor and Chat from the execution view overflow menu', () => {
+    it('shows Chat first and excludes Editor from the execution view overflow menu', () => {
         const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
         const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
 
         const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(label => label.textContent);
-        expect(labels).to.include.members(['Plan', 'Changes', 'Preview', 'Files', 'Terminal']);
+        expect(labels).to.include.members(['Chat', 'Plan', 'Changes', 'Preview', 'Files', 'Terminal']);
         expect(labels).to.not.include('Editor');
-        expect(labels).to.not.include('Chat');
+        expect(labels[0]).to.equal('Chat');
     });
 });

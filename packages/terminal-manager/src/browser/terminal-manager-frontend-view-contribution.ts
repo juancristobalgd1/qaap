@@ -347,7 +347,6 @@ export class TerminalManagerFrontendViewContribution extends AbstractViewContrib
             id: TerminalManagerCommands.MANAGER_CLOSE_BOTTOM_PANEL_TOOLBAR.id,
             command: TerminalManagerCommands.MANAGER_CLOSE_BOTTOM_PANEL_TOOLBAR.id,
             icon: codicon('close'),
-            order: 'z',
         });
     }
 

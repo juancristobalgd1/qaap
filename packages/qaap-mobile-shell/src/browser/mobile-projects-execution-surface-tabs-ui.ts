@@ -606,7 +606,10 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             this.openExecutionTabOverflowMenu(trigger, menu);
         });
 
-        for (const spec of menuOptions) {
+        const chatSpec = { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: 'codicon-comment-discussion' };
+        const allOptions = [chatSpec, ...menuOptions];
+
+        for (const spec of allOptions) {
             const item = document.createElement('button');
             item.type = 'button';
             item.className = 'theia-mobile-transcript-tab-icon-select-option';
