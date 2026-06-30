@@ -146,14 +146,6 @@ export class MobileWorkHubSessionsSidebar {
                 },
             ),
             this.createNavButton(
-                'codicon-new-folder',
-                nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project'),
-                () => {
-                    this.hideForMobileOverlay();
-                    this.delegate.onStartNewProject?.();
-                },
-            ),
-            this.createNavButton(
                 'codicon-search',
                 nls.localize('qaap/sessionsSidebar/search', 'Search'),
                 () => this.delegate.onSearch?.(),
@@ -584,7 +576,7 @@ export function markDesktopSessionsSidebarCollapsed(scope?: string): void {
     }
 }
 
-function isDesktopSessionsSidebarLayout(): boolean {
+export function isDesktopSessionsSidebarLayout(): boolean {
     return typeof window !== 'undefined'
         && window.matchMedia?.('(min-width: 768px)').matches === true;
 }

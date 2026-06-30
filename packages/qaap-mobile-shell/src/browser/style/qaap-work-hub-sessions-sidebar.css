@@ -874,15 +874,19 @@ body.theia-mobile-mod-sessions-sidebar-open #theia-mobile-bottom-bar {
   pointer-events: none;
 }
 
-/* Ocultar chat/landing/composer bajo el sidebar (sin bleed-through al 30%). */
-body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agent-transcript-root,
-body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects,
-body.theia-mobile-mod-sessions-sidebar-open #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
-body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-workbench-top-bar,
-body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-bottom-chrome-host,
-body.theia-mobile-mod-sessions-sidebar-open #theia-statusBar {
-  visibility: hidden !important;
-  pointer-events: none !important;
+/* Mobile-only: hide chat/landing/composer under the sidebar overlay. Desktop uses flex push layout. */
+@media (max-width: 767px),
+(pointer: coarse) {
+
+  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agent-transcript-root,
+  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects,
+  body.theia-mobile-mod-sessions-sidebar-open #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
+  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-workbench-top-bar,
+  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-bottom-chrome-host,
+  body.theia-mobile-mod-sessions-sidebar-open #theia-statusBar {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
 }
 
 .theia-mobile-work-hub-sessions-sidebar-close.theia-mod-close-guarded {
@@ -904,8 +908,20 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     --qaap-work-hub-desktop-sidebar-width: 328px;
   }
 
+  body {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
   .theia-mobile-work-hub-sessions-sidebar {
-    right: auto;
+    position: relative !important;
+    inset: auto !important;
+    z-index: auto;
+    grid-column: 1;
+    grid-row: 1 / -1;
     width: clamp(240px, var(--qaap-work-hub-desktop-sidebar-width), 460px);
     box-shadow: none;
     border-right: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
@@ -916,11 +932,79 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
       visibility 0s linear var(--qaap-sessions-sidebar-motion-duration);
   }
 
+  .theia-mobile-work-hub-sessions-sidebar:not(.theia-mod-visible) {
+    width: 0 !important;
+    overflow: hidden !important;
+    border-right: none !important;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar[hidden] {
+    display: none !important;
+  }
+
   body.theia-mobile-mod-sessions-sidebar-resizing .theia-mobile-work-hub-sessions-sidebar {
     transition:
       opacity var(--qaap-sessions-sidebar-motion-duration) var(--qaap-sessions-sidebar-motion-easing),
       transform var(--qaap-sessions-sidebar-motion-duration) var(--qaap-sessions-sidebar-motion-easing),
       visibility 0s linear var(--qaap-sessions-sidebar-motion-duration);
+  }
+
+  #theia-app-shell,
+  #theia-app-shell.theia-ApplicationShell.theia-mod-mobile-one-column {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    width: auto !important;
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+
+  .theia-mobile-agent-transcript-root {
+    position: relative !important;
+    inset: auto !important;
+    z-index: auto !important;
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .theia-mobile-projects {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .theia-mobile-bottom-chrome-host {
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: auto !important;
+    grid-column: 2;
+    grid-row: 2;
+    width: auto !important;
+  }
+
+  .theia-notifications-overlay {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
   }
 
   .theia-mobile-work-hub-sessions-sidebar-panel {
@@ -987,40 +1071,6 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     display: none !important;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agent-transcript-root,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects,
-  body.theia-mobile-mod-sessions-sidebar-open #theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-workbench-top-bar,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-bottom-chrome-host,
-  body.theia-mobile-mod-sessions-sidebar-open #theia-statusBar {
-    visibility: visible !important;
-    pointer-events: auto !important;
-  }
-
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agent-transcript-root {
-    left: clamp(240px, var(--qaap-work-hub-desktop-sidebar-width), 460px) !important;
-    right: 0 !important;
-    top: 0 !important;
-    bottom: 0 !important;
-    height: 100dvh !important;
-    max-height: 100dvh !important;
-    width: auto !important;
-  }
-
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-workbench-top-bar {
-    left: clamp(240px, var(--qaap-work-hub-desktop-sidebar-width), 460px) !important;
-    width: auto !important;
-  }
-
-  body.theia-mobile-mod-sessions-sidebar-open.theia-mobile-mod-workhub-composer-header #theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-visible,
-  body.theia-mobile-mod-sessions-sidebar-open.theia-mobile-mod-workhub-no-bottom-chrome #theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-visible {
-    inset: 0 0 0 clamp(240px, var(--qaap-work-hub-desktop-sidebar-width), 460px) !important;
-    width: auto !important;
-    height: 100dvh !important;
-    max-height: 100dvh !important;
-  }
-
   body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header {
     flex: 0 0 auto;
     padding: 14px 28px 10px;
@@ -1049,14 +1099,9 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     min-width: max-content;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open #theia-top-panel,
   body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-edgeSwipeZone {
     visibility: hidden !important;
     pointer-events: none !important;
-  }
-
-  body.theia-mobile-mod-sessions-sidebar-open #theia-top-panel {
-    display: none !important;
   }
 
   body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header,

@@ -15,7 +15,7 @@ import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
+import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
 import {
     buildWorkHubSessionsSidebarRowFingerprint,
     buildWorkHubSessionsSidebarVisibleStructureFingerprint,
@@ -179,10 +179,12 @@ export class MobileProjectsSessionsSidebarUi {
                 onSearch: () => { void this.openSessionsSidebarSearch(); },
                 onExtensions: () => { void this.host.commands.executeCommand('workbench.view.extensions'); },
                 onAutomations: () => { void this.onWorkHubSessionsSidebarAutomations(); },
-                isEmbedded: () => this.host.sessionsSidebarContainer?.() !== undefined,
+                isEmbedded: () => !isDesktopSessionsSidebarLayout() && this.host.sessionsSidebarContainer?.() !== undefined,
             });
         }
-        const container = this.host.sessionsSidebarContainer?.() ?? document.body;
+        const container = isDesktopSessionsSidebarLayout()
+            ? document.body
+            : (this.host.sessionsSidebarContainer?.() ?? document.body);
         if (this.host.sessionsSidebar.node.parentElement !== container) {
             container.append(this.host.sessionsSidebar.node);
         }
