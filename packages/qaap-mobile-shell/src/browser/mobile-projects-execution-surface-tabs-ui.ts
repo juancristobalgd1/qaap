@@ -486,7 +486,10 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             return;
         }
         const displayTabId = this.resolveExecutionSurfaceIconSelectDisplayTab(activeTab);
-        const spec = this.executionSurfaceTabSpecs().find(entry => entry.id === displayTabId);
+        const spec = this.executionSurfaceTabSpecs().find(entry => entry.id === displayTabId)
+            ?? (displayTabId === 'messages'
+                ? { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: 'codicon-comment-discussion' }
+                : undefined);
         if (!spec) {
             return;
         }
@@ -541,7 +544,6 @@ export class MobileProjectsExecutionSurfaceTabsUi {
 
     executionSurfaceTabSpecs(): Array<{ id: TranscriptTab; label: string; icon: string }> {
         return [
-            { id: 'messages', label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: 'codicon-comment-discussion' },
             { id: 'plan', label: nls.localize('qaap/mobileProjects/tabPlan', 'Plan'), icon: 'codicon-file-text' },
             { id: 'review', label: nls.localize('qaap/mobileProjects/tabChanges', 'Changes'), icon: QAAP_SCM_CHANGES_ICON_CLASS },
             { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Preview'), icon: 'codicon-globe' },
@@ -559,7 +561,10 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         const wrap = document.createElement('div');
         wrap.className = 'theia-mobile-transcript-tab-icon-select-host';
 
-        const displaySpec = tabSpecs.find(entry => entry.id === displayTabId) ?? tabSpecs[0];
+        const displaySpec = tabSpecs.find(entry => entry.id === displayTabId)
+            ?? (displayTabId === 'messages'
+                ? { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: 'codicon-comment-discussion' }
+                : tabSpecs[0]);
         const menuLabel = nls.localize('qaap/mobileProjects/tabOverflow', 'Change view');
         const menuOptions = this.executionSurfaceTabSpecs();
 
@@ -600,24 +605,6 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             }
             this.openExecutionTabOverflowMenu(trigger, menu);
         });
-
-        const editorItem = document.createElement('button');
-        editorItem.type = 'button';
-        editorItem.className = 'theia-mobile-transcript-tab-icon-select-option';
-        editorItem.setAttribute('role', 'menuitem');
-        editorItem.title = nls.localize('qaap/mobileProjects/tabEditor', 'Editor');
-        editorItem.setAttribute('aria-label', editorItem.title);
-        appendExecutionSurfaceTabIcon(editorItem, 'codicon-layout', '');
-        const editorLabel = document.createElement('span');
-        editorLabel.className = 'theia-mobile-transcript-tab-icon-select-option-label';
-        editorLabel.textContent = editorItem.title;
-        editorItem.append(editorLabel);
-        editorItem.addEventListener('click', event => {
-            event.stopPropagation();
-            this.closeExecutionTabOverflowMenu();
-            void this.host.openDesktopIdeFromAgentsHub();
-        });
-        menu.append(editorItem);
 
         for (const spec of menuOptions) {
             const item = document.createElement('button');
