@@ -30,6 +30,10 @@ export class MobileProjectsTranscriptMessagesUserUi {
         const wrap = document.createElement('div');
         wrap.className = 'theia-mobile-agent-transcript-user-wrap';
         wrap.dataset.messageId = msg.id;
+        if (msg.id) {
+            wrap.id = this.transcriptUserMessageElementId(msg.id);
+            wrap.setAttribute('data-transcript-message-id', msg.id);
+        }
         const defer = !!options?.deferHeavyContent;
         if (defer) {
             wrap.setAttribute('data-transcript-row-deferred', '1');
@@ -69,6 +73,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
             canUndo: actionsEnabled && !isTheiaChat,
             onEdit: () => { void this.editTranscriptUserMessage(msg, conv); },
             onCopy: () => { void this.copyTranscriptUserMessage(plainText); },
+            onCopyLink: () => { void this.copyTranscriptUserMessageLink(msg.id); },
             onUndo: () => { void this.undoTranscriptUserMessage(msg, conv); },
         }));
         return wrap;
@@ -154,6 +159,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
         canUndo: boolean;
         onEdit: () => void;
         onCopy: () => void;
+        onCopyLink: () => void;
         onUndo: () => void;
     }): HTMLElement {
         const actions = document.createElement('div');
@@ -161,21 +167,23 @@ export class MobileProjectsTranscriptMessagesUserUi {
 
         const editLabel = nls.localize('qaap/mobileProjects/transcriptUserEdit', 'Edit');
         const copyLabel = nls.localize('qaap/mobileProjects/transcriptUserCopy', 'Copy');
+        const linkLabel = nls.localize('qaap/mobileProjects/transcriptUserCopyLink', 'Copy link');
         const undoLabel = nls.localize('qaap/mobileProjects/transcriptUserUndo', 'Undo');
 
         const editBtn = this.createTranscriptUserActionButton('edit', editLabel, 'codicon-edit', options.onEdit);
         editBtn.disabled = !options.canEdit || !options.plainText;
         const copyBtn = this.createTranscriptUserActionButton('copy', copyLabel, 'codicon-copy', options.onCopy);
         copyBtn.disabled = !options.plainText;
+        const linkBtn = this.createTranscriptUserActionButton('link', linkLabel, 'codicon-link', options.onCopyLink);
         const undoBtn = this.createTranscriptUserActionButton('undo', undoLabel, 'codicon-discard', options.onUndo);
         undoBtn.disabled = !options.canUndo;
 
-        actions.append(editBtn, copyBtn, undoBtn);
+        actions.append(editBtn, copyBtn, linkBtn, undoBtn);
         return actions;
     }
 
     createTranscriptUserActionButton(
-        action: 'edit' | 'copy' | 'undo',
+        action: 'edit' | 'copy' | 'link' | 'undo',
         label: string,
         iconClass: string,
         onClick: () => void,
@@ -192,6 +200,33 @@ export class MobileProjectsTranscriptMessagesUserUi {
             onClick();
         });
         return button;
+    }
+
+    protected transcriptUserMessageElementId(messageId: string): string {
+        return `qaap-transcript-message-${messageId}`;
+    }
+
+    protected transcriptUserMessageLink(messageId: string): string {
+        const url = new URL(window.location.href);
+        url.hash = this.transcriptUserMessageElementId(messageId);
+        return url.toString();
+    }
+
+    async copyTranscriptUserMessageLink(messageId: string): Promise<void> {
+        if (!messageId) {
+            return;
+        }
+        try {
+            const link = this.transcriptUserMessageLink(messageId);
+            if (this.host.previewClipboard) {
+                await this.host.previewClipboard.writeText(link);
+            } else {
+                await navigator.clipboard.writeText(link);
+            }
+            MobileSnackbar.show(nls.localize('qaap/mobileProjects/transcriptShellLinkCopied', 'Link copied'), { kind: 'success', duration: 1800 });
+        } catch {
+            MobileSnackbar.show(nls.localize('qaap/mobileProjects/transcriptShellCopyFailed', 'Could not copy'), { kind: 'warning' });
+        }
     }
 
     async copyTranscriptUserMessage(text: string): Promise<void> {

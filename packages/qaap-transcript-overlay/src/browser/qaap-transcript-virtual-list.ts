@@ -141,6 +141,17 @@ export class TranscriptVirtualList implements Disposable {
         this.scrollHost.scrollTop = this.scrollHost.scrollHeight;
     }
 
+    scrollToIndex(index: number, contextPx = 64): void {
+        if (this.offsetsDirty || this.offsets.length !== this.sizes.length + 1) {
+            this.offsets = buildVirtualListOffsets(this.sizes, this.defaultItemHeight);
+            this.offsetsDirty = false;
+        }
+        const safeIndex = Math.max(0, Math.min(index, Math.max(0, this.itemCount - 1)));
+        const estimatedTop = this.offsets[safeIndex] ?? safeIndex * this.defaultItemHeight;
+        this.scrollHost.scrollTop = Math.max(0, estimatedTop - contextPx);
+        this.scheduleUpdate();
+    }
+
     isNearBottom(thresholdPx = 48): boolean {
         const distance = this.scrollHost.scrollHeight - this.scrollHost.scrollTop - this.scrollHost.clientHeight;
         return distance <= thresholdPx;

@@ -1168,6 +1168,7 @@ export class MobileProjectsTranscriptLiveUi {
         chatHost: HTMLElement,
         summary: QaapAgentConversationSummaryDTO,
     ): void {
+        const preview = summary.lastMessagePreview?.trim();
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, {
             id: summary.id,
             cwd: summary.cwd,
@@ -1176,7 +1177,12 @@ export class MobileProjectsTranscriptLiveUi {
             status: summary.status,
             createdAt: summary.createdAt,
             updatedAt: summary.updatedAt,
-            messages: [],
+            messages: preview && summary.lastMessageRole ? [{
+                id: `${summary.id}:summary-preview`,
+                role: summary.lastMessageRole,
+                content: preview,
+                createdAt: summary.updatedAt,
+            }] : [],
         });
     }
 
@@ -1186,7 +1192,7 @@ export class MobileProjectsTranscriptLiveUi {
         chatHost: HTMLElement,
     ): boolean {
         const cached = this.readCachedTranscriptConversation(summary.id);
-        if (!cached?.messages.length) {
+        if (!cached || (cached.messages.length === 0 && resolveTranscriptEffectiveStatus(cached) !== 'streaming')) {
             return false;
         }
         this.host.transcriptLastConv = cached;

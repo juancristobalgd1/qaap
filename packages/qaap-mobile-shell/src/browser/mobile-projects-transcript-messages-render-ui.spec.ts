@@ -337,4 +337,89 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
 
         expect(scrollToCalls).to.equal(1);
     });
+
+    it('opens an existing conversation at the latest user turn instead of the absolute bottom', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        let scrollToCalls = 0;
+        messageHost.scrollTo = () => {
+            scrollToCalls++;
+        };
+
+        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
+            { id: 'user-1', role: 'user', content: 'First', createdAt: 1 },
+            { id: 'agent-1', role: 'agent', content: 'Done', createdAt: 2 },
+            { id: 'user-2', role: 'user', content: 'Continue here', createdAt: 3 },
+            { id: 'agent-2', role: 'agent', content: 'Long answer', createdAt: 4 },
+        ]));
+
+        expect(scrollToCalls).to.equal(1);
+    });
+
+    it('adds direct message anchors and link copy actions to user turns', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
+            { id: 'user-link', role: 'user', content: 'Link this turn', createdAt: 1 },
+        ]));
+
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const row = messageHost.querySelector<HTMLElement>('.theia-mobile-agent-transcript-user-wrap');
+        expect(row?.id).to.equal('qaap-transcript-message-user-link');
+        expect(row?.getAttribute('data-transcript-message-id')).to.equal('user-link');
+        expect(row?.querySelector<HTMLButtonElement>('.theia-mobile-agent-transcript-user-action.theia-mod-link')?.title)
+            .to.equal('Copy link');
+    });
+
+    it('summarizes the agent work under the owning user turn', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
+            { id: 'user-summary', role: 'user', content: 'Implement feature', createdAt: 1 },
+            {
+                id: 'agent-summary',
+                role: 'agent',
+                content: '',
+                createdAt: 2,
+                segments: [
+                    {
+                        type: 'tool',
+                        toolUseId: 'tool-edit',
+                        name: 'Edit',
+                        args: JSON.stringify({ file_path: 'packages/qaap-mobile-shell/src/browser/foo.ts' }),
+                        result: 'Done',
+                        finished: true,
+                    },
+                    {
+                        type: 'tool',
+                        toolUseId: 'tool-test',
+                        name: 'Bash',
+                        args: JSON.stringify({ command: 'npm test' }),
+                        result: '0 passing',
+                        finished: true,
+                    },
+                    {
+                        type: 'text',
+                        content: 'Finished.',
+                    },
+                ],
+            },
+        ]));
+
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const summary = messageHost.querySelector<HTMLElement>('.theia-mobile-agent-turn-summary');
+        expect(summary?.querySelector('.theia-mobile-agent-turn-summary-label')?.textContent)
+            .to.equal('1 files · 1 checks · 2 steps');
+        expect(summary?.textContent).to.contain('src/browser/foo.ts');
+        expect(summary?.textContent).to.contain('1 verification checks');
+    });
 });

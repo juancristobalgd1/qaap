@@ -148,6 +148,12 @@ export class MobileProjectsTranscriptSheetUi {
             await this.workHub.openInlineTranscript(project, summary);
             return;
         }
+        if (this.host.transcriptSheet?.isConnected
+            && this.host.transcriptOpenSummaryId === summary.id
+            && this.host.transcriptChatHost) {
+            this.reopenActiveTranscriptSheet(project, summary, this.host.transcriptChatHost);
+            return;
+        }
         const previousProject = this.host.transcriptOpenProject;
         const previousSummary = this.host.transcriptOpenSummary;
         if (previousProject && previousSummary && previousSummary.id !== summary.id) {
@@ -240,6 +246,31 @@ export class MobileProjectsTranscriptSheetUi {
         void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
     }
 
+    protected reopenActiveTranscriptSheet(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        chatHost: HTMLElement,
+    ): void {
+        this.host.delegate.onEnterActiveTranscript?.();
+        this.host.transcriptLastStatus = summary.status;
+        this.host.transcriptOpenSummaryId = summary.id;
+        this.host.transcriptOpenSummary = summary;
+        this.host.transcriptOpenProject = project;
+        if (this.host.visible) {
+            this.workHub.refreshHubChrome();
+            this.host.executionSurfaceTabsUi.syncHeaderExecutionTabStrip();
+        }
+        this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
+        if (!this.host.transcriptLiveUi.applyCachedTranscriptOnOpen(summary, chatHost)
+            && this.host.transcriptLastConv?.id !== summary.id) {
+            this.host.transcriptLiveUi.renderOpenTranscriptPlaceholder(chatHost, summary);
+        }
+        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
+        this.host.conversations?.prefetchDocument(summary.id);
+        void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
+    }
+
     bindTranscriptSheetDismiss(back: HTMLButtonElement, backdrop: HTMLElement): void {
         const dismiss = (ev?: Event): void => {
             ev?.preventDefault();
@@ -270,6 +301,7 @@ export class MobileProjectsTranscriptSheetUi {
     }
 
     summaryToTranscriptPlaceholder(summary: QaapAgentConversationSummaryDTO): QaapAgentConversationDTO {
+        const preview = summary.lastMessagePreview?.trim();
         return {
             id: summary.id,
             cwd: summary.cwd,
@@ -278,7 +310,12 @@ export class MobileProjectsTranscriptSheetUi {
             status: summary.status,
             createdAt: summary.createdAt,
             updatedAt: summary.updatedAt,
-            messages: [],
+            messages: preview && summary.lastMessageRole ? [{
+                id: `${summary.id}:summary-preview`,
+                role: summary.lastMessageRole,
+                content: preview,
+                createdAt: summary.updatedAt,
+            }] : [],
         };
     }
 
