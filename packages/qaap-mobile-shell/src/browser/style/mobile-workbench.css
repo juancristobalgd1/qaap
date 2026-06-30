@@ -11701,6 +11701,8 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
   font-family: var(--theia-code-font-family, monospace);
   font-size: 10px;
   color: var(--theia-descriptionForeground);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .theia-mobile-projects-task-foot {
@@ -14598,6 +14600,11 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
      sticky-pin measurement, virtual-list anchoring). Native scroll anchoring
      reacting to their layout writes bounces the scroll position. */
   overflow-anchor: none;
+}
+
+.theia-mobile-agent-transcript:focus,
+.theia-mobile-agent-transcript:focus-visible {
+  outline: none;
 }
 
 .theia-mobile-agent-transcript.theia-mod-virtual-scroll {
@@ -25271,7 +25278,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   min-width: 0;
 }
 
-.theia-mobile-agent-turn-summary-item > span:last-child {
+.theia-mobile-agent-turn-summary-item>span:last-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -25580,6 +25587,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 }
 
 @keyframes qaap-lobe-trace-pulse {
+
   0%,
   100% {
     opacity: 0.45;
@@ -25694,6 +25702,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 }
 
 @keyframes qaap-lobe-neural-pulse {
+
   0%,
   100% {
     opacity: 0.35;
@@ -25932,8 +25941,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 .theia-mobile-agent-tool-pill>summary:focus-visible,
 .theia-mobile-agent-tool-window .theia-mobile-agent-tool-head:focus-visible,
 .theia-mobile-agent-shell-window .theia-mobile-agent-shell-head:focus-visible {
-  outline: 1px solid color-mix(in srgb, var(--theia-focusBorder) 70%, transparent);
-  outline-offset: 1px;
+  outline: none;
 }
 
 .theia-mobile-agent-tool-pill[open]>summary,
@@ -26275,10 +26283,11 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .theia-mobile-agent-trace-glyph .theia-mobile-agent-activity-timeline-summary-spinner,
   .theia-mobile-agent-lobe-neural-dot,
   .theia-mobile-agent-lobe-workflow .theia-mobile-agent-activity-timeline-summary-label.theia-mod-shimmer,
-  .theia-mobile-agent-lobe-status-indicator.theia-mod-running + .theia-mobile-agent-lobe-tool-plugin,
+  .theia-mobile-agent-lobe-status-indicator.theia-mod-running+.theia-mobile-agent-lobe-tool-plugin,
   .theia-mobile-agent-tool-body,
   .theia-mobile-agent-tool-pill-body,
   .theia-mobile-agent-shell-body {
@@ -26395,7 +26404,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 .theia-mobile-agent-shell-window .theia-mobile-agent-shell-head:focus-visible,
 .theia-mobile-agent-read-line.theia-mobile-agent-lobe-inline-step:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--qaap-shadcn-ring) 38%, transparent);
+  box-shadow: none;
 }
 
 .theia-mobile-agent-trace-glyph,
