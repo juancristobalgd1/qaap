@@ -179,10 +179,12 @@ export class MobileProjectsSessionsSidebarUi {
                 onSearch: () => { void this.openSessionsSidebarSearch(); },
                 onExtensions: () => { void this.host.commands.executeCommand('workbench.view.extensions'); },
                 onAutomations: () => { void this.onWorkHubSessionsSidebarAutomations(); },
-                isEmbedded: () => !isDesktopSessionsSidebarLayout() && this.host.sessionsSidebarContainer?.() !== undefined,
+                isEmbedded: () => (!isDesktopSessionsSidebarLayout() || document.body.classList.contains('theia-mobile-mod-desktop-ide')) && this.host.sessionsSidebarContainer?.() !== undefined,
             });
         }
-        const container = isDesktopSessionsSidebarLayout()
+        const useBodyGrid = isDesktopSessionsSidebarLayout()
+            && !document.body.classList.contains('theia-mobile-mod-desktop-ide');
+        const container = useBodyGrid
             ? document.body
             : (this.host.sessionsSidebarContainer?.() ?? document.body);
         if (this.host.sessionsSidebar.node.parentElement !== container) {
