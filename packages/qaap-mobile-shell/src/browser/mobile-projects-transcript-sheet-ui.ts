@@ -149,9 +149,9 @@ export class MobileProjectsTranscriptSheetUi {
             return;
         }
         if (this.host.transcriptSheet?.isConnected
-            && this.host.transcriptOpenSummaryId === summary.id
-            && this.host.transcriptChatHost) {
-            this.reopenActiveTranscriptSheet(project, summary, this.host.transcriptChatHost);
+            && this.host.transcriptChatHost
+            && this.host.transcriptChatInputHost) {
+            this.switchMountedTranscriptSheet(project, summary, this.host.transcriptChatHost, this.host.transcriptChatInputHost);
             return;
         }
         const previousProject = this.host.transcriptOpenProject;
@@ -246,16 +246,46 @@ export class MobileProjectsTranscriptSheetUi {
         void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
     }
 
-    protected reopenActiveTranscriptSheet(
+    protected switchMountedTranscriptSheet(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         chatHost: HTMLElement,
+        chatInputHost: HTMLElement,
     ): void {
+        const previousProject = this.host.transcriptOpenProject;
+        const previousSummary = this.host.transcriptOpenSummary;
+        const conversationChanged = previousSummary?.id !== summary.id;
+        if (previousProject && previousSummary && conversationChanged) {
+            this.host.transcriptStickyComposerUi.flushTranscriptComposerDraft(previousSummary.id);
+            void this.host.transcriptStickyComposerUi.flushTranscriptComposerPrefs(previousProject, previousSummary);
+        }
+        if (conversationChanged) {
+            this.prepareMountedTranscriptSheetForSwitch();
+            if (this.host.transcriptSheet) {
+                this.observeTranscriptComposerSize(this.host.transcriptSheet, chatInputHost);
+            }
+            const header = this.host.transcriptSheet?.querySelector<HTMLElement>('.theia-mobile-agent-log-header');
+            if (header) {
+                header.replaceChildren();
+                const headerTitle = this.host.transcriptHeaderUi.resolveTranscriptHeaderTitle(project, summary);
+                const { back, tabStrip } = this.host.executionSurfaceTabsUi.mountTranscriptExecutionHeader(header, project, summary, headerTitle);
+                this.host.transcriptTabStrip = tabStrip;
+                const backdrop = this.host.transcriptSheet?.querySelector<HTMLElement>('.theia-mobile-agent-log-backdrop');
+                if (backdrop) {
+                    this.host.transcriptSheetDispose.dispose();
+                    this.host.transcriptSheetDispose = Disposable.NULL;
+                    this.bindTranscriptSheetDismiss(back, backdrop);
+                }
+            }
+        }
         this.host.delegate.onEnterActiveTranscript?.();
         this.host.transcriptLastStatus = summary.status;
         this.host.transcriptOpenSummaryId = summary.id;
         this.host.transcriptOpenSummary = summary;
         this.host.transcriptOpenProject = project;
+        this.host.transcriptComposerSummary = summary;
+        this.host.transcriptChatHost = chatHost;
+        this.host.transcriptChatInputHost = chatInputHost;
         if (this.host.visible) {
             this.workHub.refreshHubChrome();
             this.host.executionSurfaceTabsUi.syncHeaderExecutionTabStrip();
@@ -265,10 +295,87 @@ export class MobileProjectsTranscriptSheetUi {
             && this.host.transcriptLastConv?.id !== summary.id) {
             this.host.transcriptLiveUi.renderOpenTranscriptPlaceholder(chatHost, summary);
         }
+        if (conversationChanged) {
+            this.host.transcriptComposerPrefsConvId = undefined;
+            this.host.transcriptComposerAgentModel = undefined;
+            void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);
+            this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(chatInputHost, project, summary, chatHost);
+        }
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'plan');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'review');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'preview');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'files');
+        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'terminal');
         this.host.conversations?.prefetchDocument(summary.id);
         void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
+    }
+
+    protected prepareMountedTranscriptSheetForSwitch(): void {
+        this.host.executionSurfaceTabsUi.closeExecutionTabOverflowMenu();
+        this.host.closeParallelSheet();
+        this.host.transcriptComposerUi.closeTranscriptComposerSheets();
+        this.host.transcriptComposerHost = undefined;
+        this.host.transcriptComposerMountKey = undefined;
+        this.host.transcriptComposerProject = undefined;
+        this.host.transcriptComposerSummary = undefined;
+        disposeComposerContextEntries(this.host.transcriptComposerContext);
+        this.host.transcriptComposerContext = [];
+        this.host.transcriptComposerPinnedAgentId = undefined;
+        this.host.transcriptComposerAgentModel = undefined;
+        this.host.transcriptComposerModeId = undefined;
+        this.host.transcriptComposerApprovalPolicyId = undefined;
+        this.host.transcriptComposerPrefsConvId = undefined;
+        this.host.transcriptComposerDraft = '';
+        if (this.host.transcriptComposerDraftPersistTimer !== undefined) {
+            window.clearTimeout(this.host.transcriptComposerDraftPersistTimer);
+            this.host.transcriptComposerDraftPersistTimer = undefined;
+        }
+        if (this.host.transcriptComposerPrefsPersistTimer !== undefined) {
+            window.clearTimeout(this.host.transcriptComposerPrefsPersistTimer);
+            this.host.transcriptComposerPrefsPersistTimer = undefined;
+        }
+        if (this.host.transcriptOpenSummaryId) {
+            this.host.transcriptFollowUpQueue.clear(this.host.transcriptOpenSummaryId);
+        }
+        this.host.transcriptFollowUpFlushInFlight = false;
+        this.host.transcriptLiveUi.stopTranscriptLiveWatch();
+        this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptLastConv = undefined;
+        this.host.transcriptLastSseDeltaAt = undefined;
+        this.host.transcriptLiveUi.clearTranscriptSemanticProgressClock();
+        this.host.transcriptHeaderSubtitle = undefined;
+        this.host.detachTranscriptReviewWidget();
+        this.host.disposeTranscriptEmbeddedPreview();
+        this.host.detachTranscriptWorkspaceSurfacesFromSheet();
+        this.host.transcriptTerminalToolbar = undefined;
+        this.host.transcriptTerminalSlider = undefined;
+        this.host.transcriptTerminalDots = undefined;
+        this.host.transcriptPreviewRequestRunning = false;
+        this.host.transcriptPreviewRequestPending = false;
+        this.host.verifyResults = [];
+        this.host.verifyChecksCwd = undefined;
+        this.host.verifyChecksLoading = false;
+        this.host.verifyRunning = false;
+        this.host.verifyAutoAttempts = 0;
+        this.host.transcriptHistoryPanelOpen = false;
+        this.host.transcriptHistoryCommits = [];
+        this.host.transcriptHistoryBranch = undefined;
+        this.host.transcriptHistoryQuery = '';
+        this.host.transcriptHistoryRoot = undefined;
+        this.host.transcriptHistoryLoading = false;
+        this.host.transcriptComposerSizeDispose.dispose();
+        this.host.transcriptComposerSizeDispose = Disposable.NULL;
+        this.host.transcriptUserScrollPinDispose.dispose();
+        this.host.transcriptUserScrollPinDispose = Disposable.NULL;
+        this.host.transcriptUi.disposeList();
+        this.host.transcriptChatInputHost?.replaceChildren();
+        this.host.transcriptPlanHost?.replaceChildren();
+        this.host.transcriptReviewHost?.replaceChildren();
+        this.host.transcriptPreviewHost?.replaceChildren();
+        this.host.transcriptFilesHost?.replaceChildren();
+        this.host.transcriptTerminalHost?.replaceChildren();
     }
 
     bindTranscriptSheetDismiss(back: HTMLButtonElement, backdrop: HTMLElement): void {

@@ -177,9 +177,11 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         const host = createHost() as MobileProjectsTranscriptSheetHost & { calls: string[] };
         const sheet = document.createElement('div');
         const chatHost = document.createElement('div');
+        const chatInputHost = document.createElement('div');
         document.body.append(sheet);
         host.transcriptSheet = sheet;
         host.transcriptChatHost = chatHost;
+        host.transcriptChatInputHost = chatInputHost;
         host.transcriptOpenSummaryId = 'conv-1';
 
         const ui = new TestSheetUi(host, createWorkHub());
@@ -187,5 +189,47 @@ describe('MobileProjectsTranscriptSheetUi', () => {
 
         expect(ui.closeCalls).to.equal(0);
         expect(host.calls).to.include.members(['enter', 'schedule', 'placeholder', 'messages', 'mount-messages', 'prefetch']);
+    });
+
+    it('switches a mounted sheet to another conversation without closing the overlay', async () => {
+        class TestSheetUi extends MobileProjectsTranscriptSheetUi {
+            closeCalls = 0;
+            override closeTranscriptSheet(): void {
+                this.closeCalls++;
+            }
+        }
+        const host = createHost() as MobileProjectsTranscriptSheetHost & { calls: string[] };
+        const sheet = document.createElement('div');
+        const backdrop = document.createElement('div');
+        backdrop.className = 'theia-mobile-agent-log-backdrop';
+        const header = document.createElement('header');
+        header.className = 'theia-mobile-agent-log-header';
+        const chatHost = document.createElement('div');
+        const chatInputHost = document.createElement('div');
+        const planHost = document.createElement('div');
+        const reviewHost = document.createElement('div');
+        const previewHost = document.createElement('div');
+        const filesHost = document.createElement('div');
+        const terminalHost = document.createElement('div');
+        sheet.append(backdrop, header, chatHost, chatInputHost);
+        document.body.append(sheet);
+        host.transcriptSheet = sheet;
+        host.transcriptChatHost = chatHost;
+        host.transcriptChatInputHost = chatInputHost;
+        host.transcriptPlanHost = planHost;
+        host.transcriptReviewHost = reviewHost;
+        host.transcriptPreviewHost = previewHost;
+        host.transcriptFilesHost = filesHost;
+        host.transcriptTerminalHost = terminalHost;
+        host.transcriptOpenSummaryId = 'conv-1';
+        host.transcriptOpenSummary = summary();
+        host.transcriptOpenProject = project();
+
+        const ui = new TestSheetUi(host, createWorkHub());
+        await ui.openTranscriptSheet(project(), summary({ id: 'conv-2', title: 'Next thread' }));
+
+        expect(ui.closeCalls).to.equal(0);
+        expect(host.transcriptOpenSummaryId).to.equal('conv-2');
+        expect(host.calls).to.include.members(['schedule', 'placeholder', 'messages', 'mount-messages', 'prefetch']);
     });
 });
