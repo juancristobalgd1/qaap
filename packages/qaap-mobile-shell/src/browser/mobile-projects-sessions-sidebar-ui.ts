@@ -13,7 +13,7 @@ import {
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import {
@@ -38,61 +38,61 @@ const SESSIONS_SIDEBAR_INTERACTION_GUARD_MS = 900;
 const SESSIONS_SIDEBAR_STREAM_REFRESH_MS = 250;
 
 export interface MobileProjectsSessionsSidebarHost {
-sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
-sessionsSidebarExpandedProjectIds: Set<string>;
-sessionsSidebarVisibleConversationCountByProjectId: Map<string, number>;
-sessionsSidebarAccordionDefaultsApplied: boolean;
-sessionsSidebarContainer?: () => HTMLElement | undefined;
-projects: MobileProjectEntry[];
-query: string;
-transcriptOpenSummaryId: string | undefined;
-activeTasks?: import('./mobile-projects-active-tasks').MobileProjectsActiveTasks;
-conversations?: import('./mobile-projects-conversations').MobileProjectsConversations;
-projectsService: import('./mobile-projects-service').MobileProjectsService;
-commands: import('@theia/core/lib/common/command').CommandRegistry;
-quickInputService?: import('@theia/core/lib/browser').QuickInputService;
-delegate: {
-    onProjectOpenInIde?(project: MobileProjectEntry): void | Promise<void>;
-    onShowRoutinesHub?(): void | Promise<void>;
+    sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
+    sessionsSidebarExpandedProjectIds: Set<string>;
+    sessionsSidebarVisibleConversationCountByProjectId: Map<string, number>;
+    sessionsSidebarAccordionDefaultsApplied: boolean;
+    sessionsSidebarContainer?: () => HTMLElement | undefined;
+    projects: MobileProjectEntry[];
+    query: string;
+    transcriptOpenSummaryId: string | undefined;
+    activeTasks?: import('./mobile-projects-active-tasks').MobileProjectsActiveTasks;
+    conversations?: import('./mobile-projects-conversations').MobileProjectsConversations;
+    projectsService: import('./mobile-projects-service').MobileProjectsService;
+    commands: import('@theia/core/lib/common/command').CommandRegistry;
+    quickInputService?: import('@theia/core/lib/browser').QuickInputService;
+    delegate: {
+        onProjectOpenInIde?(project: MobileProjectEntry): void | Promise<void>;
+        onShowRoutinesHub?(): void | Promise<void>;
+        cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+        projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    };
+
+    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
-};
-
-conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
-hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
-chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
-cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
-projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
-compareChatInboxProjectOrder(a: MobileProjectEntry, b: MobileProjectEntry): number;
-createTaskItem(
-    project: MobileProjectEntry,
-    task: import('./mobile-projects-active-tasks').MobileProjectTaskView,
-    activeInfo: ReturnType<import('./mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
-    summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO | undefined,
-    parentIds: ReadonlySet<string>,
-    options?: { onActivate?: () => void; compact?: boolean },
-): HTMLElement;
-buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement;
-toggleCardMenu(row: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
-buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement;
-toggleCardMenu(row: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
-resolveHomePinnedProject(): MobileProjectEntry | undefined;
-shouldUseAgentsHubLanding(): boolean;
-isProjectDetailView(): boolean;
-transcriptSheet: HTMLElement | undefined;
-agentsHubInlineActive: boolean;
-visible: boolean;
+    compareChatInboxProjectOrder(a: MobileProjectEntry, b: MobileProjectEntry): number;
+    createTaskItem(
+        project: MobileProjectEntry,
+        task: import('./mobile-projects-active-tasks').MobileProjectTaskView,
+        activeInfo: ReturnType<import('./mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
+        summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO | undefined,
+        parentIds: ReadonlySet<string>,
+        options?: { onActivate?: () => void; compact?: boolean },
+    ): HTMLElement;
+    buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement;
+    toggleCardMenu(row: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
+    buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement;
+    toggleCardMenu(row: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
+    resolveHomePinnedProject(): MobileProjectEntry | undefined;
+    shouldUseAgentsHubLanding(): boolean;
+    isProjectDetailView(): boolean;
+    transcriptSheet: HTMLElement | undefined;
+    agentsHubInlineActive: boolean;
+    visible: boolean;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     transcriptStickyComposerUi: import('./mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
-closeAgentsHubSession(): void;
-resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void;
-renderHeader(): void;
-renderSubtitle(): void;
-stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
-closeCurrentWorkspace(): Promise<void>;
-openConversationSummary(project: MobileProjectEntry, summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
-runCatalogAction(action: import('../common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
+    closeAgentsHubSession(): void;
+    resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void;
+    renderHeader(): void;
+    renderSubtitle(): void;
+    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    closeCurrentWorkspace(): Promise<void>;
+    openConversationSummary(project: MobileProjectEntry, summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
+    runCatalogAction(action: import('../common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
     onNewClick(): Promise<void>;
     onStartNewProject(): Promise<void>;
 }
@@ -991,6 +991,12 @@ export class MobileProjectsSessionsSidebarUi {
         await this.host.delegate.onShowRoutinesHub?.();
     }
     onSessionsSidebarAccountClick(anchor: HTMLButtonElement): void {
+        const viewToggle = {
+            activeId: 'agent' as MobileViewToggleId,
+            onSelect: (id: MobileViewToggleId) => {
+                void this.host.commands.executeCommand('qaap.mobile.ideHeaderView.activate', id);
+            },
+        };
         toggleQaapAccountMenu(
             anchor,
             this.host.commands,
@@ -1004,6 +1010,7 @@ export class MobileProjectsSessionsSidebarUi {
                 anchorGap: 2,
                 onMenuAction: () => { this.host.sessionsSidebar?.hide(); },
             },
+            viewToggle,
         );
     }
     async openSessionsSidebarSearch(): Promise<void> {

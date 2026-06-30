@@ -4,16 +4,13 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
+import { type MobileViewToggleId } from './qaap-workbench-account-menu';
 import { setMobileWorkHubComposerHeaderChrome } from './mobile-projects-open';
-import { createSegmentedField, type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import { writeStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { QAAP_PRIMARY_AGENT_ID, writeStoredAgent } from '../common/qaap-agent-task-client';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectEntry, MobileProjectFilter } from './mobile-projects-types';
 import type { MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
-
-const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
 
 export interface MobileProjectsComposerHeaderHost {
     visible: boolean;
@@ -22,7 +19,7 @@ export interface MobileProjectsComposerHeaderHost {
     stickyComposerHost: HTMLElement;
     headerSurfacePickerHost: HTMLElement;
     accountBtn: HTMLButtonElement;
-    headerSurfacePicker: QaapSegmentedFieldController<MobileBottomButtonId> | undefined;
+    headerSurfacePicker: import('./qaap-mobile-form-ui').QaapSegmentedFieldController<MobileBottomButtonId> | undefined;
     stickyComposerSurface: QaapComposerSurface;
     tasksHubSurface: QaapComposerSurface;
     stickyComposerFabLiftPx: number;
@@ -71,69 +68,15 @@ export class MobileProjectsComposerHeaderUi {
     }
 
     syncHeaderComposerSurfacePicker(): void {
-        const show = this.shouldShowHeaderComposerSurfacePicker();
-        const hideAccount = show || this.host.isProjectDetailView();
-        setMobileWorkHubComposerHeaderChrome(show);
-        if (show && !this.host.isAgentsHubExecutionSurfaceReady()) {
-            this.host.ensureAgentsHubExecutionShellRendered();
-        }
-        if (!hideAccount) {
-            this.host.syncAgentsHubAccountChrome();
-        } else {
-            this.host.accountBtn.hidden = true;
-            this.host.accountBtn.style.display = 'none';
-            this.host.accountBtn.setAttribute('aria-hidden', 'true');
-            dismissQaapAccountMenu();
-        }
-        this.host.headerSurfacePickerHost.hidden = !show;
-        if (!show) {
-            this.host.headerSurfacePickerHost.replaceChildren();
-            this.host.headerSurfacePicker = undefined;
-            return;
-        }
-        const value: MobileBottomButtonId = 'agent';
-        if (!this.host.headerSurfacePicker) {
-            const field = createSegmentedField<MobileBottomButtonId>({
-                segments: this.composerSurfaceSegmentOptions(),
-                value,
-                iconOnly: true,
-                onChange: (surface: MobileBottomButtonId) => { this.onHeaderComposerSurfaceChange(surface); },
-            });
-            field.root.classList.add('theia-mod-header-surface');
-            field.root.addEventListener('click', event => this.onHeaderComposerSurfacePickerClick(event), true);
-            this.host.headerSurfacePicker = field;
-            this.host.headerSurfacePickerHost.append(field.root);
-        } else {
-            this.host.headerSurfacePicker.setValue(value);
-        }
+        setMobileWorkHubComposerHeaderChrome(false);
+        this.host.headerSurfacePickerHost.hidden = true;
+        this.host.headerSurfacePickerHost.replaceChildren();
+        this.host.headerSurfacePicker = undefined;
+        this.host.syncAgentsHubAccountChrome();
     }
 
-    onHeaderComposerSurfacePickerClick(event: MouseEvent): void {
-        const option = event.target instanceof HTMLElement
-            ? event.target.closest<HTMLElement>('.theia-qaap-segmented-option')
-            : undefined;
-        const clickedId = option?.dataset.segmentId as MobileBottomButtonId | undefined;
-        if (clickedId && clickedId !== 'agent') {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        this.onHeaderComposerSurfaceChange('editor');
-    }
-
-    onHeaderComposerSurfaceChange(surface: MobileBottomButtonId): void {
-        if (surface === 'agent') {
-            this.syncHeaderComposerSurfacePicker();
-            return;
-        }
-        if (surface !== 'editor') {
-            return;
-        }
-        if (this.host.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
-            && this.host.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
-            void this.host.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');
-        }
+    resolveActiveViewToggleId(): MobileViewToggleId {
+        return 'agent';
     }
 
     updateStickyComposerFabLift(): void {

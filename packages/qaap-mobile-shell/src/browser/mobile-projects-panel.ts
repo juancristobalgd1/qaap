@@ -75,6 +75,7 @@ import {
     buildQaapAccountMenuEntries,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
     toggleQaapAccountMenu,
+    type MobileViewToggleId,
 } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
@@ -739,6 +740,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     };
 
     protected readonly onAccountClick = (): void => {
+        const viewToggle = {
+            activeId: this.composerHeaderUi.resolveActiveViewToggleId(),
+            onSelect: (id: MobileViewToggleId) => {
+                void this.commands.executeCommand('qaap.mobile.ideHeaderView.activate', id);
+            },
+        };
         toggleQaapAccountMenu(
             this.accountBtn,
             this.commands,
@@ -747,6 +754,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 section: QAAP_WORK_HUB_GETTING_STARTED,
                 onCatalogAction: action => { void this.runCatalogAction(action); },
             },
+            undefined,
+            viewToggle,
         );
     };
 
@@ -1236,7 +1245,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                         const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
                             ? workspaceCwd
                             : panel.preparedCwdByProjectId.get(project.id)
-                                ?? panel.projectsService.getProjectCwd(project);
+                            ?? panel.projectsService.getProjectCwd(project);
                         if (cwd) {
                             panel.preparedCwdByProjectId.set(project.id, cwd);
                         }

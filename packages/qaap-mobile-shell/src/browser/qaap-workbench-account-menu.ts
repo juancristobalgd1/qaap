@@ -7,6 +7,7 @@ import { CommandRegistry, nls } from '@theia/core/lib/common';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import type { WorkHubCatalogAction, WorkHubCatalogItem, WorkHubCatalogSection } from '../common/mobile-work-hub-catalog';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
+import { createSegmentedField } from './qaap-mobile-form-ui';
 
 export const QAAP_AUTH_SIGN_IN_GITHUB_COMMAND = 'qaap.auth.signInGithub';
 export const QAAP_AUTH_SIGN_OUT_COMMAND = 'qaap.auth.signOut';
@@ -21,6 +22,14 @@ export interface QaapAccountMenuEntry {
     kind: 'action' | 'separator';
     label?: string;
     commandId?: string;
+    iconClass?: string;
+    args?: unknown[];
+    activeMark?: boolean;
+}
+
+export interface QaapAccountMenuViewToggleOptions {
+    readonly activeId: MobileViewToggleId;
+    readonly onSelect: (id: MobileViewToggleId) => void;
 }
 
 export interface QaapAccountMenuGettingStartedOptions {
@@ -40,6 +49,32 @@ export interface QaapAccountMenuOpenOptions {
 let activeMenu: HTMLElement | undefined;
 let activeDismiss: (() => void) | undefined;
 let activeAnchor: HTMLElement | undefined;
+
+export const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
+
+export type MobileViewToggleId = 'editor' | 'agent';
+
+export function buildMobileViewToggleEntries(activeId: MobileViewToggleId): QaapAccountMenuEntry[] {
+    return [
+        {
+            kind: 'action',
+            label: nls.localize('qaap/mobileBottomBar/editor', 'Editor'),
+            commandId: QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
+            iconClass: 'codicon-code',
+            args: ['editor'],
+            activeMark: activeId === 'editor',
+        },
+        {
+            kind: 'action',
+            label: nls.localize('theia/core/mobileBottomBar/agent', 'Agent'),
+            commandId: QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
+            iconClass: 'codicon-comment-discussion',
+            args: ['agent'],
+            activeMark: activeId === 'agent',
+        },
+        { kind: 'separator' },
+    ];
+}
 
 export function buildQaapAccountMenuEntries(signedIn: boolean = true): QaapAccountMenuEntry[] {
     if (!signedIn) {
@@ -139,12 +174,13 @@ export function toggleQaapAccountMenu(
     entries: QaapAccountMenuEntry[],
     gettingStarted?: QaapAccountMenuGettingStartedOptions,
     openOptions?: QaapAccountMenuOpenOptions,
+    viewToggle?: QaapAccountMenuViewToggleOptions,
 ): void {
     if (isQaapAccountMenuOpen(anchor)) {
         dismissQaapAccountMenu();
         return;
     }
-    openQaapAccountMenu(anchor, commands, entries, gettingStarted, openOptions);
+    openQaapAccountMenu(anchor, commands, entries, gettingStarted, openOptions, viewToggle);
 }
 
 export function openQaapAccountMenu(
@@ -153,6 +189,7 @@ export function openQaapAccountMenu(
     entries: QaapAccountMenuEntry[],
     gettingStarted?: QaapAccountMenuGettingStartedOptions,
     openOptions?: QaapAccountMenuOpenOptions,
+    viewToggle?: QaapAccountMenuViewToggleOptions,
 ): void {
     if (activeAnchor !== anchor) {
         dismissQaapAccountMenu();
@@ -162,6 +199,39 @@ export function openQaapAccountMenu(
     panel.className = 'theia-qaap-account-menu';
     panel.setAttribute('role', 'menu');
     panel.tabIndex = -1;
+
+    if (viewToggle) {
+        const switchHost = document.createElement('div');
+        switchHost.className = 'theia-qaap-account-menu-view-switch';
+        const field = createSegmentedField<MobileViewToggleId>({
+            segments: [
+                {
+                    id: 'editor',
+                    label: nls.localize('qaap/mobileBottomBar/ide', 'IDE'),
+                    iconClass: 'codicon-code',
+                },
+                {
+                    id: 'agent',
+                    label: nls.localize('qaap/mobileBottomBar/agents', 'Agents'),
+                    iconClass: 'codicon-comment-discussion',
+                },
+            ],
+            value: viewToggle.activeId,
+            iconOnly: false,
+            onChange: id => {
+                openOptions?.onMenuAction?.();
+                dismissQaapAccountMenu();
+                viewToggle.onSelect(id);
+            },
+        });
+        field.root.classList.add('theia-mod-header-surface');
+        switchHost.append(field.root);
+        panel.appendChild(switchHost);
+        const sep = document.createElement('div');
+        sep.className = 'theia-qaap-account-menu-separator';
+        sep.setAttribute('role', 'separator');
+        panel.appendChild(sep);
+    }
 
     if (gettingStarted && gettingStarted.section.items.length > 0) {
         panel.classList.add('theia-mod-with-getting-started');
@@ -200,12 +270,25 @@ export function openQaapAccountMenu(
         item.type = 'button';
         item.className = 'theia-qaap-account-menu-item';
         item.setAttribute('role', 'menuitem');
-        item.textContent = entry.label;
+        if (entry.activeMark) {
+            item.classList.add('theia-mod-active');
+            item.setAttribute('aria-checked', 'true');
+        }
+        if (entry.iconClass) {
+            const icon = document.createElement('span');
+            icon.className = `codicon ${entry.iconClass}`;
+            icon.setAttribute('aria-hidden', 'true');
+            item.append(icon);
+        }
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'theia-qaap-account-menu-item-label';
+        labelSpan.textContent = entry.label;
+        item.append(labelSpan);
         item.addEventListener('click', () => {
             openOptions?.onMenuAction?.();
             dismissQaapAccountMenu();
             if (isQaapAuthCommand || (commands.getCommand(commandId) && commands.isEnabled(commandId))) {
-                void commands.executeCommand(commandId).catch(() => undefined);
+                void commands.executeCommand(commandId, ...(entry.args ?? [])).catch(() => undefined);
             }
         });
         panel.appendChild(item);

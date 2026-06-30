@@ -11,12 +11,11 @@ import { collapseLeftPanelIfMobileOneColumn, matchesMobileOneColumnLayout } from
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
-import { buildQaapAccountMenuEntries, dismissQaapAccountMenu, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, dismissQaapAccountMenu, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
 import { MobileProjectsService } from './mobile-projects-service';
 import type { MobileBottomButton, MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
-import { createSegmentedField, type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 
 const WORKBENCH_NAV_GO_BACK = 'textEditor.commands.go.back';
 const WORKBENCH_NAV_GO_FORWARD = 'textEditor.commands.go.forward';
@@ -199,8 +198,6 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     protected readonly toDispose = new DisposableCollection();
     protected readonly terminalBtn: HTMLButtonElement;
     protected readonly aiChatBtn: HTMLButtonElement;
-    protected readonly mobileModeSwitchHost: HTMLElement;
-    protected mobileModeSwitch: QaapSegmentedFieldController<MobileBottomButtonId> | undefined;
     protected readonly mobileViewPickerBtn: HTMLButtonElement;
     protected readonly mobileViewPickerSlot: HTMLElement;
     protected readonly accountBtn: HTMLButtonElement;
@@ -235,10 +232,6 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             nls.localize('theia/core/workbenchBar/openAiChat', 'Open AI Chat')
         );
         this.aiChatBtn.classList.add('theia-workbench-in-mobile-bottom-bar');
-        this.mobileModeSwitchHost = document.createElement('div');
-        this.mobileModeSwitchHost.className = 'theia-workbench-mobile-mode-switch';
-        this.mobileModeSwitchHost.hidden = true;
-        this.mobileModeSwitchHost.setAttribute('aria-hidden', 'true');
         this.mobileViewPickerBtn = document.createElement('button');
         this.mobileViewPickerBtn.type = 'button';
         this.mobileViewPickerBtn.className = 'theia-workbench-nav-btn theia-workbench-mobile-view-picker-btn';
@@ -263,7 +256,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.accountAvatar.setAttribute('aria-hidden', 'true');
         this.accountBtn.appendChild(this.accountAvatar);
         this.mobileViewPickerSlot.append(this.mobileViewPickerBtn);
-        node.append(this.terminalBtn, this.aiChatBtn, this.mobileModeSwitchHost, this.mobileViewPickerSlot, this.accountBtn);
+        node.append(this.terminalBtn, this.aiChatBtn, this.mobileViewPickerSlot, this.accountBtn);
         this.terminalBtn.addEventListener('click', this.onTerminalClick);
         this.aiChatBtn.addEventListener('click', this.onAiChatClick);
         this.mobileViewPickerBtn.addEventListener('pointerdown', this.onMobileViewPickerPointerDown);
@@ -297,7 +290,18 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     };
     protected readonly onAccountClick = (): void => {
         const signedIn = readQaapSignedIn();
-        toggleQaapAccountMenu(this.accountBtn, this.commands, buildQaapAccountMenuEntries(signedIn));
+        const activeId: MobileViewToggleId = this.isMobileBottomAgentActive() ? 'agent' : 'editor';
+        const canToggle = matchesMobileOneColumnLayout()
+            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE);
+        const viewToggle = canToggle
+            ? {
+                activeId,
+                onSelect: (id: MobileViewToggleId) => {
+                    void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id);
+                },
+            }
+            : undefined;
+        toggleQaapAccountMenu(this.accountBtn, this.commands, buildQaapAccountMenuEntries(signedIn), undefined, undefined, viewToggle);
     };
 
     protected override onAfterAttach(msg: Message): void {
@@ -353,7 +357,6 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.aiChatBtn.disabled = !this.commands.isEnabled(WORKBENCH_AI_CHAT_TOGGLE);
         this.updateTerminalSwitchVisual();
         this.updateAiChatSwitchVisual();
-        this.syncMobileModeSwitch();
         this.scheduleMobileViewPickerUpdate();
         this.updateAccountVisual();
     }
@@ -396,85 +399,12 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.aiChatBtn.setAttribute('aria-label', this.aiChatBtn.title);
     }
 
-    protected syncMobileModeSwitch(): void {
-        const visible = matchesMobileOneColumnLayout()
-            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVE)
-            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE);
-        this.mobileModeSwitchHost.hidden = !visible;
-        this.mobileModeSwitchHost.style.display = visible ? '' : 'none';
-        this.mobileModeSwitchHost.setAttribute('aria-hidden', visible ? 'false' : 'true');
-        if (!visible) {
-            this.mobileModeSwitchHost.replaceChildren();
-            this.mobileModeSwitch = undefined;
-            return;
-        }
-        const active: MobileBottomButtonId = this.isMobileBottomAgentActive() ? 'agent' : 'editor';
-        if (!this.mobileModeSwitch) {
-            this.mobileModeSwitch = createSegmentedField<MobileBottomButtonId>({
-                segments: [
-                    {
-                        id: 'editor',
-                        label: nls.localize('qaap/mobileBottomBar/editor', 'Editor'),
-                        iconClass: 'codicon-layout',
-                    },
-                    {
-                        id: 'agent',
-                        label: nls.localize('theia/core/mobileBottomBar/agent', 'Agent'),
-                        iconClass: 'codicon-comment-discussion',
-                    },
-                ],
-                value: active,
-                iconOnly: true,
-                onChange: id => { void this.activateMobileMode(id); },
-            });
-            this.mobileModeSwitch.root.classList.add('theia-mod-header-surface');
-            this.mobileModeSwitch.root.addEventListener('click', event => this.onMobileModeSwitchRootClick(event), true);
-            this.mobileModeSwitchHost.append(this.mobileModeSwitch.root);
-        } else {
-            this.mobileModeSwitch.setValue(active);
-        }
-    }
-
-    protected onMobileModeSwitchRootClick(event: MouseEvent): void {
-        const root = this.mobileModeSwitch?.root;
-        if (!root) {
-            return;
-        }
-        const option = event.target instanceof HTMLElement
-            ? event.target.closest<HTMLElement>('.theia-qaap-segmented-option')
-            : undefined;
-        const clickedId = option?.dataset.segmentId as MobileBottomButtonId | undefined;
-        const active: MobileBottomButtonId = this.isMobileBottomAgentActive() ? 'agent' : 'editor';
-        if (clickedId && clickedId !== active) {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        void this.activateMobileMode(active === 'agent' ? 'editor' : 'agent');
-    }
-
     protected isMobileBottomAgentActive(): boolean {
         if (document.querySelector('.theia-mobile-projects.theia-mod-visible') || document.querySelector('.theia-mobile-agent-transcript-root.theia-mod-visible')) {
             return true;
         }
         const title = this.shell.rightPanelHandler.tabBar.currentTitle;
         return this.shell.isExpanded('right') && title?.owner?.id === WORKBENCH_CHAT_VIEW_WIDGET_ID;
-    }
-
-    protected async activateMobileMode(id: MobileBottomButtonId): Promise<void> {
-        if (id !== 'agent' && id !== 'editor') {
-            return;
-        }
-        if (!this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE) || !this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
-            return;
-        }
-        try {
-            await this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id);
-        } finally {
-            this.scheduleMobileViewPickerUpdate();
-            this.syncMobileModeSwitch();
-        }
     }
 
     protected scheduleMobileViewPickerUpdate(): void {
