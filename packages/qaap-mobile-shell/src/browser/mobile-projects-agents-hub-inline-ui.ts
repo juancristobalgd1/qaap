@@ -565,6 +565,20 @@ export class MobileProjectsAgentsHubInlineUi {
             && !!this.host.agentsHubInlineChatHost?.isConnected;
     }
 
+    /**
+     * Merge the fresh summary status into a cached conversation document so the
+     * inline transcript never shows a stale streaming/idle indicator on reopen.
+     */
+    protected syncCachedConversationStatus(
+        conv: QaapAgentConversationDTO | undefined,
+        summary: QaapAgentConversationSummaryDTO,
+    ): QaapAgentConversationDTO | undefined {
+        if (!conv || conv.status === summary.status) {
+            return conv;
+        }
+        return { ...conv, status: summary.status, updatedAt: Math.max(conv.updatedAt, summary.updatedAt) };
+    }
+
     async openAgentsHubInlineTranscript(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -599,7 +613,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptOpenSummary = summary;
         this.host.transcriptOpenProject = project;
         this.host.transcriptComposerSummary = summary;
-        this.host.transcriptLastConv = cachedTargetConversation;
+        this.host.transcriptLastConv = this.syncCachedConversationStatus(cachedTargetConversation, summary);
         this.host.transcriptLastFingerprint = undefined;
         if (this.host.visible) {
             this.host.renderHeader();
@@ -610,7 +624,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptComposerMountKey = undefined;
         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);
         this.host.transcriptLiveUi.stopTranscriptLiveWatch();
-        this.host.transcriptLastConv = cachedTargetConversation;
+        this.host.transcriptLastConv = this.syncCachedConversationStatus(cachedTargetConversation, summary);
         this.host.transcriptLastFingerprint = undefined;
         this.host.transcriptLastSseDeltaAt = undefined;
         this.host.transcriptLiveUi.clearTranscriptSemanticProgressClock();

@@ -745,6 +745,9 @@ export class MobileProjectsConversations {
     }
 
     protected refreshSummaryFromLiveMessage(payload: ConversationMessageEvent): void {
+        // Keep cached documents fresh for non-active conversations so the
+        // transcript hydrates instantly when the user switches back.
+        this.threadStore.appendLiveMessage(payload.conversationId, payload.message);
         const existing = this.threadStore.findSummaryById(payload.conversationId);
         if (!existing) {
             this.emitConversationChange({

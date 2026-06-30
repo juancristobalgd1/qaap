@@ -1195,9 +1195,14 @@ export class MobileProjectsTranscriptLiveUi {
         if (!cached || (cached.messages.length === 0 && resolveTranscriptEffectiveStatus(cached) !== 'streaming')) {
             return false;
         }
-        this.host.transcriptLastConv = cached;
-        this.host.transcriptLastFingerprint = this.conversationTranscriptFingerprint(cached);
-        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, cached);
+        // Safety net: merge the fresh summary status into the cached document so
+        // the transcript never shows a stale streaming/idle indicator on reopen.
+        const synced = cached.status !== summary.status
+            ? { ...cached, status: summary.status, updatedAt: Math.max(cached.updatedAt, summary.updatedAt) }
+            : cached;
+        this.host.transcriptLastConv = synced;
+        this.host.transcriptLastFingerprint = this.conversationTranscriptFingerprint(synced);
+        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, synced);
         return true;
     }
 

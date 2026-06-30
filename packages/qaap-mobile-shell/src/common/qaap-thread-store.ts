@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { applyAgentMessageWireDelta } from './qaap-agent-message-wire-delta';
 import type { QaapAgentMessageWireDelta } from './qaap-agent-message-wire-delta';
 import {
@@ -92,6 +92,9 @@ export class QaapThreadStore {
         for (const entry of sorted) {
             this.summariesById.set(entry.id, entry);
         }
+        // Sync status/updatedAt to cached document so non-active conversations
+        // don't show stale streaming/idle state when the user returns.
+        this.syncDocumentStatusFromSummary(summary.id, summary);
         this.notifyThread(summary.id);
         return {
             previous,
@@ -99,6 +102,55 @@ export class QaapThreadStore {
             changedFields: computeSummaryChangedFields(previous, summary),
             listOrderChanged,
         };
+    }
+
+    /**
+     * Patch a cached document's status/updatedAt from a fresh summary.
+     * Keeps non-active conversation documents from going stale while the user
+     * is viewing another conversation (e.g. streaming → idle transition).
+     */
+    syncDocumentStatusFromSummary(
+        conversationId: string,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void {
+        const document = this.documents.get(conversationId);
+        if (!document) {
+            return;
+        }
+        if (document.status === summary.status
+            && document.updatedAt >= summary.updatedAt) {
+            return;
+        }
+        this.documents.set(conversationId, {
+            ...document,
+            status: summary.status,
+            updatedAt: Math.max(document.updatedAt, summary.updatedAt),
+        });
+    }
+
+    /**
+     * Append a live `message` event to a cached document if it exists.
+     * Keeps non-active conversation documents fresh with new messages so the
+     * transcript hydrates instantly when the user switches back — no flicker,
+     * no empty screen, no stale data while the backend refetch completes.
+     */
+    appendLiveMessage(
+        conversationId: string,
+        message: QaapAgentMessageDTO,
+    ): void {
+        const document = this.documents.get(conversationId);
+        if (!document) {
+            return;
+        }
+        if (document.messages.some(existing => existing.id === message.id)) {
+            return;
+        }
+        this.documents.set(conversationId, {
+            ...document,
+            messages: [...document.messages, message],
+            updatedAt: Math.max(document.updatedAt, message.createdAt ?? Date.now()),
+        });
+        this.notifyThread(conversationId);
     }
 
     removeSummary(conversationId: string, cwd: string): QaapAgentConversationSummaryDTO | undefined {
