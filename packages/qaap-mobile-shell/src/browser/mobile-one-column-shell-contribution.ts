@@ -674,6 +674,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.landing.syncFromStorage();
         installMobileWorkHubBootGuard();
         this.armBootGuardSafetyTimeout();
+        this.armAgentsSurfaceWatchdog();
         switch (resolveInitialLandingBodyClass(this.mobileMq?.matches === true)) {
             case 'agents':
                 this.landingLeftThisSession = true;
@@ -701,6 +702,44 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         }
     }
 
+    /** Last-resort guard for restored Work Hub DOM that is visible as Agents but has no mounted shell. */
+    protected armAgentsSurfaceWatchdog(): void {
+        const interval = window.setInterval(() => {
+            this.recoverEmptyAgentsSurface();
+        }, 500);
+        this.toDispose.push(Disposable.create(() => window.clearInterval(interval)));
+    }
+
+    protected recoverEmptyAgentsSurface(): void {
+        if (peekPreferDesktopIde()) {
+            return;
+        }
+        const root = document.querySelector<HTMLElement>(
+            '.theia-mobile-projects.theia-mod-home.theia-mod-visible.theia-mod-agents-hub-landing',
+        );
+        const scroll = root?.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll');
+        if (!root || !scroll || scroll.querySelector(
+            '.theia-mobile-agents-hub-inline-execution, .theia-mobile-tasks-hub-root.theia-mod-agents-loading, .theia-mobile-agent-transcript-empty',
+        )) {
+            return;
+        }
+        if (this.projectsPanel?.node !== root) {
+            root.remove();
+            if (!this.projectsPanel?.node.isConnected) {
+                this.projectsPanel?.dispose();
+                this.projectsPanel = undefined;
+            }
+            this.tryBootstrapMobileAgentsChat();
+            return;
+        }
+        if (!this.projectsPanel) {
+            this.tryBootstrapMobileAgentsChat();
+            return;
+        }
+        this.projectsPanel.ensureAgentsHubExecutionShellRendered();
+        this.projectsPanel.refreshHubChrome();
+    }
+
     /** Safety net: if the boot guard is still active after 15s, clear it so the user doesn't see a blank screen. */
     protected armBootGuardSafetyTimeout(): void {
         const timeout = window.setTimeout(() => {
@@ -724,7 +763,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     onDidInitializeLayout(app: FrontendApplication): void {
         this.ensureShellHooks(app.shell);
-        void this.workHubBootstrap.bootstrapWorkHubSurfaceAfterLayout();
+        void this.workHubBootstrap.bootstrapWorkHubSurfaceAfterLayout().finally(() => {
+            this.recoverEmptyAgentsSurface();
+        });
+        window.requestAnimationFrame(() => this.recoverEmptyAgentsSurface());
     }
 
     protected readonly onMediaChange = (): void => {
@@ -1595,6 +1637,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected resolveMobileIdeHeaderViewId(): MobileBottomButtonId {
+        if (this.bottomBarController.isMobileBottomButtonActive('agent')) {
+            return 'agent';
+        }
         const active = this.bottomBarController.getMobileIdeHeaderViewButtons()
             .find(def => this.bottomBarController.isMobileBottomButtonActive(def.id));
         return active?.id ?? 'editor';

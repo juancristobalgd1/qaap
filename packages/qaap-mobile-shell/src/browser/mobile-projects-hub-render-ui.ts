@@ -27,6 +27,8 @@ export interface MobileProjectsHubRenderHost {
     syncHubViewAvailability(): void;
     renderFilters(): void;
     renderList(): void;
+    isAgentsHubExecutionSurfaceReady(): boolean;
+    ensureAgentsHubExecutionShellRendered(): void;
 }
 
 export class MobileProjectsHubRenderUi {
@@ -73,9 +75,18 @@ export class MobileProjectsHubRenderUi {
         this.host.syncHubViewAvailability();
         this.host.renderFilters();
         this.host.renderList();
+        if (this.host.shouldUseAgentsHubLanding() && !this.isAgentsHubExecutionSurfacePainted()) {
+            this.host.ensureAgentsHubExecutionShellRendered();
+        }
         if (this.host.sessionsSidebar?.isVisible()) {
             this.host.sessionsSidebar.scheduleRefreshList();
         }
+    }
+
+    protected isAgentsHubExecutionSurfacePainted(): boolean {
+        return this.host.root.querySelector(
+            '.theia-mobile-agents-hub-inline-execution, .theia-mobile-tasks-hub-root.theia-mod-agents-loading, .theia-mobile-agent-transcript-empty',
+        ) !== null;
     }
 
     syncHubViewAvailability(): void {

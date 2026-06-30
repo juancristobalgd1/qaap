@@ -163,8 +163,22 @@ export class MobileShellWorkHubBootstrapController {
                 void this.prepareWorkHubIdePanelsHidden().then(() => this.host.releaseMobileWorkHubBootGuardWhenReady());
                 return true;
             }
+            panel.ensureAgentsHubExecutionShellRendered();
+            if (panel.isAgentsHubExecutionSurfaceReady()) {
+                this.sessionState.landingLeftThisSession = true;
+                markPreferAgentsSurface();
+                document.body.classList.remove('theia-mobile-mod-landing');
+                setMobileWorkHubComposerHeaderChrome(true);
+                this.host.syncMobileHubPrimaryBottomChrome();
+                this.host.refreshBottomBar();
+                void this.prepareWorkHubIdePanelsHidden().then(() => this.host.releaseMobileWorkHubBootGuardWhenReady());
+                return true;
+            }
         }
         if (this.sessionState.agentsBootstrapStarted) {
+            if (panel?.isVisible() && panel.isHomeMode() && panel.getHubView() === 'tasks') {
+                panel.ensureAgentsHubExecutionShellRendered();
+            }
             return true;
         }
         this.sessionState.agentsBootstrapStarted = true;

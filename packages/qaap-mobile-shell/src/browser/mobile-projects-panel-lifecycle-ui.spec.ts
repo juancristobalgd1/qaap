@@ -100,6 +100,9 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             markTasksFirstLoadComplete: () => undefined,
             maybeInstallWorkHubPerfProbe: () => undefined,
             shouldSkipFullRenderListOnConversationTick: () => false,
+            shouldUseAgentsHubLanding: () => false,
+            isAgentsHubExecutionSurfaceReady: () => true,
+            ensureAgentsHubExecutionShellRendered: () => undefined,
             refreshWorkHubConversationChrome: () => { refreshChromeCalls.value++; },
             mergeInboxPullRequests: polled => polled,
             updateTasksAttentionChrome: () => undefined,
@@ -179,5 +182,22 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
         expect(host.refreshChromeCalls).to.equal(1);
         expect(host.scheduleRenderListCalls).to.equal(0);
         expect(host.renderListCalls).to.equal(0);
+    });
+
+    it('forces the agents execution shell when a visible agents landing has no painted surface', () => {
+        let ensureCalls = 0;
+        const host = createHost({
+            visible: true,
+            homeMode: true,
+            hubView: 'tasks',
+            shouldUseAgentsHubLanding: () => true,
+            isAgentsHubExecutionSurfaceReady: () => false,
+            ensureAgentsHubExecutionShellRendered: () => { ensureCalls++; },
+        });
+        const ui = new MobileProjectsPanelLifecycleUi(host);
+
+        (ui as unknown as { ensureVisibleAgentsHubShell(): void }).ensureVisibleAgentsHubShell();
+
+        expect(ensureCalls).to.equal(1);
     });
 });

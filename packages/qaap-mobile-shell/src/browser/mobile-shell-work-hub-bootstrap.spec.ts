@@ -173,6 +173,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
             getHubView: () => 'tasks' as const,
             isAgentsHubShellActive: () => false,
             isAgentsHubExecutionSurfaceReady: () => false,
+            ensureAgentsHubExecutionShellRendered: () => undefined,
             node: document.createElement('div'),
         } as unknown as MobileProjectsPanel;
         const { controller, sessionState } = createController({
@@ -193,6 +194,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
             getHubView: () => 'tasks' as const,
             isAgentsHubShellActive: () => false,
             isAgentsHubExecutionSurfaceReady: () => false,
+            ensureAgentsHubExecutionShellRendered: () => undefined,
             node: root,
         } as unknown as MobileProjectsPanel;
         const { controller, sessionState } = createController({
@@ -211,6 +213,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
             getHubView: () => 'tasks' as const,
             isAgentsHubShellActive: () => true,
             isAgentsHubExecutionSurfaceReady: () => true,
+            ensureAgentsHubExecutionShellRendered: () => undefined,
             node: document.createElement('div'),
         } as unknown as MobileProjectsPanel;
         const { controller, sessionState } = createController({
@@ -220,6 +223,34 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         });
         expect(controller.tryBootstrapMobileAgentsChat()).to.equal(true);
         expect(sessionState.agentsBootstrapStarted).to.equal(false);
+    });
+
+    it('tryBootstrapMobileAgentsChat paints a visible empty agents panel synchronously', () => {
+        let ready = false;
+        const calls: string[] = [];
+        const panel = {
+            isVisible: () => true,
+            isHomeMode: () => true,
+            getHubView: () => 'tasks' as const,
+            isAgentsHubShellActive: () => true,
+            isAgentsHubExecutionSurfaceReady: () => ready,
+            ensureAgentsHubExecutionShellRendered: () => {
+                calls.push('ensureAgentsHubExecutionShellRendered');
+                ready = true;
+            },
+            node: document.createElement('div'),
+        } as unknown as MobileProjectsPanel;
+        const sessionState = new MobileShellSessionState();
+        sessionState.agentsBootstrapStarted = true;
+        const { controller } = createController({
+            sessionState,
+            host: {
+                getProjectsPanel: () => panel,
+            },
+        });
+        expect(controller.tryBootstrapMobileAgentsChat()).to.equal(true);
+        expect(calls).to.deep.equal(['ensureAgentsHubExecutionShellRendered']);
+        expect(sessionState.agentsBootstrapStarted).to.equal(true);
     });
 
     it('cancelAgentsBootstrap prevents stale restore completion', async () => {

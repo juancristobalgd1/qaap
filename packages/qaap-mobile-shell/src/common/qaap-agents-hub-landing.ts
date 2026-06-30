@@ -23,12 +23,9 @@ export function isAgentsHubIdleConversationSummary(summary: QaapAgentConversatio
  * ({@code theia-mod-agents-hub-landing}), which is applied before the inline shell mounts.
  */
 export function isAgentsHubExecutionSurfacePainted(
-    agentsHubShellActive: boolean,
+    _agentsHubShellActive: boolean,
     scroll: ParentNode,
 ): boolean {
-    if (agentsHubShellActive) {
-        return true;
-    }
     return scroll.querySelector(
         '.theia-mobile-agents-hub-inline-execution, .theia-mobile-tasks-hub-root.theia-mod-agents-loading, .theia-mobile-agent-transcript-empty',
     ) !== null;

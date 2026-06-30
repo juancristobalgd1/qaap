@@ -191,6 +191,58 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(ui.shouldSkipFullRenderListOnConversationTick()).to.equal(false);
     });
 
+    it('resolveAgentsHubShellSummary prefers an active project conversation over the idle placeholder', () => {
+        const project = {
+            id: 'proj-1',
+            name: 'demo',
+            status: 'working',
+            isCurrent: true,
+        } as MobileProjectEntry;
+        const active = openSummary();
+        const ui = new MobileProjectsAgentsHubInlineUi(createHost({
+            conversationsForProject: () => [active],
+        }));
+        expect(ui.resolveAgentsHubShellSummary(project)).to.equal(active);
+    });
+
+    it('renderAgentsHubShellChat keeps a streaming summary as working when no full document is cached', () => {
+        const project = {
+            id: 'proj-1',
+            name: 'demo',
+            status: 'working',
+            isCurrent: true,
+        } as MobileProjectEntry;
+        let rendered: QaapAgentConversationDTO | undefined;
+        const host = createHost({
+            transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
+                stopTranscriptLiveWatch: () => undefined,
+                peekCachedOpenTranscript: () => undefined,
+                applyCachedTranscriptOnOpen: () => false,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptSheetUi: {
+                summaryToTranscriptPlaceholder: (summary: QaapAgentConversationSummaryDTO) => ({
+                    id: summary.id,
+                    cwd: summary.cwd,
+                    agentId: summary.agentId,
+                    title: summary.title,
+                    status: 'idle',
+                    createdAt: summary.createdAt,
+                    updatedAt: summary.updatedAt,
+                    messages: [],
+                }),
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSheetUi'],
+            transcriptMessagesUi: {
+                renderTranscriptMessages: (_host: HTMLElement, conv: QaapAgentConversationDTO) => { rendered = conv; },
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptMessagesUi'],
+        });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.renderAgentsHubShellChat(document.createElement('div'), project, openSummary());
+        expect(rendered?.id).to.equal('conv-open');
+        expect(rendered?.status).to.equal('streaming');
+        expect(rendered?.messages).to.deep.equal([]);
+    });
+
     it('skips full hub list rebuild when agents hub execution shell is mounted idle', () => {
         const executionRoot = document.createElement('div');
         const scroll = document.createElement('div');

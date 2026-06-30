@@ -9,7 +9,7 @@ import {
     isPreviewOnlySummaryChange,
     streamingSortOrderMayChange,
 } from './qaap-conversation-change';
-import type { QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
 import { QaapThreadStore, sortConversationSummaries } from './qaap-thread-store';
 
 function summary(overrides: Partial<QaapAgentConversationSummaryDTO> = {}): QaapAgentConversationSummaryDTO {
@@ -89,6 +89,42 @@ describe('qaap-thread-store', () => {
             content: 'hi!',
             status: 'streaming',
         });
+    });
+
+    it('notifies thread subscribers when a cached document changes', () => {
+        const store = new QaapThreadStore();
+        const seen: string[] = [];
+        const disposable = store.subscribe<QaapAgentConversationDTO | undefined>(
+            document => {
+                seen.push((document?.messages ?? []).map(message => message.content).join('|'));
+            },
+            snapshot => snapshot.document,
+            'conv-1',
+        );
+        store.setDocument({
+            id: 'conv-1',
+            cwd: '/workspace/demo',
+            agentId: 'qaiq',
+            title: 'Demo',
+            status: 'streaming',
+            createdAt: 1,
+            updatedAt: 1,
+            messages: [{
+                id: 'agent-1',
+                role: 'agent',
+                content: 'hello',
+                createdAt: 1,
+            }],
+        });
+        store.appendLiveMessage('conv-1', {
+            id: 'agent-2',
+            role: 'agent',
+            content: 'world',
+            createdAt: 2,
+        });
+        disposable.dispose();
+        expect(seen).to.deep.equal(['', 'hello', 'hello|world']);
+        expect(store.getDocument('conv-1')?.messages.map(message => message.content)).to.deep.equal(['hello', 'world']);
     });
 
     it('listStreamingSummaries returns only active threads', () => {

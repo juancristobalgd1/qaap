@@ -470,16 +470,12 @@ export class MobileShellBottomBarController {
     }
 
     getMobileIdeHeaderViewButtons(): MobileBottomButton[] {
-        return [
-            { id: 'editor', label: nls.localize('qaap/mobileBottomBar/editor', 'Editor'), icon: 'codicon-layout' },
-            ...this.getMobileBottomButtons().filter(def => (
-                def.id === 'agent'
-                || def.id === 'preview'
-                || def.id === 'terminal'
-                || def.id === 'explore'
-                || def.id === 'pr'
-            )),
-        ];
+        return this.getMobileBottomButtons().filter(def => (
+            def.id === 'preview'
+            || def.id === 'terminal'
+            || def.id === 'explore'
+            || def.id === 'pr'
+        ));
     }
 
     isMobileBottomButtonActive(id: MobileBottomButtonId): boolean {
@@ -558,6 +554,13 @@ export class MobileShellBottomBarController {
     }
 
     async activateMobileIdeHeaderView(id: MobileBottomButtonId): Promise<void> {
+        if (id === 'agent' || id === 'editor') {
+            const def = this.getMobileBottomButtons().find(candidate => candidate.id === id)
+                ?? ({ id, label: id, icon: '' } as MobileBottomButton);
+            const anchor = document.createElement('button');
+            await this.onMobileBottomButtonClick(def, anchor);
+            return;
+        }
         const def = this.getMobileIdeHeaderViewButtons().find(candidate => candidate.id === id);
         if (!def) {
             return;

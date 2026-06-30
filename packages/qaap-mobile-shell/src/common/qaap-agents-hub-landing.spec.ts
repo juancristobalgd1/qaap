@@ -49,7 +49,7 @@ describe('qaap-agents-hub-landing', () => {
             loading.className = 'theia-mobile-tasks-hub-root theia-mod-agents-loading';
             scroll.append(loading);
             expect(isAgentsHubExecutionSurfacePainted(false, scroll)).to.equal(true);
-            expect(isAgentsHubExecutionSurfacePainted(true, document.createElement('div'))).to.equal(true);
+            expect(isAgentsHubExecutionSurfacePainted(true, document.createElement('div'))).to.equal(false);
         } finally {
             disableJSDOM();
         }

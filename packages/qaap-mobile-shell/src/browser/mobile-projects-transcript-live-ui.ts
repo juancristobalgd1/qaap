@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
-import { Disposable } from '@theia/core/lib/common/disposable';
+import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import {
     conversationToSummary,
     getConversation,
@@ -174,6 +174,8 @@ export class MobileProjectsTranscriptLiveUi {
     protected transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
     protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
     protected transcriptPreviewPollMisses = 0;
+    protected refreshInFlight: Promise<void> | undefined;
+    protected refreshInFlightConversationId: string | undefined;
     protected readonly transcriptPreviewFailureReportedFor = new Set<string>();
     protected visibilityResumeListenerInstalled = false;
     protected readonly agUiLiveBridge: QaapAgUiTranscriptLiveBridge;
@@ -471,19 +473,50 @@ export class MobileProjectsTranscriptLiveUi {
             this.threadStoreSummaryDispose = Disposable.NULL;
             return;
         }
-        this.threadStoreSummaryDispose = conversations.threadStore.subscribe(
+        const summaryDispose = conversations.threadStore.subscribe<QaapAgentConversationSummaryDTO | undefined>(
             summary => {
-                if (!summary || this.host.transcriptOpenSummary?.id !== conversationId) {
+                if (this.host.transcriptOpenSummary?.id !== conversationId) {
                     return;
                 }
-                this.host.transcriptOpenSummary = { ...this.host.transcriptOpenSummary, ...summary };
-                if (this.host.transcriptComposerSummary?.id === conversationId) {
-                    this.host.transcriptComposerSummary = { ...this.host.transcriptComposerSummary, ...summary };
+                if (summary) {
+                    this.host.transcriptOpenSummary = { ...this.host.transcriptOpenSummary, ...summary };
+                    if (this.host.transcriptComposerSummary?.id === conversationId) {
+                        this.host.transcriptComposerSummary = { ...this.host.transcriptComposerSummary, ...summary };
+                    }
                 }
             },
             snapshot => snapshot.summariesById.get(conversationId),
             conversationId,
         );
+        const documentDispose = conversations.threadStore.subscribe<QaapAgentConversationDTO | undefined>(
+            document => {
+                if (!document || document.id !== conversationId || !this.isActiveTranscriptConversation(conversationId)) {
+                    return;
+                }
+                const fingerprint = this.conversationTranscriptFingerprint(document);
+                if (this.host.transcriptLastFingerprint === fingerprint) {
+                    this.host.transcriptLastConv = document;
+                    return;
+                }
+                const chatHost = this.resolveActiveTranscriptChatHost();
+                if (!chatHost) {
+                    return;
+                }
+                this.host.transcriptLastFingerprint = fingerprint;
+                this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, document);
+                if (document.status === 'streaming') {
+                    this.touchTranscriptSemanticProgressFromConversation(document);
+                    this.scheduleTranscriptComposerActivityRefresh(document);
+                    this.scheduleTranscriptApprovalRefresh();
+                    this.maybeActivateTranscriptDevPreview(document);
+                } else {
+                    this.clearTranscriptSemanticProgressClock();
+                }
+            },
+            snapshot => snapshot.document,
+            conversationId,
+        );
+        this.threadStoreSummaryDispose = new DisposableCollection(summaryDispose, documentDispose);
     }
 
     protected unbindOpenTranscriptThreadStore(): void {
@@ -1197,12 +1230,13 @@ export class MobileProjectsTranscriptLiveUi {
         }
         // Safety net: merge the fresh summary status into the cached document so
         // the transcript never shows a stale streaming/idle indicator on reopen.
-        const synced = cached.status !== summary.status
+        const synced = cached.status !== summary.status || cached.updatedAt < summary.updatedAt
             ? { ...cached, status: summary.status, updatedAt: Math.max(cached.updatedAt, summary.updatedAt) }
             : cached;
         this.host.transcriptLastConv = synced;
         this.host.transcriptLastFingerprint = this.conversationTranscriptFingerprint(synced);
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, synced);
+        this.host.conversations?.cacheDocument(synced);
         return true;
     }
 
@@ -1240,6 +1274,24 @@ export class MobileProjectsTranscriptLiveUi {
     }
 
     async refreshOpenTranscriptConversation(
+        options?: QaapTranscriptLiveRefreshOptions,
+    ): Promise<void> {
+        const activeId = this.host.transcriptOpenSummaryId;
+        if (this.refreshInFlight && this.refreshInFlightConversationId === activeId) {
+            if (options?.forceStatusSettle) {
+                return this.refreshInFlight.then(() => this.refreshOpenTranscriptConversation(options));
+            }
+            return this.refreshInFlight;
+        }
+        this.refreshInFlightConversationId = activeId;
+        this.refreshInFlight = this.doRefreshOpenTranscriptConversation(options).finally(() => {
+            this.refreshInFlight = undefined;
+            this.refreshInFlightConversationId = undefined;
+        });
+        return this.refreshInFlight;
+    }
+
+    protected async doRefreshOpenTranscriptConversation(
         options?: QaapTranscriptLiveRefreshOptions,
     ): Promise<void> {
         const context = this.resolveTranscriptRefreshContext();

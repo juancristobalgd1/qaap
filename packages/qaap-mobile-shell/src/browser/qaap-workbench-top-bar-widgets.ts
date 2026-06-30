@@ -16,6 +16,7 @@ import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard
 import { MobileProjectsService } from './mobile-projects-service';
 import type { MobileBottomButton, MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
+import { createSegmentedField, type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 
 const WORKBENCH_NAV_GO_BACK = 'textEditor.commands.go.back';
 const WORKBENCH_NAV_GO_FORWARD = 'textEditor.commands.go.forward';
@@ -177,10 +178,10 @@ export class QaapWorkbenchHistoryNavWidget extends Widget {
     }
 
     protected updateEnabledStates(): void {
-        const narrow = matchesMobileOneColumnLayout();
-        const showDashboard = narrow && this.workspaceService.opened;
+        const showDashboard = false;
         this.dashboardBtn.hidden = !showDashboard;
         this.dashboardBtn.style.display = showDashboard ? '' : 'none';
+        this.dashboardBtn.setAttribute('aria-hidden', showDashboard ? 'false' : 'true');
         if (showDashboard) {
             this.dashboardBtn.disabled = !this.commands.isEnabled(QaapMobileProjectsDashboardCommands.TOGGLE.id);
             const open = Boolean(
@@ -198,7 +199,10 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     protected readonly toDispose = new DisposableCollection();
     protected readonly terminalBtn: HTMLButtonElement;
     protected readonly aiChatBtn: HTMLButtonElement;
+    protected readonly mobileModeSwitchHost: HTMLElement;
+    protected mobileModeSwitch: QaapSegmentedFieldController<MobileBottomButtonId> | undefined;
     protected readonly mobileViewPickerBtn: HTMLButtonElement;
+    protected readonly mobileViewPickerSlot: HTMLElement;
     protected readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected mobileViewPickerMenu: HTMLElement | undefined;
@@ -231,6 +235,10 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             nls.localize('theia/core/workbenchBar/openAiChat', 'Open AI Chat')
         );
         this.aiChatBtn.classList.add('theia-workbench-in-mobile-bottom-bar');
+        this.mobileModeSwitchHost = document.createElement('div');
+        this.mobileModeSwitchHost.className = 'theia-workbench-mobile-mode-switch';
+        this.mobileModeSwitchHost.hidden = true;
+        this.mobileModeSwitchHost.setAttribute('aria-hidden', 'true');
         this.mobileViewPickerBtn = document.createElement('button');
         this.mobileViewPickerBtn.type = 'button';
         this.mobileViewPickerBtn.className = 'theia-workbench-nav-btn theia-workbench-mobile-view-picker-btn';
@@ -242,6 +250,9 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.mobileViewPickerBtn.setAttribute('aria-label', this.mobileViewPickerBtn.title);
         this.mobileViewPickerOptions = this.getFallbackMobileViewPickerOptions();
         this.renderMobileViewPickerButton();
+        this.mobileViewPickerSlot = document.createElement('span');
+        this.mobileViewPickerSlot.className = 'theia-workbench-mobile-view-picker-slot';
+        this.mobileViewPickerSlot.hidden = true;
         this.accountBtn = document.createElement('button');
         this.accountBtn.type = 'button';
         this.accountBtn.className = 'theia-workbench-nav-btn theia-workbench-account-btn';
@@ -251,7 +262,8 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.accountAvatar.className = 'theia-workbench-account-avatar';
         this.accountAvatar.setAttribute('aria-hidden', 'true');
         this.accountBtn.appendChild(this.accountAvatar);
-        node.append(this.terminalBtn, this.aiChatBtn, this.mobileViewPickerBtn, this.accountBtn);
+        this.mobileViewPickerSlot.append(this.mobileViewPickerBtn);
+        node.append(this.terminalBtn, this.aiChatBtn, this.mobileModeSwitchHost, this.mobileViewPickerSlot, this.accountBtn);
         this.terminalBtn.addEventListener('click', this.onTerminalClick);
         this.aiChatBtn.addEventListener('click', this.onAiChatClick);
         this.mobileViewPickerBtn.addEventListener('pointerdown', this.onMobileViewPickerPointerDown);
@@ -293,6 +305,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         window.addEventListener('qaap-auth-session-changed', this.onAuthSessionChanged);
         this.updateEnabledStates();
         this.updateAccountVisual();
+        this.syncMobileViewPickerSlot();
     }
 
     protected override onBeforeDetach(msg: Message): void {
@@ -315,6 +328,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.closeMobileViewPickerMenu();
         this.mobileViewPickerMenu?.remove();
         this.mobileViewPickerMenu = undefined;
+        this.mobileViewPickerSlot.append(this.mobileViewPickerBtn);
         document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
         window.removeEventListener('qaap-auth-session-changed', this.onAuthSessionChanged);
         this.terminalBtn.removeEventListener('click', this.onTerminalClick);
@@ -339,6 +353,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.aiChatBtn.disabled = !this.commands.isEnabled(WORKBENCH_AI_CHAT_TOGGLE);
         this.updateTerminalSwitchVisual();
         this.updateAiChatSwitchVisual();
+        this.syncMobileModeSwitch();
         this.scheduleMobileViewPickerUpdate();
         this.updateAccountVisual();
     }
@@ -381,6 +396,87 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.aiChatBtn.setAttribute('aria-label', this.aiChatBtn.title);
     }
 
+    protected syncMobileModeSwitch(): void {
+        const visible = matchesMobileOneColumnLayout()
+            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVE)
+            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE);
+        this.mobileModeSwitchHost.hidden = !visible;
+        this.mobileModeSwitchHost.style.display = visible ? '' : 'none';
+        this.mobileModeSwitchHost.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        if (!visible) {
+            this.mobileModeSwitchHost.replaceChildren();
+            this.mobileModeSwitch = undefined;
+            return;
+        }
+        const active: MobileBottomButtonId = this.isMobileBottomAgentActive() ? 'agent' : 'editor';
+        if (!this.mobileModeSwitch) {
+            this.mobileModeSwitch = createSegmentedField<MobileBottomButtonId>({
+                segments: [
+                    {
+                        id: 'editor',
+                        label: nls.localize('qaap/mobileBottomBar/editor', 'Editor'),
+                        iconClass: 'codicon-layout',
+                    },
+                    {
+                        id: 'agent',
+                        label: nls.localize('theia/core/mobileBottomBar/agent', 'Agent'),
+                        iconClass: 'codicon-comment-discussion',
+                    },
+                ],
+                value: active,
+                iconOnly: true,
+                onChange: id => { void this.activateMobileMode(id); },
+            });
+            this.mobileModeSwitch.root.classList.add('theia-mod-header-surface');
+            this.mobileModeSwitch.root.addEventListener('click', event => this.onMobileModeSwitchRootClick(event), true);
+            this.mobileModeSwitchHost.append(this.mobileModeSwitch.root);
+        } else {
+            this.mobileModeSwitch.setValue(active);
+        }
+    }
+
+    protected onMobileModeSwitchRootClick(event: MouseEvent): void {
+        const root = this.mobileModeSwitch?.root;
+        if (!root) {
+            return;
+        }
+        const option = event.target instanceof HTMLElement
+            ? event.target.closest<HTMLElement>('.theia-qaap-segmented-option')
+            : undefined;
+        const clickedId = option?.dataset.segmentId as MobileBottomButtonId | undefined;
+        const active: MobileBottomButtonId = this.isMobileBottomAgentActive() ? 'agent' : 'editor';
+        if (clickedId && clickedId !== active) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        void this.activateMobileMode(active === 'agent' ? 'editor' : 'agent');
+    }
+
+    protected isMobileBottomAgentActive(): boolean {
+        if (document.querySelector('.theia-mobile-projects.theia-mod-visible') || document.querySelector('.theia-mobile-agent-transcript-root.theia-mod-visible')) {
+            return true;
+        }
+        const title = this.shell.rightPanelHandler.tabBar.currentTitle;
+        return this.shell.isExpanded('right') && title?.owner?.id === WORKBENCH_CHAT_VIEW_WIDGET_ID;
+    }
+
+    protected async activateMobileMode(id: MobileBottomButtonId): Promise<void> {
+        if (id !== 'agent' && id !== 'editor') {
+            return;
+        }
+        if (!this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE) || !this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+            return;
+        }
+        try {
+            await this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id);
+        } finally {
+            this.scheduleMobileViewPickerUpdate();
+            this.syncMobileModeSwitch();
+        }
+    }
+
     protected scheduleMobileViewPickerUpdate(): void {
         if (this.mobileViewPickerUpdateFrame) {
             return;
@@ -409,7 +505,10 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.mobileViewPickerBtn.hidden = !visible;
         this.mobileViewPickerBtn.style.display = visible ? '' : 'none';
         this.mobileViewPickerBtn.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        this.mobileViewPickerSlot.hidden = !visible;
+        this.mobileViewPickerSlot.style.display = visible ? '' : 'none';
         document.body.classList.toggle('theia-mobile-mod-ide-header-view-picker', visible);
+        this.syncMobileViewPickerSlot();
         if (!visible) {
             this.mobileViewPickerOptions = [];
             this.closeMobileViewPickerMenu();
@@ -424,6 +523,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             this.mobileViewPickerOptions = options ?? [];
             this.mobileViewPickerActiveId = activeId ?? 'editor';
             this.renderMobileViewPickerButton();
+            this.syncMobileViewPickerSlot();
             if (this.mobileViewPickerMenu?.classList.contains('theia-mod-open')) {
                 this.populateMobileViewPickerMenu();
                 this.positionMobileViewPickerMenu();
@@ -451,6 +551,56 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             this.createMobileViewPickerIcon(active.icon),
             this.createMobileViewPickerChevron(),
         );
+    }
+
+    protected syncMobileViewPickerSlot(): void {
+        const tabBarRow = this.resolveMobileViewPickerTabBarRow();
+        const historyNav = document.getElementById('theia:workbench-history-nav');
+        if (matchesMobileOneColumnLayout() && tabBarRow && !this.mobileViewPickerBtn.hidden) {
+            this.hideDashboardReturnButton(historyNav);
+            if (this.mobileViewPickerBtn.parentElement !== tabBarRow) {
+                tabBarRow.insertBefore(this.mobileViewPickerBtn, tabBarRow.firstChild);
+            }
+            return;
+        }
+        if (matchesMobileOneColumnLayout() && historyNav && !this.mobileViewPickerBtn.hidden) {
+            this.hideDashboardReturnButton(historyNav);
+            if (this.mobileViewPickerBtn.parentElement !== historyNav) {
+                historyNav.insertBefore(this.mobileViewPickerBtn, historyNav.firstChild);
+            }
+            return;
+        }
+        if (this.mobileViewPickerBtn.parentElement !== this.mobileViewPickerSlot) {
+            this.mobileViewPickerSlot.append(this.mobileViewPickerBtn);
+        }
+    }
+
+    protected hideDashboardReturnButton(historyNav: HTMLElement | null): void {
+        if (!historyNav) {
+            return;
+        }
+        const dashboard = historyNav.querySelector<HTMLElement>('.theia-workbench-dashboard-nav-btn');
+        if (dashboard) {
+            dashboard.hidden = true;
+            dashboard.style.display = 'none';
+            dashboard.setAttribute('aria-hidden', 'true');
+        }
+    }
+
+    protected resolveMobileViewPickerTabBarRow(): HTMLElement | undefined {
+        const rows = Array.from(document.querySelectorAll<HTMLElement>(
+            '#theia-main-content-panel .lm-TabBar .theia-tabBar-tab-row',
+        ));
+        return rows.find(row => {
+            const rect = row.getBoundingClientRect();
+            const style = window.getComputedStyle(row);
+            return rect.width > 120
+                && rect.height > 20
+                && rect.top >= 40
+                && rect.top < 120
+                && style.display !== 'none'
+                && style.visibility !== 'hidden';
+        });
     }
 
     protected createMobileViewPickerIcon(icon: string): HTMLElement {
@@ -657,7 +807,8 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         const gap = 6;
         const anchor = this.mobileViewPickerBtn.getBoundingClientRect();
         const menuWidth = Math.max(menu.offsetWidth || menu.scrollWidth, 220);
-        let left = anchor.right - menuWidth;
+        const leftAnchored = this.mobileViewPickerBtn.closest('#theia\\:workbench-history-nav, .theia-tabBar-tab-row') !== null;
+        let left = leftAnchored ? anchor.left : anchor.right - menuWidth;
         left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
         menu.style.top = `${Math.round(anchor.bottom + gap)}px`;
         menu.style.left = `${Math.round(left)}px`;

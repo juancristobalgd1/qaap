@@ -243,7 +243,6 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'preview');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'files');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'terminal');
-        void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
     }
 
     protected switchMountedTranscriptSheet(
@@ -309,7 +308,6 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'files');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'terminal');
         this.host.conversations?.prefetchDocument(summary.id);
-        void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
     }
 
     protected prepareMountedTranscriptSheetForSwitch(): void {

@@ -540,6 +540,46 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
     border-radius: 50%;
   }
 
+  .theia-workbench-history-nav-group .theia-workbench-mobile-view-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 48px;
+    height: 44px;
+    min-width: 48px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 8px;
+    border-radius: var(--q-radius-icon, 10px);
+    color: var(--qaap-ink, var(--theia-foreground, var(--q-text)));
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-mobile-view-picker-btn[hidden] {
+    display: none !important;
+  }
+
+  #theia-main-content-panel .theia-tabBar-tab-row>.theia-workbench-mobile-view-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 48px;
+    width: 48px;
+    height: 44px;
+    min-width: 48px;
+    min-height: 44px;
+    margin: 0 4px 0 8px;
+    padding: 0 8px;
+    border-radius: var(--q-radius-icon, 10px);
+    color: var(--qaap-ink, var(--theia-foreground, var(--q-text)));
+    position: relative;
+    z-index: 3;
+  }
+
+  #theia-main-content-panel .theia-tabBar-tab-row>.theia-workbench-mobile-view-picker-btn[hidden] {
+    display: none !important;
+  }
+
   .theia-workbench-right-controls .theia-workbench-account-avatar .codicon,
   .theia-workbench-right-controls .theia-workbench-account-avatar .theia-workbench-account-fallback-icon {
     display: inline-block;
@@ -2386,17 +2426,20 @@ body.theia-mobile-mod-ide-header-view-picker {
   color: var(--q-accent, var(--qaap-accent, var(--theia-button-background)));
 }
 
-.theia-mobile-projects-header-surface-picker .theia-qaap-segmented-field.theia-mod-header-surface {
+.theia-mobile-projects-header-surface-picker .theia-qaap-segmented-field.theia-mod-header-surface,
+.theia-workbench-mobile-mode-switch .theia-qaap-segmented-field.theia-mod-header-surface {
   gap: 0;
 }
 
-.theia-mobile-projects-header-surface-picker .theia-qaap-segmented-bar.theia-mod-icon-only {
+.theia-mobile-projects-header-surface-picker .theia-qaap-segmented-bar.theia-mod-icon-only,
+.theia-workbench-mobile-mode-switch .theia-qaap-segmented-bar.theia-mod-icon-only {
   gap: 2px;
   padding: 2px;
   border-radius: 10px;
 }
 
-.theia-mobile-projects-header-surface-picker .theia-qaap-segmented-bar.theia-mod-icon-only .theia-qaap-segmented-option {
+.theia-mobile-projects-header-surface-picker .theia-qaap-segmented-bar.theia-mod-icon-only .theia-qaap-segmented-option,
+.theia-workbench-mobile-mode-switch .theia-qaap-segmented-bar.theia-mod-icon-only .theia-qaap-segmented-option {
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
@@ -2406,6 +2449,16 @@ body.theia-mobile-mod-ide-header-view-picker {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.theia-workbench-mobile-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.theia-workbench-mobile-mode-switch[hidden] {
+  display: none !important;
 }
 
 .theia-mobile-projects-header-surface-picker .theia-qaap-segmented-bar.theia-mod-icon-only .theia-qaap-segmented-option .codicon {
@@ -3576,7 +3629,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome #theia-app-shell.theia-mod-mobile
   pointer-events: none !important;
 }
 
-body.theia-mobile-mod-workhub-composer-header #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel {
+body.theia-mobile-mod-workhub-composer-header:not(.theia-mobile-mod-desktop-ide) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel {
   visibility: hidden !important;
   pointer-events: none !important;
 }
@@ -14383,15 +14436,6 @@ body.theia-mobile-mod-workhub-no-bottom-chrome #theia-statusBar {
   pointer-events: none !important;
 }
 
-body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) {
-  --theia-mobile-bottom-chrome-reserved: var(--theia-mobile-status-chrome-height, 28px);
-}
-
-body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host {
-  display: flex !important;
-  pointer-events: none !important;
-}
-
 body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar {
   display: none !important;
   pointer-events: none !important;
@@ -14399,8 +14443,8 @@ body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide
 
 body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host>#theia-statusBar,
 body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide) #theia-statusBar {
-  display: block !important;
-  pointer-events: auto !important;
+  display: none !important;
+  pointer-events: none !important;
 }
 
 body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host {
@@ -14438,6 +14482,39 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 body.theia-mobile-mod-active-transcript #theia-top-panel {
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* Editor mode wins over stale WorkHub/transcript chrome classes. */
+body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel,
+body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-history-nav,
+body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-nav,
+body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-right-controls {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* DOM-state failsafe: if the IDE/editor is the only painted surface, never leave the top bar blank. */
+body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel,
+body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-history-nav,
+body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-nav,
+body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-right-controls {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) .theia-mobile-bottom-chrome-host {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: none !important;
+}
+
+body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) .theia-mobile-bottom-chrome-host>#theia-statusBar,
+body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-agent-transcript-root.theia-mod-visible)) #theia-statusBar {
+  display: block !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 
 /* Parallel Runs sheet must sit ABOVE the full-screen transcript sheet that launched it. */

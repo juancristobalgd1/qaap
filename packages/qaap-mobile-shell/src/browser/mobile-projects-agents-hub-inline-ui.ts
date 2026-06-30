@@ -216,6 +216,11 @@ export class MobileProjectsAgentsHubInlineUi {
         if (this.host.transcriptOpenSummary) {
             return this.host.transcriptOpenSummary;
         }
+        const active = this.host.conversationsForProject(project)
+            .find(summary => summary.status === 'streaming' && !isAgentsHubIdleConversationSummary(summary));
+        if (active) {
+            return active;
+        }
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id) ?? project.name;
         return buildAgentsHubIdleConversationSummary(cwd);
     }
@@ -396,14 +401,26 @@ export class MobileProjectsAgentsHubInlineUi {
         const activeSummary = this.host.agentsHubInlineActive && this.host.transcriptOpenSummary
             ? this.host.transcriptOpenSummary
             : summary;
-        const conv = this.host.agentsHubInlineActive
+        const cached = this.host.agentsHubInlineActive
             && this.host.transcriptLastConv
             && this.host.transcriptLastConv.id === activeSummary.id
             ? this.host.transcriptLastConv
             : this.host.transcriptLiveUi.peekCachedOpenTranscript(activeSummary.id)
-                ?? this.host.transcriptConversationCache.get(activeSummary.id)
-                ?? this.host.transcriptSheetUi.summaryToTranscriptPlaceholder(activeSummary);
+                ?? this.host.transcriptConversationCache.get(activeSummary.id);
+        const conv = cached
+            ?? (activeSummary.status === 'streaming' && !isAgentsHubIdleConversationSummary(activeSummary)
+                ? this.buildAgentsHubWorkingConversation(activeSummary)
+                : this.host.transcriptSheetUi.summaryToTranscriptPlaceholder(activeSummary));
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
+    }
+
+    protected buildAgentsHubWorkingConversation(summary: QaapAgentConversationSummaryDTO): QaapAgentConversationDTO {
+        const placeholder = this.host.transcriptSheetUi.summaryToTranscriptPlaceholder(summary);
+        return {
+            ...placeholder,
+            status: 'streaming',
+            updatedAt: Math.max(placeholder.updatedAt, summary.updatedAt),
+        };
     }
 
     buildOptimisticSubmitConversation(
@@ -636,7 +653,6 @@ export class MobileProjectsAgentsHubInlineUi {
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
             this.renderAgentsHubShellChat(chatHost, project, summary);
             this.host.conversations?.prefetchDocument(summary.id);
-            void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
         }
         this.host.stickyComposerRenderUi.renderStickyComposer();
     }

@@ -988,3 +988,64 @@
     max-width: min(210px, 58vw);
   }
 }
+
+/* Browser feedback: keep the Thinking chevron inline with the label. */
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-activity-thinking-summary {
+  display: flex !important;
+  flex-flow: row wrap !important;
+  align-items: baseline !important;
+  justify-content: flex-start !important;
+  gap: 2px !important;
+}
+
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-activity-thinking-summary::marker,
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-activity-thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-row {
+  flex: 0 1 auto !important;
+  width: auto !important;
+  min-width: 0;
+  gap: 3px !important;
+}
+
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-activity-thinking-chevron {
+  flex: 0 0 auto;
+  margin-left: 0 !important;
+  line-height: 1;
+  transform: translateY(1px);
+}
+
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt {
+  flex: 0 0 100% !important;
+  width: 100%;
+}
+
+/* Browser feedback: make the Activity workflow read as an inline trace, not a card. */
+.theia-mobile-agent-lobe-workflow.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-lobe-workflow-summary,
+.theia-mobile-agent-lobe-workflow-summary.theia-mobile-agent-activity-timeline-sticky-bar,
+.theia-mobile-agent-lobe-workflow-summary.theia-mobile-agent-activity-timeline-summary,
+.theia-mobile-agent-lobe-workflow.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace>summary,
+.theia-mobile-agent-lobe-workflow.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-sticky-bar,
+.theia-mobile-agent-lobe-workflow.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-open-panel {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-lobe-workflow-summary:hover,
+.theia-mobile-agent-lobe-workflow .theia-mobile-agent-lobe-workflow-summary:focus-visible,
+.theia-mobile-agent-lobe-workflow-summary.theia-mobile-agent-activity-timeline-sticky-bar:hover,
+.theia-mobile-agent-lobe-workflow-summary.theia-mobile-agent-activity-timeline-sticky-bar:focus-visible {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}

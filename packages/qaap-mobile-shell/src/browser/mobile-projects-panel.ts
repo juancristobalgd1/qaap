@@ -88,6 +88,7 @@ import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-tran
 import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcript-overlay-state';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import type { MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
 import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHost } from './mobile-projects-theia-chat-session-ui';
@@ -472,7 +473,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerSurfacePickerHost: HTMLElement;
     protected readonly headerExecutionCluster: HTMLElement;
     protected readonly headerExecutionTabsHost: HTMLElement;
-    protected headerSurfacePicker?: QaapSegmentedFieldController<QaapComposerSurface>;
+    protected headerSurfacePicker?: QaapSegmentedFieldController<MobileBottomButtonId>;
     protected headerIdeViewPickerBtn: HTMLButtonElement | undefined;
     protected headerIdeViewPickerMenu: HTMLElement | undefined;
     protected headerIdeViewPickerDismiss: Disposable = Disposable.NULL;
@@ -704,6 +705,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected conversationsDispose: Disposable = Disposable.NULL;
     protected inboxStreamDispose: Disposable = Disposable.NULL;
     protected chatServiceDispose: Disposable = Disposable.NULL;
+    protected agentsHubEmptySurfaceGuardDispose: Disposable = Disposable.NULL;
     protected readonly chatSessionModelDisposables = new Map<string, Disposable>();
     protected readonly chatSessionProjectIds = new Map<string, string>();
     protected chatServiceRefreshHandle: number | undefined;
@@ -830,6 +832,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
         const grabber = this.panelChromeUi.constructPanelShell();
         this.panelChromeUi.wirePanelInteractions(grabber, this.onAuthSessionChanged);
+        this.installAgentsHubEmptySurfaceGuard();
     }
 
     protected handleHeaderBackClick(): void {
@@ -865,17 +868,85 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     /** True when the Agents tab scroll area contains the inline execution shell (or a painted placeholder). */
     isAgentsHubExecutionSurfaceReady(): boolean {
-        return isAgentsHubExecutionSurfacePainted(this.agentsHubShellActive, this.scroll);
+        return isAgentsHubExecutionSurfacePainted(this.agentsHubShellActive, this.currentProjectsScrollHost());
     }
 
     /** Re-mount the inline Agents shell when the panel is visible but the scroll area is still empty. */
     ensureAgentsHubExecutionShellRendered(): void {
+        this.syncCurrentProjectsScrollHost();
         if (this.isAgentsHubExecutionSurfaceReady()) {
             return;
         }
-        if (this.visible && this.hubView === 'tasks' && this.shouldUseAgentsHubLanding()) {
+        const visible = this.visible || (!this.root.hidden && this.root.classList.contains('theia-mod-visible'));
+        const tasksHub = this.hubView === 'tasks' || this.root.classList.contains('theia-mod-hub-tasks');
+        const agentsLanding = this.shouldUseAgentsHubLanding()
+            || this.root.classList.contains('theia-mod-agents-hub-landing');
+        if (visible && tasksHub && agentsLanding) {
+            this.visible = true;
+            this.hubView = 'tasks';
+            this.agentsHubLegacyInbox = false;
+            const workspaceCwd = this.projectsService.getCurrentWorkspaceCwd();
+            if (workspaceCwd) {
+                this.projects = ensureProbeWorkspaceProject(this.projects, this.projectsService, workspaceCwd);
+                for (const project of this.projects) {
+                    const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
+                        ? workspaceCwd
+                        : this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
+                    if (cwd) {
+                        this.preparedCwdByProjectId.set(project.id, cwd);
+                    }
+                }
+            }
             this.renderAgentsHubExecutionShell();
+            this.stickyComposerRenderUi.renderStickyComposer();
+            this.composerHeaderUi.syncHeaderComposerSurfacePicker();
         }
+    }
+
+    protected currentProjectsScrollHost(): HTMLElement {
+        return this.root.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? this.scroll;
+    }
+
+    protected syncCurrentProjectsScrollHost(): void {
+        const current = this.currentProjectsScrollHost();
+        if (current !== this.scroll) {
+            (this as unknown as { scroll: HTMLElement }).scroll = current;
+        }
+    }
+
+    protected installAgentsHubEmptySurfaceGuard(): void {
+        if (!this.homeMode || typeof window === 'undefined') {
+            return;
+        }
+        let frame: number | undefined;
+        let interval: number | undefined;
+        const schedule = (): void => {
+            if (frame !== undefined) {
+                return;
+            }
+            frame = window.requestAnimationFrame(() => {
+                frame = undefined;
+                this.ensureAgentsHubExecutionShellRendered();
+            });
+        };
+        const observer = typeof MutationObserver !== 'undefined'
+            ? new MutationObserver(schedule)
+            : undefined;
+        observer?.observe(this.root, { attributes: true, attributeFilter: ['class', 'hidden'] });
+        observer?.observe(this.scroll, { childList: true });
+        interval = window.setInterval(schedule, 500);
+        this.agentsHubEmptySurfaceGuardDispose = Disposable.create(() => {
+            observer?.disconnect();
+            if (interval !== undefined) {
+                window.clearInterval(interval);
+                interval = undefined;
+            }
+            if (frame !== undefined) {
+                window.cancelAnimationFrame(frame);
+                frame = undefined;
+            }
+        });
+        schedule();
     }
 
     getHubView(): MobileProjectsHubView {
@@ -948,6 +1019,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
         this.composerEditorContextService?.registerPanelDelegate(undefined);
         this.hubListRenderScheduler.dispose();
+        this.agentsHubEmptySurfaceGuardDispose.dispose();
+        this.agentsHubEmptySurfaceGuardDispose = Disposable.NULL;
         this.panelLifecycleUi.dispose();
     }
 
@@ -2407,6 +2480,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO {
         return this.agentsHubInlineUi.resolveAgentsHubShellSummary(project);
+    }
+
+    protected conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[] {
+        return this.conversationIndexUi.conversationsForProject(project);
     }
 
     protected renderAgentsHubExecutionShell(): void {

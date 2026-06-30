@@ -99,6 +99,9 @@ export interface MobileProjectsPanelLifecycleHost {
     markTasksFirstLoadComplete(render: boolean): void;
     maybeInstallWorkHubPerfProbe(): void;
     shouldSkipFullRenderListOnConversationTick(): boolean;
+    shouldUseAgentsHubLanding(): boolean;
+    isAgentsHubExecutionSurfaceReady(): boolean;
+    ensureAgentsHubExecutionShellRendered(): void;
     refreshWorkHubConversationChrome(): void;
     mergeInboxPullRequests(polled: QaapGithubPullRequestSummary[]): QaapGithubPullRequestSummary[];
     updateTasksAttentionChrome(): void;
@@ -178,6 +181,7 @@ export class MobileProjectsPanelLifecycleUi {
             }
         }
         this.host.render();
+        this.ensureVisibleAgentsHubShell();
         document.addEventListener('pointerdown', this.host.onDocumentPointerDown, true);
         this.updateAccountAvatar();
         this.startVisibleHubServices();
@@ -246,11 +250,23 @@ export class MobileProjectsPanelLifecycleUi {
             }
             this.host.filter = this.host.projectsService.getFilter();
             this.host.render();
+            this.ensureVisibleAgentsHubShell();
             this.updateAccountAvatar();
             this.host.syncLandingHubListChrome();
         } catch (err) {
             console.warn('[qaap-mobile-shell] Failed to prime Work Hub data:', err);
         }
+    }
+
+    protected ensureVisibleAgentsHubShell(): void {
+        if (!this.host.visible
+            || !this.host.homeMode
+            || this.host.hubView !== 'tasks'
+            || !this.host.shouldUseAgentsHubLanding()
+            || this.host.isAgentsHubExecutionSurfaceReady()) {
+            return;
+        }
+        this.host.ensureAgentsHubExecutionShellRendered();
     }
 
     hide(): void {

@@ -25,7 +25,9 @@ import {
     type StickyComposerContextChipView,
 } from './qaap-sticky-composer-context-ui';
 import {
+    appendStickyComposerWorkspaceContextField,
     createStickyComposerWorkspacePill,
+    renderStickyComposerWorkspaceBar,
 } from './qaap-sticky-composer-workspace-bar';
 import {
     createContextUsageIndicatorBadge,
@@ -521,6 +523,40 @@ export class MobileProjectsStickyComposerColumnUi {
         card.append(stage);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
         wrap.append(card);
+        if (options.showWorkspaceBar) {
+            wrap.classList.add('theia-mod-workspace-bar-below');
+            const workspaceView = this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceBarView(options.project);
+            const workspaceBar = renderStickyComposerWorkspaceBar({
+                view: workspaceView,
+                includeProject: false,
+                includeBranch: true,
+                onOpenProject: anchor => {
+                    this.host.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(
+                        options.project,
+                        options.transcriptOverlay === true,
+                        anchor,
+                    );
+                },
+                onOpenBranch: anchor => {
+                    this.host.stickyComposerWorkspaceUi.openComposerWorkspaceBranchSheet(
+                        options.project,
+                        options.transcriptOverlay === true,
+                        anchor,
+                    );
+                },
+            });
+            if (options.workspaceDestination) {
+                const destinationPill = createStickyComposerWorkspacePill({
+                    iconClass: options.workspaceDestination.iconClass,
+                    label: options.workspaceDestination.label,
+                    ariaLabel: nls.localize('qaap/composerWorkspace/destinationAria', 'Run in: {0}', options.workspaceDestination.label),
+                    fieldKind: 'destination',
+                    onClick: anchor => options.workspaceDestination!.onOpen(anchor),
+                });
+                appendStickyComposerWorkspaceContextField(workspaceBar, destinationPill, 'destination', { divider: false });
+            }
+            wrap.append(workspaceBar);
+        }
         column.append(wrap);
         return column;
     }
