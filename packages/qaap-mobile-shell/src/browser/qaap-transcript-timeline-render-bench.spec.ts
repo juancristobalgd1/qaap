@@ -194,11 +194,12 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-technical-details')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-icon.theia-mobile-agent-trace-glyph')).to.not.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent).to.equal('Read page.tsx');
+        expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent).to.equal('Read 1 file');
         expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-timeline')?.open).to.equal(false);
         expect(row.querySelector('.theia-mobile-agent-activity-icon.codicon-thinking')).to.not.equal(null);
         const verbs = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-verb')).map(el => el.textContent);
         expect(verbs).to.deep.equal(['Thinking', 'Read']);
+        expect(row.querySelector('.theia-mobile-agent-activity-narrative')?.textContent).to.equal("I'm checking the relevant files.");
         expect(row.querySelector('.theia-mobile-agent-activity-thinking')).to.not.equal(null);
         expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking')?.open).to.equal(false);
         const thinkingSummary = row.querySelector('.theia-mobile-agent-activity-thinking-summary');
@@ -208,9 +209,10 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(thinkingExcerpt?.textContent).to.include('Let me think about this step by step.');
         expect(thinkingSummary?.querySelector('.theia-mobile-agent-activity-tail')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-activity-thinking-body')?.textContent).to.include('Let me think about this step by step.');
-        expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill')?.textContent).to.equal('page.tsx');
-        expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill .theia-mobile-agent-activity-file-chip .codicon-file-code')).to.not.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-file-chip-label')?.textContent).to.equal('page.tsx');
+        const readRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Read');
+        expect(readRow?.querySelector('.theia-mobile-agent-activity-detail')?.textContent).to.equal('1 file');
+        expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill')).to.equal(null);
     });
 
     it('preserves the thinking excerpt element across streaming patches', () => {
@@ -561,7 +563,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
         const errorItem = timeline?.querySelector('.theia-mobile-agent-activity-item.theia-mod-error');
         const panel = errorItem?.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-error-panel');
         expect(panel).to.not.equal(null);
-        expect(panel?.open).to.equal(true);
+        expect(panel?.open).to.equal(false);
         expect(panel?.querySelector('.theia-mobile-agent-activity-error-panel-code')?.textContent)
             .to.equal('InputValidationError');
         expect(panel?.querySelector('.theia-mobile-agent-activity-error-panel-message')?.textContent)
@@ -813,9 +815,36 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(timeline).to.not.equal(undefined);
         expect(timeline instanceof HTMLDetailsElement && timeline.open).to.equal(false);
         expect(timeline?.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent)
-            .to.equal('Read page.tsx');
+            .to.equal('Read 1 file');
         expect(timeline?.querySelector('.theia-mobile-agent-activity-result-preview')?.textContent)
             .to.equal('export default function Page() { return null; }');
+    });
+
+    it('renders verification as a compact progress group instead of a shell event', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'Bash',
+                toolUseId: 'tool-test',
+                args: JSON.stringify({ command: 'npm run test' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(segments, {
+            streaming: false,
+            segments,
+        });
+
+        expect(timeline).to.not.equal(undefined);
+        expect(timeline instanceof HTMLDetailsElement && timeline.open).to.equal(false);
+        expect(timeline?.querySelector('.theia-mobile-agent-activity-narrative')?.textContent)
+            .to.equal("I'm validating the implementation.");
+        expect(timeline?.querySelector('.theia-mobile-agent-activity-verb')?.textContent).to.equal('Verification');
+        expect(timeline?.querySelector('.theia-mobile-agent-activity-detail')?.textContent).to.equal('1 check');
+        expect(timeline?.querySelector('.theia-mobile-agent-activity-expand') instanceof HTMLDetailsElement
+            && timeline.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand')?.open).to.equal(false);
     });
 
     it('separates verb and detail in cursor-trace rows', () => {
@@ -865,8 +894,8 @@ describe('qaap-transcript-timeline-render-bench', () => {
         ]);
 
         const bashRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Ran');
-        expect(bashRow?.textContent).to.match(/^Ran\s+ls -la/);
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Run');
+        expect(bashRow?.textContent).to.match(/^Run\s+1 command/);
         expect(bashRow?.querySelector('.theia-mobile-agent-activity-detail.theia-mod-command')).to.not.equal(null);
         expect(bashRow?.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill')).to.equal(null);
 
@@ -876,12 +905,11 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(readRow?.textContent).to.match(/^Read\s+3 files/);
 
         const askRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Asked');
-        expect(askRow?.textContent).to.equal('Asked a question');
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Use');
+        expect(askRow?.textContent).to.equal('Use 1 tool');
 
-        const writingRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Preparing');
-        expect(writingRow?.textContent).to.equal('Preparing the response');
+        expect(row.querySelector('.theia-mobile-agent-activity-item.theia-mod-result .theia-mobile-agent-activity-label')?.textContent)
+            .to.equal('Preparing the response');
     });
 
     it('renders compact grep matches inside search expand', () => {
@@ -943,7 +971,10 @@ describe('qaap-transcript-timeline-render-bench', () => {
 
         expect(row.querySelector('.theia-mobile-agent-activity-timeline')).to.not.equal(null);
         expect(row.querySelector('.theia-mobile-agent-tool-group, .theia-mobile-agent-tool-pill')).to.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-file-chip-label')?.textContent).to.equal('page.tsx');
+        expect(row.querySelector('.theia-mobile-agent-activity-narrative')?.textContent).to.equal("I'm checking the relevant files.");
+        const readRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
+            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Read');
+        expect(readRow?.querySelector('.theia-mobile-agent-activity-detail')?.textContent).to.equal('1 file');
 
         const streamingRow = createStreamingRow(artifactsUi, segments);
         const artifacts = document.createElement('div');

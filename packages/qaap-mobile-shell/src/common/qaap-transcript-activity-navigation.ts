@@ -37,6 +37,7 @@ export type TranscriptActivityNavigateTarget = 'file' | 'terminal' | 'thought';
 export interface TranscriptActivityNavigationItem {
     readonly label: string;
     readonly state: TranscriptActivityStepState;
+    readonly timelineRole?: 'narrative' | 'toolGroup' | 'result';
     readonly navigate?: TranscriptActivityNavigateTarget;
     readonly filePath?: string;
     readonly segmentIndex?: number;

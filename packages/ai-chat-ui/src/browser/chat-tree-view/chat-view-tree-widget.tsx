@@ -20,6 +20,8 @@ import {
     ChatRequestModel,
     ChatResponseContent,
     ChatResponseModel,
+    ChangeSetElement,
+    ToolCallChatResponseContent,
     ChatService,
     EditableChatRequestModel,
     ParsedChatRequestAgentPart,
@@ -65,6 +67,8 @@ import { useMarkdownRendering } from '../chat-response-renderer/markdown-part-re
 import { ProgressMessage } from '../chat-progress-message';
 import { AIChatTreeInputFactory, type AIChatTreeInputWidget } from './chat-view-tree-input-widget';
 import { PromptVariantBadge } from './prompt-variant-badge';
+import { buildExecutionTimeline, NarrativeTimelineSegment, ToolGroupTimelineSegment } from './execution-timeline';
+import { ToolGroupTimelineItem } from './execution-timeline-renderer';
 
 // TODO Instead of directly operating on the ChatRequestModel we could use an intermediate view model
 export interface RequestNode extends TreeNode {
@@ -569,7 +573,7 @@ export class ChatViewTreeWidget extends TreeWidget {
             : nls.localize('theia/ai/chat-ui/responseFrom', 'Response from {0}', this.getAgentLabel(node));
         return <React.Fragment key={node.id}>
             <div
-                className='theia-ChatNode'
+                className={`theia-ChatNode ${isRequestNode(node) ? 'theia-ChatNode-request' : 'theia-ChatNode-response'}`}
                 role='article'
                 aria-label={ariaLabel}
                 onContextMenu={e => this.handleContextMenu(node, e)}
@@ -581,6 +585,9 @@ export class ChatViewTreeWidget extends TreeWidget {
     }
 
     protected renderAgent(node: RequestNode | ResponseNode): React.ReactNode {
+        if (isResponseNode(node)) {
+            return <AgentSessionHeader response={node.response} />;
+        }
         const inProgress = isResponseNode(node) && !node.response.isComplete && !node.response.isCanceled && !node.response.isError;
         const waitingForInput = isResponseNode(node) && node.response.isWaitingForInput;
         const toolbarContributions = !inProgress
@@ -742,34 +749,68 @@ export class ChatViewTreeWidget extends TreeWidget {
     }
 
     protected renderChatResponse(node: ResponseNode): React.ReactNode {
+        const timeline = buildExecutionTimeline(node.response.response.content);
         return (
             <div className={'theia-ResponseNode'}>
                 {!node.response.isComplete
                     && node.response.response.content.length === 0
                     && node.response.progressMessages
                         .filter(c => c.show === 'untilFirstContent')
-                        .map((c, i) =>
-                            <ProgressMessage {...c} key={`${node.id}-progress-untilFirstContent-${i}`} />
+                        .map(c =>
+                            <ProgressMessage key={c.id} {...c} />
                         )
                 }
-                {node.response.response.content.map((c, i) =>
-                    <div className='theia-ResponseNode-Content' key={`${node.id}-content-${i}`}>{this.getChatResponsePartRenderer(c, node)}</div>
-                )}
+                {timeline.map(segment => {
+                    if (segment.kind === 'narrative') {
+                        return this.renderNarrativeSegment(segment, node);
+                    }
+                    return this.renderToolGroup(segment, node);
+                })}
                 {!node.response.isComplete
                     && node.response.progressMessages
                         .filter(c => c.show === 'whileIncomplete')
-                        .map((c, i) =>
-                            <ProgressMessage {...c} key={`${node.id}-progress-whileIncomplete-${i}`} />
+                        .map(c =>
+                            <ProgressMessage key={c.id} {...c} />
                         )
                 }
                 {node.response.progressMessages
                     .filter(c => c.show === 'forever')
-                    .map((c, i) =>
-                        <ProgressMessage {...c} key={`${node.id}-progress-afterComplete-${i}`} />
+                    .map(c =>
+                        <ProgressMessage key={c.id} {...c} />
                     )
                 }
+                {node.response.isComplete && this.renderFinalChangeSummary(node)}
             </div>
         );
+    }
+
+    protected renderNarrativeSegment(segment: NarrativeTimelineSegment, node: ResponseNode): React.ReactNode {
+        return <div className={`theia-ResponseNode-Content theia-ResponseNode-Narrative ${segment.synthetic ? 'synthetic' : ''}`} key={segment.id}>
+            {segment.synthetic ? segment.text : this.getChatResponsePartRenderer(segment.content, node)}
+        </div>;
+    }
+
+    protected renderToolGroup(segment: ToolGroupTimelineSegment, node: ResponseNode): React.ReactNode {
+        const hasPending = segment.contents.some(content => !content.finished);
+        const hasError = segment.contents.some(content => ToolCallChatResponseContent.isErrorResult(content.result));
+        return <ToolGroupTimelineItem
+            key={segment.id}
+            segment={segment}
+            hasPending={hasPending}
+            hasError={hasError}
+            renderContent={content => this.getChatResponsePartRenderer(content, node)}
+        />;
+    }
+
+    protected renderFinalChangeSummary(node: ResponseNode): React.ReactNode {
+        const request = node.response.requestId
+            ? this.chatService.getSession(node.sessionId)?.model.getRequests().find(candidate => candidate.id === node.response.requestId)
+            : undefined;
+        const elements = getRequestChangeSetElements(request);
+        if (elements.length === 0) {
+            return undefined;
+        }
+        return <FinalChangeSummary key={`${node.id}-final-change-summary`} elements={elements} />;
     }
 
     protected getChatResponsePartRenderer(content: ChatResponseContent, node: ResponseNode): React.ReactNode {
@@ -828,20 +869,116 @@ const WidgetContainer: React.FC<WidgetContainerProps> = ({ widget }) => {
         if (containerRef.current && !widget.isAttached) {
             Widget.attach(widget, containerRef.current);
         }
-    }, [containerRef.current]);
+    }, [widget]);
 
     // Clean up
     React.useEffect(() =>
         () => {
-            setTimeout(() => {
-                // Delay clean up to allow react to finish its rendering cycle
-                widget.clearFlag(Widget.Flag.IsAttached);
-                widget.dispose();
-            });
-        }, []);
+            widget.clearFlag(Widget.Flag.IsAttached);
+            widget.dispose();
+        }, [widget]);
 
     return <div ref={containerRef} />;
 };
+
+const AgentSessionHeader: React.FC<{ response: ChatResponseModel }> = ({ response }) => {
+    const startedAt = React.useRef<number | undefined>(undefined);
+    if (startedAt.current === undefined) {
+        startedAt.current = Date.now();
+    }
+    const completedAt = React.useRef<number | undefined>(response.isComplete ? startedAt.current : undefined);
+    const [, setTick] = React.useState(0);
+
+    if (response.isComplete && completedAt.current === undefined) {
+        completedAt.current = Date.now();
+    }
+
+    React.useEffect(() => {
+        if (response.isComplete) {
+            return;
+        }
+        const timer = window.setInterval(() => setTick(tick => tick + 1), 1000);
+        return () => window.clearInterval(timer);
+    }, [response.isComplete]);
+
+    const elapsed = (completedAt.current ?? Date.now()) - startedAt.current;
+    return <div className='theia-AgentSessionHeader'>
+        <div className='theia-AgentSessionHeader-Label'>
+            {`Worked for ${formatElapsedTime(elapsed)}`}
+            <span className='codicon codicon-chevron-down'></span>
+        </div>
+    </div>;
+};
+
+function formatElapsedTime(ms: number): string {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes === 0) {
+        return `${seconds}s`;
+    }
+    return `${minutes}m ${seconds}s`;
+}
+
+function getRequestChangeSetElements(request: ChatRequestModel | undefined): ChangeSetElement[] {
+    if (!request || !('changeSet' in request)) {
+        return [];
+    }
+    const changeSet = (request as { changeSet?: { getElements?: () => ChangeSetElement[] } }).changeSet;
+    return changeSet?.getElements?.() ?? [];
+}
+
+const FinalChangeSummary: React.FC<{ elements: ChangeSetElement[] }> = ({ elements }) => {
+    const counts = summarizeChangeSet(elements);
+    return <div className='theia-AgentFinalSummary'>
+        <div className='theia-AgentFinalSummary-Header'>
+            <span className='theia-AgentFinalSummary-Title'>
+                {formatChangeSetTitle(elements.length)}
+            </span>
+            {counts.added > 0 && <span className='theia-AgentFinalSummary-Stat added'>+{counts.added}</span>}
+            {counts.modified > 0 && <span className='theia-AgentFinalSummary-Stat modified'>{counts.modified} modified</span>}
+            {counts.deleted > 0 && <span className='theia-AgentFinalSummary-Stat deleted'>-{counts.deleted}</span>}
+        </div>
+        <div className='theia-AgentFinalSummary-Files'>
+            {elements.slice(0, 6).map(element =>
+                <div className='theia-AgentFinalSummary-File' key={element.uri.toString()}>
+                    <span>{element.name ?? element.uri.path.base}</span>
+                    {element.type && <span className={`theia-AgentFinalSummary-FileState ${element.type}`}>{formatChangeType(element.type)}</span>}
+                </div>
+            )}
+            {elements.length > 6 && <div className='theia-AgentFinalSummary-More'>{`+${elements.length - 6} more`}</div>}
+        </div>
+    </div>;
+};
+
+function summarizeChangeSet(elements: ChangeSetElement[]): { added: number, modified: number, deleted: number } {
+    return elements.reduce((summary, element) => {
+        if (element.type === 'add') {
+            summary.added++;
+        } else if (element.type === 'delete') {
+            summary.deleted++;
+        } else {
+            summary.modified++;
+        }
+        return summary;
+    }, { added: 0, modified: 0, deleted: 0 });
+}
+
+function formatChangeSetTitle(count: number): string {
+    return `${count} file${count === 1 ? '' : 's'} changed`;
+}
+
+function formatChangeType(type: ChangeSetElement['type']): string {
+    switch (type) {
+        case 'add':
+            return 'added';
+        case 'delete':
+            return 'deleted';
+        case 'modify':
+        default:
+            return 'modified';
+    }
+}
 
 const ChatRequestRender = (
     {
@@ -969,24 +1106,25 @@ const ChatRequestRender = (
                                 className={className}
                             />
                         );
-                    } else {
-                        const ref = useMarkdownRendering(
-                            part.text
-                                .replace(/^[\r\n]+|[\r\n]+$/g, '') // remove excessive new lines
-                                .replace(/(^ )/g, '&nbsp;'), // enforce keeping space before
-                            openerService,
-                            true
-                        );
-                        return (
-                            <span key={index} ref={ref}></span>
-                        );
                     }
+                    return <ChatRequestTextPart key={index} text={part.text} openerService={openerService} />;
                 })}
             </p>
             {renderContextImages()}
             {renderFooter()}
         </div>
     );
+};
+
+const ChatRequestTextPart = ({ text, openerService }: { text: string, openerService: OpenerService }) => {
+    const ref = useMarkdownRendering(
+        text
+            .replace(/^[\r\n]+|[\r\n]+$/g, '')
+            .replace(/(^ )/g, '&nbsp;'),
+        openerService,
+        true
+    );
+    return <span ref={ref}></span>;
 };
 
 const HoverableLabel = (
@@ -998,7 +1136,7 @@ const HoverableLabel = (
         hoverService: HoverService,
         className: string
     }) => {
-    const spanRef = React.createRef<HTMLSpanElement>();
+    const spanRef = React.useRef<HTMLSpanElement>(null);
     return (
         <span
             className={className}

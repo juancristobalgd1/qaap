@@ -117,6 +117,130 @@ export interface TranscriptActivityTimelineOptions {
 
 interface TranscriptActivityTimelineItem extends TranscriptActivityNavigationItem { }
 
+function isTranscriptExecutionTimelineNarrative(item: TranscriptActivityTimelineItem): boolean {
+    return item.timelineRole === 'narrative';
+}
+
+function transcriptExecutionTimelineCount(item: TranscriptActivityTimelineItem): number {
+    return Math.max(1, item.groupCount ?? item.segmentIndices?.length ?? 1);
+}
+
+function isTranscriptVerificationCommand(command: string | undefined): boolean {
+    return !!command && /(^|[\s"'`:,{[])(npm|yarn|pnpm|npx|node)?\s*(run\s+)?(test|vitest|lint|typecheck|tsc)(:|\b)/i.test(command);
+}
+
+function resolveTranscriptExecutionToolGroupParts(
+    item: TranscriptActivityTimelineItem,
+): Pick<TranscriptActivityTimelineItem, 'label' | 'verb' | 'detail' | 'tail' | 'timelineRole'> {
+    const count = transcriptExecutionTimelineCount(item);
+    const plural = (one: string, many: string): string => count === 1 ? one : many;
+    if (item.toolKind === 'reading') {
+        return {
+            timelineRole: 'toolGroup',
+            label: count === 1 ? 'Read 1 file' : `Read ${count} files`,
+            verb: 'Read',
+            detail: count === 1 ? '1 file' : `${count} files`,
+            tail: undefined,
+        };
+    }
+    if (item.toolKind === 'searching') {
+        return {
+            timelineRole: 'toolGroup',
+            label: count === 1 ? 'Explore 1 search' : `Explore ${count} searches`,
+            verb: 'Explore',
+            detail: count === 1 ? '1 search' : `${count} searches`,
+            tail: undefined,
+        };
+    }
+    if (item.toolKind === 'editing') {
+        return {
+            timelineRole: 'toolGroup',
+            label: count === 1 ? 'Update 1 file' : `Update ${count} files`,
+            verb: 'Update',
+            detail: count === 1 ? '1 file' : `${count} files`,
+            tail: undefined,
+        };
+    }
+    if (item.toolKind === 'terminal') {
+        const verification = isTranscriptVerificationCommand(item.detail);
+        const verb = verification ? 'Verification' : 'Run';
+        const unit = verification ? plural('check', 'checks') : plural('command', 'commands');
+        return {
+            timelineRole: 'toolGroup',
+            label: `${verb} ${count} ${unit}`,
+            verb,
+            detail: `${count} ${unit}`,
+            tail: undefined,
+        };
+    }
+    return {
+        timelineRole: 'toolGroup',
+        label: count === 1 ? 'Use 1 tool' : `Use ${count} tools`,
+        verb: 'Use',
+        detail: count === 1 ? '1 tool' : `${count} tools`,
+        tail: undefined,
+    };
+}
+
+function resolveTranscriptExecutionNarrative(item: TranscriptActivityTimelineItem): string {
+    if (item.toolKind === 'reading') {
+        return "I'm checking the relevant files.";
+    }
+    if (item.toolKind === 'searching') {
+        return "I'm inspecting the repository structure.";
+    }
+    if (item.toolKind === 'editing') {
+        return "I'm updating the implementation.";
+    }
+    if (item.toolKind === 'terminal') {
+        return isTranscriptVerificationCommand(item.detail)
+            ? "I'm validating the implementation."
+            : "I'm running the next command.";
+    }
+    return "I'm applying the next step.";
+}
+
+function createTranscriptExecutionNarrativeItem(label: string, anchor: TranscriptActivityTimelineItem): TranscriptActivityTimelineItem {
+    return {
+        label,
+        timelineRole: 'narrative',
+        state: 'success',
+        timestamp: anchor.timestamp,
+        segmentIndex: anchor.segmentIndex,
+    };
+}
+
+function buildTranscriptExecutionTimelineItems(items: readonly TranscriptActivityTimelineItem[]): TranscriptActivityTimelineItem[] {
+    const timeline: TranscriptActivityTimelineItem[] = [];
+    for (let index = 0; index < items.length; index++) {
+        const item = items[index]!;
+        if (!item.toolKind) {
+            if (item.verb === 'Preparing') {
+                timeline.push({
+                    ...item,
+                    timelineRole: 'result',
+                    label: item.label,
+                    verb: undefined,
+                    detail: undefined,
+                    tail: undefined,
+                });
+            } else {
+                timeline.push(item);
+            }
+            continue;
+        }
+        const previous = timeline[timeline.length - 1];
+        if (!previous || !isTranscriptExecutionTimelineNarrative(previous)) {
+            timeline.push(createTranscriptExecutionNarrativeItem(resolveTranscriptExecutionNarrative(item), item));
+        }
+        timeline.push({
+            ...item,
+            ...resolveTranscriptExecutionToolGroupParts(item),
+        });
+    }
+    return timeline;
+}
+
 interface LazyTranscriptToolPillPayload {
     readonly segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>;
     readonly conv: QaapAgentConversationDTO | undefined;
@@ -365,7 +489,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const timeline = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
         if (timeline) {
             timeline.removeAttribute('data-transcript-timeline-user-toggled');
-            const items = this.resolveTranscriptActivityItemsForDisplay([...segments], { row, conv });
+            const items = buildTranscriptExecutionTimelineItems(this.resolveTranscriptActivityItemsForDisplay([...segments], { row, conv }));
             this.syncTranscriptActivityTimelineElement(timeline, items, {
                 streaming: false,
                 segments,
@@ -867,7 +991,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                     this.resolveTranscriptRowSegments(conv, row),
                     { stalled, timedOut, row, conv, streaming: true },
                 );
-                this.syncTranscriptActivityTimelineElement(timeline, items, {
+                this.syncTranscriptActivityTimelineElement(timeline, buildTranscriptExecutionTimelineItems(items), {
                     streaming: true,
                     stalled,
                     timedOut,
@@ -1116,7 +1240,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             }
             timeline = created;
         } else {
-            this.syncTranscriptActivityTimelineElement(timeline, items, timelineOptions);
+            this.syncTranscriptActivityTimelineElement(timeline, buildTranscriptExecutionTimelineItems(items), timelineOptions);
         }
         // Hide the thought brief when the timeline is visible (instead of removing it)
         // to prevent flickering from create/destroy cycles during streaming.
@@ -1343,7 +1467,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             timeline.classList.toggle('theia-mod-streaming', backendStreaming);
             this.syncTranscriptActivityTimelineSummaryElement(timeline, segments, visibleItems, policy, options);
             timeline.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-count')
-                .forEach(count => count.textContent = String(visibleItems.length));
+                .forEach(count => count.textContent = String(visibleItems.filter(item => !isTranscriptExecutionTimelineNarrative(item)).length));
             const visualIdle = this.resolveTranscriptStreamVisualIdle(segments, !!options?.streaming);
             timeline.querySelectorAll<HTMLElement>('.theia-mobile-agent-activity-timeline-summary-label').forEach(label => {
                 label.classList.toggle('theia-mod-shimmer', !!options?.streaming && !options?.stalled && !options?.timedOut && !visualIdle);
@@ -1356,7 +1480,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             timeline.classList.toggle('theia-mod-streaming', backendStreamingElse);
             const count = timeline.querySelector('.theia-mobile-agent-premium-head-count');
             if (count) {
-                count.textContent = String(visibleItems.length);
+                count.textContent = String(visibleItems.filter(item => !isTranscriptExecutionTimelineNarrative(item)).length);
             }
         }
         const list = timeline.querySelector('.theia-mobile-agent-activity-list');
@@ -2476,7 +2600,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         hiddenCount = 0,
         options?: { readonly streaming?: boolean },
     ): string {
-        return resolveTranscriptActivityTimelineSummaryText(segments, items, hiddenCount, {
+        const summaryItems = items.filter(item => !isTranscriptExecutionTimelineNarrative(item));
+        return resolveTranscriptActivityTimelineSummaryText(segments, summaryItems, hiddenCount, {
             streaming: options?.streaming,
             formatExploredSummary: exploredSegments => {
                 const stats = resolveTranscriptActivityStats(exploredSegments);
@@ -2503,6 +2628,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (items.length === 0) {
             return undefined;
         }
+        const timelineItems = buildTranscriptExecutionTimelineItems(items);
         const timelineOptions = { ...options, segments, includeThinkingSteps, cursorTrace: true };
 
         if (variant === 'inline') {
@@ -2530,7 +2656,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             });
             const count = document.createElement('span');
             count.className = 'theia-mobile-agent-activity-timeline-summary-count';
-            count.textContent = String(items.length);
+            count.textContent = String(timelineItems.filter(item => !isTranscriptExecutionTimelineNarrative(item)).length);
             const chevron = document.createElement('span');
             chevron.className = 'theia-mobile-agent-activity-timeline-summary-chevron theia-mobile-agent-lobe-workflow-toggle codicon codicon-chevron-down';
             chevron.setAttribute('aria-hidden', 'true');
@@ -2557,7 +2683,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             bindTranscriptActivityListKeyboard(list);
             openPanel.append(stickyBar, list);
             timeline.append(summary, openPanel);
-            this.syncTranscriptActivityTimelineElement(timeline, items, timelineOptions);
+            this.syncTranscriptActivityTimelineElement(timeline, timelineItems, timelineOptions);
             return timeline;
         }
 
@@ -2573,13 +2699,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         timeline.append(this.createTranscriptPremiumHead(
             'codicon-checklist',
             nls.localize('qaap/mobileProjects/planLabel', 'Execution plan'),
-            { count: items.length, variant: 'todos' },
+            { count: timelineItems.filter(item => !isTranscriptExecutionTimelineNarrative(item)).length, variant: 'todos' },
         ));
         const list = document.createElement('ol');
         list.className = 'theia-mobile-agent-activity-list';
         bindTranscriptActivityListKeyboard(list);
         timeline.append(list);
-        this.syncTranscriptActivityTimelineElement(timeline, items, timelineOptions);
+        this.syncTranscriptActivityTimelineElement(timeline, timelineItems, timelineOptions);
         return timeline;
     }
 
@@ -2590,6 +2716,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         options?: TranscriptActivityTimelineOptions,
         tier: ReturnType<typeof resolveTranscriptTimelineItemTier> = isActive ? 'current' : 'recent',
     ): void {
+        if (isTranscriptExecutionTimelineNarrative(item)) {
+            this.syncTranscriptExecutionNarrativeItemElement(li, item, tier);
+            return;
+        }
         const shimmerActive = isActive
             && !!options?.streaming
             && !options?.stalled
@@ -2626,7 +2756,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const nestClass = transcriptActivityNestDepthClassName(item.nestDepth ?? 0) ?? '';
         const expandableThinking = item.thinkingContent || item.navigate === 'thought';
         const expandableStep = !expandableThinking && this.shouldShowTranscriptActivityItemExpand(item, options);
-        li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}${item.subagentRoot ? ' theia-mod-subagent-root' : ''}${expandableThinking ? ' theia-mod-expandable-thinking' : ''}${expandableStep ? ' theia-mod-expandable-step' : ''}${nestClass ? ` ${nestClass}` : ''} ${tierClass}`;
+        const roleClass = item.timelineRole ? ` theia-mod-${item.timelineRole}` : '';
+        li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${roleClass}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}${item.subagentRoot ? ' theia-mod-subagent-root' : ''}${expandableThinking ? ' theia-mod-expandable-thinking' : ''}${expandableStep ? ' theia-mod-expandable-step' : ''}${nestClass ? ` ${nestClass}` : ''} ${tierClass}`;
         if (isActive) {
             li.setAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, 'true');
             li.setAttribute('aria-current', 'step');
@@ -2677,6 +2808,47 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             li.removeAttribute('aria-describedby');
         }
         this.syncTranscriptCheckpointRestoreAction(li, item);
+    }
+
+    protected syncTranscriptExecutionNarrativeItemElement(
+        li: HTMLElement,
+        item: TranscriptActivityTimelineItem,
+        tier: ReturnType<typeof resolveTranscriptTimelineItemTier>,
+    ): void {
+        const tierClass = transcriptTimelineTierClassName(tier);
+        const fingerprint = `narrative|${item.label}|${tierClass}`;
+        if (li.getAttribute(TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR) === fingerprint) {
+            recordTranscriptRenderMetric('timeline_item_sync_skipped');
+            return;
+        }
+        li.setAttribute(TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR, fingerprint);
+        li.setAttribute(TRANSCRIPT_ACTIVITY_ITEM_CONTENT_FP_ATTR, item.label);
+        li.className = `theia-mobile-agent-activity-item theia-mod-narrative ${tierClass}`;
+        li.removeAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR);
+        li.removeAttribute('aria-current');
+        li.removeAttribute('aria-describedby');
+        li.removeAttribute(TRANSCRIPT_CHECKPOINT_RESTORE_ATTR);
+        let copy = li.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
+        if (!copy) {
+            copy = document.createElement('div');
+            copy.className = 'theia-mobile-agent-activity-copy';
+            li.replaceChildren(copy);
+        } else {
+            li.querySelector('.theia-mobile-agent-activity-icon')?.remove();
+            for (const child of [...li.children]) {
+                if (child !== copy) {
+                    child.remove();
+                }
+            }
+        }
+        let label = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-narrative');
+        if (!label) {
+            label = document.createElement('p');
+            label.className = 'theia-mobile-agent-activity-narrative';
+            copy.replaceChildren(label);
+        }
+        label.textContent = item.label;
+        recordTranscriptRenderMetric('timeline_item_sync');
     }
 
     protected syncTranscriptCheckpointRestoreAction(
@@ -2816,7 +2988,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const nestClass = transcriptActivityNestDepthClassName(item.nestDepth ?? 0) ?? '';
         const expandableThinking = item.thinkingContent || item.navigate === 'thought';
         const expandableStep = !expandableThinking && this.shouldShowTranscriptActivityItemExpand(item, options);
-        li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}${item.subagentRoot ? ' theia-mod-subagent-root' : ''}${expandableThinking ? ' theia-mod-expandable-thinking' : ''}${expandableStep ? ' theia-mod-expandable-step' : ''}${nestClass ? ` ${nestClass}` : ''} ${tierClass}`;
+        const roleClass = item.timelineRole ? ` theia-mod-${item.timelineRole}` : '';
+        li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${roleClass}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}${item.subagentRoot ? ' theia-mod-subagent-root' : ''}${expandableThinking ? ' theia-mod-expandable-thinking' : ''}${expandableStep ? ' theia-mod-expandable-step' : ''}${nestClass ? ` ${nestClass}` : ''} ${tierClass}`;
         if (isActive) {
             li.setAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, 'true');
             li.setAttribute('aria-current', 'step');
@@ -3242,7 +3415,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const retry = item.state === 'error' ? this.host.retryOpenTranscriptStream : undefined;
         if (!panel) {
             panel = this.toolUi.createTranscriptActivityErrorPanel(display, {
-                defaultOpen: true,
+                defaultOpen: false,
                 onRetry: retry ? () => this.host.retryOpenTranscriptStream?.() : undefined,
             });
             copy.append(panel);
