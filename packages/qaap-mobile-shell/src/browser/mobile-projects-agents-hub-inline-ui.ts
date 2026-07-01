@@ -199,15 +199,15 @@ export class MobileProjectsAgentsHubInlineUi {
         if (hasLiveTranscript) {
             return this.host.transcriptOpenProject;
         }
-        const fromWorkspace = this.host.projectsService.resolveCurrentWorkspaceProject(this.host.projects);
-        if (fromWorkspace) {
-            return fromWorkspace;
-        }
         if (this.host.agentsHubSelectedProjectId) {
             const selected = this.host.projects.find(project => project.id === this.host.agentsHubSelectedProjectId);
             if (selected) {
                 return selected;
             }
+        }
+        const fromWorkspace = this.host.projectsService.resolveCurrentWorkspaceProject(this.host.projects);
+        if (fromWorkspace) {
+            return fromWorkspace;
         }
         return this.host.transcriptOpenProject ?? this.host.resolveHomePinnedProject();
     }
@@ -406,7 +406,7 @@ export class MobileProjectsAgentsHubInlineUi {
             && this.host.transcriptLastConv.id === activeSummary.id
             ? this.host.transcriptLastConv
             : this.host.transcriptLiveUi.peekCachedOpenTranscript(activeSummary.id)
-                ?? this.host.transcriptConversationCache.get(activeSummary.id);
+            ?? this.host.transcriptConversationCache.get(activeSummary.id);
         const conv = cached
             ?? (activeSummary.status === 'streaming' && !isAgentsHubIdleConversationSummary(activeSummary)
                 ? this.buildAgentsHubWorkingConversation(activeSummary)

@@ -63,6 +63,7 @@ export interface MobileProjectsHomeHubHost {
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     missionControlHubUi: MobileProjectsMissionControlHubUi;
     missionControlExpanded: boolean;
+    agentsHubSelectedProjectId: string | undefined;
 }
 
 export class MobileProjectsHomeHubUi {
@@ -315,6 +316,12 @@ export class MobileProjectsHomeHubUi {
     }
 
     resolveHomePinnedProject(): MobileProjectEntry | undefined {
+        if (this.host.agentsHubSelectedProjectId) {
+            const selected = this.host.projects.find(p => p.id === this.host.agentsHubSelectedProjectId);
+            if (selected) {
+                return selected;
+            }
+        }
         const fromWorkspace = this.host.projectsService.resolveCurrentWorkspaceProject(this.host.projects);
         if (fromWorkspace) {
             return fromWorkspace;
