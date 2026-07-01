@@ -81,6 +81,7 @@ export interface MobileProjectsSessionsSidebarHost {
     isProjectDetailView(): boolean;
     transcriptSheet: HTMLElement | undefined;
     agentsHubInlineActive: boolean;
+    agentsHubSelectedProjectId: string | undefined;
     visible: boolean;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     transcriptStickyComposerUi: import('./mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
@@ -477,6 +478,12 @@ export class MobileProjectsSessionsSidebarUi {
         this.host.sessionsSidebar?.refreshList(force ? { force: true } : undefined);
     }
     resolveWorkHubSessionsSidebarProject(): MobileProjectEntry | undefined {
+        if (this.host.agentsHubSelectedProjectId) {
+            const selected = this.host.projects.find(p => p.id === this.host.agentsHubSelectedProjectId);
+            if (selected) {
+                return selected;
+            }
+        }
         return this.host.projects.find(p => p.isCurrent)
             ?? this.host.resolveHomePinnedProject();
     }
