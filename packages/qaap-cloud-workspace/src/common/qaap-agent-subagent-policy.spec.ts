@@ -29,8 +29,13 @@ describe('qaap-agent-subagent-policy', () => {
     it('buildSubagentDeniedMessage names unavailable subagent types explicitly', () => {
         const message = buildSubagentDeniedMessage('Agent', { subagent_type: 'web-dev' });
         expect(message).to.include('web-dev');
-        expect(message).to.include('Read/Write/Edit');
-        expect(message).to.not.include('retry the call unchanged');
+        expect(message).to.include('verification');
+        expect(message).to.include('Do not retry Agent');
+    });
+
+    it('buildSubagentDeniedMessage allows Agent with verification subagent_type', () => {
+        const message = buildSubagentDeniedMessage('Agent', { subagent_type: 'verification' });
+        expect(message).to.equal('');
     });
 
     it('buildQaiqAutoDeniedToolMessage delegates to subagent policy', () => {

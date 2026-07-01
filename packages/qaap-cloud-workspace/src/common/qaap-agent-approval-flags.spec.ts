@@ -28,9 +28,9 @@ describe('qaap-agent-approval-flags', () => {
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
         expect(command).to.include('--dangerously-skip-permissions');
-        expect(command).to.include('--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite');
+        expect(command).to.include('--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent');
         expect(command).to.include('--disallowed-tools');
-        expect(command).to.include('Agent');
+        expect(command).to.include('Task');
         expect(command).to.include('Skill');
         expect(command).not.to.include('--allowed-tools');
     });
@@ -58,7 +58,7 @@ describe('qaap-agent-approval-flags', () => {
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'full-access', autoApprove: true },
         );
-        expect(command).to.include('--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,WebFetch,WebSearch');
+        expect(command).to.include('--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch');
     });
 
     it('full-access still blocks headless tools on QAIQ', () => {
@@ -174,7 +174,7 @@ describe('qaap-agent-approval-flags', () => {
                 toolApprovalRules: { shell: false, network: false },
             },
         );
-        expect(command).to.include('--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite');
+        expect(command).to.include('--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,Agent');
         expect(command).not.to.include(',Bash');
         expect(shouldUseQaiqStdioApprovals({
             agentId: 'qaiq',

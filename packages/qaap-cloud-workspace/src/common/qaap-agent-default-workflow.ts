@@ -13,6 +13,8 @@ const DEFAULT_WORKFLOW_MARKER = '[QAAP default agent workflow]';
 const PARALLEL_TOOLS_MARKER = '[QAAP parallel tools]';
 const SEARCH_HYGIENE_MARKER = '[QAAP search hygiene]';
 const DEV_PREVIEW_MARKER = '[QAAP dev preview]';
+const DEV_SERVER_VERIFICATION_MARKER = '[QAAP dev server verification]';
+const HONEST_REPORTING_MARKER = '[QAAP honest reporting]';
 const BENIGN_CODE_EDIT_MARKER = '[QAAP benign code edit policy]';
 
 const WEB_GENERATION_MARKER = '[QAAP web generation quality]';
@@ -82,6 +84,28 @@ export function buildAgentDevPreviewPromptBlock(): string {
     ].join('\n');
 }
 
+export function buildAgentDevServerVerificationPromptBlock(): string {
+    return [
+        DEV_SERVER_VERIFICATION_MARKER,
+        'Never report a dev server as "running", "serving correctly", or "ready" unless you have executed a command that confirms it.',
+        'Before reporting a URL, verify the server responds: run `curl -s -o /dev/null -w \'%{http_code}\' http://localhost:PORT/` and check the HTTP status code is 200 or 3xx.',
+        'If you cannot verify (command timed out, connection refused, no curl available), say so explicitly — never report a URL you have not confirmed.',
+        'Partial output from a killed or timed-out process (e.g. "VITE ready in 1606ms" followed by a shell timeout) is NOT evidence the server is still running. The process may have been killed after producing that output.',
+        'If the workspace has no package.json in the root and no runnable child project was detected, report that clearly — do not invent a dev server, port, or URL.',
+    ].join('\n');
+}
+
+export function buildAgentHonestReportingPromptBlock(): string {
+    return [
+        HONEST_REPORTING_MARKER,
+        'When you finish your work, your final message must distinguish between what you verified and what you did not.',
+        'If you ran checks (tests, lints, typecheck, build) and some passed while others failed, report the exact counts: "4/9 checks passed, 5 failing" — not "fixed" or "done".',
+        'Never use phrases like "ready to validate", "ready for testing", or "should work now" as a substitute for actually running the verification. Either run it and report the result, or explicitly state you have not yet verified it.',
+        'A single passing check does not override multiple failing checks. If any check fails, the overall status is not "fixed" — it is "partially verified with remaining failures".',
+        'Do not describe a fix as "minimal" or "surgical" if you changed more than one file for a single bug — state the actual number of files changed and why.',
+    ].join('\n');
+}
+
 export function appendAgentDefaultWorkflowToPrompt(
     prompt: string,
     agentId: string,
@@ -99,6 +123,12 @@ export function appendAgentDefaultWorkflowToPrompt(
     }
     if (!prompt.includes(DEV_PREVIEW_MARKER)) {
         blocks.push(buildAgentDevPreviewPromptBlock());
+    }
+    if (!prompt.includes(DEV_SERVER_VERIFICATION_MARKER)) {
+        blocks.push(buildAgentDevServerVerificationPromptBlock());
+    }
+    if (!prompt.includes(HONEST_REPORTING_MARKER)) {
+        blocks.push(buildAgentHonestReportingPromptBlock());
     }
     if (!prompt.includes(BENIGN_CODE_EDIT_MARKER)) {
         blocks.push(buildAgentBenignCodeEditPromptBlock());

@@ -4,7 +4,12 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { appendAgentDefaultWorkflowToPrompt, buildAgentDefaultWorkflowPromptBlock } from './qaap-agent-default-workflow';
+import {
+    appendAgentDefaultWorkflowToPrompt,
+    buildAgentDefaultWorkflowPromptBlock,
+    buildAgentDevServerVerificationPromptBlock,
+    buildAgentHonestReportingPromptBlock,
+} from './qaap-agent-default-workflow';
 
 describe('buildAgentDefaultWorkflowPromptBlock', () => {
     it('frames coding work toward PR by default', () => {
@@ -21,6 +26,10 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         expect(result).to.include('[QAAP default agent workflow]');
         expect(result).to.include('[QAAP parallel tools]');
         expect(result).to.include('[QAAP dev preview]');
+        expect(result).to.include('[QAAP dev server verification]');
+        expect(result).to.include('curl -s -o /dev/null');
+        expect(result).to.include('[QAAP honest reporting]');
+        expect(result).to.include('4/9 checks passed');
         expect(result).to.include('[QAAP benign code edit policy]');
         expect(result).to.include('[QAAP direct execution policy]');
         expect(result).to.include('QAIQ is a Claude Code / OpenClaude CLI');
@@ -43,5 +52,27 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         const block = buildAgentDefaultWorkflowPromptBlock({ gitAvailable: false });
         expect(block).to.include('not be a git repository');
         expect(block).not.to.include('inspect git status');
+    });
+});
+
+describe('buildAgentDevServerVerificationPromptBlock', () => {
+    it('requires curl verification before reporting a URL', () => {
+        const block = buildAgentDevServerVerificationPromptBlock();
+        expect(block).to.include('[QAAP dev server verification]');
+        expect(block).to.include('curl -s -o /dev/null');
+        expect(block).to.include('never report a URL you have not confirmed');
+        expect(block).to.include('Partial output from a killed or timed-out process');
+        expect(block).to.include('no package.json in the root');
+    });
+});
+
+describe('buildAgentHonestReportingPromptBlock', () => {
+    it('requires exact check counts and forbids "ready to validate"', () => {
+        const block = buildAgentHonestReportingPromptBlock();
+        expect(block).to.include('[QAAP honest reporting]');
+        expect(block).to.include('4/9 checks passed');
+        expect(block).to.include('ready to validate');
+        expect(block).to.include('partially verified with remaining failures');
+        expect(block).to.include('actual number of files changed');
     });
 });

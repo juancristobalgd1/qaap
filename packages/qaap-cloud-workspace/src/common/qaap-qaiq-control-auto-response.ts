@@ -4,9 +4,20 @@
 // *****************************************************************************
 
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
-import { buildSubagentDeniedMessage, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
+import { buildSubagentDeniedMessage, extractRequestedSubagentType, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
 import { parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
+
+const VERIFICATION_SUBAGENT_TYPE = 'verification';
+
+/** True when the tool call is Agent with a subagent_type other than "verification". */
+function isNonVerificationAgentCall(toolName: string, request: QaapQaiqPendingControlRequest): boolean {
+    if (toolName.trim() !== 'Agent') {
+        return false;
+    }
+    const subagentType = extractRequestedSubagentType(request.toolInput);
+    return subagentType !== VERIFICATION_SUBAGENT_TYPE;
+}
 
 export type QaapQaiqControlAutoAction = 'allow' | 'deny' | 'queue';
 
@@ -51,6 +62,10 @@ export function resolveQaiqControlRequestAutoAction(
     const toolName = request.toolName?.trim() ?? '';
     // Headless-blocked tools bypass useful stdio control once running — deny even in bypassPermissions.
     if (toolName && isBlockedHeadlessTool(toolName)) {
+        return 'deny';
+    }
+    // Agent is allowed only for subagent_type="verification"; all other subagent types are denied.
+    if (toolName && isNonVerificationAgentCall(toolName, request)) {
         return 'deny';
     }
     const coreTools = parseQaiqCoreTools(command);

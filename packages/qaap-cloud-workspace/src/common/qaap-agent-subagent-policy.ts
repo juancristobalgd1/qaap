@@ -39,8 +39,8 @@ export function buildAgentDirectExecutionPromptBlock(): string {
         SUBAGENT_POLICY_MARKER,
         'QAIQ is a Claude Code / OpenClaude CLI on the VPS — not the in-browser Theia Coder agent.',
         'Never use Theia Coder functions (~{getFileContent}, ~{runTask}, qaap_bootstrap_*, launch configs, IDE skills, or MCP bridges).',
-        'Qaap runs a single headless conversation — Agent/Task subagents, Skill, and AskUserQuestion are not available.',
-        'Never call Agent or Task with subagent_type (web-dev, react-debug, explore, claude-code-guide, etc.).',
+        'Qaap runs a single headless conversation — Task subagents, Skill, and AskUserQuestion are not available.',
+        'The Agent tool IS available but ONLY with subagent_type="verification" — use it to verify non-trivial work (3+ file edits, backend/API changes) before reporting completion. Never call Agent with any other subagent_type (web-dev, react-debug, explore, claude-code-guide, etc.) — they are not available.',
         'Never call Skill to load skill packs (claude-code-guide, cursor-guide, etc.) — they are not mounted in VPS runs.',
         'Never call AskUserQuestion — there is no interactive question UI mid-turn. Make reasonable assumptions from the user prompt and continue.',
         'Do the work directly with Read, Grep, Glob, Write, Edit, and one-shot Bash instead of delegating.',
@@ -113,6 +113,15 @@ export function buildSubagentDeniedMessage(
             + 'Continue with direct tools (Read, Write, Edit, Bash) instead of loading skills.';
     }
     const subagentType = extractRequestedSubagentType(toolInput);
+    if (normalizedToolName === 'Agent' && subagentType === 'verification') {
+        // Allowed — should not reach here, but return a non-blocking message just in case.
+        return '';
+    }
+    if (normalizedToolName === 'Agent' && subagentType && subagentType !== 'verification') {
+        return `${toolName} subagent "${subagentType}" is not available in Qaap. `
+            + 'The only allowed subagent_type is "verification" — use it to verify non-trivial work before reporting completion. '
+            + 'Do not retry Agent with any other subagent_type.';
+    }
     if (subagentType && isKnownUnavailableSubagentType(subagentType)) {
         return `${toolName} subagent "${subagentType}" is not available in Qaap. `
             + 'Implement the landing page directly with Read/Write/Edit and one-shot Bash — do not retry Agent/Task.';

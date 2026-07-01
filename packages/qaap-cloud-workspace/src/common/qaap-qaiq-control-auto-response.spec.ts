@@ -59,13 +59,22 @@ describe('qaap-qaiq-control-auto-response', () => {
         })).to.equal('allow');
     });
 
-    it('denies Agent subagents — they cannot be approved interactively', () => {
+    it('denies Agent with non-verification subagent_type, allows verification', () => {
+        // Agent with web-dev is denied
         expect(resolveQaiqControlRequestAutoAction(approveForMeCommand, true, {
             requestId: 'req-1',
             toolName: 'Agent',
+            toolInput: { subagent_type: 'web-dev' },
         })).to.equal('deny');
-        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode default', true, {
+        // Agent with verification is allowed (not in blocked list, in core tools)
+        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
             requestId: 'req-2',
+            toolName: 'Agent',
+            toolInput: { subagent_type: 'verification' },
+        })).to.equal('allow');
+        // Task (legacy Agent name) is still blocked
+        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode default', true, {
+            requestId: 'req-3',
             toolName: 'Task',
         })).to.equal('deny');
     });
@@ -99,9 +108,11 @@ describe('qaap-qaiq-control-auto-response', () => {
 
     it('denies tools outside the --tools allowlist when present', () => {
         const command = 'qaiq --permission-mode default --tools Read,Write,Edit,Bash,Grep,Glob';
+        // Agent is not in this custom --tools list, so it's denied
         expect(resolveQaiqControlRequestAutoAction(command, true, {
             requestId: 'req-1',
             toolName: 'Agent',
+            toolInput: { subagent_type: 'verification' },
         })).to.equal('deny');
         expect(resolveQaiqControlRequestAutoAction(command, true, {
             requestId: 'req-2',

@@ -9,7 +9,9 @@
  * mounts are never available.
  */
 
-/** Built-in Claude Code tools QAIQ may use on VPS (no delegation, no IDE bridge). */
+/** Built-in Claude Code tools QAIQ may use on VPS (no delegation, no IDE bridge).
+ * Agent is included so the verification subagent can run — all other subagent types
+ * are blocked by the subagent policy prompt and isKnownUnavailableSubagentType(). */
 export const QAAP_QAIQ_CORE_CODING_TOOLS = [
     'Read',
     'Write',
@@ -19,6 +21,7 @@ export const QAAP_QAIQ_CORE_CODING_TOOLS = [
     'Glob',
     'NotebookEdit',
     'TodoWrite',
+    'Agent',
 ] as const;
 
 /** Optional network tools when the composer policy grants network access. */
@@ -29,7 +32,6 @@ export const QAAP_QAIQ_NETWORK_TOOLS = ['WebFetch', 'WebSearch'] as const;
  * and task-board tools that are not part of a single headless coding turn.
  */
 export const QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS = [
-    'Agent',
     'Task',
     'Skill',
     'AskUserQuestion',

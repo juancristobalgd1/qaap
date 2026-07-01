@@ -16,7 +16,7 @@ describe('qaap-qaiq-tool-policy', () => {
 
     it('formats core coding tools without network by default', () => {
         expect(formatQaiqCoreToolsFlag()).to.equal(
-            '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite',
+            '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent',
         );
         expect(resolveQaiqCoreToolNames()).to.not.include('WebSearch');
     });
@@ -33,12 +33,15 @@ describe('qaap-qaiq-tool-policy', () => {
 
     it('omits Bash when shell is disabled in the core tool list', () => {
         expect(formatQaiqCoreToolsFlag({ shell: false })).to.equal(
-            '--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite',
+            '--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,Agent',
         );
     });
 
     it('blocks delegation and Theia Coder tools', () => {
-        expect(isBlockedHeadlessTool('Agent')).to.equal(true);
+        // Agent is no longer blocked — it's needed for the verification subagent.
+        // Non-verification subagent types are blocked at the stdio control layer.
+        expect(isBlockedHeadlessTool('Agent')).to.equal(false);
+        expect(isBlockedHeadlessTool('Task')).to.equal(true);
         expect(isBlockedHeadlessTool('TaskCreate')).to.equal(true);
         expect(isBlockedTheiaTool('qaap_bootstrap_install')).to.equal(true);
         expect(isBlockedTheiaTool('getWorkspaceFileList')).to.equal(true);
