@@ -760,6 +760,8 @@ export class ChatViewTreeWidget extends TreeWidget {
             )
             : eventTimeline.closingNarrative;
         const diffSummary = node.response.isComplete ? this.renderDiffSummary(node) : undefined;
+        const isWorking = !node.response.isComplete && !node.response.isCanceled;
+        const isError = node.response.isError;
         return (
             <div className={'theia-ResponseNode'}>
                 {!node.response.isComplete
@@ -770,12 +772,14 @@ export class ChatViewTreeWidget extends TreeWidget {
                             <ProgressMessage key={c.id} {...c} />
                         )
                 }
-                <AgentExecution
+                <AgentExecutionWithTimer
                     events={eventTimeline.events}
                     renderToolContent={renderToolContent}
                     renderNarrativeContent={renderNarrativeContent}
                     closingNarrative={closingNarrative}
                     diffSummary={diffSummary}
+                    isWorking={isWorking}
+                    isError={isError}
                 />
                 {!node.response.isComplete
                     && node.response.progressMessages
@@ -923,6 +927,51 @@ function formatElapsedTime(ms: number): string {
     }
     return `${minutes}m ${seconds}s`;
 }
+
+/**
+ * Wraps {@link AgentExecution} with a live elapsed-time tracker.
+ * While the agent is working, re-renders every second so the
+ * "Processed in Xm Ys" header stays current. When the agent completes,
+ * the timer stops and the final elapsed value is frozen.
+ */
+const AgentExecutionWithTimer: React.FC<{
+    events: ReturnType<typeof buildExecutionEventTimeline>['events'];
+    renderToolContent: (content: ToolCallChatResponseContent) => React.ReactNode;
+    renderNarrativeContent?: (content: ChatResponseContent) => React.ReactNode;
+    closingNarrative?: React.ReactNode;
+    diffSummary?: React.ReactNode;
+    isWorking: boolean;
+    isError: boolean;
+}> = ({ events, renderToolContent, renderNarrativeContent, closingNarrative, diffSummary, isWorking, isError }) => {
+    const startedAt = React.useRef<number>(Date.now());
+    const completedAt = React.useRef<number | undefined>(undefined);
+    const [, setTick] = React.useState(0);
+
+    if (!isWorking && completedAt.current === undefined) {
+        completedAt.current = Date.now();
+    }
+
+    React.useEffect(() => {
+        if (!isWorking) {
+            return;
+        }
+        const timer = window.setInterval(() => setTick(tick => tick + 1), 1000);
+        return () => window.clearInterval(timer);
+    }, [isWorking]);
+
+    const elapsed = (completedAt.current ?? Date.now()) - startedAt.current;
+
+    return <AgentExecution
+        events={events}
+        renderToolContent={renderToolContent}
+        renderNarrativeContent={renderNarrativeContent}
+        closingNarrative={closingNarrative}
+        diffSummary={diffSummary}
+        isWorking={isWorking}
+        isError={isError}
+        elapsedMs={elapsed}
+    />;
+};
 
 function getRequestChangeSetElements(request: ChatRequestModel | undefined): ChangeSetElement[] {
     if (!request || !('changeSet' in request)) {

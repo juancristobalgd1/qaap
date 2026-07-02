@@ -2274,6 +2274,60 @@ details.theia-tool-confirmation-args>summary::marker {
   flex-direction: column;
 }
 
+/* ─── ProcessAccordion: the single collapsible for all process steps ─────── */
+/* Codex-style: "Processed in 2m 31s" header with a subtle divider.           */
+/* Auto-expands while working, auto-collapses on success, open on error.      */
+
+.theia-ProcessAccordion {
+  margin: 0 0 20px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.theia-ProcessAccordion-Header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 0 8px 0;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.theia-ProcessAccordion-Header::-webkit-details-marker {
+  display: none;
+}
+
+.theia-ProcessAccordion-Label {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.theia-ProcessAccordion.theia-mod-working .theia-ProcessAccordion-Label {
+  color: var(--theia-foreground);
+}
+
+.theia-ProcessAccordion.theia-mod-error .theia-ProcessAccordion-Label {
+  color: var(--theia-errorForeground);
+}
+
+.theia-ProcessAccordion-Chevron {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  opacity: 0.72;
+  transition: transform 200ms ease;
+}
+
+.theia-ProcessAccordion[open] .theia-ProcessAccordion-Chevron {
+  transform: rotate(180deg);
+}
+
+.theia-ProcessAccordion-Content {
+  /* Content is rendered lazily — when collapsed, children are not mounted. */
+  padding-top: 4px;
+}
+
 /* ─── ExecutionEvent: one narrative + one tool group ─────────────────────── */
 /* Much air between events, little air within.                                */
 
@@ -2430,6 +2484,12 @@ details.theia-tool-confirmation-args>summary::marker {
   white-space: nowrap;
 }
 
+.theia-ToolDetails-FileIcon {
+  font-size: 14px;
+  opacity: 0.72;
+  flex-shrink: 0;
+}
+
 .theia-ToolDetails.theia-mod-error .theia-ToolDetails-ErrorIcon {
   color: var(--theia-errorForeground);
   font-size: 12px;
@@ -2584,6 +2644,12 @@ details.theia-tool-confirmation-args>summary::marker {
   min-height: 24px;
   color: var(--theia-descriptionForeground);
   font-size: var(--theia-ui-font-size0);
+}
+
+.theia-DiffSummary-FileIcon {
+  font-size: 14px;
+  opacity: 0.72;
+  flex-shrink: 0;
 }
 
 .theia-DiffSummary-FileType,

@@ -14,6 +14,7 @@ import {
     type TranscriptPreviewMonacoEditorOptions,
 } from './qaap-transcript-monaco-editor';
 import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
+import { getFileIconClass } from '../common/qaap-file-icon-utils';
 
 export interface TranscriptFileTreeEntry {
     readonly name: string;
@@ -155,25 +156,12 @@ export function filterTranscriptFileTreeEntries(
         || entry.relativePath.toLowerCase().includes(needle));
 }
 
+/**
+ * @deprecated Use {@link getFileIconClass} from `qaap-file-icon-utils` instead.
+ * Re-exported for backward compatibility with existing import sites.
+ */
 export function transcriptFileIconClass(path: string): string {
-    const base = path.slice(path.lastIndexOf('/') + 1);
-    const ext = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1).toLowerCase() : '';
-    if (['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'cs', 'php', 'sh'].includes(ext)) {
-        return 'codicon-file-code';
-    }
-    if (['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'env'].includes(ext)) {
-        return 'codicon-settings-gear';
-    }
-    if (['md', 'mdx', 'txt', 'rst'].includes(ext)) {
-        return 'codicon-markdown';
-    }
-    if (['css', 'scss', 'less', 'html', 'svg'].includes(ext)) {
-        return 'codicon-symbol-color';
-    }
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico'].includes(ext)) {
-        return 'codicon-file-media';
-    }
-    return 'codicon-file';
+    return getFileIconClass(path);
 }
 
 export function isTranscriptPreviewableTextFile(path: string): boolean {

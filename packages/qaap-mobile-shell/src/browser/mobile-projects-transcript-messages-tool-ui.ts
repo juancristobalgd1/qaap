@@ -8,6 +8,7 @@ import { formatStoredAgentFailureMessage } from '../common/qaap-agent-failure-me
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
+import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
 import {
     registerDeferredTranscriptMarkdown,
@@ -1802,19 +1803,6 @@ export class MobileProjectsTranscriptMessagesToolUi {
     }
 
     protected transcriptFileIconClass(path: string): string {
-        const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-        if (['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'cs', 'php', 'sh'].includes(ext)) {
-            return 'codicon-file-code';
-        }
-        if (['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'env'].includes(ext)) {
-            return 'codicon-settings-gear';
-        }
-        if (['md', 'mdx', 'txt', 'rst'].includes(ext)) {
-            return 'codicon-markdown';
-        }
-        if (['css', 'scss', 'less', 'html', 'svg'].includes(ext)) {
-            return 'codicon-symbol-color';
-        }
-        return 'codicon-file';
+        return getFileIconClass(path);
     }
 }

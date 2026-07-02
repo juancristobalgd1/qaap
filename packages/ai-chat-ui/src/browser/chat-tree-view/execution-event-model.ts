@@ -357,3 +357,67 @@ function pluralize(count: number, noun: string): string {
     }
     return `${noun}s`;
 }
+
+// ─── File icon helper ────────────────────────────────────────────────────────
+// Maps a file path/name to a codicon class for display in tool details and
+// diff summaries. Lightweight inline mapping — the comprehensive shared
+// helper lives in qaap-mobile-shell, but ai-chat-ui cannot depend on that
+// package, so we keep a minimal mapping here.
+
+const FILE_EXTENSION_ICONS: Readonly<Record<string, string>> = {
+    // Code
+    js: 'codicon-file-code', jsx: 'codicon-file-code', mjs: 'codicon-file-code', cjs: 'codicon-file-code',
+    ts: 'codicon-file-code', tsx: 'codicon-file-code',
+    py: 'codicon-file-code', rb: 'codicon-file-code', go: 'codicon-file-code', rs: 'codicon-file-code',
+    java: 'codicon-file-code', c: 'codicon-file-code', cpp: 'codicon-file-code', h: 'codicon-file-code',
+    cs: 'codicon-file-code', php: 'codicon-file-code', sh: 'codicon-file-code',
+    // Config / data
+    json: 'codicon-json', jsonc: 'codicon-json',
+    yaml: 'codicon-settings-gear', yml: 'codicon-settings-gear', toml: 'codicon-settings-gear',
+    xml: 'codicon-settings-gear', ini: 'codicon-settings-gear', env: 'codicon-settings-gear',
+    // Markdown / text
+    md: 'codicon-markdown', mdx: 'codicon-markdown', markdown: 'codicon-markdown',
+    txt: 'codicon-file-text', rst: 'codicon-file-text',
+    // Styling / markup
+    css: 'codicon-symbol-color', scss: 'codicon-symbol-color', less: 'codicon-symbol-color',
+    html: 'codicon-symbol-color', svg: 'codicon-file-media',
+    // Images / media
+    png: 'codicon-file-media', jpg: 'codicon-file-media', jpeg: 'codicon-file-media',
+    gif: 'codicon-file-media', webp: 'codicon-file-media', ico: 'codicon-file-media',
+    // Documents
+    pdf: 'codicon-file-pdf',
+    // Archives
+    zip: 'codicon-file-zip', tar: 'codicon-file-zip', gz: 'codicon-file-zip',
+};
+
+const SPECIAL_FILENAMES: Readonly<Record<string, string>> = {
+    'package.json': 'codicon-json',
+    'tsconfig.json': 'codicon-json',
+    'readme.md': 'codicon-markdown',
+    '.env': 'codicon-settings-gear',
+    '.gitignore': 'codicon-settings-gear',
+    'dockerfile': 'codicon-file-code',
+    'makefile': 'codicon-file-code',
+};
+
+/**
+ * Resolves a codicon class for a file path or name. Used by tool details and
+ * diff summary rows to show a file-type icon next to the filename.
+ */
+export function getFileIconClass(pathOrName: string): string {
+    if (!pathOrName) {
+        return 'codicon-file';
+    }
+    const base = pathOrName.slice(pathOrName.lastIndexOf('/') + 1);
+    const lowerBase = base.toLowerCase();
+    const special = SPECIAL_FILENAMES[lowerBase];
+    if (special) {
+        return special;
+    }
+    const dotIndex = base.lastIndexOf('.');
+    if (dotIndex <= 0) {
+        return 'codicon-file';
+    }
+    const ext = base.slice(dotIndex + 1).toLowerCase();
+    return FILE_EXTENSION_ICONS[ext] ?? 'codicon-file';
+}

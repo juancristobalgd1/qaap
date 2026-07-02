@@ -11,10 +11,17 @@ import {
     createMobileDiffSummaryElement,
     createMobileExecutionEventTimeline,
     createMobileLineDiffSummaryElement,
+    createMobileProcessAccordion,
+    findMobileProcessAccordion,
     formatMobileEventSummary,
     hasMobileExecutionEventTimeline,
-    refreshMobileExecutionEventTimeline,
+    hasMobileProcessAccordion,
     MOBILE_EXECUTION_TIMELINE_CLASS,
+    MOBILE_PROCESS_ACCORDION_CLASS,
+    refreshMobileExecutionEventTimeline,
+    resetMobileProcessAccordionUserToggle,
+    syncMobileProcessAccordionState,
+    wrapMobileProcessAccordion,
 } from './qaap-execution-event-timeline';
 
 describe('qaap-execution-event-timeline', () => {
@@ -361,6 +368,292 @@ describe('qaap-execution-event-timeline', () => {
         it('does not render a file list', () => {
             const el = createMobileLineDiffSummaryElement(10, 2);
             expect(el.querySelector('.theia-mobile-diff-summary-files')).to.equal(null);
+        });
+
+    });
+
+    // ─── Process Accordion ───────────────────────────────────────────────────
+
+    describe('createMobileProcessAccordion', () => {
+
+        it('creates a <details> with the process accordion class', () => {
+            const segments = [textSegment('Thinking...'), toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            expect(accordion.tagName).to.equal('DETAILS');
+            expect(accordion.classList.contains(MOBILE_PROCESS_ACCORDION_CLASS)).to.be.true;
+        });
+
+        it('is open when working', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+        });
+
+        it('is open when error', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: true });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+        });
+
+        it('is collapsed when complete (not working, not error)', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.false;
+        });
+
+        it('contains the execution timeline inside', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            expect(accordion.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`)).to.not.equal(null);
+        });
+
+        it('shows "Processing…" label when working without elapsed', () => {
+            const segments = [toolSegment('read', 't1', '{}', false)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Processing…');
+        });
+
+        it('shows "Processed in Xs" label when complete with elapsed', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false, elapsedMs: 45000 });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Processed in 45s');
+        });
+
+        it('shows "Processing… Xm Ys" label when working with elapsed', () => {
+            const segments = [toolSegment('read', 't1', '{}', false)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false, elapsedMs: 125000 });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Processing… 2m 5s');
+        });
+
+        it('applies theia-mod-working class when working', () => {
+            const segments = [toolSegment('read', 't1', '{}', false)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            expect(accordion.classList.contains('theia-mod-working')).to.be.true;
+            expect(accordion.classList.contains('theia-mod-complete')).to.be.false;
+        });
+
+        it('applies theia-mod-error class when error', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: true });
+            expect(accordion.classList.contains('theia-mod-error')).to.be.true;
+        });
+
+        it('applies theia-mod-complete class when complete', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            expect(accordion.classList.contains('theia-mod-complete')).to.be.true;
+        });
+
+        it('marks user-toggled only on summary clicks, not on content clicks', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            // Click on the content area should NOT set user-toggled
+            const content = accordion.querySelector('.theia-mobile-process-accordion-content') as HTMLElement;
+            content.click();
+            expect(accordion.getAttribute('data-user-toggled')).to.equal(null);
+            // Click on the summary header SHOULD set user-toggled
+            const header = accordion.querySelector('.theia-mobile-process-accordion-header') as HTMLElement;
+            header.click();
+            expect(accordion.getAttribute('data-user-toggled')).to.equal('1');
+        });
+
+    });
+
+    describe('syncMobileProcessAccordionState', () => {
+
+        it('collapses when transitioning from working to complete', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.false;
+        });
+
+        it('expands when transitioning to error', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.false;
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: true });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+        });
+
+        it('updates the label when elapsed changes', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false, elapsedMs: 5000 });
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, elapsedMs: 30000 });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Processed in 30s');
+        });
+
+        it('respects user toggle — does not auto-collapse after user interaction', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            // Simulate user click (sets data-user-toggled)
+            accordion.setAttribute('data-user-toggled', '1');
+            (accordion as HTMLDetailsElement).open = false;
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false });
+            // Should stay collapsed because user toggled
+            expect((accordion as HTMLDetailsElement).open).to.be.false;
+        });
+
+        it('respects user toggle — does not auto-expand after user interaction', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            // User manually expands
+            accordion.setAttribute('data-user-toggled', '1');
+            (accordion as HTMLDetailsElement).open = true;
+            syncMobileProcessAccordionState(accordion, { isWorking: true, isError: false });
+            // Should stay expanded because user toggled
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+        });
+
+        it('still updates the label even when user toggled', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false, elapsedMs: 1000 });
+            accordion.setAttribute('data-user-toggled', '1');
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, elapsedMs: 60000 });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Processed in 1m 0s');
+        });
+
+        it('updates modifier classes on sync', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: true });
+            expect(accordion.classList.contains('theia-mod-working')).to.be.false;
+            expect(accordion.classList.contains('theia-mod-error')).to.be.true;
+            expect(accordion.classList.contains('theia-mod-complete')).to.be.false;
+        });
+
+    });
+
+    describe('resetMobileProcessAccordionUserToggle', () => {
+
+        it('clears the data-user-toggled attribute', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            accordion.setAttribute('data-user-toggled', '1');
+            resetMobileProcessAccordionUserToggle(accordion);
+            expect(accordion.getAttribute('data-user-toggled')).to.equal(null);
+        });
+
+        it('allows auto-expand/collapse to resume after reset', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            accordion.setAttribute('data-user-toggled', '1');
+            (accordion as HTMLDetailsElement).open = true;
+            resetMobileProcessAccordionUserToggle(accordion);
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.false;
+        });
+
+    });
+
+    describe('hasMobileProcessAccordion', () => {
+
+        it('returns true when a row contains a process accordion', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            const row = document.createElement('div');
+            row.append(accordion);
+            expect(hasMobileProcessAccordion(row)).to.be.true;
+        });
+
+        it('returns false when a row has no process accordion', () => {
+            const row = document.createElement('div');
+            expect(hasMobileProcessAccordion(row)).to.be.false;
+        });
+
+    });
+
+    describe('findMobileProcessAccordion', () => {
+
+        it('finds the accordion element within a segments body', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
+            const body = document.createElement('div');
+            body.append(accordion);
+            const found = findMobileProcessAccordion(body);
+            expect(found).to.not.equal(undefined);
+            expect(found?.classList.contains(MOBILE_PROCESS_ACCORDION_CLASS)).to.be.true;
+        });
+
+        it('returns undefined when no accordion is present', () => {
+            const body = document.createElement('div');
+            expect(findMobileProcessAccordion(body)).to.equal(undefined);
+        });
+
+    });
+
+    describe('wrapMobileProcessAccordion', () => {
+
+        it('wraps an existing timeline element', () => {
+            const timeline = createMobileExecutionEventTimeline([toolSegment('read', 't1', '{}', true)]);
+            const accordion = wrapMobileProcessAccordion(timeline, { isWorking: true, isError: false });
+            expect(accordion.classList.contains(MOBILE_PROCESS_ACCORDION_CLASS)).to.be.true;
+            expect(accordion.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`)).to.not.equal(null);
+        });
+
+    });
+
+    describe('refreshMobileExecutionEventTimeline with accordion', () => {
+
+        it('preserves the accordion wrapper when refreshing', () => {
+            const segments1 = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments1, { isWorking: true, isError: false });
+            const body = document.createElement('div');
+            body.append(accordion);
+            // Refresh with new segments
+            const segments2 = [toolSegment('read', 't1', '{}', true), toolSegment('write', 't2', '{}', true)];
+            refreshMobileExecutionEventTimeline(body, segments2);
+            // Accordion should still be present
+            expect(body.querySelector(`.${MOBILE_PROCESS_ACCORDION_CLASS}`)).to.not.equal(null);
+            // Timeline should be refreshed inside the accordion
+            const timeline = body.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`);
+            expect(timeline).to.not.equal(null);
+        });
+
+    });
+
+    // ─── File icons in tool details and diff summary ──────────────────────────
+
+    describe('file icons', () => {
+
+        it('renders a file icon in tool details for read tools with a file path', () => {
+            const segments = [toolSegment('read', 't1', JSON.stringify({ file_path: 'src/Canvas.tsx' }), true)];
+            const timeline = createMobileExecutionEventTimeline(segments);
+            const fileIcon = timeline.querySelector('.theia-mobile-tool-detail-file-icon');
+            expect(fileIcon).to.not.equal(null);
+            expect(fileIcon?.classList.contains('codicon-file-code')).to.be.true;
+        });
+
+        it('renders a file icon in tool details for write tools with a file path', () => {
+            const segments = [toolSegment('write', 't1', JSON.stringify({ path: 'config.json' }), true)];
+            const timeline = createMobileExecutionEventTimeline(segments);
+            const fileIcon = timeline.querySelector('.theia-mobile-tool-detail-file-icon');
+            expect(fileIcon).to.not.equal(null);
+            expect(fileIcon?.classList.contains('codicon-json')).to.be.true;
+        });
+
+        it('does not render a file icon for run/terminal tools', () => {
+            const segments = [toolSegment('bash', 't1', JSON.stringify({ command: 'npm test' }), true)];
+            const timeline = createMobileExecutionEventTimeline(segments);
+            const fileIcon = timeline.querySelector('.theia-mobile-tool-detail-file-icon');
+            expect(fileIcon).to.equal(null);
+        });
+
+        it('renders a file icon in the diff summary file list', () => {
+            const summary = createMobileDiffSummaryElement(2, 1, 1, 0, [
+                { name: 'Canvas.tsx', type: 'add' },
+                { name: 'README.md', type: 'modified' },
+            ]);
+            const icons = summary.querySelectorAll('.theia-mobile-diff-summary-file-icon');
+            expect(icons.length).to.equal(2);
+            expect(icons[0].classList.contains('codicon-file-code')).to.be.true;
+            expect(icons[1].classList.contains('codicon-markdown')).to.be.true;
         });
 
     });

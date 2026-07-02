@@ -16,11 +16,19 @@
 
 import { ChatResponseContent, ToolCallChatResponseContent } from '@theia/ai-chat';
 import * as React from '@theia/core/shared/react';
-import { ExecutionEvent, ExecutionTool, formatEventSummary, formatToolLabel } from './execution-event-model';
+import { ExecutionEvent, ExecutionEventKind, ExecutionTool, formatEventSummary, formatToolLabel, getFileIconClass } from './execution-event-model';
 
 // ─── AgentExecution ──────────────────────────────────────────────────────────
 // Top-level container for the entire agent response.
-// Renders events as a vertical sequence with generous spacing between them.
+//
+// The process (events, tools, thinking) lives inside a single collapsible
+// ProcessAccordion — the Codex-style "Processed in Xm Ys" header.
+// Outside the accordion: the agent's final answer (closing narrative) and
+// the diff summary. This matches the Codex mental model:
+//   1. While working → accordion expanded, steps stream inside.
+//   2. On completion → accordion collapses, only the answer + diff remain.
+//   3. On error → accordion stays expanded so the user can inspect the failure.
+//   4. User manual toggle is always respected until a new turn starts.
 
 export interface AgentExecutionProps {
     events: ExecutionEvent[];
@@ -34,24 +42,135 @@ export interface AgentExecutionProps {
     renderNarrativeContent?: (content: ChatResponseContent) => React.ReactNode;
     closingNarrative?: React.ReactNode;
     diffSummary?: React.ReactNode;
+    /** Whether the agent is currently working (streaming/incomplete). */
+    isWorking?: boolean;
+    /** Whether the agent ended in an error state. */
+    isError?: boolean;
+    /** Elapsed execution time in milliseconds. */
+    elapsedMs?: number;
 }
 
 export const AgentExecution: React.FC<AgentExecutionProps> = ({
     events, renderToolContent, renderNarrativeContent, closingNarrative, diffSummary,
-}) => (
-    <div className='theia-AgentExecution'>
-        {events.map(event =>
-            <ExecutionEventView
-                key={event.id}
-                event={event}
-                renderToolContent={renderToolContent}
-                renderNarrativeContent={renderNarrativeContent}
-            />
-        )}
-        {closingNarrative && <div className='theia-AgentExecution-ClosingNarrative'>{closingNarrative}</div>}
-        {diffSummary && <div className='theia-AgentExecution-DiffSummary'>{diffSummary}</div>}
-    </div>
-);
+    isWorking = false, isError = false, elapsedMs,
+}) => {
+    const hasEvents = events.length > 0;
+    return (
+        <div className='theia-AgentExecution'>
+            {hasEvents && (
+                <ProcessAccordion isWorking={isWorking} isError={isError} elapsedMs={elapsedMs}>
+                    {events.map(event =>
+                        <ExecutionEventView
+                            key={event.id}
+                            event={event}
+                            renderToolContent={renderToolContent}
+                            renderNarrativeContent={renderNarrativeContent}
+                        />
+                    )}
+                </ProcessAccordion>
+            )}
+            {closingNarrative && <div className='theia-AgentExecution-ClosingNarrative'>{closingNarrative}</div>}
+            {diffSummary && <div className='theia-AgentExecution-DiffSummary'>{diffSummary}</div>}
+        </div>
+    );
+};
+
+// ─── ProcessAccordion ─────────────────────────────────────────────────────────
+// The single collapsible container for all agent process steps.
+// Auto-expands while working, auto-collapses on success, stays open on error.
+// User manual toggle is respected until the agent status changes.
+
+export interface ProcessAccordionProps {
+    isWorking: boolean;
+    isError: boolean;
+    elapsedMs?: number;
+    children: React.ReactNode;
+}
+
+export const ProcessAccordion: React.FC<ProcessAccordionProps> = ({ isWorking, isError, elapsedMs, children }) => {
+    const detailsRef = React.useRef<HTMLDetailsElement | undefined>(undefined);
+    // Track whether the user has manually toggled the accordion.
+    // When true, auto-expand/collapse logic is suppressed until a new
+    // execution starts. A new turn creates a new component instance (keyed
+    // by response node id), so the ref is naturally fresh — no reset needed.
+    const userToggledRef = React.useRef(false);
+    // Track open state in React so we can do lazy rendering (skip children
+    // when collapsed) without relying on native details DOM queries.
+    const [isOpen, setIsOpen] = React.useState(isWorking || isError);
+
+    // Auto-expand/collapse based on agent status, unless the user toggled.
+    // Runs only when the agent status (isWorking/isError) changes — not on
+    // every render. The userToggledRef is checked at effect-run time.
+    React.useEffect(() => {
+        if (userToggledRef.current) {
+            return;
+        }
+        // Working or error → expanded. Completed successfully → collapsed.
+        const shouldOpen = isWorking || isError;
+        setIsOpen(prev => prev === shouldOpen ? prev : shouldOpen);
+    }, [isWorking, isError]);
+
+    // Sync the native <details> open attribute with React state.
+    React.useEffect(() => {
+        const details = detailsRef.current;
+        if (details && details.open !== isOpen) {
+            details.open = isOpen;
+        }
+    }, [isOpen]);
+
+    const handleSummaryClick = React.useCallback(() => {
+        // The native <details> toggles on summary click. We read the new state
+        // from the DOM after the browser processes the click, then sync React.
+        // Mark user intent so auto-expand/collapse is suppressed.
+        userToggledRef.current = true;
+        const details = detailsRef.current;
+        if (details) {
+            // The browser toggles open on summary click; read it in the next tick.
+            requestAnimationFrame(() => setIsOpen(details.open));
+        }
+        // Don't preventDefault — let <details> do its native toggle.
+    }, []);
+
+    const label = formatProcessLabel(elapsedMs, isWorking);
+
+    return (
+        <details
+            className={`theia-ProcessAccordion ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''} ${!isWorking && !isError ? 'theia-mod-complete' : ''}`}
+            ref={detailsRef as React.RefObject<HTMLDetailsElement>}
+            open={isOpen}
+        >
+            <summary className='theia-ProcessAccordion-Header' onClick={handleSummaryClick}>
+                <span className='theia-ProcessAccordion-Label'>{label}</span>
+                <span className='codicon codicon-chevron-down theia-ProcessAccordion-Chevron'></span>
+            </summary>
+            {isOpen && (
+                <div className='theia-ProcessAccordion-Content'>
+                    {children}
+                </div>
+            )}
+        </details>
+    );
+};
+
+function formatProcessLabel(elapsedMs: number | undefined, isWorking: boolean): string {
+    if (elapsedMs === undefined) {
+        return isWorking ? 'Processing…' : 'Processed';
+    }
+    const formatted = formatElapsed(elapsedMs);
+    return isWorking ? `Processing… ${formatted}` : `Processed in ${formatted}`;
+}
+
+function formatElapsed(ms: number): string {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    if (totalSeconds < 60) {
+        return `${totalSeconds}s`;
+    }
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    if (totalMinutes < 60) {
+        return `${totalMinutes}m ${totalSeconds % 60}s`;
+    }
+    return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
+}
 
 // ─── ExecutionEventView ──────────────────────────────────────────────────────
 // One event: narrative text followed by a collapsed tool group.
@@ -163,10 +282,14 @@ export const ToolDetails: React.FC<ToolDetailsProps> = ({ tool, event, index, re
     if (tool.isTerminal) {
         return <TerminalOutput tool={tool} event={event} index={index} renderToolContent={renderToolContent} />;
     }
+    const fileIcon = isFileDetailKind(event.kind) && tool.detail
+        ? <span className={`codicon ${getFileIconClass(tool.detail)} theia-ToolDetails-FileIcon`} aria-hidden={true}></span>
+        : undefined;
     if (tool.isError) {
         return (
             <div className='theia-ToolDetails theia-mod-error'>
                 <span className='theia-ToolDetails-Label'>{formatToolLabel(event, index)}</span>
+                {fileIcon}
                 <span className='theia-ToolDetails-Detail'>{tool.detail}</span>
                 <span className='codicon codicon-error theia-ToolDetails-ErrorIcon'></span>
             </div>
@@ -176,10 +299,19 @@ export const ToolDetails: React.FC<ToolDetailsProps> = ({ tool, event, index, re
     return (
         <div className='theia-ToolDetails theia-mod-text'>
             <span className='theia-ToolDetails-Label'>{formatToolLabel(event, index)}</span>
+            {fileIcon}
             <span className='theia-ToolDetails-Detail'>{tool.detail}</span>
         </div>
     );
 };
+
+/**
+ * Returns true when the event kind operates on files, so the tool detail is a
+ * filename that should be shown with a file-type icon.
+ */
+function isFileDetailKind(kind: ExecutionEventKind): boolean {
+    return kind === 'read' || kind === 'write' || kind === 'edit' || kind === 'delete';
+}
 
 // ─── TerminalOutput ──────────────────────────────────────────────────────────
 // Collapsed terminal output. Only this and Error/Diff get full cards.
@@ -234,6 +366,7 @@ export const DiffSummary: React.FC<DiffSummaryProps> = ({ fileCount, added, modi
         <div className='theia-DiffSummary-Files'>
             {files.slice(0, 6).map((file, i) =>
                 <div className='theia-DiffSummary-File' key={`${file.name}-${i}`}>
+                    <span className={`codicon ${getFileIconClass(file.name)} theia-DiffSummary-FileIcon`}></span>
                     <span className='theia-DiffSummary-FileName'>{file.name}</span>
                     {file.type && <span className={`theia-DiffSummary-FileType theia-mod-${file.type}`}>{formatChangeType(file.type)}</span>}
                 </div>

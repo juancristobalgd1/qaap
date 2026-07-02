@@ -27,6 +27,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import { classifyTranscriptToolActivityKind } from '../common/qaap-agent-transcript-segments';
 import { isAgentToolResultFailure, stripAnsiEscapes } from '../common/qaap-transcript-content-display';
+import { getFileIconClass } from '../common/qaap-file-icon-utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -314,6 +315,12 @@ function pluralize(count: number, noun: string): string {
 /** CSS class on the top-level execution event timeline container. */
 export const MOBILE_EXECUTION_TIMELINE_CLASS = 'theia-mobile-execution-timeline';
 
+/** CSS class on the process accordion that wraps the timeline. */
+export const MOBILE_PROCESS_ACCORDION_CLASS = 'theia-mobile-process-accordion';
+
+/** Data attribute: whether the user manually toggled the accordion. */
+const PROCESS_ACCORDION_USER_TOGGLED_ATTR = 'data-user-toggled';
+
 /**
  * Creates the Codex-style execution event timeline as a DOM element.
  * Replaces the old activity timeline + tool pills + diff/verification cards.
@@ -345,6 +352,171 @@ export function hasMobileExecutionEventTimeline(row: HTMLElement): boolean {
     return !!row.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`);
 }
 
+// ─── Process Accordion ───────────────────────────────────────────────────────
+// The single collapsible container for all agent process steps.
+// Wraps the execution event timeline. The header shows "Processed in Xm Ys".
+// Auto-expands while working, auto-collapses on success, stays open on error.
+// User manual toggle is respected until the agent status changes.
+
+export interface MobileProcessAccordionOptions {
+    /** Whether the agent is currently working (streaming/incomplete). */
+    readonly isWorking: boolean;
+    /** Whether the agent ended in an error state. */
+    readonly isError: boolean;
+    /** Elapsed execution time in milliseconds, or undefined if unknown. */
+    readonly elapsedMs?: number;
+}
+
+/**
+ * Creates the process accordion `<details>` element that wraps the execution
+ * event timeline. The timeline is rendered inside as a child.
+ *
+ * The accordion is auto-expanded when `isWorking` or `isError` is true, and
+ * auto-collapsed when the agent completes successfully. Once the user manually
+ * toggles it, the auto logic is suppressed until the agent status changes
+ * (detected via the `data-user-toggled` attribute, which is cleared by
+ * {@link syncMobileProcessAccordionState} on status transitions).
+ */
+export function createMobileProcessAccordion(
+    segments: readonly QaapAgentMessageSegmentDTO[],
+    options: MobileProcessAccordionOptions,
+): HTMLElement {
+    const timeline = createMobileExecutionEventTimeline(segments);
+    return wrapMobileProcessAccordion(timeline, options);
+}
+
+/**
+ * Wraps an existing timeline element in a process accordion `<details>`.
+ * Extracted so callers that already have a timeline (e.g. from
+ * {@link createMobileExecutionEventTimeline}) can wrap it without rebuilding.
+ */
+export function wrapMobileProcessAccordion(
+    timeline: HTMLElement,
+    options: MobileProcessAccordionOptions,
+): HTMLElement {
+    const { isWorking, isError, elapsedMs } = options;
+    const details = document.createElement('details');
+    details.className = `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''} ${!isWorking && !isError ? 'theia-mod-complete' : ''}`;
+    // Auto-expand while working or on error; collapse on success.
+    details.open = isWorking || isError;
+
+    const header = document.createElement('summary');
+    header.className = 'theia-mobile-process-accordion-header';
+
+    const label = document.createElement('span');
+    label.className = 'theia-mobile-process-accordion-label';
+    label.textContent = formatMobileProcessLabel(elapsedMs, isWorking);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'codicon codicon-chevron-down theia-mobile-process-accordion-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+
+    header.append(label, chevron);
+    details.append(header);
+
+    // Content wrapper — children are only rendered when open (lazy).
+    const content = document.createElement('div');
+    content.className = 'theia-mobile-process-accordion-content';
+    content.append(timeline);
+    details.append(content);
+
+    // Track user manual toggles — only on summary (header) clicks, not on
+    // clicks inside the content (tool details, terminal output, etc.).
+    header.addEventListener('click', () => {
+        details.setAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR, '1');
+    });
+
+    return details;
+}
+
+/**
+ * Updates the process accordion's auto-expand/collapse state and header label
+ * based on the current agent status. Called during streaming patches and
+ * finalization.
+ *
+ * Rules:
+ * - If the user has manually toggled (`data-user-toggled="1"`), do nothing
+ *   unless the agent status changed since the last sync (in which case the
+ *   attribute is cleared and auto logic resumes).
+ * - Working or error → expanded. Completed successfully → collapsed.
+ * - The header label is always updated to reflect the current elapsed time.
+ */
+export function syncMobileProcessAccordionState(
+    accordion: HTMLElement,
+    options: MobileProcessAccordionOptions,
+): void {
+    if (!accordion.classList.contains(MOBILE_PROCESS_ACCORDION_CLASS)) {
+        return;
+    }
+    const details = accordion as HTMLDetailsElement;
+    const { isWorking, isError, elapsedMs } = options;
+
+    // Update the label regardless of toggle state.
+    const label = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-label');
+    if (label) {
+        label.textContent = formatMobileProcessLabel(elapsedMs, isWorking);
+    }
+
+    // Update modifier classes.
+    details.classList.toggle('theia-mod-working', isWorking);
+    details.classList.toggle('theia-mod-error', isError);
+    details.classList.toggle('theia-mod-complete', !isWorking && !isError);
+
+    // If the user manually toggled, respect their choice until a new
+    // execution starts (new row → new accordion element → flag is fresh).
+    if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
+        return;
+    }
+
+    // Auto-expand/collapse.
+    const shouldOpen = isWorking || isError;
+    if (details.open !== shouldOpen) {
+        details.open = shouldOpen;
+    }
+}
+
+/**
+ * Clears the user-toggled flag on the process accordion. Called when a new
+ * agent turn starts so auto-expand/collapse resumes.
+ */
+export function resetMobileProcessAccordionUserToggle(accordion: HTMLElement): void {
+    accordion.removeAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR);
+}
+
+/**
+ * Returns true if the row contains a process accordion.
+ */
+export function hasMobileProcessAccordion(row: HTMLElement): boolean {
+    return !!row.querySelector(`.${MOBILE_PROCESS_ACCORDION_CLASS}`);
+}
+
+/**
+ * Finds the process accordion element within a segments body, if present.
+ */
+export function findMobileProcessAccordion(segmentsBody: HTMLElement): HTMLDetailsElement | undefined {
+    return segmentsBody.querySelector<HTMLDetailsElement>(`.${MOBILE_PROCESS_ACCORDION_CLASS}`) ?? undefined;
+}
+
+function formatMobileProcessLabel(elapsedMs: number | undefined, isWorking: boolean): string {
+    if (elapsedMs === undefined) {
+        return isWorking ? 'Processing…' : 'Processed';
+    }
+    const formatted = formatMobileElapsed(elapsedMs);
+    return isWorking ? `Processing… ${formatted}` : `Processed in ${formatted}`;
+}
+
+function formatMobileElapsed(ms: number): string {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    if (totalSeconds < 60) {
+        return `${totalSeconds}s`;
+    }
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    if (totalMinutes < 60) {
+        return `${totalMinutes}m ${totalSeconds % 60}s`;
+    }
+    return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
+}
+
 /**
  * Replaces the existing execution event timeline inside `segmentsBody` with a
  * fresh one built from `segments`. Preserves the open/closed state of any
@@ -356,6 +528,9 @@ export function hasMobileExecutionEventTimeline(row: HTMLElement): boolean {
  *     > details.theia-mobile-tool-group
  *         > div.theia-mobile-tool-group-details
  *             > details.theia-mobile-terminal-output  (terminal tools only)
+ *
+ * If the timeline is wrapped in a process accordion, the accordion itself is
+ * preserved — only the inner timeline is swapped.
  */
 export function refreshMobileExecutionEventTimeline(
     segmentsBody: HTMLElement,
@@ -381,6 +556,16 @@ export function refreshMobileExecutionEventTimeline(
         });
     }
     if (existing) {
+        // If the timeline is inside a process accordion, replace only the
+        // timeline and keep the accordion wrapper intact.
+        const accordion = existing.closest(`.${MOBILE_PROCESS_ACCORDION_CLASS}`);
+        if (accordion) {
+            const content = accordion.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`);
+            if (content) {
+                content.replaceWith(fresh);
+                return fresh;
+            }
+        }
         existing.replaceWith(fresh);
     } else {
         segmentsBody.append(fresh);
@@ -470,6 +655,12 @@ function createMobileToolDetailElement(
         return createMobileTerminalOutputElement(event, tool, index);
     }
 
+    // File-related tools (read/write/edit/delete) get a file-type icon before
+    // the filename detail, per the Codex-style file display requirement.
+    const fileIcon = isMobileFileDetailKind(event.kind) && tool.detail
+        ? createMobileFileIconSpan(tool.detail)
+        : undefined;
+
     // Error tools get a simple error line
     if (tool.isError) {
         const row = document.createElement('div');
@@ -482,7 +673,11 @@ function createMobileToolDetailElement(
         detail.textContent = tool.detail;
         const errorIcon = document.createElement('span');
         errorIcon.className = 'codicon codicon-error theia-mobile-tool-detail-error-icon';
-        row.append(label, detail, errorIcon);
+        if (fileIcon) {
+            row.append(label, fileIcon, detail, errorIcon);
+        } else {
+            row.append(label, detail, errorIcon);
+        }
         return row;
     }
 
@@ -495,8 +690,27 @@ function createMobileToolDetailElement(
     const detail = document.createElement('span');
     detail.className = 'theia-mobile-tool-detail-detail';
     detail.textContent = tool.detail;
-    row.append(label, detail);
+    if (fileIcon) {
+        row.append(label, fileIcon, detail);
+    } else {
+        row.append(label, detail);
+    }
     return row;
+}
+
+/**
+ * Returns true when the event kind operates on files, so the tool detail is a
+ * filename that should be shown with a file-type icon.
+ */
+function isMobileFileDetailKind(kind: MobileEventKind): boolean {
+    return kind === 'read' || kind === 'write' || kind === 'edit' || kind === 'delete';
+}
+
+function createMobileFileIconSpan(filename: string): HTMLElement {
+    const icon = document.createElement('span');
+    icon.className = `codicon ${getFileIconClass(filename)} theia-mobile-tool-detail-file-icon`;
+    icon.setAttribute('aria-hidden', 'true');
+    return icon;
 }
 
 function createMobileTerminalOutputElement(
@@ -603,10 +817,13 @@ export function createMobileDiffSummaryElement(
         for (const file of files.slice(0, 6)) {
             const row = document.createElement('div');
             row.className = 'theia-mobile-diff-summary-file';
+            const fileIcon = document.createElement('span');
+            fileIcon.className = `codicon ${getFileIconClass(file.name)} theia-mobile-diff-summary-file-icon`;
+            fileIcon.setAttribute('aria-hidden', 'true');
             const name = document.createElement('span');
             name.className = 'theia-mobile-diff-summary-file-name';
             name.textContent = file.name;
-            row.append(name);
+            row.append(fileIcon, name);
             if (file.type) {
                 const type = document.createElement('span');
                 type.className = `theia-mobile-diff-summary-file-type theia-mod-${file.type}`;

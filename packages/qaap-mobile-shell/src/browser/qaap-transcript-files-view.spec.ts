@@ -40,7 +40,8 @@ describe('qaap-transcript-files-view', () => {
     });
 
     it('maps common extensions to codicons', () => {
-        expect(transcriptFileIconClass('package.json')).to.equal('codicon-settings-gear');
+        // package.json gets the dedicated JSON codicon (special filename)
+        expect(transcriptFileIconClass('package.json')).to.equal('codicon-json');
         expect(transcriptFileIconClass('README.md')).to.equal('codicon-markdown');
         expect(transcriptFileIconClass('src/index.ts')).to.equal('codicon-file-code');
     });

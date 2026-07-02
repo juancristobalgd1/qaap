@@ -16,7 +16,7 @@ import { classifyTranscriptToolActivityKind, excerptTranscriptThought, extractTr
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
-import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
+import { hasUnfinishedAgentWork, resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigateTarget, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
 import { groupTranscriptActivityNavigationItems, resolveTranscriptLifecycleActivityItems } from '../common/qaap-transcript-activity-navigation';
@@ -95,9 +95,13 @@ import {
     createMobileDiffSummaryElement,
     createMobileExecutionEventTimeline,
     createMobileLineDiffSummaryElement,
+    findMobileProcessAccordion,
     hasMobileExecutionEventTimeline,
     refreshMobileExecutionEventTimeline,
+    syncMobileProcessAccordionState,
+    wrapMobileProcessAccordion,
 } from './qaap-execution-event-timeline';
+import { getFileIconClass } from '../common/qaap-file-icon-utils';
 
 const TRANSCRIPT_TRACE_STATUS_ATTR = 'data-transcript-trace-status';
 const TRANSCRIPT_CHECKPOINT_RESTORE_ATTR = 'data-transcript-checkpoint-id';
@@ -367,9 +371,14 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segments: readonly QaapAgentMessageSegmentDTO[],
         options: { readonly streaming: boolean; readonly defer?: boolean; readonly conv?: QaapAgentConversationDTO },
     ): void {
-        const { streaming, defer } = options;
+        const { streaming, defer, conv } = options;
         const eventTimeline = createMobileExecutionEventTimeline(segments);
-        body.append(eventTimeline);
+        // Wrap the timeline in a process accordion (Codex-style "Processed in").
+        const isWorking = streaming && this.isConversationWorking(conv);
+        const isError = this.isConversationError(conv);
+        const elapsedMs = this.resolveConversationElapsedMs(conv);
+        const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, elapsedMs });
+        body.append(accordion);
         if (streaming) {
             const status = document.createElement('div');
             status.className = 'theia-mobile-agent-trace-status';
@@ -408,6 +417,68 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!streaming) {
             this.appendMobileDiffSummary(body, segments);
         }
+    }
+
+    /** True when the conversation is still actively streaming/working. */
+    protected isConversationWorking(conv: QaapAgentConversationDTO | undefined): boolean {
+        if (!conv) {
+            return false;
+        }
+        return hasUnfinishedAgentWork(conv) || conv.status === 'streaming';
+    }
+
+    /** True when the conversation ended in a failure. */
+    protected isConversationError(conv: QaapAgentConversationDTO | undefined): boolean {
+        return conv?.status === 'failed';
+    }
+
+    /**
+     * Resolves the elapsed execution time for the conversation, if available.
+     * Uses the conversation's `createdAt`/`updatedAt` timestamps (defined on
+     * {@link QaapAgentConversationDTO}) to compute the total wall-clock duration.
+     * Falls back to the last agent message's `createdAt` when the conversation
+     * `updatedAt` is not newer than `createdAt` (e.g. still streaming).
+     */
+    protected resolveConversationElapsedMs(conv: QaapAgentConversationDTO | undefined): number | undefined {
+        if (!conv) {
+            return undefined;
+        }
+        const createdAt = conv.createdAt;
+        // While streaming, updatedAt may not have advanced yet — use the last
+        // agent message's createdAt as the upper bound in that case.
+        const lastAgentCreatedAt = conv.messages.length > 0
+            ? conv.messages[conv.messages.length - 1].createdAt
+            : undefined;
+        const endAt = conv.updatedAt >= createdAt
+            ? conv.updatedAt
+            : (typeof lastAgentCreatedAt === 'number' && lastAgentCreatedAt >= createdAt
+                ? lastAgentCreatedAt
+                : undefined);
+        if (typeof endAt === 'number' && endAt >= createdAt) {
+            return endAt - createdAt;
+        }
+        return undefined;
+    }
+
+    /**
+     * Updates the process accordion state (auto-expand/collapse + label) for
+     * a row based on the current conversation status. Called during streaming
+     * patches and finalization.
+     */
+    protected syncRowProcessAccordion(
+        row: HTMLElement,
+        conv: QaapAgentConversationDTO | undefined,
+        streaming: boolean,
+    ): void {
+        const accordion = findMobileProcessAccordion(row);
+        if (!accordion) {
+            return;
+        }
+        syncMobileProcessAccordionState(accordion, {
+            isWorking: streaming && this.isConversationWorking(conv),
+            isError: this.isConversationError(conv),
+            elapsedMs: this.resolveConversationElapsedMs(conv),
+        });
     }
 
     /**
@@ -600,6 +671,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             // story. During streaming the row was created without it; now that
             // the turn has settled we add it. The helper is idempotent.
             this.appendMobileDiffSummary(segmentsBody, segments);
+            // Sync the process accordion: collapse on success, stay open on error.
+            this.syncRowProcessAccordion(row, conv, false);
             row.classList.remove('theia-mod-stream-stalled');
             return;
         }
@@ -948,6 +1021,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (hasTools) {
                 refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
             }
+            // Sync the process accordion label/state while streaming.
+            this.syncRowProcessAccordion(row, conv, true);
             return true;
         }
         // Upgrade path: row has tools but no Codex-style timeline yet.
@@ -4423,23 +4498,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     /** Codicon for a changed-file row, derived from the file extension. */
 
     transcriptFileIconClass(path: string): string {
-        const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-        if (['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'cs', 'php', 'sh'].includes(ext)) {
-            return 'codicon-file-code';
-        }
-        if (['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'env'].includes(ext)) {
-            return 'codicon-settings-gear';
-        }
-        if (['md', 'mdx', 'txt', 'rst'].includes(ext)) {
-            return 'codicon-markdown';
-        }
-        if (['css', 'scss', 'less', 'html', 'svg'].includes(ext)) {
-            return 'codicon-symbol-color';
-        }
-        if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico'].includes(ext)) {
-            return 'codicon-file-media';
-        }
-        return 'codicon-file';
+        return getFileIconClass(path);
     }
 
     createTranscriptVerificationCard(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {

@@ -26693,6 +26693,59 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   flex-direction: column;
 }
 
+/* ─── ProcessAccordion: the single collapsible for all process steps ──────── */
+/* Codex-style: "Processed in 2m 31s" header with a subtle divider.            */
+/* Auto-expands while working, auto-collapses on success, open on error.       */
+
+.theia-mobile-process-accordion {
+  margin: 0 0 20px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.theia-mobile-process-accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 0 8px 0;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.theia-mobile-process-accordion-header::-webkit-details-marker {
+  display: none;
+}
+
+.theia-mobile-process-accordion-label {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.theia-mobile-process-accordion.theia-mod-working .theia-mobile-process-accordion-label {
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-process-accordion.theia-mod-error .theia-mobile-process-accordion-label {
+  color: var(--theia-errorForeground);
+}
+
+.theia-mobile-process-accordion-chevron {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  opacity: 0.72;
+  transition: transform 200ms ease;
+}
+
+.theia-mobile-process-accordion[open] .theia-mobile-process-accordion-chevron {
+  transform: rotate(180deg);
+}
+
+.theia-mobile-process-accordion-content {
+  padding-top: 4px;
+}
+
 /* ─── ExecutionEvent: one narrative + one tool group ──────────────────────── */
 /* Much air between events, little air within.                                 */
 
@@ -26836,6 +26889,12 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+.theia-mobile-tool-detail-file-icon {
+  font-size: 14px;
+  opacity: 0.72;
+  flex-shrink: 0;
 }
 
 .theia-mobile-tool-detail.theia-mod-error .theia-mobile-tool-detail-error-icon {
@@ -26997,6 +27056,12 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.theia-mobile-diff-summary-file-icon {
+  font-size: 14px;
+  opacity: 0.72;
+  flex-shrink: 0;
 }
 
 .theia-mobile-diff-summary-file-type,
