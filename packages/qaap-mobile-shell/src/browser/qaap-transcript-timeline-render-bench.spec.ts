@@ -13,11 +13,26 @@ import {
     getTranscriptRenderMetricsSnapshot,
     resetTranscriptRenderMetrics,
 } from '../common/qaap-transcript-render-metrics';
-import { MobileProjectsTranscriptMessagesArtifactsUi } from '../browser/mobile-projects-transcript-messages-artifacts-ui';
+import {
+    MobileProjectsTranscriptMessagesArtifactsUi,
+    type TranscriptActivityTimelineOptions,
+} from '../browser/mobile-projects-transcript-messages-artifacts-ui';
 import { MobileProjectsTranscriptMessagesContentUi } from '../browser/mobile-projects-transcript-messages-content-ui';
 import { MobileProjectsTranscriptMessagesResolversUi } from '../browser/mobile-projects-transcript-messages-resolvers-ui';
 import { MobileProjectsTranscriptMessagesToolUi } from '../browser/mobile-projects-transcript-messages-tool-ui';
 import type { MobileProjectsTranscriptMessagesHost } from '../browser/mobile-projects-transcript-messages-ui';
+
+type TranscriptTimelineSyncHarness = {
+    resolveTranscriptActivityItemsForDisplay(
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        options?: TranscriptActivityTimelineOptions,
+    ): readonly unknown[];
+    syncTranscriptActivityTimelineElement(
+        timeline: HTMLElement,
+        items: readonly unknown[],
+        options?: TranscriptActivityTimelineOptions,
+    ): void;
+};
 
 describe('qaap-transcript-timeline-render-bench', () => {
 
@@ -137,7 +152,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(visibleText).to.include('PR Review: Fix critical bugs');
     });
 
-    it('rebuilds the execution event timeline during duplicate SSE frames', () => {
+    it('skips execution event timeline DOM work during duplicate SSE frames', () => {
         enableTranscriptRenderMetrics(true);
         resetTranscriptRenderMetrics();
         const artifactsUi = createArtifactsUi();
@@ -147,22 +162,23 @@ describe('qaap-transcript-timeline-render-bench', () => {
             artifactsUi.patchStreamingActivityTimeline(row, segments);
         }
         const metrics = getTranscriptRenderMetricsSnapshot();
-        // The Codex-style timeline does a full rebuild each sync (cheap: flat
-        // list of collapsed <details>). Verify the sync counter advances.
-        expect(metrics.timeline_sync).to.be.greaterThan(0);
+        expect(metrics.timeline_event_sync_skipped).to.equal(120);
+        expect(metrics.timeline_event_patch).to.equal(0);
+        expect(metrics.timeline_event_rebuild).to.equal(0);
     });
 
-    it('rebuilds the execution event timeline when the active step advances', () => {
+    it('patches the execution event timeline when tool state advances', () => {
         enableTranscriptRenderMetrics(true);
         resetTranscriptRenderMetrics();
         const artifactsUi = createArtifactsUi();
         const row = createStreamingRow(artifactsUi, buildToolSegments(52, 40));
-        for (let tick = 0; tick < 60; tick++) {
-            const runningIndex = 40 + (tick % 3);
+        for (let tick = 0; tick < 12; tick++) {
+            const runningIndex = 40 + tick + 1;
             artifactsUi.patchStreamingActivityTimeline(row, buildToolSegments(52, runningIndex));
         }
         const metrics = getTranscriptRenderMetricsSnapshot();
-        expect(metrics.timeline_sync).to.be.greaterThan(0);
+        expect(metrics.timeline_event_patch).to.be.greaterThan(0);
+        expect(metrics.timeline_event_rebuild).to.equal(0);
     });
 
     it('patches timeline under ~250ms for 50 growing tool segments', () => {
@@ -175,6 +191,84 @@ describe('qaap-transcript-timeline-render-bench', () => {
         }
         const elapsedMs = performance.now() - start;
         expect(elapsedMs).to.be.below(250);
+    });
+
+    it('syncs changed activity timeline items without reconstructing the whole list', () => {
+        enableTranscriptRenderMetrics(true);
+        resetTranscriptRenderMetrics();
+        const artifactsUi = createArtifactsUi();
+        const harness = artifactsUi as unknown as TranscriptTimelineSyncHarness;
+        const initialSegments: QaapAgentMessageSegmentDTO[] = [
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-package',
+                args: JSON.stringify({ path: 'package.json' }),
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'Bash',
+                toolUseId: 'tool-test',
+                args: JSON.stringify({ command: 'npm test' }),
+                result: undefined,
+                finished: false,
+            },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-src',
+                args: JSON.stringify({ path: 'src/app.ts' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const timeline = artifactsUi.createTranscriptActivityTimeline(initialSegments, {
+            streaming: true,
+            segments: initialSegments,
+        });
+        expect(timeline).to.not.equal(undefined);
+
+        const initialItems = harness.resolveTranscriptActivityItemsForDisplay(initialSegments, { streaming: true });
+        harness.syncTranscriptActivityTimelineElement(timeline!, initialItems, {
+            streaming: true,
+            segments: initialSegments,
+            cursorTrace: true,
+        });
+        const listBefore = timeline!.querySelector<HTMLOListElement>('.theia-mobile-agent-activity-list');
+        const rowsBefore = [...listBefore!.querySelectorAll<HTMLElement>(':scope > li')];
+        expect(rowsBefore.length).to.be.greaterThan(1);
+
+        resetTranscriptRenderMetrics();
+        const patchedSegments: QaapAgentMessageSegmentDTO[] = [
+            initialSegments[0],
+            {
+                type: 'tool',
+                name: 'Bash',
+                toolUseId: 'tool-test',
+                args: JSON.stringify({ command: 'npm test' }),
+                result: 'passed',
+                finished: true,
+            },
+            initialSegments[2],
+        ];
+        const patchedItems = harness.resolveTranscriptActivityItemsForDisplay(patchedSegments, { streaming: true });
+        harness.syncTranscriptActivityTimelineElement(timeline!, patchedItems, {
+            streaming: true,
+            segments: patchedSegments,
+            cursorTrace: true,
+        });
+
+        const metrics = getTranscriptRenderMetricsSnapshot();
+        const listAfter = timeline!.querySelector<HTMLOListElement>('.theia-mobile-agent-activity-list');
+        const rowsAfter = [...listAfter!.querySelectorAll<HTMLElement>(':scope > li')];
+        expect(listAfter).to.equal(listBefore);
+        expect(rowsAfter.length).to.equal(rowsBefore.length);
+        rowsBefore.forEach((row, index) => expect(rowsAfter[index]).to.equal(row));
+        expect(metrics.timeline_sync).to.equal(1);
+        expect(metrics.timeline_item_sync_skipped + metrics.timeline_item_sync_light).to.be.greaterThan(0);
+        expect(metrics.timeline_item_sync).to.be.lessThan(rowsAfter.length);
     });
 
     it('renders Codex-style execution event timeline with narrative and collapsed tool groups', () => {
@@ -1079,6 +1173,8 @@ describe('qaap-transcript-timeline-render-bench', () => {
     });
 
     it('updates closing narrative text blocks when content grows during streaming', () => {
+        enableTranscriptRenderMetrics(true);
+        resetTranscriptRenderMetrics();
         const artifactsUi = createArtifactsUi();
         // Start with a tool and a short text segment (the agent's final answer)
         const initialSegments: QaapAgentMessageSegmentDTO[] = [
@@ -1117,11 +1213,16 @@ describe('qaap-transcript-timeline-render-bench', () => {
         ];
         const patched = artifactsUi.patchStreamingAgentTextSegments(row, initialSegments, grownSegments);
         expect(patched).to.equal(true);
+        artifactsUi.patchStreamingActivityTimeline(row, grownSegments);
 
         // The text block should now show the updated content
         const updatedBlock = segmentsBody!.querySelector<HTMLElement>('[data-transcript-segment-index="2"]');
         expect(updatedBlock).to.not.equal(null);
         expect(updatedBlock!.textContent).to.include('I am now writing the final summary');
+        const metrics = getTranscriptRenderMetricsSnapshot();
+        expect(metrics.timeline_event_patch).to.equal(0);
+        expect(metrics.timeline_event_rebuild).to.equal(0);
+        expect(metrics.timeline_event_sync_skipped).to.equal(0);
     });
 
     it('re-renders closing narrative text blocks with final content on settle', () => {

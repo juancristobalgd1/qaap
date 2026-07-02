@@ -29,6 +29,7 @@ import { classifyTranscriptToolActivityKind } from '../common/qaap-agent-transcr
 import { isAgentToolResultFailure, stripAnsiEscapes } from '../common/qaap-transcript-content-display';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 
 /** Data attribute: stable id of the execution event a `section` element renders. */
 const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
@@ -36,6 +37,10 @@ const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
 /** Caches the last-rendered event list for a timeline container so streaming
  *  patches can diff against it without re-parsing the DOM. */
 const timelineEventCache = new WeakMap<HTMLElement, readonly MobileExecutionEvent[]>();
+
+/** Stable content signature for the whole rendered event list. Used to avoid
+ *  touching DOM at all on duplicate SSE frames. */
+const timelineEventSignatureCache = new WeakMap<HTMLElement, string>();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -295,6 +300,40 @@ export function formatMobileEventSummary(event: MobileExecutionEvent): string {
     return `${count} ${noun}`;
 }
 
+function fingerprintMobileTool(tool: MobileExecutionTool): string {
+    const segment = tool.segment;
+    return [
+        tool.segmentIndex,
+        segment.toolUseId,
+        segment.name,
+        tool.kind,
+        tool.verb,
+        tool.detail,
+        tool.isFinished ? '1' : '0',
+        tool.isError ? '1' : '0',
+        segment.args ?? '',
+        segment.result ?? '',
+    ].join('\u001f');
+}
+
+function fingerprintMobileExecutionEvent(event: MobileExecutionEvent): string {
+    return [
+        event.id,
+        event.kind,
+        event.verb,
+        event.icon,
+        event.narrativeSource,
+        event.narrative,
+        event.hasPending ? '1' : '0',
+        event.hasError ? '1' : '0',
+        event.tools.map(fingerprintMobileTool).join('\u001e'),
+    ].join('\u001d');
+}
+
+function fingerprintMobileExecutionEvents(events: readonly MobileExecutionEvent[]): string {
+    return events.map(fingerprintMobileExecutionEvent).join('\u001c');
+}
+
 function mobileToolNoun(event: MobileExecutionEvent): string {
     switch (event.kind) {
         case 'explore': return 'search';
@@ -349,6 +388,7 @@ export function createMobileExecutionEventTimeline(
     }
 
     timelineEventCache.set(container, timeline.events);
+    timelineEventSignatureCache.set(container, fingerprintMobileExecutionEvents(timeline.events));
     return container;
 }
 
@@ -606,6 +646,10 @@ export function tryPatchMobileExecutionEventTimeline(
     }
 
     for (let i = 0; i < prevEvents.length; i++) {
+        if (fingerprintMobileExecutionEvent(prevEvents[i]) === fingerprintMobileExecutionEvent(nextEvents[i])) {
+            recordTranscriptRenderMetric('timeline_event_item_sync_skipped');
+            continue;
+        }
         patchMobileExecutionEventSection(sections[i], prevEvents[i], nextEvents[i]);
     }
     for (let i = prevEvents.length; i < nextEvents.length; i++) {
@@ -814,18 +858,27 @@ export function refreshMobileExecutionEventTimeline(
 ): HTMLElement {
     const existing = segmentsBody.querySelector<HTMLElement>(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`);
     const nextEvents = buildMobileExecutionEvents(segments).events;
+    const nextSignature = fingerprintMobileExecutionEvents(nextEvents);
 
     if (existing) {
+        if (timelineEventSignatureCache.get(existing) === nextSignature) {
+            recordTranscriptRenderMetric('timeline_event_sync_skipped');
+            return existing;
+        }
         const prevEvents = timelineEventCache.get(existing);
         if (prevEvents && tryPatchMobileExecutionEventTimeline(existing, prevEvents, nextEvents)) {
             timelineEventCache.set(existing, nextEvents);
+            timelineEventSignatureCache.set(existing, nextSignature);
+            recordTranscriptRenderMetric('timeline_event_patch');
             return existing;
         }
     }
 
     // Fallback: full rebuild.
+    recordTranscriptRenderMetric('timeline_event_rebuild');
     const captured = existing ? captureTimelineOpenStateById(existing) : undefined;
     const fresh = createMobileExecutionEventTimeline(segments);
+    timelineEventSignatureCache.set(fresh, nextSignature);
     if (captured) {
         restoreTimelineOpenStateById(fresh, captured);
     }

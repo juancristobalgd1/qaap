@@ -110,6 +110,8 @@ const transcriptActivityTimelineResync = new WeakMap<HTMLElement, () => void>();
 const transcriptToolGroupItems = new WeakMap<HTMLElement, Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>[]>();
 const transcriptToolGroupUmbrella = new WeakMap<HTMLElement, ToolUmbrella>();
 const transcriptSummarySpinners = new WeakMap<HTMLElement, HTMLElement>();
+const pendingExecutionTimelineRefreshSegments = new WeakMap<HTMLElement, readonly QaapAgentMessageSegmentDTO[]>();
+const skippedExecutionTimelineRefreshRows = new WeakSet<HTMLElement>();
 
 export interface TranscriptActivityTimelineOptions {
     /** Last N steps in chat; omit or ≤0 to show the full trace (Plan tab). */
@@ -272,6 +274,56 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         protected readonly toolUi: MobileProjectsTranscriptMessagesToolUi,
         protected readonly onConversationMutation?: (conv: QaapAgentConversationDTO) => void,
     ) { }
+
+    protected queueExecutionTimelineRefresh(row: HTMLElement, segments: readonly QaapAgentMessageSegmentDTO[]): void {
+        pendingExecutionTimelineRefreshSegments.set(row, segments);
+    }
+
+    protected skipExecutionTimelineRefresh(row: HTMLElement): void {
+        skippedExecutionTimelineRefreshRows.add(row);
+    }
+
+    protected consumeExecutionTimelineRefresh(row: HTMLElement): readonly QaapAgentMessageSegmentDTO[] | undefined {
+        const segments = pendingExecutionTimelineRefreshSegments.get(row);
+        if (segments) {
+            pendingExecutionTimelineRefreshSegments.delete(row);
+            skippedExecutionTimelineRefreshRows.delete(row);
+        }
+        return segments;
+    }
+
+    protected consumeSkippedExecutionTimelineRefresh(row: HTMLElement): boolean {
+        if (!skippedExecutionTimelineRefreshRows.has(row)) {
+            return false;
+        }
+        skippedExecutionTimelineRefreshRows.delete(row);
+        return true;
+    }
+
+    protected didExecutionToolSegmentsChange(
+        previousSegments: readonly QaapAgentMessageSegmentDTO[],
+        nextSegments: readonly QaapAgentMessageSegmentDTO[],
+    ): boolean {
+        const length = Math.max(previousSegments.length, nextSegments.length);
+        for (let index = 0; index < length; index++) {
+            const previous = previousSegments[index];
+            const next = nextSegments[index];
+            if (previous?.type !== 'tool' && next?.type !== 'tool') {
+                continue;
+            }
+            if (previous?.type !== 'tool' || next?.type !== 'tool') {
+                return true;
+            }
+            if (previous.toolUseId !== next.toolUseId
+                || previous.name !== next.name
+                || previous.args !== next.args
+                || previous.result !== next.result
+                || previous.finished !== next.finished) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     createTranscriptAgentSegmentsRow(
         segments: QaapAgentMessageSegmentDTO[],
@@ -937,6 +989,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 (last, seg, idx) => seg.type === 'tool' ? idx : last,
                 -1,
             );
+            let timelineNarrativeChanged = false;
             for (let segmentIndex = 0; segmentIndex < nextSegments.length; segmentIndex++) {
                 const previous = prevSegments[segmentIndex];
                 const next = nextSegments[segmentIndex];
@@ -951,6 +1004,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 // Narrative inside events is plain text within the timeline and
                 // is updated by the timeline rebuild below.
                 if (segmentIndex <= lastToolIndex) {
+                    timelineNarrativeChanged = true;
                     continue;
                 }
                 if (this.isLobeWorkflowProcessText(next.content ?? '')) {
@@ -968,11 +1022,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                     return false;
                 }
             }
-            // Rebuild the timeline to update narrative inside events and
-            // tool group state.
-            const hasTools = nextSegments.some(s => s.type === 'tool');
-            if (hasTools) {
-                refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
+            // Coalesce execution-timeline refresh with the final activity patch
+            // for this SSE tick. Closing final-answer text lives outside the
+            // timeline, so pure final-answer growth should not touch it.
+            if (timelineNarrativeChanged) {
+                this.queueExecutionTimelineRefresh(row, nextSegments);
+            } else {
+                this.skipExecutionTimelineRefresh(row);
             }
             return true;
         }
@@ -1017,9 +1073,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // Codex-style execution event timeline: rebuild in place.
         const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
         if (segmentsBody && hasMobileExecutionEventTimeline(row)) {
-            const hasTools = nextSegments.some(s => s.type === 'tool');
-            if (hasTools) {
-                refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
+            if (this.didExecutionToolSegmentsChange(prevSegments, nextSegments)) {
+                this.queueExecutionTimelineRefresh(row, nextSegments);
             }
             // Sync the process accordion label/state while streaming.
             this.syncRowProcessAccordion(row, conv, true);
@@ -1488,10 +1543,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // avoids the complex incremental sync logic of the legacy timeline.
         const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
         if (segmentsBody && hasMobileExecutionEventTimeline(row)) {
-            const hasTools = nextSegments.some(s => s.type === 'tool');
+            const queuedRefreshSegments = this.consumeExecutionTimelineRefresh(row);
+            if (!queuedRefreshSegments && this.consumeSkippedExecutionTimelineRefresh(row)) {
+                return true;
+            }
+            const refreshSegments = queuedRefreshSegments ?? nextSegments;
+            const hasTools = refreshSegments.some(s => s.type === 'tool');
             if (hasTools) {
                 recordTranscriptRenderMetric('timeline_sync');
-                refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
+                refreshMobileExecutionEventTimeline(segmentsBody, refreshSegments);
             }
             return true;
         }
@@ -2227,11 +2287,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                     segmentsBody.append(textBlock);
                 }
             }
-            // Rebuild the timeline to reflect updated tool/narrative state.
-            const hasTools = nextSegments.some(s => s.type === 'tool');
-            if (hasTools) {
-                refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
-            }
+            this.skipExecutionTimelineRefresh(row);
             return true;
         }
         const activityTimelineShown = !!segmentsBody.querySelector(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
