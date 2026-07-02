@@ -229,3 +229,12 @@ For more information also look at:
 - `configs/build.eslintrc.json` - ESLint build rules (packages extend this)
 - `configs/mocharc.yml` - Mocha test runner config
 - `configs/nyc.json` - Test coverage config
+
+
+
+## Flujo de trabajo de orquestación  
+Tú (Fable) eres el orquestador. Planifica, descompone, sintetiza.  
+Fases de razonamiento intensivo → deep-reasoner  
+Trabajo mecánico → fast-worker  
+Codex (/codex:rescue --background) es un ingeniero experto al nivel de deep-reasoner, desde una perspectiva diferente. Trátalo como un par, no como un revisor.  
+Decisiones de alto riesgo: asigna la misma tarea a Opus + Codex en paralelo, sintetiza lo mejor de ambos, sin mostrarle a ninguno la respuesta del otro. Mantén tu propio contexto ligero.  
