@@ -36,6 +36,7 @@ import {
     type LobeTraceStatus,
     type LobeToolTitleParam,
 } from './mobile-projects-transcript-lobehub-ui';
+import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
 
 /** Sticky expand headers kick in once a grouped panel is long enough to scroll. */
 const TRANSCRIPT_EXPAND_STICKY_TERMINAL_MIN = 6;
@@ -44,10 +45,6 @@ const TRANSCRIPT_EXPAND_STICKY_READ_MIN = 8;
 export const TRANSCRIPT_TOOL_RESULT_STREAM_CLASS = 'theia-mobile-agent-tool-result-stream';
 /** Placeholder body mounted before tool stdout/result arrives (speculative pill). */
 export const TRANSCRIPT_TOOL_SPECULATIVE_CLASS = 'theia-mobile-agent-tool-pill-speculative';
-
-/** Live interval ids for the LobeHub ExecutionTime chips, keyed by the chip element.
- *  Self-cleans when the element is disconnected from the DOM. */
-const transcriptToolExecutionTimers = new WeakMap<HTMLElement, number>();
 
 /** LobeHub ExecutionTime format (Inspector/ExecutionTime.tsx):
  *  <1000ms -> "Xms"; <60s -> "X.Xs"; >=60s -> "XminYs". */
@@ -86,11 +83,7 @@ export function syncTranscriptToolExecutionTime(
     let chip = parent.querySelector<HTMLElement>('.theia-mobile-agent-lobe-exec-time');
     if (!running || startedAt === undefined) {
         if (chip) {
-            const id = transcriptToolExecutionTimers.get(chip);
-            if (id !== undefined) {
-                window.clearInterval(id);
-            }
-            transcriptToolExecutionTimers.delete(chip);
+            sharedElapsedTicker.unregister(chip);
             chip.remove();
         }
         return;
@@ -105,42 +98,14 @@ export function syncTranscriptToolExecutionTime(
             parent.append(chip);
         }
     }
-    // Restart the timer so a re-sync with a new startedAt re-bases the tick.
-    const prior = transcriptToolExecutionTimers.get(chip);
-    if (prior !== undefined) {
-        window.clearInterval(prior);
-    }
-    const chipRef = chip;
-    // Capture the clear fn at mount so the self-clean still works after the
-    // jsdom globals are torn down in unit tests (avoids `HTMLElement is not
-    // defined` uncaught exceptions from timers firing post-teardown).
-    const clearIntervalFn = window.clearInterval.bind(window);
-    const stopTimer = (): void => {
-        const id = transcriptToolExecutionTimers.get(chipRef);
-        if (id !== undefined) {
-            clearIntervalFn(id);
-        }
-        transcriptToolExecutionTimers.delete(chipRef);
-    };
-    const update = (): void => {
-        let alive = false;
-        try {
-            alive = chipRef.isConnected;
-        } catch {
-            alive = false;
-        }
-        if (!alive) {
-            stopTimer();
-            return;
-        }
-        try {
-            chipRef.textContent = `(${formatTranscriptExecutionTime(Math.max(0, Date.now() - startedAt))})`;
-        } catch {
-            stopTimer();
-        }
-    };
-    update();
-    transcriptToolExecutionTimers.set(chipRef, window.setInterval(update, 100));
+    // Re-register so a re-sync with a new startedAt re-bases the tick.
+    sharedElapsedTicker.unregister(chip);
+    sharedElapsedTicker.register({
+        element: chip,
+        render: now => {
+            chip.textContent = `(${formatTranscriptExecutionTime(Math.max(0, now - startedAt))})`;
+        },
+    });
 }
 
 export class MobileProjectsTranscriptMessagesToolUi {

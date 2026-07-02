@@ -28,6 +28,14 @@ import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversati
 import { classifyTranscriptToolActivityKind } from '../common/qaap-agent-transcript-segments';
 import { isAgentToolResultFailure, stripAnsiEscapes } from '../common/qaap-transcript-content-display';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
+import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+
+/** Data attribute: stable id of the execution event a `section` element renders. */
+const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
+
+/** Caches the last-rendered event list for a timeline container so streaming
+ *  patches can diff against it without re-parsing the DOM. */
+const timelineEventCache = new WeakMap<HTMLElement, readonly MobileExecutionEvent[]>();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -340,6 +348,7 @@ export function createMobileExecutionEventTimeline(
         container.append(createMobileExecutionEventElement(event));
     }
 
+    timelineEventCache.set(container, timeline.events);
     return container;
 }
 
@@ -518,16 +527,283 @@ function formatMobileElapsed(ms: number): string {
 }
 
 /**
- * Replaces the existing execution event timeline inside `segmentsBody` with a
- * fresh one built from `segments`. Preserves the open/closed state of any
- * `<details>` elements that have corresponding events by index.
+ * Attempts to patch an existing timeline `container` in place so that it
+ * matches `nextEvents`, given it currently reflects `prevEvents`. Returns
+ * `false` (without mutating the DOM) whenever the shapes have diverged too
+ * much to patch safely — callers should then fall back to a full rebuild.
  *
- * Both tool-group and terminal-output elements are `<details>`, so we capture
- * all of them in document order. The DOM structure is:
- *   section.theia-mobile-execution-event
- *     > details.theia-mobile-tool-group
- *         > div.theia-mobile-tool-group-details
- *             > details.theia-mobile-terminal-output  (terminal tools only)
+ * This only ever needs to handle streaming growth: events keep their ids in
+ * order, tools are appended (never removed/reordered), and in-flight tool
+ * segments only grow their `args`/`result` or flip from unfinished to
+ * finished. Anything else (e.g. an event or tool being edited/removed)
+ * returns `false` so the caller rebuilds instead of risking a stale DOM.
+ */
+export function tryPatchMobileExecutionEventTimeline(
+    container: HTMLElement,
+    prevEvents: readonly MobileExecutionEvent[],
+    nextEvents: readonly MobileExecutionEvent[],
+): boolean {
+    if (nextEvents.length < prevEvents.length) {
+        return false;
+    }
+    for (let i = 0; i < prevEvents.length; i++) {
+        const prevEvent = prevEvents[i];
+        const nextEvent = nextEvents[i];
+        if (prevEvent.id !== nextEvent.id) {
+            return false;
+        }
+        // Args can keep streaming in after an event/tool has already been
+        // classified, which can flip its resolved kind (e.g. a `run` command
+        // turning out to be a `verification` command once the full args are
+        // in). The section class, group icon/verb, and terminal label are all
+        // derived from `kind`, so a mismatch here means the DOM would render
+        // stale chrome — fall back to a full rebuild instead of patching text.
+        if (prevEvent.kind !== nextEvent.kind) {
+            return false;
+        }
+        if (nextEvent.tools.length < prevEvent.tools.length) {
+            return false;
+        }
+        for (let j = 0; j < prevEvent.tools.length; j++) {
+            const prevTool = prevEvent.tools[j];
+            const nextTool = nextEvent.tools[j];
+            if (prevTool.kind !== nextTool.kind) {
+                return false;
+            }
+            const p = prevTool.segment;
+            const n = nextTool.segment;
+            if (p.toolUseId !== n.toolUseId) {
+                return false;
+            }
+            if (p.finished && !n.finished) {
+                return false;
+            }
+            if ((p.finished !== n.finished || p.args !== n.args || p.result !== n.result) && !canPatchToolSegmentGrowth(p, n)) {
+                return false;
+            }
+        }
+    }
+
+    // Structural validation — every section that patching would touch must
+    // already have the exact DOM shape createMobileExecutionEventElement
+    // produces. This must run to completion BEFORE any mutation below: either
+    // every check passes and the whole patch proceeds, or one fails and we
+    // return false having written nothing, so the caller's full-rebuild
+    // fallback never has to reconcile a half-patched DOM.
+    const sections = container.querySelectorAll<HTMLElement>(':scope > section.theia-mobile-execution-event');
+    if (sections.length !== prevEvents.length) {
+        return false;
+    }
+    for (let i = 0; i < prevEvents.length; i++) {
+        const group = sections[i].querySelector<HTMLDetailsElement>(':scope > details.theia-mobile-tool-group');
+        if (!group) {
+            return false;
+        }
+        const detailsContainer = group.querySelector<HTMLElement>(':scope > div.theia-mobile-tool-group-details');
+        if (!detailsContainer || detailsContainer.children.length !== prevEvents[i].tools.length) {
+            return false;
+        }
+    }
+
+    for (let i = 0; i < prevEvents.length; i++) {
+        patchMobileExecutionEventSection(sections[i], prevEvents[i], nextEvents[i]);
+    }
+    for (let i = prevEvents.length; i < nextEvents.length; i++) {
+        container.append(createMobileExecutionEventElement(nextEvents[i]));
+    }
+    return true;
+}
+
+/** Patches a single `section.theia-mobile-execution-event` element in place. */
+function patchMobileExecutionEventSection(
+    section: HTMLElement,
+    prev: MobileExecutionEvent,
+    next: MobileExecutionEvent,
+): void {
+    const narrativeEl = section.querySelector<HTMLElement>(':scope > p.theia-mobile-execution-event-narrative');
+    if (narrativeEl) {
+        if (prev.narrative !== next.narrative) {
+            narrativeEl.textContent = next.narrative;
+        }
+        if (prev.narrativeSource !== next.narrativeSource) {
+            narrativeEl.classList.toggle('theia-mod-synthetic', next.narrativeSource === 'synthetic');
+            narrativeEl.classList.toggle('theia-mod-agent', next.narrativeSource === 'agent');
+        }
+    }
+
+    section.classList.toggle('theia-mod-error', next.hasError);
+    section.classList.toggle('theia-mod-running', next.hasPending);
+
+    const group = section.querySelector<HTMLDetailsElement>(':scope > details.theia-mobile-tool-group');
+    if (!group) {
+        // Unreachable: tryPatchMobileExecutionEventTimeline validates that
+        // every section it patches already has a tool group before this
+        // function is ever called.
+        throw new Error('patchMobileExecutionEventSection: missing tool group despite passing validation');
+    }
+    group.className = `theia-mobile-tool-group ${next.hasError ? 'failed' : ''} ${next.hasPending ? 'running' : 'finished'}`;
+
+    const meta = group.querySelector<HTMLElement>('.theia-mobile-tool-group-meta');
+    if (meta) {
+        const summaryText = formatMobileEventSummary(next);
+        if (meta.textContent !== summaryText) {
+            meta.textContent = summaryText;
+        }
+    }
+
+    const state = group.querySelector<HTMLElement>('.theia-mobile-tool-group-state');
+    if (state) {
+        state.className = `theia-mobile-tool-group-state ${next.hasError ? 'failed' : next.hasPending ? 'running' : 'complete'}`;
+        const stateIcon = state.querySelector<HTMLElement>('.codicon');
+        if (stateIcon) {
+            stateIcon.className = `codicon ${next.hasError ? 'codicon-error' : next.hasPending ? 'codicon-loading theia-animation-spin' : 'codicon-check'}`;
+        }
+    }
+
+    const detailsContainer = group.querySelector<HTMLElement>(':scope > div.theia-mobile-tool-group-details');
+    if (!detailsContainer) {
+        // Unreachable: validated alongside the tool group above.
+        throw new Error('patchMobileExecutionEventSection: missing tool group details container despite passing validation');
+    }
+    for (let j = 0; j < prev.tools.length; j++) {
+        const el = detailsContainer.children.item(j) as HTMLElement | null;
+        if (el) {
+            patchMobileToolDetail(el, prev.tools[j], next.tools[j], next, j);
+        }
+    }
+    for (let j = prev.tools.length; j < next.tools.length; j++) {
+        detailsContainer.append(createMobileToolDetailElement(next, next.tools[j], j));
+    }
+}
+
+/** Patches a single tool-detail row (terminal card or plain/error line) in place. */
+function patchMobileToolDetail(
+    el: HTMLElement,
+    prevTool: MobileExecutionTool,
+    nextTool: MobileExecutionTool,
+    event: MobileExecutionEvent,
+    index: number,
+): void {
+    if (el instanceof HTMLDetailsElement && el.classList.contains('theia-mobile-terminal-output')) {
+        el.className = `theia-mobile-terminal-output ${nextTool.isError ? 'failed' : nextTool.isFinished ? 'complete' : 'running'}`;
+
+        const stateIcon = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-state');
+        if (stateIcon) {
+            stateIcon.className =
+                `codicon ${nextTool.isError ? 'codicon-error' : nextTool.isFinished ? 'codicon-check' : 'codicon-loading theia-animation-spin'} theia-mobile-terminal-output-state`;
+        }
+
+        if (prevTool.detail !== nextTool.detail) {
+            const detailEl = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-detail');
+            if (detailEl) {
+                detailEl.textContent = nextTool.detail;
+            }
+        }
+
+        const content = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-content');
+        if (content) {
+            if (nextTool.segment.result) {
+                let pre = content.querySelector<HTMLElement>('.theia-mobile-terminal-output-pre');
+                if (!pre) {
+                    const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
+                    if (placeholder) {
+                        placeholder.remove();
+                    }
+                    pre = document.createElement('pre');
+                    pre.className = 'theia-mobile-terminal-output-pre';
+                    content.append(pre);
+                }
+                pre.textContent = stripAnsiEscapes(nextTool.segment.result);
+            } else if (nextTool.isFinished) {
+                // Mirrors the builder: a finished tool with no result renders
+                // neither the pending placeholder nor a <pre> — don't leave a
+                // stale "Running…" placeholder behind once it finishes empty.
+                const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
+                if (placeholder) {
+                    placeholder.remove();
+                }
+            }
+        }
+        return;
+    }
+
+    if (prevTool.detail !== nextTool.detail || prevTool.isError !== nextTool.isError) {
+        el.replaceWith(createMobileToolDetailElement(event, nextTool, index));
+    }
+}
+
+/** Open/closed `<details>` state captured before a fallback full rebuild, keyed
+ *  by stable ids so a rebuild that shifts DOM indices doesn't lose state. */
+interface MobileTimelineOpenState {
+    readonly groups: Map<string, boolean>;
+    readonly terminals: Map<string, boolean>;
+}
+
+/**
+ * Key used to remember a tool group's open state across a full rebuild.
+ * `m-event-<index>` ids are positional — an insertion or split upstream can
+ * shift them onto a different event — so prefer the (globally stable)
+ * `toolUseId` of the group's first tool row, falling back to the section's
+ * event id only when no tool row is present yet.
+ */
+function resolveTimelineGroupStateKey(section: HTMLElement, group: HTMLDetailsElement): string | undefined {
+    const detailsContainer = group.querySelector<HTMLElement>(':scope > div.theia-mobile-tool-group-details');
+    const firstToolUseId = detailsContainer?.firstElementChild?.getAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR);
+    if (firstToolUseId) {
+        return firstToolUseId;
+    }
+    return section.getAttribute(MOBILE_EVENT_ID_ATTR) ?? undefined;
+}
+
+function captureTimelineOpenStateById(existing: HTMLElement): MobileTimelineOpenState {
+    const groups = new Map<string, boolean>();
+    const terminals = new Map<string, boolean>();
+    existing.querySelectorAll<HTMLElement>(`section[${MOBILE_EVENT_ID_ATTR}]`).forEach(section => {
+        const group = section.querySelector<HTMLDetailsElement>(':scope > details.theia-mobile-tool-group');
+        if (group) {
+            const key = resolveTimelineGroupStateKey(section, group);
+            if (key) {
+                groups.set(key, group.open);
+            }
+        }
+    });
+    existing.querySelectorAll<HTMLDetailsElement>('details.theia-mobile-terminal-output').forEach(details => {
+        const toolUseId = details.getAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR);
+        if (toolUseId) {
+            terminals.set(toolUseId, details.open);
+        }
+    });
+    return { groups, terminals };
+}
+
+function restoreTimelineOpenStateById(fresh: HTMLElement, captured: MobileTimelineOpenState): void {
+    fresh.querySelectorAll<HTMLElement>(`section[${MOBILE_EVENT_ID_ATTR}]`).forEach(section => {
+        const group = section.querySelector<HTMLDetailsElement>(':scope > details.theia-mobile-tool-group');
+        if (group) {
+            const key = resolveTimelineGroupStateKey(section, group);
+            if (key && captured.groups.get(key)) {
+                group.open = true;
+            }
+        }
+    });
+    fresh.querySelectorAll<HTMLDetailsElement>('details.theia-mobile-terminal-output').forEach(details => {
+        const toolUseId = details.getAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR);
+        if (toolUseId && captured.terminals.get(toolUseId)) {
+            details.open = true;
+        }
+    });
+}
+
+/**
+ * Replaces the existing execution event timeline inside `segmentsBody` with a
+ * fresh one built from `segments`.
+ *
+ * First tries {@link tryPatchMobileExecutionEventTimeline} to patch the
+ * existing DOM in place — the common streaming case where events/tools only
+ * grow — which avoids losing scroll position, focus, and `<details>` open
+ * state. If that isn't safe (structure diverged too much), falls back to a
+ * full rebuild, preserving open/closed `<details>` state by event id / tool
+ * id rather than DOM position.
  *
  * If the timeline is wrapped in a process accordion, the accordion itself is
  * preserved — only the inner timeline is swapped.
@@ -537,23 +813,21 @@ export function refreshMobileExecutionEventTimeline(
     segments: readonly QaapAgentMessageSegmentDTO[],
 ): HTMLElement {
     const existing = segmentsBody.querySelector<HTMLElement>(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`);
-    // Capture open state of all <details> elements before rebuilding.
-    const openStateByIndex: boolean[] = [];
+    const nextEvents = buildMobileExecutionEvents(segments).events;
+
     if (existing) {
-        const allDetails = existing.querySelectorAll<HTMLDetailsElement>('details');
-        allDetails.forEach(details => {
-            openStateByIndex.push(details.open);
-        });
+        const prevEvents = timelineEventCache.get(existing);
+        if (prevEvents && tryPatchMobileExecutionEventTimeline(existing, prevEvents, nextEvents)) {
+            timelineEventCache.set(existing, nextEvents);
+            return existing;
+        }
     }
+
+    // Fallback: full rebuild.
+    const captured = existing ? captureTimelineOpenStateById(existing) : undefined;
     const fresh = createMobileExecutionEventTimeline(segments);
-    // Restore open state by index.
-    if (openStateByIndex.length > 0) {
-        const newDetails = fresh.querySelectorAll<HTMLDetailsElement>('details');
-        newDetails.forEach((details, index) => {
-            if (index < openStateByIndex.length && openStateByIndex[index]) {
-                details.open = true;
-            }
-        });
+    if (captured) {
+        restoreTimelineOpenStateById(fresh, captured);
     }
     if (existing) {
         // If the timeline is inside a process accordion, replace only the
@@ -578,6 +852,7 @@ function createMobileExecutionEventElement(
 ): HTMLElement {
     const section = document.createElement('section');
     section.className = `theia-mobile-execution-event theia-mod-${event.kind}`;
+    section.setAttribute(MOBILE_EVENT_ID_ATTR, event.id);
     if (event.hasError) {
         section.classList.add('theia-mod-error');
     }
@@ -665,6 +940,7 @@ function createMobileToolDetailElement(
     if (tool.isError) {
         const row = document.createElement('div');
         row.className = 'theia-mobile-tool-detail theia-mod-error';
+        row.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
         const label = document.createElement('span');
         label.className = 'theia-mobile-tool-detail-label';
         label.textContent = `${event.verb} ${index + 1}`;
@@ -684,6 +960,7 @@ function createMobileToolDetailElement(
     // Everything else: plain text line, no card
     const row = document.createElement('div');
     row.className = 'theia-mobile-tool-detail theia-mod-text';
+    row.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
     const label = document.createElement('span');
     label.className = 'theia-mobile-tool-detail-label';
     label.textContent = `${event.verb} ${index + 1}`;
@@ -720,6 +997,7 @@ function createMobileTerminalOutputElement(
 ): HTMLElement {
     const details = document.createElement('details');
     details.className = `theia-mobile-terminal-output ${tool.isError ? 'failed' : tool.isFinished ? 'complete' : 'running'}`;
+    details.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
 
     const summary = document.createElement('summary');
     summary.className = 'theia-mobile-terminal-output-summary';
