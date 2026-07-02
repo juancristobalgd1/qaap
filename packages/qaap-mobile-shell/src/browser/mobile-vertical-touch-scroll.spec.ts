@@ -20,6 +20,9 @@ const OVERLAY_SCROLL_HOSTS = [
     '.theia-mobile-sticky-composer-sheet-list',
     '.theia-qaap-approval-policy-sheet-list',
     '.qaap-project-bootstrap-picker',
+    // Codex-style execution event timeline: terminal output card content is a
+    // scroll host rendered inside the transcript overlay (outside #theia-app-shell).
+    '.theia-mobile-terminal-output-content',
 ] as const;
 
 /**

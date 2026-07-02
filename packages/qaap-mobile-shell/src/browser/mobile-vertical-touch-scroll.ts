@@ -169,6 +169,10 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-agent-activity-timeline:not(.theia-mod-cursor-trace) .theia-mobile-agent-activity-list.theia-mod-virtualized',
     '.theia-mobile-agent-activity-terminal-stack',
     '.theia-mobile-agent-activity-terminal-output',
+    // Codex-style execution event timeline: terminal output card content is a
+    // scroll host rendered inside the transcript overlay (outside #theia-app-shell),
+    // so it needs the touch fallback to pan on iOS.
+    '.theia-mobile-terminal-output-content',
     '.theia-mobile-agent-activity-read-stack',
     '.theia-mobile-agent-activity-edit-stack',
     '.theia-mobile-agent-activity-search-stack',

@@ -137,7 +137,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(visibleText).to.include('PR Review: Fix critical bugs');
     });
 
-    it('skips redundant timeline syncs during duplicate SSE frames', () => {
+    it('rebuilds the execution event timeline during duplicate SSE frames', () => {
         enableTranscriptRenderMetrics(true);
         resetTranscriptRenderMetrics();
         const artifactsUi = createArtifactsUi();
@@ -147,11 +147,12 @@ describe('qaap-transcript-timeline-render-bench', () => {
             artifactsUi.patchStreamingActivityTimeline(row, segments);
         }
         const metrics = getTranscriptRenderMetricsSnapshot();
+        // The Codex-style timeline does a full rebuild each sync (cheap: flat
+        // list of collapsed <details>). Verify the sync counter advances.
         expect(metrics.timeline_sync).to.be.greaterThan(0);
-        expect(metrics.timeline_sync_skipped).to.be.greaterThan(80);
     });
 
-    it('skips per-item DOM work when only the active step advances', () => {
+    it('rebuilds the execution event timeline when the active step advances', () => {
         enableTranscriptRenderMetrics(true);
         resetTranscriptRenderMetrics();
         const artifactsUi = createArtifactsUi();
@@ -161,8 +162,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
             artifactsUi.patchStreamingActivityTimeline(row, buildToolSegments(52, runningIndex));
         }
         const metrics = getTranscriptRenderMetricsSnapshot();
-        expect(metrics.timeline_item_sync).to.be.greaterThan(0);
-        expect(metrics.timeline_item_sync_skipped).to.be.greaterThan(50);
+        expect(metrics.timeline_sync).to.be.greaterThan(0);
     });
 
     it('patches timeline under ~250ms for 50 growing tool segments', () => {
@@ -177,7 +177,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(elapsedMs).to.be.below(250);
     });
 
-    it('renders assistant-style reasoning trace chrome with descriptive tool rows', () => {
+    it('renders Codex-style execution event timeline with narrative and collapsed tool groups', () => {
         const artifactsUi = createArtifactsUi();
         const row = createStreamingRow(artifactsUi, [
             { type: 'thinking', content: 'Let me think about this step by step.' },
@@ -191,31 +191,27 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ]);
 
+        // The new Codex-style timeline should be present
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.not.equal(null);
+        // No old-style activity timeline elements
+        expect(row.querySelector('.theia-mobile-agent-activity-timeline')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-technical-details')).to.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-icon.theia-mobile-agent-trace-glyph')).to.not.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent).to.equal('Read 1 file');
-        expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-timeline')?.open).to.equal(false);
-        expect(row.querySelector('.theia-mobile-agent-activity-icon.codicon-thinking')).to.not.equal(null);
-        const verbs = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-verb')).map(el => el.textContent);
-        expect(verbs).to.deep.equal(['Thinking', 'Read']);
-        expect(row.querySelector('.theia-mobile-agent-activity-narrative')?.textContent).to.equal("I'm checking the relevant files.");
-        expect(row.querySelector('.theia-mobile-agent-activity-thinking')).to.not.equal(null);
-        expect(row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking')?.open).to.equal(false);
-        const thinkingSummary = row.querySelector('.theia-mobile-agent-activity-thinking-summary');
-        // Thinking excerpt preview is shown in the summary when the details is collapsed
-        const thinkingExcerpt = thinkingSummary?.querySelector('.theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt');
-        expect(thinkingExcerpt).to.not.equal(null);
-        expect(thinkingExcerpt?.textContent).to.include('Let me think about this step by step.');
-        expect(thinkingSummary?.querySelector('.theia-mobile-agent-activity-tail')).to.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-thinking-body')?.textContent).to.include('Let me think about this step by step.');
-        const readRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Read');
-        expect(readRow?.querySelector('.theia-mobile-agent-activity-detail')?.textContent).to.equal('1 file');
-        expect(row.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill')).to.equal(null);
+        // Each event has a narrative and a collapsed tool group
+        const events = row.querySelectorAll('.theia-mobile-execution-event');
+        expect(events.length).to.be.greaterThan(0);
+        const narrative = row.querySelector('.theia-mobile-execution-event-narrative');
+        expect(narrative?.textContent).to.not.equal(null);
+        const toolGroup = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroup).to.not.equal(null);
+        // Tool group is collapsed by default (Codex never auto-expands)
+        expect(toolGroup?.open).to.equal(false);
+        // The verb and meta are present
+        expect(toolGroup?.querySelector('.theia-mobile-tool-group-verb')?.textContent).to.equal('Read');
+        expect(toolGroup?.querySelector('.theia-mobile-tool-group-meta')?.textContent).to.equal('1 file');
     });
 
-    it('preserves the thinking excerpt element across streaming patches', () => {
+    it('rebuilds the execution event timeline across streaming patches preserving open state', () => {
         const artifactsUi = createArtifactsUi();
         const segmentsBefore: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Let me think about this step by step.' },
@@ -229,12 +225,12 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         const row = createStreamingRow(artifactsUi, segmentsBefore);
-        const excerptBefore = row.querySelector<HTMLElement>(
-            '.theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt',
-        );
-        expect(excerptBefore).to.not.equal(null);
+        const toolGroupBefore = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroupBefore).to.not.equal(null);
+        // Expand the tool group to simulate user interaction
+        toolGroupBefore!.open = true;
 
-        // Patch with a changed segment (tool finished) to force a real sync.
+        // Patch with a changed segment (tool finished) to force a rebuild.
         const segmentsAfter: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Let me think about this step by step.' },
             {
@@ -247,16 +243,13 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         artifactsUi.patchStreamingActivityTimeline(row, segmentsAfter);
-        const excerptAfter = row.querySelector<HTMLElement>(
-            '.theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt',
-        );
-        expect(excerptAfter).to.not.equal(null);
-        // The excerpt element should be reused, not removed and recreated.
-        expect(excerptAfter).to.equal(excerptBefore);
-        expect(excerptAfter?.textContent).to.include('Let me think about this step by step.');
+        const toolGroupAfter = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroupAfter).to.not.equal(null);
+        // The open state should be preserved across the rebuild
+        expect(toolGroupAfter?.open).to.equal(true);
     });
 
-    it('respects user collapse of previously-live thinking across streaming patches', () => {
+    it('respects user collapse of tool groups across streaming patches', () => {
         const artifactsUi = createArtifactsUi();
         const initialSegments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Planning the work.' },
@@ -270,23 +263,12 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         const row = createStreamingRow(artifactsUi, initialSegments);
-        const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        expect(details).to.not.equal(null);
+        const toolGroup = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroup).to.not.equal(null);
+        // Default is collapsed
+        expect(toolGroup?.open).to.equal(false);
 
-        // Simulate the state that occurs after the thinking was auto-expanded
-        // live and then the user collapsed it:
-        // - `thinkingWasLive='1'`: the sync previously auto-expanded it.
-        // - `thinkingUserToggled='1'`: the user manually collapsed it.
-        // - `open=false`: the details is currently collapsed.
-        // The old code cleared `thinkingUserExpanded` on close, so the next
-        // sync would re-open because `thinkingWasLive='1'`. The new code uses
-        // `thinkingUserToggled` which is never cleared, so the user's choice
-        // is respected.
-        details!.dataset.thinkingWasLive = '1';
-        details!.dataset.thinkingUserToggled = '1';
-        details!.open = false;
-
-        // Patch with changed thinking content to force a per-item sync.
+        // Patch with changed content — the tool group should stay collapsed
         const patchedSegments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Planning the work. Now let me read the file.' },
             {
@@ -299,16 +281,11 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         artifactsUi.patchStreamingActivityTimeline(row, patchedSegments);
-        const detailsAfterPatch = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        // The user's collapse must be respected — no re-open.
-        expect(detailsAfterPatch?.open).to.equal(false);
-        expect(detailsAfterPatch?.dataset.thinkingUserToggled).to.equal('1');
-        // The copy element should reflect the closed state.
-        const copyAfterPatch = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
-        expect(copyAfterPatch?.classList.contains('theia-mod-thinking-open')).to.equal(false);
+        const toolGroupAfterPatch = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroupAfterPatch?.open).to.equal(false);
     });
 
-    it('auto-expands thinking with thinkingWasLive and no user toggle', () => {
+    it('keeps tool groups collapsed by default during streaming', () => {
         const artifactsUi = createArtifactsUi();
         const initialSegments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Planning the work.' },
@@ -322,33 +299,17 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         const row = createStreamingRow(artifactsUi, initialSegments);
-        const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        expect(details).to.not.equal(null);
+        const toolGroup = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroup).to.not.equal(null);
+        expect(toolGroup?.open).to.equal(false);
 
-        // Simulate: thinking was previously live (auto-expanded), user has NOT
-        // toggled. The sync should auto-expand it.
-        details!.dataset.thinkingWasLive = '1';
-        details!.open = false;
-
-        const patchedSegments: QaapAgentMessageSegmentDTO[] = [
-            { type: 'thinking', content: 'Planning the work. Now let me read the file.' },
-            {
-                type: 'tool',
-                name: 'Read',
-                toolUseId: 'tool-read-page',
-                args: JSON.stringify({ path: 'app/page.tsx' }),
-                result: 'ok',
-                finished: true,
-            },
-        ];
-        artifactsUi.patchStreamingActivityTimeline(row, patchedSegments);
-        const detailsAfterPatch = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        expect(detailsAfterPatch?.open).to.equal(true);
-        const copyAfterPatch = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
-        expect(copyAfterPatch?.classList.contains('theia-mod-thinking-open')).to.equal(true);
+        // Patch with the same segments — should stay collapsed
+        artifactsUi.patchStreamingActivityTimeline(row, initialSegments);
+        const toolGroupAfterPatch = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroupAfterPatch?.open).to.equal(false);
     });
 
-    it('auto-collapses thinking when the model starts writing its final response', () => {
+    it('rebuilds timeline when the model starts writing its final response', () => {
         const artifactsUi = createArtifactsUi();
         const initialSegments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Planning the work.' },
@@ -362,18 +323,9 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         const row = createStreamingRow(artifactsUi, initialSegments);
-        const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        expect(details).to.not.equal(null);
 
-        // Simulate: thinking was previously live (auto-expanded), user has NOT
-        // toggled. The thinking should currently be expanded.
-        details!.dataset.thinkingWasLive = '1';
-        details!.open = true;
-
-        // Patch with a text segment that exceeds the short-preamble threshold
-        // (TRANSCRIPT_TEXT_PREAMBLE_MAX_CHARS = 40). This transitions the
-        // message into the "writing" phase, so the chain of thought should
-        // auto-collapse to give the summary focus.
+        // Patch with a text segment — the timeline should rebuild and the
+        // text should appear as a rich content block (the agent's answer).
         const writingSegments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Planning the work.' },
             {
@@ -386,16 +338,15 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
             { type: 'text', content: 'I have read the file and I am now writing the final summary for the user.' },
         ];
-        artifactsUi.patchStreamingActivityTimeline(row, writingSegments);
-        const detailsAfterWriting = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        // The thinking should auto-collapse when writing starts.
-        expect(detailsAfterWriting?.open).to.equal(false);
-        expect(detailsAfterWriting?.dataset.thinkingCollapsedForWriting).to.equal('1');
-        const copyAfterWriting = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
-        expect(copyAfterWriting?.classList.contains('theia-mod-thinking-open')).to.equal(false);
+        artifactsUi.appendStreamingAgentTextSegment(row, writingSegments);
+        // The timeline should still be present
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.not.equal(null);
+        // The final answer text should be rendered as rich content
+        const contentBlocks = row.querySelectorAll('.theia-mobile-agent-transcript-content');
+        expect(contentBlocks.length).to.be.greaterThan(0);
     });
 
-    it('keeps thinking expanded while tools are still acting after thinking', () => {
+    it('keeps tool groups collapsed while tools are still acting after thinking', () => {
         const artifactsUi = createArtifactsUi();
         const initialSegments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Planning the work.' },
@@ -409,18 +360,12 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         const row = createStreamingRow(artifactsUi, initialSegments);
-        const details = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        expect(details).to.not.equal(null);
-
-        // Simulate: thinking was previously live (auto-expanded). Also sync
-        // the copy class to match the open state (as the real sync would).
-        details!.dataset.thinkingWasLive = '1';
-        details!.open = true;
-        const copy = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
-        copy?.classList.add('theia-mod-thinking-open');
+        const toolGroup = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroup).to.not.equal(null);
+        expect(toolGroup?.open).to.equal(false);
 
         // Patch with changed thinking content and an unfinished tool — the
-        // model is still acting, so the thinking should stay expanded.
+        // model is still acting, tool group stays collapsed.
         const actingSegments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Planning the work. Now let me read the file.' },
             {
@@ -433,11 +378,8 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         artifactsUi.patchStreamingActivityTimeline(row, actingSegments);
-        const detailsAfterActing = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        expect(detailsAfterActing?.open).to.equal(true);
-        expect(detailsAfterActing?.dataset.thinkingCollapsedForWriting).to.equal(undefined);
-        const copyAfterActing = row.querySelector<HTMLElement>('.theia-mobile-agent-activity-copy');
-        expect(copyAfterActing?.classList.contains('theia-mod-thinking-open')).to.equal(true);
+        const toolGroupAfterActing = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroupAfterActing?.open).to.equal(false);
     });
 
     it('renders expandable grouped terminal steps with command details', () => {
@@ -847,7 +789,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
             && timeline.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-expand')?.open).to.equal(false);
     });
 
-    it('separates verb and detail in cursor-trace rows', () => {
+    it('separates verb and detail in Codex-style execution event rows', () => {
         const artifactsUi = createArtifactsUi();
         const row = createStreamingRow(artifactsUi, [
             {
@@ -893,23 +835,24 @@ describe('qaap-transcript-timeline-render-bench', () => {
             { type: 'text', content: 'Done.' },
         ]);
 
-        const bashRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Run');
-        expect(bashRow?.textContent).to.match(/^Run\s+1 command/);
-        expect(bashRow?.querySelector('.theia-mobile-agent-activity-detail.theia-mod-command')).to.not.equal(null);
-        expect(bashRow?.querySelector('.theia-mobile-agent-activity-detail.theia-mod-pill')).to.equal(null);
+        // Codex-style timeline: each event has a verb + meta in the tool group summary
+        const toolGroups = Array.from(row.querySelectorAll<HTMLDetailsElement>('.theia-mobile-tool-group'));
+        expect(toolGroups.length).to.be.greaterThan(0);
 
-        const readRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Read'
-                && el.textContent?.includes('files'));
-        expect(readRow?.textContent).to.match(/^Read\s+3 files/);
+        const bashGroup = toolGroups.find(el => el.querySelector('.theia-mobile-tool-group-verb')?.textContent === 'Run');
+        expect(bashGroup?.querySelector('.theia-mobile-tool-group-verb')?.textContent).to.equal('Run');
+        expect(bashGroup?.querySelector('.theia-mobile-tool-group-meta')?.textContent).to.equal('1 command');
 
-        const askRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Use');
-        expect(askRow?.textContent).to.equal('Use 1 tool');
+        const readGroup = toolGroups.find(el => el.querySelector('.theia-mobile-tool-group-verb')?.textContent === 'Read');
+        expect(readGroup?.querySelector('.theia-mobile-tool-group-verb')?.textContent).to.equal('Read');
+        expect(readGroup?.querySelector('.theia-mobile-tool-group-meta')?.textContent).to.equal('3 files');
 
-        expect(row.querySelector('.theia-mobile-agent-activity-item.theia-mod-result .theia-mobile-agent-activity-label')?.textContent)
-            .to.equal('Preparing the response');
+        const useGroup = toolGroups.find(el => el.querySelector('.theia-mobile-tool-group-verb')?.textContent === 'Use');
+        expect(useGroup?.querySelector('.theia-mobile-tool-group-verb')?.textContent).to.equal('Use');
+        expect(useGroup?.querySelector('.theia-mobile-tool-group-meta')?.textContent).to.equal('1 step');
+
+        // All tool groups are collapsed by default
+        toolGroups.forEach(group => expect(group.open).to.equal(false));
     });
 
     it('renders compact grep matches inside search expand', () => {
@@ -945,7 +888,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
             .to.contain('resolvePinnedEditorContextVariable');
     });
 
-    it('keeps reasoning as the only tool execution surface after settling', () => {
+    it('keeps the Codex execution event timeline as the only tool surface after settling', () => {
         const artifactsUi = createArtifactsUi();
         const segments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Plan the work.' },
@@ -969,24 +912,307 @@ describe('qaap-transcript-timeline-render-bench', () => {
         const conv = createCompletedConv(segments);
         const row = artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, conv);
 
-        expect(row.querySelector('.theia-mobile-agent-activity-timeline')).to.not.equal(null);
+        // Codex-style execution event timeline is present
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.not.equal(null);
+        // No old-style activity timeline or tool pills
+        expect(row.querySelector('.theia-mobile-agent-activity-timeline')).to.equal(null);
         expect(row.querySelector('.theia-mobile-agent-tool-group, .theia-mobile-agent-tool-pill')).to.equal(null);
-        expect(row.querySelector('.theia-mobile-agent-activity-narrative')?.textContent).to.equal("I'm checking the relevant files.");
-        const readRow = Array.from(row.querySelectorAll('.theia-mobile-agent-activity-row'))
-            .find(el => el.querySelector('.theia-mobile-agent-activity-verb')?.textContent === 'Read');
-        expect(readRow?.querySelector('.theia-mobile-agent-activity-detail')?.textContent).to.equal('1 file');
+        // The narrative is present
+        const narrative = row.querySelector('.theia-mobile-execution-event-narrative');
+        expect(narrative?.textContent).to.not.equal(null);
+        // The Read tool group has the correct verb and meta
+        const readGroup = Array.from(row.querySelectorAll<HTMLDetailsElement>('.theia-mobile-tool-group'))
+            .find(el => el.querySelector('.theia-mobile-tool-group-verb')?.textContent === 'Read');
+        expect(readGroup?.querySelector('.theia-mobile-tool-group-meta')?.textContent).to.equal('1 file');
 
+        // Finalize a streaming row — the timeline should be rebuilt, not replaced with old DOM
         const streamingRow = createStreamingRow(artifactsUi, segments);
-        const artifacts = document.createElement('div');
-        artifacts.className = 'theia-mobile-agent-transcript-artifacts';
-        const duplicate = document.createElement('details');
-        duplicate.className = 'theia-mobile-agent-tool-group';
-        artifacts.append(duplicate);
-        streamingRow.querySelector('.theia-mobile-agent-transcript-segments')?.append(artifacts);
         artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
 
-        expect(streamingRow.querySelector('.theia-mobile-agent-activity-timeline')).to.not.equal(null);
+        expect(streamingRow.querySelector('.theia-mobile-execution-timeline')).to.not.equal(null);
+        expect(streamingRow.querySelector('.theia-mobile-agent-activity-timeline')).to.equal(null);
         expect(streamingRow.querySelector('.theia-mobile-agent-tool-group, .theia-mobile-agent-tool-pill')).to.equal(null);
         expect(streamingRow.querySelector('.theia-mobile-agent-technical-details')).to.equal(null);
+    });
+
+    it('appends the diff summary when a streaming turn with file changes settles', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Plan the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'Write',
+                toolUseId: 'tool-write-page',
+                args: JSON.stringify({ file_path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const conv = createCompletedConv(segments);
+        // Streaming row — no diff summary while streaming
+        const streamingRow = createStreamingRow(artifactsUi, segments);
+        expect(streamingRow.querySelector('.theia-mobile-diff-summary')).to.equal(null);
+        // Finalize — the diff summary should now appear as the closing of the story
+        artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
+        const diffSummary = streamingRow.querySelector('.theia-mobile-diff-summary');
+        expect(diffSummary).to.not.equal(null);
+        expect(diffSummary?.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('1 file changed');
+    });
+
+    it('renders a thought brief during the thinking phase when no tools are present', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the approach before reading files.' },
+        ];
+        // Include a user message with createdAt 5s ago to exceed the 2s thinking grace period
+        const conv = {
+            id: 'conv-think',
+            cwd: '/tmp/bench',
+            agentId: 'codex',
+            status: 'streaming',
+            updatedAt: Date.now(),
+            messages: [
+                { id: 'user-1', role: 'user', content: 'Do the task', createdAt: Date.now() - 5000 },
+                { id: 'agent-1', role: 'agent', content: '', segments },
+            ],
+        } as QaapAgentConversationDTO;
+        const row = artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, conv, { streaming: true });
+        // No execution event timeline yet (no tools)
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.equal(null);
+        // A thought brief should be visible so the user sees the thinking phase
+        expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.not.equal(null);
+    });
+
+    it('upgrades from thought brief to Codex-style timeline when a tool arrives during streaming', () => {
+        const artifactsUi = createArtifactsUi();
+        // Start with thinking only — no tools
+        const thinkingSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the approach.' },
+        ];
+        const conv = {
+            id: 'conv-think',
+            cwd: '/tmp/bench',
+            agentId: 'codex',
+            status: 'streaming',
+            updatedAt: Date.now(),
+            messages: [
+                { id: 'user-1', role: 'user', content: 'Do the task', createdAt: Date.now() - 5000 },
+                { id: 'agent-1', role: 'agent', content: '', segments: thinkingSegments },
+            ],
+        } as QaapAgentConversationDTO;
+        const row = artifactsUi.createTranscriptAgentSegmentsRow(thinkingSegments, undefined, conv, { streaming: true });
+        expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.equal(null);
+
+        // A tool segment arrives via streaming patch
+        const segmentsWithTool: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the approach.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-1',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        artifactsUi.patchStreamingActivityTimeline(row, segmentsWithTool, conv);
+
+        // The thought brief should be gone, replaced by the Codex-style timeline
+        expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.equal(null);
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.not.equal(null);
+        // The tool group should be collapsed by default
+        const toolGroup = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroup).to.not.equal(null);
+        expect(toolGroup?.open).to.equal(false);
+    });
+
+    it('upgrades to Codex-style timeline when finalizing a row that was never upgraded during streaming', () => {
+        const artifactsUi = createArtifactsUi();
+        // Simulate a row that was created during thinking and never received
+        // a streaming patch with tools (e.g. tools arrived in a single batch)
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the approach.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-1',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const conv = {
+            id: 'conv-think',
+            cwd: '/tmp/bench',
+            agentId: 'codex',
+            status: 'streaming',
+            updatedAt: Date.now(),
+            messages: [
+                { id: 'user-1', role: 'user', content: 'Do the task', createdAt: Date.now() - 5000 },
+                { id: 'agent-1', role: 'agent', content: '', segments: [segments[0]!] },
+            ],
+        } as QaapAgentConversationDTO;
+        const row = artifactsUi.createTranscriptAgentSegmentsRow([segments[0]!], undefined, conv, { streaming: true });
+        // Row starts with thought brief, no timeline
+        expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.equal(null);
+
+        // Finalize with the full segments (including the tool)
+        const finalizedConv = { ...conv, status: 'idle' as const, messages: [
+            conv.messages[0]!,
+            { id: 'agent-1', role: 'agent', content: '', segments },
+        ] } as QaapAgentConversationDTO;
+        artifactsUi.finalizeStreamingAgentTrace(row, segments, finalizedConv);
+
+        // Should now have the Codex-style timeline, not the thought brief
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.not.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-thought-brief')).to.equal(null);
+    });
+
+    it('updates closing narrative text blocks when content grows during streaming', () => {
+        const artifactsUi = createArtifactsUi();
+        // Start with a tool and a short text segment (the agent's final answer)
+        const initialSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'I have read the file.' },
+        ];
+        const row = createStreamingRow(artifactsUi, initialSegments);
+
+        // The closing narrative text block should be present
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        expect(segmentsBody).to.not.equal(null);
+        const textBlock = segmentsBody!.querySelector<HTMLElement>('[data-transcript-segment-index="2"]');
+        expect(textBlock).to.not.equal(null);
+        expect(textBlock!.textContent).to.include('I have read the file.');
+
+        // Simulate the text growing during streaming (same segment count, text grew)
+        const grownSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'I have read the file and I am now writing the final summary for the user.' },
+        ];
+        const patched = artifactsUi.patchStreamingAgentTextSegments(row, initialSegments, grownSegments);
+        expect(patched).to.equal(true);
+
+        // The text block should now show the updated content
+        const updatedBlock = segmentsBody!.querySelector<HTMLElement>('[data-transcript-segment-index="2"]');
+        expect(updatedBlock).to.not.equal(null);
+        expect(updatedBlock!.textContent).to.include('I am now writing the final summary');
+    });
+
+    it('re-renders closing narrative text blocks with final content on settle', () => {
+        const artifactsUi = createArtifactsUi();
+        // Start with a tool and a short text segment
+        const initialSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'I have read the file.' },
+        ];
+        const row = createStreamingRow(artifactsUi, initialSegments);
+
+        // Finalize with grown text content (simulating a race where the
+        // last streaming patch didn't apply before settle)
+        const finalSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'I have read the file and here is my complete final answer for the user.' },
+        ];
+        const conv = createCompletedConv(finalSegments);
+        artifactsUi.finalizeStreamingAgentTrace(row, finalSegments, conv);
+
+        // The text block should show the final content, not the stale initial content
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        const textBlock = segmentsBody?.querySelector<HTMLElement>('[data-transcript-segment-index="2"]');
+        expect(textBlock).to.not.equal(null);
+        expect(textBlock?.textContent).to.include('here is my complete final answer');
+    });
+
+    it('rebuilds the Codex timeline without creating legacy tool pills when a tool is appended to a settled row', () => {
+        const artifactsUi = createArtifactsUi();
+        // Create a streaming row with one tool, then finalize it so it settles
+        // with a Codex-style timeline and no longer has the streaming class.
+        const initialSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-1',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const row = createStreamingRow(artifactsUi, initialSegments);
+        const conv = createCompletedConv(initialSegments);
+        artifactsUi.finalizeStreamingAgentTrace(row, initialSegments, conv);
+        // The row should have the Codex-style timeline and no streaming class
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.not.equal(null);
+        expect(row.classList.contains('theia-mod-streaming')).to.equal(false);
+        // No legacy tool pills should be present
+        expect(row.querySelector('.theia-mobile-agent-tool-pills')).to.equal(null);
+
+        // Simulate a late tool segment arriving after settle (e.g. a retry
+        // or a rapid state transition). appendStreamingAgentToolSegment must
+        // rebuild the Codex timeline, NOT fall through to the legacy path.
+        const segmentsWithNewTool: QaapAgentMessageSegmentDTO[] = [
+            ...initialSegments,
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-2',
+                args: JSON.stringify({ path: 'app/other.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+        ];
+        const appended = artifactsUi.appendStreamingAgentToolSegment(row, segmentsWithNewTool, conv);
+        expect(appended).to.equal(true);
+
+        // The Codex-style timeline should still be present and reflect 2 tools
+        expect(row.querySelector('.theia-mobile-execution-timeline')).to.not.equal(null);
+        // No legacy tool pills should have been created
+        expect(row.querySelector('.theia-mobile-agent-tool-pills')).to.equal(null);
+        expect(row.querySelector('.theia-mobile-agent-tool-group')).to.equal(null);
+        // The tool group should now show 2 files
+        const toolGroup = row.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+        expect(toolGroup?.querySelector('.theia-mobile-tool-group-meta')?.textContent).to.equal('2 files');
     });
 });

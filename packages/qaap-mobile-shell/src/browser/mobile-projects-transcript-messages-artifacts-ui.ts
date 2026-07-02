@@ -12,7 +12,7 @@ import {
     resolveAgentTurnFailureTechnicalContent,
 } from '../common/qaap-agent-failure-message';
 import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
-import { classifyTranscriptToolActivityKind, excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, shouldRenderTranscriptToolSegmentInline, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
+import { classifyTranscriptToolActivityKind, excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
@@ -91,6 +91,13 @@ import {
     summarizeToolBundle,
     type ToolUmbrella,
 } from '../common/qaap-tool-umbrella';
+import {
+    createMobileDiffSummaryElement,
+    createMobileExecutionEventTimeline,
+    createMobileLineDiffSummaryElement,
+    hasMobileExecutionEventTimeline,
+    refreshMobileExecutionEventTimeline,
+} from './qaap-execution-event-timeline';
 
 const TRANSCRIPT_TRACE_STATUS_ATTR = 'data-transcript-trace-status';
 const TRANSCRIPT_CHECKPOINT_RESTORE_ATTR = 'data-transcript-checkpoint-id';
@@ -278,27 +285,30 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         body.className = 'theia-mobile-agent-transcript-segments';
         const streaming = !!options?.streaming;
 
-        const stalled = streaming ? this.resolveTranscriptStreamStalled(conv) : false;
-        const activityTimeline = shouldShowTranscriptInlineTimeline(segments, streaming)
-            ? this.createTranscriptActivityTimeline(segments, {
+        // ─── Codex-style Execution Event Timeline ───────────────────────────
+        // Replaces the old activity timeline + tool pills + diff/verification cards.
+        // Events are the primary element; tools are children, not siblings.
+        // Everything collapsed by default. Only Terminal/Error/Diff get cards.
+        const hasToolSegments = segments.some(s => s.type === 'tool');
+        if (hasToolSegments) {
+            this.renderMobileExecutionEventTimeline(body, segments, {
                 streaming,
-                stalled,
-                expanded: false,
-                segments,
-                includeThinkingSteps: true,
+                defer,
                 conv,
-                row,
-            })
-            : undefined;
-        const thoughtBrief = activityTimeline ? undefined : this.createTranscriptThoughtBriefBlock(segments, {
-            streaming,
-            conv,
-        });
-        if (thoughtBrief) {
-            body.append(thoughtBrief);
-        }
-        if (activityTimeline) {
-            body.append(activityTimeline);
+            });
+        } else {
+            // No tools yet — render thinking content (if any) as a thought brief,
+            // then visible text segments. This preserves the thinking-phase UX
+            // (collapsible reasoning block with live indicator) before the first
+            // tool arrives. When tools arrive later via streaming, the row is
+            // upgraded to the Codex-style timeline in patchStreamingActivityTimeline.
+            const thoughtBrief = this.createTranscriptThoughtBriefBlock(segments, {
+                streaming,
+                conv,
+            });
+            if (thoughtBrief) {
+                body.append(thoughtBrief);
+            }
             if (streaming) {
                 const status = document.createElement('div');
                 status.className = 'theia-mobile-agent-trace-status';
@@ -306,82 +316,16 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 status.hidden = true;
                 body.append(status);
             }
-        }
-
-        const visibleTextSegmentIndexes = this.resolveLobeVisibleTextSegmentIndexes(segments, !!activityTimeline);
-
-        // LobeHub-style: keep process prose inside the workflow trace and show only answer prose.
-        for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
-            const segment = segments[segmentIndex];
-            if (!visibleTextSegmentIndexes.has(segmentIndex)) {
-                continue;
-            }
-            if (segment.type === 'text' && (segment.content?.trim() ?? '').length > 0) {
-                const textBlock = this.toolUi.createTranscriptSegmentDetails(segment, {
-                    defer,
-                    streaming: options?.streaming,
-                });
-                textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
-                body.append(textBlock);
-            }
-        }
-
-        const artifacts = document.createElement('div');
-        artifacts.className = 'theia-mobile-agent-transcript-artifacts';
-        const activityTimelineShown = !!activityTimeline;
-        const toolPills = streaming || activityTimelineShown
-            ? undefined
-            : this.createTranscriptToolPillsStrip(segments, conv, { deferHeavyContent: defer });
-        if (toolPills) {
-            artifacts.append(toolPills);
-        }
-        const inlineDiff = (!streaming || !activityTimeline)
-            ? this.createTranscriptInlineDiffStrip(segments)
-            : undefined;
-        if (inlineDiff) {
-            artifacts.append(inlineDiff);
-        }
-        const changedFiles = this.createTranscriptChangedFilesCard(segments);
-        if (changedFiles) {
-            artifacts.append(changedFiles);
-        } else {
-            const diffSummary = this.createTranscriptDiffSummaryCard(segments);
-            if (diffSummary) {
-                artifacts.append(diffSummary);
-            }
-        }
-        const verification = this.createTranscriptVerificationCard(segments);
-        if (verification) {
-            artifacts.append(verification);
-        }
-        if (!toolPills) {
-            for (const segment of segments) {
-                if (segment.type !== 'tool') {
-                    continue;
+            for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
+                const segment = segments[segmentIndex];
+                if (segment.type === 'text' && (segment.content?.trim() ?? '').length > 0) {
+                    const textBlock = this.toolUi.createTranscriptSegmentDetails(segment, {
+                        defer,
+                        streaming: options?.streaming,
+                    });
+                    textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
+                    body.append(textBlock);
                 }
-                if (activityTimelineShown) {
-                    continue;
-                }
-                if (!shouldRenderTranscriptToolSegmentInline({
-                    activityTimelineShown,
-                    finished: segment.finished,
-                    resultFailed: this.resolversUi.transcriptToolResultFailed(segment.result, segment.name),
-                    toolKind: classifyTranscriptToolActivityKind(segment.name),
-                    hasToolOutput: !!segment.result?.trim(),
-                })) {
-                    continue;
-                }
-                artifacts.append(this.toolUi.createTranscriptSegmentDetails(segment));
-            }
-        }
-        if (artifacts.childElementCount > 0) {
-            body.append(artifacts);
-        }
-
-        if (!thoughtBrief) {
-            const technicalDetails = this.createTranscriptTechnicalDetailsCard(segments, { activityTimelineShown });
-            if (technicalDetails) {
-                body.append(technicalDetails);
             }
         }
 
@@ -406,6 +350,98 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             this.ensureTranscriptStreamStallWatch(row);
         }
         return row;
+    }
+
+    /**
+     * Renders the Codex-style execution event timeline into `body`:
+     *   1. The execution event timeline (events with narrative + collapsed tool groups)
+     *   2. A trace status element (when streaming)
+     *   3. Closing narrative text segments (the agent's final answer, after the last tool)
+     *   4. The diff summary (when not streaming)
+     *
+     * Used both for initial render and for upgrading a row that was created
+     * during the thinking phase (no tools) and later received tool segments.
+     */
+    protected renderMobileExecutionEventTimeline(
+        body: HTMLElement,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        options: { readonly streaming: boolean; readonly defer?: boolean; readonly conv?: QaapAgentConversationDTO },
+    ): void {
+        const { streaming, defer } = options;
+        const eventTimeline = createMobileExecutionEventTimeline(segments);
+        body.append(eventTimeline);
+        if (streaming) {
+            const status = document.createElement('div');
+            status.className = 'theia-mobile-agent-trace-status';
+            status.setAttribute(TRANSCRIPT_TRACE_STATUS_ATTR, 'true');
+            status.hidden = true;
+            body.append(status);
+        }
+        // Render closing narrative text segments (text after the last tool)
+        // as rich content blocks — these are the agent's final answer, not
+        // process prose. The timeline model captures them as closingNarrative
+        // (plain text), but the final answer needs full markdown rendering.
+        const lastToolIndex = segments.reduce(
+            (last, segment, index) => segment.type === 'tool' ? index : last,
+            -1,
+        );
+        for (let segmentIndex = lastToolIndex + 1; segmentIndex < segments.length; segmentIndex++) {
+            const segment = segments[segmentIndex];
+            if (segment.type !== 'text') {
+                continue;
+            }
+            const text = segment.content?.trim() ?? '';
+            if (!text) {
+                continue;
+            }
+            if (this.isLobeWorkflowProcessText(segment.content)) {
+                continue;
+            }
+            const textBlock = this.toolUi.createTranscriptSegmentDetails(segment, {
+                defer,
+                streaming,
+            });
+            textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
+            body.append(textBlock);
+        }
+        // Diff summary as the natural closing of the execution story
+        if (!streaming) {
+            this.appendMobileDiffSummary(body, segments);
+        }
+    }
+
+    /**
+     * Upgrades a row from the thinking-phase representation (thought brief +
+     * text blocks) to the Codex-style execution event timeline. Removes all
+     * legacy elements (thought brief, activity timeline, artifacts, tool pills,
+     * process-prose text blocks) and renders the new timeline + closing
+     * narrative + diff summary in their place.
+     *
+     * Called when tool segments arrive during streaming but the row was
+     * initially created without tools (thinking phase), or when a row settles
+     * with tools but was never upgraded.
+     */
+    protected upgradeToMobileExecutionEventTimeline(
+        row: HTMLElement,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        options: { readonly streaming: boolean; readonly conv?: QaapAgentConversationDTO },
+    ): void {
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        if (!segmentsBody) {
+            return;
+        }
+        // Remove legacy elements: thought brief, activity timeline, artifacts,
+        // and all text blocks (process-prose text blocks will be re-rendered
+        // as narrative inside the timeline; closing-narrative text blocks will
+        // be re-rendered after the timeline).
+        segmentsBody.querySelectorAll(
+            `[${TRANSCRIPT_THOUGHT_BRIEF_ATTR}], [${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}], ` +
+            `.theia-mobile-agent-transcript-artifacts, [${TRANSCRIPT_SEGMENT_INDEX_ATTR}]`,
+        ).forEach(el => el.remove());
+        // Remove any leftover trace status (will be re-added by the helper if streaming)
+        segmentsBody.querySelector('.theia-mobile-agent-trace-status')?.remove();
+        // Render the Codex-style timeline + closing narrative + diff summary
+        this.renderMobileExecutionEventTimeline(segmentsBody, segments, options);
     }
 
     protected resolveLobeVisibleTextSegmentIndexes(
@@ -467,6 +503,76 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     /**
+     * Re-render closing narrative text blocks (text after the last tool) with
+     * the final segment content. Used as a safety net during finalization to
+     * ensure the agent's final answer is complete even if the last streaming
+     * patch didn't apply. Only updates existing blocks; does not create new ones.
+     */
+    protected refreshMobileClosingNarrativeBlocks(
+        segmentsBody: HTMLElement,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+    ): void {
+        const lastToolIndex = segments.reduce(
+            (last, segment, index) => segment.type === 'tool' ? index : last,
+            -1,
+        );
+        for (let segmentIndex = lastToolIndex + 1; segmentIndex < segments.length; segmentIndex++) {
+            const segment = segments[segmentIndex];
+            if (segment.type !== 'text') {
+                continue;
+            }
+            const text = segment.content?.trim() ?? '';
+            if (!text) {
+                continue;
+            }
+            if (this.isLobeWorkflowProcessText(segment.content)) {
+                continue;
+            }
+            const host = segmentsBody.querySelector<HTMLElement>(
+                `[${TRANSCRIPT_SEGMENT_INDEX_ATTR}="${segmentIndex}"]`,
+            );
+            if (host) {
+                this.toolUi.renderTranscriptRichContent(host, segment.content ?? '', { streaming: false });
+            }
+        }
+    }
+
+    /**
+     * Append the Codex-style diff summary (the natural closing of the execution
+     * story) to `segmentsBody`, removing any previously-rendered one first.
+     * Extracted so both initial render and streaming finalization can share it.
+     */
+    protected appendMobileDiffSummary(
+        segmentsBody: HTMLElement,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+    ): void {
+        // Remove any existing diff summary so re-calling this is idempotent.
+        segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
+        const mutableSegments = [...segments];
+        const changedFiles = this.resolversUi.resolveTranscriptChangedFiles(mutableSegments);
+        if (changedFiles.length > 0) {
+            const diffSummary = createMobileDiffSummaryElement(
+                changedFiles.length,
+                changedFiles.filter(f => f.kind === 'created').length,
+                changedFiles.filter(f => f.kind === 'edited').length,
+                0,
+                changedFiles.map(f => ({ name: f.path.split('/').pop() ?? f.path, type: f.kind === 'created' ? 'add' : 'modify' })),
+            );
+            segmentsBody.append(diffSummary);
+        } else {
+            // No per-file change set — fall back to aggregate line stats
+            // (parsed from diff hunks embedded in tool output). Use the
+            // line-level summary builder so we render "+N / -N" without
+            // claiming a misleading file count.
+            const diffStats = this.resolversUi.resolveTranscriptDiffStats(mutableSegments);
+            if (diffStats && (diffStats.added > 0 || diffStats.removed > 0)) {
+                const diffSummary = createMobileLineDiffSummaryElement(diffStats.added, diffStats.removed);
+                segmentsBody.append(diffSummary);
+            }
+        }
+    }
+
+    /**
      * When a turn becomes visually settled while the backend is still attached, collapse the trace
      * and mount deferred tool artifacts that were hidden during streaming.
      */
@@ -475,8 +581,34 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segments: readonly QaapAgentMessageSegmentDTO[],
         conv: QaapAgentConversationDTO,
     ): void {
-        const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
         if (!segmentsBody) {
+            return;
+        }
+        // Codex-style execution event timeline: rebuild as a finalized (non-streaming) timeline.
+        if (hasMobileExecutionEventTimeline(row)) {
+            const hasTools = segments.some(s => s.type === 'tool');
+            if (hasTools) {
+                refreshMobileExecutionEventTimeline(segmentsBody, segments);
+            }
+            // Re-render closing narrative text blocks with final content as a
+            // safety net — if the last streaming patch didn't apply (e.g. a
+            // race between the final SSE frame and settle), the blocks could
+            // have stale content. This ensures the final answer is complete.
+            this.refreshMobileClosingNarrativeBlocks(segmentsBody, segments);
+            // Append the diff summary as the natural closing of the execution
+            // story. During streaming the row was created without it; now that
+            // the turn has settled we add it. The helper is idempotent.
+            this.appendMobileDiffSummary(segmentsBody, segments);
+            row.classList.remove('theia-mod-stream-stalled');
+            return;
+        }
+        // Upgrade path: if the row was never upgraded during streaming (e.g. it
+        // was created during thinking and tools arrived but the streaming patch
+        // didn't run), upgrade it now to the Codex-style timeline.
+        if (segments.some(s => s.type === 'tool')) {
+            this.upgradeToMobileExecutionEventTimeline(row, segments, { streaming: false, conv });
+            row.classList.remove('theia-mod-stream-stalled');
             return;
         }
         if (!shouldShowTranscriptThoughtBrief(segments, false, {
@@ -716,6 +848,67 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         prevSegments: readonly QaapAgentMessageSegmentDTO[],
         nextSegments: readonly QaapAgentMessageSegmentDTO[],
     ): boolean {
+        // Codex-style execution event timeline: update closing narrative text
+        // blocks (rendered outside the timeline as rich content) in-place, and
+        // rebuild the timeline to reflect any narrative changes inside events.
+        // Narrative inside events is plain text updated by the timeline rebuild;
+        // closing narrative blocks are rich content that must be refreshed here
+        // because the timeline rebuild does not touch them.
+        if (hasMobileExecutionEventTimeline(row)) {
+            const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+            if (!segmentsBody) {
+                return true;
+            }
+            const streaming = row.classList.contains('theia-mod-streaming');
+            const lastToolIndex = nextSegments.reduce(
+                (last, seg, idx) => seg.type === 'tool' ? idx : last,
+                -1,
+            );
+            for (let segmentIndex = 0; segmentIndex < nextSegments.length; segmentIndex++) {
+                const previous = prevSegments[segmentIndex];
+                const next = nextSegments[segmentIndex];
+                if (next?.type !== 'text' || previous?.type !== 'text') {
+                    continue;
+                }
+                if ((previous.content ?? '') === (next.content ?? '')) {
+                    continue;
+                }
+                // Only closing narrative text blocks (after the last tool) are
+                // rendered as separate rich content elements outside the timeline.
+                // Narrative inside events is plain text within the timeline and
+                // is updated by the timeline rebuild below.
+                if (segmentIndex <= lastToolIndex) {
+                    continue;
+                }
+                if (this.isLobeWorkflowProcessText(next.content ?? '')) {
+                    continue;
+                }
+                const host = segmentsBody.querySelector<HTMLElement>(
+                    `[${TRANSCRIPT_SEGMENT_INDEX_ATTR}="${segmentIndex}"]`,
+                );
+                if (host) {
+                    this.toolUi.renderTranscriptRichContent(host, next.content ?? '', { streaming });
+                } else {
+                    // The text block should be visible but doesn't exist yet
+                    // (e.g. content grew enough to no longer be classified as
+                    // process prose). Trigger a full re-render to create it.
+                    return false;
+                }
+            }
+            // Rebuild the timeline to update narrative inside events and
+            // tool group state.
+            const hasTools = nextSegments.some(s => s.type === 'tool');
+            if (hasTools) {
+                refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
+            }
+            return true;
+        }
+        // Upgrade path: if tools are present but no Codex-style timeline yet,
+        // the caller (patchStreamingAgentToolSegments) will upgrade. Return
+        // true to avoid patching legacy text blocks that will be removed.
+        if (nextSegments.some(s => s.type === 'tool')) {
+            return true;
+        }
         const activityTimelineShown = !!row.querySelector(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
         for (let segmentIndex = 0; segmentIndex < nextSegments.length; segmentIndex++) {
             const previous = prevSegments[segmentIndex];
@@ -748,6 +941,21 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         nextSegments: readonly QaapAgentMessageSegmentDTO[],
         conv?: QaapAgentConversationDTO,
     ): boolean {
+        // Codex-style execution event timeline: rebuild in place.
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        if (segmentsBody && hasMobileExecutionEventTimeline(row)) {
+            const hasTools = nextSegments.some(s => s.type === 'tool');
+            if (hasTools) {
+                refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
+            }
+            return true;
+        }
+        // Upgrade path: row has tools but no Codex-style timeline yet.
+        if (segmentsBody && nextSegments.some(s => s.type === 'tool')) {
+            this.upgradeToMobileExecutionEventTimeline(row, nextSegments, { streaming: true, conv });
+            return true;
+        }
+
         for (let segmentIndex = 0; segmentIndex < nextSegments.length; segmentIndex++) {
             const previous = prevSegments[segmentIndex];
             const next = nextSegments[segmentIndex];
@@ -983,6 +1191,14 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
         if (segmentsBody) {
             this.syncTranscriptStreamTimeoutBanner(segmentsBody, timedOut, timeoutCause);
+            // Codex-style execution event timeline: toggle stalled class on the container.
+            if (hasMobileExecutionEventTimeline(row)) {
+                const eventTimeline = segmentsBody.querySelector<HTMLElement>(`.theia-mobile-execution-timeline`);
+                if (eventTimeline) {
+                    eventTimeline.classList.toggle('theia-mod-stalled', stalled);
+                    eventTimeline.classList.toggle('theia-mod-timed-out', timedOut);
+                }
+            }
             const timeline = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
             if (timeline) {
                 timeline.classList.toggle('theia-mod-stalled', stalled);
@@ -1191,11 +1407,35 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         nextSegments: readonly QaapAgentMessageSegmentDTO[],
         conv?: QaapAgentConversationDTO,
     ): boolean {
+        // ─── Codex-style execution event timeline path ──────────────────────
+        // If the row was rendered with the new execution event timeline, rebuild
+        // it in place. This is cheap (a flat list of collapsed <details>) and
+        // avoids the complex incremental sync logic of the legacy timeline.
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        if (segmentsBody && hasMobileExecutionEventTimeline(row)) {
+            const hasTools = nextSegments.some(s => s.type === 'tool');
+            if (hasTools) {
+                recordTranscriptRenderMetric('timeline_sync');
+                refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
+            }
+            return true;
+        }
+
+        // ─── Upgrade path: thinking → tools ────────────────────────────────
+        // The row was created during the thinking phase (no tools, so a thought
+        // brief was rendered). Now tools are present — upgrade to the Codex-style
+        // execution event timeline so the user sees events, not a tool log.
+        if (segmentsBody && nextSegments.some(s => s.type === 'tool')) {
+            recordTranscriptRenderMetric('timeline_upgrade');
+            this.upgradeToMobileExecutionEventTimeline(row, nextSegments, { streaming: true, conv });
+            return true;
+        }
+
+        // ─── Legacy activity timeline path ──────────────────────────────────
         const stalled = this.resolveTranscriptStreamStalled(conv);
         const timedOut = this.resolveTranscriptStreamTimedOut(conv);
         const streaming = row.classList.contains('theia-mod-streaming');
         if (!shouldShowTranscriptInlineTimeline(nextSegments, streaming)) {
-            const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
             segmentsBody?.querySelector(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`)?.remove();
             this.patchStreamingThoughtBrief(row, nextSegments, conv, true);
             return true;
@@ -1211,7 +1451,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             this.patchStreamingThoughtBrief(row, nextSegments, conv, true);
             return true;
         }
-        const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
         if (!segmentsBody) {
             return false;
         }
@@ -1881,9 +2120,44 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!segment || segment.type !== 'text') {
             return false;
         }
-        const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
         if (!segmentsBody) {
             return false;
+        }
+        // Codex-style execution event timeline: render the text block as a
+        // rich content element after the timeline (the agent's final answer),
+        // and rebuild the timeline to update its state.
+        if (hasMobileExecutionEventTimeline(row)) {
+            if (segmentsBody.querySelector(`[${TRANSCRIPT_SEGMENT_INDEX_ATTR}="${segmentIndex}"]`)) {
+                return false;
+            }
+            // Only render as a separate block if it's after the last tool
+            // (i.e. the agent's final answer, not process prose).
+            const lastToolIndex = nextSegments.reduce(
+                (last, seg, idx) => seg.type === 'tool' ? idx : last,
+                -1,
+            );
+            if (segmentIndex > lastToolIndex && !this.isLobeWorkflowProcessText(segment.content)) {
+                const textBlock = this.toolUi.createTranscriptSegmentDetails(segment);
+                textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
+                const streaming = row.classList.contains('theia-mod-streaming');
+                if (streaming) {
+                    this.toolUi.renderTranscriptRichContent(textBlock, segment.content ?? '', { streaming });
+                }
+                // Insert after the timeline but before any diff summary.
+                const diffSummary = segmentsBody.querySelector('.theia-mobile-diff-summary');
+                if (diffSummary) {
+                    segmentsBody.insertBefore(textBlock, diffSummary);
+                } else {
+                    segmentsBody.append(textBlock);
+                }
+            }
+            // Rebuild the timeline to reflect updated tool/narrative state.
+            const hasTools = nextSegments.some(s => s.type === 'tool');
+            if (hasTools) {
+                refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
+            }
+            return true;
         }
         const activityTimelineShown = !!segmentsBody.querySelector(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
         if (!this.shouldRenderLobeTextSegment(nextSegments, segmentIndex, activityTimelineShown)) {
@@ -1922,36 +2196,22 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (row.classList.contains('theia-mod-streaming')) {
             return this.patchStreamingActivityTimeline(row, nextSegments, conv);
         }
-        const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
-        if (!segmentsBody) {
-            return false;
+        // Non-streaming row: if it doesn't have the Codex-style timeline yet
+        // (e.g. it was created during thinking and settled without tools, then
+        // a late tool arrived), upgrade it to the Codex-style timeline.
+        if (!hasMobileExecutionEventTimeline(row)) {
+            this.upgradeToMobileExecutionEventTimeline(row, nextSegments, { streaming: false, conv });
+            return true;
         }
-        let artifacts = segmentsBody.querySelector('.theia-mobile-agent-transcript-artifacts');
-        if (!artifacts) {
-            artifacts = document.createElement('div');
-            artifacts.className = 'theia-mobile-agent-transcript-artifacts';
-            segmentsBody.append(artifacts);
+        // Non-streaming row that already has the Codex-style timeline: rebuild
+        // it in place to reflect the newly appended tool. Without this branch,
+        // the method would fall through to the legacy path and create legacy
+        // tool pills (.theia-mobile-agent-tool-pills) alongside the Codex
+        // timeline, leaving corrupted DOM.
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        if (segmentsBody) {
+            refreshMobileExecutionEventTimeline(segmentsBody, nextSegments);
         }
-        let strip = artifacts.querySelector<HTMLElement>('.theia-mobile-agent-tool-pills');
-        if (!strip) {
-            strip = document.createElement('div');
-            strip.className = 'theia-mobile-agent-tool-pills';
-            const group = this.wrapTranscriptToolGroup(strip);
-            artifacts.prepend(group);
-        }
-        if (strip.querySelector(`[${TRANSCRIPT_TOOL_USE_ID_ATTR}="${CSS.escape(segment.toolUseId)}"]`)) {
-            return false;
-        }
-        strip.append(this.createTranscriptToolPill(segment, conv));
-        const group = strip.closest('.theia-mobile-agent-tool-group');
-        if (group instanceof HTMLElement) {
-            const items = transcriptToolGroupItems.get(group);
-            if (items) {
-                items.push(segment);
-            }
-            this.refreshTranscriptToolGroupSummary(group);
-        }
-        this.patchStreamingActivityTimeline(row, nextSegments, conv);
         return true;
     }
 

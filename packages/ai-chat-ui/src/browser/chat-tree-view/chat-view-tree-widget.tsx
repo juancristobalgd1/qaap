@@ -67,8 +67,8 @@ import { useMarkdownRendering } from '../chat-response-renderer/markdown-part-re
 import { ProgressMessage } from '../chat-progress-message';
 import { AIChatTreeInputFactory, type AIChatTreeInputWidget } from './chat-view-tree-input-widget';
 import { PromptVariantBadge } from './prompt-variant-badge';
-import { buildExecutionTimeline, NarrativeTimelineSegment, ToolGroupTimelineSegment } from './execution-timeline';
-import { ToolGroupTimelineItem } from './execution-timeline-renderer';
+import { buildExecutionEventTimeline } from './execution-event-model';
+import { AgentExecution, DiffSummary } from './execution-event-renderer';
 
 // TODO Instead of directly operating on the ChatRequestModel we could use an intermediate view model
 export interface RequestNode extends TreeNode {
@@ -749,7 +749,17 @@ export class ChatViewTreeWidget extends TreeWidget {
     }
 
     protected renderChatResponse(node: ResponseNode): React.ReactNode {
-        const timeline = buildExecutionTimeline(node.response.response.content);
+        const eventTimeline = buildExecutionEventTimeline(node.response.response.content);
+        const renderToolContent = (content: ToolCallChatResponseContent) => this.getChatResponsePartRenderer(content, node);
+        const renderNarrativeContent = (content: ChatResponseContent) => this.getChatResponsePartRenderer(content, node);
+        // Render each closing narrative content segment with the full part
+        // renderer so markdown and other rich formatting are preserved.
+        const closingNarrative = eventTimeline.closingNarrativeContents && eventTimeline.closingNarrativeContents.length > 0
+            ? eventTimeline.closingNarrativeContents.map((content, index) =>
+                <React.Fragment key={`closing-${index}`}>{renderNarrativeContent(content)}</React.Fragment>
+            )
+            : eventTimeline.closingNarrative;
+        const diffSummary = node.response.isComplete ? this.renderDiffSummary(node) : undefined;
         return (
             <div className={'theia-ResponseNode'}>
                 {!node.response.isComplete
@@ -760,12 +770,13 @@ export class ChatViewTreeWidget extends TreeWidget {
                             <ProgressMessage key={c.id} {...c} />
                         )
                 }
-                {timeline.map(segment => {
-                    if (segment.kind === 'narrative') {
-                        return this.renderNarrativeSegment(segment, node);
-                    }
-                    return this.renderToolGroup(segment, node);
-                })}
+                <AgentExecution
+                    events={eventTimeline.events}
+                    renderToolContent={renderToolContent}
+                    renderNarrativeContent={renderNarrativeContent}
+                    closingNarrative={closingNarrative}
+                    diffSummary={diffSummary}
+                />
                 {!node.response.isComplete
                     && node.response.progressMessages
                         .filter(c => c.show === 'whileIncomplete')
@@ -779,30 +790,11 @@ export class ChatViewTreeWidget extends TreeWidget {
                         <ProgressMessage key={c.id} {...c} />
                     )
                 }
-                {node.response.isComplete && this.renderFinalChangeSummary(node)}
             </div>
         );
     }
 
-    protected renderNarrativeSegment(segment: NarrativeTimelineSegment, node: ResponseNode): React.ReactNode {
-        return <div className={`theia-ResponseNode-Content theia-ResponseNode-Narrative ${segment.synthetic ? 'synthetic' : ''}`} key={segment.id}>
-            {segment.synthetic ? segment.text : this.getChatResponsePartRenderer(segment.content, node)}
-        </div>;
-    }
-
-    protected renderToolGroup(segment: ToolGroupTimelineSegment, node: ResponseNode): React.ReactNode {
-        const hasPending = segment.contents.some(content => !content.finished);
-        const hasError = segment.contents.some(content => ToolCallChatResponseContent.isErrorResult(content.result));
-        return <ToolGroupTimelineItem
-            key={segment.id}
-            segment={segment}
-            hasPending={hasPending}
-            hasError={hasError}
-            renderContent={content => this.getChatResponsePartRenderer(content, node)}
-        />;
-    }
-
-    protected renderFinalChangeSummary(node: ResponseNode): React.ReactNode {
+    protected renderDiffSummary(node: ResponseNode): React.ReactNode {
         const request = node.response.requestId
             ? this.chatService.getSession(node.sessionId)?.model.getRequests().find(candidate => candidate.id === node.response.requestId)
             : undefined;
@@ -810,7 +802,19 @@ export class ChatViewTreeWidget extends TreeWidget {
         if (elements.length === 0) {
             return undefined;
         }
-        return <FinalChangeSummary key={`${node.id}-final-change-summary`} elements={elements} />;
+        const counts = summarizeChangeSet(elements);
+        const files = elements.map(element => ({
+            name: element.name ?? element.uri.path.base,
+            type: element.type,
+        }));
+        return <DiffSummary
+            key={`${node.id}-diff-summary`}
+            fileCount={elements.length}
+            added={counts.added}
+            modified={counts.modified}
+            deleted={counts.deleted}
+            files={files}
+        />;
     }
 
     protected getChatResponsePartRenderer(content: ChatResponseContent, node: ResponseNode): React.ReactNode {
@@ -928,29 +932,6 @@ function getRequestChangeSetElements(request: ChatRequestModel | undefined): Cha
     return changeSet?.getElements?.() ?? [];
 }
 
-const FinalChangeSummary: React.FC<{ elements: ChangeSetElement[] }> = ({ elements }) => {
-    const counts = summarizeChangeSet(elements);
-    return <div className='theia-AgentFinalSummary'>
-        <div className='theia-AgentFinalSummary-Header'>
-            <span className='theia-AgentFinalSummary-Title'>
-                {formatChangeSetTitle(elements.length)}
-            </span>
-            {counts.added > 0 && <span className='theia-AgentFinalSummary-Stat added'>+{counts.added}</span>}
-            {counts.modified > 0 && <span className='theia-AgentFinalSummary-Stat modified'>{counts.modified} modified</span>}
-            {counts.deleted > 0 && <span className='theia-AgentFinalSummary-Stat deleted'>-{counts.deleted}</span>}
-        </div>
-        <div className='theia-AgentFinalSummary-Files'>
-            {elements.slice(0, 6).map(element =>
-                <div className='theia-AgentFinalSummary-File' key={element.uri.toString()}>
-                    <span>{element.name ?? element.uri.path.base}</span>
-                    {element.type && <span className={`theia-AgentFinalSummary-FileState ${element.type}`}>{formatChangeType(element.type)}</span>}
-                </div>
-            )}
-            {elements.length > 6 && <div className='theia-AgentFinalSummary-More'>{`+${elements.length - 6} more`}</div>}
-        </div>
-    </div>;
-};
-
 function summarizeChangeSet(elements: ChangeSetElement[]): { added: number, modified: number, deleted: number } {
     return elements.reduce((summary, element) => {
         if (element.type === 'add') {
@@ -962,22 +943,6 @@ function summarizeChangeSet(elements: ChangeSetElement[]): { added: number, modi
         }
         return summary;
     }, { added: 0, modified: 0, deleted: 0 });
-}
-
-function formatChangeSetTitle(count: number): string {
-    return `${count} file${count === 1 ? '' : 's'} changed`;
-}
-
-function formatChangeType(type: ChangeSetElement['type']): string {
-    switch (type) {
-        case 'add':
-            return 'added';
-        case 'delete':
-            return 'deleted';
-        case 'modify':
-        default:
-            return 'modified';
-    }
 }
 
 const ChatRequestRender = (

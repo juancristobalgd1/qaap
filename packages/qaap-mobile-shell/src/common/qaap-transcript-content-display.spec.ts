@@ -11,6 +11,7 @@ import {
     isTranscriptErrorOutput,
     isTranscriptTerminalOutputText,
     looksLikeTranscriptMarkdown,
+    stripAnsiEscapes,
     stripToolResultLineNumberPrefixes,
 } from './qaap-transcript-content-display';
 
@@ -122,5 +123,33 @@ describe('qaap-transcript-content-display', () => {
     it('isAgentToolResultFailure still flags real Bash failures', () => {
         expect(isAgentToolResultFailure('bash: line 1: npm: command not found', { toolName: 'Bash' })).to.equal(true);
         expect(isAgentToolResultFailure('Error: Exit code 1\nnpm ERR! Test failed', { toolName: 'Bash' })).to.equal(true);
+    });
+
+    describe('stripAnsiEscapes', () => {
+
+        it('removes CSI color codes', () => {
+            expect(stripAnsiEscapes('\u001b[32mgreen\u001b[0m')).to.equal('green');
+        });
+
+        it('removes OSC title sequences terminated by BEL', () => {
+            expect(stripAnsiEscapes('\u001b]0;title\u0007body')).to.equal('body');
+        });
+
+        it('removes OSC title sequences terminated by ST', () => {
+            expect(stripAnsiEscapes('\u001b]0;title\u001b\\body')).to.equal('body');
+        });
+
+        it('leaves plain text untouched', () => {
+            expect(stripAnsiEscapes('hello world')).to.equal('hello world');
+        });
+
+        it('handles mixed CSI and OSC sequences', () => {
+            const input = '\u001b[1;31mError\u001b[0m\n\u001b]0;window\u0007details';
+            expect(stripAnsiEscapes(input)).to.equal('Error\ndetails');
+        });
+
+        it('returns empty string for empty input', () => {
+            expect(stripAnsiEscapes('')).to.equal('');
+        });
     });
 });

@@ -130,6 +130,10 @@ const ALLOWED = [
     // ---- Misc product seams in upstream Theia packages ---------------------
     /^packages\/ai-chat-ui\/src\/browser\/chat-input-product-chrome\.ts$/,
     /^packages\/ai-chat-ui\/src\/browser\/chat-input-widget\.tsx$/,
+    // Codex-style execution event timeline model + renderer + tests (co-located with chat-view-tree-widget consumer).
+    /^packages\/ai-chat-ui\/src\/browser\/chat-tree-view\/execution-event-model\.ts$/,
+    /^packages\/ai-chat-ui\/src\/browser\/chat-tree-view\/execution-event-model\.spec\.ts$/,
+    /^packages\/ai-chat-ui\/src\/browser\/chat-tree-view\/execution-event-renderer\.tsx$/,
     // Defensive lineNumber resolve when editor cursor is unavailable.
     /^packages\/editor\/src\/browser\/editor-variable-contribution\.ts$/,
     // Treat legacy Canceled errors as unresolved variables instead of console noise.

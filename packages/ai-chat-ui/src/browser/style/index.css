@@ -2260,29 +2260,61 @@ details.theia-tool-confirmation-args>summary::marker {
 .theia-ResponseNode {
   display: flex;
   flex-direction: column;
-  gap: 28px;
 }
 
 .theia-ResponseNode-Content {
   margin: 0;
 }
 
-.theia-ResponseNode-Narrative {
-  color: color-mix(in srgb, var(--theia-foreground) 90%, var(--theia-descriptionForeground) 10%);
+/* ─── AgentExecution: the timeline container ─────────────────────────────── */
+/* Generous spacing between events; the story is the primary element.         */
+
+.theia-AgentExecution {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── ExecutionEvent: one narrative + one tool group ─────────────────────── */
+/* Much air between events, little air within.                                */
+
+.theia-ExecutionEvent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 28px;
+}
+
+.theia-ExecutionEvent:last-child {
+  padding-bottom: 0;
+}
+
+/* ─── Narrative: the story text that leads each event ────────────────────── */
+
+.theia-ExecutionEvent-Narrative {
+  margin: 0;
+  color: var(--theia-foreground);
   font-size: 13px;
   font-weight: 500;
   line-height: 1.6;
 }
 
-.theia-ResponseNode-Narrative p,
-.theia-ResponseNode-Narrative ul,
-.theia-ResponseNode-Narrative ol {
+.theia-ExecutionEvent-Narrative.theia-mod-synthetic {
+  color: color-mix(in srgb, var(--theia-foreground) 65%, var(--theia-descriptionForeground) 35%);
+  font-weight: 400;
+  font-style: italic;
+}
+
+.theia-ExecutionEvent-Narrative p,
+.theia-ExecutionEvent-Narrative ul,
+.theia-ExecutionEvent-Narrative ol {
   margin-top: 0;
   margin-bottom: 0;
 }
 
-.theia-AgentToolGroup {
-  margin: 2px 0 8px 0;
+/* ─── ToolGroup: collapsed by default, one-line summary ──────────────────── */
+
+.theia-ToolGroup {
+  margin: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -2290,67 +2322,68 @@ details.theia-tool-confirmation-args>summary::marker {
   transition: background-color 180ms ease;
 }
 
-.theia-AgentToolGroup:hover {
+.theia-ToolGroup:hover {
   background: color-mix(in srgb, var(--theia-foreground) 4%, transparent);
 }
 
-.theia-AgentToolGroup-Summary {
+.theia-ToolGroup-Summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 30px;
+  min-height: 28px;
   padding: 0 6px;
   list-style: none;
   cursor: pointer;
   user-select: none;
 }
 
-.theia-AgentToolGroup-Summary::-webkit-details-marker {
+.theia-ToolGroup-Summary::-webkit-details-marker {
   display: none;
 }
 
-.theia-AgentToolGroup-Summary > .codicon:first-child {
+.theia-ToolGroup-Icon {
   color: var(--theia-descriptionForeground);
   font-size: 12px;
   opacity: 0.68;
 }
 
-.theia-AgentToolGroup-Title {
-  min-width: 58px;
+.theia-ToolGroup-Verb {
   font-weight: 500;
+  font-size: 12px;
+  color: var(--theia-descriptionForeground);
 }
 
-.theia-AgentToolGroup-Meta,
-.theia-AgentToolGroup-State {
+.theia-ToolGroup-Meta {
   color: var(--theia-descriptionForeground);
   font-size: var(--theia-ui-font-size0);
   font-weight: 400;
+  opacity: 0.72;
 }
 
-.theia-AgentToolGroup-State {
+.theia-ToolGroup-State {
   display: inline-flex;
   align-items: center;
   margin-left: auto;
   color: var(--theia-descriptionForeground);
 }
 
-.theia-AgentToolGroup-State.complete {
+.theia-ToolGroup-State.complete {
   color: var(--theia-charts-green);
 }
 
-.theia-AgentToolGroup-State.failed {
+.theia-ToolGroup-State.failed {
   color: var(--theia-errorForeground);
 }
 
-.theia-AgentToolGroup-State.running {
+.theia-ToolGroup-State.running {
   color: var(--theia-descriptionForeground);
 }
 
-.theia-AgentToolGroup-State .codicon {
+.theia-ToolGroup-State .codicon {
   font-size: 12px;
 }
 
-.theia-AgentToolGroup-Chevron {
+.theia-ToolGroup-Chevron {
   margin-left: 4px;
   color: var(--theia-descriptionForeground);
   font-size: 12px;
@@ -2358,113 +2391,192 @@ details.theia-tool-confirmation-args>summary::marker {
   transition: transform 200ms ease;
 }
 
-.theia-AgentToolGroup[open] .theia-AgentToolGroup-Chevron {
+.theia-ToolGroup[open] .theia-ToolGroup-Chevron {
   transform: rotate(180deg);
 }
 
-.theia-AgentToolGroup-Tree {
-  position: relative;
+/* ─── ToolDetails: individual tools inside an expanded group ──────────────── */
+/* Non-terminal tools are plain text lines, NOT cards.                        */
+
+.theia-ToolGroup-Details {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 6px 10px 22px;
+  gap: 4px;
+  padding: 6px 6px 8px 22px;
   animation: theia-chat-document-fade-in 180ms ease;
 }
 
-.theia-AgentToolGroup-Tree::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 10px;
-  left: 9px;
-  width: 1px;
-  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
-}
-
-.theia-AgentToolGroup-TreeItem {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  align-items: start;
+.theia-ToolDetails {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-height: 24px;
 }
 
-.theia-AgentToolGroup-Branch {
+.theia-ToolDetails-Label {
   color: var(--theia-descriptionForeground);
-  font-family: var(--theia-ui-font-family);
   font-size: var(--theia-ui-font-size0);
   font-weight: 400;
-  line-height: 28px;
+  min-width: 70px;
   user-select: none;
 }
 
-.theia-AgentToolGroup-ToolCard {
-  min-width: 0;
-}
-
-.theia-AgentToolGroup-ToolCard .theia-toolCall {
+.theia-ToolDetails-Detail {
   color: var(--theia-descriptionForeground);
+  font-size: var(--theia-ui-font-size0);
+  font-family: var(--theia-monospace-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.theia-AgentToolGroup-ToolCard .theia-toolCall > details {
+.theia-ToolDetails.theia-mod-error .theia-ToolDetails-ErrorIcon {
+  color: var(--theia-errorForeground);
+  font-size: 12px;
+  margin-left: auto;
+}
+
+/* ─── TerminalOutput: the only tool that gets a real card ────────────────── */
+
+.theia-TerminalOutput {
   border: 0;
   border-radius: 6px;
   background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
+  overflow: hidden;
 }
 
-.theia-AgentToolGroup-ToolCard .theia-toolCall > details > summary,
-.theia-AgentToolGroup-ToolCard .theia-toolCall-pending,
-.theia-AgentToolGroup-ToolCard .theia-toolCall-allowed,
-.theia-AgentToolGroup-ToolCard .theia-toolCall-denied,
-.theia-AgentToolGroup-ToolCard .theia-toolCall-rejected {
+.theia-TerminalOutput-Summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.theia-TerminalOutput-Summary::-webkit-details-marker {
+  display: none;
+}
+
+.theia-TerminalOutput-Label {
+  color: var(--theia-descriptionForeground);
+  font-size: var(--theia-ui-font-size0);
+  font-weight: 400;
+  min-width: 70px;
+  user-select: none;
+}
+
+.theia-TerminalOutput-Detail {
+  color: var(--theia-descriptionForeground);
+  font-size: var(--theia-ui-font-size0);
+  font-family: var(--theia-monospace-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.theia-TerminalOutput-State {
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.theia-TerminalOutput.complete .theia-TerminalOutput-State {
+  color: var(--theia-charts-green);
+}
+
+.theia-TerminalOutput.failed .theia-TerminalOutput-State {
+  color: var(--theia-errorForeground);
+}
+
+.theia-TerminalOutput-Content {
+  padding: 4px 8px 8px 8px;
+}
+
+.theia-TerminalOutput-Content .theia-toolCall {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-TerminalOutput-Content .theia-toolCall > details {
+  border: 0;
+  background: transparent;
+}
+
+.theia-TerminalOutput-Content .theia-toolCall > details > summary,
+.theia-TerminalOutput-Content .theia-toolCall-pending,
+.theia-TerminalOutput-Content .theia-toolCall-allowed,
+.theia-TerminalOutput-Content .theia-toolCall-denied,
+.theia-TerminalOutput-Content .theia-toolCall-rejected {
   min-height: 28px;
   padding: 0 8px;
   color: var(--theia-descriptionForeground);
   font-size: var(--theia-ui-font-size0);
 }
 
-.theia-AgentToolGroup-ToolCard .theia-toolCall-response-result {
+.theia-TerminalOutput-Content .theia-toolCall-response-result {
   padding: 8px;
 }
 
-.theia-AgentFinalSummary {
-  margin-top: 4px;
+/* ─── ClosingNarrative: agent's final text after all tools ────────────────── */
+
+.theia-AgentExecution-ClosingNarrative {
+  margin-top: 28px;
+  color: var(--theia-foreground);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+/* ─── DiffSummary: the natural closing of the execution story ─────────────── */
+
+.theia-AgentExecution-DiffSummary {
+  margin-top: 28px;
+}
+
+.theia-DiffSummary {
   padding: 14px 6px 4px 6px;
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
   animation: theia-chat-document-fade-in 180ms ease;
 }
 
-.theia-AgentFinalSummary-Header {
+.theia-DiffSummary-Header {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 28px;
 }
 
-.theia-AgentFinalSummary-Title {
+.theia-DiffSummary-Icon {
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+}
+
+.theia-DiffSummary-Title {
   font-weight: 500;
 }
 
-.theia-AgentFinalSummary-Stat {
+.theia-DiffSummary-Stat {
   color: var(--theia-descriptionForeground);
   font-size: var(--theia-ui-font-size0);
 }
 
-.theia-AgentFinalSummary-Stat.added {
+.theia-DiffSummary-Stat.theia-mod-added {
   color: var(--theia-charts-green);
 }
 
-.theia-AgentFinalSummary-Stat.deleted {
+.theia-DiffSummary-Stat.theia-mod-deleted {
   color: var(--theia-errorForeground);
 }
 
-.theia-AgentFinalSummary-Files {
+.theia-DiffSummary-Files {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-top: 8px;
 }
 
-.theia-AgentFinalSummary-File {
+.theia-DiffSummary-File {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2474,17 +2586,17 @@ details.theia-tool-confirmation-args>summary::marker {
   font-size: var(--theia-ui-font-size0);
 }
 
-.theia-AgentFinalSummary-FileState,
-.theia-AgentFinalSummary-More {
+.theia-DiffSummary-FileType,
+.theia-DiffSummary-More {
   color: var(--theia-descriptionForeground);
   font-size: var(--theia-ui-font-size0);
 }
 
-.theia-AgentFinalSummary-FileState.add {
+.theia-DiffSummary-FileType.theia-mod-add {
   color: var(--theia-charts-green);
 }
 
-.theia-AgentFinalSummary-FileState.delete {
+.theia-DiffSummary-FileType.theia-mod-delete {
   color: var(--theia-errorForeground);
 }
 

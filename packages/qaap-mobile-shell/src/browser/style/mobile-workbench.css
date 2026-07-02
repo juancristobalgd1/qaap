@@ -26742,3 +26742,334 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 .theia-mobile-agent-lobe-workflow .theia-mobile-agent-activity-meta {
   color: var(--theia-descriptionForeground);
 }
+
+/* ─── Codex-style Execution Event Timeline (mobile) ───────────────────────── */
+/* Replaces the old activity timeline + tool pills + diff/verification cards.  */
+/* Events are the primary element; tools are children, not siblings.           */
+/* Everything collapsed by default. Only Terminal/Error/Diff get cards.        */
+
+.theia-mobile-execution-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── ExecutionEvent: one narrative + one tool group ──────────────────────── */
+/* Much air between events, little air within.                                 */
+
+.theia-mobile-execution-event {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 24px;
+}
+
+.theia-mobile-execution-event:last-child {
+  padding-bottom: 0;
+}
+
+/* ─── Narrative: the story text that leads each event ─────────────────────── */
+
+.theia-mobile-execution-event-narrative {
+  margin: 0;
+  color: var(--theia-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.theia-mobile-execution-event-narrative.theia-mod-synthetic {
+  color: color-mix(in srgb, var(--theia-foreground) 60%, var(--theia-descriptionForeground) 40%);
+  font-weight: 400;
+  font-style: italic;
+}
+
+/* ─── ToolGroup: collapsed by default, one-line summary ───────────────────── */
+
+.theia-mobile-tool-group {
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  overflow: hidden;
+  transition: background-color 180ms ease;
+}
+
+.theia-mobile-tool-group:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 4%, transparent);
+}
+
+.theia-mobile-tool-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-tool-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+.theia-mobile-tool-group-icon {
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+  opacity: 0.68;
+}
+
+.theia-mobile-tool-group-verb {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-tool-group-meta {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.72;
+}
+
+.theia-mobile-tool-group-state {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-tool-group-state.complete {
+  color: var(--theia-charts-green);
+}
+
+.theia-mobile-tool-group-state.failed {
+  color: var(--theia-errorForeground);
+}
+
+.theia-mobile-tool-group-state .codicon {
+  font-size: 14px;
+}
+
+.theia-mobile-tool-group-chevron {
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+  opacity: 0.72;
+  transition: transform 200ms ease;
+}
+
+.theia-mobile-tool-group[open] .theia-mobile-tool-group-chevron {
+  transform: rotate(180deg);
+}
+
+/* ─── ToolDetails: individual tools inside an expanded group ──────────────── */
+/* Non-terminal tools are plain text lines, NOT cards.                         */
+
+.theia-mobile-tool-group-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 8px 24px;
+}
+
+.theia-mobile-tool-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.theia-mobile-tool-detail-label {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-weight: 400;
+  min-width: 64px;
+  user-select: none;
+}
+
+.theia-mobile-tool-detail-detail {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-family: var(--theia-monospace-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.theia-mobile-tool-detail.theia-mod-error .theia-mobile-tool-detail-error-icon {
+  color: var(--theia-errorForeground);
+  font-size: 14px;
+  margin-left: auto;
+}
+
+/* ─── TerminalOutput: the only tool that gets a real card ─────────────────── */
+
+.theia-mobile-terminal-output {
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
+  overflow: hidden;
+}
+
+.theia-mobile-terminal-output-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-terminal-output-summary::-webkit-details-marker {
+  display: none;
+}
+
+.theia-mobile-terminal-output-label {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-weight: 400;
+  min-width: 64px;
+  user-select: none;
+}
+
+.theia-mobile-terminal-output-detail {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-family: var(--theia-monospace-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.theia-mobile-terminal-output-state {
+  font-size: 14px;
+  margin-left: auto;
+}
+
+.theia-mobile-terminal-output.complete .theia-mobile-terminal-output-state {
+  color: var(--theia-charts-green);
+}
+
+.theia-mobile-terminal-output.failed .theia-mobile-terminal-output-state {
+  color: var(--theia-errorForeground);
+}
+
+.theia-mobile-terminal-output-content {
+  padding: 4px 10px 8px 10px;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  max-height: 240px;
+}
+
+.theia-mobile-terminal-output-pre {
+  margin: 0;
+  padding: 0;
+  color: var(--theia-descriptionForeground);
+  font-family: var(--theia-monospace-font-family);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.theia-mobile-terminal-output-pending {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* ─── Closing narrative ────────────────────────────────────────────────────── */
+
+.theia-mobile-execution-timeline-closing {
+  margin: 24px 0 0 0;
+  color: var(--theia-foreground);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+/* ─── DiffSummary: the natural closing of the execution story ─────────────── */
+
+.theia-mobile-diff-summary {
+  margin-top: 24px;
+  padding: 14px 8px 4px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.theia-mobile-diff-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  flex-wrap: wrap;
+}
+
+.theia-mobile-diff-summary-icon {
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+}
+
+.theia-mobile-diff-summary-title {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.theia-mobile-diff-summary-stat {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-mobile-diff-summary-stat.theia-mod-added {
+  color: var(--theia-charts-green);
+}
+
+.theia-mobile-diff-summary-stat.theia-mod-deleted {
+  color: var(--theia-errorForeground);
+}
+
+.theia-mobile-diff-summary-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.theia-mobile-diff-summary-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 24px;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-mobile-diff-summary-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mobile-diff-summary-file-type,
+.theia-mobile-diff-summary-more {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.theia-mobile-diff-summary-file-type.theia-mod-add {
+  color: var(--theia-charts-green);
+}
+
+.theia-mobile-diff-summary-file-type.theia-mod-delete {
+  color: var(--theia-errorForeground);
+}

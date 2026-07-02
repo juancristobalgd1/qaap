@@ -16,6 +16,7 @@ export type QaapTranscriptRenderMetricKind =
     | 'timeline_sync'
     | 'timeline_sync_skipped'
     | 'timeline_create'
+    | 'timeline_upgrade'
     | 'timeline_item_sync'
     | 'timeline_item_sync_light'
     | 'timeline_item_sync_skipped';
@@ -43,6 +44,7 @@ const EMPTY_COUNTS = (): Record<QaapTranscriptRenderMetricKind, number> => ({
     timeline_sync: 0,
     timeline_sync_skipped: 0,
     timeline_create: 0,
+    timeline_upgrade: 0,
     timeline_item_sync: 0,
     timeline_item_sync_light: 0,
     timeline_item_sync_skipped: 0,

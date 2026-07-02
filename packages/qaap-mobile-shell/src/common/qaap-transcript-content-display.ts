@@ -3,6 +3,22 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+/**
+ * Strip ANSI escape sequences (CSI and OSC) from a string.
+ *
+ * Terminal tool results frequently contain color/control codes that would
+ * render as visible garbage in a {@code <pre>} element. This mirrors the
+ * cleaning performed by {@code cleanTranscriptDisplayText} in the browser UI
+ * layer, but lives in {@code common} so it can be reused by standalone DOM
+ * builders (e.g. the Codex-style execution event timeline) that do not have
+ * access to the {@code MobileProjectsTranscriptMessagesContentUi} DI service.
+ */
+export function stripAnsiEscapes(text: string): string {
+    return text
+        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+        .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, '');
+}
+
 /** Returns true when transcript text should render as Markdown, not a terminal/log panel. */
 export function looksLikeTranscriptMarkdown(content: string): boolean {
     if (!content.trim()) {
