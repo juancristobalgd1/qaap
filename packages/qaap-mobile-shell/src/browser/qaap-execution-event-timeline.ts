@@ -484,8 +484,21 @@ export function wrapMobileProcessAccordion(
     const { isWorking, isError, elapsedMs, turnStartMs } = options;
     const details = document.createElement('details');
     details.className = `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''} ${!isWorking && !isError ? 'theia-mod-complete' : ''}`;
-    // Auto-expand while working or on error; collapse on success.
-    details.open = isWorking || isError;
+    // Auto-expand while working or on error; collapse on success. When this
+    // turn already rendered an accordion before (row rebuilt mid-stream by a
+    // full re-render or a patch fallback), restore the previous element's
+    // open/user-toggled state instead of recomputing it — a transient
+    // `isWorking === false` snapshot at rebuild time must not create the new
+    // accordion collapsed (that made it visibly oscillate during streaming).
+    const remembered = turnStartMs !== undefined ? processAccordionTurnState.get(turnStartMs) : undefined;
+    if (remembered) {
+        details.open = remembered.open;
+        if (remembered.userToggled) {
+            details.setAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR, '1');
+        }
+    } else {
+        details.open = isWorking || isError;
+    }
 
     const header = document.createElement('summary');
     header.className = 'theia-mobile-process-accordion-header';
@@ -514,7 +527,53 @@ export function wrapMobileProcessAccordion(
         details.setAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR, '1');
     });
 
+    // Keep the per-turn sticky state in sync with EVERY open change (user
+    // click, auto expand/collapse, deferred rAF collapse) so a rebuilt
+    // accordion always starts from the freshest state.
+    if (turnStartMs !== undefined) {
+        details.addEventListener('toggle', () => {
+            recordProcessAccordionTurnState(turnStartMs, details);
+        });
+        recordProcessAccordionTurnState(turnStartMs, details);
+    }
+
+    // Orphaned-open guard: when the settle itself arrives as a full rebuild,
+    // this fresh accordion inherits `open` from the sticky state but NO sync
+    // ever runs afterwards (the turn is over — no more streaming ticks), so
+    // nothing would fold it. Schedule the same confirmation collapse here; it
+    // self-cancels if work resumes (a working sync cancels it) or if the user
+    // toggles (checked at fire time).
+    if (!isWorking && !isError && details.open
+        && details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) !== '1') {
+        schedulePendingProcessAccordionCollapse(details);
+    }
+
     return details;
+}
+
+/**
+ * Per-turn sticky accordion state, keyed by the turn's start timestamp.
+ * Survives full row rebuilds (re-render after refetch, patch fallback), which
+ * create a brand-new `<details>` element — without this, each rebuild
+ * recomputed the open state from a possibly-flickering `isWorking` snapshot
+ * and the accordion visibly oscillated open/closed mid-stream.
+ */
+const processAccordionTurnState = new Map<number, { open: boolean; userToggled: boolean }>();
+const PROCESS_ACCORDION_TURN_STATE_MAX = 32;
+
+function recordProcessAccordionTurnState(turnStartMs: number, details: HTMLDetailsElement): void {
+    processAccordionTurnState.delete(turnStartMs);
+    processAccordionTurnState.set(turnStartMs, {
+        open: details.open,
+        userToggled: details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1',
+    });
+    while (processAccordionTurnState.size > PROCESS_ACCORDION_TURN_STATE_MAX) {
+        const oldest = processAccordionTurnState.keys().next().value;
+        if (oldest === undefined) {
+            break;
+        }
+        processAccordionTurnState.delete(oldest);
+    }
 }
 
 /**
@@ -595,40 +654,79 @@ export function syncMobileProcessAccordionState(
 
     // Auto-expand/collapse.
     //
-    // Expansion happens whenever the agent is working or errored. Collapse is
-    // stricter: it requires an explicit `settled` sync (final summary already
-    // in the DOM) — a transient `isWorking === false` between tools must
-    // leave the accordion open, otherwise it oscillates during the stream.
+    // Expansion happens whenever the agent is working or errored, and cancels
+    // any pending collapse. Collapse has two routes:
+    // - `settled: true` (the finalize path, final summary already appended):
+    //   collapse on the next animation frame so the browser paints the final
+    //   content first.
+    // - any other `!isWorking` sync (e.g. the streaming patch path observing
+    //   the settled conversation, or a transient status flicker between
+    //   tools): collapse only after a confirmation delay, cancelled if work
+    //   resumes — so mid-stream flickers can never fold the accordion.
     const shouldOpen = isWorking || isError;
-    if (shouldOpen === details.open) {
+    if (shouldOpen) {
+        cancelPendingProcessAccordionCollapse(details);
+        if (!details.open) {
+            details.open = true;
+        }
         return;
     }
-    if (!shouldOpen && options.settled !== true) {
-        // Not working right now, but the turn hasn't settled with its final
-        // summary yet — keep the accordion open until it does.
+    if (!details.open) {
+        cancelPendingProcessAccordionCollapse(details);
         return;
     }
-    if (details.open !== shouldOpen) {
-        if (shouldOpen || typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
-            details.open = shouldOpen;
+    if (options.settled === true) {
+        cancelPendingProcessAccordionCollapse(details);
+        if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+            details.open = false;
         } else {
-            // Defer the collapse to the next frame so the browser paints
-            // freshly-appended content (diff summary, closing narrative)
-            // first, avoiding a double layout jump on settle. Re-check the
-            // freshest state at fire time in case another sync ran in the
-            // meantime (e.g. a late error arrived).
+            // Defer to the next frame so freshly-appended final content paints
+            // before the collapse (avoids a double layout jump). Re-check at
+            // fire time in case the user toggled or a late error arrived.
             window.requestAnimationFrame(() => {
-                if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
-                    // The user toggled between scheduling and firing — never
-                    // override a manual toggle.
-                    return;
-                }
-                if (!details.classList.contains('theia-mod-working') && !details.classList.contains('theia-mod-error')) {
-                    details.open = false;
-                }
+                collapseProcessAccordionIfStillSettled(details);
             });
         }
+        return;
     }
+    // Unconfirmed settle: debounce the collapse.
+    schedulePendingProcessAccordionCollapse(details);
+}
+
+/** Pending debounced-collapse timers, keyed by the accordion element. */
+const pendingProcessAccordionCollapse = new WeakMap<HTMLDetailsElement, ReturnType<typeof setTimeout>>();
+const PROCESS_ACCORDION_COLLAPSE_CONFIRM_MS = 1500;
+
+function cancelPendingProcessAccordionCollapse(details: HTMLDetailsElement): void {
+    const timer = pendingProcessAccordionCollapse.get(details);
+    if (timer !== undefined) {
+        clearTimeout(timer);
+        pendingProcessAccordionCollapse.delete(details);
+    }
+}
+
+function schedulePendingProcessAccordionCollapse(details: HTMLDetailsElement): void {
+    if (pendingProcessAccordionCollapse.has(details)) {
+        return;
+    }
+    pendingProcessAccordionCollapse.set(details, setTimeout(() => {
+        pendingProcessAccordionCollapse.delete(details);
+        collapseProcessAccordionIfStillSettled(details);
+    }, PROCESS_ACCORDION_COLLAPSE_CONFIRM_MS));
+}
+
+/** Collapses unless the user toggled, work resumed, or the element was replaced. */
+function collapseProcessAccordionIfStillSettled(details: HTMLDetailsElement): void {
+    if (!details.isConnected) {
+        return;
+    }
+    if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
+        return;
+    }
+    if (details.classList.contains('theia-mod-working') || details.classList.contains('theia-mod-error')) {
+        return;
+    }
+    details.open = false;
 }
 
 /**
