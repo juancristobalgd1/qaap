@@ -1,0 +1,98 @@
+{
+  "timestamp": "2026-06-24T00:49:41.391Z",
+  "bundle": {
+    "jsGzipKB": "0",
+    "cssGzipKB": "0"
+  },
+  "tasks": [
+    {
+      "description": "Revisa el estado del repo",
+      "agentId": "Fast",
+      "totalMs": 997,
+      "ttftMs": 0,
+      "timeToFirstResponseMs": 990.7999999970198,
+      "timeToFirstToolMs": 991.7000000029802,
+      "toolCalls": 1,
+      "toolCallsByType": {
+        "gitQuick": 1
+      },
+      "error": null,
+      "reason": "success"
+    },
+    {
+      "description": "Muéstrame el diff",
+      "agentId": "Fast",
+      "totalMs": 466,
+      "ttftMs": 0,
+      "timeToFirstResponseMs": 464,
+      "timeToFirstToolMs": 464.19999999552965,
+      "toolCalls": 1,
+      "toolCallsByType": {
+        "gitQuick": 1
+      },
+      "error": null,
+      "reason": "success"
+    },
+    {
+      "description": "Lista archivos modificados",
+      "agentId": "Fast",
+      "totalMs": 640,
+      "ttftMs": 0,
+      "timeToFirstResponseMs": 630.6000000014901,
+      "timeToFirstToolMs": 630.8000000044703,
+      "toolCalls": 1,
+      "toolCallsByType": {
+        "gitQuick": 1
+      },
+      "error": null,
+      "reason": "success"
+    },
+    {
+      "description": "Lee package.json",
+      "agentId": "Fast",
+      "totalMs": 0,
+      "ttftMs": 0,
+      "timeToFirstResponseMs": 0.10000000149011612,
+      "timeToFirstToolMs": 0.10000000149011612,
+      "toolCalls": 1,
+      "toolCallsByType": {
+        "getFileContent": 1
+      },
+      "error": null,
+      "reason": "success"
+    },
+    {
+      "description": "Busca TODO",
+      "agentId": "Fast",
+      "totalMs": 700,
+      "ttftMs": 0,
+      "timeToFirstResponseMs": 697.8000000044703,
+      "timeToFirstToolMs": 698,
+      "toolCalls": 1,
+      "toolCallsByType": {
+        "searchInWorkspace": 1
+      },
+      "error": null,
+      "reason": "success"
+    }
+  ],
+  "system": {
+    "memBefore": {
+      "usedJSMB": 358.2399911880493,
+      "totalJSMB": 456.49845600128174,
+      "limitJSMB": 4192
+    },
+    "memAfter": {
+      "usedJSMB": 263.93694972991943,
+      "totalJSMB": 361.62568187713623,
+      "limitJSMB": 4192
+    },
+    "memDeltaMB": "-94.30",
+    "cpu": {
+      "taskDuration": "0.01s",
+      "jsHeapUsed": "207.98MB",
+      "jsHeapTotal": "305.67MB"
+    },
+    "registeredTools": null
+  }
+}

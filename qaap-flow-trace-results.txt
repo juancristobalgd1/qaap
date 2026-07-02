@@ -1,0 +1,20 @@
+[FLOW-TRACE] ui_t0_enter_keydown | key=Enter
+[FLOW-TRACE] ui_t0b_submit_called | draft="Read the README.md in packages/ai-chat/ and the chat-service"
+[FLOW-TRACE] ui_t0c_onSubmit_called | draft="Read the README.md in packages/ai-chat/ and the chat-service"
+[FLOW-TRACE] ui_t2_thinking_indicator_visible | convId=__qaap_agents_hub_idle__
+[FLOW-TRACE] wh_t0_submit_enter | prompt="Read the README.md in packages/ai-chat/ and the chat-service"
+[FLOW-TRACE] wh_t1_cwd_resolved | +0.1ms | cwd=/Users/jc/.qaap/workspaces/juancristobalgd1/Mockup
+[FLOW-TRACE] wh_t2_agent_selected | +49.6ms | agent=qaiq
+[FLOW-TRACE] wh_t3_context_resolved | +50.1ms | preambleLen=1591
+[FLOW-TRACE] wh_t4_conversation_api_returned | +76.3ms | httpLatency=26.1ms | convId=b2f8820f-e691-4b88-8923-d54827eb1f22
+[FLOW-TRACE] ui_t1_user_message_painted | convId=b2f8820f-e691-4b88-8923-d54827eb1f22
+[FLOW-TRACE] wh_t5_conversation_created | +105.6ms | convId=b2f8820f-e691-4b88-8923-d54827eb1f22 agent=qaiq
+[FLOW-TRACE] wh_t6_streaming_started | convId=b2f8820f-e691-4b88-8923-d54827eb1f22
+[FLOW-TRACE] wh_t6_first_agent_message | convId=b2f8820f-e691-4b88-8923-d54827eb1f22 | +3247.9ms
+[FLOW-TRACE] ui_t4_first_token_visible | convId=b2f8820f-e691-4b88-8923-d54827eb1f22
+[FLOW-TRACE] wh_t9_streaming_complete | convId=b2f8820f-e691-4b88-8923-d54827eb1f22 | +10971.6ms
+[FLOW-TRACE] wh_t6_first_stream_delta | convId=123527e3-f431-42eb-b495-56b3c2051e48
+[FLOW-TRACE] wh_t6_streaming_started | convId=123527e3-f431-42eb-b495-56b3c2051e48
+[FLOW-TRACE] wh_t9_streaming_complete | convId=123527e3-f431-42eb-b495-56b3c2051e48 | +58.3ms
+[FLOW-TRACE] wh_t6_streaming_started | convId=edf677cc-3c73-4641-8b13-6fad476eba28
+[FLOW-TRACE] wh_t6_first_agent_message | convId=edf677cc-3c73-4641-8b13-6fad476eba28 | +6910.9ms
