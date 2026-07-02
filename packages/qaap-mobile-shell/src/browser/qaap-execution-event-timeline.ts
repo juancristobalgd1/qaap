@@ -440,6 +440,15 @@ export interface MobileProcessAccordionOptions {
      * happens to re-render it.
      */
     readonly turnStartMs?: number;
+    /**
+     * True only when the turn has definitively finished AND the final content
+     * (closing narrative / diff summary) has already been appended to the DOM.
+     * Auto-collapse happens exclusively on a `settled` sync — a transient
+     * `isWorking === false` between tools (status flicker mid-stream) must
+     * never collapse the accordion, otherwise it visibly oscillates
+     * open/closed during the stream.
+     */
+    readonly settled?: boolean;
 }
 
 /**
@@ -542,10 +551,13 @@ function syncMobileProcessAccordionLabelTicker(
  *   cleared by this function, so the user's choice persists for the rest of
  *   the turn. A new turn renders a fresh accordion element, so the flag
  *   naturally starts clear again.
- * - Working or error → expanded. Completed successfully → collapsed (the
- *   collapse itself is deferred to the next animation frame so the browser
- *   paints any content appended just before the settle, e.g. the diff
- *   summary, before the accordion collapses — avoiding a double layout jump).
+ * - Working or error → expanded. Completed successfully → collapsed, but only
+ *   on a `settled` sync (the finalize path, which runs after the closing
+ *   narrative and diff summary are in the DOM). A transient
+ *   `isWorking === false` during streaming leaves the accordion open, so it
+ *   never oscillates mid-stream. The collapse itself is deferred to the next
+ *   animation frame so the browser paints the freshly-appended final content
+ *   before the accordion collapses — avoiding a double layout jump.
  * - The header label is always updated to reflect the current elapsed time,
  *   even when the user has manually toggled the accordion.
  */
@@ -582,7 +594,20 @@ export function syncMobileProcessAccordionState(
     }
 
     // Auto-expand/collapse.
+    //
+    // Expansion happens whenever the agent is working or errored. Collapse is
+    // stricter: it requires an explicit `settled` sync (final summary already
+    // in the DOM) — a transient `isWorking === false` between tools must
+    // leave the accordion open, otherwise it oscillates during the stream.
     const shouldOpen = isWorking || isError;
+    if (shouldOpen === details.open) {
+        return;
+    }
+    if (!shouldOpen && options.settled !== true) {
+        // Not working right now, but the turn hasn't settled with its final
+        // summary yet — keep the accordion open until it does.
+        return;
+    }
     if (details.open !== shouldOpen) {
         if (shouldOpen || typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
             details.open = shouldOpen;

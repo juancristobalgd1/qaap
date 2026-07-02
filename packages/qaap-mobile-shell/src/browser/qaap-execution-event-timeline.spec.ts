@@ -471,11 +471,27 @@ describe('qaap-execution-event-timeline', () => {
 
     describe('syncMobileProcessAccordionState', () => {
 
-        it('collapses when transitioning from working to complete', () => {
+        it('collapses when transitioning from working to settled complete', () => {
             const segments = [toolSegment('read', 't1', '{}', true)];
             const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
             expect((accordion as HTMLDetailsElement).open).to.be.true;
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, settled: true });
+            expect((accordion as HTMLDetailsElement).open).to.be.false;
+        });
+
+        it('stays open on a transient non-working sync until the turn settles', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+            // Mid-stream status flicker: working briefly reads false but the
+            // turn has not settled — the accordion must NOT collapse.
             syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+            // Working resumes: still open, no oscillation.
+            syncMobileProcessAccordionState(accordion, { isWorking: true, isError: false });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+            // Real settle with the final summary in the DOM: now it collapses.
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, settled: true });
             expect((accordion as HTMLDetailsElement).open).to.be.false;
         });
 

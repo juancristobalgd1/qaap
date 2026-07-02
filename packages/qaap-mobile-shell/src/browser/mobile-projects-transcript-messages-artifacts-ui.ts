@@ -553,6 +553,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             isError: this.isConversationError(conv),
             elapsedMs: this.resolveConversationElapsedMs(conv),
             turnStartMs: conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined,
+            // Only the finalize path calls with streaming=false, and it does so
+            // AFTER appending the closing narrative + diff summary — that is
+            // the one moment auto-collapse is allowed. Streaming syncs must
+            // never collapse, even if the working flag flickers between tools.
+            settled: !streaming,
         });
     }
 
