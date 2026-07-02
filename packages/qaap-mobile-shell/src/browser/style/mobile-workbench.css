@@ -27052,16 +27052,39 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   font-size: 12px;
 }
 
+.theia-mobile-diff-summary-file-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
 .theia-mobile-diff-summary-file-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .theia-mobile-diff-summary-file-icon {
   font-size: 14px;
   opacity: 0.72;
   flex-shrink: 0;
+}
+
+.theia-mobile-diff-summary-file-stat {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.theia-mobile-diff-summary-file-stat.theia-mod-added {
+  color: var(--theia-charts-green);
+}
+
+.theia-mobile-diff-summary-file-stat.theia-mod-deleted {
+  color: var(--theia-errorForeground);
 }
 
 .theia-mobile-diff-summary-file-type,

@@ -45,6 +45,11 @@ export function transcriptContentNeedsStreamingMarkdown(content: string): boolea
 const STREAM_STABLE_LENGTH_DATA = 'qaapStreamStableLength';
 const STREAM_TOTAL_LENGTH_DATA = 'qaapStreamTotalLength';
 
+/** Cumulative clean streamed text per host, keyed off the DOM element rather than
+ *  a `dataset` attribute so writing it every SSE tick doesn't pay for O(N) DOM
+ *  attribute serialization on every frame while a long turn streams. */
+const transcriptStreamSourceCache = new WeakMap<HTMLElement, string>();
+
 /** Per-row token smoothing state: full received text vs. the prefix revealed so far. */
 interface TranscriptStreamSmoothEntry {
     target: string;
@@ -156,7 +161,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
             TRANSCRIPT_STREAMING_HYBRID_CLASS,
         );
         host.classList.add('theia-mod-markdown');
-        delete host.dataset.transcriptStreamSource;
+        transcriptStreamSourceCache.delete(host);
         host.innerHTML = html;
         host.dataset.transcriptStreamParsedLen = String(cleanLength);
         host.dataset.transcriptStreamParsedAt = String(Date.now());
@@ -290,7 +295,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
                 TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS,
                 TRANSCRIPT_STREAMING_HYBRID_CLASS,
             );
-            delete host.dataset.transcriptStreamSource;
+            transcriptStreamSourceCache.delete(host);
             delete host.dataset.transcriptStreamParsedLen;
             delete host.dataset.transcriptStreamParsedAt;
             delete host.dataset[STREAM_STABLE_LENGTH_DATA];
@@ -301,7 +306,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
             host.classList.remove('theia-mod-markdown', TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS);
             host.classList.add(TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS);
             host.textContent = clean;
-            host.dataset.transcriptStreamSource = clean;
+            transcriptStreamSourceCache.set(host, clean);
             delete host.dataset[STREAM_STABLE_LENGTH_DATA];
             delete host.dataset[STREAM_TOTAL_LENGTH_DATA];
             delete host.dataset.transcriptStreamParsedLen;
@@ -309,7 +314,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
             return;
         }
 
-        host.dataset.transcriptStreamSource = clean;
+        transcriptStreamSourceCache.set(host, clean);
         const linked = this.linkifyTranscriptPreviewUrls(clean);
         const previousStable = Number(host.dataset[STREAM_STABLE_LENGTH_DATA] ?? '-1');
         const previousTotal = Number(host.dataset[STREAM_TOTAL_LENGTH_DATA] ?? '-1');
@@ -340,7 +345,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
         if (!applyStreamingMarkdownHtmlPatch(host, patch)) {
             return;
         }
-        updateStreamingPlainPreview(host, host.dataset.transcriptStreamSource ?? '', patch.totalLength);
+        updateStreamingPlainPreview(host, transcriptStreamSourceCache.get(host) ?? '', patch.totalLength);
         host.classList.remove(TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS);
         host.classList.add(
             'theia-mod-markdown',
@@ -361,7 +366,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
         host.classList.add(TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS);
         host.replaceChildren();
         host.textContent = linkedContent;
-        host.dataset.transcriptStreamSource = linkedContent;
+        transcriptStreamSourceCache.set(host, linkedContent);
         delete host.dataset[STREAM_STABLE_LENGTH_DATA];
         delete host.dataset[STREAM_TOTAL_LENGTH_DATA];
     }
@@ -383,7 +388,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
             // still hold only the revealed prefix when the turn settles mid-animation.
             const pendingFullText = this.streamSmoothEntries.get(host)?.target;
             this.cancelStreamSmoothing(host);
-            const content = pendingFullText ?? host.dataset.transcriptStreamSource ?? host.textContent ?? '';
+            const content = pendingFullText ?? transcriptStreamSourceCache.get(host) ?? host.textContent ?? '';
             this.renderTranscriptMarkdown(host, content);
         }
     }

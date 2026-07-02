@@ -53,6 +53,15 @@ import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 export class MobileProjectsTranscriptMessagesRenderUi {
     protected readonly transcriptAgentSegmentsCache = new Map<string, readonly QaapAgentMessageSegmentDTO[]>();
     protected transcriptAgentSegmentsCacheConversationId: string | undefined;
+    /**
+     * Tracks the most recent cache key inserted per message (`${conv.id}|${msg.id}`).
+     * The cache key embeds a content signature that changes every streamed token, so
+     * without this, a streaming tail message would insert a brand-new entry on every
+     * tick — unbounded growth until the 1000-entry cap wipes the whole cache. Deleting
+     * the message's previous entry before inserting the new one caps live growth at one
+     * entry per message while still caching finished messages across re-renders.
+     */
+    protected readonly transcriptAgentSegmentsCacheKeyByMessage = new Map<string, string>();
 
     constructor(
         protected readonly host: MobileProjectsTranscriptMessagesHost,
@@ -108,10 +117,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         if (trace.segments.length > 0) {
             const segments = dedupeAgentMessageTextSegments([...trace.segments]);
-            this.transcriptAgentSegmentsCache.set(cacheKey, segments);
+            this.setTranscriptAgentSegmentsCacheEntry(conv, msg, cacheKey, segments);
             return [...segments];
         }
-        this.transcriptAgentSegmentsCache.set(cacheKey, []);
+        this.setTranscriptAgentSegmentsCacheEntry(conv, msg, cacheKey, []);
         return undefined;
     }
 
@@ -121,6 +130,27 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         this.transcriptAgentSegmentsCacheConversationId = conversationId;
         this.transcriptAgentSegmentsCache.clear();
+        this.transcriptAgentSegmentsCacheKeyByMessage.clear();
+    }
+
+    /**
+     * Inserts a cache entry, evicting the message's previous entry first so a
+     * streaming tail message (whose cache key changes every tick) never holds
+     * more than one live entry — see {@link transcriptAgentSegmentsCacheKeyByMessage}.
+     */
+    protected setTranscriptAgentSegmentsCacheEntry(
+        conv: QaapAgentConversationDTO,
+        msg: QaapAgentMessageDTO,
+        cacheKey: string,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+    ): void {
+        const messageKey = `${conv.id}|${msg.id ?? ''}`;
+        const previousKey = this.transcriptAgentSegmentsCacheKeyByMessage.get(messageKey);
+        if (previousKey !== undefined && previousKey !== cacheKey) {
+            this.transcriptAgentSegmentsCache.delete(previousKey);
+        }
+        this.transcriptAgentSegmentsCacheKeyByMessage.set(messageKey, cacheKey);
+        this.transcriptAgentSegmentsCache.set(cacheKey, segments);
     }
 
     protected transcriptAgentSegmentsCacheKey(conv: QaapAgentConversationDTO, msg: QaapAgentMessageDTO): string {

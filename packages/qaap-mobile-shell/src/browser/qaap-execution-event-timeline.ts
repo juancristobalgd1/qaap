@@ -30,6 +30,7 @@ import { isAgentToolResultFailure, stripAnsiEscapes } from '../common/qaap-trans
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
 
 /** Data attribute: stable id of the execution event a `section` element renders. */
 const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
@@ -37,6 +38,14 @@ const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
 /** Caches the last-rendered event list for a timeline container so streaming
  *  patches can diff against it without re-parsing the DOM. */
 const timelineEventCache = new WeakMap<HTMLElement, readonly MobileExecutionEvent[]>();
+
+/** Latest raw (un-stripped) terminal result for a collapsed terminal `<details>`
+ *  card, keyed by the details element. Terminal cards are collapsed by
+ *  default, so building the `<pre>` (which requires stripAnsiEscapes over the
+ *  full — possibly large — result) is deferred until the card is first
+ *  opened; this map lets the deferred render pick up whatever the latest
+ *  streamed result was by then. */
+const pendingTerminalOutputResult = new WeakMap<HTMLDetailsElement, string>();
 
 /** Stable content signature for the whole rendered event list. Used to avoid
  *  touching DOM at all on duplicate SSE frames. */
@@ -302,6 +311,13 @@ export function formatMobileEventSummary(event: MobileExecutionEvent): string {
 
 function fingerprintMobileTool(tool: MobileExecutionTool): string {
     const segment = tool.segment;
+    const args = segment.args;
+    const result = segment.result;
+    // Cheap fingerprint: these values are only ever compared for equality,
+    // never displayed, so lengths (+ a short tail slice for same-length
+    // paranoia) are enough to detect growth without embedding the full
+    // args/result strings -- mirrors segmentToolFingerprint in
+    // qaap-transcript-incremental-update.ts.
     return [
         tool.segmentIndex,
         segment.toolUseId,
@@ -311,8 +327,9 @@ function fingerprintMobileTool(tool: MobileExecutionTool): string {
         tool.detail,
         tool.isFinished ? '1' : '0',
         tool.isError ? '1' : '0',
-        segment.args ?? '',
-        segment.result ?? '',
+        `${args?.length ?? 0}:${result?.length ?? 0}`,
+        result?.slice(0, 16) ?? '',
+        result?.slice(-32) ?? '',
     ].join('\u001f');
 }
 
@@ -405,7 +422,9 @@ export function hasMobileExecutionEventTimeline(row: HTMLElement): boolean {
 // The single collapsible container for all agent process steps.
 // Wraps the execution event timeline. The header shows "Processed in Xm Ys".
 // Auto-expands while working, auto-collapses on success, stays open on error.
-// User manual toggle is respected until the agent status changes.
+// A manual user toggle persists for the rest of the turn — the accordion
+// never auto-expands/collapses again after that (each new turn renders a
+// fresh accordion element, so the next turn starts with auto logic active).
 
 export interface MobileProcessAccordionOptions {
     /** Whether the agent is currently working (streaming/incomplete). */
@@ -414,6 +433,13 @@ export interface MobileProcessAccordionOptions {
     readonly isError: boolean;
     /** Elapsed execution time in milliseconds, or undefined if unknown. */
     readonly elapsedMs?: number;
+    /**
+     * Start timestamp (ms epoch) of the current turn, if known. When set and
+     * `isWorking` is true, the header label ticks live (updated every 500ms
+     * via {@link sharedElapsedTicker}) instead of only updating when a patch
+     * happens to re-render it.
+     */
+    readonly turnStartMs?: number;
 }
 
 /**
@@ -422,9 +448,12 @@ export interface MobileProcessAccordionOptions {
  *
  * The accordion is auto-expanded when `isWorking` or `isError` is true, and
  * auto-collapsed when the agent completes successfully. Once the user manually
- * toggles it, the auto logic is suppressed until the agent status changes
- * (detected via the `data-user-toggled` attribute, which is cleared by
- * {@link syncMobileProcessAccordionState} on status transitions).
+ * toggles it (detected via the `data-user-toggled` attribute), the auto
+ * expand/collapse logic is suppressed for the remainder of the turn — the
+ * accordion never fights the user by re-expanding or re-collapsing on its
+ * own after a manual toggle. The flag is never cleared programmatically;
+ * a new turn always renders a fresh accordion element, so the flag starts
+ * fresh naturally.
  */
 export function createMobileProcessAccordion(
     segments: readonly QaapAgentMessageSegmentDTO[],
@@ -443,7 +472,7 @@ export function wrapMobileProcessAccordion(
     timeline: HTMLElement,
     options: MobileProcessAccordionOptions,
 ): HTMLElement {
-    const { isWorking, isError, elapsedMs } = options;
+    const { isWorking, isError, elapsedMs, turnStartMs } = options;
     const details = document.createElement('details');
     details.className = `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''} ${!isWorking && !isError ? 'theia-mod-complete' : ''}`;
     // Auto-expand while working or on error; collapse on success.
@@ -455,6 +484,7 @@ export function wrapMobileProcessAccordion(
     const label = document.createElement('span');
     label.className = 'theia-mobile-process-accordion-label';
     label.textContent = formatMobileProcessLabel(elapsedMs, isWorking);
+    syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
 
     const chevron = document.createElement('span');
     chevron.className = 'codicon codicon-chevron-down theia-mobile-process-accordion-chevron';
@@ -479,16 +509,45 @@ export function wrapMobileProcessAccordion(
 }
 
 /**
+ * Registers (or unregisters) the shared elapsed-time ticker for a process
+ * accordion's header label, so the "Processing… Xs" label keeps ticking even
+ * during quiet stretches with no tool-segment patches. Only active while
+ * `isWorking` is true and a `turnStartMs` is known; unregistered otherwise
+ * (settled, error, or when the caller doesn't know the turn start).
+ */
+function syncMobileProcessAccordionLabelTicker(
+    label: HTMLElement,
+    isWorking: boolean,
+    turnStartMs: number | undefined,
+): void {
+    sharedElapsedTicker.unregister(label);
+    if (isWorking && turnStartMs !== undefined) {
+        sharedElapsedTicker.register({
+            element: label,
+            render: now => {
+                label.textContent = formatMobileProcessLabel(Math.max(0, now - turnStartMs), true);
+            },
+        });
+    }
+}
+
+/**
  * Updates the process accordion's auto-expand/collapse state and header label
  * based on the current agent status. Called during streaming patches and
  * finalization.
  *
  * Rules:
- * - If the user has manually toggled (`data-user-toggled="1"`), do nothing
- *   unless the agent status changed since the last sync (in which case the
- *   attribute is cleared and auto logic resumes).
- * - Working or error → expanded. Completed successfully → collapsed.
- * - The header label is always updated to reflect the current elapsed time.
+ * - If the user has manually toggled (`data-user-toggled="1"`), the auto
+ *   expand/collapse logic below is skipped for good — the flag is never
+ *   cleared by this function, so the user's choice persists for the rest of
+ *   the turn. A new turn renders a fresh accordion element, so the flag
+ *   naturally starts clear again.
+ * - Working or error → expanded. Completed successfully → collapsed (the
+ *   collapse itself is deferred to the next animation frame so the browser
+ *   paints any content appended just before the settle, e.g. the diff
+ *   summary, before the accordion collapses — avoiding a double layout jump).
+ * - The header label is always updated to reflect the current elapsed time,
+ *   even when the user has manually toggled the accordion.
  */
 export function syncMobileProcessAccordionState(
     accordion: HTMLElement,
@@ -498,12 +557,17 @@ export function syncMobileProcessAccordionState(
         return;
     }
     const details = accordion as HTMLDetailsElement;
-    const { isWorking, isError, elapsedMs } = options;
+    const { isWorking, isError, elapsedMs, turnStartMs } = options;
 
     // Update the label regardless of toggle state.
     const label = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-label');
     if (label) {
-        label.textContent = formatMobileProcessLabel(elapsedMs, isWorking);
+        if (!(isWorking && turnStartMs !== undefined)) {
+            // While working with a known turn start, registering on the ticker
+            // below renders immediately — skip the redundant direct write.
+            label.textContent = formatMobileProcessLabel(elapsedMs, isWorking);
+        }
+        syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
     }
 
     // Update modifier classes.
@@ -511,8 +575,8 @@ export function syncMobileProcessAccordionState(
     details.classList.toggle('theia-mod-error', isError);
     details.classList.toggle('theia-mod-complete', !isWorking && !isError);
 
-    // If the user manually toggled, respect their choice until a new
-    // execution starts (new row → new accordion element → flag is fresh).
+    // If the user manually toggled, respect their choice for the rest of the
+    // turn — never fight the user by auto-expanding/collapsing afterward.
     if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
         return;
     }
@@ -520,16 +584,26 @@ export function syncMobileProcessAccordionState(
     // Auto-expand/collapse.
     const shouldOpen = isWorking || isError;
     if (details.open !== shouldOpen) {
-        details.open = shouldOpen;
+        if (shouldOpen || typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+            details.open = shouldOpen;
+        } else {
+            // Defer the collapse to the next frame so the browser paints
+            // freshly-appended content (diff summary, closing narrative)
+            // first, avoiding a double layout jump on settle. Re-check the
+            // freshest state at fire time in case another sync ran in the
+            // meantime (e.g. a late error arrived).
+            window.requestAnimationFrame(() => {
+                if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
+                    // The user toggled between scheduling and firing — never
+                    // override a manual toggle.
+                    return;
+                }
+                if (!details.classList.contains('theia-mod-working') && !details.classList.contains('theia-mod-error')) {
+                    details.open = false;
+                }
+            });
+        }
     }
-}
-
-/**
- * Clears the user-toggled flag on the process accordion. Called when a new
- * agent turn starts so auto-expand/collapse resumes.
- */
-export function resetMobileProcessAccordionUserToggle(accordion: HTMLElement): void {
-    accordion.removeAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR);
 }
 
 /**
@@ -548,10 +622,14 @@ export function findMobileProcessAccordion(segmentsBody: HTMLElement): HTMLDetai
 
 function formatMobileProcessLabel(elapsedMs: number | undefined, isWorking: boolean): string {
     if (elapsedMs === undefined) {
-        return isWorking ? 'Processing…' : 'Processed';
+        return isWorking
+            ? nls.localize('theia/qaap-mobile-shell/processTimeline/processing', 'Processing…')
+            : nls.localize('theia/qaap-mobile-shell/processTimeline/processed', 'Processed');
     }
     const formatted = formatMobileElapsed(elapsedMs);
-    return isWorking ? `Processing… ${formatted}` : `Processed in ${formatted}`;
+    return isWorking
+        ? nls.localize('theia/qaap-mobile-shell/processTimeline/processingElapsed', 'Processing… {0}', formatted)
+        : nls.localize('theia/qaap-mobile-shell/processTimeline/processedIn', 'Processed in {0}', formatted);
 }
 
 function formatMobileElapsed(ms: number): string {
@@ -599,6 +677,16 @@ export function tryPatchMobileExecutionEventTimeline(
         // derived from `kind`, so a mismatch here means the DOM would render
         // stale chrome — fall back to a full rebuild instead of patching text.
         if (prevEvent.kind !== nextEvent.kind) {
+            return false;
+        }
+        // A synthetic narrative renders no <p> at all (see
+        // createMobileExecutionEventElement), so a transition between
+        // synthetic and agent-authored narrative changes whether the section
+        // even has a narrative element to patch. This is a rare transition
+        // (agent text arriving after a synthetic placeholder was already
+        // rendered) — fall back to a full rebuild instead of trying to
+        // insert/remove the <p> in place.
+        if ((prevEvent.narrativeSource === 'synthetic') !== (nextEvent.narrativeSource === 'synthetic')) {
             return false;
         }
         if (nextEvent.tools.length < prevEvent.tools.length) {
@@ -720,6 +808,45 @@ function patchMobileExecutionEventSection(
     }
 }
 
+/**
+ * Builds (or refreshes) the terminal `<pre>` from `result`, replacing the
+ * pending placeholder if present. Shared by the eager render path (terminal
+ * created/patched while open) and the lazy first-open handler below.
+ */
+function renderMobileTerminalOutputPre(content: HTMLElement, result: string): void {
+    let pre = content.querySelector<HTMLElement>('.theia-mobile-terminal-output-pre');
+    if (!pre) {
+        const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
+        if (placeholder) {
+            placeholder.remove();
+        }
+        pre = document.createElement('pre');
+        pre.className = 'theia-mobile-terminal-output-pre';
+        content.append(pre);
+    }
+    pre.textContent = stripAnsiEscapes(result);
+}
+
+/**
+ * Defers building the terminal `<pre>` until the `<details>` is first opened,
+ * so collapsed terminal cards never pay the stripAnsiEscapes + DOM cost while
+ * streaming. Reads whatever the latest result is from
+ * {@link pendingTerminalOutputResult} at open time, not just what was known
+ * when the handler was attached.
+ */
+function attachMobileTerminalLazyOpenHandler(details: HTMLDetailsElement, content: HTMLElement): void {
+    details.addEventListener('toggle', function onFirstOpen() {
+        if (!details.open) {
+            return;
+        }
+        details.removeEventListener('toggle', onFirstOpen);
+        const latest = pendingTerminalOutputResult.get(details);
+        if (latest !== undefined) {
+            renderMobileTerminalOutputPre(content, latest);
+        }
+    });
+}
+
 /** Patches a single tool-detail row (terminal card or plain/error line) in place. */
 function patchMobileToolDetail(
     el: HTMLElement,
@@ -746,18 +873,27 @@ function patchMobileToolDetail(
 
         const content = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-content');
         if (content) {
-            if (nextTool.segment.result) {
-                let pre = content.querySelector<HTMLElement>('.theia-mobile-terminal-output-pre');
-                if (!pre) {
+            const nextResult = nextTool.segment.result;
+            // Always remember the latest result so a deferred (lazy) open
+            // later picks up fresh content, even if it streamed in while
+            // the card was collapsed.
+            if (nextResult) {
+                pendingTerminalOutputResult.set(el, nextResult);
+            }
+            if (!el.open) {
+                // Collapsed: skip the stripAnsiEscapes + <pre> DOM work
+                // entirely — the lazy open handler attached at creation
+                // covers it once the user expands the card. Still clear a
+                // stale pending placeholder so a later open doesn't show
+                // "Running…" for a tool that already finished empty.
+                if (!nextResult && nextTool.isFinished) {
                     const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
                     if (placeholder) {
                         placeholder.remove();
                     }
-                    pre = document.createElement('pre');
-                    pre.className = 'theia-mobile-terminal-output-pre';
-                    content.append(pre);
                 }
-                pre.textContent = stripAnsiEscapes(nextTool.segment.result);
+            } else if (nextResult) {
+                renderMobileTerminalOutputPre(content, nextResult);
             } else if (nextTool.isFinished) {
                 // Mirrors the builder: a finished tool with no result renders
                 // neither the pending placeholder nor a <pre> — don't leave a
@@ -834,6 +970,14 @@ function restoreTimelineOpenStateById(fresh: HTMLElement, captured: MobileTimeli
         const toolUseId = details.getAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR);
         if (toolUseId && captured.terminals.get(toolUseId)) {
             details.open = true;
+            // Programmatic `open` does not fire `toggle` synchronously, so the
+            // lazy first-open handler will not run here — render the deferred
+            // <pre> eagerly to avoid an open-but-empty terminal card.
+            const content = details.querySelector<HTMLElement>('.theia-mobile-terminal-output-content');
+            const result = pendingTerminalOutputResult.get(details);
+            if (content && result !== undefined && result !== '') {
+                renderMobileTerminalOutputPre(content, result);
+            }
         }
     });
 }
@@ -913,11 +1057,16 @@ function createMobileExecutionEventElement(
         section.classList.add('theia-mod-running');
     }
 
-    // Narrative
-    const narrative = document.createElement('p');
-    narrative.className = `theia-mobile-execution-event-narrative ${event.narrativeSource === 'synthetic' ? 'theia-mod-synthetic' : 'theia-mod-agent'}`;
-    narrative.textContent = event.narrative;
-    section.append(narrative);
+    // Narrative — synthetic filler ("I'm checking the relevant files.") is
+    // suppressed: the tool-group summary already conveys verb + count, so a
+    // generic placeholder sentence above it is just noise. Agent-authored
+    // narrative (actual reasoning text) is always kept.
+    if (event.narrativeSource !== 'synthetic') {
+        const narrative = document.createElement('p');
+        narrative.className = 'theia-mobile-execution-event-narrative theia-mod-agent';
+        narrative.textContent = event.narrative;
+        section.append(narrative);
+    }
 
     // Tool group (collapsed by default)
     section.append(createMobileToolGroupElement(event));
@@ -996,7 +1145,7 @@ function createMobileToolDetailElement(
         row.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
         const label = document.createElement('span');
         label.className = 'theia-mobile-tool-detail-label';
-        label.textContent = `${event.verb} ${index + 1}`;
+        label.textContent = event.verb;
         const detail = document.createElement('span');
         detail.className = 'theia-mobile-tool-detail-detail';
         detail.textContent = tool.detail;
@@ -1016,7 +1165,7 @@ function createMobileToolDetailElement(
     row.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
     const label = document.createElement('span');
     label.className = 'theia-mobile-tool-detail-label';
-    label.textContent = `${event.verb} ${index + 1}`;
+    label.textContent = event.verb;
     const detail = document.createElement('span');
     detail.className = 'theia-mobile-tool-detail-detail';
     detail.textContent = tool.detail;
@@ -1057,7 +1206,7 @@ function createMobileTerminalOutputElement(
 
     const label = document.createElement('span');
     label.className = 'theia-mobile-terminal-output-label';
-    label.textContent = `${event.verb} ${index + 1}`;
+    label.textContent = event.verb;
 
     const detail = document.createElement('span');
     detail.className = 'theia-mobile-terminal-output-detail';
@@ -1069,22 +1218,32 @@ function createMobileTerminalOutputElement(
     summary.append(label, detail, state);
     details.append(summary);
 
-    // Output content — show the tool result
+    // Output content — show the tool result. Terminal cards are collapsed by
+    // default (details.open starts false), so building the <pre> — which
+    // requires stripAnsiEscapes over the full result — is deferred until the
+    // card is first opened. Strip ANSI escape sequences (color codes, OSC
+    // titles, etc.) so they don't render as visible garbage in the <pre>.
+    // Mirrors the cleaning done by cleanTranscriptDisplayText in the content
+    // UI layer.
     const content = document.createElement('div');
     content.className = 'theia-mobile-terminal-output-content';
-    if (tool.segment.result) {
-        const pre = document.createElement('pre');
-        pre.className = 'theia-mobile-terminal-output-pre';
-        // Strip ANSI escape sequences (color codes, OSC titles, etc.) so they
-        // don't render as visible garbage in the <pre>. Mirrors the cleaning
-        // done by cleanTranscriptDisplayText in the content UI layer.
-        pre.textContent = stripAnsiEscapes(tool.segment.result);
-        content.append(pre);
-    } else if (!tool.isFinished) {
+    const result = tool.segment.result;
+    if (result) {
+        pendingTerminalOutputResult.set(details, result);
+    }
+    if (!result && !tool.isFinished) {
         const placeholder = document.createElement('span');
         placeholder.className = 'theia-mobile-terminal-output-pending';
         placeholder.textContent = nls.localize('qaap/mobileProjects/terminalOutputPending', 'Running...');
         content.append(placeholder);
+    }
+    if (details.open) {
+        // Created already open (rare) — render eagerly as before.
+        if (result) {
+            renderMobileTerminalOutputPre(content, result);
+        }
+    } else {
+        attachMobileTerminalLazyOpenHandler(details, content);
     }
     details.append(content);
 
@@ -1096,6 +1255,10 @@ function createMobileTerminalOutputElement(
 export interface MobileDiffFileEntry {
     name: string;
     type?: string;
+    /** Lines added in this file, when known. */
+    added?: number;
+    /** Lines removed in this file, when known. */
+    removed?: number;
 }
 
 export function createMobileDiffSummaryElement(
@@ -1148,13 +1311,28 @@ export function createMobileDiffSummaryElement(
         for (const file of files.slice(0, 6)) {
             const row = document.createElement('div');
             row.className = 'theia-mobile-diff-summary-file';
+            const main = document.createElement('span');
+            main.className = 'theia-mobile-diff-summary-file-main';
             const fileIcon = document.createElement('span');
             fileIcon.className = `codicon ${getFileIconClass(file.name)} theia-mobile-diff-summary-file-icon`;
             fileIcon.setAttribute('aria-hidden', 'true');
             const name = document.createElement('span');
             name.className = 'theia-mobile-diff-summary-file-name';
             name.textContent = file.name;
-            row.append(fileIcon, name);
+            main.append(fileIcon, name);
+            if (typeof file.added === 'number' && file.added > 0) {
+                const addedStat = document.createElement('span');
+                addedStat.className = 'theia-mobile-diff-summary-file-stat theia-mod-added';
+                addedStat.textContent = `+${file.added}`;
+                main.append(addedStat);
+            }
+            if (typeof file.removed === 'number' && file.removed > 0) {
+                const removedStat = document.createElement('span');
+                removedStat.className = 'theia-mobile-diff-summary-file-stat theia-mod-deleted';
+                removedStat.textContent = `-${file.removed}`;
+                main.append(removedStat);
+            }
+            row.append(main);
             if (file.type) {
                 const type = document.createElement('span');
                 type.className = `theia-mobile-diff-summary-file-type theia-mod-${file.type}`;

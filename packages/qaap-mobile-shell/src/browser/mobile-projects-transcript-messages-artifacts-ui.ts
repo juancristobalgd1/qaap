@@ -75,6 +75,8 @@ import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-t
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileSnackbar } from './mobile-snackbar';
+import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
+import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { resolveTranscriptToolErrorDisplay } from '../common/qaap-transcript-tool-error-display';
 import {
     resolveTranscriptActivityExpandContent,
@@ -316,9 +318,18 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             }
             if (previous.toolUseId !== next.toolUseId
                 || previous.name !== next.name
-                || previous.args !== next.args
-                || previous.result !== next.result
                 || previous.finished !== next.finished) {
+                return true;
+            }
+            // O(1) length pre-check before walking the full common prefix —
+            // args/result can be large while streaming, and a length
+            // mismatch alone already proves a change without comparing
+            // every character.
+            if ((previous.args?.length ?? 0) !== (next.args?.length ?? 0)
+                || (previous.result?.length ?? 0) !== (next.result?.length ?? 0)) {
+                return true;
+            }
+            if (previous.args !== next.args || previous.result !== next.result) {
                 return true;
             }
         }
@@ -429,7 +440,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const isWorking = streaming && this.isConversationWorking(conv);
         const isError = this.isConversationError(conv);
         const elapsedMs = this.resolveConversationElapsedMs(conv);
-        const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, elapsedMs });
+        const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
+        const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, elapsedMs, turnStartMs });
         body.append(accordion);
         if (streaming) {
             const status = document.createElement('div');
@@ -485,29 +497,39 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     /**
-     * Resolves the elapsed execution time for the conversation, if available.
-     * Uses the conversation's `createdAt`/`updatedAt` timestamps (defined on
-     * {@link QaapAgentConversationDTO}) to compute the total wall-clock duration.
-     * Falls back to the last agent message's `createdAt` when the conversation
-     * `updatedAt` is not newer than `createdAt` (e.g. still streaming).
+     * Resolves the elapsed execution time for the CURRENT TURN, if available.
+     * Turn start is the last user message's timestamp
+     * ({@link resolveTranscriptTurnStartMs}), not the whole conversation's
+     * `createdAt` — a conversation can span many turns, and using its
+     * `createdAt` would report the age of the entire conversation instead of
+     * how long this turn took. Falls back to `conv.createdAt` when the turn
+     * start can't be resolved (e.g. no user message recorded).
+     *
+     * While the turn is still working, the end bound is "now" so the elapsed
+     * time keeps growing live; once settled, it's `conv.updatedAt` (falling
+     * back to the last agent message's `createdAt` when `updatedAt` hasn't
+     * advanced yet, e.g. mid-stream).
      */
     protected resolveConversationElapsedMs(conv: QaapAgentConversationDTO | undefined): number | undefined {
         if (!conv) {
             return undefined;
         }
-        const createdAt = conv.createdAt;
+        const startAt = resolveTranscriptTurnStartMs(conv.messages) ?? conv.createdAt;
+        if (this.isConversationWorking(conv)) {
+            return Math.max(0, Date.now() - startAt);
+        }
         // While streaming, updatedAt may not have advanced yet — use the last
         // agent message's createdAt as the upper bound in that case.
         const lastAgentCreatedAt = conv.messages.length > 0
             ? conv.messages[conv.messages.length - 1].createdAt
             : undefined;
-        const endAt = conv.updatedAt >= createdAt
+        const endAt = conv.updatedAt >= startAt
             ? conv.updatedAt
-            : (typeof lastAgentCreatedAt === 'number' && lastAgentCreatedAt >= createdAt
+            : (typeof lastAgentCreatedAt === 'number' && lastAgentCreatedAt >= startAt
                 ? lastAgentCreatedAt
                 : undefined);
-        if (typeof endAt === 'number' && endAt >= createdAt) {
-            return endAt - createdAt;
+        if (typeof endAt === 'number' && endAt >= startAt) {
+            return endAt - startAt;
         }
         return undefined;
     }
@@ -530,6 +552,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             isWorking: streaming && this.isConversationWorking(conv),
             isError: this.isConversationError(conv),
             elapsedMs: this.resolveConversationElapsedMs(conv),
+            turnStartMs: conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined,
         });
     }
 
@@ -679,7 +702,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 changedFiles.filter(f => f.kind === 'created').length,
                 changedFiles.filter(f => f.kind === 'edited').length,
                 0,
-                changedFiles.map(f => ({ name: f.path.split('/').pop() ?? f.path, type: f.kind === 'created' ? 'add' : 'modify' })),
+                changedFiles.map(f => ({
+                    name: f.path.split('/').pop() ?? f.path,
+                    type: f.kind === 'created' ? 'add' : 'modify',
+                    added: f.added,
+                    removed: f.removed,
+                })),
             );
             segmentsBody.append(diffSummary);
         } else {
@@ -1305,6 +1333,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 row.classList.remove('theia-mod-stream-stalled');
                 return;
             }
+            if (!isTranscriptDocumentVisible()) {
+                return;
+            }
             const conv = this.host.transcriptLastConv;
             if (!conv || conv.status !== 'streaming') {
                 return;
@@ -1316,6 +1347,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     syncTranscriptStreamStallChrome(row: HTMLElement, conv: QaapAgentConversationDTO): void {
         const health = this.resolveTranscriptStreamHealth(conv);
         const { stalled, timedOut, timeoutCause } = health;
+        // Only rebuild the (relatively expensive) activity timeline items when the
+        // stall/timeout state actually changed, or while stalled/timed out (so the
+        // banner/detail text can keep updating). Steady-state streaming ticks skip
+        // the rebuild; the cheap class toggles below still run every tick.
+        const stallState = `${stalled ? 1 : 0}${timedOut ? 1 : 0}`;
+        const stallStateChanged = row.dataset.qaapStallState !== stallState;
+        row.dataset.qaapStallState = stallState;
         row.classList.toggle('theia-mod-stream-stalled', stalled);
         row.classList.toggle('theia-mod-stream-timed-out', timedOut);
         const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
@@ -1333,19 +1371,21 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (timeline) {
                 timeline.classList.toggle('theia-mod-stalled', stalled);
                 timeline.classList.toggle('theia-mod-timed-out', timedOut);
-                const items = this.resolveTranscriptActivityItemsForDisplay(
-                    this.resolveTranscriptRowSegments(conv, row),
-                    { stalled, timedOut, row, conv, streaming: true },
-                );
-                this.syncTranscriptActivityTimelineElement(timeline, buildTranscriptExecutionTimelineItems(items), {
-                    streaming: true,
-                    stalled,
-                    timedOut,
-                    expanded: false,
-                    segments: this.resolveTranscriptRowSegments(conv, row),
-                    conv,
-                    row,
-                });
+                if (stallStateChanged || stalled || timedOut) {
+                    const items = this.resolveTranscriptActivityItemsForDisplay(
+                        this.resolveTranscriptRowSegments(conv, row),
+                        { stalled, timedOut, row, conv, streaming: true },
+                    );
+                    this.syncTranscriptActivityTimelineElement(timeline, buildTranscriptExecutionTimelineItems(items), {
+                        streaming: true,
+                        stalled,
+                        timedOut,
+                        expanded: false,
+                        segments: this.resolveTranscriptRowSegments(conv, row),
+                        conv,
+                        row,
+                    });
+                }
             }
             const streamLine = segmentsBody.querySelector('.theia-mobile-agent-stream-line, .qaap-agent-setup');
             if (streamLine) {
@@ -1769,13 +1809,19 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         title.classList.remove('theia-mod-shimmer');
         if (options.thinkingActive && options.turnStartMs !== undefined) {
             title.classList.add('theia-mod-shimmer');
+            // LobeHub Thinking.thinking = "Deep Thinking..." — shown while
+            // the model is actively reasoning (streaming). The text itself is
+            // constant while thinking is active, so avoid rewriting
+            // `textContent` (and triggering layout/style work) on every tick;
+            // this timer's real job is watching for the live class to drop.
             const update = (): void => {
                 if (!title.isConnected) {
                     return;
                 }
-                // LobeHub Thinking.thinking = "Deep Thinking..." — shown while
-                // the model is actively reasoning (streaming).
-                title.textContent = nls.localize('qaap/lobehub/thinking/thinking', 'Deep Thinking...');
+                const next = nls.localize('qaap/lobehub/thinking/thinking', 'Deep Thinking...');
+                if (title.textContent !== next) {
+                    title.textContent = next;
+                }
             };
             update();
             if (block.dataset.thoughtLiveTimer !== '1') {
@@ -1793,6 +1839,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                             ...options,
                             thinkingActive: false,
                         });
+                        return;
+                    }
+                    if (!isTranscriptDocumentVisible()) {
                         return;
                     }
                     update();
@@ -4715,18 +4764,22 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             meta.textContent = `· ${parts.join(' · ')}`;
         };
         update();
-        const timer = window.setInterval(() => {
-            if (!meta.isConnected) {
-                window.clearInterval(timer);
-                return;
-            }
-            if (ownerRow && !ownerRow.classList.contains('theia-mod-streaming')) {
-                window.clearInterval(timer);
-                (meta.closest('.theia-mobile-agent-stream-status') ?? meta).remove();
-                return;
-            }
-            update();
-        }, 1000);
+        // Rides the shared 1s ticker instead of a dedicated per-row `setInterval`;
+        // the ticker auto-drops `meta` once it's disconnected from the DOM.
+        sharedSecondTicker.register({
+            element: meta,
+            render: () => {
+                if (ownerRow && !ownerRow.classList.contains('theia-mod-streaming')) {
+                    sharedSecondTicker.unregister(meta);
+                    (meta.closest('.theia-mobile-agent-stream-status') ?? meta).remove();
+                    return;
+                }
+                if (!isTranscriptDocumentVisible()) {
+                    return;
+                }
+                update();
+            },
+        });
         return meta;
     }
 

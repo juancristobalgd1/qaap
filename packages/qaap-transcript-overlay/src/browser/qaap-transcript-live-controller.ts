@@ -55,6 +55,15 @@ export class QaapTranscriptLiveController implements Disposable {
     protected watchedConversationId: string | undefined;
     protected liveUpdatesDispose: Disposable = Disposable.NULL;
     protected visibilityListenerInstalled = false;
+    /**
+     * Cache of the last computed transcript fingerprint, keyed by exact object
+     * identity of the conversation it was computed from. `handleSummaryUpdated`
+     * recomputes `next`'s fingerprint every tick and that same object becomes
+     * `last` on the following tick — reusing the cached value instead of
+     * rebuilding avoids hashing every message twice per tick.
+     */
+    protected lastTranscriptFingerprintConv: QaapAgentConversationDTO | undefined;
+    protected lastTranscriptFingerprint: string | undefined;
 
     constructor(protected readonly deps: QaapTranscriptLiveControllerDeps) { }
 
@@ -146,8 +155,15 @@ export class QaapTranscriptLiveController implements Disposable {
             return;
         }
         if (next.status === 'streaming' && shouldSkipStreamingTranscriptRefetch(next, this.deps.getLastSseDeltaAt())) {
-            const previousFingerprint = buildConversationTranscriptFingerprint(last);
+            // `last` was `next` on the previous tick — if its fingerprint is
+            // still cached under the same object identity, reuse it instead
+            // of rebuilding (exact `===` identity guard, not a value compare).
+            const previousFingerprint = this.lastTranscriptFingerprintConv === last && this.lastTranscriptFingerprint !== undefined
+                ? this.lastTranscriptFingerprint
+                : buildConversationTranscriptFingerprint(last);
             const nextFingerprint = buildConversationTranscriptFingerprint(next);
+            this.lastTranscriptFingerprintConv = next;
+            this.lastTranscriptFingerprint = nextFingerprint;
             if (previousFingerprint !== nextFingerprint) {
                 this.deps.renderConversation(next);
             }

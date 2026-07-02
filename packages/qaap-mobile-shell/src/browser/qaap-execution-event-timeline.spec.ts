@@ -19,7 +19,6 @@ import {
     MOBILE_EXECUTION_TIMELINE_CLASS,
     MOBILE_PROCESS_ACCORDION_CLASS,
     refreshMobileExecutionEventTimeline,
-    resetMobileProcessAccordionUserToggle,
     syncMobileProcessAccordionState,
     wrapMobileProcessAccordion,
 } from './qaap-execution-event-timeline';
@@ -208,6 +207,14 @@ describe('qaap-execution-event-timeline', () => {
             const el = createMobileExecutionEventTimeline([
                 toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'echo' }), true, false, rawOutput),
             ]);
+
+            // Terminal output <pre> is built lazily on first open (collapsed
+            // by default) -- expand it before asserting on its content.
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+            // Use the jsdom window's Event constructor — Node's own global
+            // `Event` class produces an object jsdom's dispatchEvent rejects.
+            terminal!.dispatchEvent(new window.Event('toggle'));
 
             const pre = el.querySelector<HTMLPreElement>('.theia-mobile-terminal-output-pre');
             expect(pre).to.not.equal(null);
@@ -526,28 +533,6 @@ describe('qaap-execution-event-timeline', () => {
             expect(accordion.classList.contains('theia-mod-working')).to.be.false;
             expect(accordion.classList.contains('theia-mod-error')).to.be.true;
             expect(accordion.classList.contains('theia-mod-complete')).to.be.false;
-        });
-
-    });
-
-    describe('resetMobileProcessAccordionUserToggle', () => {
-
-        it('clears the data-user-toggled attribute', () => {
-            const segments = [toolSegment('read', 't1', '{}', true)];
-            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
-            accordion.setAttribute('data-user-toggled', '1');
-            resetMobileProcessAccordionUserToggle(accordion);
-            expect(accordion.getAttribute('data-user-toggled')).to.equal(null);
-        });
-
-        it('allows auto-expand/collapse to resume after reset', () => {
-            const segments = [toolSegment('read', 't1', '{}', true)];
-            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
-            accordion.setAttribute('data-user-toggled', '1');
-            (accordion as HTMLDetailsElement).open = true;
-            resetMobileProcessAccordionUserToggle(accordion);
-            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false });
-            expect((accordion as HTMLDetailsElement).open).to.be.false;
         });
 
     });
