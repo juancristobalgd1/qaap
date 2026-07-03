@@ -101,6 +101,7 @@ import { QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
 import { QaapPushNotificationContribution } from './qaap-push-notification-contribution';
 import { QaapAgentCompletionContribution } from './qaap-agent-completion-contribution';
 import { QaapAgentDevPreviewAutopilotContribution } from './qaap-agent-dev-preview-autopilot-contribution';
+import { QaapTurnSettleNotifyContribution } from './qaap-turn-settle-notify-contribution';
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapCopilotOwnerBinding } from './qaap-copilot-owner-binding';
 import { QaapMobileAppPreferenceContribution } from './qaap-mobile-app-preferences';
@@ -292,6 +293,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(FrontendApplicationContribution).toService(QaapAgentCompletionContribution);
     bind(QaapAgentDevPreviewAutopilotContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentDevPreviewAutopilotContribution);
+    bind(QaapTurnSettleNotifyContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapTurnSettleNotifyContribution);
 
     bind(QaapMobileAppTesterContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapMobileAppTesterContribution);

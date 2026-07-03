@@ -31,6 +31,7 @@ import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-ss
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
+import { QaapTurnSettleNotifier } from './qaap-turn-settle-notifier';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
@@ -86,6 +87,8 @@ export interface MobileProjectsTranscriptSubmitHost {
 export class MobileProjectsTranscriptSubmitUi {
 
     protected readonly submitInFlightByConversationId = new Set<string>();
+    /** A user submitting a task is the natural consent moment for the notification permission prompt. */
+    protected readonly turnSettleNotifier = new QaapTurnSettleNotifier();
 
     constructor(protected readonly host: MobileProjectsTranscriptSubmitHost) { }
 
@@ -175,6 +178,9 @@ export class MobileProjectsTranscriptSubmitUi {
             return;
         }
         this.submitInFlightByConversationId.add(summary.id);
+        // Fire-and-forget: a user starting a task is the natural consent moment to ask whether
+        // they want a notification when it settles — browsers require a user gesture for this.
+        void this.turnSettleNotifier.maybeRequestPermission();
         try {
             await this.submitTranscriptViaBackendConversationInner(project, summary, content, options);
         } finally {
