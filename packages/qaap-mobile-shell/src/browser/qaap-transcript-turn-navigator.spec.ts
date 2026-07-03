@@ -5,12 +5,21 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
-
 import { expect } from 'chai';
 import { attachTranscriptTurnNavigator } from './qaap-transcript-turn-navigator';
 
 describe('qaap-transcript-turn-navigator', () => {
+
+    let disableJSDOM: (() => void) | undefined;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM?.();
+        disableJSDOM = undefined;
+    });
 
     beforeEach(() => {
         const raf = (callback: FrameRequestCallback): number => setTimeout(() => callback(performance.now()), 0) as unknown as number;

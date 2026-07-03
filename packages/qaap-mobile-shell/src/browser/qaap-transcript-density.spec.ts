@@ -5,12 +5,21 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
-
 import { expect } from 'chai';
 import { attachTranscriptDensityToggle } from './qaap-transcript-density';
 
 describe('qaap-transcript-density', () => {
+
+    let disableJSDOM: (() => void) | undefined;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM?.();
+        disableJSDOM = undefined;
+    });
 
     beforeEach(() => {
         window.localStorage.clear();

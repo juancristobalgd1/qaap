@@ -5,7 +5,7 @@
 
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 export function pullRequestKey(pullRequest: { owner: string; repo: string; number: number }): string {
@@ -81,7 +81,7 @@ export function conversationInboxPriority(summary: QaapAgentConversationSummaryD
     if (summary.status === 'streaming') {
         return 3;
     }
-    if (summary.status === 'failed') {
+    if (isFailedRunSummary(summary)) {
         return 2;
     }
     if (summary.priority) {

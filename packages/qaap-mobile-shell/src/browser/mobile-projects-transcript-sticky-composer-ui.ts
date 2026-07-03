@@ -233,40 +233,55 @@ export class MobileProjectsTranscriptStickyComposerUi {
     /** Tracks whether the Agents Hub idle (pre-conversation) composer is currently mounted, to drive autofocus-on-ready. */
     protected agentsHubIdleComposerMounted = false;
 
-    /** Pending focus-retention timers for the idle composer autofocus (see mount). */
-    protected idleComposerFocusRetentionTimers: Array<ReturnType<typeof setTimeout>> = [];
+    /** Disposer for the idle-composer focus-retention watchers (see mount). */
+    protected idleComposerFocusRetentionDispose: (() => void) | undefined;
+
+    /** Autofocus is only attempted during the boot window after construction. */
+    protected readonly idleComposerAutofocusDeadline = Date.now() + 20_000;
 
     protected clearIdleComposerFocusRetention(): void {
-        for (const timer of this.idleComposerFocusRetentionTimers) {
-            clearTimeout(timer);
-        }
-        this.idleComposerFocusRetentionTimers = [];
+        this.idleComposerFocusRetentionDispose?.();
+        this.idleComposerFocusRetentionDispose = undefined;
     }
 
     /**
-     * Re-asserts focus on the freshly-mounted idle composer at 1s and 3s,
-     * because the Theia shell boot sequence can steal the initial focus back
-     * to `<body>`. Never steals focus from a real input: only re-focuses when
-     * the active element is body/none, and stops after one sticky success.
+     * Keeps the freshly-mounted idle composer focused through the Theia shell
+     * boot sequence, which steals focus back to `<body>` at unpredictable
+     * times. Watches the textarea's `focusout` for 10s after mount and
+     * re-asserts focus ONLY when the steal was programmatic: focus landed on
+     * body/none AND the user did not interact (pointer/key) in the previous
+     * 500ms — so a deliberate tap outside (e.g. dismissing the mobile
+     * keyboard) is always respected.
      */
     protected scheduleIdleComposerFocusRetention(textarea: HTMLTextAreaElement): void {
         this.clearIdleComposerFocusRetention();
-        for (const delay of [1000, 3000]) {
-            this.idleComposerFocusRetentionTimers.push(setTimeout(() => {
-                const active = document.activeElement;
-                const focusFree = !active || active === document.body;
-                if (!focusFree || !textarea.isConnected || textarea.disabled) {
-                    if (active !== textarea) {
-                        this.clearIdleComposerFocusRetention();
-                    }
+        let lastUserInteraction = 0;
+        const markInteraction = (): void => { lastUserInteraction = Date.now(); };
+        const onFocusOut = (): void => {
+            // Let the new focus target settle before inspecting it.
+            setTimeout(() => {
+                if (!textarea.isConnected || textarea.disabled) {
+                    this.clearIdleComposerFocusRetention();
                     return;
                 }
-                textarea.focus();
-                if (document.activeElement === textarea) {
-                    this.clearIdleComposerFocusRetention();
+                const active = document.activeElement;
+                const focusFree = !active || active === document.body;
+                const userDriven = Date.now() - lastUserInteraction < 500;
+                if (focusFree && !userDriven) {
+                    textarea.focus();
                 }
-            }, delay));
-        }
+            }, 0);
+        };
+        window.addEventListener('pointerdown', markInteraction, true);
+        window.addEventListener('keydown', markInteraction, true);
+        textarea.addEventListener('focusout', onFocusOut);
+        const expiry = setTimeout(() => this.clearIdleComposerFocusRetention(), 10_000);
+        this.idleComposerFocusRetentionDispose = () => {
+            clearTimeout(expiry);
+            window.removeEventListener('pointerdown', markInteraction, true);
+            window.removeEventListener('keydown', markInteraction, true);
+            textarea.removeEventListener('focusout', onFocusOut);
+        };
     }
 
     constructor(
@@ -1505,19 +1520,27 @@ export class MobileProjectsTranscriptStickyComposerUi {
         shell.append(column);
         host.append(shell);
         const isIdleComposer = isAgentsHubIdleConversationSummary(summary);
-        const becameMounted = isIdleComposer && !this.agentsHubIdleComposerMounted;
         this.agentsHubIdleComposerMounted = isIdleComposer;
-        if (becameMounted && focusEligibleBeforeMount) {
+        // Autofocus on EVERY idle-composer mount during the boot window — the
+        // shell remounts the composer several times while booting, replacing
+        // the column, so a mounted-once latch (or querying the local column in
+        // the rAF) silently loses the focus to a later remount. Querying the
+        // stable host and re-running per mount converges; the boot-window +
+        // focus-free guards keep it from ever stealing focus afterwards.
+        if (isIdleComposer && focusEligibleBeforeMount && Date.now() < this.idleComposerAutofocusDeadline) {
             window.requestAnimationFrame(() => {
-                const textarea = column.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
-                if (textarea) {
-                    textarea.focus();
-                    // The Theia shell boot sequence can steal focus back to
-                    // <body> after this initial focus. Re-assert up to twice
-                    // (1s/3s), only while nothing else took focus and the
-                    // textarea is still live; stop after one sticky success.
-                    this.scheduleIdleComposerFocusRetention(textarea);
+                const textarea = host.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
+                if (!textarea || !textarea.isConnected || textarea.disabled) {
+                    return;
                 }
+                const active = document.activeElement;
+                if (active && active !== document.body && active !== textarea) {
+                    return;
+                }
+                textarea.focus();
+                // The boot sequence can still steal this focus back to <body>
+                // moments later — defend it for a short window.
+                this.scheduleIdleComposerFocusRetention(textarea);
             });
         }
         this.syncTranscriptComposerQuickActionsVisibility(host, summary);

@@ -8,6 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import * as markdownit from '@theia/core/shared/markdown-it';
 import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { resetTimelineDetailsOpenStateForTesting } from './qaap-execution-event-timeline';
 import {
     enableTranscriptRenderMetrics,
     getTranscriptRenderMetricsSnapshot,
@@ -45,6 +46,17 @@ describe('qaap-transcript-timeline-render-bench', () => {
     after(() => {
         disableJSDOM?.();
         disableJSDOM = undefined;
+    });
+
+    beforeEach(() => {
+        // Several specs below reuse tool-use ids (e.g. 'tool-read-page') across
+        // `it()` blocks. `timelineDetailsOpenState` in qaap-execution-event-timeline.ts
+        // is a deliberately process-lifetime-scoped module global (see its doc
+        // comment), so a prior test's `<details>.open = true` mutation can leak
+        // a "user opened this" record forward — via an async `toggle` event —
+        // into a later test that expects a freshly created tool group to be
+        // collapsed by default. Reset it before every test in this file.
+        resetTimelineDetailsOpenStateForTesting();
     });
 
     function buildToolSegments(count: number, runningIndex: number): QaapAgentMessageSegmentDTO[] {

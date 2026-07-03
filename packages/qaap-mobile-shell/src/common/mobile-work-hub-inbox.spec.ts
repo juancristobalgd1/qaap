@@ -8,6 +8,7 @@ import {
     buildReviewHubPullRequestItems,
     buildWorkHubInboxItems,
     compareWorkHubInboxItems,
+    conversationInboxPriority,
     conversationQualifiesForWorkHubInbox,
     githubRepoKeysForProjects,
     pullRequestBelongsToProject,
@@ -146,5 +147,23 @@ describe('mobile-work-hub-inbox', () => {
         const a = buildWorkHubInboxItems(project(), [conversation({ status: 'streaming', updatedAt: 1, hasGitOperation: true })])[0];
         const b = buildReviewHubPullRequestItems(project(), [pull()], [])[0];
         expect(compareWorkHubInboxItems(a, b)).to.be.lessThan(0);
+    });
+
+    it('conversationInboxPriority ranks a self-reported agent stop as a failure', () => {
+        const priority = conversationInboxPriority(conversation({
+            status: 'idle',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Stopped: repeated tool failures detected.',
+        }));
+        expect(priority).to.equal(2);
+    });
+
+    it('conversationInboxPriority does not treat a clean cancellation as a failure', () => {
+        const priority = conversationInboxPriority(conversation({
+            status: 'idle',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Turn cancelled.',
+        }));
+        expect(priority).to.equal(0);
     });
 });

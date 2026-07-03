@@ -37,6 +37,22 @@ describe('classifyMissionControlLane', () => {
         expect(classifyMissionControlLane(summary({ status: 'failed' }), false)).to.equal('needs-you');
     });
 
+    it('classifies a self-reported agent stop as needs-you even though status stays idle', () => {
+        expect(classifyMissionControlLane(summary({
+            status: 'idle',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Stopped: repeated tool failures detected.',
+        }), false)).to.equal('needs-you');
+    });
+
+    it('does not classify a clean cancellation as needs-you', () => {
+        expect(classifyMissionControlLane(summary({
+            status: 'idle',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Turn cancelled.',
+        }), false)).to.equal('done');
+    });
+
     it('classifies a user-flagged priority conversation as needs-you', () => {
         expect(classifyMissionControlLane(summary({ priority: true }), false)).to.equal('needs-you');
     });

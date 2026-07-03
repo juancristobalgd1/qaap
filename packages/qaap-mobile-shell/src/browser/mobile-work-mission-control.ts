@@ -5,7 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentFailureKind } from '../common/qaap-agent-failure-message';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
     buildMissionControlRowFingerprint,
     buildMissionControlStructureFingerprint,
@@ -95,7 +95,7 @@ export function classifyMissionControlLane(
     if (summary.status === 'streaming') {
         return 'running';
     }
-    if (summary.status === 'failed') {
+    if (isFailedRunSummary(summary)) {
         return 'needs-you';
     }
     if (summary.priority) {

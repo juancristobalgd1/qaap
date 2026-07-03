@@ -175,6 +175,19 @@ function startPhraseRotation(
     }
     const scheduleNext = (): void => {
         state.phraseTimer = setTimeout(() => {
+            // Mirror the self-termination check `startSpinner` already does:
+            // once the element is removed from the document (row replaced or
+            // scrolled out by the virtual list), stop rescheduling instead of
+            // running forever. The `destroyAgentSetupElement` MutationObserver
+            // set up by the caller only fires on mutations *within* the row's
+            // own subtree, so it never sees the row itself being detached
+            // wholesale from its parent — without this guard the recurring
+            // phrase timer keeps firing (and touching `document`) long after
+            // the element — and in tests, the whole jsdom document — is gone.
+            if (!element.isConnected) {
+                state.phraseTimer = undefined;
+                return;
+            }
             state.phraseIndex = randomPhraseIndex(state.phraseIndex);
             if (state.shownStatus === null) {
                 renderShimmerText(textContainer, SETUP_PHRASES[state.phraseIndex]!, state, true);

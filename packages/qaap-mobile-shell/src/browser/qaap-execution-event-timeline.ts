@@ -96,6 +96,18 @@ function recordTimelineDetailsOpenState(key: string, open: boolean): void {
     }
 }
 
+/**
+ * Test-only helper: clears {@link timelineDetailsOpenState}. This module-level
+ * map is deliberately process-lifetime-scoped in production (see the doc
+ * comment above), but that means specs that reuse tool-use ids (e.g.
+ * `tool-read-page`) across `it()` blocks leak open/closed state between them.
+ * Call this from `beforeEach()` in specs that assert default collapsed/open
+ * state for a tool group or terminal card. Not for production use.
+ */
+export function resetTimelineDetailsOpenStateForTesting(): void {
+    timelineDetailsOpenState.clear();
+}
+
 /** Stable content signature for the whole rendered event list. Used to avoid
  *  touching DOM at all on duplicate SSE frames. */
 const timelineEventSignatureCache = new WeakMap<HTMLElement, string>();

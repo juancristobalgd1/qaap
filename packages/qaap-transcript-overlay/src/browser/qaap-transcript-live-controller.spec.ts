@@ -71,6 +71,14 @@ describe('QaapTranscriptLiveController', () => {
         let lastConv = conv();
         const changeEmitter = new Emitter<void>();
         const controller = new QaapTranscriptLiveController({
+            // Deterministic regardless of any global `document` a sibling spec
+            // file's jsdom lifecycle may have left in place — jsdom's default
+            // `document.visibilityState` is 'prerender', not 'visible', which
+            // would otherwise make `refreshNow()` skip silently depending on
+            // test run order (see the isDocumentVisible fallback in the
+            // controller). This test is about the settle-refetch behavior, not
+            // document visibility, so pin it explicitly.
+            isDocumentVisible: () => true,
             isWatching: () => true,
             getOpenSummary: () => summary({ status: 'idle' }),
             setOpenSummary: () => undefined,
@@ -101,6 +109,11 @@ describe('QaapTranscriptLiveController', () => {
         let lastConv = conv();
         const changeEmitter = new Emitter<void>();
         const controller = new QaapTranscriptLiveController({
+            // See the comment in the "forces a refetch when the conversation
+            // settles" test above: pin document visibility so the fallback
+            // poll's refetch isn't silently skipped by a sibling spec file's
+            // leaked jsdom `document` (default visibilityState 'prerender').
+            isDocumentVisible: () => true,
             isWatching: () => true,
             getOpenSummary: () => summary(),
             setOpenSummary: () => undefined,
