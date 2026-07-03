@@ -51,5 +51,33 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
             { status: 'failed', messageCount: 2 },
         ).id).to.equal('failed');
     });
+
+    it('classifies a self-reported agent stop/failure as failed, not needs-you, even though status settled to idle', () => {
+        const status = resolveQaapAgentTaskVisualStatus(
+            { state: 'completed' },
+            {
+                status: 'idle',
+                lastMessageRole: 'agent',
+                messageCount: 3,
+                lastMessagePreview: 'Stopped: repeated tool failures detected',
+            },
+            true,
+        );
+        expect(status.id).to.equal('failed');
+    });
+
+    it('does not mistake a plain unread agent reply for a failed run', () => {
+        const status = resolveQaapAgentTaskVisualStatus(
+            { state: 'completed' },
+            {
+                status: 'idle',
+                lastMessageRole: 'agent',
+                messageCount: 3,
+                lastMessagePreview: 'Stopped the dev server as requested.',
+            },
+            true,
+        );
+        expect(status.id).to.equal('needs-you');
+    });
 });
 

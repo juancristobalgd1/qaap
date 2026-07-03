@@ -5,7 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatService } from '@theia/ai-chat';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { filterVpsTaskSummaries } from '../common/qaap-work-hub-surfaces';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -75,7 +75,7 @@ export class MobileProjectsConversationIndexUi {
     }
 
     countFailedTasks(project: MobileProjectEntry): number {
-        return this.vpsTasksForProject(project).filter(c => c.status === 'failed').length;
+        return this.vpsTasksForProject(project).filter(c => isFailedRunSummary(c)).length;
     }
 
     countUnreadTasks(project: MobileProjectEntry): number {

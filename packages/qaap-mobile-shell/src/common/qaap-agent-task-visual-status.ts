@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
+import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
 
 export type QaapAgentTaskVisualStatusId =
     | 'idle'
@@ -92,11 +92,14 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
 export function resolveQaapAgentTaskVisualStatus(
     task: { readonly state: string },
     summary?: Pick<QaapAgentConversationSummaryDTO,
-        'status' | 'priority' | 'lastMessageRole' | 'messageCount' | 'linkedPullRequest'>,
+        'status' | 'priority' | 'lastMessageRole' | 'messageCount' | 'linkedPullRequest' | 'lastMessagePreview'>,
     unread = false,
 ): QaapAgentTaskVisualStatus {
     const state = task.state;
-    if (state === 'failed' || state === 'interrupted' || summary?.status === 'failed') {
+    // isFailedRunSummary also catches turns the agent self-reported as stopped/failed while
+    // exiting cleanly — those would otherwise fall through to the generic "needs-you" bucket below
+    // (unread + last message from the agent) and paint the same glyph as an ordinary unread reply.
+    if (state === 'failed' || state === 'interrupted' || (summary && isFailedRunSummary(summary))) {
         return STATUS_BY_ID['failed'];
     }
     if (state === 'queued') {

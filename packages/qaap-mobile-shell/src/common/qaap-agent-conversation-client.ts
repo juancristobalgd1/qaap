@@ -181,6 +181,47 @@ function resolveEffectiveConversationStatus(conv: QaapAgentConversationDTO): Qaa
     return effective;
 }
 
+/**
+ * Text prefix some agent CLIs use to self-report giving up mid-turn (e.g. after repeated tool
+ * failures) while still exiting cleanly. The backend task state is `completed` in that case, so
+ * `conv.status` never flips to `failed` and no message carries `.error` — the only trace of the
+ * failure is this wording in the agent's own final message. Distinct from cancellation: a cancelled
+ * turn's last text is whatever partial content had streamed before the stop (the "Turn cancelled."
+ * marker is carried on a separate `run_cancelled` trace event, never written into message content),
+ * so it never matches this pattern.
+ */
+const SELF_REPORTED_AGENT_STOP_FAILURE_PATTERN = /^stopped\s*[:.]/i;
+
+/** True when an agent's last message reads like a self-reported stop/failure (see above). */
+export function looksLikeSelfReportedAgentStopFailure(text: string | undefined): boolean {
+    return !!text && SELF_REPORTED_AGENT_STOP_FAILURE_PATTERN.test(text.trim());
+}
+
+/**
+ * Single source of truth for "this is a failed run" — shared by the failed-tasks badge/menu count
+ * ({@link countFailedTasks} equivalents), the "Clear failed runs" delete filter, and the per-row
+ * warning glyph, so they can never diverge.
+ *
+ * Combines the structured `status` signal with a text-based approximation for turns the agent
+ * self-reported as stopped/failed while still exiting cleanly. The approximation is necessary
+ * because {@link QaapAgentConversationSummaryDTO} does not carry a dedicated error/failure field —
+ * only the full conversation's per-message `error` field does, and recomputing that would require an
+ * extra backend call per row.
+ *
+ * Deliberately excludes clean user-cancellations: a cancelled turn's `lastMessagePreview` is
+ * whatever the agent had streamed so far, not a self-reported-stop phrase, and the `run_cancelled`
+ * marker itself is only available as a trace event on the full conversation — not on the summary —
+ * so it cannot be checked here.
+ */
+export function isFailedRunSummary(
+    summary: Pick<QaapAgentConversationSummaryDTO, 'status' | 'lastMessageRole' | 'lastMessagePreview'>,
+): boolean {
+    if (summary.status === 'failed') {
+        return true;
+    }
+    return summary.lastMessageRole === 'agent' && looksLikeSelfReportedAgentStopFailure(summary.lastMessagePreview);
+}
+
 /** Move legacy user-turn errors onto the following agent row for transcript rendering. */
 export function normalizeAgentConversationFailures(conv: QaapAgentConversationDTO): QaapAgentConversationDTO {
     if (!conv.messages.some(message => message.role === 'user' && message.error?.trim())) {

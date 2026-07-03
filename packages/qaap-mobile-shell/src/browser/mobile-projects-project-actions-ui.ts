@@ -7,7 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { ChatService } from '@theia/ai-chat';
-import { deleteConversation } from '../common/qaap-agent-conversation-client';
+import { deleteConversation, isFailedRunSummary } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -101,7 +101,7 @@ export class MobileProjectsProjectActionsUi {
     async onClearFailedTasks(project: MobileProjectEntry): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
         const failed = this.host.conversationIndexUi.vpsTasksForProject(project)
-            .filter(summary => summary.status === 'failed');
+            .filter(summary => isFailedRunSummary(summary));
         if (failed.length === 0) {
             return;
         }
