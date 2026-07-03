@@ -4,14 +4,19 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
-import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { BackendApplicationContribution, BackendApplicationServer } from '@theia/core/lib/node';
 import { LocalizationContribution } from '@theia/core/lib/node/i18n/localization-contribution';
 import { QaapBackendStartupLogFilterContribution } from './qaap-backend-startup-log-filter';
 import { QaapLocalizationContribution } from './qaap-localization-contribution';
+import { QaapFrontendStaticServer } from './qaap-immutable-chunk-cache-contribution';
 
 export default new ContainerModule(bind => {
     bind(QaapLocalizationContribution).toSelf().inSingletonScope();
     bind(LocalizationContribution).toService(QaapLocalizationContribution);
     bind(QaapBackendStartupLogFilterContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapBackendStartupLogFilterContribution);
+    // Owns frontend static serving (the generated server.js default yields when this is bound):
+    // adds immutable caching for hashed esbuild chunks.
+    bind(QaapFrontendStaticServer).toSelf().inSingletonScope();
+    bind(BackendApplicationServer).toService(QaapFrontendStaticServer);
 });

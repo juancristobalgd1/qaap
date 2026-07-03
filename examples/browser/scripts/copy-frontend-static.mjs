@@ -113,4 +113,27 @@ if (compressed.length) {
     console.log('[qaap] gzipped:', sizes.join(', '));
 }
 
+// Prune stale hashed chunks. esbuild does not clean its outdir, so every full rebuild leaves
+// the previous build's chunk-<hash>.(js|css) files (plus .map/.gz companions) behind — they
+// accumulate across rebuilds forever otherwise. A full build rewrites (or recreates with a new
+// hash) every chunk that's actually referenced by the fresh bundle.js, so any chunk file whose
+// mtime predates the new bundle.js by more than STALE_THRESHOLD_MS is guaranteed to be orphaned.
+const CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\./;
+const STALE_THRESHOLD_MS = 60_000;
+
+const bundlePath = path.join(libFrontend, 'bundle.js');
+if (!fs.existsSync(bundlePath)) {
+    console.warn('[qaap] bundle.js missing — skipping stale chunk prune');
+} else {
+    const bundleMtime = fs.statSync(bundlePath).mtimeMs;
+    const staleChunks = fs.readdirSync(libFrontend)
+        .filter(f => CHUNK_FILE_PATTERN.test(f))
+        .filter(f => (bundleMtime - fs.statSync(path.join(libFrontend, f)).mtimeMs) > STALE_THRESHOLD_MS);
+
+    for (const file of staleChunks) {
+        fs.rmSync(path.join(libFrontend, file));
+    }
+    console.log(`[qaap] pruned ${staleChunks.length} stale chunk file(s)`);
+}
+
 console.log('[qaap] synced frontend static files → lib/frontend/');
