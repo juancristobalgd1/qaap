@@ -94,6 +94,7 @@ import {
     type ToolUmbrella,
 } from '../common/qaap-tool-umbrella';
 import {
+    buildMobileExecutionEvents,
     createMobileClosingErrorCardElement,
     createMobileDiffSummaryElement,
     createMobileExecutionEventTimeline,
@@ -102,6 +103,7 @@ import {
     hasMobileExecutionEventTimeline,
     MOBILE_CLOSING_ERROR_CARD_CLASS,
     refreshMobileExecutionEventTimeline,
+    resolveMobileActivityVerb,
     syncMobileProcessAccordionState,
     wrapMobileProcessAccordion,
 } from './qaap-execution-event-timeline';
@@ -498,7 +500,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const isCancelled = this.isAgentMessageCancelled(message ?? this.resolveLastAgentMessage(conv));
         const elapsedMs = this.resolveConversationElapsedMs(conv);
         const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
-        const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, isCancelled, elapsedMs, turnStartMs });
+        const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
+        const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb });
         body.append(accordion);
         ensureSlowTurnHint(accordion, { isWorking, turnStartMs, onStopTurn: () => this.host.cancelOpenTranscriptStream?.() });
         if (streaming) {
@@ -544,7 +547,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 continue;
             }
             if (action.kind === 'error-card') {
-                const errorCard = createMobileClosingErrorCardElement(action.message);
+                const errorCard = createMobileClosingErrorCardElement(action.message, this.resolveMobileClosingErrorCardRetry());
                 errorCard.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
                 body.append(errorCard);
                 continue;
@@ -672,6 +675,28 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     /**
+     * Resolves the optional "Retry" action for a closing error card, or
+     * undefined when the host doesn't support it. Wired to
+     * {@link MobileProjectsTranscriptMessagesHost.retryOpenTranscriptConversation},
+     * which resolves the conversation to retry the same way
+     * `cancelOpenTranscriptStream` resolves the one to cancel: the transcript
+     * sheet's open project/summary when a sheet is open, falling back to
+     * whichever conversation the Agents Hub inline shell is showing
+     * otherwise. This dual resolution matters — the error card renders
+     * wherever the conversation happens to be displayed, and a retry wired
+     * only to the transcript-sheet state would silently no-op on the Agents
+     * Hub inline surface, which is the default (non-sheet) surface.
+     */
+    protected resolveMobileClosingErrorCardRetry(): (() => void) | undefined {
+        if (!this.host.retryOpenTranscriptConversation) {
+            return undefined;
+        }
+        return () => {
+            void this.host.retryOpenTranscriptConversation?.();
+        };
+    }
+
+    /**
      * Recomputes the (normalized) set of closing-narrative text strictly
      * before `beforeIndex`, so a newly-arrived closing-narrative segment (the
      * streaming fast-path in {@link appendStreamingAgentTextSegment}) can be
@@ -774,6 +799,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      */
     protected syncRowProcessAccordion(
         row: HTMLElement,
+        segments: readonly QaapAgentMessageSegmentDTO[],
         conv: QaapAgentConversationDTO | undefined,
         streaming: boolean,
     ): void {
@@ -789,12 +815,14 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // mislabeled as cancelled just because a later turn ended up
         // cancelled.
         const message = this.resolveTranscriptRowAgentMessage(row, conv);
+        const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
         syncMobileProcessAccordionState(accordion, {
             isWorking,
             isError: this.isConversationError(conv),
             isCancelled: this.isAgentMessageCancelled(message),
             elapsedMs: this.resolveConversationElapsedMs(conv),
             turnStartMs,
+            activityVerb,
             // Only the finalize path calls with streaming=false, and it does so
             // AFTER appending the closing narrative + diff summary — that is
             // the one moment auto-collapse is allowed. Streaming syncs must
@@ -1018,7 +1046,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             // the turn has settled we add it. The helper is idempotent.
             this.appendMobileDiffSummary(segmentsBody, segments);
             // Sync the process accordion: collapse on success, stay open on error.
-            this.syncRowProcessAccordion(row, conv, false);
+            this.syncRowProcessAccordion(row, segments, conv, false);
             row.classList.remove('theia-mod-stream-stalled');
             return;
         }
@@ -1390,7 +1418,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 this.queueExecutionTimelineRefresh(row, nextSegments);
             }
             // Sync the process accordion label/state while streaming.
-            this.syncRowProcessAccordion(row, conv, true);
+            this.syncRowProcessAccordion(row, nextSegments, conv, true);
             return true;
         }
         // Upgrade path: row has tools but no Codex-style timeline yet.
@@ -1878,6 +1906,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 recordTranscriptRenderMetric('timeline_sync');
                 refreshMobileExecutionEventTimeline(segmentsBody, refreshSegments);
             }
+            // Sync the accordion label here too: this path handles the
+            // tool-START frame (a new tool appended to a streaming row), and a
+            // long quiet tool produces no further frames — without this sync
+            // the live label would keep the verb captured before the tool
+            // began (usually none, i.e. plain 'Processing…').
+            this.syncRowProcessAccordion(row, refreshSegments, conv, true);
             return true;
         }
 
@@ -2634,7 +2668,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 if (action.kind !== 'skip') {
                     const streaming = row.classList.contains('theia-mod-streaming');
                     const el = action.kind === 'error-card'
-                        ? createMobileClosingErrorCardElement(action.message)
+                        ? createMobileClosingErrorCardElement(action.message, this.resolveMobileClosingErrorCardRetry())
                         : this.toolUi.createTranscriptSegmentDetails(segment);
                     el.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
                     if (action.kind === 'text' && streaming) {

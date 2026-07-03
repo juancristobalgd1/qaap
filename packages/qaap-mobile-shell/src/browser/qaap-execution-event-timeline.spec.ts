@@ -8,6 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import {
     buildMobileExecutionEvents,
+    createMobileClosingErrorCardElement,
     createMobileDiffSummaryElement,
     createMobileExecutionEventTimeline,
     createMobileLineDiffSummaryElement,
@@ -16,9 +17,11 @@ import {
     formatMobileEventSummary,
     hasMobileExecutionEventTimeline,
     hasMobileProcessAccordion,
+    MOBILE_CLOSING_ERROR_CARD_CLASS,
     MOBILE_EXECUTION_TIMELINE_CLASS,
     MOBILE_PROCESS_ACCORDION_CLASS,
     refreshMobileExecutionEventTimeline,
+    resolveMobileActivityVerb,
     syncMobileProcessAccordionState,
     wrapMobileProcessAccordion,
 } from './qaap-execution-event-timeline';
@@ -435,6 +438,22 @@ describe('qaap-execution-event-timeline', () => {
             expect(label?.textContent).to.equal('Processing… 2m 5s');
         });
 
+        it('shows the "<Verb>… Xs" label when working with a known activityVerb', () => {
+            const segments = [toolSegment('read', 't1', '{}', false)];
+            const accordion = createMobileProcessAccordion(
+                segments, { isWorking: true, isError: false, elapsedMs: 45000, activityVerb: 'Read' },
+            );
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Read… 45s');
+        });
+
+        it('falls back to the generic "Processing… Xs" label when no activityVerb is given', () => {
+            const segments = [toolSegment('read', 't1', '{}', false)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false, elapsedMs: 45000 });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Processing… 45s');
+        });
+
         it('applies theia-mod-working class when working', () => {
             const segments = [toolSegment('read', 't1', '{}', false)];
             const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
@@ -607,6 +626,66 @@ describe('qaap-execution-event-timeline', () => {
             expect(accordion.classList.contains('theia-mod-working')).to.be.false;
             expect(accordion.classList.contains('theia-mod-error')).to.be.true;
             expect(accordion.classList.contains('theia-mod-complete')).to.be.false;
+        });
+
+        it('shows the live verb label on a sync while working', () => {
+            const segments = [toolSegment('read', 't1', '{}', false)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false, elapsedMs: 5000 });
+            syncMobileProcessAccordionState(accordion, { isWorking: true, isError: false, elapsedMs: 8000, activityVerb: 'Explore' });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Explore… 8s');
+        });
+
+    });
+
+    describe('resolveMobileActivityVerb', () => {
+
+        it('returns the verb of the last event that still has pending tools', () => {
+            const segments = [
+                toolSegment('read', 't1', '{}', true),
+                textSegment('Now building the project.'),
+                toolSegment('bash', 't2', '{"command":"npm run build"}', false),
+            ];
+            const { events } = buildMobileExecutionEvents(segments);
+            expect(resolveMobileActivityVerb(events)).to.equal('Run');
+        });
+
+        it('returns undefined when nothing is pending', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const { events } = buildMobileExecutionEvents(segments);
+            expect(resolveMobileActivityVerb(events)).to.be.undefined;
+        });
+
+        it('returns undefined for an empty event list', () => {
+            expect(resolveMobileActivityVerb([])).to.be.undefined;
+        });
+
+    });
+
+    describe('createMobileClosingErrorCardElement', () => {
+
+        it('renders the icon and message without a retry button by default', () => {
+            const card = createMobileClosingErrorCardElement('Something went wrong');
+            expect(card.classList.contains(MOBILE_CLOSING_ERROR_CARD_CLASS)).to.be.true;
+            expect(card.querySelector('.theia-mobile-closing-error-card-message')?.textContent).to.equal('Something went wrong');
+            expect(card.querySelector('.theia-mobile-closing-error-card-retry')).to.equal(null);
+        });
+
+        it('renders a Retry button when onRetry is provided', () => {
+            const card = createMobileClosingErrorCardElement('Boom', () => { /* noop */ });
+            const retryBtn = card.querySelector<HTMLButtonElement>('.theia-mobile-closing-error-card-retry');
+            expect(retryBtn).to.not.equal(null);
+            expect(retryBtn?.textContent).to.equal('Retry');
+        });
+
+        it('calls onRetry exactly once and disables the button after click', () => {
+            let calls = 0;
+            const card = createMobileClosingErrorCardElement('Boom', () => { calls++; });
+            const retryBtn = card.querySelector<HTMLButtonElement>('.theia-mobile-closing-error-card-retry')!;
+            retryBtn.click();
+            retryBtn.click();
+            expect(calls).to.equal(1);
+            expect(retryBtn.disabled).to.be.true;
         });
 
     });

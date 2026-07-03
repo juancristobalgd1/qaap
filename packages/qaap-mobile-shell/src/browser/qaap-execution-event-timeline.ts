@@ -370,6 +370,23 @@ export function formatMobileEventSummary(event: MobileExecutionEvent): string {
     return `${count} ${noun}`;
 }
 
+/**
+ * Resolves the Codex-style live activity verb for the process accordion
+ * label: the {@link MobileExecutionEvent.verb} of the LAST event in
+ * `events` that still has pending tools (i.e. whichever tool group is
+ * actively spinning right now). Returns undefined when nothing is pending
+ * (e.g. between tool groups, or before the first tool has arrived), in which
+ * case the caller should fall back to the generic "Processing…" label.
+ */
+export function resolveMobileActivityVerb(events: readonly MobileExecutionEvent[]): string | undefined {
+    for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].hasPending) {
+            return events[i].verb;
+        }
+    }
+    return undefined;
+}
+
 function fingerprintMobileTool(tool: MobileExecutionTool): string {
     const segment = tool.segment;
     const args = segment.args;
@@ -493,6 +510,15 @@ export interface MobileProcessAccordionOptions {
     /** Whether the agent ended in an error state. */
     readonly isError: boolean;
     /**
+     * Codex-style live activity verb (e.g. `'Read'`, `'Run'`, `'Explore'`),
+     * taken verbatim from the {@link MobileExecutionEvent.verb} of the LAST
+     * event that still has pending tools. Only meaningful while `isWorking`
+     * is true; ignored otherwise. When undefined (nothing pending yet, or
+     * the caller couldn't resolve one), the label falls back to the generic
+     * "Processing…" text.
+     */
+    readonly activityVerb?: string;
+    /**
      * True when the turn was manually stopped by the user rather than ending
      * in a genuine failure (e.g. a `run_cancelled` AG-UI trace event). Takes
      * precedence over `isError` for the header label ("Stopped after {0}"
@@ -551,7 +577,7 @@ export function wrapMobileProcessAccordion(
     timeline: HTMLElement,
     options: MobileProcessAccordionOptions,
 ): HTMLElement {
-    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb } = options;
     const details = document.createElement('details');
     details.className =
         `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''}` +
@@ -578,8 +604,8 @@ export function wrapMobileProcessAccordion(
 
     const label = document.createElement('span');
     label.className = 'theia-mobile-process-accordion-label';
-    label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options));
-    syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
+    label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options), activityVerb);
+    syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs, activityVerb);
 
     const chevron = document.createElement('span');
     chevron.className = 'codicon codicon-chevron-down theia-mobile-process-accordion-chevron';
@@ -651,22 +677,30 @@ function recordProcessAccordionTurnState(turnStartMs: number, details: HTMLDetai
 
 /**
  * Registers (or unregisters) the shared elapsed-time ticker for a process
- * accordion's header label, so the "Processing… Xs" label keeps ticking even
- * during quiet stretches with no tool-segment patches. Only active while
- * `isWorking` is true and a `turnStartMs` is known; unregistered otherwise
- * (settled, error, or when the caller doesn't know the turn start).
+ * accordion's header label, so the "Processing… Xs" / "<Verb>… Xs" label
+ * keeps ticking even during quiet stretches with no tool-segment patches.
+ * Only active while `isWorking` is true and a `turnStartMs` is known;
+ * unregistered otherwise (settled, error, or when the caller doesn't know the
+ * turn start).
+ *
+ * `activityVerb` is captured in the render closure, so calling this again
+ * with a different verb (as the caller does on every sync tick, re-deriving
+ * it from the latest pending event) transparently re-registers with the new
+ * label text — {@link QaapSharedElapsedTicker.register} keys its targets map
+ * by `element`, so the previous closure for this label is simply replaced.
  */
 function syncMobileProcessAccordionLabelTicker(
     label: HTMLElement,
     isWorking: boolean,
     turnStartMs: number | undefined,
+    activityVerb: string | undefined,
 ): void {
     sharedElapsedTicker.unregister(label);
     if (isWorking && turnStartMs !== undefined) {
         sharedElapsedTicker.register({
             element: label,
             render: now => {
-                label.textContent = formatMobileProcessLabel(Math.max(0, now - turnStartMs), 'processing');
+                label.textContent = formatMobileProcessLabel(Math.max(0, now - turnStartMs), 'processing', activityVerb);
             },
         });
     }
@@ -701,7 +735,7 @@ export function syncMobileProcessAccordionState(
         return;
     }
     const details = accordion as HTMLDetailsElement;
-    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb } = options;
 
     // Update the label regardless of toggle state.
     const label = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-label');
@@ -709,9 +743,9 @@ export function syncMobileProcessAccordionState(
         if (!(isWorking && turnStartMs !== undefined)) {
             // While working with a known turn start, registering on the ticker
             // below renders immediately — skip the redundant direct write.
-            label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options));
+            label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options), activityVerb);
         }
-        syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
+        syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs, activityVerb);
     }
 
     // Update modifier classes.
@@ -843,10 +877,22 @@ function resolveMobileProcessOutcome(
     return 'processed';
 }
 
-function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: MobileProcessOutcome): string {
+/**
+ * Formats the process accordion header label. While `outcome === 'processing'`
+ * and an `activityVerb` is known (the Codex-style live activity verb, e.g.
+ * `'Read'` / `'Run'` / `'Explore'` — see {@link resolveMobileActivityVerb}),
+ * the label reads `'<Verb>… Xs'` instead of the generic `'Processing… Xs'`.
+ * The verb is reused verbatim from {@link MobileExecutionEvent.verb} — never
+ * conjugated (e.g. no invented `'Reading'` from `'Read'`) — so this never
+ * introduces a new display string beyond what the timeline already shows.
+ */
+function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: MobileProcessOutcome, activityVerb?: string): string {
     if (elapsedMs === undefined) {
         switch (outcome) {
             case 'processing':
+                if (activityVerb) {
+                    return nls.localize('theia/qaap-mobile-shell/processTimeline/workingOnNoElapsed', '{0}…', activityVerb);
+                }
                 return nls.localize('theia/qaap-mobile-shell/processTimeline/processing', 'Processing…');
             case 'stopped':
                 return nls.localize('theia/qaap-mobile-shell/processTimeline/stopped', 'Stopped');
@@ -859,6 +905,9 @@ function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: Mobile
     const formatted = formatMobileElapsed(elapsedMs);
     switch (outcome) {
         case 'processing':
+            if (activityVerb) {
+                return nls.localize('theia/qaap-mobile-shell/processTimeline/workingOn', '{0}… {1}', activityVerb, formatted);
+            }
             return nls.localize('theia/qaap-mobile-shell/processTimeline/processingElapsed', 'Processing… {0}', formatted);
         case 'stopped':
             return nls.localize('theia/qaap-mobile-shell/processTimeline/stoppedAfter', 'Stopped after {0}', formatted);
@@ -1541,7 +1590,13 @@ function createMobileTerminalOutputElement(
 /** CSS class on the compact closing error card. */
 export const MOBILE_CLOSING_ERROR_CARD_CLASS = 'theia-mobile-closing-error-card';
 
-export function createMobileClosingErrorCardElement(message: string): HTMLElement {
+/**
+ * Creates the compact closing error card, optionally with a quiet "Retry"
+ * action when `onRetry` is provided. The button disables itself after the
+ * first click so a slow/failed retry attempt can't be triggered twice from
+ * the same card.
+ */
+export function createMobileClosingErrorCardElement(message: string, onRetry?: () => void): HTMLElement {
     const card = document.createElement('div');
     card.className = `${MOBILE_CLOSING_ERROR_CARD_CLASS} theia-mod-error`;
 
@@ -1549,11 +1604,29 @@ export function createMobileClosingErrorCardElement(message: string): HTMLElemen
     icon.className = 'codicon codicon-error theia-mobile-closing-error-card-icon';
     icon.setAttribute('aria-hidden', 'true');
 
+    const content = document.createElement('div');
+    content.className = 'theia-mobile-closing-error-card-content';
+
     const text = document.createElement('span');
     text.className = 'theia-mobile-closing-error-card-message';
     text.textContent = message;
+    content.append(text);
 
-    card.append(icon, text);
+    if (onRetry) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'theia-mobile-closing-error-card-retry';
+        retry.textContent = nls.localizeByDefault('Retry');
+        retry.addEventListener('click', () => {
+            // Disable immediately so a double-click (or a slow retry that
+            // hasn't settled yet) can't fire the callback a second time.
+            retry.disabled = true;
+            onRetry();
+        }, { once: true });
+        content.append(retry);
+    }
+
+    card.append(icon, content);
     return card;
 }
 

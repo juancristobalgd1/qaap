@@ -73,6 +73,15 @@ export interface MobileProjectsTranscriptMessagesHost {
     cancelOpenTranscriptStream?(): void;
     retryOpenTranscriptStream?(): void | Promise<void>;
     retryOpenFailedConversationTask?(): void | Promise<void>;
+    /**
+     * Retries whichever conversation is currently open, resolving it the same
+     * way {@link cancelOpenTranscriptStream} does: the transcript sheet's open
+     * project/summary when a sheet is open, falling back to the Agents Hub
+     * inline shell's conversation otherwise. Used by the closing error card's
+     * "Retry" action, which must work regardless of which surface renders the
+     * conversation.
+     */
+    retryOpenTranscriptConversation?(): void | Promise<void>;
 }
 
 /** Transcript message list rendering: rows, streaming patches, and rich segment UI. */

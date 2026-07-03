@@ -27086,12 +27086,45 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   font-size: 14px;
 }
 
+.theia-mobile-closing-error-card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
 .theia-mobile-closing-error-card-message {
   color: var(--theia-foreground);
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Quiet retry action — same understated treatment as the slow-turn-hint's
+   "Stop turn" button (see .theia-mobile-slow-turn-hint-stop). */
+.theia-mobile-closing-error-card-retry {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.theia-mobile-closing-error-card-retry:hover,
+.theia-mobile-closing-error-card-retry:focus-visible {
+  background: var(--theia-toolbar-hoverBackground);
+  outline: none;
+}
+
+.theia-mobile-closing-error-card-retry:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* ─── DiffSummary: the natural closing of the execution story ─────────────── */

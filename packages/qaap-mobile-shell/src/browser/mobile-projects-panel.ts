@@ -2281,6 +2281,28 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         }
     }
 
+    /**
+     * Retries whichever conversation is currently open, wired to the closing
+     * error card's "Retry" action (see
+     * {@link MobileProjectsTranscriptMessagesHost.retryOpenTranscriptConversation}).
+     * Mirrors {@link cancelOpenTranscriptStream}'s project/summary resolution:
+     * the transcript sheet's open project/summary when a sheet is open,
+     * falling back to the Agents Hub inline shell's conversation otherwise —
+     * a plain sheet-state check would silently no-op there, which is the
+     * default (non-sheet) surface.
+     */
+    retryOpenTranscriptConversation(): void {
+        let project = this.transcriptController.state.transcriptOpenProject;
+        let summary = this.transcriptController.state.transcriptOpenSummary;
+        if (!project || !summary) {
+            project = this.resolveAgentsHubShellProject();
+            summary = project ? this.resolveAgentsHubShellSummary(project) : undefined;
+        }
+        if (project && summary) {
+            void this.onRetryConversation(project, summary);
+        }
+    }
+
     retryOpenTranscriptStream(): void {
         const project = this.transcriptController.state.transcriptOpenProject;
         const summary = this.transcriptController.state.transcriptOpenSummary;
