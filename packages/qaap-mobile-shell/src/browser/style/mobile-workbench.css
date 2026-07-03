@@ -9630,6 +9630,19 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-plugin-picker-icon.t
   white-space: nowrap;
 }
 
+.theia-qaap-picker-sheet-option-stats {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.55));
+}
+
+.theia-qaap-picker-sheet-option-stats.theia-mod-slow {
+  color: var(--theia-editorWarning-foreground, #cca700);
+}
+
 .theia-qaap-llm-provider-icon.theia-mod-tone-light {
   color: var(--theia-foreground, #e5e5e5);
 }

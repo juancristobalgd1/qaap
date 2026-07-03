@@ -40,6 +40,12 @@ import {
     createToolApprovalRuleToggle,
 } from './qaap-agent-ui';
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
+import {
+    canonicalModelStatsKey,
+    formatTurnDuration,
+    MODEL_TURN_STATS_SLOW_THRESHOLD_MS,
+    resolveModelTurnStats,
+} from '../common/qaap-model-latency-stats';
 import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
 import {
     formatQaiqModelSelectionLabel,
@@ -889,11 +895,16 @@ export class MobileProjectsStickyComposerSheetsUi {
             label.append(labelText);
             section.append(label);
             for (const model of providerModels) {
+                const stats = resolveModelTurnStats(canonicalModelStatsKey(model));
                 section.append(createPickerSheetOptionButton({
                     label: model.label || model.modelId,
                     llmVendor: model.vendor,
                     llmModelId: model.modelId,
                     selected: isSameAgentModel(storedModel, model),
+                    statsLabel: stats
+                        ? nls.localize('qaap/mobileProjects/modelPickerLatency', '~{0}', formatTurnDuration(stats.median))
+                        : undefined,
+                    statsSlow: stats ? stats.median > MODEL_TURN_STATS_SLOW_THRESHOLD_MS : false,
                     onSelect: () => onSelect(model),
                 }));
             }

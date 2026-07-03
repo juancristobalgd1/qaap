@@ -208,6 +208,10 @@ export function createPickerSheetOptionButton(options: {
     readonly selected?: boolean;
     readonly llmVendor?: string;
     readonly llmModelId?: string;
+    /** Muted observed-latency chip, e.g. `~2m 10s` (see `qaap-model-latency-stats.ts`). */
+    readonly statsLabel?: string;
+    /** Renders {@link statsLabel} in the warning color to flag models with a slow observed median. */
+    readonly statsSlow?: boolean;
     readonly onSelect: () => void;
 }): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -225,6 +229,15 @@ export function createPickerSheetOptionButton(options: {
     labelEl.className = 'theia-mobile-sticky-composer-sheet-option-label';
     labelEl.textContent = options.label;
     content.append(labelEl);
+    if (options.statsLabel) {
+        const stats = document.createElement('span');
+        stats.className = 'theia-qaap-picker-sheet-option-stats';
+        if (options.statsSlow) {
+            stats.classList.add('theia-mod-slow');
+        }
+        stats.textContent = options.statsLabel;
+        content.append(stats);
+    }
     if (options.selected) {
         const check = document.createElement('span');
         check.className = 'codicon codicon-check theia-mobile-sticky-composer-sheet-option-check';
