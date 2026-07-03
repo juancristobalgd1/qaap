@@ -312,6 +312,12 @@ export interface MobileProjectsPanelOptions {
      * open, so the panel must not be dismissable.
      */
     homeMode?: boolean;
+    /**
+     * Resolves when the frontend application reached the 'ready' state
+     * (FrontendApplicationStateService). Used to defer composer autofocus
+     * until the boot sequence has finished fighting over focus.
+     */
+    whenFrontendReady?: () => Promise<void>;
     /** Live cross-project task tracker. When provided the panel updates cards from SSE events. */
     activeTasks?: MobileProjectsActiveTasks;
     /**
@@ -661,7 +667,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected pullToRefreshDispose: Disposable = Disposable.NULL;
     protected lastTitleTap = 0;
     protected readonly homeMode: boolean;
+    protected readonly whenFrontendReadyProvider: (() => Promise<void>) | undefined;
     protected readonly activeTasks: MobileProjectsActiveTasks | undefined;
+
+    /** Resolves when the frontend app is 'ready'; immediately when no provider was wired. */
+    whenFrontendReady(): Promise<void> {
+        return this.whenFrontendReadyProvider?.() ?? Promise.resolve();
+    }
     protected readonly conversations: MobileProjectsConversations | undefined;
     protected readonly backgroundContext: QaapBackgroundContextProvider | undefined;
     protected readonly inboxStream: MobileWorkHubInboxStream | undefined;
@@ -771,6 +783,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         );
         bindTranscriptOverlayStateAccessors(this, this.transcriptController.state);
         this.homeMode = !!options.homeMode;
+        this.whenFrontendReadyProvider = options.whenFrontendReady;
         this.activeTasks = options.activeTasks;
         this.conversations = options.conversations;
         this.backgroundContext = options.backgroundContext;

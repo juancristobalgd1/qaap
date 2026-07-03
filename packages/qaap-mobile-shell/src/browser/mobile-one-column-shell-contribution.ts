@@ -64,6 +64,7 @@ import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-inp
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
 import { LabelProvider } from '@theia/core/lib/browser';
+import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
 import { MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
@@ -161,6 +162,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     @inject(ApplicationShell)
     protected readonly shell: ApplicationShell;
+
+    @inject(FrontendApplicationStateService)
+    protected readonly frontendStateService: FrontendApplicationStateService;
 
     @inject(StatusBarImpl)
     protected readonly statusBar: StatusBarImpl;
@@ -455,6 +459,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 openWorkHubAiConfigurationSheet: tabId => this.openWorkHubAiConfigurationSheet(tabId),
             },
             panelOptions: {
+                whenFrontendReady: () => this.frontendStateService.reachedState('ready'),
                 mobileIdeViewPicker: {
                     isVisible: () => this.mobileActive && !peekPreferDesktopIde(),
                     getOptions: () => this.bottomBarController.getMobileIdeHeaderViewButtons(),

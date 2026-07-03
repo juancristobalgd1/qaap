@@ -138,7 +138,23 @@ export interface TranscriptStickyComposerColumnOptions {
 }
 
 /** Panel surface for transcript sticky composer mount, prefs persistence, and follow-up queue. */
+/**
+ * True when `active` is a focus holder the idle composer may take focus from:
+ * nothing/body, the composer textarea itself, the composer loading
+ * placeholder, or xterm's hidden helper textarea (which grabs focus during
+ * terminal boot but is never a user-facing input).
+ */
+export function isIdleComposerFocusStealable(active: Element | null, textarea: HTMLTextAreaElement | undefined): boolean {
+    if (!active || active === document.body || (textarea !== undefined && active === textarea)) {
+        return true;
+    }
+    return active instanceof HTMLElement
+        && (active.classList.contains('theia-mod-loading') || active.classList.contains('xterm-helper-textarea'));
+}
+
 export interface MobileProjectsTranscriptStickyComposerHost {
+    /** Resolves when the frontend app reached 'ready' (immediately if unwired). */
+    whenFrontendReady?(): Promise<void>;
     transcriptComposerHost: HTMLElement | undefined;
     transcriptComposerMountKey: string | undefined;
     transcriptComposerProject: MobileProjectEntry | undefined;
@@ -265,9 +281,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     return;
                 }
                 const active = document.activeElement;
-                const focusFree = !active || active === document.body;
                 const userDriven = Date.now() - lastUserInteraction < 500;
-                if (focusFree && !userDriven) {
+                if (isIdleComposerFocusStealable(active, textarea) && !userDriven) {
                     textarea.focus();
                 }
             }, 0);
@@ -1292,10 +1307,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         summary: QaapAgentConversationSummaryDTO,
         chatHost: HTMLElement,
     ): Promise<void> {
-        const activeElementBeforeMount = document.activeElement;
-        const focusEligibleBeforeMount = !activeElementBeforeMount
-            || activeElementBeforeMount === document.body
-            || (activeElementBeforeMount instanceof HTMLElement && activeElementBeforeMount.classList.contains('theia-mod-loading'));
+        const focusEligibleBeforeMount = isIdleComposerFocusStealable(document.activeElement, undefined);
         const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
         warmAgentTurnPath(cwd, {
             warmLiveTransport: () => this.host.conversations?.warmLiveTransport(),
@@ -1521,26 +1533,27 @@ export class MobileProjectsTranscriptStickyComposerUi {
         host.append(shell);
         const isIdleComposer = isAgentsHubIdleConversationSummary(summary);
         this.agentsHubIdleComposerMounted = isIdleComposer;
-        // Autofocus on EVERY idle-composer mount during the boot window — the
-        // shell remounts the composer several times while booting, replacing
-        // the column, so a mounted-once latch (or querying the local column in
-        // the rAF) silently loses the focus to a later remount. Querying the
-        // stable host and re-running per mount converges; the boot-window +
-        // focus-free guards keep it from ever stealing focus afterwards.
+        // Autofocus deterministically AFTER the frontend reaches 'ready' — the
+        // boot sequence remounts the composer and shuffles focus (xterm's
+        // hidden helper textarea, shell activation) at unpredictable times, so
+        // timing heuristics lose. Every idle mount during the boot window
+        // re-arms this; the ready-await plus the focus check at focus time
+        // ensure exactly one deliberate focus that nothing later steals back.
         if (isIdleComposer && focusEligibleBeforeMount && Date.now() < this.idleComposerAutofocusDeadline) {
-            window.requestAnimationFrame(() => {
-                const textarea = host.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
-                if (!textarea || !textarea.isConnected || textarea.disabled) {
-                    return;
-                }
-                const active = document.activeElement;
-                if (active && active !== document.body && active !== textarea) {
-                    return;
-                }
-                textarea.focus();
-                // The boot sequence can still steal this focus back to <body>
-                // moments later — defend it for a short window.
-                this.scheduleIdleComposerFocusRetention(textarea);
+            void (this.host.whenFrontendReady?.() ?? Promise.resolve()).then(() => {
+                window.requestAnimationFrame(() => {
+                    const textarea = host.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
+                    if (!textarea || !textarea.isConnected || textarea.disabled) {
+                        return;
+                    }
+                    if (!isIdleComposerFocusStealable(document.activeElement, textarea)) {
+                        return;
+                    }
+                    textarea.focus();
+                    // Late boot stragglers can still steal this focus back to
+                    // <body> moments later — defend it for a short window.
+                    this.scheduleIdleComposerFocusRetention(textarea);
+                });
             });
         }
         this.syncTranscriptComposerQuickActionsVisibility(host, summary);
