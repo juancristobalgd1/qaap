@@ -94,15 +94,18 @@ import {
     type ToolUmbrella,
 } from '../common/qaap-tool-umbrella';
 import {
+    createMobileClosingErrorCardElement,
     createMobileDiffSummaryElement,
     createMobileExecutionEventTimeline,
     createMobileLineDiffSummaryElement,
     findMobileProcessAccordion,
     hasMobileExecutionEventTimeline,
+    MOBILE_CLOSING_ERROR_CARD_CLASS,
     refreshMobileExecutionEventTimeline,
     syncMobileProcessAccordionState,
     wrapMobileProcessAccordion,
 } from './qaap-execution-event-timeline';
+import { ensureSlowTurnHint } from './qaap-slow-turn-hint';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
 
 const TRANSCRIPT_TRACE_STATUS_ATTR = 'data-transcript-trace-status';
@@ -256,6 +259,32 @@ function buildTranscriptExecutionTimelineItems(items: readonly TranscriptActivit
     return timeline;
 }
 
+/** Leading "Error: " marker prepended by {@link traceEventsToSegments} when it
+ *  converts an `error` trace event into a plain text segment. Stripped before
+ *  comparing closing-narrative text against `msg.error` (which never carries
+ *  the prefix) so identical content is recognized as a duplicate regardless
+ *  of which side added the marker. */
+const MOBILE_CLOSING_TEXT_ERROR_PREFIX = /^error:\s*/i;
+
+/** Normalizes closing-narrative text for duplicate detection: trims and
+ *  strips a leading "Error: " marker so a trace-derived error segment and the
+ *  canonical `msg.error` string compare equal. */
+function normalizeMobileClosingNarrativeText(text: string): string {
+    return text.trim().replace(MOBILE_CLOSING_TEXT_ERROR_PREFIX, '').trim();
+}
+
+/**
+ * How a closing-narrative text segment should be rendered — shared between
+ * the full render path ({@link MobileProjectsTranscriptMessagesArtifactsUi.renderMobileExecutionEventTimeline})
+ * and the streaming fast-path ({@link MobileProjectsTranscriptMessagesArtifactsUi.appendStreamingAgentTextSegment})
+ * so duplicate/failure-dialog-covered error text is suppressed consistently
+ * regardless of which path first observes the segment.
+ */
+type MobileClosingNarrativeAction =
+    | { readonly kind: 'skip' }
+    | { readonly kind: 'error-card'; readonly message: string }
+    | { readonly kind: 'text' };
+
 interface LazyTranscriptToolPillPayload {
     readonly segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>;
     readonly conv: QaapAgentConversationDTO | undefined;
@@ -340,7 +369,16 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segments: QaapAgentMessageSegmentDTO[],
         error?: string,
         conv?: QaapAgentConversationDTO,
-        options?: { readonly deferHeavyContent?: boolean; readonly streaming?: boolean },
+        options?: {
+            readonly deferHeavyContent?: boolean;
+            readonly streaming?: boolean;
+            /** The specific agent message being rendered, if known -- lets
+             *  cancellation be derived from THIS message rather than
+             *  whichever agent message happens to be last in the
+             *  conversation (which mislabels historical accordions once a
+             *  later turn has run). */
+            readonly message?: QaapAgentMessageDTO;
+        },
     ): HTMLElement {
         const row = document.createElement('div');
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent';
@@ -362,6 +400,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 streaming,
                 defer,
                 conv,
+                error,
+                message: options?.message,
             });
         } else {
             // No tools yet — render thinking content (if any) as a thought brief,
@@ -432,17 +472,35 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     protected renderMobileExecutionEventTimeline(
         body: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],
-        options: { readonly streaming: boolean; readonly defer?: boolean; readonly conv?: QaapAgentConversationDTO },
+        options: {
+            readonly streaming: boolean;
+            readonly defer?: boolean;
+            readonly conv?: QaapAgentConversationDTO;
+            /** The failure reason recorded on the message being rendered (`msg.error`), if any. */
+            readonly error?: string;
+            /** The specific agent message being rendered, if known -- see
+             *  {@link createTranscriptAgentSegmentsRow}'s `options.message`. Falls
+             *  back to the conversation's last agent message when omitted (e.g.
+             *  benchmark/test callers that only have a `conv`). */
+            readonly message?: QaapAgentMessageDTO;
+        },
     ): void {
-        const { streaming, defer, conv } = options;
+        const { streaming, defer, conv, error, message } = options;
         const eventTimeline = createMobileExecutionEventTimeline(segments);
         // Wrap the timeline in a process accordion (Codex-style "Processed in").
         const isWorking = streaming && this.isConversationWorking(conv);
         const isError = this.isConversationError(conv);
+        // Cancellation must be derived from THIS message, not merely the
+        // conversation's last agent message -- each agent message renders its
+        // own accordion, and in a multi-turn conversation a historical
+        // (already-settled) turn's accordion would otherwise be mislabeled
+        // whenever a later turn happened to end up cancelled.
+        const isCancelled = this.isAgentMessageCancelled(message ?? this.resolveLastAgentMessage(conv));
         const elapsedMs = this.resolveConversationElapsedMs(conv);
         const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
-        const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, elapsedMs, turnStartMs });
+        const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, isCancelled, elapsedMs, turnStartMs });
         body.append(accordion);
+        ensureSlowTurnHint(accordion, { isWorking, turnStartMs });
         if (streaming) {
             const status = document.createElement('div');
             status.className = 'theia-mobile-agent-trace-status';
@@ -454,10 +512,20 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // as rich content blocks — these are the agent's final answer, not
         // process prose. The timeline model captures them as closingNarrative
         // (plain text), but the final answer needs full markdown rendering.
+        //
+        // Repeated tool failures / retries can surface the same "error"
+        // trace-event text more than once (e.g. one summary per retry
+        // attempt that ends up identical) — identical closing-narrative
+        // content must render ONCE, not once per occurrence. A segment whose
+        // (normalized) content matches `msg.error` is skipped entirely: the
+        // styled "Task failed" dialog below already shows that message, so an
+        // extra unstyled copy here would just be a duplicate.
         const lastToolIndex = segments.reduce(
             (last, segment, index) => segment.type === 'tool' ? index : last,
             -1,
         );
+        const seenClosingNarrativeTexts = new Set<string>();
+        const normalizedFailureReason = error?.trim() ? normalizeMobileClosingNarrativeText(error) : undefined;
         for (let segmentIndex = lastToolIndex + 1; segmentIndex < segments.length; segmentIndex++) {
             const segment = segments[segmentIndex];
             if (segment.type !== 'text') {
@@ -468,6 +536,17 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 continue;
             }
             if (this.isLobeWorkflowProcessText(segment.content)) {
+                continue;
+            }
+            const action = this.resolveMobileClosingNarrativeAction(text, seenClosingNarrativeTexts, normalizedFailureReason, isError);
+            seenClosingNarrativeTexts.add(normalizeMobileClosingNarrativeText(text));
+            if (action.kind === 'skip') {
+                continue;
+            }
+            if (action.kind === 'error-card') {
+                const errorCard = createMobileClosingErrorCardElement(action.message);
+                errorCard.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
+                body.append(errorCard);
                 continue;
             }
             const textBlock = this.toolUi.createTranscriptSegmentDetails(segment, {
@@ -494,6 +573,160 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     /** True when the conversation ended in a failure. */
     protected isConversationError(conv: QaapAgentConversationDTO | undefined): boolean {
         return conv?.status === 'failed';
+    }
+
+    /** The most recent agent message in the conversation, if any. Walks
+     *  backwards without allocating a reversed copy -- called on every
+     *  streaming tick, so avoiding the `[...].reverse()` allocation matters. */
+    protected resolveLastAgentMessage(conv: QaapAgentConversationDTO | undefined): QaapAgentMessageDTO | undefined {
+        const messages = conv?.messages;
+        if (!messages) {
+            return undefined;
+        }
+        for (let index = messages.length - 1; index >= 0; index--) {
+            if (messages[index].role === 'agent') {
+                return messages[index];
+            }
+        }
+        return undefined;
+    }
+
+    /** The failure reason recorded on the conversation's last agent message, if any. */
+    protected resolveLastAgentMessageError(conv: QaapAgentConversationDTO | undefined): string | undefined {
+        return this.resolveLastAgentMessage(conv)?.error;
+    }
+
+    /**
+     * Resolves the specific agent message a rendered `row` represents: the
+     * conversation message matching `row`'s `data-transcript-message-id`
+     * attribute, falling back to the conversation's last agent message when
+     * the attribute isn't set yet (e.g. before the row has been marked) or
+     * doesn't match. Mirrors the message resolution in
+     * {@link resolveTranscriptActivityRowContext}, so that cancellation
+     * (and other message-scoped state) is derived from the same message in
+     * both places.
+     */
+    protected resolveTranscriptRowAgentMessage(
+        row: HTMLElement | undefined,
+        conv: QaapAgentConversationDTO | undefined,
+    ): QaapAgentMessageDTO | undefined {
+        const messageId = row?.getAttribute(TRANSCRIPT_MESSAGE_ID_ATTR);
+        const found = messageId ? conv?.messages.find(entry => entry.id === messageId) : undefined;
+        return found ?? this.resolveLastAgentMessage(conv);
+    }
+
+    /**
+     * True when `message` (a specific agent message, not necessarily the
+     * conversation's last one) was manually stopped by the user rather than
+     * ending in a genuine failure. There is no dedicated conversation
+     * `status` for this — the backend's `cancel()` resets `status` to
+     * `'idle'` — so the only reliable signal is the `run_cancelled` AG-UI
+     * trace event recorded on the message itself. Mirrors the
+     * `messageCancelled` detection in {@link resolveTranscriptActivityRowContext}.
+     *
+     * Callers must resolve the specific message being rendered (see
+     * {@link resolveTranscriptRowAgentMessage}) rather than passing whichever
+     * message happens to be last in the conversation -- each agent message
+     * renders its own process accordion, and in a multi-turn conversation a
+     * historical (already-settled) turn's accordion would otherwise be
+     * mislabeled whenever a later turn happened to end up cancelled.
+     */
+    protected isAgentMessageCancelled(message: QaapAgentMessageDTO | undefined): boolean {
+        return message?.traceEvents?.some(event => event.type === 'run_cancelled') ?? false;
+    }
+
+    /**
+     * Decides how a single closing-narrative text segment should render:
+     * skipped (exact duplicate of an earlier closing block, or the same
+     * message the "Task failed" dialog already shows), a compact error card
+     * (a distinct error-derived line with no corresponding `msg.error`
+     * dialog), or a normal rich-content text block. Shared by the full render
+     * path and the streaming fast-path so duplicate error text is suppressed
+     * consistently regardless of which path first observes the segment — see
+     * {@link MobileClosingNarrativeAction}.
+     */
+    protected resolveMobileClosingNarrativeAction(
+        text: string,
+        seenClosingNarrativeTexts: ReadonlySet<string>,
+        normalizedFailureReason: string | undefined,
+        isError: boolean,
+    ): MobileClosingNarrativeAction {
+        const normalizedText = normalizeMobileClosingNarrativeText(text);
+        if (seenClosingNarrativeTexts.has(normalizedText)) {
+            // Exact duplicate of an already-rendered closing block — collapse
+            // to a single occurrence instead of repeating the raw text.
+            return { kind: 'skip' };
+        }
+        if (normalizedFailureReason !== undefined && normalizedText === normalizedFailureReason) {
+            // Same message the failure dialog renders — skip the duplicate
+            // instead of showing it twice.
+            return { kind: 'skip' };
+        }
+        if (isError && MOBILE_CLOSING_TEXT_ERROR_PREFIX.test(text)) {
+            // A distinct error-derived closing line with no corresponding
+            // `msg.error` dialog — show it as a single, styled error card
+            // (icon + message) instead of an unstyled markdown block.
+            return { kind: 'error-card', message: normalizedText };
+        }
+        return { kind: 'text' };
+    }
+
+    /**
+     * Recomputes the (normalized) set of closing-narrative text strictly
+     * before `beforeIndex`, so a newly-arrived closing-narrative segment (the
+     * streaming fast-path in {@link appendStreamingAgentTextSegment}) can be
+     * checked against everything already rendered — the same duplicate check
+     * {@link renderMobileExecutionEventTimeline} applies during a full render.
+     */
+    protected collectMobileClosingNarrativeTextsBefore(
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        lastToolIndex: number,
+        beforeIndex: number,
+    ): Set<string> {
+        const seen = new Set<string>();
+        for (let index = lastToolIndex + 1; index < beforeIndex; index++) {
+            const segment = segments[index];
+            if (segment?.type !== 'text') {
+                continue;
+            }
+            const text = segment.content?.trim() ?? '';
+            if (!text || this.isLobeWorkflowProcessText(segment.content)) {
+                continue;
+            }
+            seen.add(normalizeMobileClosingNarrativeText(text));
+        }
+        return seen;
+    }
+
+    /**
+     * True when the closing-narrative text `segment` at `segmentIndex` would be
+     * DELIBERATELY skipped (no DOM host emitted) by
+     * {@link resolveMobileClosingNarrativeAction} — a duplicate of an earlier
+     * closing block, or identical to the message's `error` (already shown by
+     * the failure dialog). Used by {@link patchStreamingAgentTextSegments} to
+     * tell an intentional hole (keep patching) apart from a genuinely missing
+     * block (rebuild once). Mirrors the exact decision inputs the full render
+     * path and the streaming append fast-path use, so all three agree on which
+     * closing segments are visible.
+     */
+    protected isClosingNarrativeSegmentSkipped(
+        segment: QaapAgentMessageSegmentDTO,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        lastToolIndex: number,
+        segmentIndex: number,
+        conv: QaapAgentConversationDTO | undefined,
+    ): boolean {
+        const text = segment.type === 'text' ? (segment.content?.trim() ?? '') : '';
+        if (!text) {
+            return false;
+        }
+        const seenClosingNarrativeTexts = this.collectMobileClosingNarrativeTextsBefore(segments, lastToolIndex, segmentIndex);
+        const error = this.resolveLastAgentMessageError(conv);
+        const normalizedFailureReason = error?.trim() ? normalizeMobileClosingNarrativeText(error) : undefined;
+        const isErrorLikely = this.isConversationError(conv) || MOBILE_CLOSING_TEXT_ERROR_PREFIX.test(text);
+        return this.resolveMobileClosingNarrativeAction(
+            text, seenClosingNarrativeTexts, normalizedFailureReason, isErrorLikely,
+        ).kind === 'skip';
     }
 
     /**
@@ -548,17 +781,31 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!accordion) {
             return;
         }
+        const isWorking = streaming && this.isConversationWorking(conv);
+        const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
+        // `row` represents one specific agent message, not necessarily the
+        // conversation's last one -- resolve it via the row's message-id
+        // attribute so a historical (already-settled) turn's accordion isn't
+        // mislabeled as cancelled just because a later turn ended up
+        // cancelled.
+        const message = this.resolveTranscriptRowAgentMessage(row, conv);
         syncMobileProcessAccordionState(accordion, {
-            isWorking: streaming && this.isConversationWorking(conv),
+            isWorking,
             isError: this.isConversationError(conv),
+            isCancelled: this.isAgentMessageCancelled(message),
             elapsedMs: this.resolveConversationElapsedMs(conv),
-            turnStartMs: conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined,
+            turnStartMs,
             // Only the finalize path calls with streaming=false, and it does so
             // AFTER appending the closing narrative + diff summary — that is
             // the one moment auto-collapse is allowed. Streaming syncs must
             // never collapse, even if the working flag flickers between tools.
             settled: !streaming,
         });
+        // Re-ensure the slow-turn hint on every sync (runs on every streaming
+        // tick): this is what lets the hint survive `accordion` being wholly
+        // replaced by a full timeline rebuild mid-stream, and what removes it
+        // promptly once the turn settles.
+        ensureSlowTurnHint(accordion, { isWorking, turnStartMs });
     }
 
     /**
@@ -591,8 +838,19 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         ).forEach(el => el.remove());
         // Remove any leftover trace status (will be re-added by the helper if streaming)
         segmentsBody.querySelector('.theia-mobile-agent-trace-status')?.remove();
-        // Render the Codex-style timeline + closing narrative + diff summary
-        this.renderMobileExecutionEventTimeline(segmentsBody, segments, options);
+        // Render the Codex-style timeline + closing narrative + diff summary.
+        // Neither `error` nor the specific message are part of `options` here
+        // (callers only have `conv`) — resolve the message `row` represents
+        // (via its message-id attribute) so the same duplicate-error
+        // suppression AND cancellation state that a fresh render would use
+        // apply on this upgrade path too, instead of whichever agent message
+        // happens to be last in the conversation.
+        const message = this.resolveTranscriptRowAgentMessage(row, options.conv);
+        this.renderMobileExecutionEventTimeline(segmentsBody, segments, {
+            ...options,
+            error: message?.error,
+            message,
+        });
     }
 
     protected resolveLobeVisibleTextSegmentIndexes(
@@ -682,7 +940,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             const host = segmentsBody.querySelector<HTMLElement>(
                 `[${TRANSCRIPT_SEGMENT_INDEX_ATTR}="${segmentIndex}"]`,
             );
-            if (host) {
+            // Closing error cards (see renderMobileExecutionEventTimeline) are
+            // not markdown blocks — refreshing one here would clobber its
+            // icon + message structure with the raw markdown renderer.
+            if (host && !host.classList.contains(MOBILE_CLOSING_ERROR_CARD_CLASS)) {
                 this.toolUi.renderTranscriptRichContent(host, segment.content ?? '', { streaming: false });
             }
         }
@@ -1005,6 +1266,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         row: HTMLElement,
         prevSegments: readonly QaapAgentMessageSegmentDTO[],
         nextSegments: readonly QaapAgentMessageSegmentDTO[],
+        conv?: QaapAgentConversationDTO,
     ): boolean {
         // Codex-style execution event timeline: update closing narrative text
         // blocks (rendered outside the timeline as rich content) in-place, and
@@ -1047,11 +1309,29 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                     `[${TRANSCRIPT_SEGMENT_INDEX_ATTR}="${segmentIndex}"]`,
                 );
                 if (host) {
-                    this.toolUi.renderTranscriptRichContent(host, next.content ?? '', { streaming });
+                    // A closing error card (see renderMobileExecutionEventTimeline)
+                    // is not a markdown block — re-rendering it here would clobber
+                    // its icon + message structure with the raw markdown renderer.
+                    // Mirror the guard in refreshMobileClosingNarrativeBlocks.
+                    if (!host.classList.contains(MOBILE_CLOSING_ERROR_CARD_CLASS)) {
+                        this.toolUi.renderTranscriptRichContent(host, next.content ?? '', { streaming });
+                    }
+                } else if (this.isClosingNarrativeSegmentSkipped(next, nextSegments, lastToolIndex, segmentIndex, conv)) {
+                    // The segment has no DOM host because the closing-narrative
+                    // dedup / error-suppression logic (see
+                    // resolveMobileClosingNarrativeAction) deliberately skipped
+                    // it — a duplicate of an earlier closing block, or identical
+                    // to `msg.error` which the styled failure dialog already
+                    // shows. A full row rebuild would re-skip it and produce
+                    // byte-identical DOM, so returning false here would churn a
+                    // brand-new process accordion on every streaming tick for no
+                    // visible change. Keep patching in place instead.
+                    continue;
                 } else {
-                    // The text block should be visible but doesn't exist yet
-                    // (e.g. content grew enough to no longer be classified as
-                    // process prose). Trigger a full re-render to create it.
+                    // Genuinely missing: the block should be visible but doesn't
+                    // exist yet (e.g. content grew enough to no longer be
+                    // process prose, or to become a distinct error card).
+                    // Trigger a one-off full re-render to materialize it.
                     return false;
                 }
             }
@@ -2327,18 +2607,46 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 -1,
             );
             if (segmentIndex > lastToolIndex && !this.isLobeWorkflowProcessText(segment.content)) {
-                const textBlock = this.toolUi.createTranscriptSegmentDetails(segment);
-                textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
-                const streaming = row.classList.contains('theia-mod-streaming');
-                if (streaming) {
-                    this.toolUi.renderTranscriptRichContent(textBlock, segment.content ?? '', { streaming });
-                }
-                // Insert after the timeline but before any diff summary.
-                const diffSummary = segmentsBody.querySelector('.theia-mobile-diff-summary');
-                if (diffSummary) {
-                    segmentsBody.insertBefore(textBlock, diffSummary);
-                } else {
-                    segmentsBody.append(textBlock);
+                // Repeated tool failures / retries can stream the same
+                // "error" trace-event text more than once — check this new
+                // tail segment against everything already rendered (and
+                // against `msg.error`, shown by the failure dialog) so a
+                // duplicate never gets its own block, matching the dedup a
+                // full render applies (see renderMobileExecutionEventTimeline).
+                const text = segment.content?.trim() ?? '';
+                const seenClosingNarrativeTexts = this.collectMobileClosingNarrativeTextsBefore(nextSegments, lastToolIndex, segmentIndex);
+                const error = this.resolveLastAgentMessageError(conv);
+                const normalizedFailureReason = error?.trim() ? normalizeMobileClosingNarrativeText(error) : undefined;
+                // `conv.status` is typically still `'streaming'` at this point
+                // even when this tail segment is itself an error narrative —
+                // the conversation only flips to `'failed'` once the turn
+                // settles. Without this, an error segment would render as
+                // plain unstyled text during streaming and only pick up the
+                // styled error card on the next full render/finalize. Treat a
+                // text segment matching the error prefix as error-like right
+                // away; `resolveMobileClosingNarrativeAction` re-checks the
+                // same prefix regex before actually choosing the card, so this
+                // cannot turn an unrelated narrative into a false error card.
+                const isErrorLikely = this.isConversationError(conv) || MOBILE_CLOSING_TEXT_ERROR_PREFIX.test(text);
+                const action = this.resolveMobileClosingNarrativeAction(
+                    text, seenClosingNarrativeTexts, normalizedFailureReason, isErrorLikely,
+                );
+                if (action.kind !== 'skip') {
+                    const streaming = row.classList.contains('theia-mod-streaming');
+                    const el = action.kind === 'error-card'
+                        ? createMobileClosingErrorCardElement(action.message)
+                        : this.toolUi.createTranscriptSegmentDetails(segment);
+                    el.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
+                    if (action.kind === 'text' && streaming) {
+                        this.toolUi.renderTranscriptRichContent(el, segment.content ?? '', { streaming });
+                    }
+                    // Insert after the timeline but before any diff summary.
+                    const diffSummary = segmentsBody.querySelector('.theia-mobile-diff-summary');
+                    if (diffSummary) {
+                        segmentsBody.insertBefore(el, diffSummary);
+                    } else {
+                        segmentsBody.append(el);
+                    }
                 }
             }
             this.skipExecutionTimelineRefresh(row);

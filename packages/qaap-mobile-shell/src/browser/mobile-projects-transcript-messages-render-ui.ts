@@ -224,6 +224,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             row = this.artifactsUi.createTranscriptAgentSegmentsRow(agentSegments, msg.error, normalized, {
                 deferHeavyContent,
                 streaming: streamingTail,
+                message: msg,
             });
             if (msg.id) {
                 row.setAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, msg.id);
@@ -658,7 +659,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         });
 
         const row = segments?.length
-            ? this.artifactsUi.createTranscriptAgentSegmentsRow(segments, lastAgent.error, conv, { streaming: true })
+            ? this.artifactsUi.createTranscriptAgentSegmentsRow(segments, lastAgent.error, conv, { streaming: true, message: lastAgent })
             : this.createTranscriptMessageRowAtIndex(conv, conv.messages.length - 1);
         this.markTranscriptMessageRow(row, lastAgent.id, isTranscriptAgentTailStreaming(conv));
 
@@ -760,7 +761,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
         this.host.transcriptLastConv = conv;
         const row = segments?.length
-            ? this.artifactsUi.createTranscriptAgentSegmentsRow(segments, lastAgent.error, conv, { streaming: true })
+            ? this.artifactsUi.createTranscriptAgentSegmentsRow(segments, lastAgent.error, conv, { streaming: true, message: lastAgent })
             : this.createTranscriptMessageRowAtIndex(conv, conv.messages.length - 1);
         this.markTranscriptMessageRow(row, lastAgent.id, isTranscriptAgentTailStreaming(conv));
 
@@ -820,7 +821,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         if (segmentsInPlace) {
             if (resolvedSegments?.length) {
-                if (!this.artifactsUi.patchStreamingAgentTextSegments(existingRow, prevSegments, nextSegments)) {
+                if (!this.artifactsUi.patchStreamingAgentTextSegments(existingRow, prevSegments, nextSegments, conv)) {
                     return false;
                 }
             } else {

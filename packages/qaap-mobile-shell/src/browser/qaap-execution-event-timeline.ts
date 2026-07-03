@@ -47,6 +47,55 @@ const timelineEventCache = new WeakMap<HTMLElement, readonly MobileExecutionEven
  *  streamed result was by then. */
 const pendingTerminalOutputResult = new WeakMap<HTMLDetailsElement, string>();
 
+/**
+ * Global per-tool `<details>` open/closed state, keyed by a stable id: a
+ * terminal card's {@link TRANSCRIPT_TOOL_USE_ID_ATTR} value, or a tool
+ * group's key as derived by {@link resolveTimelineGroupStateKey} /
+ * {@link resolveTimelineGroupCreationKey}. This is deliberately global and
+ * long-lived (unlike {@link processAccordionTurnState}, scoped to a turn, or
+ * {@link captureTimelineOpenStateById}, scoped to a single in-place rebuild):
+ * a long transcript's virtual list fully removes rows that scroll out of
+ * view (`row.remove()`) and builds a brand-new row from scratch when the
+ * user scrolls back — there is no "existing" element to capture state from
+ * at that point, only the stable tool-use id to look up. Capped with a
+ * simple LRU eviction so a very long session doesn't grow this unbounded.
+ *
+ * Keys are namespaced with a `group:`/`terminal:` prefix (see
+ * {@link timelineGroupOpenStateKey} / {@link timelineTerminalOpenStateKey}):
+ * a tool group's derived key falls back to its *first tool row's* toolUseId,
+ * which — for an event with exactly one terminal tool — is the very same
+ * toolUseId as that terminal card itself. Without the prefix, toggling the
+ * outer group would silently overwrite the independent remembered state of
+ * the inner terminal card (and vice versa).
+ */
+const timelineDetailsOpenState = new Map<string, boolean>();
+const TIMELINE_DETAILS_OPEN_STATE_MAX = 256;
+
+const TIMELINE_GROUP_OPEN_STATE_PREFIX = 'group:';
+const TIMELINE_TERMINAL_OPEN_STATE_PREFIX = 'terminal:';
+
+function timelineGroupOpenStateKey(key: string): string {
+    return TIMELINE_GROUP_OPEN_STATE_PREFIX + key;
+}
+
+function timelineTerminalOpenStateKey(toolUseId: string): string {
+    return TIMELINE_TERMINAL_OPEN_STATE_PREFIX + toolUseId;
+}
+
+/** Records the latest user/programmatic open state for `key`, evicting the
+ *  least-recently-touched entry once the cap is exceeded. */
+function recordTimelineDetailsOpenState(key: string, open: boolean): void {
+    timelineDetailsOpenState.delete(key);
+    timelineDetailsOpenState.set(key, open);
+    while (timelineDetailsOpenState.size > TIMELINE_DETAILS_OPEN_STATE_MAX) {
+        const oldest = timelineDetailsOpenState.keys().next().value;
+        if (oldest === undefined) {
+            break;
+        }
+        timelineDetailsOpenState.delete(oldest);
+    }
+}
+
 /** Stable content signature for the whole rendered event list. Used to avoid
  *  touching DOM at all on duplicate SSE frames. */
 const timelineEventSignatureCache = new WeakMap<HTMLElement, string>();
@@ -431,6 +480,15 @@ export interface MobileProcessAccordionOptions {
     readonly isWorking: boolean;
     /** Whether the agent ended in an error state. */
     readonly isError: boolean;
+    /**
+     * True when the turn was manually stopped by the user rather than ending
+     * in a genuine failure (e.g. a `run_cancelled` AG-UI trace event). Takes
+     * precedence over `isError` for the header label ("Stopped after {0}"
+     * instead of "Processed in {0}") but is treated the same as `isError` for
+     * expand/collapse — a stopped turn stays expanded so the partial work is
+     * still visible, matching the "leave evidence visible" rule.
+     */
+    readonly isCancelled?: boolean;
     /** Elapsed execution time in milliseconds, or undefined if unknown. */
     readonly elapsedMs?: number;
     /**
@@ -481,15 +539,18 @@ export function wrapMobileProcessAccordion(
     timeline: HTMLElement,
     options: MobileProcessAccordionOptions,
 ): HTMLElement {
-    const { isWorking, isError, elapsedMs, turnStartMs } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs } = options;
     const details = document.createElement('details');
-    details.className = `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''} ${!isWorking && !isError ? 'theia-mod-complete' : ''}`;
-    // Auto-expand while working or on error; collapse on success. When this
-    // turn already rendered an accordion before (row rebuilt mid-stream by a
-    // full re-render or a patch fallback), restore the previous element's
-    // open/user-toggled state instead of recomputing it — a transient
-    // `isWorking === false` snapshot at rebuild time must not create the new
-    // accordion collapsed (that made it visibly oscillate during streaming).
+    details.className =
+        `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''}` +
+        ` ${isCancelled ? 'theia-mod-cancelled' : ''} ${!isWorking && !isError && !isCancelled ? 'theia-mod-complete' : ''}`;
+    // Auto-expand while working, on error, or when stopped by the user;
+    // collapse on success. When this turn already rendered an accordion
+    // before (row rebuilt mid-stream by a full re-render or a patch
+    // fallback), restore the previous element's open/user-toggled state
+    // instead of recomputing it — a transient `isWorking === false` snapshot
+    // at rebuild time must not create the new accordion collapsed (that made
+    // it visibly oscillate during streaming).
     const remembered = turnStartMs !== undefined ? processAccordionTurnState.get(turnStartMs) : undefined;
     if (remembered) {
         details.open = remembered.open;
@@ -497,7 +558,7 @@ export function wrapMobileProcessAccordion(
             details.setAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR, '1');
         }
     } else {
-        details.open = isWorking || isError;
+        details.open = isWorking || isError || !!isCancelled;
     }
 
     const header = document.createElement('summary');
@@ -505,7 +566,7 @@ export function wrapMobileProcessAccordion(
 
     const label = document.createElement('span');
     label.className = 'theia-mobile-process-accordion-label';
-    label.textContent = formatMobileProcessLabel(elapsedMs, isWorking);
+    label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options));
     syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
 
     const chevron = document.createElement('span');
@@ -543,7 +604,7 @@ export function wrapMobileProcessAccordion(
     // nothing would fold it. Schedule the same confirmation collapse here; it
     // self-cancels if work resumes (a working sync cancels it) or if the user
     // toggles (checked at fire time).
-    if (!isWorking && !isError && details.open
+    if (!isWorking && !isError && !isCancelled && details.open
         && details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) !== '1') {
         schedulePendingProcessAccordionCollapse(details);
     }
@@ -593,7 +654,7 @@ function syncMobileProcessAccordionLabelTicker(
         sharedElapsedTicker.register({
             element: label,
             render: now => {
-                label.textContent = formatMobileProcessLabel(Math.max(0, now - turnStartMs), true);
+                label.textContent = formatMobileProcessLabel(Math.max(0, now - turnStartMs), 'processing');
             },
         });
     }
@@ -628,7 +689,7 @@ export function syncMobileProcessAccordionState(
         return;
     }
     const details = accordion as HTMLDetailsElement;
-    const { isWorking, isError, elapsedMs, turnStartMs } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs } = options;
 
     // Update the label regardless of toggle state.
     const label = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-label');
@@ -636,7 +697,7 @@ export function syncMobileProcessAccordionState(
         if (!(isWorking && turnStartMs !== undefined)) {
             // While working with a known turn start, registering on the ticker
             // below renders immediately — skip the redundant direct write.
-            label.textContent = formatMobileProcessLabel(elapsedMs, isWorking);
+            label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options));
         }
         syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
     }
@@ -644,7 +705,8 @@ export function syncMobileProcessAccordionState(
     // Update modifier classes.
     details.classList.toggle('theia-mod-working', isWorking);
     details.classList.toggle('theia-mod-error', isError);
-    details.classList.toggle('theia-mod-complete', !isWorking && !isError);
+    details.classList.toggle('theia-mod-cancelled', !!isCancelled);
+    details.classList.toggle('theia-mod-complete', !isWorking && !isError && !isCancelled);
 
     // If the user manually toggled, respect their choice for the rest of the
     // turn — never fight the user by auto-expanding/collapsing afterward.
@@ -654,8 +716,9 @@ export function syncMobileProcessAccordionState(
 
     // Auto-expand/collapse.
     //
-    // Expansion happens whenever the agent is working or errored, and cancels
-    // any pending collapse. Collapse has two routes:
+    // Expansion happens whenever the agent is working, errored, or was
+    // stopped by the user, and cancels any pending collapse. Collapse has two
+    // routes:
     // - `settled: true` (the finalize path, final summary already appended):
     //   collapse on the next animation frame so the browser paints the final
     //   content first.
@@ -663,7 +726,7 @@ export function syncMobileProcessAccordionState(
     //   the settled conversation, or a transient status flicker between
     //   tools): collapse only after a confirmation delay, cancelled if work
     //   resumes — so mid-stream flickers can never fold the accordion.
-    const shouldOpen = isWorking || isError;
+    const shouldOpen = isWorking || isError || !!isCancelled;
     if (shouldOpen) {
         cancelPendingProcessAccordionCollapse(details);
         if (!details.open) {
@@ -723,7 +786,9 @@ function collapseProcessAccordionIfStillSettled(details: HTMLDetailsElement): vo
     if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
         return;
     }
-    if (details.classList.contains('theia-mod-working') || details.classList.contains('theia-mod-error')) {
+    if (details.classList.contains('theia-mod-working')
+        || details.classList.contains('theia-mod-error')
+        || details.classList.contains('theia-mod-cancelled')) {
         return;
     }
     details.open = false;
@@ -743,16 +808,53 @@ export function findMobileProcessAccordion(segmentsBody: HTMLElement): HTMLDetai
     return segmentsBody.querySelector<HTMLDetailsElement>(`.${MOBILE_PROCESS_ACCORDION_CLASS}`) ?? undefined;
 }
 
-function formatMobileProcessLabel(elapsedMs: number | undefined, isWorking: boolean): string {
+/**
+ * The process accordion header conveys one of four outcomes for the turn.
+ * `processing` while streaming; once settled, exactly one of `processed`
+ * (success), `stopped` (user cancelled), or `failed` (genuine error) — never
+ * "Processed" for a turn the user manually stopped.
+ */
+type MobileProcessOutcome = 'processing' | 'processed' | 'stopped' | 'failed';
+
+function resolveMobileProcessOutcome(
+    options: Pick<MobileProcessAccordionOptions, 'isWorking' | 'isError' | 'isCancelled'>,
+): MobileProcessOutcome {
+    if (options.isWorking) {
+        return 'processing';
+    }
+    if (options.isCancelled) {
+        return 'stopped';
+    }
+    if (options.isError) {
+        return 'failed';
+    }
+    return 'processed';
+}
+
+function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: MobileProcessOutcome): string {
     if (elapsedMs === undefined) {
-        return isWorking
-            ? nls.localize('theia/qaap-mobile-shell/processTimeline/processing', 'Processing…')
-            : nls.localize('theia/qaap-mobile-shell/processTimeline/processed', 'Processed');
+        switch (outcome) {
+            case 'processing':
+                return nls.localize('theia/qaap-mobile-shell/processTimeline/processing', 'Processing…');
+            case 'stopped':
+                return nls.localize('theia/qaap-mobile-shell/processTimeline/stopped', 'Stopped');
+            case 'failed':
+                return nls.localize('theia/qaap-mobile-shell/processTimeline/failed', 'Failed');
+            default:
+                return nls.localize('theia/qaap-mobile-shell/processTimeline/processed', 'Processed');
+        }
     }
     const formatted = formatMobileElapsed(elapsedMs);
-    return isWorking
-        ? nls.localize('theia/qaap-mobile-shell/processTimeline/processingElapsed', 'Processing… {0}', formatted)
-        : nls.localize('theia/qaap-mobile-shell/processTimeline/processedIn', 'Processed in {0}', formatted);
+    switch (outcome) {
+        case 'processing':
+            return nls.localize('theia/qaap-mobile-shell/processTimeline/processingElapsed', 'Processing… {0}', formatted);
+        case 'stopped':
+            return nls.localize('theia/qaap-mobile-shell/processTimeline/stoppedAfter', 'Stopped after {0}', formatted);
+        case 'failed':
+            return nls.localize('theia/qaap-mobile-shell/processTimeline/failedAfter', 'Failed after {0}', formatted);
+        default:
+            return nls.localize('theia/qaap-mobile-shell/processTimeline/processedIn', 'Processed in {0}', formatted);
+    }
 }
 
 function formatMobileElapsed(ms: number): string {
@@ -1058,6 +1160,22 @@ function resolveTimelineGroupStateKey(section: HTMLElement, group: HTMLDetailsEl
     return section.getAttribute(MOBILE_EVENT_ID_ATTR) ?? undefined;
 }
 
+/**
+ * Same key derivation as {@link resolveTimelineGroupStateKey} (first tool
+ * row's stable `toolUseId`, falling back to the event id), but computed at
+ * element-creation time directly from the `detailsContainer` being built
+ * rather than by querying an already-mounted `section` — used by
+ * {@link timelineDetailsOpenState} lookups/records, which run before the
+ * group is ever attached to a section. The event-id fallback is positional
+ * per-timeline (stable within one render, not across renders with a
+ * different event shape), which is acceptable here for the same reason it is
+ * acceptable for {@link resolveTimelineGroupStateKey}.
+ */
+function resolveTimelineGroupCreationKey(event: MobileExecutionEvent, detailsContainer: HTMLElement): string {
+    const firstToolUseId = detailsContainer.firstElementChild?.getAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR);
+    return firstToolUseId ?? event.id;
+}
+
 function captureTimelineOpenStateById(existing: HTMLElement): MobileTimelineOpenState {
     const groups = new Map<string, boolean>();
     const terminals = new Map<string, boolean>();
@@ -1242,6 +1360,20 @@ function createMobileToolGroupElement(
     });
 
     details.append(detailsContainer);
+
+    // Restore a user-opened state that survives full row rematerialization
+    // (virtual-list scroll-out/scroll-back builds this element from scratch,
+    // with no "existing" element around to capture/restore from) and keep
+    // recording every subsequent toggle so later rematerializations stay in
+    // sync.
+    const groupStateKey = timelineGroupOpenStateKey(resolveTimelineGroupCreationKey(event, detailsContainer));
+    if (timelineDetailsOpenState.get(groupStateKey)) {
+        details.open = true;
+    }
+    details.addEventListener('toggle', () => {
+        recordTimelineDetailsOpenState(groupStateKey, details.open);
+    });
+
     return details;
 }
 
@@ -1324,6 +1456,20 @@ function createMobileTerminalOutputElement(
     details.className = `theia-mobile-terminal-output ${tool.isError ? 'failed' : tool.isFinished ? 'complete' : 'running'}`;
     details.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
 
+    // Restore a user-opened state that survives full row rematerialization
+    // (see the matching comment in createMobileToolGroupElement) — setting
+    // `open` here (rather than after the lazy-render wiring below) lets the
+    // existing `if (details.open) { ... }` branch further down render the
+    // pending `<pre>` eagerly, exactly as it already does for the "created
+    // already open" case.
+    const terminalStateKey = timelineTerminalOpenStateKey(tool.segment.toolUseId);
+    if (timelineDetailsOpenState.get(terminalStateKey)) {
+        details.open = true;
+    }
+    details.addEventListener('toggle', () => {
+        recordTimelineDetailsOpenState(terminalStateKey, details.open);
+    });
+
     const summary = document.createElement('summary');
     summary.className = 'theia-mobile-terminal-output-summary';
 
@@ -1371,6 +1517,32 @@ function createMobileTerminalOutputElement(
     details.append(content);
 
     return details;
+}
+
+// ─── Closing Error Card ──────────────────────────────────────────────────────
+// A single, styled outcome card for a failed turn's closing narrative — the
+// codex-style equivalent of the old repeated raw "Error: ..." text blocks.
+// Rendered OUTSIDE the process accordion (it's a final outcome, like the diff
+// summary), and only once per distinct message: callers are responsible for
+// deduplicating identical/duplicate error text before calling this.
+
+/** CSS class on the compact closing error card. */
+export const MOBILE_CLOSING_ERROR_CARD_CLASS = 'theia-mobile-closing-error-card';
+
+export function createMobileClosingErrorCardElement(message: string): HTMLElement {
+    const card = document.createElement('div');
+    card.className = `${MOBILE_CLOSING_ERROR_CARD_CLASS} theia-mod-error`;
+
+    const icon = document.createElement('span');
+    icon.className = 'codicon codicon-error theia-mobile-closing-error-card-icon';
+    icon.setAttribute('aria-hidden', 'true');
+
+    const text = document.createElement('span');
+    text.className = 'theia-mobile-closing-error-card-message';
+    text.textContent = message;
+
+    card.append(icon, text);
+    return card;
 }
 
 // ─── Diff Summary (closing of the story) ─────────────────────────────────────

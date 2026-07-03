@@ -37,7 +37,10 @@ describe('QaapTranscriptLiveController', () => {
         (global as unknown as { window: typeof globalThis }).window = globalThis;
     });
 
-    it('handleSummaryUpdated renders locally while SSE deltas are still arriving', () => {
+    it('handleSummaryUpdated updates conv state but skips render for a metadata-only SSE tick while streaming', () => {
+        // `updatedAt` alone is no longer part of the transcript fingerprint (see
+        // qaap-transcript-incremental-update#fingerprintConversationHeader): a summary tick that only
+        // bumps `updatedAt` with byte-identical messages must not force a DOM rebuild every tick.
         let rendered = 0;
         let lastConv = conv();
         const changeEmitter = new Emitter<void>();
@@ -56,7 +59,7 @@ describe('QaapTranscriptLiveController', () => {
             conversationsOnDidChange: changeEmitter.event,
         });
         controller.handleSummaryUpdated(summary({ updatedAt: 11 }));
-        expect(rendered).to.equal(1);
+        expect(rendered).to.equal(0);
         expect(lastConv.updatedAt).to.equal(11);
         controller.dispose();
         changeEmitter.dispose();

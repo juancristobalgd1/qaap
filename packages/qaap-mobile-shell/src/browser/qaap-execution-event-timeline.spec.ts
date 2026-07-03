@@ -448,6 +448,40 @@ describe('qaap-execution-event-timeline', () => {
             expect(accordion.classList.contains('theia-mod-error')).to.be.true;
         });
 
+        it('shows "Stopped after Xs" label and theia-mod-cancelled class when the user stopped the turn', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(
+                segments, { isWorking: false, isError: false, isCancelled: true, elapsedMs: 15000 },
+            );
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Stopped after 15s');
+            expect(accordion.classList.contains('theia-mod-cancelled')).to.be.true;
+            expect(accordion.classList.contains('theia-mod-error')).to.be.false;
+            expect(accordion.classList.contains('theia-mod-complete')).to.be.false;
+        });
+
+        it('shows "Stopped" label (no elapsed) when cancelled without a known duration', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false, isCancelled: true });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Stopped');
+        });
+
+        it('shows "Failed after Xs" label when the turn ended in error', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: true, elapsedMs: 147000 });
+            const label = accordion.querySelector('.theia-mobile-process-accordion-label');
+            expect(label?.textContent).to.equal('Failed after 2m 27s');
+        });
+
+        it('is open when cancelled, and stays open on a settled sync (leaves evidence visible)', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false, isCancelled: true });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, isCancelled: true, settled: true });
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+        });
+
         it('applies theia-mod-complete class when complete', () => {
             const segments = [toolSegment('read', 't1', '{}', true)];
             const accordion = createMobileProcessAccordion(segments, { isWorking: false, isError: false });
@@ -679,6 +713,63 @@ describe('qaap-execution-event-timeline', () => {
             expect(icons.length).to.equal(2);
             expect(icons[0].classList.contains('codicon-file-code')).to.be.true;
             expect(icons[1].classList.contains('codicon-markdown')).to.be.true;
+        });
+
+    });
+
+    // ─── Open-state persistence across virtual-list rematerialization ────────
+    // Long transcripts virtualize: a row scrolled out of view is fully
+    // removed (`row.remove()`), and scrolling back builds a brand-new row
+    // from scratch — a fresh `createMobileExecutionEventTimeline` call with
+    // no relationship to the previous DOM. These tests simulate that by
+    // creating a second, independent timeline from the same segments and
+    // checking that a manually-opened terminal card / tool group is still
+    // open (and, for the terminal, that its content is already rendered).
+
+    describe('global open-state persistence across virtual-list rematerialization', () => {
+
+        it('restores a user-opened terminal card, with its output already rendered, in a freshly created timeline', () => {
+            const segments = [
+                toolSegment('Bash', 'persist-terminal-1', JSON.stringify({ command: 'echo hi' }), true, false, 'hello output'),
+            ];
+
+            // First mount: user expands the terminal card.
+            const first = createMobileExecutionEventTimeline(segments);
+            const terminal = first.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+            // Use the jsdom window's Event constructor — see the note in the
+            // ANSI-stripping test above.
+            terminal!.dispatchEvent(new window.Event('toggle'));
+
+            // Simulate the virtual list dropping the row entirely (scrolled
+            // out of view) and rebuilding it from scratch on scroll-back: a
+            // brand new element tree, unrelated to `first`.
+            const second = createMobileExecutionEventTimeline(segments);
+            const restoredTerminal = second.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            expect(restoredTerminal).to.not.equal(null);
+            expect(restoredTerminal?.open).to.equal(true);
+            // The lazy <pre> must be rendered eagerly at creation time, since
+            // a programmatic `open = true` never fires the lazy first-open
+            // 'toggle' handler.
+            const pre = restoredTerminal?.querySelector('.theia-mobile-terminal-output-pre');
+            expect(pre).to.not.equal(null);
+            expect(pre?.textContent).to.equal('hello output');
+        });
+
+        it('restores a user-opened tool group in a freshly created timeline', () => {
+            const segments = [
+                toolSegment('Read', 'persist-group-1', JSON.stringify({ path: 'a.ts' })),
+            ];
+
+            const first = createMobileExecutionEventTimeline(segments);
+            const group = first.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            group!.open = true;
+            group!.dispatchEvent(new window.Event('toggle'));
+
+            const second = createMobileExecutionEventTimeline(segments);
+            const restoredGroup = second.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            expect(restoredGroup).to.not.equal(null);
+            expect(restoredGroup?.open).to.equal(true);
         });
 
     });

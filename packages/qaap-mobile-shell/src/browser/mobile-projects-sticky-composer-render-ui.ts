@@ -68,6 +68,7 @@ import {
     readInstalledMcpServerSlugs,
     removeMcpServer,
 } from '../common/qaap-mcp-plugin-install';
+import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 
 export interface MobileProjectsStickyComposerRenderHost {
 root: HTMLElement;
@@ -134,6 +135,40 @@ handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
 
 export class MobileProjectsStickyComposerRenderUi {
     constructor(protected readonly host: MobileProjectsStickyComposerRenderHost) { }
+
+    /** Tracks whether the real (non-placeholder) home-repos composer is currently mounted, to drive autofocus-on-ready. */
+    protected reposComposerMounted = false;
+
+    protected readStickyComposerDraft(project: MobileProjectEntry): string {
+        return readProjectComposerDraft(project.id, this.host.stickyComposerDraft);
+    }
+
+    protected writeStickyComposerDraft(project: MobileProjectEntry, value: string): void {
+        this.host.stickyComposerDraft = value;
+        writeProjectComposerDraft(project.id, value);
+    }
+
+    /**
+     * Minimal disabled placeholder rendered while the home-repos composer surface is eligible but the
+     * project has not resolved yet (avoids a 5-8s window with zero composer mounted).
+     */
+    protected renderStickyComposerLoadingPlaceholder(): void {
+        const column = document.createElement('div');
+        column.className = 'theia-mobile-projects-sticky-composer-column theia-mod-loading';
+        const inputPanel = document.createElement('div');
+        inputPanel.className = 'theia-mobile-projects-sticky-composer-input-wrap theia-mobile-projects-sticky-composer-input-panel theia-mod-loading';
+        const input = document.createElement('textarea');
+        input.className = 'theia-mobile-projects-sticky-composer-input theia-mod-loading';
+        input.rows = 2;
+        input.setAttribute('rows', '2');
+        input.disabled = true;
+        input.placeholder = nls.localize('qaap/mobileProjects/stickyComposerLoadingProject', 'Loading project…');
+        inputPanel.append(input);
+        column.append(inputPanel);
+        this.host.stickyComposerHost.replaceChildren(column);
+        this.host.stickyComposerHost.hidden = false;
+        this.host.root.classList.add('theia-mod-sticky-composer');
+    }
 
     handleStickyComposerSlashAction(actionId: StickyComposerSlashActionId, prompt: string): Promise<void> {
         return executeStickyComposerSlashAction(actionId, prompt, {
@@ -246,6 +281,7 @@ export class MobileProjectsStickyComposerRenderUi {
         const filtered = this.host.hubQueryUi.applySearch(this.host.hubQueryUi.applyFilter(this.host.projects, this.host.filter));
         const project = this.host.composerHeaderUi.resolveStickyComposerProject(filtered);
         if (this.host.agentsHubShellActive) {
+            this.reposComposerMounted = false;
             const shellProject = this.host.resolveAgentsHubShellProject();
             const shellSummary = shellProject ? this.host.resolveAgentsHubShellSummary(shellProject) : undefined;
             const chatHost = this.host.agentsHubInlineChatHost ?? this.host.transcriptChatHost;
@@ -278,9 +314,14 @@ export class MobileProjectsStickyComposerRenderUi {
             window.requestAnimationFrame(() => this.host.composerHeaderUi.updateStickyComposerFabLift());
             return;
         }
+        const activeElementBeforeRender = document.activeElement;
+        const focusEligibleBeforeMount = !activeElementBeforeRender
+            || activeElementBeforeRender === document.body
+            || (activeElementBeforeRender instanceof HTMLElement && activeElementBeforeRender.classList.contains('theia-mod-loading'));
         this.host.transcriptComposerMountKey = undefined;
         this.host.stickyComposerHost.replaceChildren();
-        const showReposComposer = this.host.homeMode && !!this.host.conversations && !!project && this.host.hubView === 'repos';
+        const surfaceEligible = this.host.homeMode && !!this.host.conversations && this.host.hubView === 'repos';
+        const showReposComposer = surfaceEligible && !!project;
         const showSurface = showReposComposer;
         const showComposer = showSurface
             && (!this.host.isProjectDetailView() || (project && this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'messages'));
@@ -288,6 +329,10 @@ export class MobileProjectsStickyComposerRenderUi {
         this.host.root.classList.toggle('theia-mod-sticky-composer', showComposer);
         if (!showSurface || !project) {
             this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
+            this.reposComposerMounted = false;
+            if (surfaceEligible && !project) {
+                this.renderStickyComposerLoadingPlaceholder();
+            }
             return;
         }
 
@@ -343,8 +388,8 @@ export class MobileProjectsStickyComposerRenderUi {
             formatContextChip: item => this.host.stickyComposerContextUi.formatComposerContextEntry(item),
             filesExpanded: this.host.stickyComposerFilesExpanded,
             onFilesExpandedChange: expanded => { this.host.stickyComposerFilesExpanded = expanded; },
-            getDraft: () => this.host.stickyComposerDraft,
-            setDraft: value => { this.host.stickyComposerDraft = value; },
+            getDraft: () => this.readStickyComposerDraft(project),
+            setDraft: value => { this.writeStickyComposerDraft(project, value); },
             resolveAgentLabel: () => this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
             resolveAgentId: () => this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
             modes,
@@ -394,7 +439,7 @@ export class MobileProjectsStickyComposerRenderUi {
                 disposeComposerContextEntries(this.host.stickyComposerContext);
                 this.host.stickyComposerContext = [];
                 const submitOptions = {
-                    openConversation: isChatSurface,
+                    openConversation: true,
                     selectedAgentId,
                     modeId,
                     variables: variables.length > 0 ? variables : undefined,
@@ -402,7 +447,6 @@ export class MobileProjectsStickyComposerRenderUi {
                 };
                 const done = this.host.submitBackgroundAgentTask(project, draft, {
                     ...submitOptions,
-                    openConversation: false,
                     forceVps: true,
                     worktree: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree',
                     approvalPolicyId: showApprovalPolicy
@@ -501,6 +545,14 @@ export class MobileProjectsStickyComposerRenderUi {
             this.host.stickyComposerHost.append(modeBanner);
         }
         this.host.stickyComposerHost.append(column);
+        const becameMounted = showComposer && !this.reposComposerMounted;
+        this.reposComposerMounted = showComposer;
+        if (becameMounted && focusEligibleBeforeMount) {
+            window.requestAnimationFrame(() => {
+                const textarea = column.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
+                textarea?.focus();
+            });
+        }
         this.host.composerHeaderUi.syncHeaderComposerSurfacePicker();
         this.host.updateNewFabVisibility();
         window.requestAnimationFrame(() => this.host.composerHeaderUi.updateStickyComposerFabLift());

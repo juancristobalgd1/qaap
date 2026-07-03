@@ -60,7 +60,6 @@ function fingerprintConversationHeader(conv: QaapAgentConversationDTO): string {
     return [
         conv.autoApprove === false ? '0' : '1',
         conv.status,
-        String(conv.updatedAt),
         String(conv.messages.length),
     ].join('|');
 }

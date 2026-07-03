@@ -68,6 +68,7 @@ import {
     type TranscriptFollowUpEntry,
 } from '../common/qaap-transcript-follow-up-queue';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
 import {
@@ -228,6 +229,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
     protected composerCheckpointRestoreBusy = false;
+
+    /** Tracks whether the Agents Hub idle (pre-conversation) composer is currently mounted, to drive autofocus-on-ready. */
+    protected agentsHubIdleComposerMounted = false;
 
     constructor(
         protected readonly host: MobileProjectsTranscriptStickyComposerHost,
@@ -1195,7 +1199,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
-        if (summary.source === 'theia-chat' || isAgentsHubIdleConversationSummary(summary)) {
+        if (isAgentsHubIdleConversationSummary(summary)) {
+            this.host.transcriptComposerAgentModel = undefined;
+            // The idle summary id is a shared constant across all projects (not per-conversation), so its
+            // draft is persisted per project rather than through the per-conversation draft storage below.
+            this.host.transcriptComposerDraft = readProjectComposerDraft(project.id, this.host.transcriptComposerDraft);
+            return;
+        }
+        if (summary.source === 'theia-chat') {
             this.host.transcriptComposerAgentModel = undefined;
             return;
         }
@@ -1230,6 +1241,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
         summary: QaapAgentConversationSummaryDTO,
         chatHost: HTMLElement,
     ): Promise<void> {
+        const activeElementBeforeMount = document.activeElement;
+        const focusEligibleBeforeMount = !activeElementBeforeMount
+            || activeElementBeforeMount === document.body
+            || (activeElementBeforeMount instanceof HTMLElement && activeElementBeforeMount.classList.contains('theia-mod-loading'));
         const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
         warmAgentTurnPath(cwd, {
             warmLiveTransport: () => this.host.conversations?.warmLiveTransport(),
@@ -1314,7 +1329,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
             getDraft: () => this.host.transcriptComposerDraft,
             setDraft: value => {
                 this.host.transcriptComposerDraft = value;
-                this.schedulePersistTranscriptComposerDraft(summary.id);
+                if (isAgentsHubIdleConversationSummary(summary)) {
+                    // Shared idle summary id — persist per project instead of per conversation.
+                    writeProjectComposerDraft(project.id, value);
+                } else {
+                    this.schedulePersistTranscriptComposerDraft(summary.id);
+                }
             },
             resolveAgentLabel: () => this.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(),
             resolveAgentId: () => this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
@@ -1448,6 +1468,15 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         shell.append(column);
         host.append(shell);
+        const isIdleComposer = isAgentsHubIdleConversationSummary(summary);
+        const becameMounted = isIdleComposer && !this.agentsHubIdleComposerMounted;
+        this.agentsHubIdleComposerMounted = isIdleComposer;
+        if (becameMounted && focusEligibleBeforeMount) {
+            window.requestAnimationFrame(() => {
+                const textarea = column.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
+                textarea?.focus();
+            });
+        }
         this.syncTranscriptComposerQuickActionsVisibility(host, summary);
         this.syncComposerActivityFingerprint(summary, project);
         if (this.host.transcriptLastConv?.id === summary.id) {
@@ -1485,7 +1514,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
         disposeComposerContextEntries(this.host.transcriptComposerContext);
         this.host.transcriptComposerContext = [];
         const clearComposerDraft = (): void => {
-            clearConversationComposerDraft(summary.id);
+            if (isAgentsHubIdleConversationSummary(summary)) {
+                // Shared idle summary id — clear the project-scoped draft instead of the (unrelated) per-conversation one.
+                writeProjectComposerDraft(project.id, '');
+            } else {
+                clearConversationComposerDraft(summary.id);
+            }
             this.host.transcriptComposerDraft = '';
         };
         if (this.isTranscriptStickyComposerAgentWorking() && !isAgentsHubIdleConversationSummary(summary)) {

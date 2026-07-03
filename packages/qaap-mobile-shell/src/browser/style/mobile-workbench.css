@@ -26731,6 +26731,10 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   color: var(--theia-errorForeground);
 }
 
+.theia-mobile-process-accordion.theia-mod-cancelled .theia-mobile-process-accordion-label {
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 65%, transparent);
+}
+
 .theia-mobile-process-accordion-chevron {
   color: var(--theia-descriptionForeground);
   font-size: 12px;
@@ -26744,6 +26748,53 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 .theia-mobile-process-accordion-content {
   padding-top: 4px;
+}
+
+/* ─── Slow-turn hint: subtle nudge once a turn runs long ──────────────────── */
+/* Sits right after the process accordion (never inside it), so it stays out  */
+/* of the streaming patch/rebuild paths and is unaffected by open/collapse.   */
+
+.theia-mobile-slow-turn-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -12px 0 20px 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.theia-mobile-slow-turn-hint-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.theia-mobile-slow-turn-hint-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.theia-mobile-slow-turn-hint-dismiss {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.theia-mobile-slow-turn-hint-dismiss:hover,
+.theia-mobile-slow-turn-hint-dismiss:focus-visible {
+  background: var(--theia-toolbar-hoverBackground);
+  color: var(--theia-foreground);
+  outline: none;
 }
 
 /* ─── ExecutionEvent: one narrative + one tool group ──────────────────────── */
@@ -26994,6 +27045,35 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   color: var(--theia-foreground);
   font-size: 13px;
   line-height: 1.65;
+}
+
+/* ─── Closing error card: single, styled outcome for a failed turn ────────── */
+/* Replaces repeated raw "Error: ..." text blocks with one compact card.      */
+
+.theia-mobile-closing-error-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 24px 0 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--theia-errorForeground) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theia-errorForeground) 24%, transparent);
+}
+
+.theia-mobile-closing-error-card-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--theia-errorForeground);
+  font-size: 14px;
+}
+
+.theia-mobile-closing-error-card-message {
+  color: var(--theia-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ─── DiffSummary: the natural closing of the execution story ─────────────── */
