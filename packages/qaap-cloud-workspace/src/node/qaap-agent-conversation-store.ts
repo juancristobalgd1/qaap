@@ -62,6 +62,7 @@ import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
 import { buildConversationAgentPrompt } from '../common/qaap-agent-conversation-prompt';
+import { deriveConversationTitle } from '../common/qaap-conversation-title';
 import {
     areAllSubtasksSettled,
     buildTeamSynthesisUserMessage,
@@ -1617,12 +1618,16 @@ export class QaapAgentConversationStore {
         return filterAgentProcessLogChunk(chunk);
     }
 
+    /**
+     * Derive the auto-summarized title for a conversation from its first user prompt.
+     *
+     * Delegates to the pure {@link deriveConversationTitle} heuristic (shared with the frontend
+     * fallback). This is the single chokepoint used both when a conversation is created and when
+     * the first user turn is posted, so an explicit rename ({@link rename}/{@link update}) is never
+     * touched. See {@link deriveConversationTitle}'s doc for the documented LLM-title upgrade seam.
+     */
     protected deriveTitle(seed: string): string {
-        const clean = seed.replace(/\s+/g, ' ').trim();
-        if (!clean) {
-            return '';
-        }
-        return clean.length > 60 ? `${clean.slice(0, 57)}…` : clean;
+        return deriveConversationTitle(seed);
     }
 
     protected fire(event: QaapAgentConversationEvent): void {
