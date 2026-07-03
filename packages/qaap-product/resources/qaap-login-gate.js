@@ -223,7 +223,9 @@
         }
         window.__qaapBundleLoading = true;
         var script = document.createElement('script');
-        script.type = 'text/javascript';
+        // The frontend builds as ES modules (esbuild code-splitting); the
+        // browser resolves and parallel-loads the shared chunks itself.
+        script.type = 'module';
         script.charset = 'utf-8';
         script.src = './bundle.js';
         script.onload = function () {
