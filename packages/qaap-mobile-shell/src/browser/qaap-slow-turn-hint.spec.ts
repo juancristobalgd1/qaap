@@ -72,9 +72,22 @@ describe('qaap-slow-turn-hint', () => {
         expect(hint).to.not.be.null;
         expect(hint!.classList.contains(MOBILE_SLOW_TURN_HINT_CLASS)).to.be.true;
         expect(hint!.hasAttribute(MOBILE_SLOW_TURN_HINT_ATTR)).to.be.true;
-        expect(hint!.textContent).to.contain('This model is taking a while');
+        expect(hint!.textContent).to.contain('This model is taking a while.');
         expect(hint!.querySelector('.codicon-clock')).to.not.be.null;
         expect(hint!.querySelector('.theia-mobile-slow-turn-hint-dismiss')).to.not.be.null;
+        // No `onStopTurn` was passed -- no stop button should render.
+        expect(hint!.querySelector('.theia-mobile-slow-turn-hint-stop')).to.be.null;
+    });
+
+    it('renders a Stop turn button when onStopTurn is supplied', () => {
+        const accordion = createAccordion();
+        const turnStartMs = freshTurnStartMs(SLOW_TURN_HINT_THRESHOLD_MS + 1000);
+        ensureSlowTurnHint(accordion, { isWorking: true, turnStartMs, onStopTurn: () => { /* no-op */ } });
+        const hint = accordion.nextElementSibling;
+        expect(hint).to.not.be.null;
+        const stopBtn = hint!.querySelector<HTMLButtonElement>('.theia-mobile-slow-turn-hint-stop');
+        expect(stopBtn).to.not.be.null;
+        expect(stopBtn!.textContent).to.equal('Stop turn');
     });
 
     it('keeps the hint in place on a later sync of the same accordion', () => {
@@ -128,6 +141,28 @@ describe('qaap-slow-turn-hint', () => {
         const rebuiltAccordion = createAccordion();
         ensureSlowTurnHint(rebuiltAccordion, { isWorking: true, turnStartMs });
         expect(rebuiltAccordion.nextElementSibling).to.be.null;
+    });
+
+    it('clicking Stop turn calls the callback and removes the hint permanently', () => {
+        const accordion = createAccordion();
+        const turnStartMs = freshTurnStartMs(SLOW_TURN_HINT_THRESHOLD_MS + 1000);
+        let stopped = 0;
+        ensureSlowTurnHint(accordion, { isWorking: true, turnStartMs, onStopTurn: () => { stopped += 1; } });
+        const hint = accordion.nextElementSibling as HTMLElement;
+        const stopBtn = hint.querySelector<HTMLButtonElement>('.theia-mobile-slow-turn-hint-stop');
+        expect(stopBtn).to.not.be.null;
+        stopBtn!.click();
+        expect(stopped).to.equal(1);
+        expect(accordion.nextElementSibling).to.be.null;
+
+        // Permanent, like dismiss: a later sync of the same (still working)
+        // turn must not bring it back, even across an accordion rebuild.
+        ensureSlowTurnHint(accordion, { isWorking: true, turnStartMs, onStopTurn: () => { stopped += 1; } });
+        expect(accordion.nextElementSibling).to.be.null;
+        const rebuiltAccordion = createAccordion();
+        ensureSlowTurnHint(rebuiltAccordion, { isWorking: true, turnStartMs, onStopTurn: () => { stopped += 1; } });
+        expect(rebuiltAccordion.nextElementSibling).to.be.null;
+        expect(stopped).to.equal(1);
     });
 
     it('removes the hint once the turn stops working, and does not re-show it later', () => {

@@ -54,6 +54,7 @@ export interface MobileProjectsCardMenuHost {
     onDuplicateProject(project: MobileProjectEntry): Promise<void>;
     onRemoveProject(project: MobileProjectEntry): Promise<void>;
     onClearProjectChats(project: MobileProjectEntry): Promise<void>;
+    onClearFailedTasks(project: MobileProjectEntry): Promise<void>;
     closeCurrentWorkspace(): Promise<void>;
     ensureOverlayUi(): {
         parallel: {
@@ -141,6 +142,18 @@ export class MobileProjectsCardMenuUi {
                 : undefined,
             onSelect: () => { void this.host.onClearProjectChats(project); },
         });
+
+        const failedCount = this.host.conversationIndexUi.countFailedTasks(project);
+        if (failedCount > 0) {
+            this.appendCardMenuItem(menu, {
+                label: failedCount === 1
+                    ? nls.localize('qaap/mobileProjects/clearFailedTasksOne', 'Clear failed run')
+                    : nls.localize('qaap/mobileProjects/clearFailedTasksMany', 'Clear failed runs ({0})', String(failedCount)),
+                iconClass: 'codicon-clear-all',
+                danger: true,
+                onSelect: () => { void this.host.onClearFailedTasks(project); },
+            });
+        }
 
         return menu;
     }

@@ -500,7 +500,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
         const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, isCancelled, elapsedMs, turnStartMs });
         body.append(accordion);
-        ensureSlowTurnHint(accordion, { isWorking, turnStartMs });
+        ensureSlowTurnHint(accordion, { isWorking, turnStartMs, onStopTurn: () => this.host.cancelOpenTranscriptStream?.() });
         if (streaming) {
             const status = document.createElement('div');
             status.className = 'theia-mobile-agent-trace-status';
@@ -805,7 +805,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // tick): this is what lets the hint survive `accordion` being wholly
         // replaced by a full timeline rebuild mid-stream, and what removes it
         // promptly once the turn settles.
-        ensureSlowTurnHint(accordion, { isWorking, turnStartMs });
+        ensureSlowTurnHint(accordion, { isWorking, turnStartMs, onStopTurn: () => this.host.cancelOpenTranscriptStream?.() });
     }
 
     /**

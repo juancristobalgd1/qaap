@@ -26775,6 +26775,24 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   min-width: 0;
 }
 
+.theia-mobile-slow-turn-hint-stop {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.theia-mobile-slow-turn-hint-stop:hover,
+.theia-mobile-slow-turn-hint-stop:focus-visible {
+  background: var(--theia-toolbar-hoverBackground);
+  outline: none;
+}
+
 .theia-mobile-slow-turn-hint-dismiss {
   flex-shrink: 0;
   width: 20px;

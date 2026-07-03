@@ -22,6 +22,11 @@
 // unlike the "shown" state. Callers should call {@link ensureSlowTurnHint}
 // from every sync of the process accordion (creation and every subsequent
 // streaming sync); it is cheap and idempotent.
+//
+// Optionally renders a "Stop turn" action next to the dismiss (✕) control
+// when `options.onStopTurn` is supplied. Clicking it invokes the callback
+// *and* dismisses the hint (permanently, like the ✕) -- there is nothing
+// left for the hint to say once the turn has been asked to stop.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -72,6 +77,14 @@ export interface SlowTurnHintOptions {
     readonly isWorking: boolean;
     /** Start timestamp (ms epoch) of the current turn, if known. */
     readonly turnStartMs: number | undefined;
+    /**
+     * Invoked when the user clicks the hint's "Stop turn" button. When
+     * omitted, the hint renders without a stop button (dismiss-only). The
+     * click also marks the turn "dismissed" (so the hint never reappears for
+     * it) and removes the hint immediately -- callers do not need to call
+     * anything themselves to make the hint go away.
+     */
+    readonly onStopTurn?: () => void;
 }
 
 /**
@@ -91,7 +104,7 @@ export interface SlowTurnHintOptions {
  * re-inserted immediately, without waiting through the threshold again.
  */
 export function ensureSlowTurnHint(accordion: HTMLElement, options: SlowTurnHintOptions): void {
-    const { isWorking, turnStartMs } = options;
+    const { isWorking, turnStartMs, onStopTurn } = options;
     if (!isWorking || turnStartMs === undefined) {
         sharedSecondTicker.unregister(accordion);
         removeSlowTurnHint(accordion);
@@ -108,7 +121,7 @@ export function ensureSlowTurnHint(accordion: HTMLElement, options: SlowTurnHint
         // exists next to `accordion`, or needs to be re-inserted right away
         // because a rebuild replaced the element since it was last shown.
         sharedSecondTicker.unregister(accordion);
-        reinsertSlowTurnHintIfMissing(accordion, turnStartMs);
+        reinsertSlowTurnHintIfMissing(accordion, turnStartMs, onStopTurn);
         return;
     }
     sharedSecondTicker.register({
@@ -121,7 +134,7 @@ export function ensureSlowTurnHint(accordion: HTMLElement, options: SlowTurnHint
             if (now - turnStartMs < SLOW_TURN_HINT_THRESHOLD_MS) {
                 return;
             }
-            showSlowTurnHint(accordion, turnStartMs);
+            showSlowTurnHint(accordion, turnStartMs, onStopTurn);
             sharedSecondTicker.unregister(accordion);
         },
     });
@@ -131,7 +144,7 @@ export function ensureSlowTurnHint(accordion: HTMLElement, options: SlowTurnHint
  *  already present), then marks the turn as "shown" -- only once insertion
  *  actually succeeds, so a no-op call (no parent, e.g. a detached element)
  *  never falsely records the turn as shown. */
-function showSlowTurnHint(accordion: HTMLElement, turnStartMs: number): void {
+function showSlowTurnHint(accordion: HTMLElement, turnStartMs: number, onStopTurn: (() => void) | undefined): void {
     const existing = accordion.nextElementSibling;
     if (existing?.hasAttribute(MOBILE_SLOW_TURN_HINT_ATTR)) {
         setSlowTurnHintState(turnStartMs, 'shown');
@@ -140,14 +153,14 @@ function showSlowTurnHint(accordion: HTMLElement, turnStartMs: number): void {
     if (!accordion.parentElement) {
         return;
     }
-    insertSlowTurnHintElement(accordion, turnStartMs);
+    insertSlowTurnHintElement(accordion, turnStartMs, onStopTurn);
     setSlowTurnHintState(turnStartMs, 'shown');
 }
 
 /** Re-inserts the hint next to `accordion` if it isn't already there --
  *  without touching the turn's recorded state (it is already "shown"). Used
  *  when a timeline rebuild replaced the accordion element mid-turn. */
-function reinsertSlowTurnHintIfMissing(accordion: HTMLElement, turnStartMs: number): void {
+function reinsertSlowTurnHintIfMissing(accordion: HTMLElement, turnStartMs: number, onStopTurn: (() => void) | undefined): void {
     const existing = accordion.nextElementSibling;
     if (existing?.hasAttribute(MOBILE_SLOW_TURN_HINT_ATTR)) {
         return;
@@ -155,13 +168,24 @@ function reinsertSlowTurnHintIfMissing(accordion: HTMLElement, turnStartMs: numb
     if (!accordion.parentElement) {
         return;
     }
-    insertSlowTurnHintElement(accordion, turnStartMs);
+    insertSlowTurnHintElement(accordion, turnStartMs, onStopTurn);
+}
+
+/** Marks `turnStartMs` as permanently dismissed, removes `hint`, and stops
+ *  the shared ticker for `accordion` immediately rather than waiting for its
+ *  next tick to notice the turn is now dismissed -- there is nothing left
+ *  for it to drive once the hint has been dismissed. Shared by both the
+ *  dismiss (✕) and "Stop turn" click handlers. */
+function dismissSlowTurnHint(accordion: HTMLElement, hint: HTMLElement, turnStartMs: number): void {
+    setSlowTurnHintState(turnStartMs, 'dismissed');
+    hint.remove();
+    sharedSecondTicker.unregister(accordion);
 }
 
 /** Builds the hint element and inserts it right after `accordion`. Does not
  *  check for an existing sibling or update any recorded state -- callers are
  *  responsible for both. */
-function insertSlowTurnHintElement(accordion: HTMLElement, turnStartMs: number): void {
+function insertSlowTurnHintElement(accordion: HTMLElement, turnStartMs: number, onStopTurn: (() => void) | undefined): void {
     const hint = document.createElement('div');
     hint.className = MOBILE_SLOW_TURN_HINT_CLASS;
     hint.setAttribute(MOBILE_SLOW_TURN_HINT_ATTR, '1');
@@ -174,8 +198,22 @@ function insertSlowTurnHintElement(accordion: HTMLElement, turnStartMs: number):
     text.className = 'theia-mobile-slow-turn-hint-text';
     text.textContent = nls.localize(
         'theia/qaap-mobile-shell/processTimeline/slowTurnHint',
-        'This model is taking a while — you can stop the turn or try a faster model.',
+        'This model is taking a while.',
     );
+
+    hint.append(icon, text);
+
+    if (onStopTurn) {
+        const stop = document.createElement('button');
+        stop.type = 'button';
+        stop.className = 'theia-mobile-slow-turn-hint-stop';
+        stop.textContent = nls.localize('theia/qaap-mobile-shell/processTimeline/slowTurnHintStop', 'Stop turn');
+        stop.addEventListener('click', () => {
+            onStopTurn();
+            dismissSlowTurnHint(accordion, hint, turnStartMs);
+        });
+        hint.append(stop);
+    }
 
     const dismiss = document.createElement('button');
     dismiss.type = 'button';
@@ -183,15 +221,10 @@ function insertSlowTurnHintElement(accordion: HTMLElement, turnStartMs: number):
     dismiss.title = nls.localizeByDefault('Dismiss');
     dismiss.setAttribute('aria-label', dismiss.title);
     dismiss.addEventListener('click', () => {
-        setSlowTurnHintState(turnStartMs, 'dismissed');
-        hint.remove();
-        // Stop the ticker immediately rather than waiting for its next tick
-        // to notice the turn is now dismissed -- there is nothing left for
-        // it to drive once the hint has been dismissed.
-        sharedSecondTicker.unregister(accordion);
+        dismissSlowTurnHint(accordion, hint, turnStartMs);
     });
+    hint.append(dismiss);
 
-    hint.append(icon, text, dismiss);
     accordion.insertAdjacentElement('afterend', hint);
 }
 

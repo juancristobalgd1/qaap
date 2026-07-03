@@ -14,6 +14,11 @@ import {
 } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '../common/qaap-transcript-incremental-update';
+import {
+    enableTranscriptRenderMetrics,
+    getTranscriptRenderMetricsSnapshot,
+    resetTranscriptRenderMetrics,
+} from '../common/qaap-transcript-render-metrics';
 import { seedTranscriptSemanticProgressClock } from '../common/qaap-transcript-semantic-progress';
 import { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
 import { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
@@ -357,6 +362,107 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         ]));
 
         expect(scrollToCalls).to.equal(1);
+    });
+
+    function settledConversation(
+        id: string,
+        messages: QaapAgentConversationDTO['messages'],
+    ): QaapAgentConversationDTO {
+        return {
+            id,
+            cwd: '/workspace',
+            agentId: 'codex',
+            title: 'Settled',
+            status: 'settled',
+            createdAt: 0,
+            updatedAt: Date.now(),
+            messages,
+        };
+    }
+
+    it('skips re-rendering an unchanged settled conversation into the same host (render storm guard)', () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        enableTranscriptRenderMetrics(true);
+        try {
+            const settled = settledConversation('conv-settled', [
+                { id: 'user-1', role: 'user', content: 'Done?', createdAt: 1 },
+                { id: 'agent-1', role: 'agent', content: 'All done.', createdAt: 2 },
+            ]);
+
+            // First paint: full rebuild, stamps the host.
+            renderUi.renderTranscriptMessages(chatHost, settled);
+            let snapshot = getTranscriptRenderMetricsSnapshot();
+            expect(snapshot.render_full).to.equal(1);
+            expect(snapshot.render_patch_none).to.equal(1);
+            expect(snapshot.render_skip_unchanged_settled).to.equal(0);
+
+            // A background host repaints the same settled snapshot ~8x/s while another
+            // conversation streams. Simulate the shared-state thrash a streaming host causes
+            // by clobbering the shared last-rendered pointers between ticks.
+            for (let tick = 0; tick < 8; tick++) {
+                host.transcriptLastConv = undefined;
+                host.transcriptLastRenderedConversationId = 'some-other-streaming-conv';
+                renderUi.renderTranscriptMessages(chatHost, settledConversation('conv-settled', [
+                    { id: 'user-1', role: 'user', content: 'Done?', createdAt: 1 },
+                    { id: 'agent-1', role: 'agent', content: 'All done.', createdAt: 2 },
+                ]));
+            }
+            snapshot = getTranscriptRenderMetricsSnapshot();
+            expect(snapshot.render_full).to.equal(1);
+            expect(snapshot.render_patch_none).to.equal(1);
+            expect(snapshot.render_skip_unchanged_settled).to.equal(8);
+
+            // A real content change on the settled conversation must still repaint once.
+            renderUi.renderTranscriptMessages(chatHost, settledConversation('conv-settled', [
+                { id: 'user-1', role: 'user', content: 'Done?', createdAt: 1 },
+                { id: 'agent-1', role: 'agent', content: 'All done. Plus a follow-up.', createdAt: 2 },
+            ]));
+            snapshot = getTranscriptRenderMetricsSnapshot();
+            expect(snapshot.render_full).to.equal(2);
+            expect(snapshot.render_skip_unchanged_settled).to.equal(8);
+        } finally {
+            resetTranscriptRenderMetrics();
+            enableTranscriptRenderMetrics(false);
+        }
+    });
+
+    it('does not skip a streaming conversation and re-arms the settled guard after settling', () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        enableTranscriptRenderMetrics(true);
+        try {
+            const settled = settledConversation('conv-x', [
+                { id: 'user-1', role: 'user', content: 'Hi', createdAt: 1 },
+                { id: 'agent-1', role: 'agent', content: 'Hello', createdAt: 2 },
+            ]);
+            renderUi.renderTranscriptMessages(chatHost, settled);
+            renderUi.renderTranscriptMessages(chatHost, settledConversation('conv-x', settled.messages));
+            expect(getTranscriptRenderMetricsSnapshot().render_skip_unchanged_settled).to.equal(1);
+
+            // Same conversation goes back to streaming: must repaint and clear the settled stamp.
+            host.transcriptLastConv = undefined;
+            host.transcriptLastRenderedConversationId = undefined;
+            const streaming: QaapAgentConversationDTO = { ...settled, status: 'streaming' };
+            renderUi.renderTranscriptMessages(chatHost, streaming);
+            const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+            expect(messageHost.dataset.qaapSettledRenderKey).to.equal(undefined);
+
+            // Settling again must repaint once (guard was re-armed), not be wrongly skipped.
+            const skipsBefore = getTranscriptRenderMetricsSnapshot().render_skip_unchanged_settled;
+            host.transcriptLastConv = undefined;
+            renderUi.renderTranscriptMessages(chatHost, settledConversation('conv-x', settled.messages));
+            expect(getTranscriptRenderMetricsSnapshot().render_skip_unchanged_settled).to.equal(skipsBefore);
+        } finally {
+            resetTranscriptRenderMetrics();
+            enableTranscriptRenderMetrics(false);
+        }
     });
 
     it('adds direct message anchors and link copy actions to user turns', () => {

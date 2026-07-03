@@ -30,7 +30,7 @@ export interface MobileProjectsProjectActionsHost {
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
 }
 
-/** Repository card actions: rename, duplicate, clear tasks, remove. */
+/** Repository card actions: rename, duplicate, clear tasks, clear failed tasks, remove. */
 export class MobileProjectsProjectActionsUi {
 
     constructor(protected readonly host: MobileProjectsProjectActionsHost) { }
@@ -93,6 +93,45 @@ export class MobileProjectsProjectActionsUi {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/clearAllTasksFailed',
                 'Could not clear tasks: {0}',
+                error instanceof Error ? error.message : String(error)
+            ));
+        }
+    }
+
+    async onClearFailedTasks(project: MobileProjectEntry): Promise<void> {
+        this.host.cardMenuUi.closeCardMenu();
+        const failed = this.host.conversationIndexUi.vpsTasksForProject(project)
+            .filter(summary => summary.status === 'failed');
+        if (failed.length === 0) {
+            return;
+        }
+        const confirmed = await new ConfirmDialog({
+            title: nls.localize('qaap/mobileProjects/clearFailedTasks', 'Clear failed runs'),
+            msg: failed.length === 1
+                ? nls.localize(
+                    'qaap/mobileProjects/clearFailedTasksConfirmOne',
+                    'Delete the 1 failed run for this project? This cannot be undone.'
+                )
+                : nls.localize(
+                    'qaap/mobileProjects/clearFailedTasksConfirmMany',
+                    'Delete all {0} failed runs for this project? This cannot be undone.',
+                    String(failed.length)
+                ),
+        }).open();
+        if (!confirmed) {
+            return;
+        }
+        try {
+            for (const summary of failed) {
+                await deleteConversation(summary.id);
+                this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+            }
+            this.host.transcriptSheetUi.closeTranscriptSheet();
+            this.host.renderList();
+        } catch (error) {
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/clearFailedTasksFailed',
+                'Could not clear failed runs: {0}',
                 error instanceof Error ? error.message : String(error)
             ));
         }

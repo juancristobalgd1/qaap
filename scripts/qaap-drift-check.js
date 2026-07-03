@@ -183,6 +183,14 @@ const ALLOWED = [
     /^dev-packages\/application-manager\//,
     /^dev-packages\/application-package\//,
     /^dev-packages\/cli\//,
+    // Fork-authored QA issue reports and multi-tenancy audit — not upstream Theia content.
+    /^docs\/qa\/issues\/.*\.md$/,
+    /^MULTI_TENANCY_AUDIT\.md$/,
+    // Fork-specific git attributes (line-ending rules for generated icon assets).
+    /^\.gitattributes$/,
+    // Fork-local packages with no upstream counterpart (do not rename to qaap-* prefix).
+    /^packages\/ai-copilot\//,
+    /^packages\/terminal-manager\//,
 ];
 
 /**

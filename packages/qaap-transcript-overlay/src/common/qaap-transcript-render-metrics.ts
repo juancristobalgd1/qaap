@@ -13,6 +13,7 @@ export type QaapTranscriptRenderMetricKind =
     | 'render_patch_append'
     | 'render_patch_none'
     | 'render_skip_unchanged_tail'
+    | 'render_skip_unchanged_settled'
     | 'timeline_sync'
     | 'timeline_sync_skipped'
     | 'timeline_event_patch'
@@ -45,6 +46,7 @@ const EMPTY_COUNTS = (): Record<QaapTranscriptRenderMetricKind, number> => ({
     render_patch_append: 0,
     render_patch_none: 0,
     render_skip_unchanged_tail: 0,
+    render_skip_unchanged_settled: 0,
     timeline_sync: 0,
     timeline_sync_skipped: 0,
     timeline_event_patch: 0,

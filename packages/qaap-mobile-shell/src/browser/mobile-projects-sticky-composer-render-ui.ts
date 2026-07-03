@@ -139,6 +139,13 @@ export class MobileProjectsStickyComposerRenderUi {
     /** Tracks whether the real (non-placeholder) home-repos composer is currently mounted, to drive autofocus-on-ready. */
     protected reposComposerMounted = false;
 
+    /**
+     * Pending re-checks that re-assert focus on the sticky composer textarea shortly after the initial
+     * mount, to withstand the Theia shell boot sequence stealing focus back to `document.body` right
+     * after the composer is first focused. Cleared whenever the composer re-renders/unmounts.
+     */
+    protected stickyComposerFocusRetentionTimers: Array<ReturnType<typeof setTimeout>> = [];
+
     protected readStickyComposerDraft(project: MobileProjectEntry): string {
         return readProjectComposerDraft(project.id, this.host.stickyComposerDraft);
     }
@@ -277,6 +284,7 @@ export class MobileProjectsStickyComposerRenderUi {
     }
 
     renderStickyComposer(): void {
+        this.clearStickyComposerFocusRetention();
         this.host.stickyComposerContextUsageDispose.dispose();
         const filtered = this.host.hubQueryUi.applySearch(this.host.hubQueryUi.applyFilter(this.host.projects, this.host.filter));
         const project = this.host.composerHeaderUi.resolveStickyComposerProject(filtered);
@@ -551,12 +559,53 @@ export class MobileProjectsStickyComposerRenderUi {
             window.requestAnimationFrame(() => {
                 const textarea = column.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
                 textarea?.focus();
+                this.scheduleStickyComposerFocusRetention(textarea ?? undefined);
             });
         }
         this.host.composerHeaderUi.syncHeaderComposerSurfacePicker();
         this.host.updateNewFabVisibility();
         window.requestAnimationFrame(() => this.host.composerHeaderUi.updateStickyComposerFabLift());
     }
+    /**
+     * Cancels any pending sticky-composer focus re-checks scheduled by {@link scheduleStickyComposerFocusRetention}.
+     * Called at the start of every render so a re-render (which rebuilds/removes the composer column) never
+     * leaves a stale timer pointing at a disconnected textarea.
+     */
+    protected clearStickyComposerFocusRetention(): void {
+        for (const timer of this.stickyComposerFocusRetentionTimers) {
+            clearTimeout(timer);
+        }
+        this.stickyComposerFocusRetentionTimers = [];
+    }
+
+    /**
+     * The Theia shell boot sequence can steal focus back to `document.body` shortly after the sticky
+     * composer textarea receives its initial autofocus (e.g. layout restoration finishing after the
+     * composer mounts). Re-assert focus a couple of times while the app settles, but only when nothing
+     * else legitimately holds focus (never steal focus from a real input, including one the user has
+     * started typing into) and the textarea is still connected and enabled. Stops after the first
+     * successful re-focus or once both checks have run (~3s after mount).
+     */
+    protected scheduleStickyComposerFocusRetention(textarea: HTMLTextAreaElement | undefined): void {
+        if (!textarea) {
+            return;
+        }
+        const reassertFocus = (): void => {
+            const activeElement = document.activeElement;
+            const focusWasStolen = !activeElement || activeElement === document.body;
+            if (!focusWasStolen || !textarea.isConnected || textarea.disabled) {
+                this.clearStickyComposerFocusRetention();
+                return;
+            }
+            textarea.focus();
+            if (document.activeElement === textarea) {
+                this.clearStickyComposerFocusRetention();
+            }
+        };
+        this.stickyComposerFocusRetentionTimers.push(setTimeout(reassertFocus, 1000));
+        this.stickyComposerFocusRetentionTimers.push(setTimeout(reassertFocus, 3000));
+    }
+
     mountStickyComposerContextUsage(
         badge: HTMLButtonElement,
         resolveTarget: () => {

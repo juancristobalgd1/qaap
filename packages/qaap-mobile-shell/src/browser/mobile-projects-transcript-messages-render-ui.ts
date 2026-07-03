@@ -10,7 +10,7 @@ import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
 import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
-import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
+import { buildConversationTranscriptFingerprint, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
@@ -435,6 +435,30 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     renderTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): void {
         const conversationSwitched = this.host.transcriptLastRenderedConversationId !== undefined
             && this.host.transcriptLastRenderedConversationId !== conv.id;
+        // Settled (non-streaming) snapshots can never take the stream-patch fast path and never
+        // satisfy `isStreamingTranscriptTailUnchanged` (both bail on `status !== 'streaming'`), so
+        // any re-render of one falls straight through to a full rebuild. A background/idle host that
+        // re-runs this on every SSE tick of *another* streaming conversation therefore rebuilds an
+        // unchanged transcript ~8x/s. Short-circuit host-locally when the settled snapshot is
+        // byte-identical to what this host already shows. The key is stamped on the host element
+        // itself (not the shared `transcriptLast*` fields, which thrash between hosts) and includes
+        // the conversation id, so a switch to a different conversation always repaints. Streaming
+        // renders bypass this and clear the stamp, so a later re-settle still repaints exactly once.
+        if (conv.status !== 'streaming') {
+            const settledHost = this.resolveTranscriptMessageHost(host);
+            const settledKey = `${conv.id} ${buildConversationTranscriptFingerprint(conv)}`;
+            if (settledHost.childElementCount > 0 && settledHost.dataset.qaapSettledRenderKey === settledKey) {
+                recordTranscriptRenderMetric('render_skip_unchanged_settled');
+                this.clearTranscriptEmptyQuickActions(settledHost, conv);
+                return;
+            }
+            settledHost.dataset.qaapSettledRenderKey = settledKey;
+        } else {
+            const streamingHost = this.resolveTranscriptMessageHost(host);
+            if (streamingHost.dataset.qaapSettledRenderKey !== undefined) {
+                delete streamingHost.dataset.qaapSettledRenderKey;
+            }
+        }
         if (!conversationSwitched && this.tryPatchStreamingTranscriptMessages(host, conv)) {
             return;
         }

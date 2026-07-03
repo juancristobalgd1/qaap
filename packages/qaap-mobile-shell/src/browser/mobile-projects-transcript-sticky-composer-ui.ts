@@ -233,6 +233,42 @@ export class MobileProjectsTranscriptStickyComposerUi {
     /** Tracks whether the Agents Hub idle (pre-conversation) composer is currently mounted, to drive autofocus-on-ready. */
     protected agentsHubIdleComposerMounted = false;
 
+    /** Pending focus-retention timers for the idle composer autofocus (see mount). */
+    protected idleComposerFocusRetentionTimers: Array<ReturnType<typeof setTimeout>> = [];
+
+    protected clearIdleComposerFocusRetention(): void {
+        for (const timer of this.idleComposerFocusRetentionTimers) {
+            clearTimeout(timer);
+        }
+        this.idleComposerFocusRetentionTimers = [];
+    }
+
+    /**
+     * Re-asserts focus on the freshly-mounted idle composer at 1s and 3s,
+     * because the Theia shell boot sequence can steal the initial focus back
+     * to `<body>`. Never steals focus from a real input: only re-focuses when
+     * the active element is body/none, and stops after one sticky success.
+     */
+    protected scheduleIdleComposerFocusRetention(textarea: HTMLTextAreaElement): void {
+        this.clearIdleComposerFocusRetention();
+        for (const delay of [1000, 3000]) {
+            this.idleComposerFocusRetentionTimers.push(setTimeout(() => {
+                const active = document.activeElement;
+                const focusFree = !active || active === document.body;
+                if (!focusFree || !textarea.isConnected || textarea.disabled) {
+                    if (active !== textarea) {
+                        this.clearIdleComposerFocusRetention();
+                    }
+                    return;
+                }
+                textarea.focus();
+                if (document.activeElement === textarea) {
+                    this.clearIdleComposerFocusRetention();
+                }
+            }, delay));
+        }
+    }
+
     constructor(
         protected readonly host: MobileProjectsTranscriptStickyComposerHost,
         protected readonly workHub: WorkHubTranscriptBridge,
@@ -1474,7 +1510,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (becameMounted && focusEligibleBeforeMount) {
             window.requestAnimationFrame(() => {
                 const textarea = column.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input');
-                textarea?.focus();
+                if (textarea) {
+                    textarea.focus();
+                    // The Theia shell boot sequence can steal focus back to
+                    // <body> after this initial focus. Re-assert up to twice
+                    // (1s/3s), only while nothing else took focus and the
+                    // textarea is still live; stop after one sticky success.
+                    this.scheduleIdleComposerFocusRetention(textarea);
+                }
             });
         }
         this.syncTranscriptComposerQuickActionsVisibility(host, summary);
