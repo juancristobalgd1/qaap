@@ -2267,8 +2267,15 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     cancelOpenTranscriptStream(): void {
-        const project = this.transcriptController.state.transcriptOpenProject;
-        const summary = this.transcriptController.state.transcriptOpenSummary;
+        let project = this.transcriptController.state.transcriptOpenProject;
+        let summary = this.transcriptController.state.transcriptOpenSummary;
+        if (!project || !summary) {
+            // No transcript sheet is open — the conversation is showing in the
+            // Agents Hub inline shell instead (the default surface). Cancel
+            // that one; a bare sheet-state check silently no-ops there.
+            project = this.resolveAgentsHubShellProject();
+            summary = project ? this.resolveAgentsHubShellSummary(project) : undefined;
+        }
         if (project && summary) {
             this.onCancelConversation(project, summary);
         }
