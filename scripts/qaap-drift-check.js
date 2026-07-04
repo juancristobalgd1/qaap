@@ -70,6 +70,15 @@ const ALLOWED = [
     /^packages\/core\/src\/browser\/menu\/browser-menu-module\.ts$/,
     /^packages\/core\/src\/browser\/menu\/browser-menu-plugin\.ts$/,
     /^packages\/core\/src\/browser\/window\/window-title-service\.ts$/,
+    // Test accommodation: the qaap agent runtime creates real git worktrees under
+    // .worktrees/ (EnterWorktree), so the upstream spec's absolute-result asserts
+    // need an excludePatterns filter or they match spurious files.
+    /^packages\/file-search\/src\/node\/file-search-service-impl\.spec\.ts$/,
+    // Fork extension: RemoteConnection.copy() accepts Buffer/ReadableStream in
+    // addition to upstream's string path (used-by-design for container uploads;
+    // SSH impl still string-only — tracked follow-up). Not in upstream.
+    /^packages\/remote\/src\/electron-node\/remote-types\.ts$/,
+    /^packages\/remote-wsl\/src\/electron-node\/remote-wsl-connection\.ts$/,
     // Path-traversal hardening on the upload endpoint (403 on normalized!==resolved).
     // Fork security fix not present upstream; only non-upstream lines in the file.
     // TODO: upstream it or extract QaapNodeFileUploadService.
