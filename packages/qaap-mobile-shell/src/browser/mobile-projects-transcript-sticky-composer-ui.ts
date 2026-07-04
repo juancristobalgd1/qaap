@@ -155,6 +155,9 @@ export function isIdleComposerFocusStealable(active: Element | null, textarea: H
 export interface MobileProjectsTranscriptStickyComposerHost {
     /** Resolves when the frontend app reached 'ready' (immediately if unwired). */
     whenFrontendReady?(): Promise<void>;
+    /** Fresh resolution of the Agents Hub shell's project/summary (see submit-time re-resolution). */
+    resolveAgentsHubShellProject?(): MobileProjectEntry | undefined;
+    resolveAgentsHubShellSummary?(project: MobileProjectEntry): QaapAgentConversationSummaryDTO;
     transcriptComposerHost: HTMLElement | undefined;
     transcriptComposerMountKey: string | undefined;
     transcriptComposerProject: MobileProjectEntry | undefined;
@@ -1449,8 +1452,24 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     this.host.stickyComposerContextUi.notifyPendingComposerAttachments();
                     return;
                 }
-                void this.submitTranscriptComposerDraft(draft, project, summary, chatHost, {
-                    resolvedPinnedId: this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+                // Re-resolve the idle-composer target at SUBMIT time. The mount
+                // closure can hold a stale project captured during boot — e.g.
+                // the ephemeral workspace-container entry fabricated before the
+                // projects list loaded — and an agent turn must never inherit
+                // that cwd from the closure (observed live: the chip showed the
+                // real project while the created conversation targeted the
+                // multi-repo container).
+                let submitProject = project;
+                let submitSummary = summary;
+                if (isAgentsHubIdleConversationSummary(summary) && this.host.resolveAgentsHubShellProject) {
+                    const fresh = this.host.resolveAgentsHubShellProject();
+                    if (fresh && fresh.id !== project.id) {
+                        submitProject = fresh;
+                        submitSummary = this.host.resolveAgentsHubShellSummary?.(fresh) ?? summary;
+                    }
+                }
+                void this.submitTranscriptComposerDraft(draft, submitProject, submitSummary, chatHost, {
+                    resolvedPinnedId: this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(submitProject, submitSummary),
                     showApprovalPolicy,
                     isLegacyTheiaChat,
                 });

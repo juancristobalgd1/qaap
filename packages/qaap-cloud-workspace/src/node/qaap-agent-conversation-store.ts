@@ -115,10 +115,20 @@ import { backfillConversationTraceEvents, materializeConversationForApiWithChang
 import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
+import {
+    QAAP_MAX_TURN_MINUTES_ENV,
+    buildQaapTurnWatchdogMessage,
+    findExpiredStreamingTurns,
+    resolveQaapMaxTurnMinutes,
+    resolveStreamingSinceMs,
+    type QaapStreamingTurnSnapshot,
+} from '../common/qaap-agent-turn-watchdog';
 
 const STORE_DIR = path.join(os.homedir(), '.qaap', 'agent-conversations');
 const STREAMING_PERSIST_DEBOUNCE_MS = 500;
 const INDEX_PATH = path.join(STORE_DIR, 'index.json');
+/** How often the turn watchdog scans for conversations stuck 'streaming' past the max duration. */
+const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 
 /**
  * Persistent multi-turn conversations with the coding agent. Each user message spawns a one-shot
@@ -154,6 +164,8 @@ export class QaapAgentConversationStore {
     protected readonly agUiReducerByAgentMessageId = new Map<string, QaapAgUiTraceReducerState>();
     protected sseBatcher!: QaapAgentConversationSseBatcher;
     protected persistTimer: ReturnType<typeof setTimeout> | undefined;
+    /** Periodic sweep that force-stops turns stuck 'streaming' past {@link QAAP_MAX_TURN_MINUTES_ENV}. */
+    protected turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
     protected readonly streamMetrics = new QaapConversationStreamMetricsCollector('server');
     /** Uncompressed wire payloads keyed by `conversationId:messageId` for compression savings. */
     protected readonly wireMetricsBaselines = new Map<string, QaapAgentConversationEvent>();
@@ -171,6 +183,7 @@ export class QaapAgentConversationStore {
         });
         this.restoreReady = this.restoreFromDisk();
         this.taskRunner.onDidChangeTask(event => this.onTaskChanged(event));
+        this.startTurnWatchdog();
     }
 
     whenReady(): Promise<void> {
@@ -1878,19 +1891,133 @@ export class QaapAgentConversationStore {
             const stored = JSON.parse(raw) as QaapAgentConversation[];
             let anyChanged = false;
             for (const conv of stored) {
-                const recovered: QaapAgentConversation = conv.status === 'streaming' ? { ...conv, status: 'idle' } : conv;
-                const { conversation, changed } = backfillConversationTraceEvents(recovered);
+                // Leave a persisted 'streaming' status as-is here — sweepZombieStreamingTurns below
+                // (run once every restart, after every conversation is loaded) force-stops any turn
+                // that already exceeded the max duration with a proper failed/error trace instead of
+                // silently going back to 'idle'. A restart always drops the live task handle, so a
+                // turn still within budget can never complete on its own either; that case keeps the
+                // previous behavior of quietly resetting to 'idle'.
+                const { conversation, changed } = backfillConversationTraceEvents(conv);
                 this.conversations.set(conversation.id, conversation);
-                if (changed || recovered.status !== conv.status) {
+                if (changed) {
                     anyChanged = true;
                 }
             }
-            if (anyChanged) {
+            const sweptAny = this.sweepZombieStreamingTurns(Date.now(), { resetSurvivorsToIdle: true });
+            if (anyChanged || sweptAny) {
                 await this.persist();
             }
         } catch {
             /* no prior conversations */
         }
+    }
+
+    /**
+     * Turn watchdog: kills any conversation stuck continuously 'streaming' for longer than
+     * {@link QAAP_MAX_TURN_MINUTES_ENV} (default {@link resolveQaapMaxTurnMinutes}), so a hung agent
+     * CLI or a lost child process cannot hold a conversation in 'streaming' forever — this is what
+     * let a real turn run for 50 hours in production. Runs once at startup (from
+     * {@link restoreFromDisk}, covering zombies that were already streaming before a restart) and
+     * then on a {@link TURN_WATCHDOG_SWEEP_MS} interval for the lifetime of the process.
+     */
+    protected startTurnWatchdog(): void {
+        if (this.turnWatchdogTimer !== undefined) {
+            return;
+        }
+        this.turnWatchdogTimer = setInterval(() => {
+            this.sweepZombieStreamingTurns(Date.now());
+        }, TURN_WATCHDOG_SWEEP_MS);
+        this.turnWatchdogTimer.unref?.();
+    }
+
+    /**
+     * Force-stop every 'streaming' conversation whose turn has run at least
+     * {@link resolveQaapMaxTurnMinutes}. Returns whether anything changed, so callers can decide
+     * whether to persist.
+     *
+     * @param resetSurvivorsToIdle Also reset still-within-budget 'streaming' conversations to
+     * 'idle' (used only at startup: after a restart the live task handle is gone either way, so a
+     * turn under budget can never complete normally — same fallback the store always applied).
+     */
+    protected sweepZombieStreamingTurns(nowMs: number, options?: { readonly resetSurvivorsToIdle?: boolean }): boolean {
+        const maxTurnMinutes = resolveQaapMaxTurnMinutes(process.env[QAAP_MAX_TURN_MINUTES_ENV]);
+        const streaming: QaapStreamingTurnSnapshot[] = [];
+        for (const conv of this.conversations.values()) {
+            if (conv.status !== 'streaming') {
+                continue;
+            }
+            const streamingSinceMs = resolveStreamingSinceMs(conv);
+            if (streamingSinceMs !== undefined) {
+                streaming.push({ conversationId: conv.id, streamingSinceMs });
+            }
+        }
+        const expiredIds = new Set(findExpiredStreamingTurns(streaming, nowMs, maxTurnMinutes));
+        let changed = false;
+        for (const turn of streaming) {
+            if (expiredIds.has(turn.conversationId)) {
+                if (this.forceStopZombieTurn(turn.conversationId, nowMs - turn.streamingSinceMs, maxTurnMinutes)) {
+                    changed = true;
+                }
+            } else if (options?.resetSurvivorsToIdle) {
+                const conv = this.conversations.get(turn.conversationId);
+                if (conv?.status === 'streaming') {
+                    this.conversations.set(conv.id, { ...conv, status: 'idle', updatedAt: nowMs });
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            this.flushPersist();
+        }
+        return changed;
+    }
+
+    /**
+     * Force-settle one zombie turn: kill the underlying agent process (and any delegated
+     * subtasks) via the same kill path {@link cancel} uses, mark the turn failed with a
+     * watchdog-specific message, and publish the change over SSE.
+     */
+    protected forceStopZombieTurn(conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean {
+        const conv = this.conversations.get(conversationId);
+        if (!conv || conv.status !== 'streaming') {
+            return false;
+        }
+        const reason = buildQaapTurnWatchdogMessage(elapsedMs);
+        const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
+        const turnRef = lastUser?.taskId ? this.taskToConversation.get(lastUser.taskId) : undefined;
+        if (lastUser?.taskId) {
+            this.taskRunner.cancel(lastUser.taskId);
+            for (const subtask of collectSubtasksForLeader(lastUser.taskId, this.taskRunner.list())) {
+                if (subtask.state === 'running') {
+                    this.taskRunner.cancel(subtask.id);
+                }
+            }
+        }
+        // Re-read: cancelling the task above can synchronously settle it through the normal
+        // task-outcome path first (generic "Turn cancelled." reason) — our watchdog message
+        // below is the one that should stick, so it must be layered on top of the latest state.
+        const latest = this.conversations.get(conversationId) ?? conv;
+        const agentMessageId = turnRef?.agentMessageId
+            ?? (latest.messages[latest.messages.length - 1]?.role === 'agent'
+                ? latest.messages[latest.messages.length - 1].id
+                : undefined);
+        const withTrace = this.appendRunCancelledTrace(latest, agentMessageId, reason);
+        const finalized = this.finalizeStreamingAgentMessage(withTrace, agentMessageId, reason);
+        const failed = this.markTurnFailed(finalized, {
+            userMessageId: lastUser?.id ?? latest.messages[latest.messages.length - 1]?.id ?? '',
+            agentMessageId,
+            reason,
+        });
+        const resolvedAgentMessageId = failed.agentMessageId ?? agentMessageId;
+        const next: QaapAgentConversation = { ...failed.conv, updatedAt: Date.now() };
+        this.conversations.set(conversationId, next);
+        this.publishFinalizedAgentMessage(conversationId, next, resolvedAgentMessageId);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        console.warn(
+            `[qaap-agent-conversation-watchdog] auto-stopped conversation ${conversationId} `
+            + `after ${elapsedMs}ms streaming (max ${maxTurnMinutes}m).`,
+        );
+        return true;
     }
 
     protected async persist(): Promise<void> {

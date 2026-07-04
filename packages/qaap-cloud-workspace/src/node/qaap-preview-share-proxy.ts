@@ -13,14 +13,24 @@ import {
     parseQaapDevPreviewPort,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
 import { QaapDevPreviewTargetHostResolver } from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-target-host';
+import { FileUri } from '@theia/core/lib/node';
 import { QAAP_DEV_PREVIEW_PUBLIC_PREFIX, parseQaapPublicPreviewSharePath } from '../common/qaap-preview-share';
-import { QaapPreviewShareStore } from './qaap-preview-share-store';
+import { buildQaapPreviewFailureHtml } from '../common/qaap-preview-supervisor-types';
+import { QaapPreviewShareStore, type QaapPreviewShareEntry } from './qaap-preview-share-store';
+import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
+import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 
 @injectable()
 export class QaapPreviewShareProxyContribution implements BackendApplicationContribution {
 
     @inject(QaapPreviewShareStore)
     protected readonly shares: QaapPreviewShareStore;
+
+    @inject(QaapPreviewSupervisor)
+    protected readonly supervisor: QaapPreviewSupervisor;
+
+    @inject(QaapCloudWorkspaceStore)
+    protected readonly workspaces: QaapCloudWorkspaceStore;
 
     protected readonly targetHostResolver = new QaapDevPreviewTargetHostResolver();
 
@@ -48,7 +58,39 @@ export class QaapPreviewShareProxyContribution implements BackendApplicationCont
             res.status(400).send('Invalid preview port');
             return;
         }
-        await this.forwardHttp(req, res, port, req.url || '/');
+        await this.forwardHttp(req, res, port, req.url || '/', entry);
+    }
+
+    /** Serves the self-contained failure page describing why the dev server is down + a Restart action. */
+    protected async sendFailurePage(res: Response, port: number, entry: QaapPreviewShareEntry): Promise<void> {
+        if (res.headersSent) {
+            res.end();
+            return;
+        }
+        const cwd = await this.resolveWorkspaceCwd(entry);
+        const snapshot = this.supervisor.describe(port);
+        res.status(503).type('text/html').send(buildQaapPreviewFailureHtml({
+            port,
+            cwd: snapshot?.cwd ?? cwd,
+            exitCode: snapshot?.exitCode,
+            signal: snapshot?.signal,
+            stderrTail: snapshot?.stderrTail,
+            everStarted: snapshot !== undefined,
+        }));
+    }
+
+    /** Resolves the workspace directory backing a share so the Restart button can target it. */
+    protected async resolveWorkspaceCwd(entry: QaapPreviewShareEntry): Promise<string | undefined> {
+        if (!entry.repoKey) {
+            return undefined;
+        }
+        try {
+            const rows = await this.workspaces.list(entry.ownerLogin);
+            const workspaceUri = rows.find(row => row.repoKey === entry.repoKey)?.workspaceUri;
+            return workspaceUri ? FileUri.fsPath(workspaceUri) : undefined;
+        } catch {
+            return undefined;
+        }
     }
 
     protected async handleWebSocketUpgrade(
@@ -108,10 +150,10 @@ export class QaapPreviewShareProxyContribution implements BackendApplicationCont
         proxyReq.end();
     }
 
-    protected async forwardHttp(incoming: Request, outgoing: Response, targetPort: number, targetPath: string): Promise<void> {
+    protected async forwardHttp(incoming: Request, outgoing: Response, targetPort: number, targetPath: string, entry: QaapPreviewShareEntry): Promise<void> {
         const targetHost = await this.targetHostResolver.resolve(targetPort);
         if (!targetHost) {
-            outgoing.status(502).type('text/plain').send('Dev preview is not running.');
+            await this.sendFailurePage(outgoing, targetPort, entry);
             return;
         }
         const headers: http.OutgoingHttpHeaders = { ...incoming.headers };
@@ -128,11 +170,7 @@ export class QaapPreviewShareProxyContribution implements BackendApplicationCont
             proxyRes.pipe(outgoing);
         });
         proxyReq.on('error', () => {
-            if (!outgoing.headersSent) {
-                outgoing.status(502).type('text/plain').send('Dev preview is not running.');
-            } else {
-                outgoing.end();
-            }
+            void this.sendFailurePage(outgoing, targetPort, entry);
         });
         incoming.pipe(proxyReq);
     }

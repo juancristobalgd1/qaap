@@ -20,10 +20,16 @@ import {
     type QaapPushSubscribeRequest,
     type QaapTerminalSessionsUpsertRequest,
 } from '../common/qaap-cloud-api-types';
+import {
+    isAllowedDevPreviewPort,
+    parseQaapDevPreviewPort,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
+import { QAAP_PREVIEW_RESTART_PATH, type QaapPreviewRestartRequest } from '../common/qaap-preview-supervisor-types';
 import { QaapCloudOrchestrator } from './qaap-cloud-orchestrator';
 import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
+import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
 import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
@@ -52,6 +58,9 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
     @inject(QaapPreviewShareStore)
     protected readonly shares: QaapPreviewShareStore;
 
+    @inject(QaapPreviewSupervisor)
+    protected readonly previewSupervisor: QaapPreviewSupervisor;
+
     @inject(QaapTerminalSessionStore)
     protected readonly terminals: QaapTerminalSessionStore;
 
@@ -66,6 +75,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         app.get(`${QAAP_CLOUD_API_PATH}/workspaces`, (req, res) => { void this.handleListWorkspaces(req, res); });
         app.post(`${QAAP_CLOUD_API_PATH}/workspaces/ensure`, (req, res) => { void this.handleEnsureWorkspace(req, res); });
         app.post(`${QAAP_CLOUD_API_PATH}/preview/share`, (req, res) => { void this.handleCreateShare(req, res); });
+        app.post(QAAP_PREVIEW_RESTART_PATH, (req, res) => { void this.handleRestartPreview(req, res); });
         app.get(`${QAAP_CLOUD_API_PATH}/terminal-sessions`, (req, res) => { void this.handleGetTerminalSessions(req, res); });
         app.post(`${QAAP_CLOUD_API_PATH}/terminal-sessions`, (req, res) => { void this.handleUpsertTerminalSessions(req, res); });
         app.get(`${QAAP_CLOUD_API_PATH}/deploy/env`, (req, res) => { void this.handleGetDeployEnv(req, res); });
@@ -225,6 +235,35 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         }
         const summary = await this.shares.create(port, body.repoKey, origin, ownerLogin);
         res.json({ share: summary });
+    }
+
+    /**
+     * Restarts (or starts) the dev server for a workspace so the friendly preview-failure page's
+     * Restart button can recover a crashed preview without leaving the app. Ownership of the target
+     * cwd is enforced exactly like {@link handleDeployRun}.
+     */
+    protected async handleRestartPreview(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const body = (req.body ?? {}) as Partial<QaapPreviewRestartRequest>;
+        const port = parseQaapDevPreviewPort(body.port);
+        if (port === undefined || !isAllowedDevPreviewPort(port)) {
+            res.status(400).json({ error: 'A valid dev preview port is required' });
+            return;
+        }
+        const cwd = typeof body.cwd === 'string' ? body.cwd.trim() : '';
+        if (!cwd) {
+            res.status(400).json({ error: 'cwd is required' });
+            return;
+        }
+        if (ctx.kind !== 'skip' && !this.auth.ownsWorkspacePath(ctx, cwd)) {
+            this.auth.denyForbidden(res, req, 'workspace_path', { port });
+            return;
+        }
+        const status = this.previewSupervisor.start(cwd, port);
+        res.json({ status, port });
     }
 
     protected async handleGetTerminalSessions(req: Request, res: Response): Promise<void> {

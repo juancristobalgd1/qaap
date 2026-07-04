@@ -21,6 +21,7 @@ import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
 import { QaapParallelRunStore } from './qaap-parallel-run-store';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
+import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
 import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
@@ -38,6 +39,7 @@ export default new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsy
     bind(QaapPushSubscriptionStore).toSelf().inSingletonScope();
     bind(QaapWebPushService).toSelf().inSingletonScope();
     bind(QaapPreviewShareStore).toSelf().inSingletonScope();
+    bind(QaapPreviewSupervisor).toSelf().inSingletonScope();
     bind(QaapTerminalSessionStore).toSelf().inSingletonScope();
     bind(QaapPreviewShareProxyContribution).toSelf().inSingletonScope();
     bind(QaapCloudWorkspaceEndpoint).toSelf().inSingletonScope();
