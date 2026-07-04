@@ -327,6 +327,7 @@ describe('ChatRequestParserImpl', () => {
         chatAgentService.getAgents.returns([createAgent('agentA'), createAgent('agentB')]);
 
         const tool = new AgentDelegationTool();
+        (tool as unknown as { logger: ILogger }).logger = logger;
         (tool as unknown as { getChatAgentService: () => unknown }).getChatAgentService = () => ({
             getAgent: sinon.stub().withArgs('agentA').returns(createAgent('agentA')),
             getAgents: sinon.stub().returns([createAgent('agentA')]),
