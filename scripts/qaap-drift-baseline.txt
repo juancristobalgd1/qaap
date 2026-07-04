@@ -335,9 +335,6 @@ packages/plugin-ext-vscode/package.json
 packages/plugin-ext-vscode/src/node/plugin-vscode-init.spec.ts
 packages/plugin-ext-vscode/src/node/plugin-vscode-init.ts
 packages/plugin-ext/package.json
-packages/plugin-ext/src/common/plugin-protocol.ts
-packages/plugin-ext/src/hosted/node/scanners/scanner-theia.ts
-packages/plugin-ext/src/main/browser/view/plugin-view-registry.spec.ts
 packages/plugin-metrics/package.json
 packages/plugin/package.json
 packages/preferences/package.json
