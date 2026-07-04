@@ -70,6 +70,14 @@ const ALLOWED = [
     /^packages\/core\/src\/browser\/menu\/browser-menu-module\.ts$/,
     /^packages\/core\/src\/browser\/menu\/browser-menu-plugin\.ts$/,
     /^packages\/core\/src\/browser\/window\/window-title-service\.ts$/,
+    // Deliberate product choice (May 2026): keep the on-demand per-URI decoration
+    // fetch from upstream PR #17508 so git decorations stay correct with >250
+    // changes (upstream issue #17507, still open). Upstream reverted it (#17555)
+    // for a perf feedback loop with the decorations-service per-URI emitter (our
+    // core decorations-service seam is the other half). If explorer lag shows up
+    // on large workspaces, this pair is the prime suspect; watch for upstream's
+    // re-land and re-sync then.
+    /^packages\/filesystem\/src\/browser\/file-tree\/file-tree-decorator-adapter\.ts$/,
     // Test accommodation: the qaap agent runtime creates real git worktrees under
     // .worktrees/ (EnterWorktree), so the upstream spec's absolute-result asserts
     // need an excludePatterns filter or they match spurious files.
