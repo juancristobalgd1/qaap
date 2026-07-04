@@ -90,7 +90,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Upstream-Drift Policy and Migration Plan
 
-**The rule:** all new Qaap product code lives under `packages/qaap-*`. Do not modify files inside upstream Theia packages (`packages/<anything not starting with qaap->`). Drift is enforced in CI by `scripts/qaap-drift-check.js`: every file that differs from `upstream/master` must be either inside `packages/qaap-*`, matched by a regex in the `ALLOWED` list (with a comment explaining why), or listed in `scripts/qaap-drift-baseline.txt` (currently empty — no undocumented drift).
+**The rule:** all new Qaap product code lives under `packages/qaap-*`. Do not modify files inside upstream Theia packages (`packages/<anything not starting with qaap->`). Drift is enforced in CI by `scripts/qaap-drift-check.js`: every file that differs from `upstream/master` must be either inside `packages/qaap-*`, matched by a regex in the `ALLOWED` list (with a comment explaining why), or listed in `scripts/qaap-drift-baseline.txt` (~516 entries as of July 2026 — known drift pending extraction; CI fails only on NEW drift outside both lists. Trim stale entries after each extraction: regenerate the file from the report output, keeping only paths that still differ).
 
 ### Extraction patterns by change type
 
@@ -109,7 +109,7 @@ When a Qaap product behaviour requires changing a Theia file, use one of these p
 
 Each entry should eventually be removed by extracting product behaviour into `packages/qaap-*` and reverting the upstream file. Listed in descending file count:
 
-- **`core`** (17 files) — mostly small seams already in the allowlist (`workbench-top-bar-factory`, `mobile-layout-state`, several `shell` / `menu` files). The big residuals are `backend-application.ts` and `backend-application-module.ts` (fork lag: missing upstream's graceful-shutdown machinery and the `RootContainer` symbol — decide per-file whether to re-sync or keep simplified).
+- **`core`** (2 files) — only `package.json` and `README.md` remain in the baseline, both coupled to the full 1.71→1.72 version merge. Everything else was re-adopted from upstream (July 2026 sweep) or is a documented seam in `ALLOWED` (`workbench-top-bar-factory`, `mobile-layout-state`, `decorations-service`, generated i18n catalogs).
 - **`ai-ide`** (14 files) — model-alias configuration UI, command/prompt templates, and `workspace-functions.ts` (−291 lines: removed `TrustAwarePreferenceReader` and the external-path allowlist; reassess against the current upstream Theia AI release).
 - **`plugin-ext`** (7 files) — plugin host, view registry, webview-resource-cache customizations. Sensitive area: extract via subclass + rebind one file at a time.
 - **`mini-browser`** (7 files) — most already seamed for the Element Inspector and mobile open-handler; a few remain.
@@ -157,7 +157,10 @@ Pick the next task off this list. Each is independent — extract one, verify, c
         - `package.json` + `tsconfig.json` — add direct deps on `qaap-ai-nvidia` / `qaap-ai-openrouter` that the free-badge feature needs.
     - Re-adopted from upstream:
         - `workspace-functions.{ts,spec.ts}`, `context-file-validation-service-impl.spec.ts`, and the `ALLOWED_EXTERNAL_PATHS_PREF` part of `common/workspace-preferences.ts`: restored `TrustAwarePreferenceReader`, external-path allowlist, path-traversal hardening, and upstream tests.
-- [ ] **core** (residuals after Tier 1–3 cleanups). Mostly already-allowlisted small seams **justified by qaap consumers** (e.g. `WorkbenchTopBarFactory` → `qaap-mobile-shell`, `ElectronMainApplication.resolveApplicationIconPath` → `qaap-product`). Real outstanding work:
+- [x] **core** (residuals after Tier 1–3 cleanups). Mostly already-allowlisted small seams **justified by qaap consumers** (e.g. `WorkbenchTopBarFactory` → `qaap-mobile-shell`, `ElectronMainApplication.resolveApplicationIconPath` → `qaap-product`). Real outstanding work:
+    - [x] July 2026 sweep: 44 remaining core files in the drift baseline triaged and re-adopted from upstream in 5 bisectable batches — (1) the fork's partial ILogger→console style migration reverted (26 files, behavior-identical), (2) markdown-link-handler.ts + `MarkdownString.isCommandAllowed()` trust gate + hover-service link wiring, (3) preference-proxy `Symbol.toStringTag` fix + quick-view empty-label filter + jsdom act helper, (4) tab-bar-toolbar widget/args propagation (fixed a fork regression: `composite-menu-node` passed `args` as a nested array instead of spreading, so handlers received `[widget]` instead of `widget`; Codex-verified no qaap-shell dependency), (5) node logging wildcards + `unixKill` ESRCH suppression + core `shell-quoting`.
+    - New documented seams in `ALLOWED`: `decorations-service.ts` (re-fire onDidChangeDecorations after lazy resolution; wrapper class not exported upstream — TODO upstream the fix) and `packages/core/i18n/` + `nls.metadata.json` (generated artifacts; diff derives from allowlisted seams).
+    - Still in baseline (deferred to the full 1.71→1.72 `git merge upstream/master`): `packages/core/package.json` and `packages/core/README.md` — the version bump cascades through 87 package.json files and the README is regenerated from re-exports at that version.
     - `backend-application.{ts,-module.ts}` + `backend-application.spec.ts` re-adopted from upstream: restored graceful shutdown, `RootContainer`, async `onStop`, and upstream tests.
     - [x] yargs `v15 → v17` re-adopted across `core`, `dev-packages/{cli,application-manager,private-re-exports}`, and root; `logger-cli-contribution.spec.ts` and `theia.ts` parse calls aligned with upstream async API. Root adds `@types/yargs` for workspace hoisting.
     - [x] `application-shell.ts` top-bar visibility: extracted to `QaapApplicationShellWithToolbar` in `@theia/qaap-shell`; upstream file reverted.
