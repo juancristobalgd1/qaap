@@ -78,6 +78,10 @@ const ALLOWED = [
     // on large workspaces, this pair is the prime suspect; watch for upstream's
     // re-land and re-sync then.
     /^packages\/filesystem\/src\/browser\/file-tree\/file-tree-decorator-adapter\.ts$/,
+    // Env accommodation: this dev/CI environment's Node emits a NO_COLOR/FORCE_COLOR
+    // warning on stderr that breaks the upstream spec's exact-stderr asserts; the
+    // fork spec filters it. Revisit when the env no longer emits the warning.
+    /^packages\/process\/src\/node\/raw-process\.spec\.ts$/,
     // Test accommodation: the qaap agent runtime creates real git worktrees under
     // .worktrees/ (EnterWorktree), so the upstream spec's absolute-result asserts
     // need an excludePatterns filter or they match spurious files.
@@ -195,6 +199,20 @@ const ALLOWED = [
     /^packages\/ai-chat\/src\/browser\/(ai-chat-frontend-module|chat-tool-request-service|change-set-variable|context-file-validation-service|file-chat-variable-contribution)\.ts$/,
     // Variable descriptions tuned for agents (relative-path guidance).
     /^packages\/ai-core\/src\/browser\/theia-variable-contribution\.ts$/,
+    // Claude Code agent: "Analyze before acting" system-prompt block,
+    // AskUserQuestion normalization (LLM sometimes omits header), and the
+    // fork's chat navigation command instead of AI_CHAT_HOME.
+    /^packages\/ai-claude-code\/src\/browser\/claude-code-chat-agent\.ts$/,
+    // OpenAI custom-model preferences describe the fork's provider ecosystem
+    // (OpenRouter/NVIDIA/HuggingFace, consumed by qaap-ai-openrouter/-nvidia)
+    // and add required:['model','url'] + nullable reasoning opt-out.
+    /^packages\/ai-openai\/src\/common\/openai-preferences\.ts$/,
+    // Shell-execution seam: cwd+workspaceRoot travel to the backend where
+    // QaapShellExecutionServerImpl (qaap-ai-config) overrides resolveCwd/execute
+    // (basename fallback + ENOENT rewrite); renderer keeps the Canceled i18n key.
+    /^packages\/ai-terminal\/src\/(browser\/(shell-execution-tool|shell-execution-tool-renderer)\.tsx?|common\/shell-execution-server\.ts|node\/shell-execution-server-impl\.ts)$/,
+    // Fork-authored spec document (agent trace Cursor-parity), not upstream content.
+    /^doc\/agent-trace-cursor-parity-spec\.md$/,
     // ---- Qaap product tooling / editor config (not upstream Theia) --------
     /^\.cursor\/rules\/work-hub-reload-default\.mdc$/,
     /^\.tool-ui\/agent\.json$/,
