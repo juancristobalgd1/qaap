@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as os from 'os';
 import {
     isPathUnderUserWorkspace,
+    isUserWorkspaceContainerPath,
     resolveQaapReposRoot,
     resolveUserReposRoot,
     safeUserIdSegment,
@@ -189,6 +190,19 @@ describe('Multi-tenancy isolation', () => {
             expect(isPathUnderUserWorkspace(cwdA, reposRoot, userB)).to.be.false;
             expect(isPathUnderUserWorkspace(cwdB, reposRoot, userB)).to.be.true;
             expect(isPathUnderUserWorkspace(cwdB, reposRoot, userA)).to.be.false;
+        });
+
+        it('isUserWorkspaceContainerPath flags the user root and owner dirs but never repositories', () => {
+            const userRootA = resolveUserReposRoot(reposRoot, userA);
+            // Depth 0 (the per-user root) and depth 1 (an owner dir) are containers.
+            expect(isUserWorkspaceContainerPath(userRootA, reposRoot, userA)).to.be.true;
+            expect(isUserWorkspaceContainerPath(path.join(userRootA, 'octocat'), reposRoot, userA)).to.be.true;
+            // Depth 2 (a repository) and deeper are legitimate agent targets.
+            expect(isUserWorkspaceContainerPath(cwdA, reposRoot, userA)).to.be.false;
+            expect(isUserWorkspaceContainerPath(path.join(cwdA, 'src'), reposRoot, userA)).to.be.false;
+            // Paths outside the user's tree are not this predicate's concern.
+            expect(isUserWorkspaceContainerPath(cwdB, reposRoot, userA)).to.be.false;
+            expect(isUserWorkspaceContainerPath('/tmp/elsewhere', reposRoot, userA)).to.be.false;
         });
 
         it('eventIsOwned filters created/updated events by conversation.cwd', () => {
