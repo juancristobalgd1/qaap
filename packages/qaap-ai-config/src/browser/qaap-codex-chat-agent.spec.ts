@@ -16,6 +16,8 @@ import { TokenUsageService } from '@theia/ai-core';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { URI } from '@theia/core/lib/common/uri';
+import { ILogger } from '@theia/core/lib/common/logger';
+import { MockLogger } from '@theia/core/lib/common/test/mock-logger';
 import { ChangeSetFileElementFactory } from '@theia/ai-chat/lib/browser/change-set-file-element';
 import { MarkdownChatResponseContentImpl, MutableChatRequestModel } from '@theia/ai-chat';
 import { CodexFrontendService } from '@theia/ai-codex/lib/browser/codex-frontend-service';
@@ -53,6 +55,7 @@ describe('QaapCodexChatAgent', () => {
             roots: Promise.resolve([{ resource: new URI('file:///test') }])
         } as unknown as WorkspaceService);
         container.bind(ChangeSetFileElementFactory).toConstantValue(sinon.stub());
+        container.bind(ILogger).to(MockLogger).inSingletonScope();
         container.bind(QaapCodexChatAgent).toSelf();
 
         mockRequest = {
