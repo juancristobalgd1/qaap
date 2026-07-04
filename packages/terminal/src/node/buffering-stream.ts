@@ -65,19 +65,6 @@ export class BufferingStream<T> {
         }
     }
 
-    /** Immediately drains all buffered data, cancelling any pending timed flush. */
-    flush(): void {
-        if (this.buffer !== undefined) {
-            clearTimeout(this.timeout);
-            const snapshot = this.buffer;
-            this.buffer = undefined;
-            const totalLength = this.length(snapshot);
-            for (let offset = 0; offset < totalLength; offset += this.maxChunkSize) {
-                this.onDataEmitter.fire(this.slice(snapshot, offset, offset + this.maxChunkSize));
-            }
-        }
-    }
-
     dispose(): void {
         clearTimeout(this.timeout);
         this.buffer = undefined;

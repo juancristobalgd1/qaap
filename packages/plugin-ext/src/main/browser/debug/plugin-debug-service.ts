@@ -16,13 +16,13 @@
 
 import { DebuggerDescription, DebugPath, DebugService, DynamicDebugConfigurationProvider } from '@theia/debug/lib/common/debug-service';
 import debounce = require('@theia/core/shared/lodash.debounce');
-import { deepClone, Emitter, Event, nls, ILogger } from '@theia/core';
+import { deepClone, Emitter, Event, nls } from '@theia/core';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { DebugConfiguration } from '@theia/debug/lib/common/debug-configuration';
 import { IJSONSchema, IJSONSchemaSnippet } from '@theia/core/lib/common/json-schema';
 import { PluginDebugAdapterContribution } from './plugin-debug-adapter-contribution';
 import { PluginDebugConfigurationProvider } from './plugin-debug-configuration-provider';
-import { injectable, inject, postConstruct, named } from '@theia/core/shared/inversify';
+import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { WebSocketConnectionProvider } from '@theia/core/lib/browser/messaging/ws-connection-provider';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { CommandIdVariables } from '@theia/variable-resolver/lib/common/variable-types';
@@ -64,8 +64,6 @@ export class PluginDebugService implements DebugService {
     protected readonly connectionProvider: WebSocketConnectionProvider;
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
-    @inject(ILogger) @named('plugin-ext:PluginDebugService')
-    protected readonly logger: ILogger;
 
     @postConstruct()
     protected init(): void {
@@ -86,7 +84,7 @@ export class PluginDebugService implements DebugService {
         const { type } = contrib;
 
         if (this.contributors.has(type)) {
-            this.logger.warn(`Debugger with type '${type}' already registered.`);
+            console.warn(`Debugger with type '${type}' already registered.`);
             return Disposable.NULL;
         }
 
@@ -107,7 +105,7 @@ export class PluginDebugService implements DebugService {
         if (this.configurationProviders.has(provider.handle)) {
             const configuration = this.configurationProviders.get(provider.handle);
             if (configuration && configuration.type !== provider.type) {
-                this.logger.warn(`Different debug configuration provider with type '${configuration.type}' already registered.`);
+                console.warn(`Different debug configuration provider with type '${configuration.type}' already registered.`);
                 provider.handle = this.configurationProviders.size;
             }
         }
@@ -360,7 +358,7 @@ export class PluginDebugService implements DebugService {
                 }
                 resolved = await resolver(workspaceFolderUri, resolved);
             } catch (e) {
-                this.logger.error(e);
+                console.error(e);
             }
         }
         return resolved;

@@ -24,8 +24,6 @@ import { bindPreferenceService } from '../frontend-application-bindings';
 import { FrontendApplicationConfigProvider } from '../frontend-application-config-provider';
 import { IndexedAccess, PreferenceDataProperty, PreferenceSchemaService } from '../../common/preferences/preference-schema';
 import { PreferenceProvider, PreferenceProviderProvider, PreferenceScope } from '../../common/preferences';
-import { ILogger } from '../../common';
-import { MockLogger } from '../../common/test/mock-logger';
 
 disableJSDOM();
 
@@ -40,9 +38,6 @@ let testContainer: Container;
 function createTestContainer(): Container {
     const result = new Container();
     bindPreferenceService(result.bind.bind(result));
-
-    result.bind(ILogger).to(MockLogger).inSingletonScope();
-
     return result;
 }
 

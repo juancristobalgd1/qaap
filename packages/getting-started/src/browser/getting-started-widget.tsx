@@ -613,7 +613,7 @@ export interface PreferencesProps {
     preferenceService: PreferenceService;
 }
 
-function WelcomePreferences(props: PreferencesProps): React.JSX.Element {
+function WelcomePreferences(props: PreferencesProps): JSX.Element {
     const [startupEditor, setStartupEditor] = React.useState<string>(
         props.preferenceService.get('workbench.startupEditor', 'welcomePage')
     );

@@ -22,8 +22,7 @@
 /* eslint-disable no-null/no-null */
 /* eslint-disable @typescript-eslint/no-shadow */
 
-import { injectable, inject, postConstruct, named } from '@theia/core/shared/inversify';
-import { ILogger } from '@theia/core';
+import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { basename, dirname, normalize, join } from 'path';
 import { generateUuid } from '@theia/core/lib/common/uuid';
 import * as os from 'os';
@@ -109,9 +108,6 @@ export class DiskFileSystemProvider implements Disposable,
 
     @inject(EncodingService)
     protected readonly encodingService: EncodingService;
-
-    @inject(ILogger) @named('filesystem:DiskFileSystemProvider')
-    protected readonly logger: ILogger;
 
     @postConstruct()
     protected init(): void {
@@ -224,7 +220,7 @@ export class DiskFileSystemProvider implements Disposable,
                     const stat = await this.stat(resource.resolve(child));
                     result.push([child, stat.type]);
                 } catch (error) {
-                    this.logger.error(error); // ignore errors for individual entries that can arise from permission denied
+                    console.trace(error); // ignore errors for individual entries that can arise from permission denied
                 }
             }));
 
@@ -336,7 +332,7 @@ export class DiskFileSystemProvider implements Disposable,
                         // After a successful truncate() the flag can be set to 'r+' which will not truncate.
                         flags = 'r+';
                     } catch (error) {
-                        this.logger.error(error);
+                        console.trace(error);
                     }
                 }
 
@@ -388,7 +384,7 @@ export class DiskFileSystemProvider implements Disposable,
                     // In some exotic setups it is well possible that node fails to sync
                     // In that case we disable flushing and log the error to our logger
                     this.canFlush = false;
-                    this.logger.error(error);
+                    console.error(error);
                 }
             }
 

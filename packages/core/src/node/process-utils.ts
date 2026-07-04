@@ -15,17 +15,13 @@
 // *****************************************************************************
 
 import * as cp from 'child_process';
-import { injectable, inject, named } from 'inversify';
-import { ILogger } from '../common/logger';
+import { injectable } from 'inversify';
 
 /**
  * `@theia/core` service with some process-related utilities.
  */
 @injectable()
 export class ProcessUtils {
-
-    @inject(ILogger) @named('core:ProcessUtils')
-    protected readonly logger: ILogger;
 
     terminateProcessTree(ppid: number): void {
         if (process.platform === 'win32') {
@@ -43,7 +39,7 @@ export class ProcessUtils {
         // taskkill may exit with a non-zero code when some child processes have already exited.
         // This is expected during shutdown — log but don't throw.
         if (result.status !== 0) {
-            this.logger.warn(`taskkill.exe exited with ${result.status} for PID ${ppid}. Output:\n${JSON.stringify(result.output)}`);
+            console.warn(`taskkill.exe exited with ${result.status} for PID ${ppid}. Output:\n${JSON.stringify(result.output)}`);
         }
     }
 
@@ -51,28 +47,21 @@ export class ProcessUtils {
         for (const pid of this.unixGetChildrenRecursive(ppid)) {
             // Prevent killing the current process:
             if (pid !== process.pid) {
-                this.unixKill(pid);
+                // Don't stop if a process fails to be killed (keep on killing the others):
+                try {
+                    process.kill(pid);
+                } catch (error) {
+                    console.error(error);
+                }
             }
         }
         if (ppid === this.unixGetPGID(ppid)) {
             // When a process pgid === pid this means the the process is a group leader.
             // We can then kill every process part of its group by doing `kill(-pgid)`.
             // This can catch leaked processes under `init` that are still part of the group.
-            this.unixKill(-ppid);
+            process.kill(-ppid);
         }
-        this.unixKill(ppid);
-    }
-
-    protected unixKill(pid: number): void {
-        try {
-            process.kill(pid);
-        } catch (error) {
-            // ESRCH means the process is already gone, which is the goal here. Log
-            // anything else but keep going so the rest of the tree is still killed.
-            if ((error as NodeJS.ErrnoException | undefined)?.code !== 'ESRCH') {
-                this.logger.error(`[${pid}] failed to kill`, error);
-            }
-        }
+        process.kill(ppid);
     }
 
     protected unixGetPGID(pid: number): number {

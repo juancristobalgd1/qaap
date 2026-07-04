@@ -121,7 +121,7 @@ export class TaskService implements TaskConfigurationClient {
     @inject(TaskServer)
     protected readonly taskServer: TaskServer;
 
-    @inject(ILogger) @named('task:TaskService')
+    @inject(ILogger) @named('task')
     protected readonly logger: ILogger;
 
     @inject(WidgetManager)
@@ -338,7 +338,7 @@ export class TaskService implements TaskConfigurationClient {
             } else if (event.signal !== undefined) {
                 this.messageService.info(nls.localize('theia/task/taskTerminatedBySignal', "Task '{0}' was terminated by signal {1}.", taskIdentifier, event.signal));
             } else {
-                this.logger.error('Invalid TaskExitedEvent received, neither code nor signal is set.');
+                console.error('Invalid TaskExitedEvent received, neither code nor signal is set.');
             }
         });
     }
@@ -588,7 +588,7 @@ export class TaskService implements TaskConfigurationClient {
             return this.runCompoundTask(token, task, runTaskOption);
         } else {
             return this.runTask(task, runTaskOption).catch(error => {
-                this.logger.error('Error at launching task', error);
+                console.error('Error at launching task', error);
                 return undefined;
             });
         }
@@ -606,12 +606,12 @@ export class TaskService implements TaskConfigurationClient {
             const rootNode = new TaskNode(task, [], []);
             this.detectDirectedAcyclicGraph(task, rootNode, tasks);
         } catch (error) {
-            this.logger.error(`Error at launching task '${task.label}'`, error);
+            console.error(`Error at launching task '${task.label}'`, error);
             this.messageService.error(error.message);
             return undefined;
         }
         return this.runTasksGraph(task, tasks, option).catch(error => {
-            this.logger.error(`Error at launching task '${task.label}'`, error);
+            console.error(`Error at launching task '${task.label}'`, error);
             return undefined;
         });
     }
@@ -759,9 +759,9 @@ export class TaskService implements TaskConfigurationClient {
         if (!(await this.requestWorkspaceTrust())) {
             return;
         }
-        this.logger.debug('entering runTask');
+        console.debug('entering runTask');
         const releaseLock = await this.taskStartingLock.acquire();
-        this.logger.debug('got lock');
+        console.debug('got lock');
 
         try {
             // resolve problemMatchers
@@ -779,11 +779,11 @@ export class TaskService implements TaskConfigurationClient {
                 const taskConfig = taskInfo.config;
                 return this.taskDefinitionRegistry.compareTasks(taskConfig, task);
             });
-            this.logger.debug(`running task ${JSON.stringify(task)}, already running = ${!!matchedRunningTaskInfo}`);
+            console.debug(`running task ${JSON.stringify(task)}, already running = ${!!matchedRunningTaskInfo}`);
 
             if (matchedRunningTaskInfo) { // the task is active
                 releaseLock();
-                this.logger.debug('released lock');
+                console.debug('released lock');
                 const taskName = this.taskNameResolver.resolve(task);
                 const terminalId = matchedRunningTaskInfo.terminalId;
                 if (terminalId) {
@@ -805,10 +805,10 @@ export class TaskService implements TaskConfigurationClient {
                     return this.restartTask(matchedRunningTaskInfo, option);
                 }
             } else { // run task as the task is not active
-                this.logger.debug('task about to start');
+                console.debug('task about to start');
                 const taskInfo = await this.doRunTask(task, option);
                 releaseLock();
-                this.logger.debug('release lock 2');
+                console.debug('release lock 2');
                 return taskInfo;
             }
         } catch (e) {
@@ -911,7 +911,7 @@ export class TaskService implements TaskConfigurationClient {
         return this.runTasksGraph(task, tasks, {
             customization: { ...taskCustomization, ...{ problemMatcher: resolvedMatchers } }
         }).catch(error => {
-            this.logger.info(error.message);
+            console.log(error.message);
             return undefined;
         });
     }

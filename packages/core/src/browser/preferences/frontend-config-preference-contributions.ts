@@ -14,21 +14,16 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable, named, inject } from 'inversify';
+import { injectable } from 'inversify';
 import { PreferenceContribution, PreferenceSchema, PreferenceSchemaService } from '../../common/preferences/preference-schema';
 import { FrontendApplicationConfigProvider } from '../frontend-application-config-provider';
 import { FrontendApplicationPreferenceConfig } from './preference-contribution';
 import { PreferenceLanguageOverrideService } from '../../common/preferences/preference-language-override-service';
 import { PreferenceScope } from '../../common/preferences';
 import { DefaultTheme } from '@theia/application-package/lib/application-props';
-import { ILogger } from '../../common/logger';
 
 @injectable()
 export class FrontendConfigPreferenceContribution implements PreferenceContribution {
-
-    @inject(ILogger) @named('core:FrontendConfigPreferenceContribution')
-    protected readonly logger: ILogger;
-
     schema: PreferenceSchema = { scope: PreferenceScope.Folder, properties: {} };
     async initSchema(service: PreferenceSchemaService): Promise<void> {
         const config = FrontendApplicationConfigProvider.get();
@@ -49,7 +44,7 @@ export class FrontendConfigPreferenceContribution implements PreferenceContribut
                     }
                 }
             } catch (e) {
-                this.logger.error('Failed to load preferences from frontend configuration.', e);
+                console.error('Failed to load preferences from frontend configuration.', e);
             }
         }
     }

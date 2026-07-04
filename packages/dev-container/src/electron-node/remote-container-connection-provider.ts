@@ -15,28 +15,27 @@
 // *****************************************************************************
 
 import * as net from 'net';
-import { PassThrough } from 'stream';
 import {
-    AttachContainerArgs, AttachContainerOptions, ContainerConnectionOptions, ContainerConnectionResult,
-    DevContainerFile, RemoteContainerConnectionProvider, RunningContainerInfo, WorkspaceCandidate
+    ContainerConnectionOptions, ContainerConnectionResult,
+    DevContainerFile, RemoteContainerConnectionProvider, RunningContainerInfo
 } from '../electron-common/remote-container-connection-provider';
+import { RemoteConnection, RemoteExecOptions, RemoteExecResult, RemoteExecTester, RemoteStatusReport } from '@theia/remote/lib/electron-node/remote-types';
+import { RemoteSetupResult, RemoteSetupService } from '@theia/remote/lib/electron-node/setup/remote-setup-service';
 import { RemoteConnectionService } from '@theia/remote/lib/electron-node/remote-connection-service';
-import { RemoteSetupService } from '@theia/remote/lib/electron-node/setup/remote-setup-service';
 import { RemoteProxyServerProvider } from '@theia/remote/lib/electron-node/remote-proxy-server-provider';
-import { RemoteStatusReport } from '@theia/remote/lib/electron-node/remote-types';
-import { RpcServer, ILogger, MessageService, generateUuid, URI } from '@theia/core';
-import { inject, injectable, named } from '@theia/core/shared/inversify';
+import { Emitter, Event, generateUuid, MessageService, RpcServer, ILogger } from '@theia/core';
+import { Socket } from 'net';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import * as Docker from 'dockerode';
-import { DevContainerFileService } from './dev-container-file-service';
 import { DockerContainerService } from './docker-container-service';
+import { Deferred } from '@theia/core/lib/common/promise-util';
+import { WriteStream } from 'tty';
+import { PassThrough } from 'stream';
+import { exec, execSync } from 'child_process';
+import { DevContainerFileService } from './dev-container-file-service';
 import { ContainerOutputProvider } from '../electron-common/container-output-provider';
-import { DevContainerCliContribution } from './dev-container-cli-contribution';
-import { RemoteDockerContainerConnection } from './remote-docker-container-connection';
-// Re-export for backward compatibility — these types were moved to remote-docker-container-connection.ts
-export { RemoteDockerContainerConnection, RemoteContainerConnectionOptions } from './remote-docker-container-connection';
 import { DevContainerConfiguration } from './devcontainer-file';
-import { getWorkspaceMounts, inferWorkspacePath } from './devcontainer-util';
-import { VariableContext } from './devcontainer-contributions/variable-resolver-contribution';
+import { resolveComposeFilePath } from './docker-compose/compose-service';
 
 @injectable()
 export class DevContainerConnectionProvider implements RemoteContainerConnectionProvider, RpcServer<ContainerOutputProvider> {
@@ -47,6 +46,9 @@ export class DevContainerConnectionProvider implements RemoteContainerConnection
     @inject(RemoteSetupService)
     protected readonly remoteSetup: RemoteSetupService;
 
+    @inject(MessageService)
+    protected readonly messageService: MessageService;
+
     @inject(RemoteProxyServerProvider)
     protected readonly serverProvider: RemoteProxyServerProvider;
 
@@ -56,14 +58,11 @@ export class DevContainerConnectionProvider implements RemoteContainerConnection
     @inject(DevContainerFileService)
     protected readonly devContainerFileService: DevContainerFileService;
 
-    @inject(DevContainerCliContribution)
-    protected readonly cliContribution: DevContainerCliContribution;
+    @inject(RemoteConnectionService)
+    protected readonly remoteService: RemoteConnectionService;
 
-    @inject(ILogger) @named('dev-container:DevContainerConnectionProvider')
+    @inject(ILogger)
     protected readonly logger: ILogger;
-
-    @inject(MessageService)
-    protected readonly messageService: MessageService;
 
     protected outputProvider: ContainerOutputProvider | undefined;
 
@@ -71,7 +70,7 @@ export class DevContainerConnectionProvider implements RemoteContainerConnection
         this.outputProvider = client;
     }
 
-    async createDockerConnection(): Promise<Docker> {
+    async connectToContainer(options: ContainerConnectionOptions): Promise<ContainerConnectionResult> {
         const dockerOptions: Docker.DockerOptions = {};
         const dockerHost = process.env.DOCKER_HOST;
 
@@ -97,181 +96,62 @@ export class DevContainerConnectionProvider implements RemoteContainerConnection
             }
         } catch (_) {
             this.logger.warn(`Ignoring invalid DOCKER_HOST=${dockerHost}`);
+            this.messageService.warn(`Ignoring invalid DOCKER_HOST=${dockerHost}`);
         }
 
         const dockerConnection = new Docker(dockerOptions);
-        await dockerConnection.version()
+        const version = await dockerConnection.version()
             .catch(e => {
-                this.logger.error('Docker Error:', e);
-                throw new Error(`Docker is not available: ${e.message ?? e}`);
+                console.error('Docker Error:', e);
+                this.messageService.error('Docker Error: ' + e.message);
             });
 
-        return dockerConnection;
-    }
-
-    async listRunningContainers(docker?: Docker): Promise<RunningContainerInfo[]> {
-        docker ??= await this.createDockerConnection();
-        const containers = await docker.listContainers({ all: false });
-
-        return containers.map(container => ({
-            id: container.Id.substring(0, 12),
-            name: (container.Names[0] || '').replace(/^\//, ''),
-            image: container.Image,
-            status: container.Status,
-            created: container.Created
-        }));
-    }
-
-    async getWorkspaceCandidates(containerId: string, docker?: Docker): Promise<WorkspaceCandidate[]> {
-        docker ??= await this.createDockerConnection();
-        const container = docker.getContainer(containerId);
-        const info = await container.inspect();
-        const candidates: WorkspaceCandidate[] = [];
-        const seen = new Set<string>();
-
-        // Check for devcontainer metadata label (set by tools that created the container)
-        const metadataLabel = info.Config.Labels?.['devcontainer.metadata'];
-        if (metadataLabel) {
-            try {
-                const metadata = JSON.parse(metadataLabel);
-                if (Array.isArray(metadata)) {
-                    for (const entry of metadata) {
-                        if (entry.remoteWorkspaceFolder && !seen.has(entry.remoteWorkspaceFolder)) {
-                            seen.add(entry.remoteWorkspaceFolder);
-                            candidates.push({ path: entry.remoteWorkspaceFolder, source: 'devcontainer-label' });
-                        }
-                    }
-                }
-            } catch {
-                // ignore malformed metadata
-            }
+        if (!version) {
+            this.messageService.error('Docker Daemon is not running');
+            throw new Error('Docker is not running');
         }
 
-        const localFolderLabel = info.Config.Labels?.['devcontainer.local_folder'];
-        if (localFolderLabel) {
-            const basename = URI.fromFilePath(localFolderLabel).path.base;
-            if (basename) {
-                const workspacePath = `/workspaces/${basename}`;
-                if (!seen.has(workspacePath)) {
-                    seen.add(workspacePath);
-                    candidates.push({ path: workspacePath, source: 'devcontainer-label' });
-                }
-            }
-        }
-
-        if (info.Config.WorkingDir && info.Config.WorkingDir !== '/' && !seen.has(info.Config.WorkingDir)) {
-            seen.add(info.Config.WorkingDir);
-            candidates.push({ path: info.Config.WorkingDir, source: 'working-dir' });
-        }
-
-        for (const mount of getWorkspaceMounts(info.Mounts ?? [])) {
-            if (!seen.has(mount.Destination)) {
-                seen.add(mount.Destination);
-                candidates.push({ path: mount.Destination, source: 'bind-mount' });
-            }
-        }
-
-        if (!seen.has('/')) {
-            candidates.push({ path: '/', source: 'fallback' });
-        }
-
-        return candidates;
-    }
-
-    async scanForDevContainerConfig(containerId: string, workspacePath: string, docker?: Docker): Promise<string | undefined> {
-        docker ??= await this.createDockerConnection();
-        const container = docker.getContainer(containerId);
-
-        // Search all three standard devcontainer.json locations:
-        //   <workspace>/.devcontainer/devcontainer.json
-        //   <workspace>/.devcontainer.json
-        //   <workspace>/.devcontainer/<subfolder>/devcontainer.json
-        // Uses a single find command to avoid multiple exec round-trips.
+        // create container
+        const progress = await this.messageService.showProgress({
+            text: 'Creating container',
+        });
         try {
-            // Use Cmd array form instead of sh -c to avoid shell injection.
-            // stderr (e.g. "No such file or directory" when .devcontainer doesn't exist)
-            // is demuxed to a separate stream and discarded.
-            const execution = await container.exec({
-                Cmd: [
-                    'find',
-                    `${workspacePath}/.devcontainer`, `${workspacePath}/.devcontainer.json`,
-                    '-maxdepth', '2',
-                    '(', '-name', 'devcontainer.json', '-o', '-name', '.devcontainer.json', ')',
-                    '-type', 'f'
-                ],
-                AttachStdout: true,
-                AttachStderr: true
-            });
+            const container = await this.containerService.getOrCreateContainer(dockerConnection, options, this.outputProvider);
+            const devContainerConfig = await this.devContainerFileService.getConfiguration(options.devcontainerFile);
 
-            let stdout = '';
-            const stream = await execution.start({});
-            const stdoutPassthrough = new PassThrough();
-            const stderrPassthrough = new PassThrough();
-            stdoutPassthrough.on('data', (chunk: Buffer) => {
-                stdout += chunk.toString();
-            });
-            execution.modem.demuxStream(stream, stdoutPassthrough, stderrPassthrough);
-
-            await new Promise<void>((resolve, reject) => {
-                stream.on('end', () => resolve());
-                stream.on('error', reject);
-            });
-            stdoutPassthrough.destroy();
-            stderrPassthrough.destroy();
-
-            const found = stdout.trim().split('\n').filter(line => line.length > 0);
-            if (found.length === 0) {
-                return undefined;
-            }
-
-            // Prefer the standard location, then root-level, then subfolder configs
-            const standardPath = `${workspacePath}/.devcontainer/devcontainer.json`;
-            const rootPath = `${workspacePath}/.devcontainer.json`;
-            for (const preferred of [standardPath, rootPath]) {
-                if (found.includes(preferred)) {
-                    return preferred;
-                }
-            }
-            // Return the first subfolder config found
-            return found[0];
-        } catch (e) {
-            // find/sh might not be available in minimal containers
-            this.logger.debug('Failed to scan for devcontainer.json in container:', e);
-            return undefined;
-        }
-    }
-
-    async connectToContainer(options: ContainerConnectionOptions): Promise<ContainerConnectionResult> {
-        const progress = await this.messageService.showProgress({ text: 'Creating container' });
-        try {
+            // create actual connection
             const report: RemoteStatusReport = message => progress.report({ message });
-            const docker = await this.createDockerConnection();
+            report('Connecting to remote system...');
 
-            let remote: RemoteDockerContainerConnection | undefined;
-            try {
-                const container = await this.containerService.getOrCreateContainer(docker, options, this.outputProvider);
-                const context: VariableContext = { containerId: container.id };
-                const devContainerConfig = await this.devContainerFileService.getConfiguration(options.devcontainerFile, context);
+            const remote = await this.createContainerConnection(container, dockerConnection, devContainerConfig);
+            const result = await this.remoteSetup.setup({
+                connection: remote,
+                report,
+                nodeDownloadTemplate: options.nodeDownloadTemplate
+            });
+            remote.remoteSetupResult = result;
 
-                report('Connecting to remote system...');
+            const registration = this.remoteConnectionService.register(remote);
+            const server = await this.serverProvider.getProxyServer(socket => {
+                remote.forwardOut(socket);
+            });
+            remote.onDidDisconnect(() => {
+                server.close();
+                registration.dispose();
+            });
+            const localPort = (server.address() as net.AddressInfo).port;
+            remote.localPort = localPort;
 
-                const result = await this.setupRemoteConnection(container, docker, devContainerConfig, options.nodeDownloadTemplate, report);
-                remote = result.remote;
+            await this.containerService.postConnect(options.devcontainerFile, remote, this.outputProvider);
 
-                await this.containerService.postConnect(options.devcontainerFile, remote, this.outputProvider, context);
-
-                return {
-                    containerId: container.id,
-                    workspacePath: devContainerConfig.workspaceFolder ?? inferWorkspacePath(await container.inspect()),
-                    port: result.localPort.toString(),
-                };
-            } catch (e) {
-                remote?.dispose();
-                this.logger.error(e);
-                throw e;
-            }
+            return {
+                containerId: container.id,
+                workspacePath: devContainerConfig.workspaceFolder ?? this.inferWorkspacePath(await container.inspect()),
+                port: localPort.toString(),
+            };
         } catch (e) {
             this.messageService.error(e.message);
+            console.error(e);
             throw e;
         } finally {
             progress.cancel();
@@ -282,65 +162,16 @@ export class DevContainerConnectionProvider implements RemoteContainerConnection
         return this.devContainerFileService.getAvailableFiles(workspacePath);
     }
 
-    async getAttachContainerArgs(): Promise<AttachContainerArgs | undefined> {
-        const containerId = this.cliContribution.consumeAttachContainerId();
-        if (!containerId) {
-            return undefined;
-        }
-        return {
-            containerId,
-            scanForDevJson: this.cliContribution.shouldScanForDevJson()
-        };
-    }
-
-    async attachToContainer(options: AttachContainerOptions): Promise<ContainerConnectionResult> {
-        const progress = await this.messageService.showProgress({ text: 'Attaching to container' });
-        try {
-            const report: RemoteStatusReport = message => progress.report({ message });
-            const docker = await this.createDockerConnection();
-            const container = docker.getContainer(options.containerId);
-
-            const containerInfo = await container.inspect();
-            if (!containerInfo.State.Running) {
-                throw new Error(`Container ${options.containerId} is not running`);
-            }
-
-            const context: VariableContext = { containerId: options.containerId };
-            let config: DevContainerConfiguration;
-            if (options.devcontainerFile) {
-                config = await this.devContainerFileService.getConfiguration(options.devcontainerFile, context);
-                config = { ...config, shutdownAction: 'none' };
-            } else {
-                config = { name: containerInfo.Name.replace(/^\//, ''), shutdownAction: 'none' } as DevContainerConfiguration;
-            }
-
-            let remote: RemoteDockerContainerConnection | undefined;
-            try {
-                report('Connecting to remote system...');
-
-                const result = await this.setupRemoteConnection(container, docker, config, options.nodeDownloadTemplate, report);
-                remote = result.remote;
-
-                if (options.devcontainerFile) {
-                    await this.containerService.postConnect(options.devcontainerFile, remote, this.outputProvider, context);
-                }
-
-                return {
-                    containerId: container.id,
-                    workspacePath: options.workspacePath,
-                    port: result.localPort.toString(),
-                };
-            } catch (e) {
-                remote?.dispose();
-                this.logger.error(e);
-                throw e;
-            }
-        } catch (e) {
-            this.messageService.error(e.message);
-            throw e;
-        } finally {
-            progress.cancel();
-        }
+    async createContainerConnection(container: Docker.Container, docker: Docker, config: DevContainerConfiguration): Promise<RemoteDockerContainerConnection> {
+        return Promise.resolve(new RemoteDockerContainerConnection({
+            id: generateUuid(),
+            name: config.name ?? 'dev-container',
+            type: 'Dev Container',
+            docker,
+            container,
+            config,
+            logger: this.logger
+        }));
     }
 
     async getCurrentContainerInfo(port: number): Promise<Docker.ContainerInspectInfo | undefined> {
@@ -351,82 +182,343 @@ export class DevContainerConnectionProvider implements RemoteContainerConnection
         return connection.container.inspect();
     }
 
-    async removeContainer(containerId: string): Promise<void> {
-        return this.doRemoveContainer(containerId);
+    async listRunningContainers(): Promise<RunningContainerInfo[]> {
+        try {
+            const docker = new Docker();
+            const containers = await docker.listContainers({ all: false });
+            return containers.map(container => ({
+                id: container.Id,
+                name: (container.Names[0] ?? '').replace(/^\//, ''),
+                image: container.Image,
+                status: container.Status
+            }));
+        } catch (e) {
+            console.error('Failed to list running containers:', e);
+            return [];
+        }
     }
 
-    protected async doRemoveContainer(containerId: string, docker?: Docker): Promise<void> {
-        docker ??= await this.createDockerConnection();
+    async attachToContainer(containerId: string): Promise<ContainerConnectionResult> {
+        const docker = new Docker();
         const container = docker.getContainer(containerId);
+        const containerInfo = await container.inspect();
+
+        const progress = await this.messageService.showProgress({
+            text: 'Attaching to container',
+        });
         try {
+            const report: RemoteStatusReport = message => progress.report({ message });
+            report('Connecting to remote system...');
+
+            const remote = new RemoteDockerContainerConnection({
+                id: generateUuid(),
+                name: containerInfo.Name.replace(/^\//, ''),
+                type: 'Dev Container',
+                docker,
+                container,
+                config: DevContainerConfiguration.empty(),
+                logger: this.logger
+            });
+
+            const result = await this.remoteSetup.setup({
+                connection: remote,
+                report,
+            });
+            remote.remoteSetupResult = result;
+
+            const registration = this.remoteConnectionService.register(remote);
+            const server = await this.serverProvider.getProxyServer(socket => {
+                remote.forwardOut(socket);
+            });
+            remote.onDidDisconnect(() => {
+                server.close();
+                registration.dispose();
+            });
+            const localPort = (server.address() as net.AddressInfo).port;
+            remote.localPort = localPort;
+
+            const workspacePath = this.inferWorkspacePath(containerInfo);
+
+            return {
+                containerId: container.id,
+                workspacePath,
+                port: localPort.toString(),
+            };
+        } catch (e) {
+            this.messageService.error(e.message);
+            console.error(e);
+            throw e;
+        } finally {
+            progress.cancel();
+        }
+    }
+
+    protected inferWorkspacePath(containerInfo: Docker.ContainerInspectInfo): string {
+        // Skip mounts that are injected by HostConfigSharingContribution
+        // (SSH dir, gitconfig) — these are not workspace mounts.
+        const workspaceMount = containerInfo.Mounts.find(m =>
+            !m.Destination.endsWith('/.ssh') &&
+            !m.Destination.endsWith('/.gitconfig') &&
+            m.Destination !== '/tmp/host_gitconfig'
+        );
+        return (workspaceMount?.Destination ?? containerInfo.Config.WorkingDir) || '/';
+    }
+
+    async removeContainer(containerId: string): Promise<void> {
+        try {
+            const docker = new Docker();
+            const container = docker.getContainer(containerId);
             const info = await container.inspect();
             if (info.State.Running) {
                 await container.stop();
             }
             await container.remove();
         } catch (e) {
-            this.logger.error('Failed to remove container:', e);
+            console.error('Failed to remove container:', e);
             throw e;
         }
-    }
-
-    /**
-     * Creates a remote connection, runs setup (injecting the Theia backend into the container),
-     * registers the connection, and starts a local proxy server.
-     *
-     * @returns the local proxy port and the remote connection
-     */
-    protected async setupRemoteConnection(
-        container: Docker.Container, docker: Docker, config: DevContainerConfiguration,
-        nodeDownloadTemplate: string | undefined, report: RemoteStatusReport
-    ): Promise<{ localPort: number; remote: RemoteDockerContainerConnection }> {
-        const remote = new RemoteDockerContainerConnection({
-            id: generateUuid(),
-            name: config.name ?? 'dev-container',
-            type: 'Dev Container',
-            docker,
-            container,
-            config,
-            logger: this.logger
-        });
-
-        let result;
-        try {
-            result = await this.remoteSetup.setup({
-                connection: remote,
-                report,
-                nodeDownloadTemplate
-            });
-        } catch (e) {
-            remote.dispose();
-            throw e;
-        }
-        remote.remoteSetupResult = result;
-
-        let registration: { dispose(): void } | undefined;
-        let server: net.Server | undefined;
-        try {
-            registration = this.remoteConnectionService.register(remote);
-            server = await this.serverProvider.getProxyServer(socket => {
-                remote.forwardOut(socket);
-            });
-        } catch (e) {
-            server?.close();
-            registration?.dispose();
-            remote.dispose();
-            throw e;
-        }
-        remote.onDidDisconnect(() => {
-            server.close();
-            registration.dispose();
-        });
-
-        const localPort = (server.address() as net.AddressInfo).port;
-        remote.localPort = localPort;
-        return { localPort, remote };
     }
 
     dispose(): void {
-        this.outputProvider = undefined;
+
     }
+
+}
+
+export interface RemoteContainerConnectionOptions {
+    id: string;
+    name: string;
+    type: string;
+    docker: Docker;
+    container: Docker.Container;
+    config: DevContainerConfiguration;
+    logger: ILogger;
+}
+
+interface ContainerTerminalSession {
+    execution: Docker.Exec,
+    stdout: WriteStream,
+    stderr: WriteStream,
+    executeCommand(cmd: string, args?: string[]): Promise<{ stdout: string, stderr: string }>;
+}
+
+interface ContainerTerminalSession {
+    execution: Docker.Exec,
+    stdout: WriteStream,
+    stderr: WriteStream,
+    executeCommand(cmd: string, args?: string[]): Promise<{ stdout: string, stderr: string }>;
+}
+
+export class RemoteDockerContainerConnection implements RemoteConnection {
+
+    id: string;
+    name: string;
+    type: string;
+    localPort: number;
+    remotePort: number;
+
+    docker: Docker;
+    container: Docker.Container;
+
+    remoteSetupResult: RemoteSetupResult;
+
+    protected readonly logger: ILogger;
+
+    protected config: DevContainerConfiguration;
+
+    protected activeTerminalSession: ContainerTerminalSession | undefined;
+
+    protected readonly onDidDisconnectEmitter = new Emitter<void>();
+    onDidDisconnect: Event<void> = this.onDidDisconnectEmitter.event;
+
+    constructor(options: RemoteContainerConnectionOptions) {
+        this.id = options.id;
+        this.type = options.type;
+        this.name = options.name;
+
+        this.docker = options.docker;
+        this.container = options.container;
+
+        this.config = options.config;
+
+        this.docker.getEvents({ filters: { container: [this.container.id], event: ['stop'] } }).then(stream => {
+            stream.on('data', () => this.onDidDisconnectEmitter.fire());
+        });
+
+        this.logger = options.logger;
+    }
+
+    protected getRemoteEnv(): string[] | undefined {
+        const remoteEnv = this.config.remoteEnv;
+        if (!remoteEnv || Object.keys(remoteEnv).length === 0) {
+            return undefined;
+        }
+        return Object.entries(remoteEnv)
+            .filter(([, value]) => value !== undefined)
+            .map(([key, value]) => `${key}=${value}`);
+    }
+
+    async forwardOut(socket: Socket, port?: number): Promise<void> {
+        const node = `${this.remoteSetupResult.nodeDirectory}/bin/node`;
+        const devContainerServer = `${this.remoteSetupResult.applicationDirectory}/backend/dev-container-server.js`;
+        try {
+            const ttySession = await this.container.exec({
+                Cmd: ['sh', '-c', `${node} ${devContainerServer} -target-port=${port ?? this.remotePort}`],
+                Env: this.getRemoteEnv(),
+                AttachStdin: true, AttachStdout: true, AttachStderr: true
+            });
+
+            const stream = await ttySession.start({ hijack: true, stdin: true });
+
+            socket.pipe(stream);
+            ttySession.modem.demuxStream(stream, socket, socket);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async exec(cmd: string, args?: string[], options?: RemoteExecOptions): Promise<RemoteExecResult> {
+        // return (await this.getOrCreateTerminalSession()).executeCommand(cmd, args);
+        const deferred = new Deferred<RemoteExecResult>();
+        try {
+            // TODO add windows container support
+            const execution = await this.container.exec({
+                Cmd: ['sh', '-c', `${cmd} ${args?.join(' ') ?? ''}`], Env: this.getRemoteEnv(), AttachStdout: true, AttachStderr: true
+            });
+            let stdoutBuffer = '';
+            let stderrBuffer = '';
+            const stream = await execution?.start({});
+            const stdout = new PassThrough();
+            stdout.on('data', (chunk: Buffer) => {
+                stdoutBuffer += chunk.toString();
+            });
+            const stderr = new PassThrough();
+            stderr.on('data', (chunk: Buffer) => {
+                stderrBuffer += chunk.toString();
+            });
+            execution.modem.demuxStream(stream, stdout, stderr);
+            stream?.addListener('close', () => deferred.resolve({ stdout: stdoutBuffer, stderr: stderrBuffer }));
+        } catch (e) {
+            deferred.reject(e);
+        }
+        return deferred.promise;
+    }
+
+    async execPartial(cmd: string, tester: RemoteExecTester, args?: string[], options?: RemoteExecOptions): Promise<RemoteExecResult> {
+        const deferred = new Deferred<RemoteExecResult>();
+        try {
+            // TODO add windows container support
+            const execution = await this.container.exec({
+                Cmd: ['sh', '-c', `${cmd} ${args?.join(' ') ?? ''}`], Env: this.getRemoteEnv(), AttachStdout: true, AttachStderr: true
+            });
+            let stdoutBuffer = '';
+            let stderrBuffer = '';
+            const stream = await execution?.start({});
+            stream.on('close', () => {
+                if (deferred.state === 'unresolved') {
+                    deferred.resolve({ stdout: stdoutBuffer, stderr: stderrBuffer });
+                }
+            });
+            const stdout = new PassThrough();
+            stdout.on('data', (data: Buffer) => {
+                this.logger.debug('REMOTE STDOUT:', data.toString());
+                if (deferred.state === 'unresolved') {
+                    stdoutBuffer += data.toString();
+
+                    if (tester(stdoutBuffer, stderrBuffer)) {
+                        deferred.resolve({ stdout: stdoutBuffer, stderr: stderrBuffer });
+                    }
+                }
+            });
+            const stderr = new PassThrough();
+            stderr.on('data', (data: Buffer) => {
+                this.logger.debug('REMOTE STDERR:', data.toString());
+                if (deferred.state === 'unresolved') {
+                    stderrBuffer += data.toString();
+
+                    if (tester(stdoutBuffer, stderrBuffer)) {
+                        deferred.resolve({ stdout: stdoutBuffer, stderr: stderrBuffer });
+                    }
+                }
+            });
+            execution.modem.demuxStream(stream, stdout, stderr);
+        } catch (e) {
+            deferred.reject(e);
+        }
+        return deferred.promise;
+    }
+
+    getDockerHost(): string {
+        const dockerHost = process.env.DOCKER_HOST;
+        let remoteHost = '';
+        try {
+            if (dockerHost) {
+                const dockerHostURL = new URL(dockerHost);
+                if (dockerHostURL.protocol === 'http:' || dockerHostURL.protocol === 'https:') {
+                    dockerHostURL.protocol = 'tcp:';
+                }
+                remoteHost = `-H ${dockerHostURL.href} `;
+            }
+        } catch (e) {
+            console.error(e);
+        }
+
+        return remoteHost;
+    }
+
+    async copy(localPath: string | Buffer | NodeJS.ReadableStream, remotePath: string): Promise<void> {
+        const deferred = new Deferred<void>();
+        const remoteHost = this.getDockerHost();
+
+        const subprocess = exec(`docker ${remoteHost}cp -a ${localPath.toString()} ${this.container.id}:${remotePath}`);
+
+        let stderr = '';
+        subprocess.stderr?.on('data', data => {
+            stderr += data.toString();
+        });
+        subprocess.on('close', code => {
+            if (code === 0) {
+                deferred.resolve();
+            } else {
+                deferred.reject(stderr);
+            }
+        });
+        return deferred.promise;
+    }
+
+    disposeSync(): void {
+        // cant use dockerrode here since this needs to happen on one tick
+        this.shutdownContainer(true);
+    }
+
+    async dispose(): Promise<void> {
+        await this.shutdownContainer(false);
+    }
+
+    protected async shutdownContainer(sync: boolean): Promise<unknown> {
+        const remoteHost = this.getDockerHost();
+
+        const shutdownAction = this.config.shutdownAction ?? (this.config.dockerComposeFile ? 'stopCompose' : 'stopContainer');
+
+        if (shutdownAction === 'stopContainer') {
+            return sync ? execSync(`docker ${remoteHost}stop ${this.container.id}`) : this.container.stop();
+        } else if (shutdownAction === 'stopCompose') {
+            if (!this.config.dockerComposeFile) {
+                console.warn('shutdownAction is stopCompose but dockerComposeFile is not defined, falling back to stopContainer');
+                return sync ? execSync(`docker ${remoteHost}stop ${this.container.id}`) : this.container.stop();
+            }
+            const composeFilePath = resolveComposeFilePath(this.config);
+            return sync ? execSync(`docker ${remoteHost}compose -f ${composeFilePath} stop`) :
+                new Promise<void>((res, rej) => exec(`docker ${remoteHost}compose -f ${composeFilePath} stop`, err => {
+                    if (err) {
+                        console.error(err);
+                        rej(err);
+                    } else {
+                        res();
+                    }
+                }));
+        }
+
+    }
+
 }

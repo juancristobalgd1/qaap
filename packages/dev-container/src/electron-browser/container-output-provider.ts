@@ -31,8 +31,6 @@ export class ContainerOutputProvider implements ContainerOutputProvider {
     };
 
     onRemoteOutput(output: string): void {
-        if (output) {
-            this.currentChannel?.appendLine(output);
-        }
+        this.currentChannel?.appendLine(output);
     }
 }
