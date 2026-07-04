@@ -64,7 +64,7 @@ export class McpServerDefinitionRegistryMainImpl implements McpServerDefinitionR
         try {
             const definitions = await this.$getServerDefinitions(handle);
             for (const definition of definitions) {
-                await this.mcpServerManager.removeServer(definition.label);
+                this.mcpServerManager.removeServer(definition.label);
             }
         } catch (error) {
             console.error('Error getting server definitions for removal:', error);
@@ -107,7 +107,7 @@ export class McpServerDefinitionRegistryMainImpl implements McpServerDefinitionR
 
             for (const definition of definitions) {
                 const mcpServerDescription = this.convertToMcpServerDescription(handle, definition);
-                await this.mcpServerManager.addOrUpdateServer(mcpServerDescription);
+                this.mcpServerManager.addOrUpdateServer(mcpServerDescription);
             }
         } catch (error) {
             console.error('Error loading MCP server definitions:', error);

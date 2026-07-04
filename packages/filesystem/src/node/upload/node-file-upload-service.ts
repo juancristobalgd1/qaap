@@ -17,19 +17,14 @@
 import multer = require('multer');
 import path = require('path');
 import os = require('os');
-import express = require('@theia/core/shared/express');
 import fs = require('@theia/core/shared/fs-extra');
+import express = require('@theia/core/shared/express');
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
-import { injectable, inject, named } from '@theia/core/shared/inversify';
+import { injectable } from '@theia/core/shared/inversify';
 import { HTTP_FILE_UPLOAD_PATH } from '../../common/file-upload';
-import { ILogger } from '@theia/core';
 
 @injectable()
 export class NodeFileUploadService implements BackendApplicationContribution {
-
-    @inject(ILogger) @named('filesystem:NodeFileUploadService')
-    protected readonly logger: ILogger;
-
     private static readonly UPLOAD_DIR = 'theia_upload';
 
     async configure(app: express.Application): Promise<void> {
@@ -37,8 +32,8 @@ export class NodeFileUploadService implements BackendApplicationContribution {
             this.getTemporaryUploadDest(),
             this.getHttpFileUploadPath()
         ]);
-        this.logger.debug(`HTTP file upload URL path: ${http_path}`);
-        this.logger.debug(`Backend file upload cache path: ${dest}`);
+        console.debug(`HTTP file upload URL path: ${http_path}`);
+        console.debug(`Backend file upload cache path: ${dest}`);
         app.post(
             http_path,
             // `multer` handles `multipart/form-data` containing our file to upload.
@@ -84,7 +79,7 @@ export class NodeFileUploadService implements BackendApplicationContribution {
             }
             response.status(200).send(resolved); // ok
         } catch (error) {
-            this.logger.error(error);
+            console.error(error);
             if (error.message) {
                 // internal server error with error message as response
                 response.status(500).send(error.message);

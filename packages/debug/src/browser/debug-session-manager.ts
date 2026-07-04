@@ -14,12 +14,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { DisposableCollection, Emitter, Event, MessageService, nls, ProgressService, WaitUntilEvent, ILogger } from '@theia/core';
+import { DisposableCollection, Emitter, Event, MessageService, nls, ProgressService, WaitUntilEvent } from '@theia/core';
 import { ApplicationShell, ConfirmDialog } from '@theia/core/lib/browser';
 import { ContextKey, ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import URI from '@theia/core/lib/common/uri';
-import { inject, injectable, postConstruct, named } from '@theia/core/shared/inversify';
+import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import * as monaco from '@theia/monaco-editor-core';
 import { QuickOpenTask } from '@theia/task/lib/browser/quick-open-task';
 import { TaskEndedInfo, TaskEndedTypes, TaskService } from '@theia/task/lib/browser/task-service';
@@ -152,9 +152,6 @@ export class DebugSessionManager {
     @inject(DebugSessionConfigurationLabelProvider)
     protected readonly sessionConfigurationLabelProvider: DebugSessionConfigurationLabelProvider;
 
-    @inject(ILogger) @named('debug:DebugSessionManager')
-    protected readonly logger: ILogger;
-
     @inject(WorkspaceTrustService)
     protected readonly workspaceTrustService: WorkspaceTrustService;
 
@@ -191,7 +188,7 @@ export class DebugSessionManager {
             await this.shell.saveAll();
             return true;
         } catch (error) {
-            this.logger.error('saveAll failed:', error);
+            console.error('saveAll failed:', error);
             return false;
         }
     }
@@ -268,7 +265,7 @@ export class DebugSessionManager {
                 }
 
                 this.messageService.error(nls.localize('theia/debug/errorStartingDebugSession', 'There was an error starting the debug session, check the logs for more details.'));
-                this.logger.error('Error starting the debug session', e);
+                console.error('Error starting the debug session', e);
                 throw e;
             }
         });
@@ -415,7 +412,7 @@ export class DebugSessionManager {
         const parentSession = options.configuration.parentSessionId ? this._sessions.get(options.configuration.parentSessionId) : undefined;
         const contrib = this.sessionContributionRegistry.get(options.configuration.type);
         const sessionFactory = contrib ? contrib.debugSessionFactory() : this.debugSessionFactory;
-        const session = sessionFactory.createSession(sessionId, options, parentSession);
+        const session = sessionFactory.get(this, sessionId, options, parentSession);
         this._sessions.set(sessionId, session);
 
         this.debugTypeKey.set(session.configuration.type);

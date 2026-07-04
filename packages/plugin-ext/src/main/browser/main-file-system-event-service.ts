@@ -27,7 +27,6 @@ import { URI } from '@theia/core';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { FileChangeType, WatchOptions } from '@theia/filesystem/lib/common/files';
-import { FileSystemPreferences } from '@theia/filesystem/lib/common/filesystem-preferences';
 
 export class MainFileSystemEventService implements MainFileSystemEventServiceShape {
 
@@ -37,8 +36,7 @@ export class MainFileSystemEventService implements MainFileSystemEventServiceSha
     constructor(
         rpc: RPCProtocol,
         container: interfaces.Container,
-        private readonly fileService = container.get(FileService),
-        private readonly preferences = container.get<FileSystemPreferences>(FileSystemPreferences)
+        private readonly fileService = container.get(FileService)
     ) {
         const proxy = rpc.getProxy(MAIN_RPC_CONTEXT.ExtHostFileSystemEventService);
 
@@ -83,27 +81,9 @@ export class MainFileSystemEventService implements MainFileSystemEventServiceSha
         if (this.watches.has(session)) {
             throw new Error(`There is already a watch request for the key ${session}`);
         }
-        const uri = URI.fromComponents(resource);
-        // Plugin-created watchers (`vscode.workspace.createFileSystemWatcher`) arrive here with an
-        // empty `excludes` list. Language servers frequently request recursive watches rooted at
-        // absolute paths outside the workspace (e.g. JDT-LS's per-project globs), so apply the
-        // user's `files.watcherExclude` here to keep the number of OS file watches bounded.
-        const watch = this.fileService.watch(uri, { ...options, excludes: this.getExcludes(uri, options.excludes) });
+        const watch = this.fileService.watch(URI.fromComponents(resource), options);
         this.toDispose.push(watch);
         this.watches.set(session, watch);
-    }
-
-    protected getExcludes(uri: URI, requested: string[] = []): string[] {
-        const configured = this.preferences.get('files.watcherExclude', undefined, uri.toString());
-        const excludes = new Set(requested);
-        if (configured) {
-            for (const pattern of Object.keys(configured)) {
-                if (configured[pattern]) {
-                    excludes.add(pattern);
-                }
-            }
-        }
-        return Array.from(excludes);
     }
 
     $unwatch(session: number): void {

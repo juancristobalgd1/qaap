@@ -24,7 +24,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as cp from 'child_process';
 import { ForwardedPort, RemotePortForwardingProvider } from '@theia/remote/lib/electron-common/remote-port-forwarding-provider';
-import { RemoteDockerContainerConnection } from '../remote-docker-container-connection';
+import { RemoteDockerContainerConnection } from '../remote-container-connection-provider';
 import { WorkspaceCreationContribution } from './workspace-creation-contribution';
 import { parseWorkspaceMount } from '../dockerode-utils';
 
@@ -49,7 +49,6 @@ export class ImageFileContribution implements ContainerCreationContribution {
             const platform = process.platform;
             const arch = process.arch;
             const options = platform === 'darwin' && arch === 'arm64' ? { platform: 'amd64' } : {};
-            const dedup = OutputHelper.createDedupContext();
             await new Promise<void>((res, rej) => api.pull(containerConfig.image, options, (err, stream) => {
                 if (err) {
                     rej(err);
@@ -58,7 +57,7 @@ export class ImageFileContribution implements ContainerCreationContribution {
                 } else {
                     api.modem.followProgress(stream!, (error, output) => error ?
                         rej(error) :
-                        res(), progress => outputprovider.onRemoteOutput(OutputHelper.parseProgress(progress, dedup)));
+                        res(), progress => outputprovider.onRemoteOutput(OutputHelper.parseProgress(progress)));
                 }
             }));
             createOptions.Image = containerConfig.image;
@@ -85,7 +84,6 @@ export class DockerFileContribution implements ContainerCreationContribution {
                     buildargs: containerConfig.build?.args
                 });
                 // TODO probably have some console windows showing the output of the build
-                const dedup = OutputHelper.createDedupContext();
                 const imageId = await new Promise<string>((res, rej) => api.modem.followProgress(buildStream!, (err, outputs) => {
                     if (err) {
                         rej(err);
@@ -97,7 +95,7 @@ export class DockerFileContribution implements ContainerCreationContribution {
                             }
                         }
                     }
-                }, progress => outputprovider.onRemoteOutput(OutputHelper.parseProgress(progress, dedup))));
+                }, progress => outputprovider.onRemoteOutput(OutputHelper.parseProgress(progress))));
                 createOptions.Image = imageId;
             } catch (error) {
                 outputprovider.onRemoteOutput(`Could not build dockerfile "${dockerfile}": ${error.message}`);
@@ -519,29 +517,7 @@ export namespace OutputHelper {
         progress?: string;
     }
 
-    export interface DedupContext {
-        lastMessage: string;
-    }
-
-    export function createDedupContext(): DedupContext {
-        return { lastMessage: '' };
-    }
-
-    export function parseProgress(progress: Progress, dedup?: DedupContext): string {
-        if (progress.stream) {
-            if (dedup) {
-                dedup.lastMessage = '';
-            }
-            return progress.stream;
-        }
-        const message = progress.progress ?? progress.status ?? '';
-        const formatted = progress.id ? `${progress.id}: ${message}` : message;
-        if (dedup && formatted === dedup.lastMessage) {
-            return '';
-        }
-        if (dedup) {
-            dedup.lastMessage = formatted;
-        }
-        return formatted;
+    export function parseProgress(progress: Progress): string {
+        return progress.stream ?? progress.progress ?? progress.status ?? '';
     }
 }

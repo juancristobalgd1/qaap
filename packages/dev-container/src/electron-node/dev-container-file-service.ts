@@ -21,7 +21,7 @@ import { DevContainerConfiguration } from './devcontainer-file';
 import { parse } from 'jsonc-parser';
 import * as fs from '@theia/core/shared/fs-extra';
 import { ContributionProvider, Path, URI } from '@theia/core';
-import { VariableContext, VariableResolverContribution } from './devcontainer-contributions/variable-resolver-contribution';
+import { VariableResolverContribution } from './devcontainer-contributions/variable-resolver-contribution';
 
 const VARIABLE_REGEX = /\$\{(.+?)(?::(.+?))?\}/g;
 
@@ -34,39 +34,39 @@ export class DevContainerFileService {
     @inject(ContributionProvider) @named(VariableResolverContribution)
     protected readonly variableResolverContributions: ContributionProvider<VariableResolverContribution>;
 
-    protected resolveVariable(value: string, context?: VariableContext): string {
+    protected resolveVariable(value: string): string {
         return value.replace(VARIABLE_REGEX, (match, type, variable) => {
             for (const contribution of this.variableResolverContributions.getContributions()) {
-                if (contribution.canResolve(type, context)) {
-                    return contribution.resolve(variable ?? type, context);
+                if (contribution.canResolve(type)) {
+                    return contribution.resolve(variable ?? type);
                 }
             }
             return match;
         });
     }
 
-    protected resolveVariablesRecursively<T>(obj: T, context?: VariableContext): T {
+    protected resolveVariablesRecursively<T>(obj: T): T {
         if (typeof obj === 'string') {
-            return this.resolveVariable(obj, context) as T;
+            return this.resolveVariable(obj) as T;
         } else if (Array.isArray(obj)) {
-            return obj.map(item => this.resolveVariablesRecursively(item, context)) as T;
+            return obj.map(item => this.resolveVariablesRecursively(item)) as T;
         } else if (obj && typeof obj === 'object') {
             const newObj: Record<string, unknown> = {};
             for (const [key, value] of Object.entries(obj)) {
-                newObj[key] = this.resolveVariablesRecursively(value, context);
+                newObj[key] = this.resolveVariablesRecursively(value);
             }
             return newObj as T;
         }
         return obj;
     }
 
-    async getConfiguration(path: string, context?: VariableContext): Promise<DevContainerConfiguration> {
+    async getConfiguration(path: string): Promise<DevContainerConfiguration> {
         let configuration: DevContainerConfiguration = parse(await fs.readFile(path, 'utf-8').catch(() => '0')) as DevContainerConfiguration;
         if (!configuration) {
             throw new Error(`devcontainer file ${path} could not be parsed`);
         }
 
-        configuration = this.resolveVariablesRecursively(configuration, context);
+        configuration = this.resolveVariablesRecursively(configuration);
         configuration.location = path;
         return configuration;
     }

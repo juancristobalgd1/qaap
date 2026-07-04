@@ -85,7 +85,7 @@ export namespace TimelineItemNode {
 }
 
 export class TimelineItemNode extends React.Component<TimelineItemNode.Props> {
-    override render(): React.JSX.Element | undefined {
+    override render(): JSX.Element | undefined {
         const { label, description, tooltip, accessibilityInformation, icon } = this.props.timelineItem;
 
         let iconString: string = '';

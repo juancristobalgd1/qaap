@@ -77,7 +77,7 @@ export default new ContainerModule((bind: interfaces.Bind) => {
     ).inSingletonScope();
 
     bindRootContributionProvider(bind, DebugSessionContribution);
-    bind(DebugSessionFactory).toDynamicValue(ctx => new DefaultDebugSessionFactory(ctx.container)).inSingletonScope();
+    bind(DebugSessionFactory).to(DefaultDebugSessionFactory).inSingletonScope();
     bind(DebugSessionManager).toSelf().inSingletonScope();
 
     bind(BreakpointManager).toSelf().inSingletonScope();

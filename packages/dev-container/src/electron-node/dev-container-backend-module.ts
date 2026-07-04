@@ -16,8 +16,6 @@
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connection-container-module';
-import { DevContainerCliContribution } from './dev-container-cli-contribution';
-import { CliContribution } from '@theia/core/lib/node';
 import { DevContainerConnectionProvider } from './remote-container-connection-provider';
 import { RemoteContainerConnectionProvider, RemoteContainerConnectionProviderPath } from '../electron-common/remote-container-connection-provider';
 import { ContainerCreationContribution, DockerContainerService } from './docker-container-service';
@@ -68,7 +66,4 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
 
     bind(DevContainerWorkspaceHandler).toSelf().inSingletonScope();
     bind(WorkspaceHandlerContribution).toService(DevContainerWorkspaceHandler);
-
-    bind(DevContainerCliContribution).toSelf().inSingletonScope();
-    bind(CliContribution).toService(DevContainerCliContribution);
 });
