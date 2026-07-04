@@ -16,7 +16,7 @@
 import { CommandService, ContributionProvider, deepClone, Emitter, Event, MessageService, URI } from '@theia/core';
 import { ChatRequest, ChatRequestModel, ChatService, ChatSession, ChatSessionSettings, isActiveSessionChangedEvent, MutableChatModel } from '@theia/ai-chat';
 import { GenericCapabilitySelections, AIVariableResolutionRequest } from '@theia/ai-core';
-import { BaseWidget, codicon, ExtractableWidget, Message, PanelLayout, StatefulWidget } from '@theia/core/lib/browser';
+import { ApplicationShell, BaseWidget, codicon, ExtractableWidget, Message, PanelLayout, StatefulWidget } from '@theia/core/lib/browser';
 import { nls } from '@theia/core/lib/common/nls';
 import { inject, injectable, named, postConstruct } from '@theia/core/shared/inversify';
 import { AIChatInputWidget } from './chat-input-widget';
@@ -236,13 +236,21 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
         query?: string | ChatRequest,
         modeId?: string,
         capabilityOverrides?: Record<string, boolean>,
-        genericCapabilitySelections?: GenericCapabilitySelections
+        genericCapabilitySelections?: GenericCapabilitySelections,
+        serverToolSelections?: Record<string, string[]>
     ): Promise<void> {
         const chatRequest: ChatRequest = !query
             ? { text: '' }
             : typeof query === 'string'
-                ? { text: query, modeId, capabilityOverrides, genericCapabilitySelections }
-                : { ...query, capabilityOverrides, genericCapabilitySelections };
+                ? { text: query, modeId, capabilityOverrides, genericCapabilitySelections, serverToolSelections }
+                // For an already-built request (e.g. an edited+resent message), keep its own selections
+                // instead of overwriting them with the (undefined) explicit arguments.
+                : {
+                    ...query,
+                    capabilityOverrides: capabilityOverrides ?? query.capabilityOverrides,
+                    genericCapabilitySelections: genericCapabilitySelections ?? query.genericCapabilitySelections,
+                    serverToolSelections: serverToolSelections ?? query.serverToolSelections
+                };
         if (chatRequest.text.length === 0) { return; }
 
         if (this.chatSession.model.isEmpty()) {
@@ -331,5 +339,37 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
 
     getSettings(): ChatSessionSettings | undefined {
         return this.chatSession.model.settings;
+    }
+
+    get sessionId(): string {
+        return this.chatSession.id;
+    }
+}
+
+export namespace ChatViewWidget {
+    /**
+     * Returns the active `ChatViewWidget` if the shell's active widget is one,
+     * or if focus is inside one of its child widgets (e.g. the input or tree).
+     */
+    export function findActive(shell: ApplicationShell): ChatViewWidget | undefined {
+        const activeWidget = shell.activeWidget;
+        if (activeWidget instanceof ChatViewWidget) {
+            return activeWidget;
+        }
+        const activeElement = document.activeElement;
+        if (activeElement instanceof HTMLElement) {
+            const widget = shell.findWidgetForElement(activeElement);
+            if (widget instanceof ChatViewWidget) {
+                return widget;
+            }
+            let parent = widget?.parent;
+            while (parent) {
+                if (parent instanceof ChatViewWidget) {
+                    return parent;
+                }
+                parent = parent.parent;
+            }
+        }
+        return undefined;
     }
 }

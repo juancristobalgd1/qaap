@@ -23,12 +23,12 @@ import { ParsedChatRequest } from '@theia/ai-chat/lib/common/parsed-chat-request
 import {
     GenericCapabilitySelections, AIVariableResolutionRequest, ParsedCapability,
     FrontendLanguageModelRegistry, ReasoningLevel, ReasoningSettings, ReasoningSupport,
-    PREFERENCE_NAME_REASONING, ReasoningPreferenceEntry
+    PREFERENCE_NAME_REASONING, ReasoningPreferenceEntry, AGENT_NOTIFICATION_KIND_COMPLETED, ServerToolDescriptor
 } from '@theia/ai-core';
 import { mergeReasoningSettings } from '@theia/ai-core/lib/browser/frontend-language-model-service';
 import { ChangeSetDecoratorService } from '@theia/ai-chat/lib/browser/change-set-decorator-service';
 import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
-import { AgentCompletionNotificationService, FrontendVariableService, AIActivationService, CompletionNotificationOptions } from '@theia/ai-core/lib/browser';
+import { AgentNotificationService, FrontendVariableService, AIActivationService, AgentNotificationOptions } from '@theia/ai-core/lib/browser';
 import { AISettingsService, PromptFragment, PromptService } from '@theia/ai-core/lib/common';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { CommandService, DisposableCollection, Emitter, InMemoryResources, MessageService, URI, nls, Disposable } from '@theia/core';
@@ -58,6 +58,7 @@ import { CapabilityChip, CapabilityChipsRow } from './chat-capabilities-panel';
 import { ChatInputFocusService } from './chat-input-focus-service';
 import { AvailableGenericCapabilities, GenericCapabilitiesService } from './generic-capabilities-service';
 import { GenericCapabilitiesSection } from './generic-capabilities-section';
+import { ServerToolsSection } from './generic-capabilities-tree';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import {
     CHAT_VIEW_TOKEN_USAGE_ENABLED,
@@ -75,8 +76,10 @@ import {
 } from './chat-token-usage-indicator-util';
 import { AI_CHAT_NEW_CHAT_WINDOW_COMMAND, ChatCommands } from './chat-view-commands';
 import { chatInputProductChrome, ChatInputProductChromeContext } from './chat-input-product-chrome';
+import { isChatSessionFocused } from './chat-session-focus';
 
-type Query = (query: string, mode?: string, capabilityOverrides?: Record<string, boolean>, genericCapabilitySelections?: GenericCapabilitySelections) => Promise<void>;
+type Query = (query: string, mode?: string, capabilityOverrides?: Record<string, boolean>, genericCapabilitySelections?: GenericCapabilitySelections,
+    serverToolSelections?: Record<string, string[]>) => Promise<void>;
 type Unpin = () => void;
 type Cancel = (requestModel: ChatRequestModel) => void;
 type DeleteChangeSet = (requestModel: ChatRequestModel) => void;
@@ -122,8 +125,8 @@ export class AIChatInputWidget extends ReactWidget {
     @inject(ChangeSetActionService)
     protected readonly changeSetActionService: ChangeSetActionService;
 
-    @inject(AgentCompletionNotificationService)
-    protected readonly agentNotificationService: AgentCompletionNotificationService;
+    @inject(AgentNotificationService)
+    protected readonly agentNotificationService: AgentNotificationService;
 
     @inject(ChangeSetDecoratorService)
     protected readonly changeSetDecoratorService: ChangeSetDecoratorService;
@@ -267,6 +270,12 @@ export class AIChatInputWidget extends ReactWidget {
     protected currentReasoningSupport?: ReasoningSupport;
     /** Id (`provider/model`) of the model that backs {@link currentReasoningSupport}; used to resolve preference defaults. */
     protected currentLanguageModelId?: string;
+    /** Context window (max input tokens) of the receiving agent's primary model; falls back to {@link CHAT_CONTEXT_WINDOW_SIZE_FALLBACK} when unknown. */
+    protected currentMaxInputTokens?: number;
+    /** Server tools declared by the receiving agent's primary model; undefined/empty hides the server tools category. */
+    protected currentServerTools?: ServerToolDescriptor[];
+    /** Vendor of the receiving agent's primary model; used to key server tool selections. */
+    protected currentModelVendor?: string;
     /** Saved reasoning selection for the receiving agent (loaded from {@link AISettingsService}); kept in sync with the persisted value. */
     protected savedReasoning?: ReasoningSettings;
 
@@ -334,13 +343,27 @@ export class AIChatInputWidget extends ReactWidget {
     protected async updateReasoningSupport(agentId: string | undefined): Promise<void> {
         let support: ReasoningSupport | undefined;
         let modelId: string | undefined;
+        let maxInputTokens: number | undefined;
+        let serverTools: ServerToolDescriptor[] | undefined;
+        let vendor: string | undefined;
         if (agentId) {
             const agent = this.chatAgentService.getAgent(agentId);
             if (agent) {
                 for (const requirement of agent.languageModelRequirements ?? []) {
                     try {
                         const model = await this.languageModelRegistry.selectLanguageModel({ agent: agent.id, ...requirement });
-                        if (model?.reasoningSupport) {
+                        if (!model) {
+                            continue;
+                        }
+                        // Capture server tools / vendor from the primary (first resolved) model.
+                        if (vendor === undefined) {
+                            vendor = model.vendor;
+                            serverTools = model.serverTools;
+                        }
+                        if (maxInputTokens === undefined && model.maxInputTokens !== undefined) {
+                            maxInputTokens = model.maxInputTokens;
+                        }
+                        if (!support && model.reasoningSupport) {
                             support = model.reasoningSupport;
                             modelId = model.id;
                             break;
@@ -351,9 +374,16 @@ export class AIChatInputWidget extends ReactWidget {
                 }
             }
         }
-        if (support !== this.currentReasoningSupport || modelId !== this.currentLanguageModelId) {
+        if (support !== this.currentReasoningSupport
+            || modelId !== this.currentLanguageModelId
+            || maxInputTokens !== this.currentMaxInputTokens
+            || vendor !== this.currentModelVendor
+            || serverTools !== this.currentServerTools) {
             this.currentReasoningSupport = support;
             this.currentLanguageModelId = modelId;
+            this.currentMaxInputTokens = maxInputTokens;
+            this.currentServerTools = serverTools;
+            this.currentModelVendor = vendor;
             this.update();
         }
     }
@@ -388,6 +418,17 @@ export class AIChatInputWidget extends ReactWidget {
         this.update();
     };
 
+    protected handleServerToolChange = (ids: string[]): void => {
+        if (!this.currentModelVendor) {
+            return;
+        }
+        this.serverToolSelections = {
+            ...this.serverToolSelections,
+            [this.currentModelVendor]: ids
+        };
+        this.update();
+    };
+
     protected async updateCapabilitiesForAgent(agentId: string, modeId?: string, preserveOverrides?: boolean): Promise<void> {
         const capabilities = await this.capabilitiesService.getCapabilitiesForAgent(agentId, modeId);
         this.capabilityDefaults = capabilities;
@@ -396,11 +437,13 @@ export class AIChatInputWidget extends ReactWidget {
             const agentSettings = await this.aiSettingsService.getAgentSettings(agentId);
             const savedOverrides = agentSettings?.capabilityOverrides;
             const savedGenericSelections = agentSettings?.genericCapabilitySelections;
+            const savedServerToolSelections = agentSettings?.serverToolSelections;
             const savedReasoning = agentSettings?.reasoning;
 
             // Store saved state for comparison
             this.savedCapabilityOverrides = savedOverrides ? { ...savedOverrides } : undefined;
             this.savedGenericCapabilitySelections = savedGenericSelections ? { ...savedGenericSelections } : undefined;
+            this.savedServerToolSelections = savedServerToolSelections ? { ...savedServerToolSelections } : undefined;
             this.savedReasoning = savedReasoning ? { ...savedReasoning } : undefined;
 
             // Initialize from saved settings, or empty if none
@@ -408,6 +451,7 @@ export class AIChatInputWidget extends ReactWidget {
                 ? new Map(Object.entries(savedOverrides))
                 : new Map<string, boolean>();
             this.genericCapabilitySelections = savedGenericSelections ?? {};
+            this.serverToolSelections = savedServerToolSelections ? { ...savedServerToolSelections } : {};
             // Mirror the saved per-agent reasoning into the chat session so the selector reflects it
             // immediately on session/agent switch.
             this.applyReasoningToSession(savedReasoning);
@@ -502,6 +546,42 @@ export class AIChatInputWidget extends ReactWidget {
     }
 
     /**
+     * Extracts server tool selections from the last request in the chat model.
+     * Used to restore the user's selections when switching sessions or on reload.
+     */
+    protected getLastServerToolSelectionsFromModel(chatModel: ChatModel): Record<string, string[]> {
+        const requests = chatModel.getRequests();
+        if (requests.length === 0) {
+            return {};
+        }
+        const lastRequest = requests[requests.length - 1];
+        return lastRequest.request.serverToolSelections ?? {};
+    }
+
+    /**
+     * Builds the server tools section for the capabilities panel, or `undefined` if the current
+     * model declares no server tools.
+     */
+    protected getServerToolsSection(): ServerToolsSection | undefined {
+        const vendor = this.currentModelVendor;
+        const tools = this.currentServerTools;
+        if (!vendor || !tools || tools.length === 0) {
+            return undefined;
+        }
+        return {
+            providerName: this.getProviderDisplayName(vendor),
+            vendor,
+            tools,
+            selectedIds: this.serverToolSelections[vendor] ?? [],
+            onChange: this.handleServerToolChange
+        };
+    }
+
+    protected getProviderDisplayName(vendor: string): string {
+        return vendor.length > 0 ? vendor.charAt(0).toUpperCase() + vendor.slice(1) : vendor;
+    }
+
+    /**
      * Refreshes capabilities for the current receiving agent.
      * Called when prompt fragments change to ensure capabilities reflect the latest template.
      */
@@ -546,6 +626,11 @@ export class AIChatInputWidget extends ReactWidget {
         return true;
     }
 
+    /** Returns true if any vendor has at least one selected server tool. */
+    protected serverToolSelectionsHaveAny(selections: Record<string, string[]>): boolean {
+        return Object.values(selections).some(ids => ids.length > 0);
+    }
+
     /**
      * Checks if current generic capability selections differ from saved settings.
      */
@@ -567,7 +652,22 @@ export class AIChatInputWidget extends ReactWidget {
     }
 
     /**
-     * Checks if there are any unsaved changes (capability overrides or generic selections).
+     * Checks if current server tool selections differ from saved settings (across all vendors).
+     */
+    protected hasServerToolChangesFromSaved(): boolean {
+        const saved = this.savedServerToolSelections ?? {};
+        const current = this.serverToolSelections;
+        const vendors = new Set([...Object.keys(saved), ...Object.keys(current)]);
+        for (const vendor of vendors) {
+            if (!this.arraysEqualUnordered(saved[vendor] ?? [], current[vendor] ?? [])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks if there are any unsaved changes (capability overrides, generic selections, or server tools).
      * Reasoning is auto-persisted in {@link handleReasoningChange} and is intentionally excluded.
      */
     public hasAnyChangesFromSaved(): boolean {
@@ -575,7 +675,8 @@ export class AIChatInputWidget extends ReactWidget {
             return false;
         }
         return this.hasCapabilityChangesFromSaved()
-            || this.hasGenericCapabilityChangesFromSaved();
+            || this.hasGenericCapabilityChangesFromSaved()
+            || this.hasServerToolChangesFromSaved();
     }
 
     /**
@@ -595,12 +696,14 @@ export class AIChatInputWidget extends ReactWidget {
             capabilityOverrides[key] = value;
         }
 
+        const hasServerToolSelections = this.serverToolSelectionsHaveAny(this.serverToolSelections);
         try {
             await this.aiSettingsService.updateAgentSettings(agentId, {
                 capabilityOverrides: Object.keys(capabilityOverrides).length > 0 ? capabilityOverrides : undefined,
                 genericCapabilitySelections: GenericCapabilitySelections.hasSelections(this.genericCapabilitySelections)
                     ? this.genericCapabilitySelections
-                    : undefined
+                    : undefined,
+                serverToolSelections: hasServerToolSelections ? this.serverToolSelections : undefined
             });
 
             // Update saved state to match current
@@ -608,6 +711,7 @@ export class AIChatInputWidget extends ReactWidget {
             this.savedGenericCapabilitySelections = GenericCapabilitySelections.hasSelections(this.genericCapabilitySelections)
                 ? { ...this.genericCapabilitySelections }
                 : undefined;
+            this.savedServerToolSelections = hasServerToolSelections ? { ...this.serverToolSelections } : undefined;
 
             this.update();
         } catch (error) {
@@ -641,6 +745,14 @@ export class AIChatInputWidget extends ReactWidget {
      * Tracks user's generic capability selections from the dropdowns.
      */
     protected genericCapabilitySelections: GenericCapabilitySelections = {};
+    /**
+     * Tracks user's server tool selections, keyed by model vendor to keep selections provider-specific.
+     */
+    protected serverToolSelections: Record<string, string[]> = {};
+    /**
+     * Stores the saved server tool selections loaded from settings, for unsaved-change detection.
+     */
+    protected savedServerToolSelections: Record<string, string[]> | undefined;
     /**
      * Available generic capabilities from all sources.
      */
@@ -687,14 +799,14 @@ export class AIChatInputWidget extends ReactWidget {
     protected queryInFlight = false;
     set onQuery(query: Query) {
         this._onQuery = async (prompt: string, mode?: string, capabilityOverrides?: Record<string, boolean>,
-            genericCapabilitySelections?: GenericCapabilitySelections) => {
+            genericCapabilitySelections?: GenericCapabilitySelections, serverToolSelections?: Record<string, string[]>) => {
             if (this.configuration?.enablePromptHistory !== false && prompt.trim()) {
                 this.historyService.addToHistory(prompt);
                 this.navigationState.stopNavigation();
             }
             this.queryInFlight = true;
             try {
-                await query(prompt, mode, capabilityOverrides, genericCapabilitySelections);
+                await query(prompt, mode, capabilityOverrides, genericCapabilitySelections, serverToolSelections);
             } finally {
                 this.queryInFlight = false;
             }
@@ -743,9 +855,10 @@ export class AIChatInputWidget extends ReactWidget {
         // Force capabilities refresh on next agent update, even if the same agent is resolved
         this.forceCapabilitiesRefresh = true;
 
-        // Restore capability overrides and generic selections from the last request in this session (if any)
+        // Restore capability overrides, generic selections and server tool selections from the last request in this session (if any)
         this.userCapabilityOverrides = this.getLastCapabilityOverridesFromModel(chatModel);
         this.genericCapabilitySelections = this.getLastGenericCapabilitySelectionsFromModel(chatModel);
+        this.serverToolSelections = this.getLastServerToolSelectionsFromModel(chatModel);
 
         this.onDisposeForChatModel.push(chatModel.onDidChange(event => {
             if (event.kind === 'responseChanged') {
@@ -1114,6 +1227,8 @@ export class AIChatInputWidget extends ReactWidget {
             this.userCapabilityOverrides = new Map();
             this.chatInputHasModesKey.set(false);
             this.currentReasoningSupport = undefined;
+            this.currentServerTools = undefined;
+            this.currentModelVendor = undefined;
             this.update();
         }
     }
@@ -1202,12 +1317,12 @@ export class AIChatInputWidget extends ReactWidget {
                 const session = this.chatService.getSession(sessionId);
                 const sessionTitle = session?.title;
 
-                const options: CompletionNotificationOptions = {
+                const options: AgentNotificationOptions = {
                     shouldSuppress: () => this.isChatSessionFocused(sessionId),
                     onActivate: () => this.focusChatSession(sessionId),
                     sessionTitle,
                 };
-                await this.agentNotificationService.showCompletionNotification(agentId, options);
+                await this.agentNotificationService.showNotification(agentId, AGENT_NOTIFICATION_KIND_COMPLETED, options);
             }
         } catch (error) {
             console.error('Failed to handle agent completion notification:', error);
@@ -1219,12 +1334,7 @@ export class AIChatInputWidget extends ReactWidget {
      * Returns true only if the chat widget is focused AND viewing the same session.
      */
     protected isChatSessionFocused(sessionId: string): boolean {
-        const activeWidget = this.applicationShell.activeWidget;
-        if (!activeWidget || activeWidget.id !== 'chat-view-widget') {
-            return false;
-        }
-        const activeSession = this.chatService.getActiveSession();
-        return activeSession?.id === sessionId;
+        return isChatSessionFocused(this.applicationShell, this.chatService, sessionId);
     }
 
     /**
@@ -1330,6 +1440,8 @@ export class AIChatInputWidget extends ReactWidget {
                     onResetGenericCapabilities: this.handleResetGenericCapabilities,
                     availableCapabilities: this.availableGenericCapabilities,
                     disabledCapabilities: this.disabledGenericCapabilities,
+                    serverTools: this.getServerToolsSection(),
+                    serverToolSelections: this.serverToolSelections,
                     hoverService: this.hoverService,
                 }}
                 quickCommands={chatInputProductChrome ? this.promptService.getCommands() : []}
@@ -1603,7 +1715,8 @@ export class AIChatInputWidget extends ReactWidget {
 interface ChatInputProperties {
     branch?: ChatHierarchyBranch;
     onCancel: (requestModel: ChatRequestModel) => void;
-    onQuery: (query: string, mode?: string, capabilityOverrides?: Record<string, boolean>, genericCapabilitySelections?: GenericCapabilitySelections) => void;
+    onQuery: (query: string, mode?: string, capabilityOverrides?: Record<string, boolean>, genericCapabilitySelections?: GenericCapabilitySelections,
+        serverToolSelections?: Record<string, string[]>) => void;
     onUnpin: () => void;
     onDragOver: (event: React.DragEvent) => void;
     onDrop: (event: React.DragEvent) => void;
@@ -1670,6 +1783,10 @@ interface ChatInputProperties {
         onResetGenericCapabilities: () => void;
         availableCapabilities: AvailableGenericCapabilities;
         disabledCapabilities: GenericCapabilitySelections;
+        /** Optional server tools section for the current model's provider. */
+        serverTools?: ServerToolsSection;
+        /** Full server tool selection record (keyed by vendor), sent with the request. */
+        serverToolSelections: Record<string, string[]>;
         hoverService: HoverService;
     };
     quickCommands?: readonly PromptFragment[];
@@ -1951,6 +2068,12 @@ const ChatInput: React.FunctionComponent<ChatInputProperties> = (props: ChatInpu
         return GenericCapabilitySelections.hasSelections(selections) ? selections : undefined;
     }, [props.genericCapabilitiesProps.genericCapabilities]);
 
+    // Get server tool selections (full record, keyed by vendor) if any are set
+    const getServerToolSelections = React.useCallback((): Record<string, string[]> | undefined => {
+        const selections = props.genericCapabilitiesProps.serverToolSelections;
+        return Object.values(selections).some(ids => ids.length > 0) ? selections : undefined;
+    }, [props.genericCapabilitiesProps.serverToolSelections]);
+
     // Without user input, if we can default to "Perform this task.", do so
     const submit = React.useCallback(function submit(value: string): void {
         let effectiveValue = value;
@@ -1962,7 +2085,8 @@ const ChatInput: React.FunctionComponent<ChatInputProperties> = (props: ChatInpu
         }
         const capabilityOverrides = getCapabilityOverridesRecord();
         const genericCapabilitySelections = getGenericCapabilitySelections();
-        props.onQuery(effectiveValue, props.modeSelectorProps.currentMode, capabilityOverrides, genericCapabilitySelections);
+        const serverToolSelections = getServerToolSelections();
+        props.onQuery(effectiveValue, props.modeSelectorProps.currentMode, capabilityOverrides, genericCapabilitySelections, serverToolSelections);
         setValue('');
         if (editorRef.current && !editorRef.current.document.textEditorModel.isDisposed()) {
             editorRef.current.document.textEditorModel.setValue('');
@@ -1970,7 +2094,7 @@ const ChatInput: React.FunctionComponent<ChatInputProperties> = (props: ChatInpu
         }
     }, [
         props.context, props.onQuery, props.modeSelectorProps.currentMode, setValue,
-        shouldUseTaskPlaceholder, taskPlaceholder, getCapabilityOverridesRecord, getGenericCapabilitySelections
+        shouldUseTaskPlaceholder, taskPlaceholder, getCapabilityOverridesRecord, getGenericCapabilitySelections, getServerToolSelections
     ]);
 
     const onKeyDown = React.useCallback((event: React.KeyboardEvent) => {
@@ -2161,6 +2285,7 @@ const ChatInput: React.FunctionComponent<ChatInputProperties> = (props: ChatInpu
                         onResetGenericCapabilities={props.genericCapabilitiesProps.onResetGenericCapabilities}
                         availableCapabilities={props.genericCapabilitiesProps.availableCapabilities}
                         disabledCapabilities={props.genericCapabilitiesProps.disabledCapabilities}
+                        serverTools={props.genericCapabilitiesProps.serverTools}
                         disabled={!props.isEnabled}
                         hoverService={props.hoverService}
                         hasUnsavedChanges={props.capabilitiesProps.hasUnsavedChanges}
@@ -2201,7 +2326,8 @@ const ChatInput: React.FunctionComponent<ChatInputProperties> = (props: ChatInpu
                         show: props.showCapabilities !== false,
                         isOpen: props.capabilitiesProps.isOpen,
                         hasActiveSelections: props.capabilitiesProps.overrides.size > 0
-                            || GenericCapabilitySelections.hasSelections(props.genericCapabilitiesProps.genericCapabilities),
+                            || GenericCapabilitySelections.hasSelections(props.genericCapabilitiesProps.genericCapabilities)
+                            || Object.values(props.genericCapabilitiesProps.serverToolSelections).some(ids => ids.length > 0),
                         hasUnsavedChanges: props.capabilitiesProps.hasUnsavedChanges,
                         onToggle: props.capabilitiesProps.onToggle,
                         keybindingHint: props.capabilitiesProps.keybindingHint,
@@ -2404,6 +2530,7 @@ interface CapabilitiesBarProps {
     onResetGenericCapabilities: () => void;
     availableCapabilities: AvailableGenericCapabilities;
     disabledCapabilities: GenericCapabilitySelections;
+    serverTools?: ServerToolsSection;
     disabled?: boolean;
     hoverService: HoverService;
     hasUnsavedChanges: boolean;
@@ -2425,6 +2552,7 @@ const CapabilitiesBar: React.FunctionComponent<CapabilitiesBarProps> = ({
     onResetGenericCapabilities,
     availableCapabilities,
     disabledCapabilities,
+    serverTools,
     disabled,
     hoverService,
     hasUnsavedChanges,
@@ -2457,6 +2585,7 @@ const CapabilitiesBar: React.FunctionComponent<CapabilitiesBarProps> = ({
                         onResetGenericCapabilities={onResetGenericCapabilities}
                         availableCapabilities={availableCapabilities}
                         disabledCapabilities={disabledCapabilities}
+                        serverTools={serverTools}
                         disabled={disabled}
                         hoverService={hoverService} />
                 </div>
@@ -2544,10 +2673,10 @@ interface ReasoningSelectorProps {
 const reasoningLevelLabel = (level: ReasoningLevel): string => {
     switch (level) {
         case 'off': return nls.localizeByDefault('Off');
-        case 'minimal': return nls.localize('theia/ai/chat-ui/reasoning/minimal', 'Minimal');
-        case 'low': return nls.localize('theia/ai/chat-ui/reasoning/low', 'Low');
-        case 'medium': return nls.localize('theia/ai/chat-ui/reasoning/medium', 'Medium');
-        case 'high': return nls.localize('theia/ai/chat-ui/reasoning/high', 'High');
+        case 'minimal': return nls.localizeByDefault('Minimal');
+        case 'low': return nls.localizeByDefault('Low');
+        case 'medium': return nls.localizeByDefault('Medium');
+        case 'high': return nls.localizeByDefault('High');
         case 'auto': return nls.localizeByDefault('Auto');
     }
 };
