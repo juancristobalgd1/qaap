@@ -3,18 +3,6 @@
 #
 # Empty new-drift set: CI passes while paths are migrated into packages/qaap-* or ALLOWED.
 # Regenerate: node scripts/qaap-drift-check.js --write-baseline
-.github/copilot-instructions.md
-.github/instructions/theia-ai.instructions.md
-.github/instructions/theia-coding.instructions.md
-.github/instructions/theia-plugin-rpc.instructions.md
-.github/instructions/theia-review-checklist.instructions.md
-.github/instructions/theia-review-code.instructions.md
-.github/instructions/theia-review-context.instructions.md
-.github/instructions/theia-review.instructions.md
-.github/instructions/theia-testing.instructions.md
-.github/workflows/playwright.yml
-.github/workflows/production-smoke-test.yml
-.github/workflows/publish-api-doc-gh-pages.yml
 dev-packages/ffmpeg/package.json
 dev-packages/ovsx-client/package.json
 dev-packages/private-eslint-plugin/package.json

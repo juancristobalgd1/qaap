@@ -199,6 +199,13 @@ const ALLOWED = [
     /^\.github\/workflows\/qaap-.*\.yml$/,
     // Fork CI matrix (Node heap, test hooks) — not upstream Theia workflow content.
     /^\.github\/workflows\/ci-cd\.yml$/,
+    // Fork CI decisions: Node 24.x matrix (upstream is 22.x) with upstream's
+    // Playwright browser-cache step re-applied on top.
+    /^\.github\/workflows\/playwright\.yml$/,
+    /^\.github\/workflows\/production-smoke-test\.yml$/,
+    // Fork deploys gh-pages via peaceiris/actions-gh-pages (direct push) instead of
+    // upstream's pages environment — this repo has no github-pages environment.
+    /^\.github\/workflows\/publish-api-doc-gh-pages\.yml$/,
     /^\.prompts\//,
     /^\.theia\//,
     /^\.dockerignore$/,
