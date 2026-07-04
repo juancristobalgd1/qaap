@@ -152,6 +152,49 @@ const ALLOWED = [
     /^packages\/ai-ide\/src\/browser\/ai-configuration\/model-aliases-configuration-widget\.tsx$/,
     // Protected parseListLaunchConfigurationArgs hook for empty tool-arg guard.
     /^packages\/ai-ide\/src\/browser\/workspace-launch-provider\.ts$/,
+    // ---- Qaap AI product surface (permanent seams, July 2026 audit) --------
+    // Single-root policy: AI workspace functions/search/task/launch scope to the
+    // primary workspace root (deliberate vs upstream's multi-root investment).
+    /^packages\/ai-ide\/src\/browser\/workspace-(functions|search-provider|task-provider|launch-provider)(\.spec)?\.tsx?$/,
+    /^packages\/ai-ide\/src\/common\/workspace-(preferences|search-provider-util)\.ts$/,
+    /^packages\/ai-ide\/src\/browser\/context-file-validation-service-impl(\.spec)?\.ts$/,
+    /^packages\/ai-ide\/src\/browser\/(context-functions|file-changeset-functions)\.spec\.ts$/,
+    /^packages\/ai-ide\/src\/browser\/github-repo-variable-contribution\.ts$/,
+    /^packages\/ai-ide\/src\/browser\/(user-interaction-tool(\.spec)?|template-preference-contribution)\.ts$/,
+    /^packages\/ai-ide\/tsconfig\.json$/,
+    // PR-review agent redesign: delegation to GitHub/Explore sub-agents + task
+    // integration instead of upstream's Capability Model; coder-replace prompt
+    // diverged on both sides (autonomy/reasoning rules rewritten differently).
+    /^packages\/ai-ide\/src\/browser\/review\/pr-review-(prompt-template|capability-contribution)\.ts$/,
+    /^packages\/ai-ide\/src\/common\/coder-replace-prompt-template\.ts$/,
+    // Agents pin the fork's QAIQ-routed model aliases (default/code|universal),
+    // not upstream's default/fast; coder-agent uses the fork's chat navigation
+    // command instead of upstream's AI_CHAT_HOME.
+    /^packages\/ai-ide\/src\/browser\/(app-tester-chat-agent|explore-agent|github-chat-agent|project-info-agent|coder-agent)\.ts$/,
+    /^packages\/ai-ide\/src\/common\/(command-chat-agents|orchestrator-chat-agent)\.ts$/,
+    // Welcome-screen session cards: fork's Card architecture (responsive grid,
+    // working spinner, hover tooltip); parity pass vs upstream items pending.
+    /^packages\/ai-ide\/src\/browser\/chat-sessions-welcome-message-provider(\.spec\.ts|\.tsx)$/,
+    /^packages\/ai-ide\/src\/browser\/chat-session-card-action-contribution\.ts$/,
+    // Chat navigation product UX (back/forward + new chat window replacing
+    // upstream's Home/overview) and the Codex-style execution timeline consumer.
+    /^packages\/ai-chat-ui\/src\/browser\/(ai-chat-navigation-service|ai-chat-ui-contribution|chat-view-commands|chat-focus-contribution)\.ts$/,
+    /^packages\/ai-chat-ui\/src\/browser\/(ai-chat-ui-frontend-module|chat-view-widget-toolbar-contribution|chat-view-widget)\.tsx?$/,
+    /^packages\/ai-chat-ui\/src\/browser\/chat-tree-view\/chat-view-tree-widget\.tsx$/,
+    /^packages\/ai-chat-ui\/src\/browser\/style\/index\.css$/,
+    /^packages\/ai-chat-ui\/src\/browser\/chat-response-renderer\/toolcall-part-renderer\.tsx$/,
+    // Token-usage indicator: fork keeps CHAT_CONTEXT_WINDOW_SIZE_FALLBACK shape
+    // consumed by qaap-mobile-shell context-usage indicator/panel.
+    /^packages\/ai-chat-ui\/src\/browser\/chat-token-usage-indicator-util(\.spec)?\.ts$/,
+    // ai-chat: fork carries configurable tool-confirmation timeout (chat-model,
+    // response-model/tool-call specs, tool-request-service) and is ahead of
+    // upstream on deserializer interrupted handling, session naming alias, and
+    // async workspace-relative variables; request-parser mock bridges the two.
+    /^packages\/ai-chat\/src\/common\/(chat-model|chat-request-parser|chat-content-deserializer|chat-session-naming-service)(\.spec)?\.ts$/,
+    /^packages\/ai-chat\/src\/common\/(chat-response-model|tool-call-response-content)\.spec\.ts$/,
+    /^packages\/ai-chat\/src\/browser\/(ai-chat-frontend-module|chat-tool-request-service|change-set-variable|context-file-validation-service|file-chat-variable-contribution)\.ts$/,
+    // Variable descriptions tuned for agents (relative-path guidance).
+    /^packages\/ai-core\/src\/browser\/theia-variable-contribution\.ts$/,
     // ---- Qaap product tooling / editor config (not upstream Theia) --------
     /^\.cursor\/rules\/work-hub-reload-default\.mdc$/,
     /^\.tool-ui\/agent\.json$/,

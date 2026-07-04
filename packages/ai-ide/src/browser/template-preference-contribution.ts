@@ -16,7 +16,9 @@
 
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { DefaultPromptFragmentCustomizationService, PromptFragmentCustomizationProperties } from '@theia/ai-core/lib/browser/frontend-prompt-customization-service';
+import {
+    CUSTOM_AGENT_WORKSPACE_DIRECTORIES, DefaultPromptFragmentCustomizationService, PromptFragmentCustomizationProperties
+} from '@theia/ai-core/lib/browser/frontend-prompt-customization-service';
 import {
     PROMPT_TEMPLATE_WORKSPACE_DIRECTORIES_PREF,
     PROMPT_TEMPLATE_ADDITIONAL_EXTENSIONS_PREF,
@@ -117,6 +119,18 @@ export class TemplatePreferenceContribution implements FrontendApplicationContri
                 });
             } else {
                 configProperties.filePaths = [];
+            }
+        }
+
+        // The built-in custom-agent directories (`.agents`/`.prompts`) depend only on the workspace
+        // roots and trust state, not on any preference, so they are recomputed on every full update.
+        if (!changedPreference) {
+            if (trusted) {
+                configProperties.agentDirectoryPaths = CUSTOM_AGENT_WORKSPACE_DIRECTORIES.map(
+                    dir => workspaceRootUri.resolve(dir).path.toString()
+                );
+            } else {
+                configProperties.agentDirectoryPaths = [];
             }
         }
 

@@ -584,11 +584,26 @@ export interface ToolCallChatResponseContent extends Required<ChatResponseConten
     needsUserConfirmation: Promise<void>;
     whenFinished: Promise<void>;
     data?: Record<string, string>;
+    /**
+     * Fires when the serialized form of this tool call changes outside of the agent's stream
+     * (e.g. after a renderer persists intermediate state via {@link updateResult}). The
+     * parent {@link ChatResponse} forwards this event so chat-session auto-save picks up
+     * the change.
+     */
+    readonly onDidChange: Event<void>;
     confirm(): void;
     deny(reason?: string): void;
     cancelConfirmation(reason?: unknown): void;
     /** Signal that this tool call needs user confirmation. Resolves the needsUserConfirmation promise. */
     requestUserConfirmation(): void;
+    /**
+     * Update the tool call's result without marking it finished. Use this to persist
+     * intermediate state for long-running tools (e.g. the user-interaction wizard) so
+     * progress survives chat-session reloads. On restore the tool call is always marked
+     * finished (no live handler exists anymore), so a partial result must be
+     * self-describing; consumers should not rely on `finished` to tell partial from final.
+     */
+    updateResult(result: ToolCallResult): void;
     /**
      * Mark the tool call as completed with the given result.
      *
@@ -2354,6 +2369,8 @@ export class ToolCallChatResponseContentImpl implements ToolCallChatResponseCont
     protected _confirmationRejecter?: (reason?: unknown) => void;
     protected _whenFinished: Promise<void>;
     protected _finishedResolver?: () => void;
+    protected readonly _onDidChangeEmitter = new Emitter<void>();
+    readonly onDidChange: Event<void> = this._onDidChangeEmitter.event;
 
     constructor(id?: string, name?: string, arg_string?: string, finished?: boolean, result?: ToolCallResult, data?: Record<string, string>) {
         this._id = id;
@@ -2469,6 +2486,11 @@ export class ToolCallChatResponseContentImpl implements ToolCallChatResponseCont
             this._needsUserConfirmationResolver();
             this._needsUserConfirmationResolver = undefined;
         }
+    }
+
+    updateResult(result: ToolCallResult): void {
+        this._result = result;
+        this._onDidChangeEmitter.fire();
     }
 
     cancelConfirmation(reason?: unknown): void {
