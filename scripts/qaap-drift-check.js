@@ -70,6 +70,10 @@ const ALLOWED = [
     /^packages\/core\/src\/browser\/menu\/browser-menu-module\.ts$/,
     /^packages\/core\/src\/browser\/menu\/browser-menu-plugin\.ts$/,
     /^packages\/core\/src\/browser\/window\/window-title-service\.ts$/,
+    // Path-traversal hardening on the upload endpoint (403 on normalized!==resolved).
+    // Fork security fix not present upstream; only non-upstream lines in the file.
+    // TODO: upstream it or extract QaapNodeFileUploadService.
+    /^packages\/filesystem\/src\/node\/upload\/node-file-upload-service\.ts$/,
     // Re-fire onDidChangeDecorations after lazy decoration data resolves (event
     // truncation fix). DecorationProviderWrapper is not exported upstream, so a
     // qaap-* subclass is not possible without a bigger refactor. TODO: upstream it.
