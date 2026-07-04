@@ -15,7 +15,7 @@
 // *****************************************************************************
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { ApplicationShell, WidgetManager, WidgetOpenerOptions } from '@theia/core/lib/browser';
+import { WidgetOpenerOptions } from '@theia/core/lib/browser';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { TerminalWidgetFactoryOptions } from '@theia/terminal/lib/browser/terminal-widget-impl';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
@@ -25,9 +25,6 @@ import { TaskDefinitionRegistry } from './task-definition-registry';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
 import { nls } from '@theia/core';
-import { TerminalManagerWidget } from '@theia/terminal-manager/lib/browser/terminal-manager-widget';
-import { TerminalManagerFrontendViewContribution } from '@theia/terminal-manager/lib/browser/terminal-manager-frontend-view-contribution';
-import { TerminalManagerPreferences } from '@theia/terminal-manager/lib/browser/terminal-manager-preferences';
 
 export interface TaskTerminalWidget extends TerminalWidget {
     readonly kind: 'task';
@@ -71,9 +68,6 @@ export namespace TaskTerminalWidgetOpenerOptions {
 @injectable()
 export class TaskTerminalWidgetManager {
 
-    @inject(ApplicationShell)
-    protected readonly shell: ApplicationShell;
-
     @inject(TaskDefinitionRegistry)
     protected readonly taskDefinitionRegistry: TaskDefinitionRegistry;
 
@@ -88,15 +82,6 @@ export class TaskTerminalWidgetManager {
 
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
-
-    @inject(TerminalManagerPreferences)
-    protected readonly preferences: TerminalManagerPreferences;
-
-    @inject(WidgetManager)
-    protected readonly widgetManager: WidgetManager;
-
-    @inject(TerminalManagerFrontendViewContribution)
-    protected readonly terminalManagerViewContribution: TerminalManagerFrontendViewContribution;
 
     @postConstruct()
     protected init(): void {
@@ -154,14 +139,7 @@ export class TaskTerminalWidgetManager {
         }
 
         const { isNew, widget } = await this.getWidgetToRunTask(factoryOptions, openerOptions);
-        const isTreeMode = this.preferences['terminal.grouping.mode'] === 'tree';
-        if (isNew && isTreeMode) {
-            const terminalManagerWidget = await this.widgetManager.getOrCreateWidget<TerminalManagerWidget>(TerminalManagerWidget.ID);
-            terminalManagerWidget.addTerminalToTasksPage(widget);
-            widget.resetTerminal();
-            await this.terminalManagerViewContribution.openView({ reveal: true });
-        } else if (isNew) {
-            this.shell.addWidget(widget, { area: openerOptions.widgetOptions ? openerOptions.widgetOptions.area : 'bottom' });
+        if (isNew) {
             widget.resetTerminal();
         } else {
             if (factoryOptions.title) {
@@ -171,14 +149,13 @@ export class TaskTerminalWidgetManager {
                 widget.clearOutput();
             }
         }
-        this.terminalService.open(widget, openerOptions);
-        if (TaskTerminalWidgetOpenerOptions.echoExecutedCommand(openerOptions) &&
-            taskInfo && ProcessTaskInfo.is(taskInfo) && taskInfo.command && taskInfo.command.length > 0
-        ) {
+        await this.terminalService.open(widget, openerOptions);
+        const command = taskInfo && ProcessTaskInfo.is(taskInfo) ? taskInfo.command : undefined;
+        if (TaskTerminalWidgetOpenerOptions.echoExecutedCommand(openerOptions) && command && command.length > 0) {
             if (widget.commandHistoryState) {
-                widget.writeLine('\x1b]133;prompt_started\x07');
+                widget.write('\x1b]133;prompt_started\x07');
             }
-            widget.writeLine('\x1b[1m> ' + nls.localizeByDefault('Executing task: {0}', taskInfo.command) + ' <\x1b[0m\n');
+            widget.writeLine('\x1b[1m> ' + nls.localizeByDefault('Executing task: {0}', command) + ' <\x1b[0m\n');
         }
         return widget;
     }

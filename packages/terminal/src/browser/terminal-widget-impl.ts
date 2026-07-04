@@ -53,14 +53,32 @@ import { EnhancedPreviewWidget } from '@theia/core/lib/browser/widgets/enhanced-
 import { MarkdownRenderer, MarkdownRendererFactory } from '@theia/core/lib/browser/markdown-rendering/markdown-renderer';
 import { RemoteConnectionProvider, ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
 import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
+import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import { cleanTerminalTitle, guessShellTypeFromExecutable } from '../common/shell-type';
 import { TerminalCommandHistoryStateFactory } from './terminal-command-history';
 
 export const TERMINAL_WIDGET_FACTORY_ID = 'terminal';
 
 export interface TerminalWidgetFactoryOptions extends Partial<TerminalWidgetOptions> {
-    /* a unique string per terminal */
+    /**
+     * An opaque, unique string per terminal. Historically a date string, but
+     * it should not be interpreted as a date. Callers should use
+     * {@link nextTerminalCreationToken} to obtain a value that is guaranteed
+     * unique within the current process.
+     */
     created: string
+}
+
+let terminalCreationCounter = 0;
+/**
+ * Produce a token suitable for {@link TerminalWidgetFactoryOptions.created}
+ * that is guaranteed unique within the current process. Combines the current
+ * wall-clock time with a monotonically increasing counter so callers cannot
+ * accidentally collide even when constructing terminals within the same
+ * millisecond.
+ */
+export function nextTerminalCreationToken(): string {
+    return `${Date.now()}-${terminalCreationCounter++}`;
 }
 
 export const TerminalContribution = Symbol('TerminalContribution');
@@ -147,6 +165,7 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
     @inject(ContextMenuRenderer) protected readonly contextMenuRenderer: ContextMenuRenderer;
     @inject(MarkdownRendererFactory) protected readonly markdownRendererFactory: MarkdownRendererFactory;
     @inject(TerminalCommandHistoryStateFactory) protected readonly commandHistoryStateFactory: TerminalCommandHistoryStateFactory;
+    @inject(ContextKeyService) protected readonly contextKeyService: ContextKeyService;
 
     protected _markdownRenderer: MarkdownRenderer | undefined;
     protected get markdownRenderer(): MarkdownRenderer {
@@ -210,6 +229,14 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
         this.title.label = initialTitle;
         this.title.caption = initialTitle;
         this.setIconClass();
+
+        // Declare 'terminalFocus' as a local context key on this widget's DOM scope so that
+        // terminal-scoped keybindings (e.g. ctrlcmd+v) take precedence over global bindings
+        // for the same keystroke when focus is inside the terminal.
+        // See KeybindingRegistry.selectBindingByLocalContext.
+        const localContext = this.contextKeyService.createScoped(this.node);
+        localContext.createKey('terminalFocus', true);
+        this.toDispose.push(localContext);
 
         if (this.options.kind) {
             this.terminalKind = this.options.kind;
@@ -306,13 +333,8 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
                 } else {
                     this.exitStatus = { code, reason: TerminalExitReason.Process };
                 }
-                // Ensure any in-progress command block is closed even if the process exits
-                // before its OSC prompt_started bytes are flushed from the ring buffer.
-                if (this._commandHistoryState?.currentCommand) {
-                    this.finishCurrentCommand();
-                }
                 if (!attached) {
-                    this.dispose();
+                    this.deferredFinalizeCommandHistory();
                 }
             }
         }));
@@ -523,6 +545,28 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
         this._commandHistoryState.finishCommand(block);
         this.outputStartMarker = undefined;
         this.promptStartMarker = undefined;
+    }
+
+    protected connectionClosed = false;
+    protected waitingForConnectionCloseToDispose = false;
+
+    protected finalizeAndDispose(): void {
+        // enqueue a callback after all pending xterm writes drain
+        this.term.write('', () => {
+            if (this.isDisposed) { return; }
+            if (this._commandHistoryState?.currentCommand) {
+                this.finishCurrentCommand();
+            }
+            this.dispose();
+        });
+    }
+
+    protected deferredFinalizeCommandHistory(): void {
+        if (this.connectionClosed) {
+            this.finalizeAndDispose();
+        } else {
+            this.waitingForConnectionCloseToDispose = true;
+        }
     }
 
     private addCommandSeparator(): void {
@@ -740,6 +784,10 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
         return this.term.hasSelection();
     }
 
+    paste(text: string): void {
+        this.term.paste(text);
+    }
+
     async hasChildProcesses(): Promise<boolean> {
         return this.shellTerminalServer.hasChildProcesses(await this.processId);
     }
@@ -902,6 +950,8 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
         }
         this.toDisposeOnConnect.dispose();
         this.toDispose.push(this.toDisposeOnConnect);
+        this.connectionClosed = false;
+        this.waitingForConnectionCloseToDispose = false;
         const waitForConnection = this.waitForConnection = new Deferred<Channel>();
         this.connectionProvider.listen(
             `${terminalsPath}/${this.terminalId}`,
@@ -921,7 +971,13 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
                 disposable.push(this.term.onData(sendData));
                 disposable.push(this.term.onBinary(sendData));
 
-                connection.onClose(() => disposable.dispose());
+                connection.onClose(() => {
+                    disposable.dispose();
+                    this.connectionClosed = true;
+                    if (this.waitingForConnectionCloseToDispose) {
+                        this.finalizeAndDispose();
+                    }
+                });
 
                 if (waitForConnection) {
                     waitForConnection.resolve(connection);

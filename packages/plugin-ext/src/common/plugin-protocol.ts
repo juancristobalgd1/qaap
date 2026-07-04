@@ -113,6 +113,7 @@ export interface PluginPackageContribution {
     notebookRenderer?: PluginNotebookRendererContribution[];
     notebookPreload?: PluginPackageNotebookPreload[];
     mcpServerDefinitionProviders?: PluginPackageMcpServerDefinitionProviderContribution[];
+    languageModelTools?: PluginPackageLanguageModelToolContribution[];
 }
 
 export interface PluginPackageNotebook {
@@ -139,6 +140,14 @@ export interface PluginPackageMcpServerDefinitionProviderContribution {
     id: string;
     label: string;
     description?: string;
+}
+
+export interface PluginPackageLanguageModelToolContribution {
+    name: string;
+    modelDescription?: string;
+    userDescription?: string;
+    inputSchema?: object;
+    tags?: string[];
 }
 
 export interface PluginPackageAuthenticationProvider {
@@ -190,6 +199,7 @@ export interface PluginPackageViewContainer {
     id: string;
     title: string;
     icon: string;
+    when?: string;
 }
 
 export enum PluginViewType {
@@ -851,6 +861,7 @@ export interface ViewContainer {
     title: string;
     iconUrl: string;
     themeIcon?: string;
+    when?: string;
 }
 
 /**

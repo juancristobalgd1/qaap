@@ -14,7 +14,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
+import { inject, injectable, named, optional, postConstruct } from '@theia/core/shared/inversify';
 import {
     CommandContribution,
     Command,
@@ -26,7 +26,7 @@ import {
     SelectionService,
     Emitter,
     Event,
-    ViewColumn,
+
     OS,
     MAIN_MENU_BAR,
     PreferenceService,
@@ -37,10 +37,11 @@ import {
     KeybindingRegistry, LabelProvider, WidgetOpenerOptions, StorageService, QuickInputService,
     codicon, CommonCommands, FrontendApplicationContribution, OnWillStopAction, Dialog, ConfirmDialog, FrontendApplication, Widget, SHELL_TABBAR_CONTEXT_MENU
 } from '@theia/core/lib/browser';
+import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
-import { TERMINAL_WIDGET_FACTORY_ID, TerminalWidgetFactoryOptions, TerminalWidgetImpl } from './terminal-widget-impl';
+import { TERMINAL_WIDGET_FACTORY_ID, TerminalWidgetFactoryOptions, TerminalWidgetImpl, nextTerminalCreationToken } from './terminal-widget-impl';
 import { TerminalService } from './base/terminal-service';
-import { TerminalWidgetOptions, TerminalWidget, TerminalLocation } from './base/terminal-widget';
+import { TerminalWidgetOptions, TerminalWidget } from './base/terminal-widget';
 import { ContributedTerminalProfileStore, NULL_PROFILE, TerminalProfile, TerminalProfileService, TerminalProfileStore, UserTerminalProfileStore } from './terminal-profile-service';
 import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
 import { ShellTerminalServerProxy } from '../common/shell-terminal-protocol';
@@ -58,6 +59,8 @@ import { Profiles, terminalAnsiColorMap, TerminalPreferences } from '../common/t
 import { ShellTerminalProfile } from './shell-terminal-profile';
 import { VariableResolverService } from '@theia/variable-resolver/lib/browser';
 import { Color } from '@theia/core/lib/common/color';
+import { ContributionProvider } from '@theia/core';
+import { TerminalCreationHandler } from './terminal-creation-handler';
 
 export namespace TerminalMenus {
     export const TERMINAL = [...MAIN_MENU_BAR, '7_terminal'];
@@ -164,6 +167,16 @@ export namespace TerminalCommands {
         label: 'Select All',
         category: TERMINAL_CATEGORY,
     });
+    export const PASTE_TERMINAL = Command.toDefaultLocalizedCommand({
+        id: 'workbench.action.terminal.paste',
+        category: TERMINAL_CATEGORY,
+        label: 'Paste into Active Terminal'
+    });
+    export const COPY_TERMINAL_SELECTION = Command.toDefaultLocalizedCommand({
+        id: 'workbench.action.terminal.copySelection',
+        category: TERMINAL_CATEGORY,
+        label: 'Copy Selection'
+    });
 
     /**
      * Command that displays all terminals that are currently opened
@@ -230,8 +243,14 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
     @inject(TerminalCopyOnSelectionHandler)
     protected readonly copyHandler: TerminalCopyOnSelectionHandler;
 
+    @inject(ClipboardService)
+    protected readonly clipboardService: ClipboardService;
+
     @inject(ContextKeyService)
     protected readonly contextKeyService: ContextKeyService;
+
+    @inject(ContributionProvider) @named(TerminalCreationHandler)
+    protected readonly terminalCreationHandlers: ContributionProvider<TerminalCreationHandler>;
 
     @postConstruct()
     protected init(): void {
@@ -670,18 +689,45 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
             isEnabled: () => !!this.currentTerminal,
             execute: () => this.currentTerminal?.selectAll()
         });
-        commands.registerHandler(CommonCommands.COPY.id, {
-            execute: () => {
-                const terminal = this.shell.activeWidget;
-                if (terminal instanceof TerminalWidget && terminal.hasSelection()) {
-                    this.copyHandler.syncCopy(terminal.getSelection());
+        commands.registerCommand(TerminalCommands.PASTE_TERMINAL, {
+            isEnabled: () => !!this.getPasteTargetTerminal(),
+            execute: async () => {
+                const terminal = this.getPasteTargetTerminal();
+                if (!terminal) {
+                    return;
                 }
-            },
-            isEnabled: () => {
-                const terminal = this.shell.activeWidget;
-                return terminal instanceof TerminalWidget && terminal.hasSelection();
+                const text = await this.clipboardService.readText();
+                if (text) {
+                    terminal.paste(text);
+                }
             }
         });
+        commands.registerCommand(TerminalCommands.COPY_TERMINAL_SELECTION, {
+            isEnabled: () => !!this.getCopySourceTerminal(),
+            execute: () => {
+                const terminal = this.getCopySourceTerminal();
+                if (!terminal) {
+                    return;
+                }
+                this.copyHandler.syncCopy(terminal.getSelection());
+            }
+        });
+    }
+
+    protected getPasteTargetTerminal(): TerminalWidget | undefined {
+        const terminal = this.shell.activeWidget;
+        if (terminal instanceof TerminalWidget && this.terminalPreferences['terminal.enablePaste']) {
+            return terminal;
+        }
+        return undefined;
+    }
+
+    protected getCopySourceTerminal(): TerminalWidget | undefined {
+        const terminal = this.shell.activeWidget;
+        if (terminal instanceof TerminalWidget && terminal.hasSelection() && this.terminalPreferences['terminal.enableCopy']) {
+            return terminal;
+        }
+        return undefined;
     }
 
     protected toggleTerminal(): void {
@@ -765,10 +811,12 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
             commandId: TerminalCommands.SPLIT.id
         });
         menus.registerMenuAction([...TerminalMenus.TERMINAL_CONTEXT_MENU, '_2'], {
-            commandId: CommonCommands.COPY.id
+            commandId: TerminalCommands.COPY_TERMINAL_SELECTION.id,
+            label: nls.localizeByDefault('Copy')
         });
         menus.registerMenuAction([...TerminalMenus.TERMINAL_CONTEXT_MENU, '_2'], {
-            commandId: CommonCommands.PASTE.id
+            commandId: TerminalCommands.PASTE_TERMINAL.id,
+            label: nls.localizeByDefault('Paste')
         });
         menus.registerMenuAction([...TerminalMenus.TERMINAL_CONTEXT_MENU, '_2'], {
             commandId: TerminalCommands.SELECT_ALL.id
@@ -899,6 +947,16 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
             when: 'terminalFocus'
         });
         keybindings.registerKeybinding({
+            command: TerminalCommands.PASTE_TERMINAL.id,
+            keybinding: 'ctrlcmd+v',
+            when: 'terminalFocus'
+        });
+        keybindings.registerKeybinding({
+            command: TerminalCommands.COPY_TERMINAL_SELECTION.id,
+            keybinding: 'ctrlcmd+c',
+            when: 'terminalFocus'
+        });
+        keybindings.registerKeybinding({
             command: TerminalCommands.TERMINAL_FIND_TEXT.id,
             keybinding: 'ctrlcmd+f',
             when: 'terminalFocus'
@@ -946,55 +1004,19 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
 
     async newTerminal(options: TerminalWidgetOptions): Promise<TerminalWidget> {
         const widget = <TerminalWidget>await this.widgetManager.getOrCreateWidget(TERMINAL_WIDGET_FACTORY_ID, <TerminalWidgetFactoryOptions>{
-            created: new Date().toISOString(),
+            created: nextTerminalCreationToken(),
             ...options
         });
         return widget;
     }
 
-    // TODO: reuse WidgetOpenHandler.open
-    open(widget: TerminalWidget, options?: WidgetOpenerOptions): void {
-        const area = widget.location === TerminalLocation.Editor ? 'main' : 'bottom';
-        const widgetOptions: ApplicationShell.WidgetOptions = { area: area, ...options?.widgetOptions };
-        let preserveFocus = false;
-
-        if (typeof widget.location === 'object') {
-            if ('parentTerminal' in widget.location) {
-                widgetOptions.ref = this.getById(widget.location.parentTerminal);
-                widgetOptions.mode = 'split-right';
-            } else if ('viewColumn' in widget.location) {
-                preserveFocus = widget.location.preserveFocus ?? false;
-                switch (widget.location.viewColumn) {
-                    case ViewColumn.Active:
-                        widgetOptions.ref = this.shell.currentWidget;
-                        widgetOptions.mode = 'tab-after';
-                        break;
-                    case ViewColumn.Beside:
-                        widgetOptions.ref = this.shell.currentWidget;
-                        widgetOptions.mode = 'split-right';
-                        break;
-                    default:
-                        widgetOptions.area = 'main';
-                        const mainAreaTerminals = this.shell.getWidgets('main').filter(w => w instanceof TerminalWidget && w.isVisible);
-                        const column = Math.min(widget.location.viewColumn, mainAreaTerminals.length);
-                        widgetOptions.mode = widget.location.viewColumn <= mainAreaTerminals.length ? 'split-left' : 'split-right';
-                        widgetOptions.ref = mainAreaTerminals[column - 1];
-                }
+    async open(widget: TerminalWidget, options?: WidgetOpenerOptions): Promise<void> {
+        const handlers = this.terminalCreationHandlers.getContributions(true)
+            .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+        for (const handler of handlers) {
+            if (await handler.onWillOpenTerminal(widget, options)) {
+                return;
             }
-        }
-
-        const op: WidgetOpenerOptions = {
-            mode: 'activate',
-            ...options,
-            widgetOptions: widgetOptions
-        };
-        if (!widget.isAttached) {
-            this.shell.addWidget(widget, op.widgetOptions);
-        }
-        if (op.mode === 'activate' && !preserveFocus) {
-            this.shell.activateWidget(widget.id);
-        } else if (op.mode === 'reveal' || preserveFocus) {
-            this.shell.revealWidget(widget.id);
         }
     }
 

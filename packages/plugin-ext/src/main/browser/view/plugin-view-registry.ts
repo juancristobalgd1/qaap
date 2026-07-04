@@ -19,6 +19,7 @@ import {
     ApplicationShell, ViewContainer as ViewContainerWidget, WidgetManager, QuickViewService,
     ViewContainerIdentifier, ViewContainerTitleOptions, Widget, FrontendApplicationContribution,
     StatefulWidget, CommonMenus, TreeViewWelcomeWidget, ViewContainerPart, BaseWidget,
+    CompositeTreeNode, ExpandableTreeNode,
 } from '@theia/core/lib/browser';
 import { ViewContainer, View, ViewWelcome, PluginViewType } from '../../../common';
 import { PluginSharedStyle } from '../plugin-shared-style';
@@ -50,7 +51,6 @@ import { nls } from '@theia/core';
 import { TheiaDockPanel } from '@theia/core/lib/browser/shell/theia-dock-panel';
 import { Deferred } from '@theia/core/lib/common/promise-util';
 import { ThemeIcon } from '@theia/monaco-editor-core/esm/vs/base/common/themables';
-import { PluginViewWelcomePolicy } from './plugin-view-welcome-policy';
 
 export const PLUGIN_VIEW_FACTORY_ID = 'plugin-view';
 export const PLUGIN_VIEW_CONTAINER_FACTORY_ID = 'plugin-view-container';
@@ -61,6 +61,7 @@ export type ViewDataProvider = (params: { state?: object, viewInfo: View }) => P
 export interface ViewContainerInfo {
     id: string
     location: string
+    when?: string
     options: ViewContainerTitleOptions
     onViewAdded: () => void
 }
@@ -101,9 +102,6 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
     @inject(ViewContextKeyService)
     protected readonly viewContextKeys: ViewContextKeyService;
 
-    @inject(PluginViewWelcomePolicy) @optional()
-    protected readonly welcomePolicy?: PluginViewWelcomePolicy;
-
     protected readonly onDidExpandViewEmitter = new Emitter<string>();
     readonly onDidExpandView = this.onDidExpandViewEmitter.event;
 
@@ -112,6 +110,10 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
     private readonly viewContainers = new Map<string, ViewContainerInfo>();
     private readonly containerViews = new Map<string, string[]>();
     private readonly viewClauseContexts = new Map<string, Set<string> | undefined>();
+    private readonly viewContainerClauseContexts = new Map<string, Set<string> | undefined>();
+
+    private readonly viewMenuLabelToContainerIds = new Map<string, Set<string>>();
+    private readonly viewMenuDisposables = new Map<string, Disposable>();
 
     private readonly viewDataProviders = new Map<string, ViewDataProvider>();
     private readonly viewDataState = new Map<string, object>();
@@ -181,7 +183,7 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
             }
         });
         this.widgetManager.onDidCreateWidget(event => {
-            if (event.widget instanceof FileNavigatorWidget && (this.welcomePolicy?.shouldRegisterExplorerOpenFolderWelcome() ?? true)) {
+            if (event.widget instanceof FileNavigatorWidget) {
                 const disposable = new DisposableCollection();
                 disposable.push(this.registerViewWelcome({
                     view: 'explorer',
@@ -206,6 +208,12 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
             }
         });
         this.contextKeyService.onDidChange(e => {
+            for (const containerId of this.viewContainers.keys()) {
+                const clauseContext = this.viewContainerClauseContexts.get(containerId);
+                if (clauseContext && e.affects(clauseContext)) {
+                    this.updateViewContainerVisibility(containerId);
+                }
+            }
             for (const [, view] of this.views.values()) {
                 const clauseContext = this.viewClauseContexts.get(view.id);
                 if (clauseContext && e.affects(clauseContext)) {
@@ -332,7 +340,7 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
             // The container class automatically sets a mask; if we're using a theme icon, we don't want one.
             iconClass: (themeIconClass || containerClass) + ' ' + iconClass,
             closeable: true
-        }));
+        }, viewContainer.when?.trim()));
         return toDispose;
     }
 
@@ -348,9 +356,16 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
         }
     }
 
-    protected doRegisterViewContainer(id: string, location: string, options: ViewContainerTitleOptions): Disposable {
+    protected doRegisterViewContainer(id: string, location: string, options: ViewContainerTitleOptions, when?: string): Disposable {
         const toDispose = new DisposableCollection();
         toDispose.push(Disposable.create(() => this.viewContainers.delete(id)));
+        if (when && when !== 'false' && when !== 'true') {
+            const keys = this.contextKeyService.parseKeys(when);
+            if (keys) {
+                this.viewContainerClauseContexts.set(id, keys);
+                toDispose.push(Disposable.create(() => this.viewContainerClauseContexts.delete(id)));
+            }
+        }
         const toggleCommandId = `plugin.view-container.${id}.toggle`;
         // Some plugins may register empty view containers.
         // We should not register commands for them immediately, as that leads to bad UX.
@@ -363,12 +378,11 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
             }, {
                 execute: () => this.toggleViewContainer(id)
             }));
-            toDispose.push(this.menus.registerMenuAction(CommonMenus.VIEW_VIEWS, {
-                commandId: toggleCommandId,
-                label: options.label
-            }));
+            toDispose.push(this.registerViewMenuAction(id, options.label));
             toDispose.push(this.quickView?.registerItem({
                 label: options.label,
+                description: this.getLocationDescription(location),
+                when,
                 open: async () => {
                     const widget = await this.openViewContainer(id);
                     if (widget) {
@@ -388,10 +402,113 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
         this.viewContainers.set(id, {
             id,
             location,
+            when,
             options,
             onViewAdded: () => activate()
         });
         return toDispose;
+    }
+
+    protected getLocationDescription(location: string | undefined): string | undefined {
+        switch (location) {
+            case 'left': return nls.localizeByDefault('Side Bar');
+            case 'right': return nls.localizeByDefault('Secondary Side Bar');
+            case 'bottom': return nls.localizeByDefault('Panel');
+            default: return undefined;
+        }
+    }
+
+    protected getContainerLocation(viewContainerId: string): string | undefined {
+        if (PluginViewRegistry.BUILTIN_VIEW_CONTAINERS.has(viewContainerId)) {
+            return 'left';
+        }
+        return this.viewContainers.get(viewContainerId)?.location;
+    }
+
+    protected getViewQuickPickDescription(viewContainerId: string): string | undefined {
+        const locationDescription = this.getLocationDescription(this.getContainerLocation(viewContainerId));
+        const containerLabel = this.viewContainers.get(viewContainerId)?.options.label;
+        if (locationDescription && containerLabel) {
+            return `${locationDescription} / ${containerLabel}`;
+        }
+        return locationDescription;
+    }
+
+    protected registerViewMenuAction(containerId: string, label: string): Disposable {
+        let ids = this.viewMenuLabelToContainerIds.get(label);
+        if (!ids) {
+            ids = new Set();
+            this.viewMenuLabelToContainerIds.set(label, ids);
+        }
+        ids.add(containerId);
+        this.refreshViewMenuLabel(label);
+        return Disposable.create(() => {
+            const set = this.viewMenuLabelToContainerIds.get(label);
+            if (set) {
+                set.delete(containerId);
+                if (set.size === 0) {
+                    this.viewMenuLabelToContainerIds.delete(label);
+                }
+            }
+            const disposable = this.viewMenuDisposables.get(containerId);
+            if (disposable) {
+                disposable.dispose();
+                this.viewMenuDisposables.delete(containerId);
+            }
+            this.refreshViewMenuLabel(label);
+        });
+    }
+
+    protected refreshViewMenuLabel(label: string): void {
+        const ids = this.viewMenuLabelToContainerIds.get(label);
+        if (!ids) {
+            return;
+        }
+        const useSuffix = ids.size > 1;
+        for (const id of ids) {
+            const existing = this.viewMenuDisposables.get(id);
+            if (existing) {
+                existing.dispose();
+                this.viewMenuDisposables.delete(id);
+            }
+            const containerInfo = this.viewContainers.get(id);
+            if (!containerInfo) {
+                continue;
+            }
+            let menuLabel = label;
+            if (useSuffix) {
+                const description = this.getLocationDescription(containerInfo.location);
+                if (description) {
+                    menuLabel = `${label} (${description})`;
+                }
+            }
+            const disposable = this.menus.registerMenuAction(CommonMenus.VIEW_VIEWS, {
+                commandId: `plugin.view-container.${id}.toggle`,
+                label: menuLabel,
+                when: containerInfo.when
+            });
+            this.viewMenuDisposables.set(id, disposable);
+        }
+    }
+
+    protected isViewContainerVisible(containerId: string): boolean {
+        const info = this.viewContainers.get(containerId);
+        if (!info) {
+            return false;
+        }
+        return info.when === undefined || info.when === 'true' || this.contextKeyService.match(info.when);
+    }
+
+    protected async updateViewContainerVisibility(containerId: string): Promise<void> {
+        const widget = await this.getPluginViewContainer(containerId);
+        if (this.isViewContainerVisible(containerId)) {
+            // Becoming visible: do not auto-open. Menu and quick pick entries will become available.
+            return;
+        }
+        // Becoming hidden: dispose any attached container widget so the activity bar icon disappears.
+        if (widget) {
+            widget.dispose();
+        }
     }
 
     getContainerViews(viewContainerId: string): string[] {
@@ -437,6 +554,7 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
         }
         toDispose.push(this.quickView?.registerItem({
             label: view.name,
+            description: this.getViewQuickPickDescription(viewContainerId),
             when: view.when,
             open: () => this.openView(view.id, { activate: true })
         }));
@@ -526,7 +644,9 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
                 });
                 return _pendingResolution;
             },
-            show: webview.show
+            show: (preserveFocus: boolean) => {
+                this.openView(viewId, preserveFocus ? { reveal: true } : { activate: true });
+            }
         };
 
         const toDispose = this.onNewResolverRegistered(resolver => {
@@ -675,6 +795,9 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
         }
         const data = this.viewContainers.get(containerId);
         if (!data) {
+            return undefined;
+        }
+        if (!this.isViewContainerVisible(containerId)) {
             return undefined;
         }
         const { location } = data;
@@ -933,9 +1056,14 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
         if (view?.[1]?.type === PluginViewType.Webview) {
             return this.createWebviewWidget(viewId, webviewId);
         }
-        const provider = this.viewDataProviders.get(viewId);
-        if (!view || !provider) {
+        if (!view) {
             return undefined;
+        }
+        const provider = this.viewDataProviders.get(viewId);
+        if (!provider) {
+            return this.getViewWelcomes(viewId).length > 0
+                ? this.createViewWelcomeWidget(viewId)
+                : undefined;
         }
         const [, viewInfo] = view;
         const state = this.viewDataState.get(viewId);
@@ -946,6 +1074,25 @@ export class PluginViewRegistry implements FrontendApplicationContribution {
         } else {
             this.viewDataState.delete(viewId);
         }
+        return widget;
+    }
+
+    protected async createViewWelcomeWidget(viewId: string): Promise<TreeViewWidget> {
+        const widget = await this.widgetManager.getOrCreateWidget<TreeViewWidget>(PLUGIN_VIEW_DATA_FACTORY_ID, { id: viewId });
+        if (!widget.model.root) {
+            const root: CompositeTreeNode & ExpandableTreeNode = {
+                id: '',
+                parent: undefined,
+                name: '',
+                visible: false,
+                expanded: true,
+                children: []
+            };
+            widget.model.root = root;
+        }
+        // An undefined `model.proxy` keeps `shouldShowWelcomeView()` true, so the welcome content
+        // renders instead of an empty node list.
+        widget.handleViewWelcomeContentChange(this.getViewWelcomes(viewId));
         return widget;
     }
 
