@@ -301,6 +301,14 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             this.auth.denyForbidden(res, req, 'agent_conversation', { cwd: body.cwd });
             return;
         }
+        if (this.auth.isWorkspaceContainerPath(ctx, body.cwd)) {
+            // Defense in depth for the "no project selected → workspace root"
+            // client bug: a container cwd would hand the agent every repo at
+            // once (wrong scope, massive LLM context). The client must send a
+            // repository path.
+            res.status(400).json({ error: 'Select a project first — this path is the workspace container, not a repository.' });
+            return;
+        }
         try {
             // "New Worktree" destination: run the conversation in an isolated git worktree,
             // grouped under the originating repository via parallelBaseCwd.

@@ -69,6 +69,29 @@ export function isPathUnderUserWorkspace(
 }
 
 /**
+ * True when `targetPath` is a CONTAINER level of the user's workspace tree
+ * rather than a repository: the user root itself (depth 0) or an owner
+ * directory (depth 1). Repositories live at `{userRoot}/{owner}/{repo}`
+ * (depth 2). Agent conversations must never target a container — the agent
+ * would ingest every repository at once, which is the wrong scope and a
+ * massive LLM context.
+ */
+export function isUserWorkspaceContainerPath(
+    targetPath: string,
+    reposRoot: string,
+    userLogin: string,
+): boolean {
+    if (!isPathUnderUserWorkspace(targetPath, reposRoot, userLogin)) {
+        return false;
+    }
+    const resolved = path.resolve(targetPath);
+    const userRoot = path.resolve(resolveUserReposRoot(reposRoot, userLogin));
+    const relative = path.relative(userRoot, resolved);
+    const depth = relative === '' ? 0 : relative.split(path.sep).length;
+    return depth < 2;
+}
+
+/**
  * Parse `owner/repo` from a workspace URI path.
  * Supports `.../repos/users/{login}/{owner}/{repo}` and legacy `.../repos/{owner}/{repo}`.
  */

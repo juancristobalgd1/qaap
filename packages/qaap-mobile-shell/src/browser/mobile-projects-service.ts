@@ -1121,7 +1121,35 @@ export class MobileProjectsService {
         if (matched) {
             return matched;
         }
+        if (this.isProjectContainerWorkspace(workspaceCwd, projects)) {
+            // The open workspace is the folder that CONTAINS the user's
+            // projects (the multi-repo workspaces root on hosted deployments).
+            // Never fabricate it as a targetable "project": an agent turn with
+            // that cwd would ingest every repository at once — wrong scope and
+            // a massive LLM context. Callers fall back to the pinned/first
+            // real project instead.
+            return undefined;
+        }
         return this.buildEphemeralCurrentWorkspaceEntry();
+    }
+
+    /**
+     * True when `workspaceCwd` is a strict ancestor of at least one listed
+     * project's cwd — i.e. the workspace is the projects container, not a
+     * project itself.
+     */
+    protected isProjectContainerWorkspace(
+        workspaceCwd: string | undefined,
+        projects: readonly MobileProjectEntry[],
+    ): boolean {
+        if (!workspaceCwd) {
+            return false;
+        }
+        const prefix = workspaceCwd.endsWith('/') ? workspaceCwd : `${workspaceCwd}/`;
+        return projects.some(project => {
+            const cwd = this.getProjectCwd(project);
+            return !!cwd && cwd !== workspaceCwd && cwd.startsWith(prefix);
+        });
     }
 
     protected buildEphemeralCurrentWorkspaceEntry(): MobileProjectEntry | undefined {

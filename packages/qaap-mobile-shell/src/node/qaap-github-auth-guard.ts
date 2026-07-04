@@ -11,6 +11,7 @@ import {
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     isPathUnderUserWorkspace,
+    isUserWorkspaceContainerPath,
     QAAP_SKIP_AUTH_USER_LOGIN,
     resolveQaapReposRoot,
     resolveUserReposRoot,
@@ -80,6 +81,20 @@ export class QaapGithubAuthGuard {
             return false;
         }
         return isPathUnderUserWorkspace(targetPath, this.reposRoot, ctx.userLogin);
+    }
+
+    /**
+     * True when `targetPath` is a container level of the authenticated user's
+     * workspace tree (the per-user root or an owner directory) rather than an
+     * actual repository. Agent work must target a repository: a container cwd
+     * would feed every repo at once to the agent. Always false in skip-auth
+     * (local dev) deployments, where paths are unmanaged.
+     */
+    isWorkspaceContainerPath(ctx: QaapGithubAuthContext, targetPath: string): boolean {
+        if (ctx.kind !== 'authenticated') {
+            return false;
+        }
+        return isUserWorkspaceContainerPath(targetPath, this.reposRoot, ctx.userLogin);
     }
 
     /**
