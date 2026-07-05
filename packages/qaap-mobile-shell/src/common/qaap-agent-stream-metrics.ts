@@ -138,6 +138,14 @@ export class QaapConversationStreamMetricsCollector {
         }
     }
 
+    peekLatencyMarks(conversationId: string | undefined): Partial<Record<QaapTurnLatencyMark, number>> | undefined {
+        if (!isQaapStreamMetricsEnabled() || !conversationId) {
+            return undefined;
+        }
+        const turn = this.active.get(conversationId);
+        return turn ? { ...turn.latencyMarks } : undefined;
+    }
+
     finishTurn(conversationId: string): QaapConversationStreamMetricsSnapshot | undefined {
         if (!isQaapStreamMetricsEnabled()) {
             return undefined;

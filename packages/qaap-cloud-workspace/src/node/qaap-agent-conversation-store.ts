@@ -298,6 +298,7 @@ export class QaapAgentConversationStore {
                 request.interactionModeId,
                 request.approvalPolicyId,
                 request.toolApprovalRules,
+                request.latencyMarks,
             );
         }
         return this.conversations.get(id)!;
@@ -312,6 +313,7 @@ export class QaapAgentConversationStore {
         interactionModeId?: string,
         approvalPolicyId?: string,
         toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'],
+        latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
     ): QaapAgentConversation {
         let conv = this.conversations.get(id);
         if (!conv) {
@@ -356,12 +358,13 @@ export class QaapAgentConversationStore {
         };
         this.conversations.set(id, next);
         this.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: userMessage });
+        this.recordSubmitLatencyMarks(id, latencyMarks);
         this.streamMetrics.recordLatencyMark(id, 'backend_user_message_persisted');
         this.fire({ type: 'updated', conversation: toConversationSummary(next) });
 
         let task: QaapAgentTask | undefined;
         try {
-            task = this.taskRunner.create(this.buildTaskCreateRequest(next, turnAgentId));
+            task = this.taskRunner.create(this.buildTaskCreateRequest(next, turnAgentId, latencyMarks));
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             const failed = this.markTurnFailed(next, {
@@ -655,6 +658,22 @@ export class QaapAgentConversationStore {
 
     protected recordTaskLatencyMarks(conversationId: string, task: QaapAgentTask): void {
         for (const [mark, at] of Object.entries(task.latencyMarks ?? {})) {
+            this.streamMetrics.recordLatencyMark(
+                conversationId,
+                mark as Parameters<QaapConversationStreamMetricsCollector['recordLatencyMark']>[1],
+                at,
+            );
+        }
+    }
+
+    protected recordSubmitLatencyMarks(
+        conversationId: string,
+        latencyMarks: QaapCreateAgentConversationRequest['latencyMarks'] | undefined,
+    ): void {
+        for (const [mark, at] of Object.entries(latencyMarks ?? {})) {
+            if (typeof at !== 'number' || !Number.isFinite(at)) {
+                continue;
+            }
             this.streamMetrics.recordLatencyMark(
                 conversationId,
                 mark as Parameters<QaapConversationStreamMetricsCollector['recordLatencyMark']>[1],
@@ -1584,6 +1603,7 @@ export class QaapAgentConversationStore {
     protected buildTaskCreateRequest(
         conv: QaapAgentConversation,
         turnAgentId: string,
+        latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
     ): QaapCreateAgentTaskRequest {
         const lastUser = conv.messages[conv.messages.length - 1];
         if (turnAgentId === 'shell') {
@@ -1603,6 +1623,7 @@ export class QaapAgentConversationStore {
             ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),
             ...(conv.approvalPolicyId ? { approvalPolicyId: conv.approvalPolicyId } : {}),
             ...(conv.toolApprovalRules ? { toolApprovalRules: conv.toolApprovalRules } : {}),
+            ...(latencyMarks ? { latencyMarks } : {}),
             ...(() => {
                 const agentModel = conv.agentModel ?? conv.qaiqModel;
                 return agentSupportsModelPicker(turnAgentId) && agentModel

@@ -2016,6 +2016,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+            latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
         },
     ): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated> {
         return this.backgroundTaskUi.createProjectChatSession(project, cwd, draft, options);

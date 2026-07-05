@@ -66,6 +66,7 @@ export interface MobileProjectsTranscriptSubmitHost {
             approvalPolicyId?: string;
             variables?: AIVariableResolutionRequest[];
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
         },
     ): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
@@ -230,6 +231,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 approvalPolicyId: options.approvalPolicyId,
                 variables: options.variables,
                 agentModel: options.agentModel ?? this.resolveTranscriptSubmitAgentModel(pendingAgent, summary),
+                latencyMarks: this.host.conversations?.getSubmitLatencyMarks(summary.id),
             });
             this.host.conversations?.recordSubmitLatencyMark(created.id, 'ui_submit_clicked', submitAt);
             if (optimisticAt !== undefined) {
@@ -313,6 +315,7 @@ export class MobileProjectsTranscriptSubmitUi {
                     summary.cwd,
                     this.host.transcriptComposerToolApprovalRules,
                 ),
+                latencyMarks: this.host.conversations?.getSubmitLatencyMarks(summary.id),
             });
             this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_end');
             const nextSummary = conversationToSummary(updated);

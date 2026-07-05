@@ -890,6 +890,7 @@ export class QaapAgentTaskRunner {
             parentId,
             autoApprove,
             ...(ownerLogin ? { ownerLogin } : {}),
+            ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
             ...(() => {
                 const agentModel = this.resolveAgentModelForRequest(request, prompt || rawCommand);
                 return agentModel ? { agentModel, qaiqModel: agentModel } : {};

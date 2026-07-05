@@ -112,6 +112,8 @@ export interface QaapCreateAgentTaskRequest {
     readonly approvalPolicyId?: string;
     /** Optional scopes under {@code approve-for-me} (shell / network). */
     readonly toolApprovalRules?: import('./qaap-agent-conversation').QaapAgentToolApprovalRules;
+    /** Optional submit diagnostics forwarded by the browser for end-to-end latency logs. */
+    readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
 }
 
 /** A coding agent the runner knows how to invoke. */
