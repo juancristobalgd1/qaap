@@ -2447,6 +2447,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.shouldUseAgentsHubLanding();
     }
 
+    resolveShellProject(): MobileProjectEntry | undefined {
+        return this.resolveAgentsHubShellProject();
+    }
+
+    resolveShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined {
+        return this.resolveAgentsHubShellSummary(project);
+    }
+
     shouldEmbedAgentsHubRecentsInWorkspaceTranscript(): boolean {
         return this.tasksHubUi.shouldEmbedAgentsHubRecentsInWorkspaceTranscript();
     }

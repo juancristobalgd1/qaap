@@ -27,6 +27,7 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
+import { RESET_LAYOUT } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
 import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { ChatService } from '@theia/ai-chat';
@@ -85,6 +86,7 @@ import {
     peekPreferDesktopIde,
     shouldBootstrapMobileAgentsChat,
     shouldPreferWorkHubAgentsLayout,
+    QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS,
     QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT,
     QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT,
     setMobileActiveTranscriptChrome,
@@ -142,6 +144,11 @@ import {
 } from './mobile-shell-transcript-chrome-controller';
 import { MobileShellSessionState } from './mobile-shell-session-state';
 import {
+    decideLayoutRecovery,
+    QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY,
+    SHELL_LAYOUT_STORAGE_KEY,
+} from './mobile-shell-layout-recovery';
+import {
     BottomBarSecondaryItem,
     EXPLORER_VIEW_CONTAINER_ID,
     MINI_BROWSER_PREVIEW_WIDGET_ID,
@@ -152,6 +159,9 @@ import {
 } from './mobile-shell-bottom-bar-widget';
 
 const GETTING_STARTED_WIDGET_COMMAND = 'getting.started.widget';
+
+/** Grace after the frontend reaches 'ready' before the last-resort blank-shell recovery guard runs. */
+const LAYOUT_RECOVERY_GRACE_MS = 2000;
 
 /**
  * Narrow-viewport workbench: full-width editor, side panels as sheets, bottom activity strip,
@@ -704,6 +714,129 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         }));
         if (this.mobileMq?.matches || shouldPreferWorkHubAgentsLayout() || shouldBootstrapMobileAgentsChat()) {
             window.requestAnimationFrame(() => this.onMediaChange());
+        }
+        // Root safety + last-resort recovery, wired off 'ready' so they run on EVERY boot regardless
+        // of whether the layout was restored (empty or not) or freshly created. See below.
+        void this.frontendStateService.reachedState('ready').then(() => this.onFrontendReadyEnsureWorkHub());
+    }
+
+    /**
+     * Runs once the frontend reaches 'ready'. `onDidInitializeLayout` fires earlier (state
+     * 'initialized_layout') and its async Work Hub mount can silently fail to land when a
+     * valid-but-empty persisted layout is restored: `FrontendApplication.initializeLayout` takes the
+     * `restoreLayout() === true` branch and skips `createDefaultLayout()` (and every fresh-only
+     * `initializeLayout` contribution hook), so the shell restores to a genuinely empty main area and
+     * no watchdog can recover a hub root that was never inserted. This guarantees a mount attempt at
+     * a point where all async preconditions (workspace ready, 'ready' state) are already satisfied,
+     * then arms the last-resort blank-shell recovery.
+     */
+    protected onFrontendReadyEnsureWorkHub(): void {
+        this.ensureWorkHubSurfaceMountedAfterReady();
+        this.armLayoutRecoveryGuard();
+    }
+
+    /** Idempotent Work Hub mount: no-op when a surface is already present or a mount is in flight. */
+    protected ensureWorkHubSurfaceMountedAfterReady(): void {
+        if (peekPreferDesktopIde() || !this.shouldActivateWorkHubLayout()) {
+            return;
+        }
+        if (this.isWorkHubSurfacePresentInDom() || this.sessionState.agentsBootstrapStarted) {
+            return;
+        }
+        if (!this.mobileActive) {
+            this.enterMobileLayout();
+            return;
+        }
+        this.ensureOverlayElements();
+        if (!this.tryBootstrapMobileAgentsChat()) {
+            this.ensureMobileProjectsHomeVisible();
+        }
+        this.scheduleSnapAndUiRefresh();
+    }
+
+    /** True when a Work Hub surface (projects panel / agents transcript) is mounted in the DOM. */
+    protected isWorkHubSurfacePresentInDom(): boolean {
+        if (this.projectsPanel?.isVisible()) {
+            return true;
+        }
+        if (typeof document === 'undefined') {
+            // Non-DOM (test/SSR) environments never render the hub; treat as present to skip recovery.
+            return true;
+        }
+        if (document.body.classList.contains(QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS)) {
+            return true;
+        }
+        return !!document.querySelector('.theia-mobile-projects.theia-mod-visible')
+            || !!document.querySelector('.theia-mobile-agent-transcript-real-chat');
+    }
+
+    /**
+     * Last-resort guard: after 'ready' + a short grace, if still no Work Hub surface exists (and the
+     * user did not choose the classic IDE), the persisted layout is poisoned (valid but empty). Clear
+     * it via the proper StorageService key and reload once. A sessionStorage flag prevents loops.
+     */
+    protected armLayoutRecoveryGuard(): void {
+        if (peekPreferDesktopIde() || typeof window === 'undefined') {
+            return;
+        }
+        const timeout = window.setTimeout(() => {
+            void this.runLayoutRecoveryGuard();
+        }, LAYOUT_RECOVERY_GRACE_MS);
+        this.toDispose.push(Disposable.create(() => window.clearTimeout(timeout)));
+    }
+
+    protected async runLayoutRecoveryGuard(): Promise<void> {
+        const decision = decideLayoutRecovery({
+            workHubSurfacePresent: this.isWorkHubSurfacePresentInDom(),
+            preferDesktopIde: peekPreferDesktopIde(),
+            recoveryAlreadyAttempted: this.hasLayoutRecoveryBeenAttempted(),
+        });
+        if (decision === 'noop') {
+            return;
+        }
+        if (decision === 'abort-loop') {
+            console.error(
+                '[qaap-mobile-shell] Work Hub still absent after a layout-recovery reload; not reloading '
+                + `again to avoid a loop. The persisted layout may be corrupt — run the '${RESET_LAYOUT.label}' `
+                + 'command or clear localStorage manually.',
+            );
+            return;
+        }
+        console.warn(
+            '[qaap-mobile-shell] Work Hub failed to mount and no surface is present; clearing the '
+            + 'persisted (empty) layout and reloading once to recover.',
+        );
+        this.markLayoutRecoveryAttempted();
+        try {
+            // Clear the poisoned layout with the proper storage API (same key ShellLayoutRestorer uses).
+            await this.storageService.setData(SHELL_LAYOUT_STORAGE_KEY, undefined);
+        } catch (error) {
+            console.error('[qaap-mobile-shell] Failed to clear persisted layout during recovery', error);
+        }
+        // Reload through RESET_LAYOUT: it disables layout persistence (shouldStoreLayout=false) before
+        // reloading, so the unload handler cannot re-serialize the empty shell over our clear.
+        try {
+            await this.commands.executeCommand(RESET_LAYOUT.id);
+        } catch (error) {
+            console.error('[qaap-mobile-shell] RESET_LAYOUT failed during recovery; forcing reload', error);
+            window.location.reload();
+        }
+    }
+
+    protected hasLayoutRecoveryBeenAttempted(): boolean {
+        try {
+            return typeof sessionStorage !== 'undefined'
+                && sessionStorage.getItem(QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY) === '1';
+        } catch {
+            return false;
+        }
+    }
+
+    protected markLayoutRecoveryAttempted(): void {
+        try {
+            sessionStorage?.setItem(QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY, '1');
+        } catch {
+            /* sessionStorage unavailable — loop protection degrades gracefully */
         }
     }
 

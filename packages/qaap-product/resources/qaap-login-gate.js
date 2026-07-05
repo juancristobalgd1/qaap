@@ -165,6 +165,12 @@
         }, 30000);
     }
 
+    function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, function (ch) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+        });
+    }
+
     function showStartupError(kind) {
         // Don't show if login gate is already visible or IDE already loaded.
         if (document.getElementById('qaap-login-host') ||

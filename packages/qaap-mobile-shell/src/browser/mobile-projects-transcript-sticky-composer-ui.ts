@@ -1461,11 +1461,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 // multi-repo container).
                 let submitProject = project;
                 let submitSummary = summary;
-                if (isAgentsHubIdleConversationSummary(summary) && this.host.resolveAgentsHubShellProject) {
-                    const fresh = this.host.resolveAgentsHubShellProject();
+                if (isAgentsHubIdleConversationSummary(summary)) {
+                    const fresh = this.workHub.resolveShellProject();
                     if (fresh && fresh.id !== project.id) {
                         submitProject = fresh;
-                        submitSummary = this.host.resolveAgentsHubShellSummary?.(fresh) ?? summary;
+                        submitSummary = this.workHub.resolveShellSummary(fresh) ?? summary;
                     }
                 }
                 void this.submitTranscriptComposerDraft(draft, submitProject, submitSummary, chatHost, {

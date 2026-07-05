@@ -29,6 +29,10 @@ export interface WorkHubTranscriptBridge {
     createAgentsHubRecentsBlock(project: MobileProjectEntry): HTMLElement;
     createAgentsHubLandingHeroBlock(): HTMLElement;
     createAgentsHubQuickActionsBlock(): HTMLElement;
+    /** Freshest hub shell project (agents-hub landing), if any — used for submit-time re-resolution. */
+    resolveShellProject(): MobileProjectEntry | undefined;
+    /** Idle shell summary for the given hub project, if one exists. */
+    resolveShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
     renderIdleSubmitOptimistic(
         chatHost: HTMLElement,
         summary: QaapAgentConversationSummaryDTO,
