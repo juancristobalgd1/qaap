@@ -2055,12 +2055,22 @@ export class QaapAgentConversationStore {
         return true;
     }
 
+    /** Throttle persist-failure warnings so a sustained disk error can't spam the log every 500ms. */
+    protected persistFailureLoggedAtMs = 0;
+
     protected async persist(): Promise<void> {
         try {
             await fsp.mkdir(STORE_DIR, { recursive: true });
             await fsp.writeFile(INDEX_PATH, JSON.stringify([...this.conversations.values()], undefined, 2), 'utf8');
-        } catch {
-            /* persistence is best-effort */
+            this.persistFailureLoggedAtMs = 0;
+        } catch (error) {
+            // Best-effort persistence, but a swallowed error hides disk-full/corruption; surface it
+            // at most once a minute so the failure is visible without flooding the log.
+            const now = Date.now();
+            if (now - this.persistFailureLoggedAtMs > 60_000) {
+                this.persistFailureLoggedAtMs = now;
+                console.warn('[qaap-agent-conversation-store] failed to persist conversations:', error);
+            }
         }
     }
 
