@@ -191,7 +191,11 @@ Pick the next task off this list. Each is independent — extract one, verify, c
 5. Verify in this order: `npm run compile`, `node scripts/qaap-drift-check.js`, `npm run build:browser`, and (for UI behaviour) `npm run start:browser` plus exercising the affected flow at the relevant viewport.
 6. Commit per extraction so a regression can be bisected.
 
-### End state
+### End state — REACHED (July 2026)
+
+The version bump 1.71.0→1.73.0 landed (110 manifests + lerna.json + regenerated core README; react pinned to 18.3.1 via root overrides against the dual-range peerDeps; uuid 11 nested in core). **The drift baseline holds exactly 1 entry** (collaboration's one-line yjs range, lockfile dedupe quirk — converges with any upstream bump). Everything else is either byte-identical to upstream or a commented ALLOWED seam. From here, tracking upstream = fetch, repoint `refs/heads/upstream/master`, re-run the drift pass, and use the blob-identity fast-forward + 3-way merge-file recipes recorded above.
+
+### Original end-state definition
 
 Zero entries in the per-package section of `ALLOWED`. Baseline empty. `git merge upstream/master` produces no conflicts inside `packages/<upstream>/...`. New Theia releases can be adopted with a single `git merge` and a green CI.
 
