@@ -152,6 +152,16 @@ describe('mobile-shell-landing-state', () => {
         expect(resolveInitialLandingBodyClass(false)).to.equal('none');
     });
 
+    it('resolves none when the user chose the classic IDE (preferDesktopIde survives reload)', () => {
+        window.location.hash = '';
+        markPreferDesktopIde();
+        try {
+            expect(resolveInitialLandingBodyClass(true)).to.equal('none');
+        } finally {
+            clearPreferDesktopIde();
+        }
+    });
+
     it('resolves none when a hub action is pending across reload', () => {
         storage.set(QAAP_HUB_PENDING_ACTION_KEY, '{}');
         const snapshot = readMobileShellLandingBootSnapshot();

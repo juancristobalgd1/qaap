@@ -7,15 +7,18 @@
 import { CommandRegistry, Disposable, DisposableCollection, nls } from '@theia/core/lib/common';
 import { ApplicationShell, CommonCommands, Widget } from '@theia/core/lib/browser';
 import { Message } from '@theia/core/lib/browser/widgets/widget';
-import { collapseLeftPanelIfMobileOneColumn, matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { collapseLeftPanelIfMobileOneColumn, matchesMobileOneColumnLayout, MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
+import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
-import { buildQaapAccountMenuEntries, dismissQaapAccountMenu, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, dismissQaapAccountMenu, toggleQaapAccountMenu, type MobileViewToggleId, type QaapAccountMenuEntry } from './qaap-workbench-account-menu';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
 import { MobileProjectsService } from './mobile-projects-service';
-import type { MobileBottomButton, MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
+import { EXPLORER_VIEW_CONTAINER_ID, type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
+import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 
 const WORKBENCH_NAV_GO_BACK = 'textEditor.commands.go.back';
 const WORKBENCH_NAV_GO_FORWARD = 'textEditor.commands.go.forward';
@@ -25,6 +28,7 @@ const WORKBENCH_CHAT_VIEW_WIDGET_ID = 'chat-view-widget';
 const QAAP_MOBILE_IDE_HEADER_VIEW_OPTIONS = 'qaap.mobile.ideHeaderView.options';
 const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVE = 'qaap.mobile.ideHeaderView.active';
 const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
+const QAAP_IDE_AVATAR_VIEW_COMMAND_PREFIX = 'qaap.ide.avatarView.';
 
 function createWorkbenchNavBtn(iconClasses: string, title: string): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -215,7 +219,10 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
 
     constructor(
         protected readonly commands: CommandRegistry,
-        protected readonly shell: ApplicationShell
+        protected readonly shell: ApplicationShell,
+        protected readonly terminalService: TerminalService,
+        protected readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler,
+        protected readonly projectBootstrap: QaapProjectBootstrapService
     ) {
         const node = document.createElement('motion.div');
         node.classList.add('theia-workbench-right-controls');
@@ -269,14 +276,19 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.toDispose.push(this.shell.onDidChangeCurrentWidget(refresh));
         this.toDispose.push(this.shell.onDidAddWidget(refresh));
         this.toDispose.push(this.shell.onDidRemoveWidget(refresh));
+        // Re-evaluate the mobile view picker when the viewport crosses the one-column
+        // breakpoint: command/widget events alone leave it stuck when the layout mode
+        // changes without any command executing (e.g. rotation or window resize).
+        if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+            const mq = window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY);
+            const onMqChange = (): void => refresh();
+            mq.addEventListener('change', onMqChange);
+            this.toDispose.push(Disposable.create(() => mq.removeEventListener('change', onMqChange)));
+        }
     }
 
     protected readonly onTerminalClick = (): void => {
-        if (this.commands.isEnabled(CommonCommands.TOGGLE_BOTTOM_PANEL.id)) {
-            this.runIfEnabled(CommonCommands.TOGGLE_BOTTOM_PANEL.id);
-        } else {
-            this.runIfEnabled(WORKBENCH_TOGGLE_TERMINAL);
-        }
+        void this.activateTerminalFromAvatar();
     };
     protected readonly onAiChatClick = (): void => {
         if (matchesMobileOneColumnLayout()) {
@@ -301,8 +313,101 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
                 },
             }
             : undefined;
-        toggleQaapAccountMenu(this.accountBtn, this.commands, buildQaapAccountMenuEntries(signedIn), undefined, undefined, viewToggle);
+        toggleQaapAccountMenu(this.accountBtn, this.commands, this.buildAccountMenuEntries(signedIn), undefined, undefined, viewToggle);
     };
+
+    protected buildAccountMenuEntries(signedIn: boolean): QaapAccountMenuEntry[] {
+        const baseEntries = buildQaapAccountMenuEntries(signedIn);
+        const viewEntries = this.buildIdeHeaderViewMenuEntries();
+        if (!viewEntries.length) {
+            return baseEntries;
+        }
+        return [
+            ...viewEntries,
+            { kind: 'separator' },
+            ...baseEntries,
+        ];
+    }
+
+    protected buildIdeHeaderViewMenuEntries(): QaapAccountMenuEntry[] {
+        const options = this.mobileViewPickerOptions.length
+            ? this.mobileViewPickerOptions
+            : this.getFallbackMobileViewPickerOptions();
+        return options.map(option => ({
+            kind: 'action',
+            label: option.id === 'explore' ? nls.localize('qaap/accountMenu/explorer', 'Explorer') : option.label,
+            commandId: `${QAAP_IDE_AVATAR_VIEW_COMMAND_PREFIX}${option.id}`,
+            iconClass: option.icon,
+            activeMark: option.id === this.mobileViewPickerActiveId,
+            run: () => this.activateIdeAvatarView(option.id),
+        }));
+    }
+
+    protected activateIdeAvatarView(id: MobileBottomButtonId): void {
+        switch (id) {
+            case 'preview':
+                void this.activatePreviewFromAvatar();
+                return;
+            case 'terminal':
+                void this.activateTerminalFromAvatar();
+                return;
+            case 'explore':
+                this.activateExplorerFromAvatar();
+                return;
+            default:
+                if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE) && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+                    void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id).catch(() => undefined);
+                }
+        }
+    }
+
+    protected async activatePreviewFromAvatar(): Promise<void> {
+        const preview = await this.miniBrowserOpenHandler.openEmptyPreviewTab();
+        if (preview) {
+            await this.shell.activateWidget(preview.id);
+        }
+        void this.focusOrBootstrapPreview().catch(e => console.error('[qaap-mobile-shell] activatePreviewFromAvatar failed', e));
+    }
+
+    protected async focusOrBootstrapPreview(): Promise<void> {
+        if (this.projectBootstrap.previewUrl) {
+            await this.projectBootstrap.focusPreview();
+            return;
+        }
+        const phase = this.projectBootstrap.phase;
+        const descriptor = this.projectBootstrap.descriptor;
+        if (phase === 'run-failed' && this.projectBootstrap.needsInstall && descriptor?.installCommand) {
+            await this.projectBootstrap.runInstall();
+            return;
+        }
+        if (this.projectBootstrap.hasRunnableDevPlan()
+            && (phase === 'ready-to-run' || phase === 'starting' || phase === 'run-failed')) {
+            await this.projectBootstrap.runDevServer();
+            return;
+        }
+        if (phase === 'detected' && descriptor?.installCommand) {
+            await this.projectBootstrap.runInstall();
+        }
+    }
+
+    protected async activateTerminalFromAvatar(): Promise<void> {
+        const terminal = this.terminalService.currentTerminal
+            ?? this.terminalService.lastUsedTerminal
+            ?? this.terminalService.all.find(candidate => !candidate.hiddenFromUser)
+            ?? await this.terminalService.newTerminal({});
+        await this.terminalService.open(terminal, { mode: 'activate' });
+        if (!this.shell.isExpanded('bottom')) {
+            this.shell.expandPanel('bottom');
+        }
+    }
+
+    protected activateExplorerFromAvatar(): void {
+        void this.shell.activateWidget(EXPLORER_VIEW_CONTAINER_ID).then(widget => {
+            if (widget && !this.shell.isExpanded('left')) {
+                this.shell.expandPanel('left');
+            }
+        }).catch(() => undefined);
+    }
 
     protected override onAfterAttach(msg: Message): void {
         super.onAfterAttach(msg);

@@ -25,6 +25,7 @@ export interface QaapAccountMenuEntry {
     iconClass?: string;
     args?: unknown[];
     activeMark?: boolean;
+    run?: () => void | Promise<void>;
 }
 
 export interface QaapAccountMenuViewToggleOptions {
@@ -255,15 +256,16 @@ export function openQaapAccountMenu(
             continue;
         }
         const commandId = entry.commandId;
-        if (!commandId || !entry.label) {
+        const run = entry.run;
+        if ((!commandId && !run) || !entry.label) {
             continue;
         }
         const isQaapAuthCommand = commandId === QAAP_AUTH_SIGN_OUT_COMMAND
             || commandId === QAAP_AUTH_SIGN_IN_GITHUB_COMMAND;
-        if (!isQaapAuthCommand && !commands.getCommand(commandId)) {
+        if (!run && commandId && !isQaapAuthCommand && !commands.getCommand(commandId)) {
             continue;
         }
-        if (!isQaapAuthCommand && !commands.isEnabled(commandId)) {
+        if (!run && commandId && !isQaapAuthCommand && !commands.isEnabled(commandId)) {
             continue;
         }
         const item = document.createElement('button');
@@ -287,7 +289,9 @@ export function openQaapAccountMenu(
         item.addEventListener('click', () => {
             openOptions?.onMenuAction?.();
             dismissQaapAccountMenu();
-            if (isQaapAuthCommand || (commands.getCommand(commandId) && commands.isEnabled(commandId))) {
+            if (run) {
+                void Promise.resolve(run()).catch(() => undefined);
+            } else if (commandId && (isQaapAuthCommand || (commands.getCommand(commandId) && commands.isEnabled(commandId)))) {
                 void commands.executeCommand(commandId, ...(entry.args ?? [])).catch(() => undefined);
             }
         });

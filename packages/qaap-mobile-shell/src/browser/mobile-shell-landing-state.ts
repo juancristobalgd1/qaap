@@ -7,6 +7,7 @@ import {
     shouldBootstrapMobileAgentsChat,
     shouldSkipMobileProjectsLanding,
 } from './mobile-projects-open';
+import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
 
 /** Hub queues a pending action across reloads — see qaap-hub-actions-contribution. */
 export const QAAP_HUB_PENDING_ACTION_KEY = 'qaap.hub.pendingAction';
@@ -16,6 +17,8 @@ export interface MobileShellLandingBootSnapshot {
     skipLanding: boolean;
     bootstrapAgents: boolean;
     hasPendingHubAction: boolean;
+    /** User explicitly chose the classic IDE this session — the landing must never paint over it. */
+    preferDesktopIde: boolean;
 }
 
 export function peekHasPendingHubAction(): boolean {
@@ -32,6 +35,7 @@ export function readMobileShellLandingBootSnapshot(): MobileShellLandingBootSnap
         skipLanding: shouldSkipMobileProjectsLanding(),
         bootstrapAgents: shouldBootstrapMobileAgentsChat(),
         hasPendingHubAction: peekHasPendingHubAction(),
+        preferDesktopIde: peekPreferDesktopIde(),
     };
 }
 
@@ -51,6 +55,11 @@ export function resolveInitialLandingBodyClass(
     snapshot: MobileShellLandingBootSnapshot = readMobileShellLandingBootSnapshot(),
 ): MobileShellInitialLandingBodyClass {
     if (!mobileMqMatches || snapshot.hasPendingHubAction) {
+        return 'none';
+    }
+    if (snapshot.preferDesktopIde) {
+        // Reloading inside the classic IDE (markPreferDesktopIde): restore that surface —
+        // painting the landing here hides the whole dock behind the landing CSS (blank shell).
         return 'none';
     }
     if (snapshot.bootstrapAgents) {

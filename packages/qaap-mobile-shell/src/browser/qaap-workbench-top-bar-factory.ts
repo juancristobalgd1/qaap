@@ -8,9 +8,12 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { CommandRegistry } from '@theia/core/lib/common';
 import { ApplicationShell, Widget } from '@theia/core/lib/browser';
 import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-top-bar-factory';
+import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
+import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsService } from './mobile-projects-service';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
+import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     QaapWorkbenchHistoryNavWidget,
     QaapWorkbenchNavControlsWidget,
@@ -29,6 +32,15 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
     @inject(QaapProjectSwitcherService)
     protected readonly projectSwitcher: QaapProjectSwitcherService;
 
+    @inject(TerminalService)
+    protected readonly terminalService: TerminalService;
+
+    @inject(QaapMiniBrowserOpenHandler)
+    protected readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler;
+
+    @inject(QaapProjectBootstrapService)
+    protected readonly projectBootstrap: QaapProjectBootstrapService;
+
     createLeadingTopBarWidget(commands: CommandRegistry): Widget {
         return new QaapWorkbenchNavControlsWidget(this.projectsService, this.workspaceService, this.projectSwitcher);
     }
@@ -36,7 +48,7 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
     createTrailingTopBarWidgets(commands: CommandRegistry, shell: ApplicationShell): Widget[] {
         return [
             new QaapWorkbenchHistoryNavWidget(commands, this.workspaceService),
-            new QaapWorkbenchRightControlsWidget(commands, shell),
+            new QaapWorkbenchRightControlsWidget(commands, shell, this.terminalService, this.miniBrowserOpenHandler, this.projectBootstrap),
         ];
     }
 }
