@@ -195,6 +195,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.toDispose.push(this.scmService.onDidChangeSelectedRepository(() => this.trackRepository()));
         this.toDispose.push(this.toDisposeOnRepository);
         this.toDispose.push(Disposable.create(() => this.detachCommitMenuListener()));
+        this.toDispose.push(Disposable.create(() => this.cancelScheduledRefresh()));
         this.trackRepository();
     }
 
@@ -217,9 +218,34 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.rootUri = repository?.provider.rootUri;
         this.bulkActionsEnabled = true;
         if (repository) {
-            this.toDisposeOnRepository.push(repository.provider.onDidChange(() => void this.refresh()));
+            this.toDisposeOnRepository.push(repository.provider.onDidChange(() => this.scheduleRefresh()));
         }
         void this.refresh();
+    }
+
+    protected refreshScheduleTimer?: number;
+
+    /**
+     * Coalesce rapid SCM change events into one refresh. Each refresh fetches `/git-review/changes`,
+     * which shells out to `git status` + `git diff --numstat` on the backend; during an agent turn
+     * that writes many files the provider fires onDidChange in bursts, so debounce to avoid a git
+     * subprocess storm.
+     */
+    protected scheduleRefresh(): void {
+        this.cancelScheduledRefresh();
+        this.refreshScheduleTimer = window.setTimeout(() => {
+            this.refreshScheduleTimer = undefined;
+            if (!this.isDisposed) {
+                void this.refresh();
+            }
+        }, 250);
+    }
+
+    protected cancelScheduledRefresh(): void {
+        if (this.refreshScheduleTimer !== undefined) {
+            window.clearTimeout(this.refreshScheduleTimer);
+            this.refreshScheduleTimer = undefined;
+        }
     }
 
     protected override onActivateRequest(message: Message): void {
