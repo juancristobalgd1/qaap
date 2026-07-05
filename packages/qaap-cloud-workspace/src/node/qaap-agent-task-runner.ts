@@ -29,6 +29,7 @@ import {
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
+import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
     QAAP_BUILTIN_AGENT_DEFINITIONS,
     QAAP_BUILTIN_AGENT_IDS,
@@ -1369,6 +1370,7 @@ export class QaapAgentTaskRunner {
         const prompt = (request.prompt ?? '').trim();
         if (prompt) {
             try {
+                this.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
                 const agentModel = this.resolveAgentModelForRequest(request, prompt);
                 const { command, stdinPrompt } = this.buildAgentCommand(
@@ -1382,11 +1384,13 @@ export class QaapAgentTaskRunner {
                     request.approvalPolicyId,
                     request.toolApprovalRules,
                 );
+                this.recordTaskLatencyMark(task.id, 'build_agent_command_end');
                 if (stdinPrompt) {
                     this.stdinPrompts.set(task.id, stdinPrompt);
                 }
+                const markedTask = this.tasks.get(task.id) ?? task;
                 const next: QaapAgentTask = {
-                    ...task,
+                    ...markedTask,
                     command,
                     ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
                 };
@@ -1420,12 +1424,14 @@ export class QaapAgentTaskRunner {
         };
         let child: ChildProcess;
         try {
+            this.recordTaskLatencyMark(task.id, 'spawn_start');
             child = spawn(task.command, {
                 cwd: task.cwd,
                 shell: true,
                 env: this.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
             });
+            this.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
             finishAntigravitySettings();
             this.stdinPrompts.delete(task.id);
@@ -1537,6 +1543,7 @@ export class QaapAgentTaskRunner {
         };
         child.stdout?.on('data', chunk => {
             bumpIdleTimer();
+            this.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             this.fireOutput(task.id, chunk);
             if (stdioPrompt !== undefined) {
@@ -1545,6 +1552,7 @@ export class QaapAgentTaskRunner {
         });
         child.stderr?.on('data', chunk => {
             bumpIdleTimer();
+            this.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             this.fireOutput(task.id, chunk);
         });
@@ -1577,6 +1585,20 @@ export class QaapAgentTaskRunner {
             return;
         }
         this.onDidChangeTaskEmitter.fire({ type: 'output', task, chunk: filtered });
+    }
+
+    protected recordTaskLatencyMark(taskId: string, mark: QaapTurnLatencyMark, at = Date.now()): void {
+        const task = this.tasks.get(taskId);
+        if (!task || task.latencyMarks?.[mark] !== undefined) {
+            return;
+        }
+        this.tasks.set(taskId, {
+            ...task,
+            latencyMarks: {
+                ...task.latencyMarks,
+                [mark]: at,
+            },
+        });
     }
 
     /**

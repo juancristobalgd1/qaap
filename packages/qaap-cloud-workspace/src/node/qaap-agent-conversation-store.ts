@@ -356,6 +356,7 @@ export class QaapAgentConversationStore {
         };
         this.conversations.set(id, next);
         this.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: userMessage });
+        this.streamMetrics.recordLatencyMark(id, 'backend_user_message_persisted');
         this.fire({ type: 'updated', conversation: toConversationSummary(next) });
 
         let task: QaapAgentTask | undefined;
@@ -379,6 +380,7 @@ export class QaapAgentConversationStore {
             void this.persist();
             return next;
         }
+        this.streamMetrics.recordLatencyMark(id, 'task_created');
 
         const messagesWithTask = next.messages.map(m => m.id === userMessage.id ? { ...m, taskId: task!.id } : m);
         next = { ...next, messages: messagesWithTask };
@@ -628,6 +630,7 @@ export class QaapAgentConversationStore {
     protected onTaskChanged(event: QaapAgentTaskEvent): void {
         const ref = this.taskToConversation.get(event.task.id);
         if (ref) {
+            this.recordTaskLatencyMarks(ref.conversationId, event.task);
             if (event.type === 'output') {
                 this.applyTaskOutput(event.task.id, ref, event.chunk);
                 return;
@@ -648,6 +651,16 @@ export class QaapAgentConversationStore {
             return;
         }
         void this.deliverSubtaskMailbox(task);
+    }
+
+    protected recordTaskLatencyMarks(conversationId: string, task: QaapAgentTask): void {
+        for (const [mark, at] of Object.entries(task.latencyMarks ?? {})) {
+            this.streamMetrics.recordLatencyMark(
+                conversationId,
+                mark as Parameters<QaapConversationStreamMetricsCollector['recordLatencyMark']>[1],
+                at,
+            );
+        }
     }
 
     /**

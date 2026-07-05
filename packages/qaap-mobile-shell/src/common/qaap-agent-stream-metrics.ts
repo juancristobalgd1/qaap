@@ -12,6 +12,22 @@ export type QaapStreamMetricsSide = 'server' | 'client';
 
 export type QaapStreamMetricsTransport = 'ws' | 'sse' | 'unknown';
 
+export type QaapTurnLatencyMark =
+    | 'ui_submit_clicked'
+    | 'optimistic_render_done'
+    | 'pre_post_get_start'
+    | 'pre_post_get_end'
+    | 'post_message_start'
+    | 'post_message_end'
+    | 'backend_user_message_persisted'
+    | 'task_created'
+    | 'build_agent_command_start'
+    | 'build_agent_command_end'
+    | 'spawn_start'
+    | 'spawn_end'
+    | 'first_stdout_chunk'
+    | 'first_transcript_delta_rendered';
+
 export interface QaapConversationStreamMetricsSnapshot {
     readonly side: QaapStreamMetricsSide;
     readonly conversationId: string;
@@ -26,6 +42,7 @@ export interface QaapConversationStreamMetricsSnapshot {
     readonly updatedEvents: number;
     readonly compressedFields: number;
     readonly compressionSavedBytes: number;
+    readonly latencyMarks: Partial<Record<QaapTurnLatencyMark, number>>;
 }
 
 interface ActiveTurnMetrics {
@@ -38,6 +55,7 @@ interface ActiveTurnMetrics {
     compressedFields: number;
     compressionSavedBytes: number;
     transport: QaapStreamMetricsTransport;
+    latencyMarks: Partial<Record<QaapTurnLatencyMark, number>>;
 }
 
 export function isQaapStreamMetricsEnabled(): boolean {
@@ -106,6 +124,20 @@ export class QaapConversationStreamMetricsCollector {
         return undefined;
     }
 
+    recordLatencyMark(
+        conversationId: string | undefined,
+        mark: QaapTurnLatencyMark,
+        at = Date.now(),
+    ): void {
+        if (!isQaapStreamMetricsEnabled() || !conversationId) {
+            return;
+        }
+        const turn = this.ensureTurn(conversationId);
+        if (turn.latencyMarks[mark] === undefined) {
+            turn.latencyMarks[mark] = at;
+        }
+    }
+
     finishTurn(conversationId: string): QaapConversationStreamMetricsSnapshot | undefined {
         if (!isQaapStreamMetricsEnabled()) {
             return undefined;
@@ -133,6 +165,7 @@ export class QaapConversationStreamMetricsCollector {
             compressedFields: 0,
             compressionSavedBytes: 0,
             transport: 'unknown',
+            latencyMarks: {},
         };
         this.active.set(conversationId, created);
         return created;
@@ -156,7 +189,17 @@ export class QaapConversationStreamMetricsCollector {
             updatedEvents: turn.updatedEvents,
             compressedFields: turn.compressedFields,
             compressionSavedBytes: turn.compressionSavedBytes,
+            latencyMarks: this.toRelativeLatencyMarks(turn),
         };
+    }
+
+    protected toRelativeLatencyMarks(turn: ActiveTurnMetrics): Partial<Record<QaapTurnLatencyMark, number>> {
+        const base = turn.latencyMarks.ui_submit_clicked ?? turn.startedAt;
+        const relative: Partial<Record<QaapTurnLatencyMark, number>> = {};
+        for (const [mark, at] of Object.entries(turn.latencyMarks) as [QaapTurnLatencyMark, number][]) {
+            relative[mark] = Math.max(0, at - base);
+        }
+        return relative;
     }
 }
 
@@ -171,6 +214,7 @@ export function formatQaapStreamMetricsLog(snapshot: QaapConversationStreamMetri
         `deltas=${snapshot.messageDeltaEvents}`,
         `compressedFields=${snapshot.compressedFields}`,
         `saved=${formatBytes(snapshot.compressionSavedBytes)}`,
+        `latency=${formatLatencyMarks(snapshot.latencyMarks)}`,
     ].join(' ');
 }
 
@@ -239,6 +283,14 @@ function formatBytes(bytes: number): string {
         return `${round2(bytes / 1024)}KB`;
     }
     return `${round2(bytes / (1024 * 1024))}MB`;
+}
+
+function formatLatencyMarks(marks: Partial<Record<QaapTurnLatencyMark, number>>): string {
+    const keys = Object.keys(marks) as QaapTurnLatencyMark[];
+    if (keys.length === 0) {
+        return 'none';
+    }
+    return keys.map(key => `${key}:${marks[key]}ms`).join(',');
 }
 
 function round2(value: number): number {

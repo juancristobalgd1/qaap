@@ -131,11 +131,11 @@ export class MobileProjectsTranscriptSubmitUi {
         summary: QaapAgentConversationSummaryDTO,
         pendingUserMessage: QaapAgentConversationDTO['messages'][number],
         imagePreviews?: readonly QaapTranscriptUserImagePreview[],
-    ): void {
+    ): number | undefined {
         const cached = this.host.transcriptLastConv;
         const chatHost = this.host.resolveActiveTranscriptChatHost();
         if (!chatHost) {
-            return;
+            return undefined;
         }
         const baseConv: QaapAgentConversationDTO = cached?.id === summary.id ? cached : {
             id: summary.id,
@@ -155,6 +155,9 @@ export class MobileProjectsTranscriptSubmitUi {
             status: 'streaming',
             messages: appendOptimisticPendingUserMessage(baseConv.messages, pending),
         }, summary);
+        const renderedAt = Date.now();
+        this.host.conversations?.recordSubmitLatencyMark(summary.id, 'optimistic_render_done', renderedAt);
+        return renderedAt;
     }
 
     async submitTranscriptViaBackendConversation(
@@ -177,12 +180,14 @@ export class MobileProjectsTranscriptSubmitUi {
         if (this.submitInFlightByConversationId.has(summary.id)) {
             return;
         }
+        const submitAt = Date.now();
+        this.host.conversations?.recordSubmitLatencyMark(summary.id, 'ui_submit_clicked', submitAt);
         this.submitInFlightByConversationId.add(summary.id);
         // Fire-and-forget: a user starting a task is the natural consent moment to ask whether
         // they want a notification when it settles — browsers require a user gesture for this.
         void this.turnSettleNotifier.maybeRequestPermission();
         try {
-            await this.submitTranscriptViaBackendConversationInner(project, summary, content, options);
+            await this.submitTranscriptViaBackendConversationInner(project, summary, content, options, submitAt);
         } finally {
             this.submitInFlightByConversationId.delete(summary.id);
         }
@@ -204,17 +209,20 @@ export class MobileProjectsTranscriptSubmitUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
         } = {},
+        submitAt = Date.now(),
     ): Promise<void> {
         if (this.host.transcriptHeaderUi.isPendingNewChatSummary(summary)) {
             const pendingAgent = resolveExplicitAgentForSubmit(content, {
                 pinnedChatAgentId: options.selectedAgentId ?? options.widget?.pinnedAgent?.id ?? summary.agentId,
             }) ?? options.selectedAgentId ?? summary.agentId;
-            this.renderInstantSubmitOptimistic(summary, {
+            const optimisticAt = this.renderInstantSubmitOptimistic(summary, {
                 id: `pending-user-${Date.now()}`,
                 role: 'user',
                 content,
                 createdAt: Date.now(),
             }, options.imagePreviews);
+            const postStartAt = Date.now();
+            this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_start', postStartAt);
             const { summary: created, outbound } = await this.host.createProjectChatSession(project, summary.cwd, content, {
                 selectedAgentId: options.selectedAgentId,
                 modeId: options.modeId,
@@ -223,12 +231,20 @@ export class MobileProjectsTranscriptSubmitUi {
                 variables: options.variables,
                 agentModel: options.agentModel ?? this.resolveTranscriptSubmitAgentModel(pendingAgent, summary),
             });
+            this.host.conversations?.recordSubmitLatencyMark(created.id, 'ui_submit_clicked', submitAt);
+            if (optimisticAt !== undefined) {
+                this.host.conversations?.recordSubmitLatencyMark(created.id, 'optimistic_render_done', optimisticAt);
+            }
+            this.host.conversations?.recordSubmitLatencyMark(created.id, 'post_message_start', postStartAt);
+            this.host.conversations?.recordSubmitLatencyMark(created.id, 'post_message_end');
             this.host.seedTranscriptOptimisticSubmit(created, outbound, pendingAgent, options.imagePreviews);
             this.host.transcriptOpenSummaryId = created.id;
             this.host.transcriptOpenSummary = created;
             this.host.transcriptComposerSummary = created;
             const activeChatHost = this.host.resolveActiveTranscriptChatHost();
+            this.host.conversations?.recordSubmitLatencyMark(created.id, 'pre_post_get_start');
             const full = await getConversation(created.id);
+            this.host.conversations?.recordSubmitLatencyMark(created.id, 'pre_post_get_end');
             if (activeChatHost) {
                 this.host.transcriptLastFingerprint = undefined;
                 this.host.transcriptMessagesUi.renderTranscriptMessages(activeChatHost, full);
@@ -265,7 +281,9 @@ export class MobileProjectsTranscriptSubmitUi {
         // Zero perceived latency: paint the user bubble + activity skeleton from the cached
         // conversation before the GET/POST round-trips; the server render below reconciles.
         this.renderInstantSubmitOptimistic(summary, pendingUserMessage, options.imagePreviews);
+        this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_start');
         let base = await getConversation(summary.id);
+        this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_end');
         if (base.status === 'streaming' && isConversationTurnVisuallySettled(base)) {
             await cancelConversation(summary.id);
             base = await getConversation(summary.id);
@@ -281,6 +299,7 @@ export class MobileProjectsTranscriptSubmitUi {
         }
         try {
             const agentModel = options.agentModel ?? this.resolveTranscriptSubmitAgentModel(agent, summary);
+            this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_start');
             const updated = await postConversationMessage(summary.id, outbound, {
                 agent,
                 agentModel,
@@ -295,6 +314,7 @@ export class MobileProjectsTranscriptSubmitUi {
                     this.host.transcriptComposerToolApprovalRules,
                 ),
             });
+            this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_end');
             const nextSummary = conversationToSummary(updated);
             this.host.conversations?.recordSnapshot(nextSummary);
             const refreshedChatHost = this.host.resolveActiveTranscriptChatHost();

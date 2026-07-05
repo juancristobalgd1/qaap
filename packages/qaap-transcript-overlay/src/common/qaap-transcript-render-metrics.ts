@@ -7,6 +7,10 @@
 export type QaapTranscriptRenderMetricKind =
     | 'sse_scheduled'
     | 'sse_flushed'
+    | 'sse_summary_metadata_skip'
+    | 'sse_summary_fingerprint_check'
+    | 'approval_sync'
+    | 'approval_sync_skipped'
     | 'render_full'
     | 'render_patch_activity'
     | 'render_patch_activity_in_place'
@@ -44,6 +48,10 @@ type MetricsStore = {
 const EMPTY_COUNTS = (): Record<QaapTranscriptRenderMetricKind, number> => ({
     sse_scheduled: 0,
     sse_flushed: 0,
+    sse_summary_metadata_skip: 0,
+    sse_summary_fingerprint_check: 0,
+    approval_sync: 0,
+    approval_sync_skipped: 0,
     render_full: 0,
     render_patch_activity: 0,
     render_patch_activity_in_place: 0,

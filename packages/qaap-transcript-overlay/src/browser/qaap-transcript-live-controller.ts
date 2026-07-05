@@ -11,6 +11,7 @@ import {
     applyConversationSummaryDelta,
     shouldSkipStreamingTranscriptRefetch,
 } from '../common/qaap-transcript-sse-delta';
+import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 
 export interface QaapTranscriptLiveRefreshOptions {
     readonly forceStatusSettle?: boolean;
@@ -155,6 +156,13 @@ export class QaapTranscriptLiveController implements Disposable {
             return;
         }
         if (next.status === 'streaming' && shouldSkipStreamingTranscriptRefetch(next, this.deps.getLastSseDeltaAt())) {
+            if (this.canSkipStreamingSummaryRenderWithoutFingerprint(last, summary)) {
+                this.lastTranscriptFingerprintConv = undefined;
+                this.lastTranscriptFingerprint = undefined;
+                recordTranscriptRenderMetric('sse_summary_metadata_skip');
+                return;
+            }
+            recordTranscriptRenderMetric('sse_summary_fingerprint_check');
             // `last` was `next` on the previous tick — if its fingerprint is
             // still cached under the same object identity, reuse it instead
             // of rebuilding (exact `===` identity guard, not a value compare).
@@ -168,6 +176,23 @@ export class QaapTranscriptLiveController implements Disposable {
                 this.deps.renderConversation(next);
             }
         }
+    }
+
+    protected canSkipStreamingSummaryRenderWithoutFingerprint(
+        last: QaapAgentConversationDTO,
+        summary: QaapAgentConversationSummaryDTO,
+    ): boolean {
+        if (last.status !== 'streaming' || summary.status !== 'streaming') {
+            return false;
+        }
+        if (summary.messageCount !== last.messages.length) {
+            return false;
+        }
+        const lastMessage = last.messages[last.messages.length - 1];
+        if (summary.lastMessageRole && summary.lastMessageRole !== lastMessage?.role) {
+            return false;
+        }
+        return true;
     }
 
     async refreshNow(options?: QaapTranscriptLiveRefreshOptions): Promise<void> {
