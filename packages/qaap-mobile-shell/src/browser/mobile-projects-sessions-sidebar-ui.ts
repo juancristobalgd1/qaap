@@ -1005,7 +1005,13 @@ export class MobileProjectsSessionsSidebarUi {
         const viewToggle = {
             activeId: 'agent' as MobileViewToggleId,
             onSelect: (id: MobileViewToggleId) => {
-                void this.host.commands.executeCommand('qaap.mobile.ideHeaderView.activate', id);
+                // From the Work Hub, selecting "IDE" must open the classic IDE surface
+                // (openDesktopIde), not switch an in-IDE header view.
+                if (id === 'editor') {
+                    void this.host.commands.executeCommand('qaap.mobile.openDesktopIde');
+                } else {
+                    void this.host.commands.executeCommand('qaap.mobile.ideHeaderView.activate', id);
+                }
             },
         };
         toggleQaapAccountMenu(
