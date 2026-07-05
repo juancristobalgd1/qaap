@@ -17,6 +17,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import { resolveTranscriptEffectiveStatus } from './qaap-transcript-turn-status';
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
+import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -323,6 +324,7 @@ export interface QaapCreateConversationBody {
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
+    readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /**
      * When `true`, the server provisions an isolated git worktree (new branch off HEAD of
      * {@link cwd}) and the conversation runs there instead of the main working tree.
@@ -399,6 +401,7 @@ export interface QaapPostConversationMessageOptions {
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
+    readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
 }
 
 export async function postConversationMessage(
@@ -421,6 +424,7 @@ export async function postConversationMessage(
             interactionModeId: options.interactionModeId,
             approvalPolicyId: options.approvalPolicyId,
             toolApprovalRules: options.toolApprovalRules,
+            latencyMarks: options.latencyMarks,
             ...(autoApprove === false ? { autoApprove: false } : autoApprove === true ? { autoApprove: true } : {}),
         }),
     });

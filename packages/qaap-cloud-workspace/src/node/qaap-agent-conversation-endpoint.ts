@@ -25,6 +25,7 @@ import {
 } from '../common/qaap-agent-conversation-ws';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapAgUiEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
+import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
@@ -339,6 +340,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 interactionModeId: body.interactionModeId,
                 approvalPolicyId,
                 ...(toolApprovalRules ? { toolApprovalRules } : {}),
+                latencyMarks: sanitizeLatencyMarks(body.latencyMarks),
             }, ownerLogin);
             res.status(201).json(conv);
         } catch (error) {
@@ -369,6 +371,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 interactionModeId,
                 approvalPolicyId,
                 toolApprovalRules,
+                sanitizeLatencyMarks(body.latencyMarks),
             );
             res.status(202).json(conv);
         } catch (error) {
@@ -553,6 +556,19 @@ function parseRequestToolApprovalRules(
         shell: rules.shell === true ? true : rules.shell === false ? false : undefined,
         network: rules.network === true ? true : rules.network === false ? false : undefined,
     });
+}
+
+function sanitizeLatencyMarks(input: unknown): Partial<Record<QaapTurnLatencyMark, number>> | undefined {
+    if (!input || typeof input !== 'object') {
+        return undefined;
+    }
+    const result: Partial<Record<QaapTurnLatencyMark, number>> = {};
+    for (const [mark, at] of Object.entries(input)) {
+        if (typeof at === 'number' && Number.isFinite(at)) {
+            result[mark as QaapTurnLatencyMark] = at;
+        }
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function isAgentApprovalPolicyId(value: string | undefined): value is QaapAgentApprovalPolicyId {

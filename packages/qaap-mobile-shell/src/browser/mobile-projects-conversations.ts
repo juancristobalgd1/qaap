@@ -113,6 +113,7 @@ export class MobileProjectsConversations {
     protected wsReconnectAttempt = 0;
     protected liveCancelDispose: Disposable = Disposable.NULL;
     protected readonly streamMetrics = new QaapConversationStreamMetricsCollector('client');
+    protected readonly submitLatencyMarks = new Map<string, Partial<Record<QaapTurnLatencyMark, number>>>();
     protected started = false;
     protected visibilityListenerInstalled = false;
     protected transportWasDisconnected = false;
@@ -124,6 +125,22 @@ export class MobileProjectsConversations {
 
     recordSubmitLatencyMark(conversationId: string | undefined, mark: QaapTurnLatencyMark, at?: number): void {
         this.streamMetrics.recordLatencyMark(conversationId, mark, at);
+        if (!conversationId) {
+            return;
+        }
+        const marks = this.submitLatencyMarks.get(conversationId) ?? {};
+        if (marks[mark] === undefined) {
+            marks[mark] = at ?? Date.now();
+            this.submitLatencyMarks.set(conversationId, marks);
+        }
+    }
+
+    getSubmitLatencyMarks(conversationId: string | undefined): Partial<Record<QaapTurnLatencyMark, number>> | undefined {
+        if (!conversationId) {
+            return undefined;
+        }
+        const marks = this.submitLatencyMarks.get(conversationId);
+        return marks ? { ...marks } : undefined;
     }
 
     protected readonly onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();

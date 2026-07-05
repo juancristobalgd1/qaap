@@ -203,6 +203,7 @@ export class MobileProjectsBackgroundTaskUi {
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
         },
     ): Promise<QaapProjectChatSessionCreated> {
         const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);
@@ -234,6 +235,7 @@ export class MobileProjectsBackgroundTaskUi {
             interactionModeId: options.modeId,
             approvalPolicyId,
             toolApprovalRules,
+            latencyMarks: options.latencyMarks,
             ...(useWorktree ? { worktree: true } : {}),
             ...(contextPreamble ? { contextPreamble } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),

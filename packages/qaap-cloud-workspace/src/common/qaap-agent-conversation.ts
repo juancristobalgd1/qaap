@@ -13,6 +13,7 @@ import {
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapAgentMessageWireDelta } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
+import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import type { QaapParallelRunVariantStats } from './qaap-parallel-run';
 
 /** HTTP base path for the persistent agent-conversation endpoints. */
@@ -238,6 +239,8 @@ export interface QaapCreateAgentConversationRequest {
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
+    /** Optional submit diagnostics forwarded by the browser for end-to-end latency logs. */
+    readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
 }
 
 export interface QaapPostAgentMessageRequest {
@@ -254,6 +257,8 @@ export interface QaapPostAgentMessageRequest {
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
+    /** Optional submit diagnostics forwarded by the browser for end-to-end latency logs. */
+    readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
 }
 
 export interface QaapRenameAgentConversationRequest {
