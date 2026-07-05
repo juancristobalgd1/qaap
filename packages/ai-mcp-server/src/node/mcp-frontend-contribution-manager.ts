@@ -180,10 +180,11 @@ export class MCPFrontendContributionManager {
                     `${tool.name}_${delegateId}`,
                     {
                         description: tool.description ?? '',
-                        // Cast needed: SDK's Tool.inputSchema type is looser than what z.fromJSONSchema expects
+                        // Cast needed: SDK's Tool.inputSchema type is looser than what z.fromJSONSchema expects,
+                        // and the nested zod v4 instance differs from the SDK's own zod typing.
                         inputSchema: z.fromJSONSchema(tool.inputSchema as Parameters<typeof z.fromJSONSchema>[0])
-                    },
-                    async args => {
+                    } as never,
+                    (async (args: Record<string, unknown>) => {
                         try {
                             const result = await delegate.callTool(
                                 this.serverId!,
@@ -200,7 +201,7 @@ export class MCPFrontendContributionManager {
                             this.logger.error(`Error calling frontend tool ${tool.name}:`, error);
                             throw error;
                         }
-                    }
+                    }) as never
                 );
                 const registeredElements = this.registeredElements.get(delegateId) ?? [];
                 registeredElements.push(registeredTool);

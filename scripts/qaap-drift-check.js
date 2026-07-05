@@ -211,6 +211,12 @@ const ALLOWED = [
     // QaapShellExecutionServerImpl (qaap-ai-config) overrides resolveCwd/execute
     // (basename fallback + ENOENT rewrite); renderer keeps the Canceled i18n key.
     /^packages\/ai-terminal\/src\/(browser\/(shell-execution-tool|shell-execution-tool-renderer)\.tsx?|common\/shell-execution-server\.ts|node\/shell-execution-server-impl\.ts)$/,
+    // ai-ide drops @theia/file-search (single-root policy: the multi-root search
+    // provider that needed it is replaced by the fork's primary-root provider).
+    /^packages\/ai-ide\/package\.json$/,
+    // task integrates the fork-local @theia/terminal-manager (task terminals are
+    // routed to the dedicated Tasks page in tree mode).
+    /^packages\/task\/(package\.json|tsconfig\.json)$/,
     // Fork-authored spec document (agent trace Cursor-parity), not upstream content.
     /^doc\/agent-trace-cursor-parity-spec\.md$/,
     // ---- Qaap product tooling / editor config (not upstream Theia) --------
