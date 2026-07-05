@@ -39,10 +39,34 @@ function sh(cmd) {
 const reportOnly = process.env.QAAP_DRIFT_CHECK_REPORT === '1';
 const writeBaseline = process.argv.includes('--write-baseline');
 
-/** Prefer an unambiguous upstream ref (local branch name can lag behind CI fetch). */
+const adoptedBasePath = path.join(__dirname, 'qaap-upstream-base.txt');
+
+/** The upstream commit the fork was last content-synced to (see qaap-upstream-base.txt). */
+function readAdoptedBase() {
+    try {
+        for (const line of fs.readFileSync(adoptedBasePath, 'utf8').split('\n')) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#')) {
+                return trimmed;
+            }
+        }
+    } catch {
+        /* no pin file — fall back to the ref heuristic */
+    }
+    return '';
+}
+
+/** Prefer the pinned adopted base, then an unambiguous upstream ref (local branch can lag/advance). */
 function resolveDiffBase() {
     if (process.env.QAAP_DIFF_BASE) {
         return process.env.QAAP_DIFF_BASE;
+    }
+    // The pinned adopted-base commit keeps drift meaningful when `upstream/master` has been advanced
+    // ahead of the fork's content sync. Fall through if the commit isn't present (e.g. an un-fetched
+    // CI checkout) so the check degrades gracefully rather than erroring.
+    const adopted = readAdoptedBase();
+    if (adopted && sh(`git rev-parse --verify ${adopted}^{commit}`)) {
+        return adopted;
     }
     const candidates = [
         'refs/heads/upstream/master',

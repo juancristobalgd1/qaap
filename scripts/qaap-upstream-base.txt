@@ -1,0 +1,16 @@
+# Pinned adopted-upstream base commit for the drift check.
+#
+# The fork syncs upstream Theia by CONTENT (its history is disjoint from upstream's), so drift is
+# measured as a content diff against the upstream commit the fork was last aligned to. The tracking
+# `upstream/master` ref can be advanced ahead of that (e.g. a `git fetch upstream` during an
+# in-progress sync); comparing against the moved ref then inflates drift with pure fork-lag for
+# every file upstream changed since. This file pins the base to the actually-adopted commit so the
+# drift number stays meaningful.
+#
+# Update this SHA (and re-triage the baseline) as part of finishing a content-sync to a newer
+# upstream. The commit must be present locally / fetched in CI for the pin to take effect; if it is
+# not resolvable the drift check falls back to the `upstream/master` ref heuristic. You can always
+# override with QAAP_DIFF_BASE=<ref>.
+#
+# d6f45631a = revert(core): restore console.* in electron-main services (#17657), upstream 2026-06-12
+d6f45631a
