@@ -5,6 +5,7 @@
 
 import { toArray } from '@lumino/algorithm';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
+import { Saveable } from '@theia/core/lib/browser/saveable';
 import {
     clearMobileProjectsHomeVisible,
     clearPreferAgentsSurface,
@@ -196,6 +197,11 @@ export class MobileShellWorkHubBootstrapController {
             return;
         }
         for (const widget of widgets) {
+            // Auto-save dirty editors before the discard-close so switching to Work Hub never
+            // silently drops unsaved changes; a clean widget skips straight to close.
+            if (Saveable.isDirty(widget)) {
+                await Saveable.save(widget).catch(() => undefined);
+            }
             await this.shell.closeWidget(widget.id, { save: false });
         }
     }
