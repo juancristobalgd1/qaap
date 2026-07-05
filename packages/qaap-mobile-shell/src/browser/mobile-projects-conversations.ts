@@ -26,6 +26,7 @@ import {
     QaapConversationStreamMetricsCollector,
     countCompressedWireFields,
     logQaapStreamMetrics,
+    type QaapTurnLatencyMark,
 } from '../common/qaap-agent-stream-metrics';
 import {
     expandAgentMessageForWire,
@@ -120,6 +121,10 @@ export class MobileProjectsConversations {
     protected readonly onDidChangeEmitter = new Emitter<void>();
     /** Fires whenever conversation state on the server changes (any project). */
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
+
+    recordSubmitLatencyMark(conversationId: string | undefined, mark: QaapTurnLatencyMark, at?: number): void {
+        this.streamMetrics.recordLatencyMark(conversationId, mark, at);
+    }
 
     protected readonly onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
     /** Fine-grained change metadata for selective hub / sidebar refresh. */

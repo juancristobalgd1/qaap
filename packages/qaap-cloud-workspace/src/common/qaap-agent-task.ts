@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+
 /** HTTP base path for the background agent-task endpoints. */
 export const QAAP_AGENT_TASK_API_PATH = '/qaap/api/agent-tasks';
 
@@ -45,6 +47,8 @@ export interface QaapAgentTask {
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
     /** Login of the user who owns this task — used for multi-tenant isolation. */
     readonly ownerLogin?: string;
+    /** Opt-in latency marks for submit → first output diagnostics. */
+    readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
 }
 
 /** A task plus its captured stdout/stderr log. */

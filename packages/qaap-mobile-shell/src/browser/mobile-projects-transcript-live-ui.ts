@@ -170,6 +170,7 @@ export class MobileProjectsTranscriptLiveUi {
     protected sseRenderRafId = 0;
     protected sseRenderTimer: number | undefined;
     protected lastMountedApprovalId: string | undefined;
+    protected lastInlineApprovalSyncKey: string | undefined;
     protected transcriptComposerActivityTimer: number | undefined;
     protected transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
     protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
@@ -539,6 +540,7 @@ export class MobileProjectsTranscriptLiveUi {
         }
         const prevConv = this.host.transcriptLastConv;
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, next);
+        this.host.conversations?.recordSubmitLatencyMark(next.id, 'first_transcript_delta_rendered');
         this.host.executionSurfaceTabsUi.syncPlanTabDuringStreaming();
         this.host.transcriptLastConv = next;
         this.cacheTranscriptConversation(next);
@@ -871,6 +873,7 @@ export class MobileProjectsTranscriptLiveUi {
         }
         this.pendingSseRenderConv = undefined;
         this.lastMountedApprovalId = undefined;
+        this.lastInlineApprovalSyncKey = undefined;
         this.transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
         this.transcriptPreviewPollMisses = 0;
         this.stopTranscriptComposerActivityRefresh();
@@ -968,21 +971,29 @@ export class MobileProjectsTranscriptLiveUi {
 
     syncTranscriptPendingApproval(conv: QaapAgentConversationDTO): void {
         const chatHost = this.resolveActiveTranscriptChatHost();
-        if (chatHost) {
-            removeTranscriptPendingApprovalHosts(chatHost);
-        }
         if (!conversationUsesInteractiveApprovals(conv)) {
+            if (chatHost && this.lastInlineApprovalSyncKey !== undefined) {
+                removeTranscriptPendingApprovalHosts(chatHost);
+                this.lastInlineApprovalSyncKey = undefined;
+            }
             if (this.lastMountedApprovalId !== undefined) {
                 clearTranscriptPendingApprovalBar(this.host.transcriptComposerHost);
                 this.lastMountedApprovalId = undefined;
             }
             return;
         }
+        const pending = resolveTranscriptInlineApproval(this.host.cachedAgentApprovals, conv.id);
+        const pendingId = pending?.id;
+        const syncKey = this.buildTranscriptApprovalSyncKey(chatHost, conv, pendingId);
+        if (syncKey === this.lastInlineApprovalSyncKey && pendingId === this.lastMountedApprovalId) {
+            recordTranscriptRenderMetric('approval_sync_skipped');
+            return;
+        }
+        recordTranscriptRenderMetric('approval_sync');
+        this.lastInlineApprovalSyncKey = syncKey;
         if (chatHost) {
             this.reconcileTranscriptInlineToolApprovalCards(chatHost, conv);
         }
-        const pending = resolveTranscriptInlineApproval(this.host.cachedAgentApprovals, conv.id);
-        const pendingId = pending?.id;
         if (pendingId === this.lastMountedApprovalId) {
             return;
         }
@@ -1013,6 +1024,40 @@ export class MobileProjectsTranscriptLiveUi {
         if (pending) {
             scrollTranscriptPendingApprovalIntoView(this.host.transcriptComposerHost);
         }
+    }
+
+    protected buildTranscriptApprovalSyncKey(
+        chatHost: HTMLElement | undefined,
+        conv: QaapAgentConversationDTO,
+        pendingId: string | undefined,
+    ): string {
+        const approvals = this.host.cachedAgentApprovals
+            .filter(approval => approval.conversationId === conv.id)
+            .map(approval => `${approval.id}:${approval.toolUseId ?? ''}:${approval.kind}`)
+            .sort()
+            .join(',');
+        const visibleToolIds = chatHost
+            ? [...chatHost.querySelectorAll<HTMLDetailsElement>(`details[${TRANSCRIPT_TOOL_USE_ID_ATTR}]`)]
+                .map(pill => pill.getAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR) ?? '')
+                .filter(Boolean)
+                .sort()
+                .join(',')
+            : '';
+        const mountedInlineCards = chatHost
+            ? [...chatHost.querySelectorAll<HTMLElement>(`.${TRANSCRIPT_APPROVAL_CARD_CLASS}`)]
+                .map(card => card.closest<HTMLDetailsElement>(`details[${TRANSCRIPT_TOOL_USE_ID_ATTR}]`)?.getAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR) ?? '')
+                .filter(Boolean)
+                .sort()
+                .join(',')
+            : '';
+        return [
+            conv.id,
+            conv.status,
+            pendingId ?? '',
+            approvals,
+            visibleToolIds,
+            mountedInlineCards,
+        ].join('|');
     }
 
     /**

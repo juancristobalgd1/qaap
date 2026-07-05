@@ -7,6 +7,11 @@ import { expect } from 'chai';
 import { Emitter } from '@theia/core/lib/common/event';
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-transcript-agent-types';
 import { QaapTranscriptLiveController } from './qaap-transcript-live-controller';
+import {
+    enableTranscriptRenderMetrics,
+    getTranscriptRenderMetricsSnapshot,
+    resetTranscriptRenderMetrics,
+} from '../common/qaap-transcript-render-metrics';
 
 const summary = (partial: Partial<QaapAgentConversationSummaryDTO> = {}): QaapAgentConversationSummaryDTO => ({
     id: 'conv-1',
@@ -35,6 +40,13 @@ const conv = (partial: Partial<QaapAgentConversationDTO> = {}): QaapAgentConvers
 describe('QaapTranscriptLiveController', () => {
     beforeEach(() => {
         (global as unknown as { window: typeof globalThis }).window = globalThis;
+        enableTranscriptRenderMetrics(true);
+        resetTranscriptRenderMetrics();
+    });
+
+    afterEach(() => {
+        resetTranscriptRenderMetrics();
+        enableTranscriptRenderMetrics(false);
     });
 
     it('handleSummaryUpdated updates conv state but skips render for a metadata-only SSE tick while streaming', () => {
@@ -61,6 +73,36 @@ describe('QaapTranscriptLiveController', () => {
         controller.handleSummaryUpdated(summary({ updatedAt: 11 }));
         expect(rendered).to.equal(0);
         expect(lastConv.updatedAt).to.equal(11);
+        const metrics = getTranscriptRenderMetricsSnapshot();
+        expect(metrics.sse_summary_metadata_skip).to.equal(1);
+        expect(metrics.sse_summary_fingerprint_check).to.equal(0);
+        controller.dispose();
+        changeEmitter.dispose();
+    });
+
+    it('handleSummaryUpdated falls back to the fingerprint path when summary message count is ahead', () => {
+        let rendered = 0;
+        let lastConv = conv();
+        const changeEmitter = new Emitter<void>();
+        const controller = new QaapTranscriptLiveController({
+            isWatching: () => true,
+            getOpenSummary: () => summary(),
+            setOpenSummary: () => undefined,
+            getLastConv: () => lastConv,
+            setLastConv: next => { if (next) { lastConv = next; } },
+            getLastSseDeltaAt: () => Date.now(),
+            setLastSseDeltaAt: () => undefined,
+            findSummaryById: () => summary(),
+            refreshConversation: async () => undefined,
+            renderConversation: () => { rendered += 1; },
+            onApprovalRefresh: () => undefined,
+            conversationsOnDidChange: changeEmitter.event,
+        });
+        controller.handleSummaryUpdated(summary({ messageCount: 2, updatedAt: 11 }));
+        expect(rendered).to.equal(0);
+        const metrics = getTranscriptRenderMetricsSnapshot();
+        expect(metrics.sse_summary_metadata_skip).to.equal(0);
+        expect(metrics.sse_summary_fingerprint_check).to.equal(1);
         controller.dispose();
         changeEmitter.dispose();
     });
