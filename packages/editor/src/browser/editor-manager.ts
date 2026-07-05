@@ -25,7 +25,6 @@ import { Range, Position, Location, TextEditor } from './editor';
 import { EditorWidgetFactory } from './editor-widget-factory';
 import { NavigationLocationService } from './navigation/navigation-location-service';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
-import { ILogger } from '@theia/core';
 
 export interface WidgetId {
     id: number;
@@ -73,9 +72,6 @@ export class EditorManager extends NavigatableWidgetOpenHandler<EditorWidget> {
 
     @inject(NavigationLocationService)
     protected readonly navigationLocationService: NavigationLocationService;
-
-    @inject(ILogger) @named('editor:EditorManager')
-    protected readonly logger: ILogger;
 
     @postConstruct()
     protected override init(): void {
@@ -323,7 +319,7 @@ export class EditorManager extends NavigatableWidgetOpenHandler<EditorWidget> {
                     return selection;
                 }
             } catch (error) {
-                this.logger.error(error);
+                console.error(error);
             }
         }
         return undefined;

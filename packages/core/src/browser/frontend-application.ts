@@ -27,7 +27,6 @@ import { CorePreferences } from '../common/core-preferences';
 import { WindowService } from './window/window-service';
 import { TooltipService } from './tooltip-service';
 import { FrontendApplicationContribution } from './frontend-application-contribution';
-import { ILogger } from '../common/logger';
 
 const TIMER_WARNING_THRESHOLD = 100;
 
@@ -48,9 +47,6 @@ export class FrontendApplication {
 
     @inject(BackendStopwatch)
     protected readonly backendStopwatch: BackendStopwatch;
-
-    @inject(ILogger) @named('core:FrontendApplication')
-    protected readonly logger: ILogger;
 
     private settlementContext?: MeasurementContext<FrontendApplicationContribution>;
 
@@ -221,10 +217,10 @@ export class FrontendApplication {
             return await this.layoutRestorer.restoreLayout(this);
         } catch (error) {
             if (ApplicationShellLayoutMigrationError.is(error)) {
-                this.logger.warn(error.message);
-                this.logger.info('Initializing the default layout instead...');
+                console.warn(error.message);
+                console.info('Initializing the default layout instead...');
             } else {
-                this.logger.error('Could not restore layout', error);
+                console.error('Could not restore layout', error);
             }
             return false;
         }
@@ -262,7 +258,7 @@ export class FrontendApplication {
                     await this.measureContribution(contribution, 'initialize',
                         () => contribution.initialize!());
                 } catch (error) {
-                    this.logger.error('Could not initialize contribution', error);
+                    console.error('Could not initialize contribution', error);
                 }
             }
         }
@@ -273,7 +269,7 @@ export class FrontendApplication {
                     await this.measureContribution(contribution, 'configure',
                         () => contribution.configure!(this));
                 } catch (error) {
-                    this.logger.error('Could not configure contribution', error);
+                    console.error('Could not configure contribution', error);
                 }
             }
         }
@@ -298,7 +294,7 @@ export class FrontendApplication {
                     await this.measureContribution(contribution, 'onStart',
                         () => contribution.onStart!(this));
                 } catch (error) {
-                    this.logger.error('Could not start contribution', error);
+                    console.error('Could not start contribution', error);
                 }
             }
         }
@@ -308,17 +304,17 @@ export class FrontendApplication {
      * Stop the frontend application contributions. This is called when the window is unloaded.
      */
     protected stopContributions(): void {
-        this.logger.info('>>> Stopping frontend contributions...');
+        console.info('>>> Stopping frontend contributions...');
         for (const contribution of this.contributions.getContributions()) {
             if (contribution.onStop) {
                 try {
                     contribution.onStop(this);
                 } catch (error) {
-                    this.logger.error('Could not stop contribution', error);
+                    console.error('Could not stop contribution', error);
                 }
             }
         }
-        this.logger.info('<<< All frontend contributions have been stopped.');
+        console.info('<<< All frontend contributions have been stopped.');
     }
 
     protected async measureContribution<T>(contribution: FrontendApplicationContribution, hook: string, fn: () => MaybePromise<T>): Promise<T> {

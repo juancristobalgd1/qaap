@@ -22,7 +22,6 @@ import Route = require('route-parser');
 import { Channel, ChannelMultiplexer } from '../../common/message-rpc/channel';
 import { FrontendConnectionService } from './frontend-connection-service';
 import { BackendApplicationContribution } from '../backend-application';
-import { ILogger } from '../../common/logger';
 
 export const MessagingContainer = Symbol('MessagingContainer');
 export const MainChannel = Symbol('MainChannel');
@@ -37,9 +36,6 @@ export class DefaultMessagingService implements MessagingService, BackendApplica
 
     @inject(ContributionProvider) @named(ConnectionContainerModule)
     protected readonly connectionModules: ContributionProvider<interfaces.ContainerModule>;
-
-    @inject(ILogger) @named('core:DefaultMessagingService')
-    protected readonly logger: ILogger;
 
     @inject(ContributionProvider) @named(MessagingService.Contribution)
     protected readonly contributions: ContributionProvider<MessagingService.Contribution>;
@@ -66,8 +62,8 @@ export class DefaultMessagingService implements MessagingService, BackendApplica
         const channelHandlers = this.getConnectionChannelHandlers(channel);
         multiplexer.onDidOpenChannel(event => {
             if (channelHandlers.route(event.id, event.channel)) {
-                this.logger.debug(`Opening channel for service path '${event.id}'.`);
-                event.channel.onClose(() => this.logger.info(`Closing channel on service path '${event.id}'.`));
+                console.debug(`Opening channel for service path '${event.id}'.`);
+                event.channel.onClose(() => console.info(`Closing channel on service path '${event.id}'.`));
             }
         });
     }

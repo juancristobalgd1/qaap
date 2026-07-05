@@ -16,7 +16,7 @@
 
 import { LanguageQuickPickItem, LanguageQuickPickService } from '@theia/core/lib/browser/i18n/language-quick-pick-service';
 import { RequestContext, RequestService } from '@theia/core/shared/@theia/request';
-import { inject, injectable, named } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { LanguageInfo } from '@theia/core/lib/common/i18n/localization';
 import { PluginPackage, PluginServer } from '@theia/plugin-ext';
 import { OVSXClientProvider } from '../common/ovsx-client-provider';
@@ -24,7 +24,6 @@ import { VSXSearchEntry } from '@theia/ovsx-client';
 import { VSCodeExtensionUri } from '@theia/plugin-ext-vscode/lib/common/plugin-vscode-uri';
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { ILogger } from '@theia/core';
 
 @injectable()
 export class VSXLanguageQuickPickService extends LanguageQuickPickService {
@@ -40,9 +39,6 @@ export class VSXLanguageQuickPickService extends LanguageQuickPickService {
 
     @inject(MessageService)
     protected readonly messageService: MessageService;
-
-    @inject(ILogger) @named('vsx-registry:VSXLanguageQuickPickService')
-    protected readonly logger: ILogger;
 
     protected override async getAvailableLanguages(): Promise<LanguageQuickPickItem[]> {
         const client = await this.clientProvider();
@@ -86,7 +82,7 @@ export class VSXLanguageQuickPickService extends LanguageQuickPickService {
             }
             return Array.from(languages.values());
         } catch (error) {
-            this.logger.error(error);
+            console.error(error);
             return [];
         }
     }

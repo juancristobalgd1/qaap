@@ -21,16 +21,11 @@
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Deferred } from '@theia/core/lib/common/promise-util';
-import { injectable, inject, postConstruct, named } from '@theia/core/shared/inversify';
+import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { NamedProblemPattern, ProblemLocationKind, ProblemPattern, ProblemPatternContribution } from '../common';
-import { ILogger } from '@theia/core';
 
 @injectable()
 export class ProblemPatternRegistry {
-
-    @inject(ILogger) @named('task:ProblemPatternRegistry')
-    protected readonly logger: ILogger;
-
     private readonly patterns = new Map<string, NamedProblemPattern | NamedProblemPattern[]>();
     private readyPromise = new Deferred<void>();
 
@@ -56,7 +51,7 @@ export class ProblemPatternRegistry {
             return toDispose;
         }
         if (!value.name) {
-            this.logger.error('Only named Problem Patterns can be registered.');
+            console.error('Only named Problem Patterns can be registered.');
             return Disposable.NULL;
         }
         const problemPattern = ProblemPattern.fromProblemPatternContribution(value);

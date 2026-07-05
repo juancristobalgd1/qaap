@@ -18,7 +18,6 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import * as chai from 'chai';
 import { ResourceTextEdit } from '@theia/monaco-editor-core/esm/vs/editor/browser/services/bulkEditService';
 import { URI as Uri } from '@theia/core/shared/vscode-uri';
-import { ILogger } from '@theia/core/lib/common/logger';
 
 let disableJSDOM = enableJSDOM();
 
@@ -27,7 +26,6 @@ FrontendApplicationConfigProvider.set({});
 
 import { Container } from '@theia/core/shared/inversify';
 import { BulkEditInfoNode, BulkEditTree } from './bulk-edit-tree';
-import { MockLogger } from '@theia/core/lib/common/test/mock-logger';
 
 const expect = chai.expect;
 let bulkEditTree: BulkEditTree;
@@ -41,7 +39,6 @@ before(() => {
     disableJSDOM = enableJSDOM();
 
     testContainer = new Container();
-    testContainer.bind(ILogger).to(MockLogger).inSingletonScope();
     testContainer.bind(BulkEditTree).toSelf();
     bulkEditTree = testContainer.get(BulkEditTree);
 

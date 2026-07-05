@@ -14,7 +14,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, postConstruct, named } from '@theia/core/shared/inversify';
+import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { MarkdownRendererService as CodeMarkdownRenderer }
     from '@theia/monaco-editor-core/esm/vs/platform/markdown/browser/markdownRenderer';
 import { StandaloneServices } from '@theia/monaco-editor-core/esm/vs/editor/standalone/browser/standaloneServices';
@@ -27,13 +27,11 @@ import { MarkdownRenderer, MarkdownRenderOptions, MarkdownRenderResult } from '@
 import { MarkdownRenderOptions as MonacoMarkdownRenderOptions } from '@theia/monaco-editor-core/esm/vs/base/browser/markdownRenderer';
 import { MarkdownString } from '@theia/core/lib/common/markdown-rendering';
 import { DisposableStore } from '@theia/monaco-editor-core/esm/vs/base/common/lifecycle';
-import { DisposableCollection, DisposableGroup, ILogger } from '@theia/core';
+import { DisposableCollection, DisposableGroup } from '@theia/core';
 
 @injectable()
 export class MonacoMarkdownRenderer implements MarkdownRenderer {
     @inject(OpenerService) protected readonly openerService: OpenerService;
-    @inject(ILogger) @named('monaco:MonacoMarkdownRenderer')
-    protected readonly logger: ILogger;
 
     protected delegate: CodeMarkdownRenderer;
     protected _openerService: OpenerService | undefined;
@@ -99,7 +97,7 @@ export class MonacoMarkdownRenderer implements MarkdownRenderer {
             await open(this.openerService, uri, options);
             return true;
         } catch (e) {
-            this.logger.error(`Fail to open '${uri.toString()}':`, e);
+            console.error(`Fail to open '${uri.toString()}':`, e);
             return false;
         }
     }

@@ -37,7 +37,6 @@ import {
     KeybindingRegistry, LabelProvider, WidgetOpenerOptions, StorageService, QuickInputService,
     codicon, CommonCommands, FrontendApplicationContribution, OnWillStopAction, Dialog, ConfirmDialog, FrontendApplication, Widget, SHELL_TABBAR_CONTEXT_MENU
 } from '@theia/core/lib/browser';
-import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { TERMINAL_WIDGET_FACTORY_ID, TerminalWidgetFactoryOptions, TerminalWidgetImpl } from './terminal-widget-impl';
 import { TerminalService } from './base/terminal-service';
@@ -165,16 +164,6 @@ export namespace TerminalCommands {
         label: 'Select All',
         category: TERMINAL_CATEGORY,
     });
-    export const PASTE_TERMINAL = Command.toDefaultLocalizedCommand({
-        id: 'workbench.action.terminal.paste',
-        category: TERMINAL_CATEGORY,
-        label: 'Paste into Active Terminal'
-    });
-    export const COPY_TERMINAL_SELECTION = Command.toDefaultLocalizedCommand({
-        id: 'workbench.action.terminal.copySelection',
-        category: TERMINAL_CATEGORY,
-        label: 'Copy Selection'
-    });
 
     /**
      * Command that displays all terminals that are currently opened
@@ -240,9 +229,6 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
 
     @inject(TerminalCopyOnSelectionHandler)
     protected readonly copyHandler: TerminalCopyOnSelectionHandler;
-
-    @inject(ClipboardService)
-    protected readonly clipboardService: ClipboardService;
 
     @inject(ContextKeyService)
     protected readonly contextKeyService: ContextKeyService;
@@ -684,45 +670,18 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
             isEnabled: () => !!this.currentTerminal,
             execute: () => this.currentTerminal?.selectAll()
         });
-        commands.registerCommand(TerminalCommands.PASTE_TERMINAL, {
-            isEnabled: () => !!this.getPasteTargetTerminal(),
-            execute: async () => {
-                const terminal = this.getPasteTargetTerminal();
-                if (!terminal) {
-                    return;
-                }
-                const text = await this.clipboardService.readText();
-                if (text) {
-                    terminal.paste(text);
-                }
-            }
-        });
-        commands.registerCommand(TerminalCommands.COPY_TERMINAL_SELECTION, {
-            isEnabled: () => !!this.getCopySourceTerminal(),
+        commands.registerHandler(CommonCommands.COPY.id, {
             execute: () => {
-                const terminal = this.getCopySourceTerminal();
-                if (!terminal) {
-                    return;
+                const terminal = this.shell.activeWidget;
+                if (terminal instanceof TerminalWidget && terminal.hasSelection()) {
+                    this.copyHandler.syncCopy(terminal.getSelection());
                 }
-                this.copyHandler.syncCopy(terminal.getSelection());
+            },
+            isEnabled: () => {
+                const terminal = this.shell.activeWidget;
+                return terminal instanceof TerminalWidget && terminal.hasSelection();
             }
         });
-    }
-
-    protected getPasteTargetTerminal(): TerminalWidget | undefined {
-        const terminal = this.shell.activeWidget;
-        if (terminal instanceof TerminalWidget && this.terminalPreferences['terminal.enablePaste']) {
-            return terminal;
-        }
-        return undefined;
-    }
-
-    protected getCopySourceTerminal(): TerminalWidget | undefined {
-        const terminal = this.shell.activeWidget;
-        if (terminal instanceof TerminalWidget && terminal.hasSelection() && this.terminalPreferences['terminal.enableCopy']) {
-            return terminal;
-        }
-        return undefined;
     }
 
     protected toggleTerminal(): void {
@@ -806,12 +765,10 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
             commandId: TerminalCommands.SPLIT.id
         });
         menus.registerMenuAction([...TerminalMenus.TERMINAL_CONTEXT_MENU, '_2'], {
-            commandId: TerminalCommands.COPY_TERMINAL_SELECTION.id,
-            label: nls.localizeByDefault('Copy')
+            commandId: CommonCommands.COPY.id
         });
         menus.registerMenuAction([...TerminalMenus.TERMINAL_CONTEXT_MENU, '_2'], {
-            commandId: TerminalCommands.PASTE_TERMINAL.id,
-            label: nls.localizeByDefault('Paste')
+            commandId: CommonCommands.PASTE.id
         });
         menus.registerMenuAction([...TerminalMenus.TERMINAL_CONTEXT_MENU, '_2'], {
             commandId: TerminalCommands.SELECT_ALL.id
@@ -939,16 +896,6 @@ export class TerminalFrontendContribution implements FrontendApplicationContribu
         keybindings.registerKeybinding({
             command: TerminalCommands.TERMINAL_CLEAR.id,
             keybinding: 'ctrlcmd+k',
-            when: 'terminalFocus'
-        });
-        keybindings.registerKeybinding({
-            command: TerminalCommands.PASTE_TERMINAL.id,
-            keybinding: 'ctrlcmd+v',
-            when: 'terminalFocus'
-        });
-        keybindings.registerKeybinding({
-            command: TerminalCommands.COPY_TERMINAL_SELECTION.id,
-            keybinding: 'ctrlcmd+c',
             when: 'terminalFocus'
         });
         keybindings.registerKeybinding({

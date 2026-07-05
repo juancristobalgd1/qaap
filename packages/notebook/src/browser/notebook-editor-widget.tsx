@@ -291,7 +291,7 @@ export class NotebookEditorWidget extends ReactWidget implements Navigatable, Sa
                 {this.notebookMainToolbarRenderer.render(this._model, this.node)}
                 <div
                     className='theia-notebook-viewport'
-                    ref={ref => { this.viewportService.viewportElement = ref || undefined; }}
+                    ref={(ref: HTMLDivElement) => this.viewportService.viewportElement = ref}
                 >
                     <PerfectScrollbar className='theia-notebook-scroll-container'
                         ref={this.scrollBarRef}

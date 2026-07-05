@@ -14,10 +14,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { OS, Path, QuickInputService, ILogger } from '@theia/core';
+import { OS, Path, QuickInputService } from '@theia/core';
 import { OpenerService } from '@theia/core/lib/browser';
 import URI from '@theia/core/lib/common/uri';
-import { inject, injectable, named } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { Position } from '@theia/editor/lib/browser';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { TerminalWidget } from './base/terminal-widget';
@@ -33,8 +33,6 @@ export class FileLinkProvider implements TerminalLinkProvider {
     @inject(FileService) protected fileService: FileService;
     @inject(FileSearchService) protected searchService: FileSearchService;
     @inject(WorkspaceService) protected readonly workspaceService: WorkspaceService;
-    @inject(ILogger) @named('terminal:FileLinkProvider')
-    protected readonly logger: ILogger;
 
     async provideLinks(line: string, terminal: TerminalWidget): Promise<TerminalLink[]> {
         const links: TerminalLink[] = [];
@@ -66,7 +64,7 @@ export class FileLinkProvider implements TerminalLinkProvider {
                 return this.isValidFileURI(toOpen);
             }
         } catch (err) {
-            this.logger.error('Error validating ' + match, err);
+            console.trace('Error validating ' + match, err);
         }
         return false;
     }
@@ -122,7 +120,7 @@ export class FileLinkProvider implements TerminalLinkProvider {
             const opener = await this.openerService.getOpener(toOpen, options);
             opener.open(toOpen, options);
         } catch (err) {
-            this.logger.error('Cannot open link ' + toOpen, err);
+            console.error('Cannot open link ' + toOpen, err);
         }
     }
 
