@@ -1816,9 +1816,9 @@ export class QaapAgentConversationStore {
         void this.persist();
     }
 
-    /** Push live parallel-run diff stats to every connected conversation SSE client. */
-    emitParallelRunStats(runId: string, variants: readonly QaapParallelRunVariantStats[]): void {
-        this.fire({ type: 'parallel-run', runId, variants });
+    /** Push live parallel-run diff stats to the run owner's connected conversation SSE clients. */
+    emitParallelRunStats(runId: string, cwd: string, variants: readonly QaapParallelRunVariantStats[]): void {
+        this.fire({ type: 'parallel-run', runId, cwd, variants });
     }
 
     protected tryAutoLinkConversationToGitBranch(conv: QaapAgentConversation): QaapAgentConversation | undefined {

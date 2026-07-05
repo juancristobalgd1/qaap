@@ -535,8 +535,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         if (event.type === 'deleted' || event.type === 'message' || event.type === 'message_delta') {
             return this.auth.ownsWorkspacePath(ctx, event.cwd);
         }
-        // 'parallel-run' events don't carry a cwd — broadcast to all.
-        return true;
+        // 'parallel-run' carries the run's base cwd — scope its diff stats to the owner.
+        return this.auth.ownsWorkspacePath(ctx, event.cwd);
     }
 }
 

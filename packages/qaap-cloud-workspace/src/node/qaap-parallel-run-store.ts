@@ -188,7 +188,7 @@ export class QaapParallelRunStore {
             dels: variant.dels,
             fileCount: variant.fileCount,
         }));
-        this.conversationStore.emitParallelRunStats(runId, variants);
+        this.conversationStore.emitParallelRunStats(runId, run.cwd, variants);
     }
 
     async choose(id: string, conversationId: string, action: QaapParallelChooseAction): Promise<QaapChooseParallelVariantResponse> {
