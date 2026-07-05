@@ -155,14 +155,58 @@
         if (startupWatchdog) { return; }
         startupWatchdog = window.setTimeout(function () {
             var preload = document.querySelector('.theia-preload');
-            var isVisible = preload && preload.style.display !== 'none' &&
+            var splashVisible = preload && preload.style.display !== 'none' &&
                 !preload.classList.contains('theia-hidden') &&
                 preload.offsetParent !== null;
-            if (isVisible) {
+            var shell = document.getElementById('theia-app-shell');
+            var shellEmpty = !shell || shell.children.length === 0;
+            if (splashVisible || shellEmpty) {
+                if (attemptStartupSelfHeal()) { return; }
                 console.warn('[Qaap] Theia startup timed out — showing retry UI');
                 showStartupError('startup');
             }
         }, 30000);
+    }
+
+    /**
+     * Stale client state (a poisoned persisted layout or an out-of-date
+     * service-worker precache from a previous deploy) can leave the app
+     * permanently blank while the server is healthy. Before surfacing the
+     * manual retry UI, try ONE automatic clean-slate reload: unregister
+     * service workers, drop the persisted Theia layouts, and reload. A
+     * sessionStorage flag guarantees this runs at most once per tab session.
+     */
+    function attemptStartupSelfHeal() {
+        try {
+            if (sessionStorage.getItem('qaap.gateSelfHealed')) { return false; }
+            sessionStorage.setItem('qaap.gateSelfHealed', '1');
+        } catch (e) { return false; }
+        console.warn('[Qaap] Startup timed out — self-healing: clearing service workers and persisted layouts, then reloading once');
+        try {
+            var keys = [];
+            for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (k && k.indexOf('theia:') === 0 && (k.indexOf(':layout') === k.length - 7 || k.indexOf('mergeEditor/layoutMode') >= 0)) {
+                    keys.push(k);
+                }
+            }
+            for (var j = 0; j < keys.length; j++) { localStorage.removeItem(keys[j]); }
+        } catch (e) { /* storage unavailable — still try the SW cleanup */ }
+        var reload = function () { window.location.reload(); };
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) { return r.unregister(); }));
+            }).then(function () {
+                if (window.caches && caches.keys) {
+                    return caches.keys().then(function (names) {
+                        return Promise.all(names.map(function (n) { return caches.delete(n); }));
+                    });
+                }
+            }).then(reload, reload);
+        } else {
+            reload();
+        }
+        return true;
     }
 
     function escapeHtml(value) {
