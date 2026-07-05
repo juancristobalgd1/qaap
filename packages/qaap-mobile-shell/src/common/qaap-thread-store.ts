@@ -210,9 +210,34 @@ export class QaapThreadStore {
         return this.listAllSummaries().filter(summary => summary.status === 'streaming');
     }
 
+    /** Cap on cached full documents; summaries stay resident, documents refetch on reopen. */
+    protected static readonly DOCUMENT_CACHE_LIMIT = 16;
+
     setDocument(document: QaapAgentConversationDTO): void {
         this.documents.set(document.id, document);
+        this.evictDocumentsIfOverCap();
         this.notifyThread(document.id);
+    }
+
+    /**
+     * Evict least-recently-inserted cached documents once past the cap so a long session across
+     * many conversations doesn't grow client memory without bound. Documents with a live thread
+     * subscriber (the open transcript) are kept; an evicted document simply refetches on reopen.
+     */
+    protected evictDocumentsIfOverCap(): void {
+        if (this.documents.size <= QaapThreadStore.DOCUMENT_CACHE_LIMIT) {
+            return;
+        }
+        for (const id of this.documents.keys()) {
+            if (this.documents.size <= QaapThreadStore.DOCUMENT_CACHE_LIMIT) {
+                break;
+            }
+            if ((this.threadSubscribers.get(id)?.size ?? 0) > 0) {
+                continue;
+            }
+            this.documents.delete(id);
+            this.liveReducers.delete(id);
+        }
     }
 
     getDocument(id: string): QaapAgentConversationDTO | undefined {
