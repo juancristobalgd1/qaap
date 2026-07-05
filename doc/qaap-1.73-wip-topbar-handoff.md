@@ -36,4 +36,18 @@ Why a full revert was NOT the right move: reverting the top-bar files to the pre
 'resolved'` — an async-dep contribution); the surgical `buildAccountMenuEntries()` edit
 avoids that entirely.
 
+## Root cause of "only Sign Out survives" — FOUND AND FIXED (July 2026)
+The account-menu enable guards were fine. The real bug: the layer-3 ai-chat merge dropped
+upstream's `bind(PendingToolConfirmationTracker)` from `ai-chat-frontend-module.ts` while
+layer 5 adopted `ToolConfirmationKeybindingContribution` (ai-chat-ui) which injects it.
+One unresolvable CommandContribution makes `container.getAll(CommandContribution)` throw
+(inversify reports it misleadingly as *"attempting to construct … in a synchronous way but
+it has asynchronous dependencies"* — the same error the WIP author hit), the root
+`ContributionProvider` catches, caches `[]` forever, and `CommandRegistry.onStart()`
+registers **zero** commands app-wide (F1 dead, palette missing, all commandId menu entries
+dropped). Same failure applied to menus/keybindings providers. Fixed by restoring the
+upstream bind (commit `4007a88ef`). Debug recipe that found it, for the next time:
+`window.theia.container.getAll(CommandContribution)` in the browser console — the thrown
+error / `getAllAsync` names the offending contribution.
+
 Rollback safety: tag `qaap-master-1.71-pre173` → the last fully-working 1.71 master.
