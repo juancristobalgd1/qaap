@@ -12,5 +12,12 @@
 # not resolvable the drift check falls back to the `upstream/master` ref heuristic. You can always
 # override with QAAP_DIFF_BASE=<ref>.
 #
-# d6f45631a = revert(core): restore console.* in electron-main services (#17657), upstream 2026-06-12
-d6f45631a
+# This is the PRE-1.73 upstream base. deccc1140 ("Stabilize master") rolled every non-qaap package
+# back to 4cb111538 — the last live-verified-boot state — after a concurrent upstream-1.73 merge
+# left the tree unbootable; that 1.73 re-adoption is preserved on branch qaap/merge-1.73. So master
+# intentionally reflects this pre-1.73 upstream, NOT the 1.73 merge base (d6f45631a, 2026-06-12),
+# against which ~76 rollback files spuriously show as drift. Pin here → drift is the ~14 genuine
+# residual seams. Advance this only when qaap/merge-1.73 is stabilized and merged.
+#
+# e1eeb5f2a = Fix OpenAI Responses API token usage aggregation (#17481), upstream 2026-05-13
+e1eeb5f2a
