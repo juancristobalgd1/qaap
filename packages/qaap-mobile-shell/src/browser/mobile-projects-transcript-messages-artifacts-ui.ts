@@ -1885,6 +1885,37 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
     }
 
+    syncTranscriptStreamingActivityRow(row: HTMLElement, conv: QaapAgentConversationDTO): boolean {
+        if (!row.hasAttribute(TRANSCRIPT_ACTIVITY_ROW_ATTR)) {
+            return false;
+        }
+        const line = row.querySelector<HTMLElement>('.theia-mobile-agent-stream-line, .qaap-agent-setup');
+        if (!line) {
+            return false;
+        }
+        const stalled = this.resolveTranscriptStreamStalled(conv);
+        const timedOut = this.resolveTranscriptStreamTimedOut(conv);
+        this.syncTranscriptStreamingActivityLine(line, conv, stalled, timedOut);
+        row.classList.toggle('theia-mod-streaming', resolveTranscriptEffectiveStatus(conv) === 'streaming');
+        row.classList.toggle('theia-mod-stream-stalled', stalled);
+        row.classList.toggle('theia-mod-stream-timed-out', timedOut);
+        row.setAttribute('aria-live', 'polite');
+        row.setAttribute('aria-busy', resolveTranscriptEffectiveStatus(conv) === 'streaming' ? 'true' : 'false');
+        row.dataset.qaapAgenticState = timedOut ? 'timeout' : stalled ? 'stall' : 'streaming';
+        const existingBanner = row.querySelector('.theia-mobile-agent-stream-timeout-banner');
+        if (timedOut) {
+            if (!existingBanner) {
+                row.append(this.createTranscriptStreamTimeoutBanner());
+            }
+        } else {
+            existingBanner?.remove();
+        }
+        if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
+            this.ensureTranscriptStreamStallWatch(row);
+        }
+        return true;
+    }
+
     patchStreamingActivityTimeline(
         row: HTMLElement,
         nextSegments: readonly QaapAgentMessageSegmentDTO[],
@@ -5032,6 +5063,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const row = document.createElement('div');
         row.setAttribute(TRANSCRIPT_ACTIVITY_ROW_ATTR, 'true');
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent theia-mod-streaming theia-mobile-agent-activity';
+        row.setAttribute('aria-live', 'polite');
+        row.setAttribute('aria-busy', 'true');
         const state = this.resolveTranscriptStreamingActivity(conv, { stalled, timedOut });
 
         // CloudCode-style setup animation: show whimsical phrases + unicode spinner
@@ -5081,6 +5114,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
             row.classList.toggle('theia-mod-stream-stalled', stalled);
             row.classList.toggle('theia-mod-stream-timed-out', timedOut);
+            row.dataset.qaapAgenticState = timedOut ? 'timeout' : stalled ? 'stall' : 'streaming';
             if (timedOut) {
                 row.append(this.createTranscriptStreamTimeoutBanner());
             }

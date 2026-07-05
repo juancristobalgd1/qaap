@@ -255,6 +255,41 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(messageHost.querySelector('.theia-mobile-agent-stream-timeout-banner')).to.equal(null);
     });
 
+    it('patches the live activity row in place while awaiting the agent response', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        enableTranscriptRenderMetrics(true);
+        try {
+            const streaming = streamingIdleConv();
+            renderUi.renderTranscriptMessages(chatHost, streaming);
+            const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+            const initialRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+            expect(initialRow).to.not.equal(null);
+
+            resetTranscriptRenderMetrics();
+            renderUi.renderTranscriptMessages(chatHost, {
+                ...streaming,
+                updatedAt: streaming.updatedAt + 1,
+            });
+
+            const patchedRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+            expect(patchedRow).to.equal(initialRow);
+            expect(patchedRow?.getAttribute('aria-busy')).to.equal('true');
+            expect(patchedRow?.dataset.qaapAgenticState).to.equal('streaming');
+            const metrics = getTranscriptRenderMetricsSnapshot();
+            expect(metrics.render_patch_activity).to.equal(1);
+            expect(metrics.render_patch_activity_in_place).to.equal(1);
+            expect(metrics.render_patch_activity_replace).to.equal(0);
+            expect(metrics.render_full).to.equal(0);
+        } finally {
+            resetTranscriptRenderMetrics();
+            enableTranscriptRenderMetrics(false);
+        }
+    });
+
     it('renders optimistic image previews in pending user rows', () => {
         const { renderUi } = createRenderUi();
         const chatHost = document.createElement('div');

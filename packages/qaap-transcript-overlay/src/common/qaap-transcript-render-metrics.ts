@@ -9,7 +9,11 @@ export type QaapTranscriptRenderMetricKind =
     | 'sse_flushed'
     | 'render_full'
     | 'render_patch_activity'
+    | 'render_patch_activity_in_place'
+    | 'render_patch_activity_replace'
     | 'render_patch_last_agent'
+    | 'render_patch_last_agent_in_place'
+    | 'render_patch_last_agent_replace'
     | 'render_patch_append'
     | 'render_patch_none'
     | 'render_skip_unchanged_tail'
@@ -42,7 +46,11 @@ const EMPTY_COUNTS = (): Record<QaapTranscriptRenderMetricKind, number> => ({
     sse_flushed: 0,
     render_full: 0,
     render_patch_activity: 0,
+    render_patch_activity_in_place: 0,
+    render_patch_activity_replace: 0,
     render_patch_last_agent: 0,
+    render_patch_last_agent_in_place: 0,
+    render_patch_last_agent_replace: 0,
     render_patch_append: 0,
     render_patch_none: 0,
     render_skip_unchanged_tail: 0,
