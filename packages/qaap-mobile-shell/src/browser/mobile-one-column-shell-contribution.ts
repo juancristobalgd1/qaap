@@ -843,6 +843,11 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     /** Last-resort guard for restored Work Hub DOM that is visible as Agents but has no mounted shell. */
     protected armAgentsSurfaceWatchdog(): void {
         const interval = window.setInterval(() => {
+            // Skip the DOM scan while the tab is hidden — nothing can go blank off-screen, and this
+            // avoids a perpetual background querySelector sweep (battery/CPU on mobile).
+            if (document.hidden) {
+                return;
+            }
             this.recoverEmptyAgentsSurface();
         }, 500);
         this.toDispose.push(Disposable.create(() => window.clearInterval(interval)));
