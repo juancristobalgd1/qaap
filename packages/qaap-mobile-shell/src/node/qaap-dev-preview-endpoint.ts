@@ -5,11 +5,13 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
-import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import * as http from 'http';
 import * as net from 'net';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import {
+    QAAP_DEV_PREVIEW_CLAIM_PATH,
     QAAP_DEV_PREVIEW_PREFIX,
     QAAP_DEV_PREVIEW_PROBE_PATH,
     buildDevPreviewWaitingHtml,
@@ -37,7 +39,14 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
+    @inject(QaapDevPreviewPortRegistry)
+    protected readonly portRegistry: QaapDevPreviewPortRegistry;
+
     configure(app: Application): void {
+        // Register static /api segments before the `:port` catch-all so they aren't parsed as ports.
+        app.post(QAAP_DEV_PREVIEW_CLAIM_PATH, (req, res) => {
+            this.handleClaim(req, res);
+        });
         app.get(`${QAAP_DEV_PREVIEW_PROBE_PATH}/:port`, (req, res) => {
             if (!this.requireHttpAuth(req, res)) {
                 return;
@@ -53,9 +62,9 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
     }
 
     /**
-     * Rejects anonymous callers. This private in-IDE proxy reaches any dev server on a
-     * loopback port of the shared backend; the public share path (token-gated) is a
-     * separate endpoint. Interim mitigation until an owner→port registry scopes access.
+     * Rejects anonymous callers. This private in-IDE proxy reaches any dev server on a loopback
+     * port of the shared backend; the public share path (token-gated) is a separate endpoint.
+     * Ownership is further scoped by {@link portRegistry} once the owner claims the port.
      * Skip-auth (single-user/local dev) is allowed through.
      */
     protected requireHttpAuth(req: Request, res: Response): boolean {
@@ -64,6 +73,44 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             return false;
         }
         return true;
+    }
+
+    /** Records that the authenticated caller owns the workspace a dev-preview port belongs to. */
+    protected handleClaim(req: Request, res: Response): void {
+        const ctx = this.auth.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            res.sendStatus(401);
+            return;
+        }
+        const body = (req.body ?? {}) as { port?: unknown; root?: unknown };
+        const port = parseQaapDevPreviewPort(typeof body.port === 'number' ? body.port : Number(body.port));
+        const root = typeof body.root === 'string' ? body.root : undefined;
+        if (port === undefined || !root) {
+            res.sendStatus(400);
+            return;
+        }
+        // assertWorkspacePathOwned re-authenticates and sends 401/403; it returns true under skip-auth.
+        if (!this.auth.assertWorkspacePathOwned(req, res, FileUri.fsPath(root), 'workspace_path')) {
+            return;
+        }
+        const owner = this.auth.resolveUserLogin(ctx);
+        if (owner) {
+            this.portRegistry.claim(port, owner);
+        }
+        res.sendStatus(204);
+    }
+
+    /** True when the port is claimed by a different login than the authenticated caller. */
+    protected isForeignClaimedPort(req: Request | http.IncomingMessage, port: number): boolean {
+        const owner = this.portRegistry.ownerOf(port);
+        if (!owner) {
+            return false; // unclaimed → fall back to the requireAuth gate
+        }
+        const ctx = this.auth.authenticate(req as unknown as Request);
+        if (ctx.kind === 'skip') {
+            return false;
+        }
+        return this.auth.resolveUserLogin(ctx) !== owner;
     }
 
     onStart(server: http.Server): void {
@@ -101,6 +148,10 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             res.status(403).type('text/plain').send('Cannot proxy the Qaap IDE port. Use a different dev-server port.');
             return;
         }
+        if (this.isForeignClaimedPort(req, port)) {
+            res.status(403).type('text/plain').send('This preview port belongs to another workspace.');
+            return;
+        }
         const targetPath = req.url || '/';
         void this.forwardHttp(req, res, port, targetPath);
     }
@@ -125,6 +176,11 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         // Reject anonymous WebSocket upgrades — mirror the HTTP-route auth gate.
         if (this.auth.authenticate(req as unknown as Request).kind === 'unauthorized') {
             socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+        if (this.isForeignClaimedPort(req, parsed.port)) {
+            socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
             socket.destroy();
             return;
         }

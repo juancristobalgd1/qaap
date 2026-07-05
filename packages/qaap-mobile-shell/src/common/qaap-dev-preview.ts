@@ -8,6 +8,9 @@ export const QAAP_DEV_PREVIEW_PREFIX = '/qaap-dev';
 
 export const QAAP_DEV_PREVIEW_PROBE_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/probe`;
 
+/** Owner claims a preview port for a workspace they own, so the proxy can deny other tenants. */
+export const QAAP_DEV_PREVIEW_CLAIM_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/claim`;
+
 export interface QaapDevPreviewProbeResponse {
     readonly ready: boolean;
     /** URL the mini-browser should load via the same-origin `/qaap-dev/:port/` proxy. */

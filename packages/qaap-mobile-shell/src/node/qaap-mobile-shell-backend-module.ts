@@ -6,6 +6,7 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
+import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubInboxEndpoint } from './qaap-github-inbox-endpoint';
@@ -23,6 +24,7 @@ export default new ContainerModule(bind => {
     bind(QaapProjectSessionStore).toSelf().inSingletonScope();
     bind(QaapGithubOauthEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapGithubOauthEndpoint);
+    bind(QaapDevPreviewPortRegistry).toSelf().inSingletonScope();
     bind(QaapDevPreviewEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapDevPreviewEndpoint);
     bind(QaapGitReviewEndpoint).toSelf().inSingletonScope();

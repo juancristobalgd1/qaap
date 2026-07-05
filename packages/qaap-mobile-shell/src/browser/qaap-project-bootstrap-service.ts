@@ -24,7 +24,8 @@ import {
     QaapProjectDescriptor,
     QaapProjectKind,
 } from './qaap-project-bootstrap-types';
-import { probeQaapDevPreviewPort, toDevPreviewUrl, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { getQaapPublicOrigin, probeQaapDevPreviewPort, toDevPreviewUrl, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { QAAP_DEV_PREVIEW_CLAIM_PATH } from '../common/qaap-dev-preview';
 import {
     getImplicitDevPort,
     getQaapIdeListenPort,
@@ -787,6 +788,8 @@ export class QaapProjectBootstrapService {
         if (existing) {
             return;
         }
+        // Claim the port for this workspace so the backend proxy denies other tenants (best-effort).
+        void this.claimDevPreviewPort(port);
         const isPrimary = this._forwardedPorts.length === 0;
         const next: QaapForwardedPort = {
             port,
@@ -806,6 +809,32 @@ export class QaapProjectBootstrapService {
             } else {
                 void this.openPrimaryPreviewWhenReady(port, url);
             }
+        }
+    }
+
+    /**
+     * Tells the backend that this workspace owns {@link port}, so the `/qaap-dev/:port` proxy can
+     * deny other tenants on a shared host. Best-effort: on failure the proxy simply falls back to
+     * its any-signed-in-user gate. Same-origin fetch carries the session cookie.
+     */
+    protected async claimDevPreviewPort(port: number): Promise<void> {
+        const origin = getQaapPublicOrigin();
+        if (!origin) {
+            return;
+        }
+        try {
+            const roots = await this.workspaceService.roots;
+            const root = roots[0]?.resource?.toString();
+            if (!root) {
+                return;
+            }
+            await fetch(`${origin}${QAAP_DEV_PREVIEW_CLAIM_PATH}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ port, root }),
+            });
+        } catch {
+            /* best-effort claim; the proxy still requires a signed-in session */
         }
     }
 
