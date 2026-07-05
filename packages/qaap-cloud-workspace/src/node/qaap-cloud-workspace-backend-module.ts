@@ -5,7 +5,9 @@
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { NodeFileUploadService } from '@theia/filesystem/lib/node/upload/node-file-upload-service';
 import { IShellTerminalServer, IShellTerminalServerOptions } from '@theia/terminal/lib/common/shell-terminal-protocol';
+import { QaapNodeFileUploadService } from './qaap-node-file-upload-service';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
@@ -31,7 +33,11 @@ import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineScheduler } from './qaap-work-hub-routine-scheduler';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
 
-export default new ContainerModule((bind, _unbind, _isBound, _rebind, _unbindAsync, onActivation) => {
+export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
+    // Confine HTTP file uploads to the caller's workspace (auth + ownership); the upstream
+    // NodeFileUploadService is unauthenticated and lets absolute paths through its traversal check.
+    bind(QaapNodeFileUploadService).toSelf().inSingletonScope();
+    rebind(NodeFileUploadService).toService(QaapNodeFileUploadService);
     bind(QaapCloudWorkspaceStore).toSelf().inSingletonScope();
     bind(QaapDockerOrchestrator).toSelf().inSingletonScope();
     bind(QaapCloudOrchestrator).toSelf().inSingletonScope();
