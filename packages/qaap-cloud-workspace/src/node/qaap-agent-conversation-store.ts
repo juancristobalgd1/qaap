@@ -1077,6 +1077,16 @@ export class QaapAgentConversationStore {
         if (!convSnapshot) {
             return;
         }
+        // Defense-in-depth: a newer turn may have superseded this task (e.g. the user sent a new
+        // message that cancelled this one). This task's taskToConversation entry is already removed
+        // by the time we get here, so a *different* active task id means this outcome is stale —
+        // drop it rather than clobber the live turn's status/message.
+        const supersedingTaskId = this.getActiveTaskIdForConversation(conversationId);
+        if (supersedingTaskId && supersedingTaskId !== task.id) {
+            this.agentStreamByTaskId.delete(task.id);
+            this.agUiStreamByTaskId.delete(task.id);
+            return;
+        }
         const usageFinalized = this.finalizeTurnContextUsage(convSnapshot, task.id, convSnapshot.agentId);
         this.agentStreamByTaskId.delete(task.id);
         this.agUiStreamByTaskId.delete(task.id);
