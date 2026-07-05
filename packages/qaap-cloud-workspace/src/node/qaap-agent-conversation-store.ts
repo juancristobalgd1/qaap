@@ -1893,10 +1893,10 @@ export class QaapAgentConversationStore {
             for (const conv of stored) {
                 // Leave a persisted 'streaming' status as-is here — sweepZombieStreamingTurns below
                 // (run once every restart, after every conversation is loaded) force-stops any turn
-                // that already exceeded the max duration with a proper failed/error trace instead of
-                // silently going back to 'idle'. A restart always drops the live task handle, so a
-                // turn still within budget can never complete on its own either; that case keeps the
-                // previous behavior of quietly resetting to 'idle'.
+                // that already exceeded the max duration with a proper failed/error trace. A restart
+                // always drops the live task handle, so a turn still within budget can never complete
+                // on its own either; that case is finalized as interrupted (also with a visible trace)
+                // via interruptStreamingTurnForRestart rather than silently reset to 'idle'.
                 const { conversation, changed } = backfillConversationTraceEvents(conv);
                 this.conversations.set(conversation.id, conversation);
                 if (changed) {
@@ -1959,9 +1959,7 @@ export class QaapAgentConversationStore {
                     changed = true;
                 }
             } else if (options?.resetSurvivorsToIdle) {
-                const conv = this.conversations.get(turn.conversationId);
-                if (conv?.status === 'streaming') {
-                    this.conversations.set(conv.id, { ...conv, status: 'idle', updatedAt: nowMs });
+                if (this.interruptStreamingTurnForRestart(turn.conversationId, nowMs)) {
                     changed = true;
                 }
             }
@@ -2017,6 +2015,33 @@ export class QaapAgentConversationStore {
             `[qaap-agent-conversation-watchdog] auto-stopped conversation ${conversationId} `
             + `after ${elapsedMs}ms streaming (max ${maxTurnMinutes}m).`,
         );
+        return true;
+    }
+
+    /**
+     * Finalize a turn that was still 'streaming' when the backend restarted. The live task
+     * handle never survives a restart, so the turn can never settle on its own; rather than
+     * silently resetting it to 'idle' — which the UI renders as a phantom completion with the
+     * user's message and no agent reply — mark it failed with a visible interrupted trace so
+     * the turn is clearly ended and can be retried.
+     */
+    protected interruptStreamingTurnForRestart(conversationId: string, nowMs: number): boolean {
+        const conv = this.conversations.get(conversationId);
+        if (!conv || conv.status !== 'streaming') {
+            return false;
+        }
+        const reason = 'The backend restarted while this turn was in progress, so it was interrupted. Retry to continue.';
+        const lastUser = [...conv.messages].reverse().find(message => message.role === 'user');
+        const lastMessage = conv.messages[conv.messages.length - 1];
+        const agentMessageId = lastMessage?.role === 'agent' ? lastMessage.id : undefined;
+        const withTrace = this.appendRunCancelledTrace(conv, agentMessageId, reason);
+        const finalized = this.finalizeStreamingAgentMessage(withTrace, agentMessageId, reason);
+        const failed = this.markTurnFailed(finalized, {
+            userMessageId: lastUser?.id ?? lastMessage?.id ?? '',
+            agentMessageId,
+            reason,
+        });
+        this.conversations.set(conversationId, { ...failed.conv, updatedAt: nowMs });
         return true;
     }
 
