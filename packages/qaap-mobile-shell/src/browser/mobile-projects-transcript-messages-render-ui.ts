@@ -660,6 +660,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             );
             if (existing && this.tryPatchStreamingAgentTextContent(existing, prevLast, lastAgent, segments, conv)) {
                 recordTranscriptRenderMetric('render_patch_last_agent');
+                recordTranscriptRenderMetric('render_patch_last_agent_in_place');
                 this.markTranscriptMessageRow(existing, lastAgent.id, isTranscriptAgentTailStreaming(conv));
                 this.removeTranscriptActivityRow(messageHost);
                 this.host.transcriptLastConv = conv;
@@ -689,6 +690,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
         if (patchKind === 'last-agent') {
             recordTranscriptRenderMetric('render_patch_last_agent');
+            recordTranscriptRenderMetric('render_patch_last_agent_replace');
             const existing = messageHost.querySelector<HTMLElement>(
                 `[${TRANSCRIPT_MESSAGE_ID_ATTR}="${CSS.escape(lastAgent.id)}"]`,
             );
@@ -749,6 +751,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const wasFollowingTail = list.isNearBottom() && !shouldPauseTranscriptAutoFollow(messageHost);
 
         if (patchKind === 'activity-only') {
+            recordTranscriptRenderMetric('render_patch_activity');
+            recordTranscriptRenderMetric('render_patch_activity_in_place');
             this.host.transcriptLastConv = conv;
             list.setItemCount(conv.messages.length);
             list.setFooter(this.buildTranscriptVirtualFooter(conv));
@@ -770,6 +774,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (patchKind === 'last-agent') {
             const existing = list.findRowByAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, lastAgent.id);
             if (existing && this.tryPatchStreamingAgentTextContent(existing, prevLast, lastAgent, segments, conv)) {
+                recordTranscriptRenderMetric('render_patch_last_agent');
+                recordTranscriptRenderMetric('render_patch_last_agent_in_place');
                 this.markTranscriptMessageRow(existing, lastAgent.id, isTranscriptAgentTailStreaming(conv));
                 this.host.transcriptLastConv = conv;
                 list.setItemCount(conv.messages.length);
@@ -790,7 +796,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.markTranscriptMessageRow(row, lastAgent.id, isTranscriptAgentTailStreaming(conv));
 
         if (patchKind === 'last-agent') {
+            recordTranscriptRenderMetric('render_patch_last_agent');
+            recordTranscriptRenderMetric('render_patch_last_agent_replace');
             list.replaceRowByAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, lastAgent.id, row);
+        } else {
+            recordTranscriptRenderMetric('render_patch_append');
         }
         list.setItemCount(conv.messages.length);
         list.setFooter(this.buildTranscriptVirtualFooter(conv));
@@ -897,19 +907,30 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     syncTranscriptActivityRow(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
         this.clearTranscriptEmptyQuickActions(messageHost, conv);
-        this.removeTranscriptActivityRow(messageHost);
+        const existingActivityRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
         messageHost.querySelectorAll('.theia-mod-streaming').forEach(element => {
+            if (element === existingActivityRow) {
+                return;
+            }
             element.classList.remove('theia-mod-streaming');
             if (element instanceof HTMLElement) {
                 this.contentUi.settleTranscriptStreamingContent(element);
             }
         });
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming' && conv.messages.at(-1)?.role === 'user') {
+            if (existingActivityRow && this.artifactsUi.syncTranscriptStreamingActivityRow(existingActivityRow, conv)) {
+                recordTranscriptRenderMetric('render_patch_activity_in_place');
+                return;
+            }
+            this.removeTranscriptActivityRow(messageHost);
+            recordTranscriptRenderMetric('render_patch_activity_replace');
             const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
             if (activityRow) {
                 messageHost.append(activityRow);
             }
+            return;
         }
+        this.removeTranscriptActivityRow(messageHost);
     }
 
     createTranscriptAgentFailureRow(
