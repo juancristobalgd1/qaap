@@ -5,6 +5,10 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import {
+    QaapGithubAuthGuard,
+    type QaapGithubAuthContext,
+} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import {
     type QaapAgentApprovalActionResponse,
     type QaapAgentApprovalRequest,
     buildControlRequestApproval,
@@ -31,12 +35,20 @@ export class QaapAgentApprovalStore {
     @inject(QaapAgentTaskRunner)
     protected readonly taskRunner: QaapAgentTaskRunner;
 
-    async list(cwd: string | undefined): Promise<QaapAgentApprovalRequest[]> {
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
+
+    async list(ctx: QaapGithubAuthContext, cwd: string | undefined): Promise<QaapAgentApprovalRequest[]> {
         await this.conversationStore.whenReady();
         const resolvedCwd = cwd?.trim() ? cwd : undefined;
         const byId = new Map<string, QaapAgentApprovalRequest>();
         for (const group of this.conversationStore.listAllGroupedByCwd()) {
             if (resolvedCwd && group.cwd !== resolvedCwd) {
+                continue;
+            }
+            // Only expose approvals for workspaces the caller owns — the store aggregates
+            // across every tenant, so ownership must gate the per-cwd group here.
+            if (!this.auth.ownsWorkspacePath(ctx, group.cwd)) {
                 continue;
             }
             for (const summary of group.conversations) {
@@ -73,21 +85,23 @@ export class QaapAgentApprovalStore {
         return [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
     }
 
-    async approve(id: string): Promise<QaapAgentApprovalActionResponse> {
-        return this.respond(id, 'approve');
+    async approve(ctx: QaapGithubAuthContext, id: string): Promise<QaapAgentApprovalActionResponse> {
+        return this.respond(ctx, id, 'approve');
     }
 
-    async reject(id: string): Promise<QaapAgentApprovalActionResponse> {
-        return this.respond(id, 'reject');
+    async reject(ctx: QaapGithubAuthContext, id: string): Promise<QaapAgentApprovalActionResponse> {
+        return this.respond(ctx, id, 'reject');
     }
 
-    protected async respond(id: string, action: 'approve' | 'reject'): Promise<QaapAgentApprovalActionResponse> {
+    protected async respond(ctx: QaapGithubAuthContext, id: string, action: 'approve' | 'reject'): Promise<QaapAgentApprovalActionResponse> {
         const parsed = this.parseApprovalId(id);
         if (!parsed) {
             return { ok: false, error: 'Invalid approval id.' };
         }
         const conv = this.conversationStore.get(parsed.conversationId);
-        if (!conv) {
+        // Treat a conversation the caller does not own as absent so ownership is not
+        // leaked — answering another tenant's prompt must never be possible.
+        if (!conv || !this.auth.ownsWorkspacePath(ctx, conv.cwd)) {
             return { ok: false, error: 'Conversation not found.' };
         }
         const taskId = parsed.taskId ?? this.conversationStore.getActiveTaskIdForConversation(parsed.conversationId);
