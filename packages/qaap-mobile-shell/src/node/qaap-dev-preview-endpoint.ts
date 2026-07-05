@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import * as http from 'http';
 import * as net from 'net';
+import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import {
     QAAP_DEV_PREVIEW_PREFIX,
     QAAP_DEV_PREVIEW_PROBE_PATH,
@@ -33,13 +34,36 @@ function getQaapBackendListenPort(): number {
 @injectable()
 export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
 
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
+
     configure(app: Application): void {
         app.get(`${QAAP_DEV_PREVIEW_PROBE_PATH}/:port`, (req, res) => {
+            if (!this.requireHttpAuth(req, res)) {
+                return;
+            }
             void this.handleProbe(req, res);
         });
         app.use(`${QAAP_DEV_PREVIEW_PREFIX}/:port`, (req, res) => {
+            if (!this.requireHttpAuth(req, res)) {
+                return;
+            }
             this.handleProxy(req, res);
         });
+    }
+
+    /**
+     * Rejects anonymous callers. This private in-IDE proxy reaches any dev server on a
+     * loopback port of the shared backend; the public share path (token-gated) is a
+     * separate endpoint. Interim mitigation until an owner→port registry scopes access.
+     * Skip-auth (single-user/local dev) is allowed through.
+     */
+    protected requireHttpAuth(req: Request, res: Response): boolean {
+        if (this.auth.authenticate(req).kind === 'unauthorized') {
+            res.status(401).type('text/plain').send('Not signed in');
+            return false;
+        }
+        return true;
     }
 
     onStart(server: http.Server): void {
@@ -96,6 +120,12 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         const pathname = (req.url ?? '').split('?')[0];
         const parsed = parseQaapDevPreviewRequestPath(pathname);
         if (!parsed || this.isIdeListenPort(parsed.port)) {
+            return;
+        }
+        // Reject anonymous WebSocket upgrades — mirror the HTTP-route auth gate.
+        if (this.auth.authenticate(req as unknown as Request).kind === 'unauthorized') {
+            socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+            socket.destroy();
             return;
         }
         const query = (req.url ?? '').includes('?') ? (req.url ?? '').slice((req.url ?? '').indexOf('?')) : '';
