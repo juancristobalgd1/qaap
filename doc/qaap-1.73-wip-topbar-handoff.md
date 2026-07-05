@@ -13,27 +13,27 @@ came from it; one is fixed, one is handed off here.
   Fixed in `mobile-projects-sessions-sidebar-ui.ts` (viewToggle `onSelect` routes
   `editor` → `qaap.mobile.openDesktopIde`).
 
-## Open — needs the WIP author (design intent + interactive testing)
-**The IDE view options (Preview / Terminal / Explorer …) were moved from FIXED TABS
-(left of the Welcome tab) INTO the avatar menu, incompletely.** Desired end-state per the
-user: those views should be **fixed tabs again**, and the avatar menu should be the
-standard account menu.
+## Fixed (landed, July 2026)
+**The IDE view options (Preview / Terminal / Explorer / PR) had been duplicated INTO the
+avatar menu by the WIP.** Resolution (per the user's reference screenshots): the views keep
+their own dedicated **▷ view picker** (the `mobileViewPickerBtn` dropdown in the tab-bar
+row, which already existed and works), and the avatar menu is back to the standard account
+menu (IDE/Agents switch + Command Palette + Work Hub overview + Settings + Sign Out).
 
-Where the WIP moved them (all in `packages/qaap-mobile-shell/src/browser/`):
-- `qaap-workbench-top-bar-widgets.ts`: added `buildIdeHeaderViewMenuEntries()` +
-  `activateIdeAvatarView()` + `activate{Preview,Terminal,Explorer}FromAvatar()`, and made
-  `buildAccountMenuEntries()` prepend those view entries to the account menu. Constructor
-  now injects `TerminalService` / `QaapMiniBrowserOpenHandler` / `QaapProjectBootstrapService`
-  (via `qaap-workbench-top-bar-factory.ts`). Also removed the top-bar terminal-toggle button.
-- `qaap-workbench-account-menu.ts`: added the `run?` callback field to menu entries.
-- View source of truth: `mobile-shell-bottom-bar-controller.ts` `getMobileIdeHeaderViewButtons()`
-  / `activateMobileIdeHeaderView()`.
+Fix: `qaap-workbench-top-bar-widgets.ts` `buildAccountMenuEntries()` no longer prepends the
+IDE-header view entries — it just returns `buildQaapAccountMenuEntries(signedIn)`. The
+IDE/Agents switch is still added separately by the caller (`onAccountClick` → `viewToggle`).
 
-Why an outside pass can't finish it safely: reverting the top-bar files to the pre-WIP
-commit `11fc06b19` compiles but throws a runtime DI error (`Could not start contribution …
-'resolved'` — an async-dep contribution); and the account menu's render/enable guards drop
-most standard commandId entries in the IDE context (only Sign Out survives), so the base
-menu alone shows a single option. Deciding tabs-vs-menu and completing/reverting the tab
-rendering needs the design intent and live click-testing.
+Note: the WIP helper chain `buildIdeHeaderViewMenuEntries()` / `activateIdeAvatarView()` /
+`activate{Preview,Explorer}FromAvatar()` / `focusOrBootstrapPreview()` is now dead code (no
+caller) but left in place — it keeps the `QaapMiniBrowserOpenHandler` / `QaapProjectBootstrapService`
+injections used, so removing it would mean touching the DI-fragile factory. Optional cleanup
+in a separate, bisectable step. (`activateTerminalFromAvatar()` is still live — used by the
+top-bar terminal button `onTerminalClick`.)
+
+Why a full revert was NOT the right move: reverting the top-bar files to the pre-WIP commit
+`11fc06b19` compiles but throws a runtime DI error (`Could not start contribution …
+'resolved'` — an async-dep contribution); the surgical `buildAccountMenuEntries()` edit
+avoids that entirely.
 
 Rollback safety: tag `qaap-master-1.71-pre173` → the last fully-working 1.71 master.

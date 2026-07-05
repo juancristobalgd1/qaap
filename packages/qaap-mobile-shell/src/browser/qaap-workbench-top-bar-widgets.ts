@@ -317,16 +317,11 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     };
 
     protected buildAccountMenuEntries(signedIn: boolean): QaapAccountMenuEntry[] {
-        const baseEntries = buildQaapAccountMenuEntries(signedIn);
-        const viewEntries = this.buildIdeHeaderViewMenuEntries();
-        if (!viewEntries.length) {
-            return baseEntries;
-        }
-        return [
-            ...viewEntries,
-            { kind: 'separator' },
-            ...baseEntries,
-        ];
+        // The IDE views (Preview / Terminal / Explorer / PR) live in the dedicated view
+        // picker (the ▷ dropdown in the tab-bar row), not in the account menu. Keep the
+        // avatar menu as the standard account menu (IDE/Agents switch is added separately
+        // by the caller via the viewToggle option).
+        return buildQaapAccountMenuEntries(signedIn);
     }
 
     protected buildIdeHeaderViewMenuEntries(): QaapAccountMenuEntry[] {
