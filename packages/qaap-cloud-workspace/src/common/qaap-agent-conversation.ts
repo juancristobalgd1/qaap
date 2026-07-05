@@ -309,7 +309,7 @@ export type QaapAgentConversationEvent =
         readonly delta: QaapAgentMessageWireDelta;
     }
     | { readonly type: 'deleted'; readonly conversationId: string; readonly cwd: string }
-    | { readonly type: 'parallel-run'; readonly runId: string; readonly variants: readonly QaapParallelRunVariantStats[] };
+    | { readonly type: 'parallel-run'; readonly runId: string; readonly cwd: string; readonly variants: readonly QaapParallelRunVariantStats[] };
 
 /** Status exposed to list rows — keeps `failed` when a user turn still carries an error. */
 export function resolveEffectiveConversationStatus(conv: QaapAgentConversation): QaapAgentConversationStatus {
