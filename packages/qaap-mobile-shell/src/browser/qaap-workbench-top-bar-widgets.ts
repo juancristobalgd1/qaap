@@ -222,7 +222,8 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         protected readonly shell: ApplicationShell,
         protected readonly terminalService: TerminalService,
         protected readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler,
-        protected readonly projectBootstrap: QaapProjectBootstrapService
+        protected readonly projectBootstrap: QaapProjectBootstrapService,
+        protected readonly workspaceService: WorkspaceService
     ) {
         const node = document.createElement('motion.div');
         node.classList.add('theia-workbench-right-controls');
@@ -276,6 +277,12 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.toDispose.push(this.shell.onDidChangeCurrentWidget(refresh));
         this.toDispose.push(this.shell.onDidAddWidget(refresh));
         this.toDispose.push(this.shell.onDidRemoveWidget(refresh));
+        // The view picker's enable checks depend on `workspaceService.opened`, which flips
+        // asynchronously after startup. Without these, a cold boot straight into the IDE
+        // surface can run the last picker update while `opened` is still false and leave
+        // the picker hidden until some unrelated command fires.
+        this.toDispose.push(this.workspaceService.onWorkspaceChanged(refresh));
+        this.toDispose.push(this.workspaceService.onWorkspaceLocationChanged(refresh));
         // Re-evaluate the mobile view picker when the viewport crosses the one-column
         // breakpoint: command/widget events alone leave it stuck when the layout mode
         // changes without any command executing (e.g. rotation or window resize).
