@@ -66,7 +66,14 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
 
     protected async handleWebhook(req: Request, res: Response): Promise<void> {
         const secret = process.env.QAAP_GITHUB_WEBHOOK_SECRET?.trim();
-        if (secret && !this.verifyWebhookSignature(req, secret)) {
+        if (!secret) {
+            // Fail closed: an unset secret means any caller could forge PR events into the
+            // inbox. Only accept unsigned webhooks under skip-auth (single-user/local dev).
+            if (!this.auth.isSkipAuthEnabled()) {
+                res.status(503).json({ error: 'Webhook secret not configured.' });
+                return;
+            }
+        } else if (!this.verifyWebhookSignature(req, secret)) {
             res.status(401).json({ error: 'Invalid webhook signature.' });
             return;
         }
