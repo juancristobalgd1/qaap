@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
+    hasAnyAgentConversationWork,
     isMobileOnboardingSessionSkipped,
     markMobileOnboardingSessionSkipped,
     shouldDeferMobileOnboardingTutorial,
@@ -95,5 +96,44 @@ describe('mobile-onboarding-tutorial-guard', () => {
             </div>
         `;
         expect(shouldDeferMobileOnboardingTutorial(root)).to.equal(true);
+    });
+
+    describe('hasAnyAgentConversationWork', () => {
+        let originalFetch: typeof globalThis.fetch | undefined;
+
+        const stubFetch = (payload: unknown, ok = true): void => {
+            (globalThis as unknown as { fetch: unknown }).fetch = async () => ({
+                ok,
+                json: async () => payload,
+            });
+        };
+
+        beforeEach(() => {
+            originalFetch = globalThis.fetch;
+        });
+
+        afterEach(() => {
+            (globalThis as unknown as { fetch: typeof globalThis.fetch | undefined }).fetch = originalFetch;
+        });
+
+        it('is true when a group has any conversation (any status)', async () => {
+            stubFetch({ groups: [{ conversations: [{ status: 'idle' }] }] });
+            expect(await hasAnyAgentConversationWork()).to.equal(true);
+        });
+
+        it('is true when a group reports streaming work without listed conversations', async () => {
+            stubFetch({ groups: [{ streamingCount: 1 }] });
+            expect(await hasAnyAgentConversationWork()).to.equal(true);
+        });
+
+        it('is false for an empty history', async () => {
+            stubFetch({ groups: [{ conversations: [] }] });
+            expect(await hasAnyAgentConversationWork()).to.equal(false);
+        });
+
+        it('is false when the request fails', async () => {
+            stubFetch({}, false);
+            expect(await hasAnyAgentConversationWork()).to.equal(false);
+        });
     });
 });

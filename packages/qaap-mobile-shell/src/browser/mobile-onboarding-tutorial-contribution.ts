@@ -25,6 +25,7 @@ import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/sh
 import { MobileHaptics } from './mobile-haptics';
 import { peekPreferDesktopIde, QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS } from '../common/qaap-mobile-work-surface-preference';
 import {
+    hasAnyAgentConversationWork,
     hasBlockingAgentConversationWork,
     isMobileOnboardingSessionSkipped,
     markMobileOnboardingSessionSkipped,
@@ -203,6 +204,11 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         if (seen || !this.mobileMq?.matches || isMobileOnboardingSessionSkipped(surface)) {
             return;
         }
+        // Product onboarding: don't show coach-marks to a user who already has agent
+        // conversation history — they are not new.
+        if (await hasAnyAgentConversationWork()) {
+            return;
+        }
         this.scheduleFirstRunWhenIdle(surface);
     }
 
@@ -300,8 +306,10 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 this.dismiss(true);
                 return;
             }
-            void hasBlockingAgentConversationWork().then(blocking => {
-                if (blocking && this.active) {
+            // Any conversation existing (created via composer or API, streaming or already idle)
+            // means the user is doing agent work — get the coach-marks out of the way for good.
+            void hasAnyAgentConversationWork().then(exists => {
+                if (exists && this.active) {
                     this.dismiss(true);
                 }
             });

@@ -76,6 +76,44 @@ export function shouldDeferMobileOnboardingTutorial(root: ParentNode = document)
 }
 
 /**
+ * True when the user has ANY agent conversation on record (any status, any workspace).
+ *
+ * The first-run tutorial is product onboarding: if the user already has agent conversation
+ * history, they are not new and the coach-marks should not appear. Used to both suppress the
+ * tutorial before it opens and to dismiss it if a conversation is created while it is open —
+ * a race-free signal (a conversation, once created, keeps existing), unlike the transient
+ * `streaming` state which a fast turn can slip through between polls.
+ */
+export async function hasAnyAgentConversationWork(): Promise<boolean> {
+    if (typeof fetch === 'undefined') {
+        return false;
+    }
+    try {
+        const response = await fetch('/qaap/api/agent-conversations/all', {
+            credentials: 'include',
+            cache: 'no-store',
+        });
+        if (!response.ok) {
+            return false;
+        }
+        const body = await response.json() as {
+            readonly groups?: ReadonlyArray<{
+                readonly streamingCount?: number;
+                readonly conversations?: ReadonlyArray<unknown>;
+            }>;
+        };
+        for (const group of body.groups ?? []) {
+            if ((group.conversations?.length ?? 0) > 0 || (group.streamingCount ?? 0) > 0) {
+                return true;
+            }
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * True when any workspace has a STREAMING agent conversation (API snapshot).
  *
  * Deliberately ignores `failed` conversations: they persist indefinitely, and treating them as
