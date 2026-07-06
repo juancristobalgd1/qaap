@@ -27,6 +27,7 @@ import {
     readTranscriptHeaderText,
     resolveMockQaiqPath,
     sampleAgentTranscriptUi,
+    sampleShellHealth,
     startNewAgentChat,
     submitPromptViaComposer,
 } from './qaap-rioja-e2e-shared.mjs';
@@ -68,6 +69,17 @@ async function main() {
         await openWorkspace(page, workspace);
         await dismissTutorial(page);
         metrics.timings.shellLoadMs = now() - tLoad;
+
+        // Runtime shell-health gate: catches the "all commands dead" class of regression that
+        // slips past compile/build (see sampleShellHealth). Must run once the shell is mounted.
+        metrics.shellHealth = await sampleShellHealth(page);
+        if (!metrics.shellHealth.ok) {
+            metrics.issues.push(
+                `Shell unhealthy: commands=${metrics.shellHealth.commandCount} `
+                + `contribs=${metrics.shellHealth.contribCount} `
+                + `${metrics.shellHealth.contribError ?? metrics.shellHealth.reason ?? ''}`.trim()
+            );
+        }
 
         metrics.backendAgents = await fetchBackendAgents(page);
         if (!metrics.backendAgents.ok || !metrics.backendAgents.agents?.some(a => a.id === 'qaiq')) {

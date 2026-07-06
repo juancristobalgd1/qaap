@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_gate:
+        description: Skip the pre-deploy smoke gate (emergency only)
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - master
@@ -30,11 +35,99 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Pre-deploy smoke gate: build the browser app, boot it with the mock QAIQ agent, and run the
+  # Rioja composer UI-flow eval — which now also asserts runtime shell health (the DI container
+  # actually registered its commands). This catches runtime-only regressions that pass compile
+  # and build:browser. The deploy job depends on this, so a red gate blocks the VPS deploy.
+  gate:
+    name: Pre-deploy smoke gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    if: github.repository == 'juancristobalgd1/qaap' && github.event.inputs.skip_gate != 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '24.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Use Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+
+      - name: Build browser app
+        shell: bash
+        run: |
+          npm ci
+          npm run build:browser
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright Chromium
+        shell: bash
+        run: cd examples/playwright && npx playwright install chromium
+
+      - name: Start browser backend with mock QAIQ
+        shell: bash
+        run: |
+          MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
+          mkdir -p "${MOCK_BIN}"
+          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "${MOCK_BIN}/qaiq"
+          echo "${MOCK_BIN}" >> "${GITHUB_PATH}"
+          cd examples/browser
+          npm run start > "${{ github.workspace }}/test-results/browser-server.log" 2>&1 &
+          echo $! > "${{ github.workspace }}/test-results/browser-server.pid"
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:3000 >/dev/null; then
+              echo "Server ready after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to start"
+          tail -n 80 "${{ github.workspace }}/test-results/browser-server.log" || true
+          exit 1
+
+      - name: Rioja composer UI flow eval (P0 gate + shell health)
+        shell: bash
+        run: cd examples/playwright && npm run rioja-ui-flow-eval
+
+      - name: Upload gate artifacts
+        if: always()
+        uses: actions/upload-artifact@6.0.0
+        with:
+          name: qaap-predeploy-gate
+          path: |
+            test-results/qaap-rioja-ui-flow/**
+            test-results/browser-server.log
+          if-no-files-found: warn
+
+      - name: Stop browser backend
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f test-results/browser-server.pid ]]; then
+            kill "$(cat test-results/browser-server.pid)" 2>/dev/null || true
+          fi
+
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-22.04
     timeout-minutes: 90
-    if: github.repository == 'juancristobalgd1/qaap'
+    needs: gate
+    # Deploy when the gate passed, or when it was intentionally skipped via workflow_dispatch.
+    # A failed/cancelled gate blocks the deploy.
+    if: >-
+      always()
+      && github.repository == 'juancristobalgd1/qaap'
+      && needs.gate.result != 'failure'
+      && needs.gate.result != 'cancelled'
 
     steps:
       - name: Skip when VPS secrets are not configured

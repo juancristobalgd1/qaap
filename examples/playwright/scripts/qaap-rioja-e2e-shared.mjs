@@ -86,6 +86,52 @@ export async function waitForShell(page, timeoutMs = 90_000) {
     await page.waitForTimeout(1500);
 }
 
+/**
+ * Runtime shell-health probe.
+ *
+ * Catches the class of regression where a single unbound contribution poisons
+ * `CommandRegistry.onStart()` and leaves the whole app with ZERO registered commands
+ * (dead palette, empty menus, every command-gated menu entry dropped). That bug passes
+ * `npm run compile` AND `npm run build:browser` because it only manifests at runtime — so a
+ * compile/build-only CI gate never sees it. Only booting the app and asking the live DI
+ * container catches it.
+ *
+ * Healthy shell: ~1770 commands / ~107 CommandContributions.
+ * Poisoned shell: ~665 commands / 0 contributions (getContributions() throws inside getAll).
+ *
+ * The generated frontend index exposes the DI container as `window.theia.container`, and the
+ * module registry as `window.theia['<pkg>/lib/<path>']`.
+ */
+export async function sampleShellHealth(page) {
+    return page.evaluate(() => {
+        const t = window.theia;
+        if (!t || !t.container) {
+            return { ok: false, reason: 'no-container' };
+        }
+        const mod = t['@theia/core/lib/common/command'];
+        if (!mod || !mod.CommandRegistry) {
+            return { ok: false, reason: 'no-command-module' };
+        }
+        let reg;
+        try {
+            reg = t.container.get(mod.CommandRegistry);
+        } catch (e) {
+            return { ok: false, reason: 'no-registry: ' + String(e).slice(0, 160) };
+        }
+        const commandCount = Array.isArray(reg.commandIds) ? reg.commandIds.length : -1;
+        let contribCount = -1;
+        let contribError;
+        try {
+            contribCount = reg.contributionProvider.getContributions().length;
+        } catch (e) {
+            contribError = String(e).slice(0, 160);
+        }
+        // Floor 800 sits well below a healthy ~1770 and well above a poisoned ~665.
+        const ok = contribError === undefined && contribCount > 0 && commandCount >= 800;
+        return { ok, commandCount, contribCount, contribError };
+    });
+}
+
 /** Match TheiaAppLoader: `/#` + absolute path (no encodeURIComponent on full path). */
 export function workspaceOpenUrl(workspace) {
     const normalized = workspace.replace(/\\/g, '/');
@@ -732,6 +778,7 @@ export function evaluateUiFlowSuccess(metrics) {
         || (metrics.conversation?.toolTraceEvents?.length ?? 0) >= 1
         || (metrics.uiDuringAgent?.maxToolRows ?? 0) >= 1;
     return {
+        shellHealthy: metrics.shellHealth?.ok === true,
         composerSubmit: metrics.promptSentViaComposer?.ok === true,
         composerRouting: composerRoutingOk,
         files: !!(metrics.files?.exists?.['index.html'] && metrics.files?.mentionsRioja && metrics.files?.hasNodeModules),
@@ -740,7 +787,8 @@ export function evaluateUiFlowSuccess(metrics) {
         noContradictoryBadges: metrics.uiDuringAgent?.contradictoryBadges !== true,
         tutorial: metrics.tutorialAfterPrompt?.ok !== false && metrics.tutorialAfterAgent?.ok !== false,
         toolTrace: toolTraceOk,
-        all: metrics.promptSentViaComposer?.ok === true
+        all: metrics.shellHealth?.ok === true
+            && metrics.promptSentViaComposer?.ok === true
             && composerRoutingOk
             && metrics.files?.exists?.['index.html']
             && metrics.files?.mentionsRioja
