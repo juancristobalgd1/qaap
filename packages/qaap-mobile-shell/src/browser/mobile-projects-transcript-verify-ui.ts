@@ -32,7 +32,9 @@ interface VerifyCheckResult {
     logTail?: string;
 }
 
-const VERIFY_AUTO_MAX_ATTEMPTS = 3;
+// One auto-fix attempt: if a single agent pass doesn't turn the check green, stop and let the user
+// decide, instead of looping the agent (and the token spend) up to three times.
+const VERIFY_AUTO_MAX_ATTEMPTS = 1;
 
 /** Panel surface for transcript verify checks in the Changes tab. */
 export interface MobileProjectsTranscriptVerifyHost {

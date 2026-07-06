@@ -9,6 +9,7 @@ import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import {
     buildVerifyRunCommand,
+    packageJsonDeclaresWorkspaces,
     QaapVerifyCheckKind,
     QaapVerifyPackageManager,
     resolveVerifyCheckFromScripts,
@@ -67,6 +68,16 @@ export async function resolveAgentVerifyChecksForCwd(cwd: string, fileService: F
         const content = await fileService.read(packageJsonUri);
         pkg = JSON.parse(content.value || '{}') as PackageJsonShape;
     } catch {
+        return [];
+    }
+
+    // Skip auto-verify at a monorepo root: the root build/test fans out to every package, so it is
+    // slow and fails on packages the agent never touched — a pre-existing failure it then wrongly
+    // tries to "fix". Detected via the package.json workspaces field or a pnpm/lerna workspace file.
+    const isMonorepoRoot = packageJsonDeclaresWorkspaces(pkg)
+        || await fileService.exists(rootUri.resolve('pnpm-workspace.yaml'))
+        || await fileService.exists(rootUri.resolve('lerna.json'));
+    if (isMonorepoRoot) {
         return [];
     }
 

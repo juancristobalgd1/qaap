@@ -20,6 +20,28 @@ const VERIFY_SCRIPT_PRIORITY: ReadonlyArray<readonly [string, QaapVerifyCheckKin
     ['lint', 'lint'],
 ];
 
+/**
+ * True when the package.json declares npm/yarn/pnpm/bun workspaces — i.e. a monorepo root whose
+ * `build`/`test` scripts fan out to every package. Auto-verify skips these: a whole-monorepo build
+ * after each turn is slow and fails on packages the agent never touched (a pre-existing failure the
+ * agent then wrongly tries to "fix"). A pnpm/lerna monorepo is also detected via its workspace file
+ * (see the resolver).
+ */
+export function packageJsonDeclaresWorkspaces(packageJson: unknown): boolean {
+    if (!packageJson || typeof packageJson !== 'object') {
+        return false;
+    }
+    const workspaces = (packageJson as { workspaces?: unknown }).workspaces;
+    if (Array.isArray(workspaces)) {
+        return workspaces.length > 0;
+    }
+    if (workspaces && typeof workspaces === 'object') {
+        const packages = (workspaces as { packages?: unknown }).packages;
+        return Array.isArray(packages) && packages.length > 0;
+    }
+    return false;
+}
+
 export function buildVerifyRunCommand(script: string, packageManager: QaapVerifyPackageManager = 'npm'): string {
     switch (packageManager) {
         case 'pnpm':

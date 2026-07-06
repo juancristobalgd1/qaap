@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     buildVerifyRunCommand,
+    packageJsonDeclaresWorkspaces,
     resolveVerifyCheckFromScripts,
 } from './qaap-agent-verify-checks';
 
@@ -49,6 +50,14 @@ describe('qaap-agent-verify-checks', () => {
         expect(buildVerifyRunCommand('build', 'pnpm')).to.equal('pnpm run build');
         expect(buildVerifyRunCommand('test', 'yarn')).to.equal('yarn test');
         expect(buildVerifyRunCommand('lint', 'bun')).to.equal('bun run lint');
+    });
+
+    it('detects a monorepo root via the workspaces field', () => {
+        expect(packageJsonDeclaresWorkspaces({ workspaces: ['packages/*'] })).to.equal(true);
+        expect(packageJsonDeclaresWorkspaces({ workspaces: { packages: ['artifacts/*'] } })).to.equal(true);
+        expect(packageJsonDeclaresWorkspaces({ name: 'single-app', scripts: { build: 'vite build' } })).to.equal(false);
+        expect(packageJsonDeclaresWorkspaces({ workspaces: [] })).to.equal(false);
+        expect(packageJsonDeclaresWorkspaces(undefined)).to.equal(false);
     });
 
 });
