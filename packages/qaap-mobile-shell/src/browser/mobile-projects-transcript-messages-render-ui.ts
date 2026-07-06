@@ -446,17 +446,34 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         // renders bypass this and clear the stamp, so a later re-settle still repaints exactly once.
         if (conv.status !== 'streaming') {
             const settledHost = this.resolveTranscriptMessageHost(host);
-            const settledKey = `${conv.id} ${buildConversationTranscriptFingerprint(conv)}`;
-            if (settledHost.childElementCount > 0 && settledHost.dataset.qaapSettledRenderKey === settledKey) {
+            // Cheap pre-check first: `updatedAt` bumps on any change, and the message count plus the
+            // last message's content length catch the common append/edit even if a caller left
+            // `updatedAt` stale. An unchanged tuple means the snapshot is identical — skip WITHOUT
+            // paying the O(messages × segments) full fingerprint. A background host re-running on
+            // another conversation's ~8/s SSE ticks now does a string compare instead of a full hash.
+            const lastSettledMessage = conv.messages[conv.messages.length - 1];
+            const cheapKey = `${conv.id}|${conv.updatedAt}|${conv.messages.length}|${lastSettledMessage?.content?.length ?? 0}`;
+            if (settledHost.childElementCount > 0 && settledHost.dataset.qaapSettledCheapKey === cheapKey) {
                 recordTranscriptRenderMetric('render_skip_unchanged_settled');
                 this.clearTranscriptEmptyQuickActions(settledHost, conv);
                 return;
             }
+            const settledKey = `${conv.id} ${buildConversationTranscriptFingerprint(conv)}`;
+            if (settledHost.childElementCount > 0 && settledHost.dataset.qaapSettledRenderKey === settledKey) {
+                recordTranscriptRenderMetric('render_skip_unchanged_settled');
+                settledHost.dataset.qaapSettledCheapKey = cheapKey;
+                this.clearTranscriptEmptyQuickActions(settledHost, conv);
+                return;
+            }
             settledHost.dataset.qaapSettledRenderKey = settledKey;
+            settledHost.dataset.qaapSettledCheapKey = cheapKey;
         } else {
             const streamingHost = this.resolveTranscriptMessageHost(host);
             if (streamingHost.dataset.qaapSettledRenderKey !== undefined) {
                 delete streamingHost.dataset.qaapSettledRenderKey;
+            }
+            if (streamingHost.dataset.qaapSettledCheapKey !== undefined) {
+                delete streamingHost.dataset.qaapSettledCheapKey;
             }
         }
         if (!conversationSwitched && this.tryPatchStreamingTranscriptMessages(host, conv)) {
