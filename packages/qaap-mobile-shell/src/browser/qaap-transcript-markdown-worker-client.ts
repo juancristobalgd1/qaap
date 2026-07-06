@@ -46,7 +46,10 @@ export class QaapTranscriptMarkdownWorkerClient {
     protected worker: Worker | undefined;
     protected workerFailed = false;
     protected nextRequestId = 0;
+    protected nextStreamId = 0;
     protected readonly hostGenerations = new WeakMap<HTMLElement, number>();
+    /** Stable per-host stream id so the worker can accumulate frozen HTML across streaming ticks. */
+    protected readonly hostStreamIds = new WeakMap<HTMLElement, number>();
     protected readonly pendingRequests = new Map<number, PendingRequest>();
 
     static get(): QaapTranscriptMarkdownWorkerClient {
@@ -129,6 +132,7 @@ export class QaapTranscriptMarkdownWorkerClient {
             content,
             previousStableLength,
             previousTotalLength,
+            streamId: this.resolveHostStreamId(host),
         };
         worker.postMessage(request);
     }
@@ -137,6 +141,16 @@ export class QaapTranscriptMarkdownWorkerClient {
         const generation = (this.hostGenerations.get(host) ?? 0) + 1;
         this.hostGenerations.set(host, generation);
         return generation;
+    }
+
+    /** Stable id per host element, so the worker's frozen-HTML accumulator survives across ticks. */
+    protected resolveHostStreamId(host: HTMLElement): number {
+        let id = this.hostStreamIds.get(host);
+        if (id === undefined) {
+            id = ++this.nextStreamId;
+            this.hostStreamIds.set(host, id);
+        }
+        return id;
     }
 
     protected ensureWorker(): Worker | undefined {

@@ -198,19 +198,47 @@ export function attachTranscriptRowDeferObserver(
     scrollHost.addEventListener('toggle', onToolToggle, true);
     toDispose.push(Disposable.create(() => scrollHost.removeEventListener('toggle', onToolToggle, true)));
 
-    const scanRows = (): void => {
-        const selector = `[${TRANSCRIPT_ROW_DEFER_ATTR}]`;
-        for (const row of scrollHost.querySelectorAll<HTMLElement>(selector)) {
-            if (observedRows.has(row)) {
-                continue;
-            }
-            observedRows.add(row);
-            observer.observe(row);
+    const selector = `[${TRANSCRIPT_ROW_DEFER_ATTR}]`;
+    const observeRow = (row: HTMLElement): void => {
+        if (observedRows.has(row)) {
+            return;
+        }
+        observedRows.add(row);
+        observer.observe(row);
+    };
+    const unobserveRow = (row: HTMLElement): void => {
+        if (observedRows.has(row)) {
+            observer.unobserve(row);
+            observedRows.delete(row);
+        }
+    };
+    const forEachDeferRow = (node: Node, visit: (row: HTMLElement) => void): void => {
+        if (!(node instanceof HTMLElement)) {
+            return;
+        }
+        if (node.hasAttribute(TRANSCRIPT_ROW_DEFER_ATTR)) {
+            visit(node);
+        }
+        for (const row of node.querySelectorAll<HTMLElement>(selector)) {
+            visit(row);
         }
     };
 
-    scanRows();
-    const mutationObserver = new MutationObserver(() => scanRows());
+    // Initial full scan; thereafter the MutationObserver only walks added/removed nodes so a tail row
+    // mutating on every streamed token no longer triggers a full-subtree querySelectorAll each tick.
+    for (const row of scrollHost.querySelectorAll<HTMLElement>(selector)) {
+        observeRow(row);
+    }
+    const mutationObserver = new MutationObserver(records => {
+        for (const record of records) {
+            for (const node of record.addedNodes) {
+                forEachDeferRow(node, observeRow);
+            }
+            for (const node of record.removedNodes) {
+                forEachDeferRow(node, unobserveRow);
+            }
+        }
+    });
     mutationObserver.observe(scrollHost, { childList: true, subtree: true });
     toDispose.push(Disposable.create(() => mutationObserver.disconnect()));
 

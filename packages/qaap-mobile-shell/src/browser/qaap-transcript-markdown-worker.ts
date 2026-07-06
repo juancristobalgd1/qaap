@@ -6,7 +6,7 @@
 import * as markdownit from '@theia/core/shared/markdown-it';
 import * as markdownitemoji from '@theia/core/shared/markdown-it-emoji';
 import { parseHTML } from 'linkedom';
-import { computeTranscriptStreamingMarkdownPatch } from './qaap-transcript-markdown-worker-stream';
+import { computeTranscriptStreamingMarkdownPatch, type TranscriptStreamingFrozenCache } from './qaap-transcript-markdown-worker-stream';
 import type {
     TranscriptMarkdownWorkerRequest,
     TranscriptMarkdownWorkerResponse,
@@ -17,6 +17,27 @@ const { window } = parseHTML('<!DOCTYPE html><html><body></body></html>');
 const createDOMPurify = require('dompurify') as (window: Window) => ReturnType<typeof require>;
 const DOMPurify = createDOMPurify(window as unknown as Window);
 const markdownIt = markdownit({ linkify: false }).use(markdownitemoji.full);
+
+/**
+ * Accumulated frozen-prefix HTML per live stream, so each streaming tick parses only the newly
+ * frozen segment instead of the whole prefix (O(n) vs O(n²) markdown-it+DOMPurify cost). Capped
+ * because a stream that ends never sends a close signal; oldest entries are evicted first.
+ */
+const STREAM_FROZEN_CACHE_LIMIT = 64;
+const streamFrozenCaches = new Map<number, TranscriptStreamingFrozenCache>();
+
+function rememberStreamFrozenCache(streamId: number, cache: TranscriptStreamingFrozenCache): void {
+    // Re-insert to keep Map iteration order = LRU; evict the oldest when over the cap.
+    streamFrozenCaches.delete(streamId);
+    streamFrozenCaches.set(streamId, cache);
+    while (streamFrozenCaches.size > STREAM_FROZEN_CACHE_LIMIT) {
+        const oldest = streamFrozenCaches.keys().next().value;
+        if (oldest === undefined) {
+            break;
+        }
+        streamFrozenCaches.delete(oldest);
+    }
+}
 
 function renderSanitizedMarkdown(markdown: string): string {
     const html = markdownIt.render(markdown);
@@ -43,12 +64,17 @@ self.onmessage = (event: MessageEvent<TranscriptMarkdownWorkerRequest>): void =>
         return;
     }
     if (message.type === 'parse_stream') {
+        const streamId = message.streamId;
         const patch = computeTranscriptStreamingMarkdownPatch(
             message.content,
             message.previousStableLength,
             message.previousTotalLength,
             renderSanitizedMarkdown,
+            streamId !== undefined ? streamFrozenCaches.get(streamId) : undefined,
         );
+        if (patch?.nextFrozenCache && streamId !== undefined) {
+            rememberStreamFrozenCache(streamId, patch.nextFrozenCache);
+        }
         if (!patch) {
             const response: TranscriptMarkdownWorkerResponse = {
                 type: 'stream_result',

@@ -17,6 +17,8 @@ export interface TranscriptMarkdownWorkerStreamRequest {
     readonly content: string;
     readonly previousStableLength: number;
     readonly previousTotalLength: number;
+    /** Stable per-host stream id so the worker can accumulate frozen HTML across ticks (O(n) render). */
+    readonly streamId?: number;
 }
 
 export type TranscriptMarkdownWorkerRequest =
