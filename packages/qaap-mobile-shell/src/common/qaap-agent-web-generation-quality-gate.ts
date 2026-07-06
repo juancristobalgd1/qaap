@@ -62,6 +62,20 @@ export function messageRequestsWebGeneration(text: string | undefined): boolean 
         || WEB_GENERATION_STACK_RE.test(normalized);
 }
 
+/**
+ * Stricter than {@link messageRequestsWebGeneration}: matches ONLY an explicit web-page noun
+ * (landing page / website / homepage / sitio web …), never the loose "build … vite" action regex.
+ *
+ * Used to gate the "replace the Vite/React starter with a landing page" auto-continuation and its
+ * quality gate. Without this, a build-error report that merely contains the command `vite build`
+ * (e.g. an auto-verify failure fed back into the conversation) trips {@link WEB_GENERATION_ACTION_RE}
+ * and derails an ordinary task (e.g. "add a formatDate function") into a full landing-page rewrite.
+ */
+export function messageExplicitlyRequestsWebPage(text: string | undefined): boolean {
+    const normalized = text?.trim();
+    return !!normalized && WEB_GENERATION_PROMPT_RE.test(normalized);
+}
+
 interface EditedArtifact {
     readonly path: string;
     readonly content: string;

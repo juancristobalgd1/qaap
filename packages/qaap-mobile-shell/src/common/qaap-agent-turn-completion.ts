@@ -9,7 +9,7 @@ import { extractDevPreviewUrlFromAgentText, messageRequestsDevPreview } from './
 import {
     agentWebGenerationPassesQualityGate,
     buildWebGenerationAutoContinuePrompt,
-    messageRequestsWebGeneration,
+    messageExplicitlyRequestsWebPage,
 } from './qaap-agent-web-generation-quality-gate';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
@@ -88,7 +88,13 @@ export function agentMessageDeliversTaskOutcome(
     if (!agentMessageDeliversBaseTaskOutcome(userContent, agentMessage)) {
         return false;
     }
-    return agentWebGenerationPassesQualityGate(userContent, agentMessage);
+    // Only judge web-generation quality when the user EXPLICITLY asked for a web page. Otherwise a
+    // normal task (e.g. "add a formatDate function") in a Vite/React workspace gets mis-flagged
+    // "incomplete" and auto-continued into a landing-page rewrite.
+    if (messageExplicitlyRequestsWebPage(userContent)) {
+        return agentWebGenerationPassesQualityGate(userContent, agentMessage);
+    }
+    return true;
 }
 
 function agentMessageDeliversBaseTaskOutcome(
@@ -148,7 +154,9 @@ export function isIncompleteAgentTurn(
 }
 
 export function buildAgentAutoContinuePrompt(userContent?: string): string {
-    if (messageRequestsWebGeneration(userContent)) {
+    // Fire the "replace the Vite/React starter with a landing page" continuation ONLY when the
+    // user explicitly asked for a web page — never off an incidental "vite build" in a build error.
+    if (messageExplicitlyRequestsWebPage(userContent)) {
         return buildWebGenerationAutoContinuePrompt(userContent);
     }
     if (messageRequestsDevPreview(userContent)) {

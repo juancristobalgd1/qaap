@@ -217,4 +217,34 @@ describe('qaap-agent-turn-completion', () => {
         expect(isIncompleteAgentTurn(prompt, agent)).to.equal(true);
         expect(buildAgentAutoContinuePrompt(prompt)).to.include('starter');
     });
+
+    it('does not derail a build-error report or a plain task into a landing-page rewrite', () => {
+        // The auto-verify UI feeds a build-failure report back into the conversation. Its text
+        // contains the command `vite build`, which used to trip the loose web-generation regex and
+        // inject "Replace the Vite/React starter…". A build-error report is not a web-page request.
+        const verifyReport = 'Verification failed. Please fix these checks:\n\n'
+            + '### Build — `pnpm run build` (exit 1)\n'
+            + '@workspace/mockup-studio build: vite build --config vite.config.ts';
+        expect(buildAgentAutoContinuePrompt(verifyReport)).to.not.include('starter');
+        expect(buildAgentAutoContinuePrompt('add a formatDate function in a new file')).to.not.include('starter');
+    });
+
+    it('treats a normal file-editing task as complete — no auto-continue', () => {
+        const agent: QaapAgentMessageDTO = {
+            id: 'a6',
+            role: 'agent',
+            content: 'Created src/date.js with formatDate.',
+            createdAt: 2,
+            segments: [{
+                type: 'tool',
+                toolUseId: 't1',
+                name: 'Write',
+                args: '{"path":"src/date.js"}',
+                finished: true,
+            }],
+        };
+        const prompt = 'add a formatDate function in a new file';
+        expect(agentMessageDeliversTaskOutcome(prompt, agent)).to.equal(true);
+        expect(isIncompleteAgentTurn(prompt, agent)).to.equal(false);
+    });
 });
