@@ -16,8 +16,18 @@ const DEV_PREVIEW_MARKER = '[QAAP dev preview]';
 const DEV_SERVER_VERIFICATION_MARKER = '[QAAP dev server verification]';
 const HONEST_REPORTING_MARKER = '[QAAP honest reporting]';
 const BENIGN_CODE_EDIT_MARKER = '[QAAP benign code edit policy]';
+const PLANNING_MARKER = '[QAAP planning]';
 
 const WEB_GENERATION_MARKER = '[QAAP web generation quality]';
+
+export function buildAgentPlanningPromptBlock(): string {
+    return [
+        PLANNING_MARKER,
+        'For any task with three or more steps, call TodoWrite with a short plan before you start editing, then mark each item completed as you finish it.',
+        'Keep exactly one item in_progress at a time so the user can follow your progress live; do not leave finished items unmarked.',
+        'Skip the todo list only for trivial one-step changes (a single edit, a one-line answer).',
+    ].join('\n');
+}
 
 export function buildAgentWebGenerationQualityPromptBlock(): string {
     return [
@@ -115,6 +125,9 @@ export function appendAgentDefaultWorkflowToPrompt(
         return prompt;
     }
     const blocks = [buildAgentDefaultWorkflowPromptBlock(options)];
+    if (!prompt.includes(PLANNING_MARKER)) {
+        blocks.push(buildAgentPlanningPromptBlock());
+    }
     if (!prompt.includes(PARALLEL_TOOLS_MARKER)) {
         blocks.push(buildAgentParallelToolsPromptBlock());
     }

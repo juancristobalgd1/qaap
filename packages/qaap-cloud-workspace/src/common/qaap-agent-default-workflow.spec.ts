@@ -9,6 +9,7 @@ import {
     buildAgentDefaultWorkflowPromptBlock,
     buildAgentDevServerVerificationPromptBlock,
     buildAgentHonestReportingPromptBlock,
+    buildAgentPlanningPromptBlock,
 } from './qaap-agent-default-workflow';
 
 describe('buildAgentDefaultWorkflowPromptBlock', () => {
@@ -32,6 +33,7 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         expect(result).to.include('4/9 checks passed');
         expect(result).to.include('[QAAP benign code edit policy]');
         expect(result).to.include('[QAAP direct execution policy]');
+        expect(result).to.include('[QAAP planning]');
         expect(result).to.include('QAIQ is a Claude Code / OpenClaude CLI');
         expect(result).to.include('not the in-browser Theia Coder agent');
         expect(result).to.include('do not refuse with a report-only workaround');
@@ -52,6 +54,16 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         const block = buildAgentDefaultWorkflowPromptBlock({ gitAvailable: false });
         expect(block).to.include('not be a git repository');
         expect(block).not.to.include('inspect git status');
+    });
+});
+
+describe('buildAgentPlanningPromptBlock', () => {
+    it('tells the agent to use TodoWrite for multi-step tasks', () => {
+        const block = buildAgentPlanningPromptBlock();
+        expect(block).to.include('[QAAP planning]');
+        expect(block).to.include('TodoWrite');
+        expect(block).to.include('three or more steps');
+        expect(block).to.include('one item in_progress at a time');
     });
 });
 

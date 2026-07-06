@@ -81,7 +81,7 @@ import {
 import { resolveRequestAgentModel, resolveTaskAgentModel } from '../common/qaap-agent-task';
 import { resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
 import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default-workflow';
-import { prependAgentTaskContextToPrompt, truncateProjectInfo } from '../common/qaap-agent-task-context';
+import { prependAgentTaskContextToPrompt, truncateProjectInfo, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
 import {
     applyAntigravityModelSetting,
     isAntigravityCliCommand,
@@ -133,6 +133,22 @@ interface QaapGenericCommandResult {
 
 /** Cap on the per-project info artifact injected into prompts, to keep the agent command bounded. */
 const PROJECT_INFO_MAX_CHARS = 8000;
+
+/** Cap on the workspace agent-instructions file (CLAUDE.md / AGENTS.md) injected into prompts. */
+const AGENT_INSTRUCTIONS_MAX_CHARS = 6000;
+/** Candidate agent-instruction filenames, in priority order (first match wins). */
+const AGENT_INSTRUCTION_FILES: readonly string[] = ['CLAUDE.md', 'AGENTS.md', '.cursorrules'];
+/** Cap on the generated repo-map block (shallow tree + recently-changed files). */
+const REPO_MAP_MAX_CHARS = 2400;
+/** Repo-map cache TTL — short, because the changed-files list drifts as the agent edits. */
+const REPO_MAP_CACHE_TTL_MS = 60_000;
+/** Directories never listed in the repo map (mirrors the search-hygiene exclude list). */
+const REPO_MAP_EXCLUDED_DIRS = new Set<string>([
+    'node_modules', '.git', 'dist', 'build', '.next', 'out', 'coverage', '.turbo', '.cache',
+    '.venv', 'venv', '__pycache__', 'target', 'vendor', '.idea', '.vscode',
+]);
+/** Source-ish top-level directories worth expanding one level deeper in the repo map. */
+const REPO_MAP_SOURCE_DIRS = new Set<string>(['src', 'app', 'components', 'pages', 'packages', 'server', 'api']);
 
 /** When several CLIs are on PATH, prefer BYOK/free-tier runners over subscription CLIs. */
 const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'aider', 'codex', 'claude'];
@@ -300,6 +316,10 @@ export class QaapAgentTaskRunner {
     protected readonly projectNameCache = new Map<string, string>();
     /** Cached `.prompts/project-info.prompttemplate` per cwd — primed by {@link warmForCwd}. */
     protected readonly projectInfoCache = new Map<string, string | undefined>();
+    /** Cached workspace agent-instructions (CLAUDE.md / AGENTS.md) per cwd — primed by {@link warmForCwd}. */
+    protected readonly agentInstructionsCache = new Map<string, string | undefined>();
+    /** Cached shallow repo map per cwd — primed by {@link warmForCwd}, refreshed lazily on expiry. */
+    protected readonly repoMapCache = new Map<string, { readonly text: string | undefined; readonly at: number }>();
     /** Original create requests for tasks waiting on the concurrency queue. */
     protected readonly queuedCreateRequests = new Map<string, QaapCreateAgentTaskRequest>();
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
@@ -752,6 +772,8 @@ export class QaapAgentTaskRunner {
             throw new Error(`Workspace directory does not exist: ${resolved}`);
         }
         this.readProjectInfo(resolved);
+        this.readAgentInstructions(resolved);
+        this.readRepoMap(resolved);
         this.resolveProjectName(resolved);
         const qaiqProbed = this.probeAgentBinOnce(QAIQ_AGENT_ID, () => this.resolveQaiqBin());
         return {
@@ -961,8 +983,18 @@ export class QaapAgentTaskRunner {
             { gitAvailable: cwd ? fs.existsSync(path.join(path.resolve(cwd), '.git')) : true },
         );
         // Inject important project context for every agent: cross-project context from the request
-        // body plus the per-project info artifact read from the workspace.
-        const agentPrompt = prependAgentTaskContextToPrompt(workflowPrompt, contextPreamble, cwd ? this.readProjectInfo(cwd) : undefined);
+        // body, the per-project info artifact, the repo's own agent instructions (CLAUDE.md /
+        // AGENTS.md), and a shallow repo map — so a stateless CLI starts warm instead of cold.
+        const resolvedCwd = cwd ? path.resolve(cwd) : undefined;
+        const repoContext: QaapAgentRepoContext | undefined = resolvedCwd
+            ? { agentInstructions: this.readAgentInstructions(resolvedCwd), repoMap: this.readRepoMap(resolvedCwd) }
+            : undefined;
+        const agentPrompt = prependAgentTaskContextToPrompt(
+            workflowPrompt,
+            contextPreamble,
+            resolvedCwd ? this.readProjectInfo(resolvedCwd) : undefined,
+            repoContext,
+        );
         this.assertQaiqConfigured(id);
         const detected = this.detectedAgents.get(id);
         let command: string;
@@ -1025,6 +1057,141 @@ export class QaapAgentTaskRunner {
         } catch {
             return undefined;
         }
+    }
+
+    /**
+     * Best-effort read of the workspace's own agent-instructions file (`CLAUDE.md` / `AGENTS.md` /
+     * `.cursorrules`). QAIQ is a Claude-Code-family CLI, but spawned fresh per turn in the workspace
+     * cwd, so it never auto-loads these — injecting them makes it honor the repo's rules from turn 1.
+     */
+    protected readAgentInstructions(cwd: string): string | undefined {
+        const resolved = path.resolve(cwd);
+        if (this.agentInstructionsCache.has(resolved)) {
+            return this.agentInstructionsCache.get(resolved);
+        }
+        const info = this.loadAgentInstructionsFromDisk(resolved);
+        this.agentInstructionsCache.set(resolved, info);
+        return info;
+    }
+
+    protected loadAgentInstructionsFromDisk(cwd: string): string | undefined {
+        for (const name of AGENT_INSTRUCTION_FILES) {
+            try {
+                const text = fs.readFileSync(path.join(cwd, name), 'utf8').trim();
+                if (text) {
+                    return truncateProjectInfo(text, AGENT_INSTRUCTIONS_MAX_CHARS);
+                }
+            } catch {
+                // Try the next candidate filename.
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * Best-effort shallow repo map: a two-level source tree plus recently-changed files. Cached with
+     * a short TTL because the changed-files list drifts as the agent works. Front-loading the repo
+     * shape is the single biggest context edge over a cold-searching CLI (the Cursor-style priming).
+     */
+    protected readRepoMap(cwd: string): string | undefined {
+        const resolved = path.resolve(cwd);
+        const cached = this.repoMapCache.get(resolved);
+        if (cached && Date.now() - cached.at < REPO_MAP_CACHE_TTL_MS) {
+            return cached.text;
+        }
+        const text = this.buildRepoMap(resolved);
+        this.repoMapCache.set(resolved, { text, at: Date.now() });
+        return text;
+    }
+
+    protected buildRepoMap(cwd: string): string | undefined {
+        const sections: string[] = [];
+        const tree = this.buildRepoTree(cwd);
+        if (tree) {
+            sections.push(tree);
+        }
+        const changed = this.buildRecentlyChangedFiles(cwd);
+        if (changed) {
+            sections.push(changed);
+        }
+        if (sections.length === 0) {
+            return undefined;
+        }
+        const text = sections.join('\n\n');
+        return text.length > REPO_MAP_MAX_CHARS
+            ? `${text.slice(0, REPO_MAP_MAX_CHARS - 1).trimEnd()}…`
+            : text;
+    }
+
+    /** Two-level directory listing, source dirs expanded one level, hygiene dirs excluded. */
+    protected buildRepoTree(cwd: string): string | undefined {
+        let entries: fs.Dirent[];
+        try {
+            entries = fs.readdirSync(cwd, { withFileTypes: true });
+        } catch {
+            return undefined;
+        }
+        const lines: string[] = [];
+        const dirs = entries.filter(e => e.isDirectory() && !REPO_MAP_EXCLUDED_DIRS.has(e.name) && !e.name.startsWith('.'))
+            .map(e => e.name).sort();
+        const files = entries.filter(e => e.isFile() && !e.name.startsWith('.')).map(e => e.name).sort();
+        for (const dir of dirs) {
+            lines.push(`${dir}/`);
+            if (REPO_MAP_SOURCE_DIRS.has(dir)) {
+                let children: fs.Dirent[] = [];
+                try {
+                    children = fs.readdirSync(path.join(cwd, dir), { withFileTypes: true });
+                } catch {
+                    children = [];
+                }
+                const childNames = children
+                    .filter(c => !REPO_MAP_EXCLUDED_DIRS.has(c.name) && !c.name.startsWith('.'))
+                    .map(c => (c.isDirectory() ? `${c.name}/` : c.name))
+                    .sort()
+                    .slice(0, 40);
+                for (const child of childNames) {
+                    lines.push(`  ${child}`);
+                }
+            }
+        }
+        for (const file of files.slice(0, 30)) {
+            lines.push(file);
+        }
+        if (lines.length === 0) {
+            return undefined;
+        }
+        return `Source tree (depth 2):\n${lines.join('\n')}`;
+    }
+
+    /** Recently-changed files via git, so the agent knows where work is already in flight. */
+    protected buildRecentlyChangedFiles(cwd: string): string | undefined {
+        if (!fs.existsSync(path.join(cwd, '.git'))) {
+            return undefined;
+        }
+        const names = new Set<string>();
+        for (const args of [['diff', '--name-only', 'HEAD~5', '--'], ['status', '--porcelain', '--untracked-files=all']]) {
+            try {
+                const out = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 4000 });
+                if (out.status !== 0 || !out.stdout) {
+                    continue;
+                }
+                for (const raw of out.stdout.split('\n')) {
+                    const line = args[0] === 'status' ? raw.slice(3).trim() : raw.trim();
+                    if (line) {
+                        names.add(line);
+                    }
+                    if (names.size >= 25) {
+                        break;
+                    }
+                }
+            } catch {
+                // git unavailable or slow — skip this source.
+            }
+        }
+        if (names.size === 0) {
+            return undefined;
+        }
+        return `Recently changed files:\n${[...names].slice(0, 25).map(n => `- ${n}`).join('\n')}`;
     }
 
     protected resolveAgentId(prompt: string, agentId: string | undefined): string {

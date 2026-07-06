@@ -30,19 +30,39 @@ export function truncateProjectInfo(text: string, maxChars: number): string {
     return `${cut.trimEnd()}${QAAP_PROJECT_INFO_TRUNCATION_NOTICE}`;
 }
 
+/** Additional codebase-derived context sources, front-loaded to give the agent a warm start. */
+export interface QaapAgentRepoContext {
+    /**
+     * Verbatim repository agent instructions (`CLAUDE.md` / `AGENTS.md`), the authoritative rules a
+     * Claude-Code-family CLI would read on its own but that a spawned-per-turn CLI starts without.
+     */
+    readonly agentInstructions?: string;
+    /** Compact repository map: a shallow source tree plus recently-changed files, to orient retrieval. */
+    readonly repoMap?: string;
+}
+
 /**
  * Prepends important project context to a background-agent prompt, for ALL agents.
  *
  * Cloud agents are CLIs spawned in the workspace and never read Theia's PromptService, so context
- * has to ride on the prompt itself. Two sources are combined, whichever are present:
+ * has to ride on the prompt itself. Several sources are combined, whichever are present:
  *   - `globalContext`: cross-project Qaap context, resolved on the frontend from the editable
  *     `qaap-tasks-background-context` fragment and forwarded in the create request body.
  *   - `projectInfo`: the per-project `.prompts/project-info.prompttemplate` artifact, read from the
  *     workspace `cwd` by the runner.
+ *   - `repoContext.agentInstructions`: the workspace `CLAUDE.md` / `AGENTS.md`, so a stateless CLI
+ *     honors the repo's own agent rules from the first turn.
+ *   - `repoContext.repoMap`: a shallow source tree + recently-changed files, so the agent starts
+ *     with the shape of the repo instead of cold-searching (the Cursor-style context edge).
  *
  * Returns the prompt unchanged when there is nothing to add or the marker is already present.
  */
-export function prependAgentTaskContextToPrompt(prompt: string, globalContext?: string, projectInfo?: string): string {
+export function prependAgentTaskContextToPrompt(
+    prompt: string,
+    globalContext?: string,
+    projectInfo?: string,
+    repoContext?: QaapAgentRepoContext,
+): string {
     if (prompt.includes(QAAP_TASK_CONTEXT_MARKER)) {
         return prompt;
     }
@@ -54,6 +74,14 @@ export function prependAgentTaskContextToPrompt(prompt: string, globalContext?: 
     const project = projectInfo?.trim();
     if (project) {
         parts.push(`# Project context\n\n${project}`);
+    }
+    const instructions = repoContext?.agentInstructions?.trim();
+    if (instructions) {
+        parts.push(`# Repository agent instructions\n\n${instructions}`);
+    }
+    const repoMap = repoContext?.repoMap?.trim();
+    if (repoMap) {
+        parts.push(`# Repository map\n\n${repoMap}`);
     }
     if (parts.length === 0) {
         return prompt;

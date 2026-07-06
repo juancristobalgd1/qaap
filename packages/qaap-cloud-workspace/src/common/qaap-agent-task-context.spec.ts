@@ -41,6 +41,32 @@ describe('prependAgentTaskContextToPrompt', () => {
         const twice = prependAgentTaskContextToPrompt(once, 'GLOBAL');
         expect(twice).to.equal(once);
     });
+
+    it('prepends repository agent instructions and repo map under headings', () => {
+        const result = prependAgentTaskContextToPrompt('Do it', undefined, undefined, {
+            agentInstructions: 'Use 4 spaces.',
+            repoMap: 'src/\n  index.ts',
+        });
+        expect(result).to.contain('# Repository agent instructions');
+        expect(result).to.contain('Use 4 spaces.');
+        expect(result).to.contain('# Repository map');
+        expect(result).to.contain('src/');
+    });
+
+    it('orders project info before agent instructions before repo map before the task', () => {
+        const result = prependAgentTaskContextToPrompt('THE-TASK', undefined, 'PROJECT', {
+            agentInstructions: 'RULES',
+            repoMap: 'TREE',
+        });
+        expect(result.indexOf('PROJECT')).to.be.lessThan(result.indexOf('RULES'));
+        expect(result.indexOf('RULES')).to.be.lessThan(result.indexOf('TREE'));
+        expect(result.indexOf('TREE')).to.be.lessThan(result.indexOf('THE-TASK'));
+    });
+
+    it('adds no repo-context headings when the sources are empty', () => {
+        const result = prependAgentTaskContextToPrompt('Do it', 'GLOBAL', undefined, { agentInstructions: '  ', repoMap: '' });
+        expect(result).to.not.contain('# Repository');
+    });
 });
 
 describe('truncateProjectInfo', () => {
