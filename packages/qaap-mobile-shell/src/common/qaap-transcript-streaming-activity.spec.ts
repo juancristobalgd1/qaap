@@ -17,7 +17,7 @@ describe('qaap-transcript-streaming-activity', () => {
     it('returns timeout state when requested', () => {
         const view = resolveTranscriptStreamingActivityFromSegments([], { timedOut: true });
         expect(view.kind).to.equal('timeout');
-        expect(view.title).to.equal('El agente no respondió a tiempo');
+        expect(view.title).to.equal('The agent didn’t respond in time');
     });
 
     it('prefers the active unfinished tool', () => {

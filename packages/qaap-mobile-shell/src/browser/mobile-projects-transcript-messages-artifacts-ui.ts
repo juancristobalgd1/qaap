@@ -1740,7 +1740,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (message) {
             message.textContent = nls.localize(
                 'qaap/mobileProjects/transcriptStreamTimedOut',
-                'El agente no respondió a tiempo',
+                'The agent didn’t respond in time',
             );
         }
         if (detailText) {
@@ -1764,22 +1764,22 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             case 'sse_disconnected':
                 return nls.localize(
                     'qaap/mobileProjects/transcriptStreamTimedOutSse',
-                    'La conexión en vivo se interrumpió. Reintenta para sincronizar el turno.',
+                    'The live connection dropped. Retry to sync this turn.',
                 );
             case 'active_tool':
                 return nls.localize(
                     'qaap/mobileProjects/transcriptStreamTimedOutTool',
-                    'Un comando o herramienta tardó demasiado sin devolver resultado.',
+                    'A command or tool ran too long without returning a result.',
                 );
             case 'semantic_idle':
                 return nls.localize(
                     'qaap/mobileProjects/transcriptStreamTimedOutIdle',
-                    'No hubo progreso visible (lecturas, ediciones o respuesta) en el tiempo esperado.',
+                    'No visible progress (reads, edits, or a reply) within the expected time.',
                 );
             default:
                 return nls.localize(
                     'qaap/mobileProjects/transcriptStreamTimedOutDetail',
-                    'Cancela o reintenta para continuar.',
+                    'Cancel or retry to continue.',
                 );
         }
     }
@@ -1795,7 +1795,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         message.className = 'theia-mobile-agent-stream-timeout-message';
         message.textContent = nls.localize(
             'qaap/mobileProjects/transcriptStreamTimedOut',
-            'El agente no respondió a tiempo',
+            'The agent didn’t respond in time',
         );
         const detailText = this.resolveTranscriptStreamTimeoutDetail(cause);
         if (detailText) {
@@ -1811,7 +1811,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const cancelBtn = document.createElement('button');
         cancelBtn.type = 'button';
         cancelBtn.className = 'theia-mobile-agent-stream-timeout-btn theia-mod-ghost';
-        cancelBtn.textContent = nls.localize('qaap/mobileProjects/transcriptStreamTimeoutCancel', 'Cancelar');
+        cancelBtn.textContent = nls.localize('qaap/mobileProjects/transcriptStreamTimeoutCancel', 'Cancel');
         cancelBtn.addEventListener('click', () => {
             this.host.cancelOpenTranscriptStream?.();
         });
@@ -1819,7 +1819,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const retryBtn = document.createElement('button');
         retryBtn.type = 'button';
         retryBtn.className = 'theia-mobile-agent-stream-timeout-btn theia-mod-primary';
-        retryBtn.textContent = nls.localize('qaap/mobileProjects/transcriptStreamTimeoutRetry', 'Reintentar');
+        retryBtn.textContent = nls.localize('qaap/mobileProjects/transcriptStreamTimeoutRetry', 'Retry');
         retryBtn.addEventListener('click', () => {
             void this.host.retryOpenTranscriptStream?.();
         });

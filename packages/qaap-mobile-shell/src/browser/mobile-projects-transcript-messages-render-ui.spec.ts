@@ -240,12 +240,12 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(activityRow).to.not.equal(null);
         expect(activityRow?.classList.contains('theia-mod-stream-timed-out')).to.equal(true);
         expect(activityRow?.querySelector('.theia-mobile-agent-stream-label')?.textContent)
-            .to.equal('El agente no respondió a tiempo');
+            .to.equal('The agent didn’t respond in time');
 
         const banner = activityRow?.querySelector<HTMLElement>('.theia-mobile-agent-stream-timeout-banner');
-        expect(banner?.textContent).to.contain('El agente no respondió a tiempo');
+        expect(banner?.textContent).to.contain('The agent didn’t respond in time');
         const buttons = [...banner?.querySelectorAll<HTMLButtonElement>('button') ?? []];
-        expect(buttons.map(button => button.textContent)).to.deep.equal(['Cancelar', 'Reintentar']);
+        expect(buttons.map(button => button.textContent)).to.deep.equal(['Cancel', 'Retry']);
         buttons[0].click();
         buttons[1].click();
         expect(cancelled).to.equal(1);

@@ -99,6 +99,12 @@
             "footer footer";
     }
 
+    /* Pointer-precise desktop can use the tighter icon size; mobile keeps the 40px thumb target. */
+    .qaap-diff-review-icon-btn {
+        width: 34px;
+        height: 34px;
+    }
+
     .qaap-diff-review-sidebar {
         display: flex;
         border-top: none;
@@ -155,8 +161,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    /* Mobile-first ≥40px hit area — these are the accept/reject/commit controls tapped by thumb. */
+    width: 40px;
+    height: 40px;
     padding: 0;
     border: none;
     border-radius: 6px;
@@ -410,7 +417,13 @@
 }
 
 .qaap-diff-review-code {
-    white-space: pre;
+    /* Wrap long lines instead of clipping them behind a hidden horizontal scroll — on a phone the
+       code otherwise appears cut off mid-token. flex + min-width:0 keeps wrapped continuation lines
+       aligned under the code column (the gutter/sign are separate flex items). */
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     padding-right: 14px;
 }
 

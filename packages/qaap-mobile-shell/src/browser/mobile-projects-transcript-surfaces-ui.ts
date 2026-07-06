@@ -1105,7 +1105,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         button.disabled = loading;
         button.classList.toggle('theia-mod-loading', loading);
         const label = loading
-            ? nls.localize('qaap/mobileProjects/previewLoading', 'Cargando...')
+            ? nls.localize('qaap/mobileProjects/previewLoading', 'Loading…')
             : nls.localize('qaap/mobileProjects/previewButton', 'Vista previa');
         button.title = label;
         button.setAttribute('aria-label', label);
@@ -1800,7 +1800,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         dot.setAttribute('aria-hidden', 'true');
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-stream-label';
-        label.textContent = nls.localize('qaap/mobileProjects/previewLoading', 'Cargando...');
+        label.textContent = nls.localize('qaap/mobileProjects/previewLoading', 'Loading…');
         line.append(dot, label);
         wrap.append(line);
         return wrap;

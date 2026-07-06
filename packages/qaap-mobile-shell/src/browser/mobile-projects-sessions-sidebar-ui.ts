@@ -748,7 +748,7 @@ export class MobileProjectsSessionsSidebarUi {
         const moreBtn = document.createElement('button');
         moreBtn.type = 'button';
         moreBtn.className = 'theia-mobile-work-hub-sessions-sidebar-show-more';
-        moreBtn.textContent = nls.localize('qaap/sessionsSidebar/showMore', 'Mostrar más');
+        moreBtn.textContent = nls.localize('qaap/sessionsSidebar/showMore', 'Show more');
         const pageSize = MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE;
         moreBtn.title = nls.localize(
             'qaap/sessionsSidebar/showMoreHint',

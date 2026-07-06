@@ -27,10 +27,10 @@ export function resolveTranscriptStreamingActivityFromSegments(
     if (options?.timedOut) {
         return {
             kind: 'timeout',
-            title: nls.localize('qaap/mobileProjects/transcriptStreamTimedOut', 'El agente no respondió a tiempo'),
+            title: nls.localize('qaap/mobileProjects/transcriptStreamTimedOut', 'The agent didn’t respond in time'),
             detail: nls.localize(
                 'qaap/mobileProjects/transcriptStreamTimedOutDetail',
-                'Cancela o reintenta para continuar.',
+                'Cancel or retry to continue.',
             ),
         };
     }
