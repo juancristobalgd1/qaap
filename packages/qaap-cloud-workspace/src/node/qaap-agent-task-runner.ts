@@ -26,6 +26,7 @@ import {
     type QaapAgentTaskDetail,
     type QaapAgentTaskEvent,
     type QaapAgentTaskState,
+    type QaapAgentTaskVerification,
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
@@ -86,6 +87,7 @@ import {
     isAntigravityCliCommand,
 } from './qaap-antigravity-settings';
 import { QaapWebPushService } from './qaap-web-push-service';
+import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 interface AgentCandidate {
@@ -114,6 +116,20 @@ const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIO
  * (for example GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_BASE_URL).
  */
 const CUSTOM_AGENTS_ENV = 'QAAP_AGENT_COMMANDS';
+// Opt in with QAAP_AGENT_VERIFY=1 or QAAP_AGENT_VERIFY=true. Default-off keeps task completion
+// behavior unchanged for hosted runners and CI until the backend self-verification loop is enabled.
+const QAAP_AGENT_VERIFY_ENABLED = /^(1|true)$/i.test(process.env.QAAP_AGENT_VERIFY?.trim() ?? '');
+const QAAP_AGENT_VERIFY_MAX_ATTEMPTS = 2;
+const QAAP_AGENT_VERIFY_WALL_CLOCK_MS = 5 * 60 * 1000;
+const QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS = 12_000;
+const QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS = 4_000;
+
+interface QaapGenericCommandResult {
+    readonly exitCode: number;
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly timedOut: boolean;
+}
 
 /** Cap on the per-project info artifact injected into prompts, to keep the agent command bounded. */
 const PROJECT_INFO_MAX_CHARS = 8000;
@@ -1574,8 +1590,294 @@ export class QaapAgentTaskRunner {
             if (this.tasks.get(task.id)?.state !== 'running') {
                 return;
             }
+            if (code === 0 && QAAP_AGENT_VERIFY_ENABLED) {
+                void this.finishSuccessfulTaskAfterVerification(task, code ?? undefined);
+                return;
+            }
             this.finishTask(task.id, code === 0 ? 'completed' : 'failed', code ?? undefined);
         });
+    }
+
+    protected async finishSuccessfulTaskAfterVerification(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
+        let verification: QaapAgentTaskVerification | undefined;
+        try {
+            verification = await this.verifySuccessfulQaiqTask(task);
+        } catch (error) {
+            verification = {
+                status: 'failed',
+                command: 'qaap self-verification',
+                attempts: 0,
+                summary: error instanceof Error ? error.message : String(error),
+            };
+        }
+        if (this.tasks.get(task.id)?.state !== 'running') {
+            return;
+        }
+        if (verification) {
+            const current = this.tasks.get(task.id);
+            if (current) {
+                this.tasks.set(task.id, { ...current, verification });
+            }
+        }
+        this.finishTask(task.id, 'completed', exitCode);
+    }
+
+    protected async verifySuccessfulQaiqTask(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {
+        if (!this.isQaiqRunner(undefined, task.command)) {
+            return undefined;
+        }
+        const env = this.buildChildEnv(task);
+        const startedAt = Date.now();
+        if (!await this.hasEditedFilesForVerification(task, env)) {
+            return undefined;
+        }
+        const scripts = await this.resolveVerificationScriptsForCwd(task.cwd);
+        if (scripts.length === 0) {
+            return undefined;
+        }
+        let attempts = 0;
+        let lastCommand = '';
+        let lastFailure: QaapGenericCommandResult | undefined;
+        while (this.isTaskStillRunning(task.id) && Date.now() - startedAt < QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
+            const failed = await this.runVerificationScripts(task, env, scripts, startedAt);
+            if (!failed) {
+                return { status: 'passed', command: lastCommand || `npm run ${scripts[scripts.length - 1]}`, attempts };
+            }
+            lastCommand = failed.command;
+            lastFailure = failed.result;
+            if (attempts >= QAAP_AGENT_VERIFY_MAX_ATTEMPTS || Date.now() - startedAt >= QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
+                break;
+            }
+            attempts++;
+            await this.runQaiqVerificationFixTurn(task, env, failed.command, failed.result, attempts, startedAt);
+        }
+        if (!lastFailure) {
+            return {
+                status: 'failed',
+                command: lastCommand || 'qaap self-verification',
+                attempts,
+                summary: 'Verification did not complete before the task stopped or the wall-clock limit was reached.',
+            };
+        }
+        return {
+            status: 'failed',
+            command: lastCommand,
+            attempts,
+            summary: this.summarizeVerificationFailure(lastCommand, lastFailure),
+        };
+    }
+
+    protected async hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean> {
+        const result = await this.runGenericCommand(
+            `git -C ${this.shellQuote(task.cwd)} status --porcelain`,
+            task.cwd,
+            env,
+            task.id,
+            10_000,
+        );
+        return result.exitCode === 0 && result.stdout.trim().length > 0;
+    }
+
+    protected async resolveVerificationScriptsForCwd(cwd: string): Promise<string[]> {
+        try {
+            const raw = await fsp.readFile(path.join(cwd, 'package.json'), 'utf8');
+            return resolveQaapAgentVerificationScripts(JSON.parse(raw) as unknown);
+        } catch {
+            return [];
+        }
+    }
+
+    protected async runVerificationScripts(
+        task: QaapAgentTask,
+        env: NodeJS.ProcessEnv,
+        scripts: readonly string[],
+        startedAt: number,
+    ): Promise<{ command: string; result: QaapGenericCommandResult } | undefined> {
+        for (const script of scripts) {
+            if (!this.isTaskStillRunning(task.id)) {
+                return undefined;
+            }
+            const remaining = QAAP_AGENT_VERIFY_WALL_CLOCK_MS - (Date.now() - startedAt);
+            if (remaining <= 0) {
+                return {
+                    command: `npm run ${script}`,
+                    result: { exitCode: 1, stdout: '', stderr: 'Verification timed out.', timedOut: true },
+                };
+            }
+            const command = `npm run ${script}`;
+            const result = await this.runGenericCommand(command, task.cwd, env, task.id, remaining, {
+                header: `\n[qaap] Verifying: ${command}\n`,
+                tailOutput: true,
+            });
+            if (result.exitCode !== 0 || result.timedOut) {
+                return { command, result };
+            }
+        }
+        return undefined;
+    }
+
+    protected async runQaiqVerificationFixTurn(
+        task: QaapAgentTask,
+        env: NodeJS.ProcessEnv,
+        failedCommand: string,
+        failure: QaapGenericCommandResult,
+        attempt: number,
+        startedAt: number,
+    ): Promise<QaapGenericCommandResult> {
+        // Close the cancel race: if the task was cancelled between the failed verification and here,
+        // do not spawn a full (token-costing) agent fix turn.
+        if (!this.isTaskStillRunning(task.id)) {
+            return { exitCode: 1, stdout: '', stderr: 'Task no longer running; skipped fix turn.', timedOut: false };
+        }
+        const remaining = QAAP_AGENT_VERIFY_WALL_CLOCK_MS - (Date.now() - startedAt);
+        if (remaining <= 0) {
+            return { exitCode: 1, stdout: '', stderr: 'Verification timed out before fix turn.', timedOut: true };
+        }
+        const prompt = this.buildQaiqVerificationFixPrompt(failedCommand, failure, attempt);
+        const { command } = this.buildAgentCommand(
+            prompt,
+            QAIQ_AGENT_ID,
+            true,
+            resolveTaskAgentModel(task),
+            task.cwd,
+            undefined,
+            undefined,
+            'full-access',
+        );
+        return this.runGenericCommand(command, task.cwd, env, task.id, remaining, {
+            header: `\n[qaap] Verification failed. Starting QAIQ fix attempt ${attempt}/${QAAP_AGENT_VERIFY_MAX_ATTEMPTS}.\n`,
+            streamOutput: true,
+        });
+    }
+
+    protected buildQaiqVerificationFixPrompt(
+        failedCommand: string,
+        failure: QaapGenericCommandResult,
+        attempt: number,
+    ): string {
+        const output = this.truncateForPrompt(`${failure.stdout}\n${failure.stderr}`.trim(), QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS);
+        return [
+            'The previous coding-agent turn completed and edited files, but backend self-verification failed.',
+            `Fix the issue causing this command to fail: ${failedCommand}`,
+            `This is fix attempt ${attempt} of ${QAAP_AGENT_VERIFY_MAX_ATTEMPTS}.`,
+            'Make the smallest safe code changes needed. Do not ask questions. Do not commit.',
+            'After your edits, stop; the backend will rerun verification.',
+            '',
+            'Captured verification output:',
+            output || '(no output captured)',
+        ].join('\n');
+    }
+
+    protected runGenericCommand(
+        command: string,
+        cwd: string,
+        env: NodeJS.ProcessEnv,
+        taskId: string,
+        timeoutMs: number,
+        options: {
+            readonly header?: string;
+            readonly streamOutput?: boolean;
+            readonly tailOutput?: boolean;
+        } = {},
+    ): Promise<QaapGenericCommandResult> {
+        if (options.header) {
+            this.appendAndFireOutput(taskId, options.header);
+        }
+        return new Promise(resolve => {
+            let stdout = '';
+            let stderr = '';
+            let timedOut = false;
+            let child: ChildProcess;
+            const finish = (exitCode: number): void => {
+                if (options.tailOutput) {
+                    const combined = `${stdout}${stderr}`;
+                    const tail = this.truncateHead(combined, QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS);
+                    if (tail.trim()) {
+                        this.appendAndFireOutput(taskId, `${tail.endsWith('\n') ? tail : `${tail}\n`}`);
+                    }
+                }
+                resolve({ exitCode, stdout, stderr, timedOut });
+            };
+            try {
+                child = spawn(command, {
+                    cwd,
+                    shell: true,
+                    env,
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                });
+            } catch (error) {
+                stderr = error instanceof Error ? error.message : String(error);
+                finish(1);
+                return;
+            }
+            this.processes.set(taskId, child);
+            let killTimer: NodeJS.Timeout | undefined;
+            const timeout = setTimeout(() => {
+                timedOut = true;
+                child.kill('SIGTERM');
+                killTimer = setTimeout(() => child.kill('SIGKILL'), 5_000);
+            }, Math.max(1, timeoutMs));
+            child.stdout?.on('data', (chunk: Buffer | string) => {
+                const text = String(chunk);
+                stdout += text;
+                if (options.streamOutput) {
+                    this.appendAndFireOutput(taskId, text);
+                }
+            });
+            child.stderr?.on('data', (chunk: Buffer | string) => {
+                const text = String(chunk);
+                stderr += text;
+                if (options.streamOutput) {
+                    this.appendAndFireOutput(taskId, text);
+                }
+            });
+            child.on('error', error => {
+                stderr += `${error.message}\n`;
+            });
+            child.on('close', code => {
+                clearTimeout(timeout);
+                if (killTimer) {
+                    clearTimeout(killTimer);
+                }
+                if (this.processes.get(taskId) === child) {
+                    this.processes.delete(taskId);
+                }
+                finish(timedOut && code === 0 ? 1 : code ?? 1);
+            });
+        });
+    }
+
+    protected appendAndFireOutput(taskId: string, chunk: string): void {
+        try {
+            fs.appendFileSync(this.logPath(taskId), chunk, 'utf8');
+        } catch {
+            /* log append is best-effort */
+        }
+        this.fireOutput(taskId, chunk);
+    }
+
+    protected isTaskStillRunning(taskId: string): boolean {
+        return this.tasks.get(taskId)?.state === 'running';
+    }
+
+    protected summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string {
+        const timedOut = result.timedOut ? ' The command timed out.' : '';
+        const output = this.truncateHead(`${result.stdout}\n${result.stderr}`.trim(), 1000);
+        return `${command} exited with code ${result.exitCode}.${timedOut}${output ? `\n${output}` : ''}`;
+    }
+
+    protected truncateForPrompt(value: string, maxChars: number): string {
+        if (value.length <= maxChars) {
+            return value;
+        }
+        return `${value.slice(0, Math.floor(maxChars / 2))}\n...[truncated]...\n${value.slice(value.length - Math.floor(maxChars / 2))}`;
+    }
+
+    protected truncateHead(value: string, maxChars: number): string {
+        if (value.length <= maxChars) {
+            return value;
+        }
+        return `...[truncated]...\n${value.slice(value.length - maxChars)}`;
     }
 
     protected fireOutput(taskId: string, chunk: unknown): void {

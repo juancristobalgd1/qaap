@@ -49,7 +49,14 @@ export interface QaapAgentTask {
     readonly ownerLogin?: string;
     /** Opt-in latency marks for submit → first output diagnostics. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
+    /** Backend self-verification result for QAIQ tasks that edited files. */
+    readonly verification?: QaapAgentTaskVerification;
 }
+
+export type QaapAgentTaskVerification =
+    | { readonly status: 'skipped' }
+    | { readonly status: 'passed'; readonly command: string; readonly attempts: number }
+    | { readonly status: 'failed'; readonly command: string; readonly attempts: number; readonly summary: string };
 
 /** A task plus its captured stdout/stderr log. */
 export interface QaapAgentTaskDetail extends QaapAgentTask {
