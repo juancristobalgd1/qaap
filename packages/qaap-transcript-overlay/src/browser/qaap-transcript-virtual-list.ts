@@ -15,7 +15,10 @@ export {
     TRANSCRIPT_VIRTUAL_MIN_MESSAGES_NARROW,
 } from '../common/qaap-transcript-virtual-list-policy';
 
-export const TRANSCRIPT_VIRTUAL_DEFAULT_ITEM_HEIGHT = 128;
+// Agent turns (with tool output) dominate transcript height and run far taller than a chat line,
+// so a low estimate makes the virtualized total swing as rows measure. ~200px is closer to the
+// observed per-row average and keeps scroll-up more stable for the long threads that still virtualize.
+export const TRANSCRIPT_VIRTUAL_DEFAULT_ITEM_HEIGHT = 200;
 export const TRANSCRIPT_VIRTUAL_OVERSCAN_PX = 480;
 /**
  * Coalescing window for height remeasurements. During token streaming, content reflows
