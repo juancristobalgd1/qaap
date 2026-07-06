@@ -42,6 +42,14 @@ describe('mobile-onboarding-tutorial-guard', () => {
         expect(isMobileOnboardingSessionSkipped()).to.equal(true);
     });
 
+    it('session skip is tracked per surface: skipping Work Hub does not skip the IDE tour', () => {
+        markMobileOnboardingSessionSkipped('work-hub');
+        expect(isMobileOnboardingSessionSkipped('work-hub')).to.equal(true);
+        expect(isMobileOnboardingSessionSkipped('ide')).to.equal(false);
+        markMobileOnboardingSessionSkipped('ide');
+        expect(isMobileOnboardingSessionSkipped('ide')).to.equal(true);
+    });
+
     it('shouldDeferMobileOnboardingTutorial is false without an active transcript surface', () => {
         const root = document.createElement('div');
         expect(shouldDeferMobileOnboardingTutorial(root)).to.equal(false);
@@ -62,6 +70,28 @@ describe('mobile-onboarding-tutorial-guard', () => {
         root.innerHTML = `
             <div class="theia-mobile-agent-transcript-root theia-mod-visible">
                 <div class="theia-mobile-agent-transcript-msg theia-mod-streaming"></div>
+            </div>
+        `;
+        expect(shouldDeferMobileOnboardingTutorial(root)).to.equal(true);
+    });
+
+    it('shouldDeferMobileOnboardingTutorial ignores persistent failed session markers', () => {
+        // Old failed sessions live in the hub indefinitely; they must not defer the tour forever.
+        const root = document.createElement('div');
+        root.innerHTML = `
+            <div class="theia-mobile-agent-transcript-root theia-mod-visible">
+                <div class="theia-mobile-projects-active-chat-chip theia-mod-failed"></div>
+                <div class="theia-mobile-projects-row-glyph theia-mod-failed"></div>
+            </div>
+        `;
+        expect(shouldDeferMobileOnboardingTutorial(root)).to.equal(false);
+    });
+
+    it('shouldDeferMobileOnboardingTutorial still defers while a session row is running', () => {
+        const root = document.createElement('div');
+        root.innerHTML = `
+            <div class="theia-mobile-agent-transcript-root theia-mod-visible">
+                <div class="theia-mobile-projects-row-glyph theia-mod-running"></div>
             </div>
         `;
         expect(shouldDeferMobileOnboardingTutorial(root)).to.equal(true);

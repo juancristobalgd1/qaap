@@ -23,10 +23,12 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileHaptics } from './mobile-haptics';
+import { peekPreferDesktopIde, QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS } from '../common/qaap-mobile-work-surface-preference';
 import {
     hasBlockingAgentConversationWork,
     isMobileOnboardingSessionSkipped,
     markMobileOnboardingSessionSkipped,
+    MobileOnboardingSurface,
     shouldDeferMobileOnboardingTutorial,
 } from '../common/mobile-onboarding-tutorial-guard';
 
@@ -47,27 +49,47 @@ interface TutorialStep {
     placement: StepPlacement;
 }
 
+/** Resolve the first VISIBLE element for a selector (several surfaces clone e.g. the avatar button). */
+function visibleElement(selector: string): HTMLElement | undefined {
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+            return el;
+        }
+    }
+    return undefined;
+}
+
 /**
  * First-launch in-app tutorial for the mobile (≤ 767 px) layout.
  *
- * Highlights the primitives introduced by `MobileOneColumnShellContribution`:
- *   1. Left-edge swipe → opens the projects dashboard (when a workspace is open)
- *   2. Bottom activity bar = agent-first command surface
- *   3. The dedicated "Agent" button for the chat sheet
- *   4. The single-tab "Recents" header in the main panel
+ * Two surface-specific tours, each with its own persistent "seen" flag:
+ *   - **Work Hub / Agents** (the default surface): composer, sessions sidebar,
+ *     transcript view lenses, and the IDE switch in the avatar menu.
+ *   - **Classic IDE** (after "Open IDE"): the ▷ view picker, the avatar account
+ *     menu, and the editor tab bar.
  *
  * The overlay never blocks pointer events on the underlying workbench: the dim backdrop and
  * spotlight ring use `pointer-events: none`, so users can complete the gesture they are being
  * taught and the tutorial will advance organically on Next or via the gesture itself.
  *
- * Persistence: `StorageService.theia.mobile.tutorial.seen=true` once the user finishes or
- * dismisses the tutorial. A dedicated `Help: Replay Mobile Tutorial` command is registered so
- * users can reopen it from the command palette or the Getting Started page.
+ * Anti-flicker contract: blocking checks (streaming agent work, visible turn failures) only
+ * gate the tour BEFORE it opens. Once open, the tour is closed exclusively by the user
+ * (Skip / Done / Escape), by leaving the mobile viewport, or by switching surface — never by a
+ * background poller. A previous design re-checked "blocking work" on a 2 s interval plus a
+ * whole-body MutationObserver and auto-dismissed/re-opened the tour, which flashed constantly
+ * for any workspace with long-lived failed conversations.
+ *
+ * Persistence: `theia.mobile.tutorial.seen` (Work Hub, legacy key) and
+ * `theia.mobile.tutorial.ide.seen` once the user finishes or dismisses the respective tour.
+ * A dedicated `Help: Replay Mobile Tutorial` command replays the tour for the current surface.
  */
 @injectable()
 export class MobileOnboardingTutorialContribution implements FrontendApplicationContribution, CommandContribution {
 
+    /** Work Hub tour flag — keeps the pre-split key so existing users are not re-prompted. */
     static readonly STORAGE_KEY = 'theia.mobile.tutorial.seen';
+    static readonly IDE_STORAGE_KEY = 'theia.mobile.tutorial.ide.seen';
 
     static readonly REPLAY_COMMAND: Command = Command.toLocalizedCommand({
         id: 'theia.mobile.onboarding.replay',
@@ -91,12 +113,16 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
     protected steps: TutorialStep[] = [];
     protected reflowRaf = 0;
     protected active = false;
+    /** Surface the currently open tour belongs to. */
+    protected activeSurface: MobileOnboardingSurface = 'work-hub';
     protected deferTimer: number | undefined;
-    protected blockObserver: MutationObserver | undefined;
-    protected apiWatchTimer: number | undefined;
+    protected surfaceObserver: MutationObserver | undefined;
+    protected lastKnownSurface: MobileOnboardingSurface = 'work-hub';
 
     onDidInitializeLayout(_app: FrontendApplication): void {
         this.mobileMq?.addEventListener('change', this.onMediaChange);
+        this.lastKnownSurface = this.currentSurface();
+        this.startSurfaceWatch();
         if (this.mobileMq?.matches) {
             void this.maybeStartFirstRun();
         }
@@ -104,7 +130,8 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
 
     onStop(): void {
         this.mobileMq?.removeEventListener('change', this.onMediaChange);
-        this.stopDeferWatch();
+        this.stopSurfaceWatch();
+        this.stopDeferLoop();
         this.dismiss(false);
         this.toDispose.dispose();
     }
@@ -117,6 +144,16 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         });
     }
 
+    protected currentSurface(): MobileOnboardingSurface {
+        return peekPreferDesktopIde() ? 'ide' : 'work-hub';
+    }
+
+    protected seenKeyFor(surface: MobileOnboardingSurface): string {
+        return surface === 'ide'
+            ? MobileOnboardingTutorialContribution.IDE_STORAGE_KEY
+            : MobileOnboardingTutorialContribution.STORAGE_KEY;
+    }
+
     protected readonly onMediaChange = (): void => {
         // Leaving mobile mode while the tutorial is open would leave dangling absolutely-positioned
         // overlays on top of the desktop shell. Dismiss without marking as "seen" so a return to
@@ -126,24 +163,63 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         }
     };
 
-    protected async maybeStartFirstRun(): Promise<void> {
-        const seen = await this.storage.getData<boolean>(MobileOnboardingTutorialContribution.STORAGE_KEY, false);
-        if (seen || !this.mobileMq?.matches || isMobileOnboardingSessionSkipped()) {
+    /**
+     * Watch the desktop-IDE body class so each surface gets ITS tour: entering the IDE the first
+     * time starts the IDE tour, and a tour left open across a surface switch is closed (unseen)
+     * instead of narrating the wrong surface. Observes `document.body` class only — no subtree.
+     */
+    protected startSurfaceWatch(): void {
+        if (this.surfaceObserver || typeof MutationObserver === 'undefined' || typeof document === 'undefined') {
             return;
         }
-        this.scheduleFirstRunWhenIdle();
+        this.surfaceObserver = new MutationObserver(() => this.onPossibleSurfaceChange());
+        this.surfaceObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     }
 
-    protected scheduleFirstRunWhenIdle(): void {
+    protected stopSurfaceWatch(): void {
+        this.surfaceObserver?.disconnect();
+        this.surfaceObserver = undefined;
+    }
+
+    protected onPossibleSurfaceChange(): void {
+        const surface: MobileOnboardingSurface =
+            document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS) ? 'ide' : 'work-hub';
+        if (surface === this.lastKnownSurface) {
+            return;
+        }
+        this.lastKnownSurface = surface;
+        if (this.active && this.activeSurface !== surface) {
+            this.dismiss(false);
+        }
+        if (this.mobileMq?.matches) {
+            void this.maybeStartFirstRun();
+        }
+    }
+
+    protected async maybeStartFirstRun(): Promise<void> {
+        const surface = this.currentSurface();
+        const seen = await this.storage.getData<boolean>(this.seenKeyFor(surface), false);
+        if (seen || !this.mobileMq?.matches || isMobileOnboardingSessionSkipped(surface)) {
+            return;
+        }
+        this.scheduleFirstRunWhenIdle(surface);
+    }
+
+    /**
+     * Retry loop that opens the tour once the surface is idle (no streaming agent work, no visible
+     * turn failure). Gating happens ONLY here, before opening — never against an open tour.
+     */
+    protected scheduleFirstRunWhenIdle(surface: MobileOnboardingSurface): void {
         if (this.active || this.deferTimer !== undefined) {
             return;
         }
-        this.startDeferWatch();
         const attempt = (): void => {
             void (async (): Promise<void> => {
                 this.deferTimer = undefined;
-                if (!this.mobileMq?.matches || this.active || isMobileOnboardingSessionSkipped()) {
-                    this.stopDeferWatch();
+                if (!this.mobileMq?.matches
+                    || this.active
+                    || this.currentSurface() !== surface
+                    || isMobileOnboardingSessionSkipped(surface)) {
                     return;
                 }
                 const blocking = shouldDeferMobileOnboardingTutorial()
@@ -152,110 +228,52 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                     this.deferTimer = window.setTimeout(attempt, 2000);
                     return;
                 }
-                this.stopDeferWatch();
-                requestAnimationFrame(() => this.start(false));
+                requestAnimationFrame(() => this.openTutorial());
             })();
         };
         this.deferTimer = window.setTimeout(attempt, 0);
     }
 
-    protected startDeferWatch(): void {
-        if (this.blockObserver || typeof MutationObserver === 'undefined' || typeof document === 'undefined') {
-            return;
-        }
-        this.blockObserver = new MutationObserver(() => {
-            void this.handleBlockingAgentWorkDetected();
-        });
-        this.blockObserver.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'hidden'],
-        });
-    }
-
-    protected stopDeferWatch(): void {
-        this.blockObserver?.disconnect();
-        this.blockObserver = undefined;
-        this.stopApiWatch();
+    protected stopDeferLoop(): void {
         if (this.deferTimer !== undefined) {
             window.clearTimeout(this.deferTimer);
             this.deferTimer = undefined;
         }
     }
 
-    protected startApiWatch(): void {
-        if (this.apiWatchTimer !== undefined) {
-            return;
-        }
-        const tick = (): void => {
-            void this.handleBlockingAgentWorkDetected();
-        };
-        this.apiWatchTimer = window.setInterval(tick, 2000);
-        tick();
-    }
-
-    protected stopApiWatch(): void {
-        if (this.apiWatchTimer !== undefined) {
-            window.clearInterval(this.apiWatchTimer);
-            this.apiWatchTimer = undefined;
-        }
-    }
-
-    protected async handleBlockingAgentWorkDetected(): Promise<void> {
-        const blocking = shouldDeferMobileOnboardingTutorial()
-            || await hasBlockingAgentConversationWork();
-        if (!blocking) {
-            return;
-        }
-        if (this.active) {
-            this.dismiss(false);
-        }
-        this.scheduleFirstRunWhenIdle();
-    }
-
     /**
      * Open the tutorial overlay.
      *
-     * @param replay when `true`, do not check the "seen" flag – used by the replay command.
+     * @param replay when `true`, skip the "seen"/blocking checks – used by the replay command.
      */
     protected start(replay: boolean): void {
         if (typeof document === 'undefined' || !this.mobileMq?.matches) {
             return;
         }
-        if (!replay && shouldDeferMobileOnboardingTutorial()) {
-            this.scheduleFirstRunWhenIdle();
+        if (replay) {
+            this.openTutorial();
             return;
         }
-        if (!replay) {
-            void hasBlockingAgentConversationWork().then(blocking => {
-                if (blocking) {
-                    this.scheduleFirstRunWhenIdle();
-                    return;
-                }
-                this.openTutorial(replay);
-            });
-            return;
-        }
-        this.openTutorial(replay);
+        void this.maybeStartFirstRun();
     }
 
-    protected openTutorial(replay: boolean): void {
-        if (this.active && replay) {
+    protected openTutorial(): void {
+        if (typeof document === 'undefined' || !this.mobileMq?.matches) {
+            return;
+        }
+        if (this.active) {
             // Reset to first step on explicit replay.
             this.currentIndex = 0;
             this.renderCurrentStep();
             return;
         }
-        if (this.active) {
-            return;
-        }
+        this.stopDeferLoop();
         this.active = true;
-        this.steps = this.buildSteps();
+        this.activeSurface = this.currentSurface();
+        this.steps = this.buildSteps(this.activeSurface);
         this.currentIndex = 0;
         this.ensureOverlayElements();
         this.renderCurrentStep();
-        this.startApiWatch();
         window.addEventListener('resize', this.scheduleReflow, { passive: true });
         window.addEventListener('orientationchange', this.scheduleReflow, { passive: true });
         document.addEventListener('keydown', this.onKeyDown);
@@ -264,12 +282,12 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
     protected dismiss(markSeen: boolean): void {
         if (!this.active) {
             if (!markSeen) {
-                this.stopDeferWatch();
+                this.stopDeferLoop();
             }
             return;
         }
         this.active = false;
-        this.stopDeferWatch();
+        this.stopDeferLoop();
         window.removeEventListener('resize', this.scheduleReflow);
         window.removeEventListener('orientationchange', this.scheduleReflow);
         document.removeEventListener('keydown', this.onKeyDown);
@@ -286,8 +304,8 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         this.tooltip = undefined;
         this.demoLayer = undefined;
         if (markSeen) {
-            markMobileOnboardingSessionSkipped();
-            this.storage.setData(MobileOnboardingTutorialContribution.STORAGE_KEY, true)
+            markMobileOnboardingSessionSkipped(this.activeSurface);
+            this.storage.setData(this.seenKeyFor(this.activeSurface), true)
                 .catch(() => { /* swallow: storage failures should not block the UI */ });
         }
     }
@@ -334,66 +352,100 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         this.tooltip = tooltip;
     }
 
-    protected buildSteps(): TutorialStep[] {
+    protected buildSteps(surface: MobileOnboardingSurface): TutorialStep[] {
+        return surface === 'ide' ? this.buildIdeSteps() : this.buildWorkHubSteps();
+    }
+
+    /** Tour for the Agents / Work Hub surface (the reload default). */
+    protected buildWorkHubSteps(): TutorialStep[] {
         return [
             {
-                id: 'swipe-dashboard',
-                title: nls.localize('qaap/mobileOnboarding/swipeDashboard/title', 'Swipe → for projects'),
+                id: 'wh-compose',
+                title: nls.localize('qaap/mobileOnboarding/workHub/compose/title', 'Delegate your first task'),
                 body: nls.localize(
-                    'qaap/mobileOnboarding/swipeDashboard/body',
-                    'Drag from the left edge to open the projects dashboard — every repo and its background tasks in one place. Tap a card to switch, or use Explore in the bottom bar for the file tree.'
+                    'qaap/mobileOnboarding/workHub/compose/body',
+                    'Describe the outcome in the composer below. QAIQ plans and runs it on the server — the work keeps going even if you close this tab.'
                 ),
-                target: () => document.querySelector<HTMLElement>('.theia-mobile-edgeSwipeZone-left') ?? undefined,
-                demo: 'swipe-right',
+                target: () => visibleElement('.theia-mobile-projects-sticky-composer'),
+                placement: 'top',
+            },
+            {
+                id: 'wh-sessions',
+                title: nls.localize('qaap/mobileOnboarding/workHub/sessions/title', 'Projects & session history'),
+                body: nls.localize(
+                    'qaap/mobileOnboarding/workHub/sessions/body',
+                    'Tap the menu to open your projects and sessions — every repo with its running and finished tasks in one place. Tap a session to reopen its transcript.'
+                ),
+                target: () => visibleElement('.theia-mobile-projects-sessions-menu'),
+                demo: 'tap',
+                placement: 'bottom',
+            },
+            {
+                id: 'wh-views',
+                title: nls.localize('qaap/mobileOnboarding/workHub/views/title', 'Follow the work, your way'),
+                body: nls.localize(
+                    'qaap/mobileOnboarding/workHub/views/body',
+                    'While a task runs, switch lenses from the header: Chat, Plan, Changes, Preview, Files, or Terminal — every step stays visible.'
+                ),
+                target: () => visibleElement('.theia-mobile-transcript-tab-icon-select'),
+                demo: 'tap',
+                placement: 'bottom',
+            },
+            {
+                id: 'wh-ide-switch',
+                title: nls.localize('qaap/mobileOnboarding/workHub/ideSwitch/title', 'Need the full editor?'),
+                body: nls.localize(
+                    'qaap/mobileOnboarding/workHub/ideSwitch/body',
+                    'Open the avatar menu and flip the IDE | Agents switch to enter the classic IDE. Your agents keep running here in Work Hub while you edit.'
+                ),
                 placement: 'center',
             },
+        ];
+    }
+
+    /** Tour for the classic IDE surface (after "Open IDE"). */
+    protected buildIdeSteps(): TutorialStep[] {
+        return [
             {
-                id: 'bottom-bar',
-                title: nls.localize('theia/core/mobile/onboarding/bottomBar/title', 'Bottom bar — agent-first'),
+                id: 'ide-view-picker',
+                title: nls.localize('qaap/mobileOnboarding/ide/viewPicker/title', 'Views at your thumb'),
                 body: nls.localize(
-                    'qaap/mobileOnboarding/bottomBar/body',
-                    'The bottom bar is your agent workspace: Work Hub runs QAIQ on your server so tasks keep going after you close the tab. Use Preview, Explore, PR, and Terminal from here; open the classic IDE only when you need the full editor.',
+                    'qaap/mobileOnboarding/ide/viewPicker/body',
+                    'Use the ▷ selector next to the tabs to jump between Preview, Terminal, Explore, and PR.'
                 ),
-                target: () => document.getElementById('theia-mobile-bottom-bar') ?? undefined,
-                placement: 'top',
-            },
-            {
-                id: 'agent-button',
-                title: nls.localize('theia/core/mobile/onboarding/agent/title', 'Tap Agent to chat'),
-                body: nls.localize(
-                    'theia/core/mobile/onboarding/agent/body',
-                    'Tap Agent to open Work Hub. Your tasks run with QAIQ on the server — pick Codex or Claude only when you need an alternative.',
-                ),
-                target: () => document.querySelector<HTMLElement>(
-                    '#theia-mobile-bottom-bar .theia-mobile-bottom-activity-btn[data-action-id="agent"]'
-                ) ?? undefined,
+                target: () => visibleElement('.theia-workbench-mobile-view-picker-btn'),
                 demo: 'tap',
-                placement: 'top',
+                placement: 'bottom',
             },
             {
-                id: 'preview-bootstrap',
-                title: nls.localize('qaap/mobileOnboarding/preview/title', 'Open your first preview'),
+                id: 'ide-avatar',
+                title: nls.localize('qaap/mobileOnboarding/ide/avatar/title', 'Your account menu'),
                 body: nls.localize(
-                    'qaap/mobileOnboarding/preview/body',
-                    'After cloning a web app, tap Preview in the bottom bar. Qaap installs dependencies, runs the dev server, and opens the live preview — usually under two minutes.'
+                    'qaap/mobileOnboarding/ide/avatar/body',
+                    'The avatar opens the Command Palette, Settings, and the IDE | Agents switch back to Work Hub.'
                 ),
-                target: () => document.querySelector<HTMLElement>(
-                    '#theia-mobile-bottom-bar .theia-mobile-bottom-activity-btn[data-action-id="preview"]'
-                ) ?? undefined,
+                target: () => visibleElement('.theia-workbench-account-btn'),
                 demo: 'tap',
-                placement: 'top',
+                placement: 'bottom',
             },
             {
-                id: 'editor-tabs',
+                id: 'ide-tabs',
                 title: nls.localize('theia/core/mobile/onboarding/tabs/title', 'Scroll the tab bar'),
                 body: nls.localize(
                     'theia/core/mobile/onboarding/tabs/body',
                     'With several editors open, swipe sideways on the tab titles to see every open editor, then tap one to switch.'
                 ),
-                target: () => document.querySelector<HTMLElement>(
-                    '#theia-main-content-panel .lm-TabBar.theia-app-centers'
-                ) ?? undefined,
+                target: () => visibleElement('#theia-main-content-panel .lm-TabBar.theia-app-centers'),
                 placement: 'bottom',
+            },
+            {
+                id: 'ide-agents-running',
+                title: nls.localize('qaap/mobileOnboarding/ide/agentsRunning/title', 'Agents keep working'),
+                body: nls.localize(
+                    'qaap/mobileOnboarding/ide/agentsRunning/body',
+                    'Tasks you delegated keep running on the server while you edit. Switch back to Agents from the avatar menu to check on them.'
+                ),
+                placement: 'center',
             },
         ];
     }
@@ -541,7 +593,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         const tooltipMargin = 12;
 
         // Spotlight
-        const hasSpotlight = !!rect && rect.width > 0 && rect.height > 0 && step.id !== 'swipe-dashboard';
+        const hasSpotlight = !!rect && rect.width > 0 && rect.height > 0;
         if (hasSpotlight && rect) {
             // Pad the spotlight a few px so the focus ring sits outside the target.
             const pad = 6;
