@@ -62,6 +62,9 @@ jobs:
           mkdir -p "${MOCK_BIN}"
           ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "${MOCK_BIN}/qaiq"
           echo "${MOCK_BIN}" >> "${GITHUB_PATH}"
+          # GITHUB_PATH only affects *subsequent* steps; the backend is started in THIS step and
+          # detects agents with `which qaiq`, so it must have the mock on its own PATH.
+          export PATH="${MOCK_BIN}:${PATH}"
           cd examples/browser
           npm run start > "${{ github.workspace }}/test-results/browser-server.log" 2>&1 &
           echo $! > "${{ github.workspace }}/test-results/browser-server.pid"
