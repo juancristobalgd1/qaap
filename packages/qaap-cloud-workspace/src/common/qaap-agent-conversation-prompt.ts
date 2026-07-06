@@ -11,7 +11,14 @@ import {
 import type { QaapAgentMessage } from './qaap-agent-conversation';
 
 /** Start compressing older turns once the estimated prompt exceeds this share of the context window. */
-export const VPS_PROMPT_COMPRESS_THRESHOLD_RATIO = 0.55;
+export const VPS_PROMPT_COMPRESS_THRESHOLD_RATIO = 0.35;
+/**
+ * Hard token ceiling for the verbatim transcript, independent of the context window. Large-window
+ * models (e.g. 128k) would otherwise re-send tens of thousands of history tokens every turn before
+ * the ratio trips — this caps the per-turn cost so a growing conversation stays affordable. The
+ * recent {@link VPS_PROMPT_KEEP_RECENT_TURN_PAIRS} turn pairs are always kept full regardless.
+ */
+export const VPS_PROMPT_COMPRESS_ABSOLUTE_TOKENS = 25_000;
 /** Full verbatim user+agent pairs kept at the tail of the transcript. */
 export const VPS_PROMPT_KEEP_RECENT_TURN_PAIRS = 2;
 /** Max chars per compressed historical message body. */
@@ -84,7 +91,8 @@ export function shouldCompressConversationPrompt(
 ): boolean {
     const window = resolveConversationContextWindowSize(contextWindowSize);
     const estimated = estimateConversationTokensFromMessages(messages, contextPreamble);
-    return estimated > Math.floor(window * thresholdRatio);
+    const budget = Math.min(Math.floor(window * thresholdRatio), VPS_PROMPT_COMPRESS_ABSOLUTE_TOKENS);
+    return estimated > budget;
 }
 
 function formatTranscriptLines(messages: ReadonlyArray<QaapAgentMessage>, compressOlder: boolean): string[] {

@@ -89,4 +89,27 @@ describe('buildConversationAgentPrompt', () => {
         expect(prompt).to.include('USER: latest');
         expect(prompt).not.to.include(`${longBody} user-0`);
     });
+
+    it('compresses via the absolute token cap even on a large context window', () => {
+        // ~30k tokens of history: under 55% (and under 35%) of a 128k window, but over the 25k
+        // absolute cap — so it must still compress instead of re-sending everything verbatim.
+        const bigBody = 'palabra '.repeat(2_500); // ~2.5k tokens per message
+        const history: QaapAgentMessage[] = [];
+        for (let turn = 0; turn < 6; turn++) {
+            history.push(message({ role: 'user', content: `${bigBody} user-${turn}` }));
+            history.push(message({ role: 'agent', content: `${bigBody} agent-${turn}` }));
+        }
+        expect(shouldCompressConversationPrompt(
+            history.concat(message({ role: 'user', content: 'latest' })),
+            undefined,
+            128_000,
+        )).to.equal(true);
+        const prompt = buildConversationAgentPrompt({
+            history,
+            latestUserContent: 'latest',
+            contextWindowSize: 128_000,
+        });
+        expect(prompt).to.include('Earlier context (compressed):');
+        expect(prompt).not.to.include(`${bigBody} user-0`);
+    });
 });
