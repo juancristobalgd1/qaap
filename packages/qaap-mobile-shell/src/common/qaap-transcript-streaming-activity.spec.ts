@@ -43,4 +43,21 @@ describe('qaap-transcript-streaming-activity', () => {
         ]);
         expect(view.kind).to.equal('planning');
     });
+
+    it('surfaces the latest thinking text as the detail during the thinking phase', () => {
+        const view = resolveTranscriptStreamingActivityFromSegments([
+            { type: 'thinking', content: 'First I will read the router\n\nconfig.' },
+        ]);
+        expect(view.kind).to.equal('planning');
+        // Whitespace collapsed to a single clean line.
+        expect(view.detail).to.equal('First I will read the router config.');
+    });
+
+    it('truncates a long thinking snippet at a word boundary with an ellipsis', () => {
+        const long = 'I need to trace how the authentication middleware validates the incoming session token before the request reaches the handler';
+        const view = resolveTranscriptStreamingActivityFromSegments([{ type: 'thinking', content: long }]);
+        expect(view.detail.length).to.be.at.most(97);
+        expect(view.detail.endsWith('…')).to.equal(true);
+        expect(view.detail).to.not.contain('  ');
+    });
 });

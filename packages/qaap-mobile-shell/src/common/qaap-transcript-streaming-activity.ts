@@ -64,6 +64,16 @@ export function resolveTranscriptStreamingActivityFromSegments(
         };
     }
     const planningTitle = nls.localize('qaap/mobileProjects/transcriptActivityPlanningMoves', 'Planning next moves');
+    const thinkingSnippet = extractLatestThinkingSnippet(segments);
+    if (thinkingSnippet) {
+        // Surface the agent's own reasoning during the (often long) thinking-only phase before the
+        // first tool call — a live snippet reads as real progress where a static label reads as a hang.
+        return {
+            kind: 'planning',
+            title: planningTitle,
+            detail: thinkingSnippet,
+        };
+    }
     const hasThinking = segments.some(segment => segment.type === 'thinking' && (segment.content?.trim() ?? '').length > 0);
     if (hasThinking) {
         return {
@@ -77,6 +87,36 @@ export function resolveTranscriptStreamingActivityFromSegments(
         title: planningTitle,
         detail: nls.localize('qaap/mobileProjects/transcriptActivityStartingDetail', 'Preparing context and selecting the next action.'),
     };
+}
+
+/** Max characters of live thinking text surfaced as the activity detail (roughly one sentence). */
+const THINKING_SNIPPET_MAX_CHARS = 96;
+
+/**
+ * A short, single-line snippet of the most recent thinking segment, or `undefined` when there is no
+ * thinking text yet. Collapses whitespace and cuts at a sentence/word boundary so the footer detail
+ * stays one clean line while the agent is reasoning.
+ */
+function extractLatestThinkingSnippet(segments: readonly QaapAgentMessageSegmentDTO[]): string | undefined {
+    let latest: string | undefined;
+    for (const segment of segments) {
+        if (segment.type === 'thinking') {
+            const content = segment.content?.trim();
+            if (content) {
+                latest = content;
+            }
+        }
+    }
+    if (!latest) {
+        return undefined;
+    }
+    const collapsed = latest.replace(/\s+/g, ' ').trim();
+    if (collapsed.length <= THINKING_SNIPPET_MAX_CHARS) {
+        return collapsed;
+    }
+    const clipped = collapsed.slice(0, THINKING_SNIPPET_MAX_CHARS);
+    const lastSpace = clipped.lastIndexOf(' ');
+    return `${(lastSpace > THINKING_SNIPPET_MAX_CHARS / 2 ? clipped.slice(0, lastSpace) : clipped).trimEnd()}…`;
 }
 
 function resolveTranscriptStreamingToolDetail(
