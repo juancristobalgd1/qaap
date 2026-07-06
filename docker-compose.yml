@@ -43,6 +43,9 @@ services:
       # typecheck/build/test scripts and, on failure, spawn up to 2 fix turns (5-min cap).
       # Default off; set QAAP_AGENT_VERIFY=1 in the VPS env to enable.
       QAAP_AGENT_VERIFY: ${QAAP_AGENT_VERIFY:-}
+      # Strict mode: set QAAP_AGENT_AUTO_CONTINUE=0 to stop the agent from auto-continuing after a
+      # turn — it does only what the user asked and stops. Default on.
+      QAAP_AGENT_AUTO_CONTINUE: ${QAAP_AGENT_AUTO_CONTINUE:-}
       QAAP_CLOUD_MODE: ${QAAP_CLOUD_MODE:-local}
       # BYOK / free-tier keys for @qaiq background jobs (also set in Settings → AI).
       # Explicit env vars here override empty preferences; see doc/qaap-vps-deployment.md.

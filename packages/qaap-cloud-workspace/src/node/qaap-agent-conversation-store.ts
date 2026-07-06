@@ -131,6 +131,13 @@ const INDEX_PATH = path.join(STORE_DIR, 'index.json');
 const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 
 /**
+ * Strict mode. Set `QAAP_AGENT_AUTO_CONTINUE=0` (or `false`/`off`) to stop the backend from
+ * auto-re-prompting the agent to "keep going" after a turn — the agent then does only what the
+ * user asked and stops. Default on (preserves the auto-continue / scaffold-to-preview behavior).
+ */
+const QAAP_AGENT_AUTO_CONTINUE_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_AUTO_CONTINUE?.trim() ?? '');
+
+/**
  * Persistent multi-turn conversations with the coding agent. Each user message spawns a one-shot
  * task on {@link QaapAgentTaskRunner} with the full transcript embedded in the prompt; when the
  * task finishes, its stdout is appended as the next agent message. The store survives backend
@@ -1343,6 +1350,9 @@ export class QaapAgentConversationStore {
         conv: QaapAgentConversation,
         userMessageId: string,
     ): void {
+        if (!QAAP_AGENT_AUTO_CONTINUE_ENABLED) {
+            return;
+        }
         const userMessage = conv.messages.find(message => message.id === userMessageId);
         const agentMessage = conv.messages[conv.messages.length - 1];
         if (!userMessage || !agentMessage || agentMessage.role !== 'agent' || conv.status !== 'idle') {
