@@ -116,6 +116,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
     /** Surface the currently open tour belongs to. */
     protected activeSurface: MobileOnboardingSurface = 'work-hub';
     protected deferTimer: number | undefined;
+    protected activeAgentWatchTimer: number | undefined;
     protected surfaceObserver: MutationObserver | undefined;
     protected lastKnownSurface: MobileOnboardingSurface = 'work-hub';
 
@@ -274,9 +275,46 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         this.currentIndex = 0;
         this.ensureOverlayElements();
         this.renderCurrentStep();
+        this.startActiveAgentWatch();
         window.addEventListener('resize', this.scheduleReflow, { passive: true });
         window.addEventListener('orientationchange', this.scheduleReflow, { passive: true });
         document.addEventListener('keydown', this.onKeyDown);
+    }
+
+    /**
+     * While the tutorial is open, dismiss it — terminally (marked seen, no re-open) — as soon as
+     * active agent work appears, so the coach-marks never sit on top of the agent surface
+     * (regression guard QA-006). This does NOT reintroduce the old flashing: the dismiss is
+     * terminal (seen = true stops any re-open), and `failed` conversations no longer count as
+     * blocking, so a workspace full of old failed sessions stays perfectly stable.
+     */
+    protected startActiveAgentWatch(): void {
+        if (this.activeAgentWatchTimer !== undefined || typeof window === 'undefined') {
+            return;
+        }
+        const tick = (): void => {
+            if (!this.active) {
+                return;
+            }
+            if (shouldDeferMobileOnboardingTutorial()) {
+                this.dismiss(true);
+                return;
+            }
+            void hasBlockingAgentConversationWork().then(blocking => {
+                if (blocking && this.active) {
+                    this.dismiss(true);
+                }
+            });
+        };
+        this.activeAgentWatchTimer = window.setInterval(tick, 2000);
+        tick();
+    }
+
+    protected stopActiveAgentWatch(): void {
+        if (this.activeAgentWatchTimer !== undefined) {
+            window.clearInterval(this.activeAgentWatchTimer);
+            this.activeAgentWatchTimer = undefined;
+        }
     }
 
     protected dismiss(markSeen: boolean): void {
@@ -288,6 +326,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         }
         this.active = false;
         this.stopDeferLoop();
+        this.stopActiveAgentWatch();
         window.removeEventListener('resize', this.scheduleReflow);
         window.removeEventListener('orientationchange', this.scheduleReflow);
         document.removeEventListener('keydown', this.onKeyDown);
