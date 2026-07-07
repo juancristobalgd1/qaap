@@ -2003,6 +2003,18 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
   gap: 8px;
 }
 
+.theia-mobile-onboarding-dismiss {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.theia-mobile-onboarding-btn.theia-mod-remind {
+  color: var(--theia-descriptionForeground);
+  padding: 0 10px;
+}
+
 .theia-mobile-onboarding-btn {
   appearance: none;
   -webkit-appearance: none;

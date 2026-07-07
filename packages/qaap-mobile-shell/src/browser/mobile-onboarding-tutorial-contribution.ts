@@ -357,6 +357,13 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         }
     }
 
+    /** Close for this session but keep it eligible to reappear on a fresh session (not marked seen). */
+    protected remindLater(): void {
+        const surface = this.activeSurface;
+        markMobileOnboardingSessionSkipped(surface);
+        this.dismiss(false);
+    }
+
     protected ensureOverlayElements(): void {
         if (this.overlay) {
             return;
@@ -411,7 +418,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 title: nls.localize('qaap/mobileOnboarding/workHub/compose/title', 'Delegate your first task'),
                 body: nls.localize(
                     'qaap/mobileOnboarding/workHub/compose/body',
-                    'Describe the outcome in the composer below. QAIQ plans and runs it on the server — the work keeps going even if you close this tab.'
+                    'Describe the outcome in the composer below. QAIQ plans and runs it on the server — the work keeps going even if you close this tab, and you get notified when it finishes or needs you.'
                 ),
                 target: () => visibleElement('.theia-mobile-projects-sticky-composer'),
                 placement: 'top',
@@ -437,6 +444,15 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 target: () => visibleElement('.theia-mobile-transcript-tab-icon-select'),
                 demo: 'tap',
                 placement: 'bottom',
+            },
+            {
+                id: 'wh-review',
+                title: nls.localize('qaap/mobileOnboarding/workHub/review/title', 'Review, then commit — from your phone'),
+                body: nls.localize(
+                    'qaap/mobileOnboarding/workHub/review/body',
+                    'When the task finishes, open Changes to read the diff. Stage or discard individual hunks, then Commit — or Create PR — right here. That is the whole loop: delegate, watch, review, ship.'
+                ),
+                placement: 'center',
             },
             {
                 id: 'wh-ide-switch',
@@ -574,12 +590,26 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
         const actions = document.createElement('div');
         actions.className = 'theia-mobile-onboarding-actions';
 
+        const dismissGroup = document.createElement('div');
+        dismissGroup.className = 'theia-mobile-onboarding-dismiss';
+
         const skipBtn = document.createElement('button');
         skipBtn.type = 'button';
         skipBtn.className = 'theia-mobile-onboarding-btn theia-mod-skip';
         skipBtn.textContent = nls.localizeByDefault('Skip');
         skipBtn.addEventListener('click', () => this.dismiss(true));
-        actions.appendChild(skipBtn);
+        dismissGroup.appendChild(skipBtn);
+
+        // "Remind later" closes without marking the tour permanently seen, so it reappears on a fresh
+        // session — unlike Skip, which suppresses it for good. Both close it for the current session.
+        const remindBtn = document.createElement('button');
+        remindBtn.type = 'button';
+        remindBtn.className = 'theia-mobile-onboarding-btn theia-mod-remind';
+        remindBtn.textContent = nls.localize('qaap/mobileOnboarding/remindLater', 'Remind later');
+        remindBtn.addEventListener('click', () => this.remindLater());
+        dismissGroup.appendChild(remindBtn);
+
+        actions.appendChild(dismissGroup);
 
         const navGroup = document.createElement('div');
         navGroup.className = 'theia-mobile-onboarding-nav';
