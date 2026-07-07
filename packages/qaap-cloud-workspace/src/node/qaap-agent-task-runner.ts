@@ -47,6 +47,7 @@ import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/com
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv } from './qaap-agent-spawn-identity';
+import { extractRetrievalKeywords, formatRelevantFilesHint } from '../common/qaap-agent-retrieval';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
 import {
@@ -142,6 +143,15 @@ const AGENT_INSTRUCTIONS_MAX_CHARS = 6000;
 const AGENT_INSTRUCTION_FILES: readonly string[] = ['CLAUDE.md', 'AGENTS.md', '.cursorrules'];
 /** Cap on the generated repo-map block (shallow tree + recently-changed files). */
 const REPO_MAP_MAX_CHARS = 2400;
+/**
+ * Opt-in query-specific retrieval: ripgrep the user's message keywords over source and inject the
+ * top matching file paths as a "likely relevant files" hint. Off by default because it adds a small
+ * per-turn token + ripgrep cost — enable with QAAP_AGENT_RETRIEVAL=1 and measure on real usage.
+ */
+const QAAP_AGENT_RETRIEVAL_ENABLED = /^(1|true)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');
+/** Max relevant-file paths injected, and the char cap on that block. */
+const RETRIEVAL_MAX_FILES = 5;
+const RETRIEVAL_HINT_MAX_CHARS = 400;
 /** Repo-map cache TTL — short, because the changed-files list drifts as the agent edits. */
 const REPO_MAP_CACHE_TTL_MS = 60_000;
 /** Directories never listed in the repo map (mirrors the search-hygiene exclude list). */
@@ -973,6 +983,7 @@ export class QaapAgentTaskRunner {
         interactionModeId?: string,
         approvalPolicyId?: string,
         toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'],
+        userQuery?: string,
     ): { command: string; stdinPrompt?: string } {
         const id = this.resolveAgentId(prompt, agentId);
         const runnerPrompt = this.stripLeadingAgentMention(prompt);
@@ -989,7 +1000,11 @@ export class QaapAgentTaskRunner {
         // AGENTS.md), and a shallow repo map — so a stateless CLI starts warm instead of cold.
         const resolvedCwd = cwd ? path.resolve(cwd) : undefined;
         const repoContext: QaapAgentRepoContext | undefined = resolvedCwd
-            ? { agentInstructions: this.readAgentInstructions(resolvedCwd), repoMap: this.readRepoMap(resolvedCwd) }
+            ? {
+                agentInstructions: this.readAgentInstructions(resolvedCwd),
+                repoMap: this.readRepoMap(resolvedCwd),
+                relevantFiles: this.readRelevantFiles(resolvedCwd, userQuery),
+            }
             : undefined;
         const agentPrompt = prependAgentTaskContextToPrompt(
             workflowPrompt,
@@ -1104,6 +1119,52 @@ export class QaapAgentTaskRunner {
         const text = this.buildRepoMap(resolved);
         this.repoMapCache.set(resolved, { text, at: Date.now() });
         return text;
+    }
+
+    /**
+     * Query-specific "likely relevant files" hint: ripgrep the user's message keywords over the repo
+     * and return the top matching file paths (repo-relative). Best-effort — returns undefined when
+     * disabled, no keywords, ripgrep missing, or nothing matches. Bounded and short-timeout so it
+     * never blocks a turn.
+     */
+    protected readRelevantFiles(cwd: string, userQuery: string | undefined): string | undefined {
+        if (!QAAP_AGENT_RETRIEVAL_ENABLED) {
+            return undefined;
+        }
+        const keywords = extractRetrievalKeywords(userQuery);
+        if (keywords.length === 0) {
+            return undefined;
+        }
+        try {
+            // Case-insensitive, files-with-matches, count per file so we can rank by hit count.
+            // Exclude the hygiene dirs; -g globs keep it scoped to source.
+            const pattern = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+            const args = ['--count-matches', '--no-messages', '-i', '-e', pattern, '--max-count', '50'];
+            for (const dir of REPO_MAP_EXCLUDED_DIRS) {
+                args.push('-g', `!${dir}/**`);
+            }
+            args.push('--', '.');
+            const out = spawnSync('rg', args, { cwd, encoding: 'utf8', timeout: 4000, maxBuffer: 4 * 1024 * 1024 });
+            if (out.status !== 0 && out.status !== 1 || !out.stdout) {
+                return undefined; // status 1 = no matches; other non-zero = rg missing/error
+            }
+            const ranked: Array<{ file: string; hits: number }> = [];
+            for (const line of out.stdout.split('\n')) {
+                const sep = line.lastIndexOf(':');
+                if (sep <= 0) {
+                    continue;
+                }
+                const file = line.slice(0, sep).replace(/^\.\//, '');
+                const hits = Number.parseInt(line.slice(sep + 1), 10);
+                if (file && Number.isFinite(hits)) {
+                    ranked.push({ file, hits });
+                }
+            }
+            ranked.sort((a, b) => b.hits - a.hits);
+            return formatRelevantFilesHint(ranked.slice(0, RETRIEVAL_MAX_FILES).map(r => r.file), RETRIEVAL_HINT_MAX_CHARS);
+        } catch {
+            return undefined;
+        }
     }
 
     protected buildRepoMap(cwd: string): string | undefined {
@@ -1569,6 +1630,7 @@ export class QaapAgentTaskRunner {
                     request.interactionModeId,
                     request.approvalPolicyId,
                     request.toolApprovalRules,
+                    request.userQuery,
                 );
                 this.recordTaskLatencyMark(task.id, 'build_agent_command_end');
                 if (stdinPrompt) {

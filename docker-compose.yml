@@ -53,6 +53,10 @@ services:
       QAAP_AGENT_UID: ${QAAP_AGENT_UID:-}
       QAAP_AGENT_GID: ${QAAP_AGENT_GID:-}
       QAAP_AGENT_HOME: ${QAAP_AGENT_HOME:-/home/qaap-agent}
+      # Opt-in relevance retrieval: ripgrep the user's message keywords over the repo and inject the
+      # top matching file paths as a "likely relevant files" hint (Cursor-style priming). Adds a small
+      # per-turn token + ripgrep cost — set QAAP_AGENT_RETRIEVAL=1 and measure. Default off.
+      QAAP_AGENT_RETRIEVAL: ${QAAP_AGENT_RETRIEVAL:-}
       QAAP_CLOUD_MODE: ${QAAP_CLOUD_MODE:-local}
       # BYOK / free-tier keys for @qaiq background jobs (also set in Settings → AI).
       # Explicit env vars here override empty preferences; see doc/qaap-vps-deployment.md.

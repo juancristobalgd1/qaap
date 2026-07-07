@@ -106,6 +106,12 @@ export interface QaapCreateAgentTaskRequest {
      * from {@link cwd}. The frontend resolves this because the backend has no PromptService.
      */
     readonly contextPreamble?: string;
+    /**
+     * The latest user message, clean (mention-stripped, no transcript), for query-specific relevance
+     * retrieval. Distinct from {@link prompt}, which is the full assembled transcript. Opt-in
+     * (QAAP_AGENT_RETRIEVAL) — the runner ripgreps its keywords to inject likely-relevant files.
+     */
+    readonly userQuery?: string;
     /** Forwarded by the `qaap-task` helper so spawned tasks attribute to their parent. */
     readonly parentId?: string;
     /**

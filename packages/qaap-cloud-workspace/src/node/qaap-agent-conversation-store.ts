@@ -1657,6 +1657,8 @@ export class QaapAgentConversationStore {
             agent: turnAgentId,
             cwd: conv.cwd,
             title: conv.title,
+            // Clean latest user message (mention-stripped) for opt-in relevance retrieval.
+            ...(lastUser?.content ? { userQuery: this.stripLeadingAgentMention(lastUser.content) } : {}),
             ...(conv.autoApprove === false ? { autoApprove: false } : {}),
             ...(conv.contextPreamble ? { contextPreamble: conv.contextPreamble } : {}),
             ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),

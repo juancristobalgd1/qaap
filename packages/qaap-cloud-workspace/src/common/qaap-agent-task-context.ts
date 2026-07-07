@@ -39,6 +39,8 @@ export interface QaapAgentRepoContext {
     readonly agentInstructions?: string;
     /** Compact repository map: a shallow source tree plus recently-changed files, to orient retrieval. */
     readonly repoMap?: string;
+    /** Query-specific "likely relevant files" hint, so the agent confirms rather than cold-searches. */
+    readonly relevantFiles?: string;
 }
 
 /**
@@ -82,6 +84,10 @@ export function prependAgentTaskContextToPrompt(
     const repoMap = repoContext?.repoMap?.trim();
     if (repoMap) {
         parts.push(`# Repository map\n\n${repoMap}`);
+    }
+    const relevantFiles = repoContext?.relevantFiles?.trim();
+    if (relevantFiles) {
+        parts.push(`# Likely relevant files\n\n${relevantFiles}`);
     }
     if (parts.length === 0) {
         return prompt;
