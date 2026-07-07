@@ -46,6 +46,7 @@ import {
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv } from './qaap-agent-spawn-identity';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
 import {
@@ -1615,6 +1616,7 @@ export class QaapAgentTaskRunner {
                 shell: true,
                 env: this.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+                ...this.resolveAgentSpawnIdentity(),
             });
             this.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
@@ -1972,6 +1974,7 @@ export class QaapAgentTaskRunner {
                     shell: true,
                     env,
                     stdio: ['ignore', 'pipe', 'pipe'],
+                    ...this.resolveAgentSpawnIdentity(),
                 });
             } catch (error) {
                 stderr = error instanceof Error ? error.message : String(error);
@@ -2076,9 +2079,43 @@ export class QaapAgentTaskRunner {
      * Env handed to the spawned agent process. Prepends the helper-CLI dir to PATH and exposes
      * the token + API URL + this task's id, so the agent can fan out sub-tasks via `qaap-task`.
      */
+    protected agentSpawnIdentityWarned = false;
+
+    /**
+     * Optional privilege drop for the spawned agent process. When `QAAP_AGENT_UID` (and optionally
+     * `QAAP_AGENT_GID`) is set AND the backend runs as root, the agent is spawned under that
+     * non-root uid — so it cannot enter the root-owned `/root/.qaap` and `/root/.theia` trees where
+     * every tenant's API keys, OAuth tokens and helper tokens live, bounding
+     * `--dangerously-skip-permissions` to OS permissions. No-op (empty) when the env is unset or the
+     * backend is not root, so local dev and non-containerized runs are unchanged.
+     */
+    protected resolveAgentSpawnIdentity(): { uid?: number; gid?: number } {
+        const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+        const identity = resolveAgentSpawnIdentityFromEnv(process.env, isRoot);
+        if (identity.warnNotRoot && !this.agentSpawnIdentityWarned) {
+            this.agentSpawnIdentityWarned = true;
+            console.warn('[qaap-security] QAAP_AGENT_UID is set but the backend is not root — '
+                + 'cannot drop agent privileges; the agent will run with the backend uid.');
+        }
+        const spawnOptions: { uid?: number; gid?: number } = {};
+        if (identity.uid !== undefined) {
+            spawnOptions.uid = identity.uid;
+        }
+        if (identity.gid !== undefined) {
+            spawnOptions.gid = identity.gid;
+        }
+        return spawnOptions;
+    }
+
     protected buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
         env.PWD = task.cwd;
+        // When the agent is dropped to a non-root uid (QAAP_AGENT_UID), its inherited HOME still
+        // points at root's /root, which it cannot write — CLI caches/configs would fail. Point HOME
+        // at a writable agent home so the non-root process has somewhere to write.
+        if (this.resolveAgentSpawnIdentity().uid !== undefined) {
+            env.HOME = process.env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent';
+        }
         // Strip shared provider API keys from process.env so per-user settings
         // are the sole source. Without this, User B's agent would inherit User
         // A's keys (or operator-level keys) from the shared backend process.
@@ -2430,6 +2467,7 @@ export class QaapAgentTaskRunner {
                     shell: true,
                     env,
                     stdio: ['ignore', 'pipe', 'pipe'],
+                    ...this.resolveAgentSpawnIdentity(),
                 });
             } catch (error) {
                 reject(error instanceof Error ? error : new Error(String(error)));

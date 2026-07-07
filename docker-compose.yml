@@ -46,6 +46,13 @@ services:
       # Strict mode: set QAAP_AGENT_AUTO_CONTINUE=0 to stop the agent from auto-continuing after a
       # turn — it does only what the user asked and stops. Default on.
       QAAP_AGENT_AUTO_CONTINUE: ${QAAP_AGENT_AUTO_CONTINUE:-}
+      # Security: run the spawned agent under a non-root uid so it cannot read other tenants' secrets
+      # under /root (API keys, OAuth tokens, helper tokens). The image ships a qaap-agent user (uid
+      # 1001). Set QAAP_AGENT_UID=1001 (and QAAP_AGENT_GID=1001) to activate AFTER verifying the agent
+      # can still write its workspace — see doc/qaap-vps-deployment.md. Default off (agent runs as root).
+      QAAP_AGENT_UID: ${QAAP_AGENT_UID:-}
+      QAAP_AGENT_GID: ${QAAP_AGENT_GID:-}
+      QAAP_AGENT_HOME: ${QAAP_AGENT_HOME:-/home/qaap-agent}
       QAAP_CLOUD_MODE: ${QAAP_CLOUD_MODE:-local}
       # BYOK / free-tier keys for @qaiq background jobs (also set in Settings → AI).
       # Explicit env vars here override empty preferences; see doc/qaap-vps-deployment.md.
