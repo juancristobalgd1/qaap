@@ -490,7 +490,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const { streaming, defer, conv, error, message } = options;
         const eventTimeline = createMobileExecutionEventTimeline(segments);
         // Wrap the timeline in a process accordion (Codex-style "Processed in").
-        const isWorking = streaming && this.isConversationWorking(conv);
+        const isWorking = this.isConversationWorking(conv, streaming);
         const isError = this.isConversationError(conv);
         // Cancellation must be derived from THIS message, not merely the
         // conversation's last agent message -- each agent message renders its
@@ -501,7 +501,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const elapsedMs = this.resolveConversationElapsedMs(conv);
         const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
-        const accordion = wrapMobileProcessAccordion(eventTimeline, { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb });
+        const accordion = wrapMobileProcessAccordion(eventTimeline, {
+            isWorking,
+            isError,
+            isCancelled,
+            elapsedMs,
+            turnStartMs,
+            activityVerb,
+            settled: this.isConversationFinalResponseCommitted(conv, streaming),
+        });
         body.append(accordion);
         ensureSlowTurnHint(accordion, { isWorking, turnStartMs, onStopTurn: () => this.host.cancelOpenTranscriptStream?.() });
         if (streaming) {
@@ -566,11 +574,23 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     /** True when the conversation is still actively streaming/working. */
-    protected isConversationWorking(conv: QaapAgentConversationDTO | undefined): boolean {
+    protected isConversationWorking(conv: QaapAgentConversationDTO | undefined, renderStreaming = false): boolean {
         if (!conv) {
-            return false;
+            return renderStreaming;
         }
-        return hasUnfinishedAgentWork(conv) || conv.status === 'streaming';
+        return hasUnfinishedAgentWork(conv) || conv.status === 'streaming' || conv.status === 'settled';
+    }
+
+    /**
+     * Rendering can switch to non-streaming before the agent lifecycle is complete
+     * (visually settled/finalizing). Collapse process chrome only once the backend
+     * is actually ready/idle, not merely because this render pass is non-streaming.
+     */
+    protected isConversationFinalResponseCommitted(conv: QaapAgentConversationDTO | undefined, renderStreaming: boolean): boolean {
+        if (!conv) {
+            return !renderStreaming;
+        }
+        return conv.status !== 'streaming' && conv.status !== 'settled';
     }
 
     /** True when the conversation ended in a failure. */
@@ -807,7 +827,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!accordion) {
             return;
         }
-        const isWorking = streaming && this.isConversationWorking(conv);
+        const isWorking = this.isConversationWorking(conv, streaming);
         const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
         // `row` represents one specific agent message, not necessarily the
         // conversation's last one -- resolve it via the row's message-id
@@ -827,7 +847,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             // AFTER appending the closing narrative + diff summary — that is
             // the one moment auto-collapse is allowed. Streaming syncs must
             // never collapse, even if the working flag flickers between tools.
-            settled: !streaming,
+            settled: this.isConversationFinalResponseCommitted(conv, streaming),
         });
         // Re-ensure the slow-turn hint on every sync (runs on every streaming
         // tick): this is what lets the hint survive `accordion` being wholly
@@ -1058,7 +1078,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             row.classList.remove('theia-mod-stream-stalled');
             return;
         }
-        if (!shouldShowTranscriptThoughtBrief(segments, false, {
+        const backendActive = this.isConversationWorking(conv, false);
+        if (!shouldShowTranscriptThoughtBrief(segments, backendActive, {
             userPromptChars: resolveLastUserPromptChars(conv.messages),
             hasActivityStats: hasTranscriptActivityStats(resolveTranscriptActivityStats(segments)),
             thinkingContent: resolveTranscriptThinkingContent(segments),
@@ -2029,7 +2050,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const stats = resolveTranscriptActivityStats([...segments]);
         const hasStats = hasTranscriptActivityStats(stats);
         const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
-        const showBrief = shouldShowTranscriptThoughtBrief(segments, streaming, {
+        const backendActive = this.isConversationWorking(conv, streaming);
+        const showBrief = shouldShowTranscriptThoughtBrief(segments, backendActive, {
             turnElapsedMs: resolveTranscriptTurnElapsedMs(turnStartMs),
             userPromptChars: conv ? resolveLastUserPromptChars(conv.messages) : undefined,
             hasActivityStats: hasStats,
@@ -2042,7 +2064,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             }
             return true;
         }
-        const thinkingActive = isTranscriptAgentThinkingPhase(segments, streaming);
+        const thinkingActive = isTranscriptAgentThinkingPhase(segments, backendActive);
         if (!thinking && !hasStats && !thinkingActive) {
             if (brief) {
                 brief.hidden = true;
@@ -2070,6 +2092,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const thinking = resolveTranscriptThinkingContent([...segments]);
         const streaming = !!options.streaming;
         const thinkingActive = isTranscriptAgentThinkingPhase(segments, streaming);
+        const executionComplete = this.isConversationFinalResponseCommitted(options.conv, streaming);
         const title = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-title');
         if (!title) {
             return;
@@ -2086,16 +2109,17 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (turnStartMs !== undefined && !block.dataset.thoughtDurationMs) {
                 block.dataset.thoughtDurationMs = String(Math.max(0, Date.now() - turnStartMs));
             }
-            // Keep the thought brief open during the entire streaming turn
-            // so the user can always see what the agent reasoned. It will be
-            // collapsed once streaming ends (see the else branch below).
+            // Keep the thought brief open during the entire execution turn so
+            // the user can always see what the agent reasoned. It will be
+            // collapsed once the backend is actually ready, not merely when
+            // the transcript render switches to a non-streaming/finalizing mode.
             if (block instanceof HTMLDetailsElement && !block.dataset.thoughtUserExpanded) {
                 block.open = true;
             }
         } else if (block instanceof HTMLDetailsElement
             && !block.dataset.thoughtUserExpanded
             && !thinkingActive
-            && !streaming) {
+            && executionComplete) {
             block.open = false;
         }
         const meta = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-meta');
@@ -2104,7 +2128,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // the backend is still streaming (including the Finalizing state where
         // the turn is visually settled but the backend is still active),
         // lightbulb (LobeHub Atom) when the backend is truly idle.
-        const backendStreaming = streaming || (!!options.conv && options.conv.status === 'streaming');
+        const backendStreaming = this.isConversationWorking(options.conv, streaming);
         const briefIcon = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-icon');
         if (briefIcon) {
             this.syncTranscriptThoughtBriefIcon(briefIcon, backendStreaming || thinkingActive);
@@ -2924,7 +2948,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const hasStats = hasTranscriptActivityStats(stats);
         const streaming = !!options?.streaming;
         const turnStartMs = options?.conv ? resolveTranscriptTurnStartMs(options.conv.messages) : undefined;
-        if (!shouldShowTranscriptThoughtBrief(segments, streaming, {
+        const backendActive = this.isConversationWorking(options?.conv, streaming);
+        if (!shouldShowTranscriptThoughtBrief(segments, backendActive, {
             turnElapsedMs: resolveTranscriptTurnElapsedMs(turnStartMs),
             userPromptChars: options?.conv ? resolveLastUserPromptChars(options.conv.messages) : undefined,
             hasActivityStats: hasStats,
@@ -2932,7 +2957,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         })) {
             return undefined;
         }
-        const thinkingActive = isTranscriptAgentThinkingPhase(segments, streaming);
+        const thinkingActive = isTranscriptAgentThinkingPhase(segments, backendActive);
 
         const block = document.createElement('details');
         block.className = 'theia-mobile-agent-thought-brief theia-mod-cursor-flat';
@@ -2940,7 +2965,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (thinkingActive) {
             block.classList.add('theia-mod-thinking-live');
         }
-        block.open = thinkingActive;
+        block.open = thinkingActive || (backendActive && !!thinking);
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-thought-brief-summary';
@@ -2952,8 +2977,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // visual language is unified. The QAAQ "finalizing" state (backend still
         // streaming but turn visually settled) keeps the spinning loader so the
         // user still sees activity, matching the prior unicode-snake spinner.
-        const backendStreaming = streaming || (!!options?.conv && options.conv.status === 'streaming');
-        const icon = this.createTranscriptThoughtBriefIcon(backendStreaming || thinkingActive);
+        const icon = this.createTranscriptThoughtBriefIcon(backendActive || thinkingActive);
         const title = document.createElement('span');
         title.className = 'theia-mobile-agent-thought-brief-title';
         const chevron = document.createElement('span');
@@ -4364,27 +4388,28 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (shimmerActive) {
             details.dataset.thinkingWasLive = '1';
         }
-        // Detect the overall message phase: while the model is writing its
-        // final text response (or once the turn has settled), auto-collapse
-        // the chain of thought so the summary takes focus. While tools are
-        // still acting, keep the reasoning visible.
+        // Detect the overall message phase. Writing/finalizing is still part
+        // of the active turn, so it must not auto-collapse the chain of
+        // thought. Collapse only after the backend has committed the final
+        // response and returned to ready/idle.
         const segments = options?.segments ?? [];
         const phase = resolveTranscriptTraceDisplayPhase(segments, !!options?.streaming);
         const isStreaming = !!options?.streaming;
-        const writingOrSettled = phase === 'writing' || phase === 'settled';
-        if (writingOrSettled) {
+        const executionComplete = this.isConversationFinalResponseCommitted(options?.conv, isStreaming);
+        const shouldCollapseForFinalResponse = executionComplete && phase === 'settled';
+        if (shouldCollapseForFinalResponse) {
             details.dataset.thinkingCollapsedForWriting = '1';
         }
         if (!details.dataset.thinkingUserToggled) {
             // Once opened during streaming, keep thinking visible while tools
-            // run; collapse only when the model starts writing the final text.
-            if (isStreaming && !writingOrSettled) {
+            // run, while final text streams, and during finalizing.
+            if (!executionComplete) {
                 if (details.dataset.thinkingWasLive === '1' && !details.open) {
                     details.dataset.thinkingProgrammaticToggle = '1';
                     details.open = true;
                 }
             } else {
-                // Writing or settled — auto-collapse unless user toggled.
+                // Final response committed — auto-collapse unless user toggled.
                 const collapsedForWriting = details.dataset.thinkingCollapsedForWriting === '1';
                 const desiredOpen = shimmerActive
                     || (details.dataset.thinkingWasLive === '1' && !collapsedForWriting);

@@ -501,8 +501,9 @@ export function hasMobileExecutionEventTimeline(row: HTMLElement): boolean {
 // Wraps the execution event timeline. The header shows "Processed in Xm Ys".
 // Auto-expands while working, auto-collapses on success, stays open on error.
 // A manual user toggle persists for the rest of the turn — the accordion
-// never auto-expands/collapses again after that (each new turn renders a
-// fresh accordion element, so the next turn starts with auto logic active).
+// never auto-expands during that active turn after that. Successful final
+// settlement is the only automatic collapse and it also closes a manually
+// expanded accordion.
 
 export interface MobileProcessAccordionOptions {
     /** Whether the agent is currently working (streaming/incomplete). */
@@ -537,12 +538,10 @@ export interface MobileProcessAccordionOptions {
      */
     readonly turnStartMs?: number;
     /**
-     * True only when the turn has definitively finished AND the final content
-     * (closing narrative / diff summary) has already been appended to the DOM.
-     * Auto-collapse happens exclusively on a `settled` sync — a transient
-     * `isWorking === false` between tools (status flicker mid-stream) must
-     * never collapse the accordion, otherwise it visibly oscillates
-     * open/closed during the stream.
+     * True only when the turn has definitively finished and the final content
+     * is being committed. Auto-collapse happens exclusively with this flag; a
+     * transient `isWorking === false` between tools must never collapse the
+     * accordion, otherwise it visibly oscillates open/closed during the stream.
      */
     readonly settled?: boolean;
 }
@@ -552,13 +551,12 @@ export interface MobileProcessAccordionOptions {
  * event timeline. The timeline is rendered inside as a child.
  *
  * The accordion is auto-expanded when `isWorking` or `isError` is true, and
- * auto-collapsed when the agent completes successfully. Once the user manually
- * toggles it (detected via the `data-user-toggled` attribute), the auto
- * expand/collapse logic is suppressed for the remainder of the turn — the
- * accordion never fights the user by re-expanding or re-collapsing on its
- * own after a manual toggle. The flag is never cleared programmatically;
- * a new turn always renders a fresh accordion element, so the flag starts
- * fresh naturally.
+ * auto-collapsed only when a successful turn is finalized (`settled: true`).
+ * Once the user manually toggles it (detected via the `data-user-toggled`
+ * attribute), auto-expansion is suppressed for the remainder of the active
+ * turn. A successful final settle still collapses the accordion so the final
+ * response can take focus. The flag is never cleared programmatically; a new
+ * turn renders a fresh accordion element or a fresh turn-state key.
  */
 export function createMobileProcessAccordion(
     segments: readonly QaapAgentMessageSegmentDTO[],
@@ -577,20 +575,22 @@ export function wrapMobileProcessAccordion(
     timeline: HTMLElement,
     options: MobileProcessAccordionOptions,
 ): HTMLElement {
-    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb, settled } = options;
     const details = document.createElement('details');
     details.className =
         `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''}` +
         ` ${isCancelled ? 'theia-mod-cancelled' : ''} ${!isWorking && !isError && !isCancelled ? 'theia-mod-complete' : ''}`;
-    // Auto-expand while working, on error, or when stopped by the user;
-    // collapse on success. When this turn already rendered an accordion
-    // before (row rebuilt mid-stream by a full re-render or a patch
-    // fallback), restore the previous element's open/user-toggled state
-    // instead of recomputing it — a transient `isWorking === false` snapshot
-    // at rebuild time must not create the new accordion collapsed (that made
-    // it visibly oscillate during streaming).
+    // Auto-expand while working, on error, or when stopped by the user. When
+    // this turn already rendered an accordion before (row rebuilt mid-stream
+    // by a full re-render or a patch fallback), restore the previous element's
+    // open/user-toggled state instead of recomputing it — a transient
+    // `isWorking === false` snapshot at rebuild time must not create the new
+    // accordion collapsed. A successful final settle is the only exception:
+    // it always starts collapsed because the final response is now committed.
     const remembered = turnStartMs !== undefined ? processAccordionTurnState.get(turnStartMs) : undefined;
-    if (remembered) {
+    if (settled === true && !isError && !isCancelled) {
+        details.open = false;
+    } else if (remembered) {
         details.open = remembered.open;
         if (remembered.userToggled) {
             details.setAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR, '1');
@@ -634,17 +634,6 @@ export function wrapMobileProcessAccordion(
             recordProcessAccordionTurnState(turnStartMs, details);
         });
         recordProcessAccordionTurnState(turnStartMs, details);
-    }
-
-    // Orphaned-open guard: when the settle itself arrives as a full rebuild,
-    // this fresh accordion inherits `open` from the sticky state but NO sync
-    // ever runs afterwards (the turn is over — no more streaming ticks), so
-    // nothing would fold it. Schedule the same confirmation collapse here; it
-    // self-cancels if work resumes (a working sync cancels it) or if the user
-    // toggles (checked at fire time).
-    if (!isWorking && !isError && !isCancelled && details.open
-        && details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) !== '1') {
-        schedulePendingProcessAccordionCollapse(details);
     }
 
     return details;
@@ -713,17 +702,13 @@ function syncMobileProcessAccordionLabelTicker(
  *
  * Rules:
  * - If the user has manually toggled (`data-user-toggled="1"`), the auto
- *   expand/collapse logic below is skipped for good — the flag is never
- *   cleared by this function, so the user's choice persists for the rest of
- *   the turn. A new turn renders a fresh accordion element, so the flag
- *   naturally starts clear again.
+ *   expansion logic below is skipped while the turn is active — the flag is
+ *   never cleared by this function, so the user's choice persists until the
+ *   turn really settles. A new turn renders a fresh accordion element/state
+ *   key, so the flag naturally starts clear again.
  * - Working or error → expanded. Completed successfully → collapsed, but only
- *   on a `settled` sync (the finalize path, which runs after the closing
- *   narrative and diff summary are in the DOM). A transient
- *   `isWorking === false` during streaming leaves the accordion open, so it
- *   never oscillates mid-stream. The collapse itself is deferred to the next
- *   animation frame so the browser paints the freshly-appended final content
- *   before the accordion collapses — avoiding a double layout jump.
+ *   on a `settled` sync. A transient `isWorking === false` during streaming
+ *   leaves the accordion exactly as-is, so it never oscillates mid-stream.
  * - The header label is always updated to reflect the current elapsed time,
  *   even when the user has manually toggled the accordion.
  */
@@ -754,90 +739,38 @@ export function syncMobileProcessAccordionState(
     details.classList.toggle('theia-mod-cancelled', !!isCancelled);
     details.classList.toggle('theia-mod-complete', !isWorking && !isError && !isCancelled);
 
-    // If the user manually toggled, respect their choice for the rest of the
-    // turn — never fight the user by auto-expanding/collapsing afterward.
-    if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
+    const finalSuccessfulSettle = options.settled === true && !isError && !isCancelled;
+
+    // If the user manually toggled, respect their choice while the turn is
+    // active — never fight the user by auto-expanding during intermediate
+    // transitions. Final successful settlement is allowed to collapse.
+    if (!finalSuccessfulSettle && details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
         return;
     }
 
     // Auto-expand/collapse.
     //
     // Expansion happens whenever the agent is working, errored, or was
-    // stopped by the user, and cancels any pending collapse. Collapse has two
-    // routes:
-    // - `settled: true` (the finalize path, final summary already appended):
-    //   collapse on the next animation frame so the browser paints the final
-    //   content first.
-    // - any other `!isWorking` sync (e.g. the streaming patch path observing
-    //   the settled conversation, or a transient status flicker between
-    //   tools): collapse only after a confirmation delay, cancelled if work
-    //   resumes — so mid-stream flickers can never fold the accordion.
+    // stopped by the user. Collapse only happens on final successful settle.
+    // Any other `!isWorking` sync (streaming flicker, quiet pause between
+    // tools, finalizing transition before the response is committed) leaves
+    // the current open state unchanged.
     const shouldOpen = isWorking || isError || !!isCancelled;
     if (shouldOpen) {
-        cancelPendingProcessAccordionCollapse(details);
         if (!details.open) {
             details.open = true;
+            if (turnStartMs !== undefined) {
+                recordProcessAccordionTurnState(turnStartMs, details);
+            }
         }
         return;
     }
-    if (!details.open) {
-        cancelPendingProcessAccordionCollapse(details);
-        return;
-    }
-    if (options.settled === true) {
-        cancelPendingProcessAccordionCollapse(details);
-        if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
-            details.open = false;
-        } else {
-            // Defer to the next frame so freshly-appended final content paints
-            // before the collapse (avoids a double layout jump). Re-check at
-            // fire time in case the user toggled or a late error arrived.
-            window.requestAnimationFrame(() => {
-                collapseProcessAccordionIfStillSettled(details);
-            });
+    if (finalSuccessfulSettle && details.open) {
+        details.open = false;
+        if (turnStartMs !== undefined) {
+            recordProcessAccordionTurnState(turnStartMs, details);
         }
-        return;
     }
-    // Unconfirmed settle: debounce the collapse.
-    schedulePendingProcessAccordionCollapse(details);
-}
-
-/** Pending debounced-collapse timers, keyed by the accordion element. */
-const pendingProcessAccordionCollapse = new WeakMap<HTMLDetailsElement, ReturnType<typeof setTimeout>>();
-const PROCESS_ACCORDION_COLLAPSE_CONFIRM_MS = 1500;
-
-function cancelPendingProcessAccordionCollapse(details: HTMLDetailsElement): void {
-    const timer = pendingProcessAccordionCollapse.get(details);
-    if (timer !== undefined) {
-        clearTimeout(timer);
-        pendingProcessAccordionCollapse.delete(details);
-    }
-}
-
-function schedulePendingProcessAccordionCollapse(details: HTMLDetailsElement): void {
-    if (pendingProcessAccordionCollapse.has(details)) {
-        return;
-    }
-    pendingProcessAccordionCollapse.set(details, setTimeout(() => {
-        pendingProcessAccordionCollapse.delete(details);
-        collapseProcessAccordionIfStillSettled(details);
-    }, PROCESS_ACCORDION_COLLAPSE_CONFIRM_MS));
-}
-
-/** Collapses unless the user toggled, work resumed, or the element was replaced. */
-function collapseProcessAccordionIfStillSettled(details: HTMLDetailsElement): void {
-    if (!details.isConnected) {
-        return;
-    }
-    if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
-        return;
-    }
-    if (details.classList.contains('theia-mod-working')
-        || details.classList.contains('theia-mod-error')
-        || details.classList.contains('theia-mod-cancelled')) {
-        return;
-    }
-    details.open = false;
 }
 
 /**

@@ -129,6 +129,28 @@ describe('qaap-transcript-timeline-render-bench', () => {
         } as QaapAgentConversationDTO;
     }
 
+    function createConvWithStatus(
+        segments: QaapAgentMessageSegmentDTO[],
+        status: QaapAgentConversationDTO['status'],
+    ): QaapAgentConversationDTO {
+        return {
+            id: `conv-${status}`,
+            title: 'Bench',
+            cwd: '/tmp/bench',
+            agentId: 'codex',
+            status,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: [{
+                id: 'agent-1',
+                role: 'agent',
+                content: '',
+                segments,
+                createdAt: Date.now(),
+            }],
+        } as QaapAgentConversationDTO;
+    }
+
     it('folds short process prose into the Lobe-style workflow and keeps the final answer visible', () => {
         const artifactsUi = createArtifactsUi();
         const segments: QaapAgentMessageSegmentDTO[] = [
@@ -1235,6 +1257,45 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(metrics.timeline_event_patch).to.equal(0);
         expect(metrics.timeline_event_rebuild).to.equal(0);
         expect(metrics.timeline_event_sync_skipped).to.equal(0);
+    });
+
+    it('keeps the process accordion open while a visually settled turn is still finalizing', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Planning the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'I have read the file and am preparing the final answer.' },
+        ];
+        for (const status of ['streaming', 'settled'] as const) {
+            const conv = createConvWithStatus(segments, status);
+            const row = artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, conv, { streaming: false });
+            const accordion = row.querySelector<HTMLDetailsElement>('.theia-mobile-process-accordion');
+            expect(accordion, status).to.not.equal(null);
+            expect(accordion!.open, status).to.equal(true);
+            expect(accordion!.classList.contains('theia-mod-working'), status).to.equal(true);
+        }
+    });
+
+    it('keeps the thought brief open while a no-tool turn is still finalizing', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Reasoning about the request.' },
+            { type: 'text', content: 'I am drafting the final response.' },
+        ];
+        for (const status of ['streaming', 'settled'] as const) {
+            const conv = createConvWithStatus(segments, status);
+            const row = artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, conv, { streaming: false });
+            const thought = row.querySelector<HTMLDetailsElement>('.theia-mobile-agent-thought-brief');
+            expect(thought, status).to.not.equal(null);
+            expect(thought!.open, status).to.equal(true);
+        }
     });
 
     it('re-renders closing narrative text blocks with final content on settle', () => {

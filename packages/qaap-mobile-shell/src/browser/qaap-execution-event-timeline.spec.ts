@@ -532,28 +532,26 @@ describe('qaap-execution-event-timeline', () => {
             expect((accordion as HTMLDetailsElement).open).to.be.false;
         });
 
-        it('collapses an orphaned-open settled rebuild after the confirmation delay', function (done: Mocha.Done): void {
-            this.timeout(4000);
+        it('collapses a settled rebuild immediately instead of inheriting mid-stream open state', () => {
             const segments = [toolSegment('read', 't1', '{}', true)];
             // Streaming render: accordion opens and records sticky state for the turn.
             const streaming = createMobileProcessAccordion(segments, { isWorking: true, isError: false, turnStartMs: 987654321 }) as HTMLDetailsElement;
             expect(streaming.open).to.be.true;
-            // Settle arrives as a full rebuild: fresh element inherits open from
-            // the sticky state, and no sync will ever run afterwards.
-            const rebuilt = createMobileProcessAccordion(segments, { isWorking: false, isError: false, turnStartMs: 987654321 }) as HTMLDetailsElement;
+            // A transient non-working rebuild is not enough to collapse.
+            const paused = createMobileProcessAccordion(segments, { isWorking: false, isError: false, turnStartMs: 987654321 }) as HTMLDetailsElement;
+            expect(paused.open).to.be.true;
+            // Settle arrives as a full rebuild: the final response is committed,
+            // so the new element must collapse without waiting for a timer.
+            const rebuilt = createMobileProcessAccordion(segments, { isWorking: false, isError: false, turnStartMs: 987654321, settled: true }) as HTMLDetailsElement;
+            expect(rebuilt.open).to.be.false;
+        });
+
+        it('preserves open state across a non-settled rebuild during a quiet pause between tools', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const streaming = createMobileProcessAccordion(segments, { isWorking: true, isError: false, turnStartMs: 987654322 }) as HTMLDetailsElement;
+            expect(streaming.open).to.be.true;
+            const rebuilt = createMobileProcessAccordion(segments, { isWorking: false, isError: false, turnStartMs: 987654322 }) as HTMLDetailsElement;
             expect(rebuilt.open).to.be.true;
-            document.body.append(rebuilt);
-            // The orphaned-open guard must fold it after the confirmation delay.
-            setTimeout(() => {
-                try {
-                    expect(rebuilt.open).to.be.false;
-                    rebuilt.remove();
-                    done();
-                } catch (error) {
-                    rebuilt.remove();
-                    done(error);
-                }
-            }, 2200);
         });
 
         it('stays open on a transient non-working sync until the turn settles', () => {
@@ -596,6 +594,15 @@ describe('qaap-execution-event-timeline', () => {
             (accordion as HTMLDetailsElement).open = false;
             syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false });
             // Should stay collapsed because user toggled
+            expect((accordion as HTMLDetailsElement).open).to.be.false;
+        });
+
+        it('collapses on final successful settle even after the user manually expanded it', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
+            accordion.setAttribute('data-user-toggled', '1');
+            (accordion as HTMLDetailsElement).open = true;
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, settled: true });
             expect((accordion as HTMLDetailsElement).open).to.be.false;
         });
 
