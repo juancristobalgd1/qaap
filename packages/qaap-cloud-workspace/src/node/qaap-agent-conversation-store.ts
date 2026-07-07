@@ -138,6 +138,14 @@ const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 const QAAP_AGENT_AUTO_CONTINUE_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_AUTO_CONTINUE?.trim() ?? '');
 
 /**
+ * Hard ceiling on agent re-spawns triggered by ALL loops (auto-continue + model-fallback) for a
+ * single user message. Each loop has its own smaller cap, but without a shared budget they multiply
+ * (2 auto-continues × N fallback models), so one turn could fan out into many CLI invocations. 4
+ * bounds the worst case while leaving room for a couple of continues plus one or two fallbacks.
+ */
+const MAX_LOOP_SPAWNS_PER_USER_MESSAGE = 4;
+
+/**
  * Persistent multi-turn conversations with the coding agent. Each user message spawns a one-shot
  * task on {@link QaapAgentTaskRunner} with the full transcript embedded in the prompt; when the
  * task finishes, its stdout is appended as the next agent message. The store survives backend
@@ -162,6 +170,12 @@ export class QaapAgentConversationStore {
     protected readonly autoContinueCountByUserMessage = new Map<string, number>();
     /** Per user turn: model keys already attempted before a fallback retry. */
     protected readonly modelFallbackTriedByUserMessage = new Map<string, Set<string>>();
+    /**
+     * Per user turn: total agent re-spawns triggered by the auto-continue and model-fallback loops
+     * combined. A shared ceiling so a pathological turn cannot fan out into many CLI invocations
+     * (auto-continue × fallback multiply otherwise). See {@link MAX_LOOP_SPAWNS_PER_USER_MESSAGE}.
+     */
+    protected readonly loopSpawnCountByUserMessage = new Map<string, number>();
     /** Per-task structured stdout parsers (QAIQ, Claude, Codex JSON, OpenCode, Antigravity). */
     protected readonly agentStreamByTaskId = new Map<string, QaapAgentStreamAccumulator>();
     /** Per-task CLI stdout → native AG-UI event emitters (QAIQ, Claude, Codex, OpenCode). */
@@ -1278,6 +1292,15 @@ export class QaapAgentConversationStore {
      * When a model-backed agent exits before producing a real answer, retry the same user turn
      * with the next curated fallback model so the thread keeps moving without user intervention.
      */
+    /** Shared re-spawn budget across the auto-continue and model-fallback loops for one user turn. */
+    protected hasLoopSpawnBudget(userMessageId: string): boolean {
+        return (this.loopSpawnCountByUserMessage.get(userMessageId) ?? 0) < MAX_LOOP_SPAWNS_PER_USER_MESSAGE;
+    }
+
+    protected recordLoopSpawn(userMessageId: string): void {
+        this.loopSpawnCountByUserMessage.set(userMessageId, (this.loopSpawnCountByUserMessage.get(userMessageId) ?? 0) + 1);
+    }
+
     protected maybeRetryTurnWithFallbackModel(
         conversationId: string,
         userMessageId: string,
@@ -1291,6 +1314,10 @@ export class QaapAgentConversationStore {
             return false;
         }
         if (!agentTurnHasRetryableEmptyOutput(agentMessage)) {
+            return false;
+        }
+        if (!this.hasLoopSpawnBudget(userMessageId)) {
+            this.modelFallbackTriedByUserMessage.delete(userMessageId);
             return false;
         }
         const currentModel = conv.agentModel
@@ -1325,6 +1352,7 @@ export class QaapAgentConversationStore {
         } catch {
             return false;
         }
+        this.recordLoopSpawn(userMessageId);
         const nextKey = agentModelKey(nextModel);
         if (nextKey) {
             tried.add(nextKey);
@@ -1362,13 +1390,14 @@ export class QaapAgentConversationStore {
             return;
         }
         const attempts = this.autoContinueCountByUserMessage.get(userMessageId) ?? 0;
-        if (attempts >= 2) {
-            if (messageRequestsDevPreview(userMessage.content)) {
+        if (attempts >= 2 || !this.hasLoopSpawnBudget(userMessageId)) {
+            if (attempts >= 2 && messageRequestsDevPreview(userMessage.content)) {
                 this.reportPreviewBootstrapFailure(conversationId, buildDevPreviewAutoContinueExhaustedReason());
             }
             return;
         }
         this.autoContinueCountByUserMessage.set(userMessageId, attempts + 1);
+        this.recordLoopSpawn(userMessageId);
         try {
             this.postUserMessage(
                 conversationId,
