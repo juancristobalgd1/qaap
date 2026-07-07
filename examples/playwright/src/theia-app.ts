@@ -76,8 +76,26 @@ export class TheiaApp {
     }
 
     async isMainContentPanelVisible(): Promise<boolean> {
-        const contentPanel = await this.page.$('#theia-main-content-panel');
-        return !!contentPanel && contentPanel.isVisible();
+        const hasVisibleElement = (selector: string) => this.page.evaluate(candidateSelector =>
+            Array.from(document.querySelectorAll(candidateSelector)).some(element => {
+                const style = window.getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                return style.visibility !== 'hidden'
+                    && style.display !== 'none'
+                    && rect.width > 0
+                    && rect.height > 0;
+            }),
+        selector);
+
+        if (await hasVisibleElement('#theia-main-content-panel')) {
+            return true;
+        }
+
+        const qaapWorkHubSurfaceSelector = (
+            '.theia-mobile-agents-hub-inline-execution, .theia-mobile-tasks-hub-root.theia-mod-agents-loading, '
+            + '.theia-mobile-agent-transcript-empty, .theia-mobile-agent-transcript-empty-welcome'
+        );
+        return await hasVisibleElement(this.appData.shellSelector) && await hasVisibleElement(qaapWorkHubSurfaceSelector);
     }
 
     async openPreferences(viewFactory: { new(app: TheiaApp): TheiaPreferenceView }, preferenceScope = TheiaPreferenceScope.Workspace): Promise<TheiaPreferenceView> {

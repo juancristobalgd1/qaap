@@ -17,9 +17,9 @@ import { readQaapAuthUser } from '@theia/qaap-adapters/src/browser/qaap-auth-ses
 @injectable()
 export class QaapCopilotOwnerBinding implements FrontendApplicationContribution {
 
-    protected authServiceResolver: (() => Promise<CopilotAuthService>) | undefined;
+    protected authServiceResolver: (() => Promise<CopilotAuthService | undefined>) | undefined;
 
-    setAuthServiceResolver(resolver: () => Promise<CopilotAuthService>): void {
+    setAuthServiceResolver(resolver: () => Promise<CopilotAuthService | undefined>): void {
         this.authServiceResolver = resolver;
     }
 
@@ -33,7 +33,7 @@ export class QaapCopilotOwnerBinding implements FrontendApplicationContribution 
         // CopilotAuthService is a dynamic value with async dependencies (RemoteConnectionProvider),
         // so we resolve it lazily to avoid synchronous resolution errors.
         resolver()
-            .then(authService => authService.setOwnerLogin(user?.login))
+            .then(authService => authService?.setOwnerLogin(user?.login))
             .catch(e => console.warn('[qaap-copilot-owner-binding] CopilotAuthService not available', e));
     }
 }

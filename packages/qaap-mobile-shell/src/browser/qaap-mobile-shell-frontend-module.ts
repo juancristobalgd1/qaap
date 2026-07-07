@@ -301,7 +301,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapCopilotOwnerBinding).toDynamicValue(ctx => {
         const binding = new QaapCopilotOwnerBinding();
-        binding.setAuthServiceResolver(() => ctx.container.getAsync<CopilotAuthService>(CopilotAuthService));
+        binding.setAuthServiceResolver(() => ctx.container.isBound(CopilotAuthService)
+            ? ctx.container.getAsync<CopilotAuthService>(CopilotAuthService)
+            : Promise.resolve(undefined));
         return binding;
     }).inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapCopilotOwnerBinding);

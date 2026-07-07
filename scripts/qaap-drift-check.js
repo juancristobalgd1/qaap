@@ -133,6 +133,7 @@ const ALLOWED = [
     /^dev-packages\/localization-manager\//,
     /^dev-packages\/private-re-exports\//,
     /^scripts\/debug-.*\.mjs$/,
+    /^scripts\/qaap-ensure-dash-licenses-jar\.mjs$/,
     /^scripts\/translation-update\.js$/,
     /^\.claude\/skills\/qaap-dev\.md$/,
     /^\.cursor\/rules\/mobile-touch-accessibility\.mdc$/,
@@ -234,10 +235,17 @@ const ALLOWED = [
     /^packages\/ai-chat-ui\/src\/browser\/chat-tree-view\/execution-event-renderer\.tsx$/,
     // Defensive lineNumber resolve when editor cursor is unavailable.
     /^packages\/editor\/src\/browser\/editor-variable-contribution\.ts$/,
+    // Lint-only localization metadata alignment for the Browse button.
+    /^packages\/preferences\/src\/browser\/views\/components\/preference-file-input\.ts$/,
     // Treat legacy Canceled errors as unresolved variables instead of console noise.
     /^packages\/variable-resolver\/src\/browser\/variable-resolver-service\.ts$/,
     // Protected MCP delegate reregistration + resource URI hooks for product layer.
     /^packages\/ai-mcp-server\/src\/node\/mcp-frontend-contribution-manager\.ts$/,
+    // MCP registry UI bridge + search filters are product-facing registry UX seams
+    // currently co-located with upstream ai-registry until the registry shell moves
+    // behind a qaap-* package boundary.
+    /^packages\/ai-registry\/src\/browser\/mcp\/mcp-registry-ui-bridge-impl(\.spec)?\.ts$/,
+    /^packages\/ai-registry\/src\/common\/registry-search-filter(\.spec)?\.ts$/,
     /^packages\/ai-terminal\/src\/browser\/shell-command-permission-service\.ts$/,
     /^packages\/mini-browser\/src\/browser\/mini-browser-url-utils\.spec\.ts$/,
     /^packages\/scm\/src\/browser\/scm-tree-widget\.tsx$/,
