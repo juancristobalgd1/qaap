@@ -19,6 +19,7 @@ import {
     type QaapGitCommitWorkflowAction,
     type QaapGitFileDiffResponse,
     type QaapGitHunkLine,
+    type QaapGitPrReadiness,
 } from '../common/qaap-git-review';
 import { middleTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
@@ -121,6 +122,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected reviewComposerDraft = '';
     protected runningFileAction = false;
     protected branchName: string | undefined;
+    protected prReadiness: QaapGitPrReadiness | undefined;
     protected commitMenuOpen = false;
     protected readonly agentFileDiffs = new Map<string, QaapGitFileDiffResponse>();
     protected loadingAgentDiffs = false;
@@ -274,9 +276,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
             if (!response.ok) {
                 throw new Error(`changes request failed (${response.status})`);
             }
-            const body = await response.json() as { files?: QaapGitChangedFile[]; branch?: string };
+            const body = await response.json() as { files?: QaapGitChangedFile[]; branch?: string; prReadiness?: QaapGitPrReadiness };
             this.files = body.files ?? [];
             this.branchName = body.branch;
+            this.prReadiness = body.prReadiness;
             this.error = undefined;
             this.notifyReviewStats();
             if (this.transcriptEmbed && this.transcriptExternalChrome) {
@@ -491,6 +494,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                         <span>{branch}</span>
                     </span>
                     <span className='qaap-agent-changes-toolbar-spacer' />
+                    {this.renderCreatePrButton()}
                     {this.bulkActionsEnabled && this.renderAgentCommitControls(bulkDisabled)}
                 </div>
                 <div className='qaap-agent-changes-toolbar-secondary'>
@@ -682,6 +686,38 @@ export class QaapDiffReviewWidget extends ReactWidget {
         } catch {
             await this.commands.executeCommand(PR_CREATE, { repoPath });
         }
+    }
+
+    protected handleCreatePrClick = () => { void this.openCreatePullRequest(); };
+
+    /**
+     * Standalone, discoverable "Create PR" action in the Changes header. Shown only when the current
+     * branch has committed work ahead of the default branch — otherwise PR creation stays buried in
+     * the commit split-button's overflow. Its own committed-work signal is independent of the
+     * uncommitted-changes count, so it appears right after you commit on a feature branch.
+     */
+    protected renderCreatePrButton(): React.ReactNode {
+        if (!this.prReadiness?.canCreatePr) {
+            return undefined;
+        }
+        const ahead = this.prReadiness.aheadCount;
+        const title = nls.localize(
+            'qaap/mobileProjects/createPrTooltip',
+            'Open a pull request — {0} commit(s) ahead of {1}',
+            String(ahead),
+            this.prReadiness.defaultBranch ?? '',
+        );
+        return (
+            <button
+                type='button'
+                className='qaap-agent-changes-create-pr-btn'
+                title={title}
+                onClick={this.handleCreatePrClick}
+            >
+                <i className={codicon('git-pull-request')} aria-hidden='true' />
+                <span>{nls.localize('qaap/mobileProjects/createPr', 'Create PR')}</span>
+            </button>
+        );
     }
 
     protected renderAgentBulkActions(disabled: boolean): React.ReactNode {

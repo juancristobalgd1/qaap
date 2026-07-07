@@ -20,12 +20,35 @@ export interface QaapGitChangedFile {
     staged: boolean;
 }
 
+/** Whether the current branch has committed work worth opening a pull request for. */
+export interface QaapGitPrReadiness {
+    /** True when on a non-default branch that is ahead of the default branch by ≥1 commit. */
+    canCreatePr: boolean;
+    /** Commits on HEAD not reachable from the default branch. */
+    aheadCount: number;
+    /** Resolved default branch (e.g. `main`), when known. */
+    defaultBranch?: string;
+}
+
+/** Decide whether the Changes view should surface a "Create PR" action, from resolved git state. */
+export function computePrReadiness(
+    currentBranch: string | undefined,
+    defaultBranch: string | undefined,
+    aheadCount: number,
+): QaapGitPrReadiness {
+    const onDefaultBranch = !!currentBranch && !!defaultBranch && currentBranch === defaultBranch;
+    const canCreatePr = !!currentBranch && !!defaultBranch && !onDefaultBranch && aheadCount > 0;
+    return { canCreatePr, aheadCount, defaultBranch };
+}
+
 export interface QaapGitChangesResponse {
     /** Absolute fs path of the repository root that was inspected. */
     root: string;
     /** Current branch name (`git rev-parse --abbrev-ref HEAD`), when available. */
     branch?: string;
     files: QaapGitChangedFile[];
+    /** Present when git state could be read: whether a PR can be opened for the current branch. */
+    prReadiness?: QaapGitPrReadiness;
 }
 
 export interface QaapGitHistoryCommit {

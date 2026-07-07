@@ -11,9 +11,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     QAAP_GIT_REVIEW_API_PATH,
+    computePrReadiness,
     parseUnifiedDiff,
     type QaapGitChangedFile,
     type QaapGitChangesResponse,
+    type QaapGitPrReadiness,
     type QaapGitCommitContextResponse,
     type QaapGitCommitWorkflowAction,
     type QaapGitFileDiffResponse,
@@ -113,14 +115,67 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
-            const [files, branch] = await Promise.all([
+            const [files, branch, prReadiness] = await Promise.all([
                 this.collectChangedFiles(root),
                 this.readCurrentBranch(root),
+                this.readPrReadiness(root),
             ]);
-            res.json({ root, branch, files } satisfies QaapGitChangesResponse);
+            res.json({ root, branch, files, prReadiness } satisfies QaapGitChangesResponse);
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
+    }
+
+    /** Resolves whether the current branch has committed work worth opening a PR for. */
+    protected async readPrReadiness(root: string): Promise<QaapGitPrReadiness | undefined> {
+        try {
+            const currentBranch = await this.readCurrentBranch(root);
+            const defaultBranch = await this.readDefaultBranch(root);
+            let aheadCount = 0;
+            if (currentBranch && defaultBranch && currentBranch !== defaultBranch) {
+                aheadCount = await this.countCommitsAhead(root, defaultBranch);
+            }
+            return computePrReadiness(currentBranch, defaultBranch, aheadCount);
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** Best-effort default branch: origin/HEAD symref, else a local main/master, else undefined. */
+    protected async readDefaultBranch(root: string): Promise<string | undefined> {
+        try {
+            const symref = (await this.git(root, ['rev-parse', '--abbrev-ref', 'origin/HEAD'])).trim();
+            if (symref && symref !== 'origin/HEAD') {
+                return symref.replace(/^origin\//, '');
+            }
+        } catch {
+            // No remote HEAD; fall through to local defaults.
+        }
+        for (const candidate of ['main', 'master']) {
+            try {
+                await this.git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${candidate}`]);
+                return candidate;
+            } catch {
+                // Not present; try the next.
+            }
+        }
+        return undefined;
+    }
+
+    /** Count of commits on HEAD not reachable from the default branch (local ref, else origin/<ref>). */
+    protected async countCommitsAhead(root: string, defaultBranch: string): Promise<number> {
+        for (const base of [defaultBranch, `origin/${defaultBranch}`]) {
+            try {
+                const out = (await this.git(root, ['rev-list', '--count', `${base}..HEAD`])).trim();
+                const count = Number.parseInt(out, 10);
+                if (Number.isFinite(count)) {
+                    return count;
+                }
+            } catch {
+                // Base ref not found; try the next form.
+            }
+        }
+        return 0;
     }
 
     protected async handleStage(req: Request, res: Response): Promise<void> {
