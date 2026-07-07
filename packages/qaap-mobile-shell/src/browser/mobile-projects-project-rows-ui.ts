@@ -9,7 +9,7 @@ import {
     isConversationAutoApproveEnabled,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { resolveQaapAgentTaskVisualStatus, type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
 import {
     QAAP_INBOX_ROW_FP_ATTR,
@@ -49,6 +49,9 @@ export interface MobileProjectsProjectRowsHost {
     openTaskInAgent(project: MobileProjectEntry, task?: MobileProjectTaskView): Promise<void>;
 }
 
+/** Statuses that get a text chip in the compact sidebar row — the ones a user triages at a glance. */
+const SIDEBAR_STATUS_CHIP_IDS: ReadonlySet<string> = new Set(['needs-you', 'failed', 'running', 'pr-ready']);
+
 /** Project list cards, expanded task blocks, and conversation row rendering. */
 export class MobileProjectsProjectRowsUi {
 
@@ -59,6 +62,14 @@ export class MobileProjectsProjectRowsUi {
         glyph.className = `theia-mobile-projects-task-leading-glyph codicon ${codiconClass}`;
         glyph.setAttribute('aria-hidden', 'true');
         return glyph;
+    }
+
+    /** Short, localized status text chip for a sidebar row (attention/active states only). */
+    protected createSidebarStatusChip(visualStatus: QaapAgentTaskVisualStatus): HTMLElement {
+        const chip = document.createElement('span');
+        chip.className = `theia-mobile-projects-task-status-chip theia-mod-${visualStatus.id}`;
+        chip.textContent = nls.localize(visualStatus.labelKey, visualStatus.label);
+        return chip;
     }
 
     createRow(project: MobileProjectEntry): HTMLElement {
@@ -641,6 +652,12 @@ export class MobileProjectsProjectRowsUi {
         const taskSince = document.createElement('span');
         taskSince.className = 'theia-mobile-projects-task-since';
         taskSince.textContent = this.formatTaskSince(task, summary);
+        // Scannable status cue for the sidebar: a short text chip on the states that matter when
+        // triaging N sessions at a glance (needs you / failed / running / PR ready). The dot alone
+        // is not readable when scanning a dense list.
+        const statusChip = compact && SIDEBAR_STATUS_CHIP_IDS.has(visualStatus.id)
+            ? this.createSidebarStatusChip(visualStatus)
+            : undefined;
         if (!compact && isRunning && summary?.turnProgressTotal && summary.turnProgressCurrent !== undefined) {
             const progressCount = document.createElement('span');
             progressCount.className = 'theia-mobile-projects-task-progress-count';
@@ -654,6 +671,8 @@ export class MobileProjectsProjectRowsUi {
             progressCount.setAttribute('aria-label', progressLabel);
             progressCount.title = progressLabel;
             taskTitleRow.append(taskTitle, progressCount, taskSince);
+        } else if (statusChip) {
+            taskTitleRow.append(taskTitle, statusChip, taskSince);
         } else {
             taskTitleRow.append(taskTitle, taskSince);
         }

@@ -11719,6 +11719,55 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
   white-space: nowrap;
 }
 
+/* Scannable status chip in the sidebar row title — colored per state so a dense session list can be
+   triaged at a glance ("needs you", "failed", "running", "PR ready"). */
+.theia-mobile-projects-task-status-chip {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1.5;
+  color: var(--theia-descriptionForeground);
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-needs-you {
+  color: var(--theia-notificationsWarningIcon-foreground, #cca700);
+  background: color-mix(in srgb, var(--theia-notificationsWarningIcon-foreground, #cca700) 18%, transparent);
+  animation: qaap-sidebar-status-pulse 1.8s ease-in-out infinite;
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-failed {
+  color: var(--theia-errorForeground, #f14c4c);
+  background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-running {
+  color: var(--theia-charts-green, #4caf7c);
+  background: color-mix(in srgb, var(--theia-charts-green, #4caf7c) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-pr-ready {
+  color: var(--theia-charts-purple, #b180d7);
+  background: color-mix(in srgb, var(--theia-charts-purple, #b180d7) 18%, transparent);
+}
+
+@keyframes qaap-sidebar-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-projects-task-status-chip.theia-mod-needs-you {
+    animation: none;
+  }
+}
+
 .theia-mobile-projects-task-foot {
   display: flex;
   align-items: center;
