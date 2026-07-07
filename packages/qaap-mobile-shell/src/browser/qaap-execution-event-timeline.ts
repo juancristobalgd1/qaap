@@ -1392,18 +1392,15 @@ function createMobileToolDetailElement(
         const row = document.createElement('div');
         row.className = 'theia-mobile-tool-detail theia-mod-error';
         row.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
-        const label = document.createElement('span');
-        label.className = 'theia-mobile-tool-detail-label';
-        label.textContent = event.verb;
         const detail = document.createElement('span');
         detail.className = 'theia-mobile-tool-detail-detail';
         detail.textContent = tool.detail;
         const errorIcon = document.createElement('span');
         errorIcon.className = 'codicon codicon-error theia-mobile-tool-detail-error-icon';
         if (fileIcon) {
-            row.append(label, fileIcon, detail, errorIcon);
+            row.append(fileIcon, detail, errorIcon);
         } else {
-            row.append(label, detail, errorIcon);
+            row.append(detail, errorIcon);
         }
         return row;
     }
@@ -1412,16 +1409,13 @@ function createMobileToolDetailElement(
     const row = document.createElement('div');
     row.className = 'theia-mobile-tool-detail theia-mod-text';
     row.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
-    const label = document.createElement('span');
-    label.className = 'theia-mobile-tool-detail-label';
-    label.textContent = event.verb;
     const detail = document.createElement('span');
     detail.className = 'theia-mobile-tool-detail-detail';
     detail.textContent = tool.detail;
     if (fileIcon) {
-        row.append(label, fileIcon, detail);
+        row.append(fileIcon, detail);
     } else {
-        row.append(label, detail);
+        row.append(detail);
     }
     return row;
 }
@@ -1467,10 +1461,6 @@ function createMobileTerminalOutputElement(
     const summary = document.createElement('summary');
     summary.className = 'theia-mobile-terminal-output-summary';
 
-    const label = document.createElement('span');
-    label.className = 'theia-mobile-terminal-output-label';
-    label.textContent = event.verb;
-
     const detail = document.createElement('span');
     detail.className = 'theia-mobile-terminal-output-detail';
     detail.textContent = tool.detail;
@@ -1478,7 +1468,7 @@ function createMobileTerminalOutputElement(
     const state = document.createElement('span');
     state.className = `codicon ${tool.isError ? 'codicon-error' : tool.isFinished ? 'codicon-check' : 'codicon-loading theia-animation-spin'} theia-mobile-terminal-output-state`;
 
-    summary.append(label, detail, state);
+    summary.append(detail, state);
     details.append(summary);
 
     // Output content — show the tool result. Terminal cards are collapsed by

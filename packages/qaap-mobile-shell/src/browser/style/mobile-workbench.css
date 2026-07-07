@@ -27007,7 +27007,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 8px 8px 24px;
+  padding: 6px 8px 8px 42px;
 }
 
 .theia-mobile-tool-detail {
@@ -27015,14 +27015,6 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   align-items: center;
   gap: 8px;
   min-height: 28px;
-}
-
-.theia-mobile-tool-detail-label {
-  color: var(--theia-descriptionForeground);
-  font-size: 12px;
-  font-weight: 400;
-  min-width: 64px;
-  user-select: none;
 }
 
 .theia-mobile-tool-detail-detail {
@@ -27070,14 +27062,6 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 .theia-mobile-terminal-output-summary::-webkit-details-marker {
   display: none;
-}
-
-.theia-mobile-terminal-output-label {
-  color: var(--theia-descriptionForeground);
-  font-size: 12px;
-  font-weight: 400;
-  min-width: 64px;
-  user-select: none;
 }
 
 .theia-mobile-terminal-output-detail {

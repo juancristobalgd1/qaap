@@ -205,6 +205,28 @@ describe('qaap-execution-event-timeline', () => {
             expect(terminal?.open).to.equal(false);
         });
 
+        it('does not repeat the group verb in file detail rows', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' })),
+            ]);
+
+            const detailRow = el.querySelector<HTMLElement>('.theia-mobile-tool-detail');
+            expect(detailRow).to.not.equal(null);
+            expect(detailRow?.querySelector('.theia-mobile-tool-detail-label')).to.equal(null);
+            expect(detailRow?.textContent).to.equal('store.tsx');
+        });
+
+        it('does not repeat the group verb in terminal detail cards', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run test' }), true, false, 'ok\n'),
+            ]);
+
+            const terminal = el.querySelector<HTMLElement>('.theia-mobile-terminal-output');
+            expect(terminal).to.not.equal(null);
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-label')).to.equal(null);
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-detail')?.textContent).to.equal('npm run test');
+        });
+
         it('strips ANSI escape sequences from terminal output', () => {
             const rawOutput = '\u001b[32msuccess\u001b[0m\n\u001b]0;title\u0007done';
             const el = createMobileExecutionEventTimeline([
