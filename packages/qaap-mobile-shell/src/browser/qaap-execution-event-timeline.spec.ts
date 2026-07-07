@@ -227,6 +227,17 @@ describe('qaap-execution-event-timeline', () => {
             expect(terminal?.querySelector('.theia-mobile-terminal-output-detail')?.textContent).to.equal('npm run test');
         });
 
+        it('marks active tool group header text for shimmer while running', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' }), false),
+            ]);
+
+            const group = el.querySelector<HTMLElement>('.theia-mobile-tool-group');
+            expect(group?.classList.contains('running')).to.equal(true);
+            expect(group?.querySelector('.theia-mobile-tool-group-verb')?.classList.contains('theia-mod-shimmer')).to.equal(true);
+            expect(group?.querySelector('.theia-mobile-tool-group-meta')?.classList.contains('theia-mod-shimmer')).to.equal(true);
+        });
+
         it('strips ANSI escape sequences from terminal output', () => {
             const rawOutput = '\u001b[32msuccess\u001b[0m\n\u001b]0;title\u0007done';
             const el = createMobileExecutionEventTimeline([
@@ -342,6 +353,25 @@ describe('qaap-execution-event-timeline', () => {
             ]);
 
             expect(segmentsBody.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`)).to.not.equal(null);
+        });
+
+        it('removes tool group header shimmer when a running tool finishes', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            const pending = [toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' }), false)];
+            const timeline = createMobileExecutionEventTimeline(pending);
+            segmentsBody.append(timeline);
+            const pendingGroup = timeline.querySelector<HTMLElement>('.theia-mobile-tool-group');
+            expect(pendingGroup?.querySelector('.theia-mobile-tool-group-verb')?.classList.contains('theia-mod-shimmer')).to.equal(true);
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' }), true),
+            ]);
+
+            const finishedGroup = segmentsBody.querySelector<HTMLElement>('.theia-mobile-tool-group');
+            expect(finishedGroup?.classList.contains('finished')).to.equal(true);
+            expect(finishedGroup?.querySelector('.theia-mobile-tool-group-verb')?.classList.contains('theia-mod-shimmer')).to.equal(false);
+            expect(finishedGroup?.querySelector('.theia-mobile-tool-group-meta')?.classList.contains('theia-mod-shimmer')).to.equal(false);
         });
 
     });

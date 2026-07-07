@@ -996,10 +996,15 @@ function patchMobileExecutionEventSection(
 
     const meta = group.querySelector<HTMLElement>('.theia-mobile-tool-group-meta');
     if (meta) {
+        meta.classList.toggle('theia-mod-shimmer', next.hasPending);
         const summaryText = formatMobileEventSummary(next);
         if (meta.textContent !== summaryText) {
             meta.textContent = summaryText;
         }
+    }
+    const verb = group.querySelector<HTMLElement>('.theia-mobile-tool-group-verb');
+    if (verb) {
+        verb.classList.toggle('theia-mod-shimmer', next.hasPending);
     }
 
     const state = group.querySelector<HTMLElement>('.theia-mobile-tool-group-state');
@@ -1325,11 +1330,11 @@ function createMobileToolGroupElement(
     icon.setAttribute('aria-hidden', 'true');
 
     const verb = document.createElement('span');
-    verb.className = 'theia-mobile-tool-group-verb';
+    verb.className = `theia-mobile-tool-group-verb ${event.hasPending ? 'theia-mod-shimmer' : ''}`;
     verb.textContent = event.verb;
 
     const meta = document.createElement('span');
-    meta.className = 'theia-mobile-tool-group-meta';
+    meta.className = `theia-mobile-tool-group-meta ${event.hasPending ? 'theia-mod-shimmer' : ''}`;
     meta.textContent = formatMobileEventSummary(event);
 
     const state = document.createElement('span');

@@ -26970,6 +26970,27 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   opacity: 0.72;
 }
 
+.theia-mobile-tool-group.running .theia-mobile-tool-group-verb.theia-mod-shimmer,
+.theia-mobile-tool-group.running .theia-mobile-tool-group-meta.theia-mod-shimmer {
+  background: linear-gradient(100deg,
+      color-mix(in srgb, var(--theia-descriptionForeground) 78%, var(--theia-foreground)) 0%,
+      var(--theia-foreground) 50%,
+      color-mix(in srgb, var(--theia-descriptionForeground) 78%, var(--theia-foreground)) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: theia-mobile-agent-stream-shimmer 2.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .theia-mobile-tool-group.running .theia-mobile-tool-group-verb.theia-mod-shimmer,
+  .theia-mobile-tool-group.running .theia-mobile-tool-group-meta.theia-mod-shimmer {
+    animation: none;
+  }
+}
+
 .theia-mobile-tool-group-state {
   display: inline-flex;
   align-items: center;
