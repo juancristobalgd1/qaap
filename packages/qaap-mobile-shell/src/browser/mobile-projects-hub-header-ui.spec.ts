@@ -104,6 +104,42 @@ describe('MobileProjectsHubHeaderUi', () => {
         expect(ui.resolveHeaderNewChatVisible()).to.equal(false);
     });
 
+    it('Back returns to Messages from a tool surface before closing the inline session', () => {
+        const current = project('mockup', 'Mockup');
+        let navBackCalls = 0;
+        let sessionClosed = false;
+        let sheetClosed = false;
+        const host = createHost({ agentsHubInlineActive: true, transcriptOpenProject: current, activeTab: 'terminal' });
+        host.projectNavigationUi = { resolveSelectedProject: () => current } as MobileProjectsHubHeaderHost['projectNavigationUi'];
+        host.executionSurfaceTabsUi = {
+            executionSurfaceTabForProject: () => 'terminal',
+            navigateExecutionSurfaceBack: () => { navBackCalls++; return true; },
+        } as unknown as MobileProjectsHubHeaderHost['executionSurfaceTabsUi'];
+        host.closeAgentsHubSession = () => { sessionClosed = true; };
+        host.transcriptSheetUi = { closeTranscriptSheet: () => { sheetClosed = true; } } as MobileProjectsHubHeaderHost['transcriptSheetUi'];
+
+        new MobileProjectsHubHeaderUi(host).handleHeaderBackClick();
+        expect(navBackCalls).to.equal(1);
+        expect(sessionClosed).to.equal(false);
+        expect(sheetClosed).to.equal(false);
+    });
+
+    it('Back closes the inline session once already on Messages', () => {
+        const current = project('mockup', 'Mockup');
+        let sessionClosed = false;
+        const host = createHost({ agentsHubInlineActive: true, transcriptOpenProject: current, activeTab: 'messages' });
+        host.projectNavigationUi = { resolveSelectedProject: () => current } as MobileProjectsHubHeaderHost['projectNavigationUi'];
+        host.executionSurfaceTabsUi = {
+            executionSurfaceTabForProject: () => 'messages',
+            navigateExecutionSurfaceBack: () => false, // self-guards to false on Messages
+        } as unknown as MobileProjectsHubHeaderHost['executionSurfaceTabsUi'];
+        host.shouldUseAgentsHubLanding = () => true;
+        host.closeAgentsHubSession = () => { sessionClosed = true; };
+
+        new MobileProjectsHubHeaderUi(host).handleHeaderBackClick();
+        expect(sessionClosed).to.equal(true);
+    });
+
     it('shows the header overflow menu only when the chat execution surface is active', () => {
         const current = project('mockup', 'Mockup');
         const ui = new MobileProjectsHubHeaderUi(createHost({

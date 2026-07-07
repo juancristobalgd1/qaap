@@ -202,6 +202,17 @@ export class MobileProjectsHubHeaderUi {
     }
 
     handleHeaderBackClick(): void {
+        // In the inline agents-hub flow, Back used to tear down the whole transcript from any tool
+        // surface. Instead, from a tool surface (Plan/Changes/Preview/Files/Terminal) return to
+        // Messages first — matching the surface stack the user walked in — and only close the
+        // session/transcript once already on Messages. navigateExecutionSurfaceBack is self-guarding
+        // (false unless a non-Messages transcript tab is active), so Messages falls through to close.
+        if (this.host.agentsHubInlineActive) {
+            const inlineProject = this.host.projectNavigationUi.resolveSelectedProject();
+            if (inlineProject && this.host.executionSurfaceTabsUi.navigateExecutionSurfaceBack(inlineProject)) {
+                return;
+            }
+        }
         if (this.host.agentsHubInlineActive && this.host.shouldUseAgentsHubLanding()) {
             this.host.closeAgentsHubSession();
             return;
