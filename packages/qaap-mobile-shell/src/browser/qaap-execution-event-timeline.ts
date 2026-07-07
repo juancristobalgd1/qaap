@@ -123,6 +123,7 @@ export interface MobileExecutionTool {
     kind: MobileEventKind;
     verb: string;
     detail: string;
+    filePath?: string;
     isTerminal: boolean;
     isVerification: boolean;
     isError: boolean;
@@ -145,6 +146,8 @@ export interface MobileExecutionTimeline {
     events: MobileExecutionEvent[];
     closingNarrative?: string;
 }
+
+export const MOBILE_TOOL_FILE_OPEN_EVENT = 'qaap-mobile-tool-file-open';
 
 // ─── Builder ─────────────────────────────────────────────────────────────────
 
@@ -236,6 +239,7 @@ function toMobileTool(
         kind: descriptor.kind,
         verb: descriptor.verb,
         detail: extractToolDetail(segment, descriptor.kind),
+        filePath: extractToolFilePath(segment.args),
         isTerminal: descriptor.kind === 'run' || descriptor.kind === 'verification',
         isVerification: descriptor.kind === 'verification',
         isError: isToolError(segment),
@@ -320,9 +324,9 @@ function extractToolDetail(segment: Extract<QaapAgentMessageSegmentDTO, { type: 
     if (kind === 'run' || kind === 'verification') {
         return extractCommand(segment.args) ?? segment.name;
     }
-    const filePath = extractFilePath(segment.args);
+    const filePath = extractToolFilePath(segment.args);
     if (filePath) {
-        return filePath;
+        return filePath.split('/').pop() ?? filePath;
     }
     return segment.name;
 }
@@ -345,7 +349,7 @@ function extractCommand(args: string | undefined): string | undefined {
     return undefined;
 }
 
-function extractFilePath(args: string | undefined): string | undefined {
+function extractToolFilePath(args: string | undefined): string | undefined {
     if (!args) {
         return undefined;
     }
@@ -354,7 +358,7 @@ function extractFilePath(args: string | undefined): string | undefined {
         if (typeof parsed === 'object' && parsed !== null) {
             const path = parsed.file_path ?? parsed.path ?? parsed.filePath ?? parsed.filename;
             if (typeof path === 'string') {
-                return path.split('/').pop() ?? path;
+                return path;
             }
         }
     } catch {
@@ -404,6 +408,7 @@ function fingerprintMobileTool(tool: MobileExecutionTool): string {
         tool.kind,
         tool.verb,
         tool.detail,
+        tool.filePath ?? '',
         tool.isFinished ? '1' : '0',
         tool.isError ? '1' : '0',
         `${args?.length ?? 0}:${result?.length ?? 0}`,
@@ -1392,15 +1397,14 @@ function createMobileToolDetailElement(
     const fileIcon = isMobileFileDetailKind(event.kind) && tool.detail
         ? createMobileFileIconSpan(tool.detail)
         : undefined;
+    const canOpenFile = isMobileFileDetailKind(event.kind) && event.kind !== 'delete' && !!tool.filePath;
 
     // Error tools get a simple error line
     if (tool.isError) {
         const row = document.createElement('div');
-        row.className = 'theia-mobile-tool-detail theia-mod-error';
+        row.className = `theia-mobile-tool-detail theia-mod-error theia-mod-${event.kind}${canOpenFile ? ' theia-mod-clickable' : ''}`;
         row.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
-        const detail = document.createElement('span');
-        detail.className = 'theia-mobile-tool-detail-detail';
-        detail.textContent = tool.detail;
+        const detail = createMobileToolFileDetailSpan(tool, canOpenFile);
         const errorIcon = document.createElement('span');
         errorIcon.className = 'codicon codicon-error theia-mobile-tool-detail-error-icon';
         if (fileIcon) {
@@ -1413,11 +1417,9 @@ function createMobileToolDetailElement(
 
     // Everything else: plain text line, no card
     const row = document.createElement('div');
-    row.className = 'theia-mobile-tool-detail theia-mod-text';
+    row.className = `theia-mobile-tool-detail theia-mod-text theia-mod-${event.kind}${canOpenFile ? ' theia-mod-clickable' : ''}`;
     row.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
-    const detail = document.createElement('span');
-    detail.className = 'theia-mobile-tool-detail-detail';
-    detail.textContent = tool.detail;
+    const detail = createMobileToolFileDetailSpan(tool, canOpenFile);
     if (fileIcon) {
         row.append(fileIcon, detail);
     } else {
@@ -1432,6 +1434,36 @@ function createMobileToolDetailElement(
  */
 function isMobileFileDetailKind(kind: MobileEventKind): boolean {
     return kind === 'read' || kind === 'write' || kind === 'edit' || kind === 'delete';
+}
+
+function createMobileToolFileDetailSpan(tool: MobileExecutionTool, canOpenFile: boolean): HTMLElement {
+    const detail = document.createElement('span');
+    detail.className = `theia-mobile-tool-detail-detail${canOpenFile ? ' theia-mod-file-link' : ''}`;
+    detail.textContent = tool.detail;
+    if (canOpenFile && tool.filePath) {
+        const filePath = tool.filePath;
+        detail.setAttribute('role', 'link');
+        detail.tabIndex = 0;
+        detail.dataset.qaapToolFilePath = filePath;
+        detail.title = filePath;
+        const open = (event: Event): void => {
+            event.preventDefault();
+            event.stopPropagation();
+            const EventCtor = detail.ownerDocument.defaultView?.CustomEvent ?? CustomEvent;
+            detail.dispatchEvent(new EventCtor(MOBILE_TOOL_FILE_OPEN_EVENT, {
+                bubbles: true,
+                composed: true,
+                detail: { filePath },
+            }));
+        };
+        detail.addEventListener('click', open);
+        detail.addEventListener('keydown', event => {
+            if (event instanceof KeyboardEvent && (event.key === 'Enter' || event.key === ' ')) {
+                open(event);
+            }
+        });
+    }
+    return detail;
 }
 
 function createMobileFileIconSpan(filename: string): HTMLElement {

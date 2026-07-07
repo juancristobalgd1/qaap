@@ -27064,10 +27064,48 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   flex: 1;
 }
 
+.theia-mobile-tool-detail-detail.theia-mod-file-link {
+  color: var(--theia-textLink-foreground, #8ab4f8);
+  cursor: pointer;
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+.theia-mobile-tool-detail-detail.theia-mod-file-link:hover,
+.theia-mobile-tool-detail-detail.theia-mod-file-link:focus-visible {
+  color: var(--theia-textLink-activeForeground, var(--theia-textLink-foreground, #8ab4f8));
+  text-decoration: underline;
+  outline: none;
+}
+
 .theia-mobile-tool-detail-file-icon {
   font-size: 14px;
   opacity: 0.72;
   flex-shrink: 0;
+}
+
+.theia-mobile-tool-detail.theia-mod-read .theia-mobile-tool-detail-file-icon {
+  color: var(--theia-textLink-foreground, #8ab4f8);
+  opacity: 0.95;
+}
+
+.theia-mobile-tool-detail.theia-mod-write .theia-mobile-tool-detail-file-icon {
+  color: var(--theia-charts-green, #89d185);
+  opacity: 0.95;
+}
+
+.theia-mobile-tool-detail.theia-mod-edit .theia-mobile-tool-detail-file-icon {
+  color: var(--q-accent, #E58E40);
+  opacity: 0.95;
+}
+
+.theia-mobile-tool-detail.theia-mod-delete .theia-mobile-tool-detail-file-icon {
+  color: var(--theia-errorForeground, #f14c4c);
+  opacity: 0.9;
+}
+
+.theia-mobile-tool-detail.theia-mod-clickable {
+  cursor: pointer;
 }
 
 .theia-mobile-tool-detail.theia-mod-error .theia-mobile-tool-detail-error-icon {

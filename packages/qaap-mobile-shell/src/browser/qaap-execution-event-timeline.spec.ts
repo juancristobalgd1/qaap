@@ -216,6 +216,34 @@ describe('qaap-execution-event-timeline', () => {
             expect(detailRow?.textContent).to.equal('store.tsx');
         });
 
+        it('renders non-deleted file details as links with the full file path', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' })),
+            ]);
+            const link = el.querySelector<HTMLElement>('.theia-mobile-tool-detail-detail');
+            const opened: string[] = [];
+            el.addEventListener('qaap-mobile-tool-file-open', event => {
+                opened.push((event as CustomEvent<{ readonly filePath: string }>).detail.filePath);
+            });
+
+            expect(link?.classList.contains('theia-mod-file-link')).to.equal(true);
+            expect(link?.getAttribute('role')).to.equal('link');
+            expect(link?.dataset.qaapToolFilePath).to.equal('src/store.tsx');
+            link?.click();
+            expect(opened).to.deep.equal(['src/store.tsx']);
+        });
+
+        it('does not make deleted file details clickable', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('rm', 'tool-1', JSON.stringify({ path: 'src/old.ts' })),
+            ]);
+            const detail = el.querySelector<HTMLElement>('.theia-mobile-tool-detail-detail');
+
+            expect(detail?.textContent).to.equal('old.ts');
+            expect(detail?.classList.contains('theia-mod-file-link')).to.equal(false);
+            expect(detail?.getAttribute('role')).to.equal(null);
+        });
+
         it('does not repeat the group verb in terminal detail cards', () => {
             const el = createMobileExecutionEventTimeline([
                 toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run test' }), true, false, 'ok\n'),

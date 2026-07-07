@@ -102,6 +102,7 @@ import {
     findMobileProcessAccordion,
     hasMobileExecutionEventTimeline,
     MOBILE_CLOSING_ERROR_CARD_CLASS,
+    MOBILE_TOOL_FILE_OPEN_EVENT,
     refreshMobileExecutionEventTimeline,
     resolveMobileActivityVerb,
     syncMobileProcessAccordionState,
@@ -510,6 +511,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             activityVerb,
             settled: this.isConversationFinalResponseCommitted(conv, streaming),
         });
+        this.bindMobileExecutionEventTimelineFileOpen(accordion);
         body.append(accordion);
         ensureSlowTurnHint(accordion, { isWorking, turnStartMs, onStopTurn: () => this.host.cancelOpenTranscriptStream?.() });
         if (streaming) {
@@ -571,6 +573,24 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!streaming) {
             this.appendMobileDiffSummary(body, segments);
         }
+    }
+
+    protected bindMobileExecutionEventTimelineFileOpen(root: HTMLElement): void {
+        if (root.dataset.mobileToolFileOpenBound === '1') {
+            return;
+        }
+        root.dataset.mobileToolFileOpenBound = '1';
+        root.addEventListener(MOBILE_TOOL_FILE_OPEN_EVENT, event => {
+            const detail = (event as CustomEvent<{ readonly filePath?: unknown }>).detail;
+            const filePath = typeof detail?.filePath === 'string'
+                ? detail.filePath
+                : undefined;
+            if (!filePath) {
+                return;
+            }
+            event.stopPropagation();
+            this.toolUi.handleTranscriptFileOpen(filePath);
+        });
     }
 
     /** True when the conversation is still actively streaming/working. */
