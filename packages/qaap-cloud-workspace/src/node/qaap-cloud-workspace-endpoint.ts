@@ -75,6 +75,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         app.get(`${QAAP_CLOUD_API_PATH}/workspaces`, (req, res) => { void this.handleListWorkspaces(req, res); });
         app.post(`${QAAP_CLOUD_API_PATH}/workspaces/ensure`, (req, res) => { void this.handleEnsureWorkspace(req, res); });
         app.post(`${QAAP_CLOUD_API_PATH}/preview/share`, (req, res) => { void this.handleCreateShare(req, res); });
+        app.post(`${QAAP_CLOUD_API_PATH}/preview/share/revoke`, (req, res) => { void this.handleRevokeShare(req, res); });
         app.post(QAAP_PREVIEW_RESTART_PATH, (req, res) => { void this.handleRestartPreview(req, res); });
         app.get(`${QAAP_CLOUD_API_PATH}/terminal-sessions`, (req, res) => { void this.handleGetTerminalSessions(req, res); });
         app.post(`${QAAP_CLOUD_API_PATH}/terminal-sessions`, (req, res) => { void this.handleUpsertTerminalSessions(req, res); });
@@ -237,6 +238,24 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         }
         const summary = await this.shares.create(port, body.repoKey, origin, ownerLogin);
         res.json({ share: summary });
+    }
+
+    /** Revokes a public preview share. Only the share's owner (or a skip-auth dev) may revoke it. */
+    protected async handleRevokeShare(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const body = (req.body ?? {}) as { token?: unknown };
+        const token = typeof body.token === 'string' ? body.token : '';
+        if (!token) {
+            res.status(400).json({ error: 'token is required' });
+            return;
+        }
+        // Scope to the authenticated owner; skip-auth (single-user dev) may revoke any share.
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        const revoked = await this.shares.revoke(token, ownerLogin);
+        res.json({ revoked });
     }
 
     /**
