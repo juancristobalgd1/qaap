@@ -46,6 +46,7 @@ import {
 } from './qaap-work-hub-perf-probe-host';
 import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
 import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-probe';
+import { QaapBoundedLruMap } from './qaap-bounded-lru-map';
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
@@ -449,6 +450,9 @@ type TranscriptTab = ExecutionSurfaceTabId;
 
 const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
 
+/** Max cached full conversation DTOs kept in memory for a long-lived Work Hub tab (LRU-evicted). */
+const TRANSCRIPT_CONVERSATION_CACHE_LIMIT = 50;
+
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     /** Max conversation rows per repo card before "More" expands the list. */
@@ -546,7 +550,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly sessionsSidebarVisibleConversationCountByProjectId = new Map<string, number>();
     protected sessionsSidebarAccordionDefaultsApplied = false;
     protected agentChatInputSession: ChatSession | undefined;
-    protected readonly transcriptConversationCache = new Map<string, QaapAgentConversationDTO>();
+    // Bounded so a long-lived tab that opens many conversations does not retain every full DTO for
+    // the tab's lifetime (each can be tens of KB). LRU keeps the recently-viewed ones hot.
+    protected readonly transcriptConversationCache: Map<string, QaapAgentConversationDTO> =
+        new QaapBoundedLruMap<string, QaapAgentConversationDTO>(TRANSCRIPT_CONVERSATION_CACHE_LIMIT);
 
     /** Transcript overlay controller — state bag + `MobileProjectsTranscript*Ui` modules (Phase 3). */
     protected transcriptController!: TranscriptOverlayController;
