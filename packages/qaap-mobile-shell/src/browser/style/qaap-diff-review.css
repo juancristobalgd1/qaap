@@ -369,10 +369,51 @@
 }
 
 .qaap-diff-review-hunk-header {
-    padding: 4px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px 4px 14px;
     color: var(--theia-descriptionForeground);
     background: var(--theia-editorWidget-background);
     white-space: pre;
+}
+
+.qaap-diff-review-hunk-header-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.qaap-diff-review-hunk-actions {
+    flex: none;
+    display: inline-flex;
+    gap: 2px;
+}
+
+.qaap-diff-review-hunk-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-diff-review-hunk-btn.qaap-mod-stage:not(:disabled):active {
+    color: var(--theia-charts-green, #4caf7c);
+    background: color-mix(in srgb, var(--theia-charts-green, #4caf7c) 16%, transparent);
+}
+
+.qaap-diff-review-hunk-btn.qaap-mod-discard:not(:disabled):active {
+    color: var(--theia-errorForeground, #f14c4c);
+    background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 16%, transparent);
 }
 
 .qaap-diff-review-line {

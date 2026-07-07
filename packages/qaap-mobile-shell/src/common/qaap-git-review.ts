@@ -30,6 +30,44 @@ export interface QaapGitPrReadiness {
     defaultBranch?: string;
 }
 
+/**
+ * Extract a single hunk from a one-file `git diff` into a standalone, appliable patch (the file
+ * header + only the selected `@@` hunk). Returns undefined when the diff has no such hunk. Built from
+ * authoritative `git diff` output — never from a reconstructed structure — so the result always
+ * round-trips through `git apply`. `git apply --recount` absorbs any line-count drift.
+ */
+export function buildSingleHunkPatch(diffText: string, hunkIndex: number): string | undefined {
+    if (hunkIndex < 0) {
+        return undefined;
+    }
+    const lines = diffText.split('\n');
+    const firstHunk = lines.findIndex(line => line.startsWith('@@'));
+    if (firstHunk < 0) {
+        return undefined;
+    }
+    const header = lines.slice(0, firstHunk);
+    const hunks: string[][] = [];
+    let current: string[] | undefined;
+    for (const line of lines.slice(firstHunk)) {
+        if (line.startsWith('@@')) {
+            current = [line];
+            hunks.push(current);
+        } else if (current) {
+            current.push(line);
+        }
+    }
+    const hunk = hunks[hunkIndex];
+    if (!hunk) {
+        return undefined;
+    }
+    // Drop trailing empty lines the split may have introduced, then end with a single newline.
+    const body = [...header, ...hunk];
+    while (body.length > 0 && body[body.length - 1] === '') {
+        body.pop();
+    }
+    return `${body.join('\n')}\n`;
+}
+
 /** Decide whether the Changes view should surface a "Create PR" action, from resolved git state. */
 export function computePrReadiness(
     currentBranch: string | undefined,

@@ -1136,9 +1136,35 @@ export class QaapDiffReviewWidget extends ReactWidget {
         if (this.diff.hunks.length === 0) {
             return <div className='qaap-diff-review-note'>{nls.localize('qaap/diff/noHunks', 'No textual changes.')}</div>;
         }
+        const selectedFile = this.selectedPath;
+        const hunkActionsEnabled = this.bulkActionsEnabled && !!selectedFile && !this.runningFileAction;
         return this.diff.hunks.map((hunk, hunkIndex) => (
             <div key={hunkIndex} className='qaap-diff-review-hunk'>
-                <div className='qaap-diff-review-hunk-header'>{hunk.header}</div>
+                <div className='qaap-diff-review-hunk-header'>
+                    <span className='qaap-diff-review-hunk-header-text'>{hunk.header}</span>
+                    {hunkActionsEnabled && (
+                        <span className='qaap-diff-review-hunk-actions'>
+                            <button
+                                type='button'
+                                className='qaap-diff-review-hunk-btn qaap-mod-stage'
+                                title={nls.localize('qaap/diff/stageHunk', 'Stage this hunk')}
+                                aria-label={nls.localize('qaap/diff/stageHunk', 'Stage this hunk')}
+                                onClick={() => void this.runHunkAction(`${QAAP_GIT_REVIEW_API_PATH}/stage-hunk`, selectedFile!, hunkIndex)}
+                            >
+                                <i className={codicon('add')} aria-hidden='true' />
+                            </button>
+                            <button
+                                type='button'
+                                className='qaap-diff-review-hunk-btn qaap-mod-discard'
+                                title={nls.localize('qaap/diff/discardHunk', 'Discard this hunk')}
+                                aria-label={nls.localize('qaap/diff/discardHunk', 'Discard this hunk')}
+                                onClick={() => void this.runHunkAction(`${QAAP_GIT_REVIEW_API_PATH}/discard-hunk`, selectedFile!, hunkIndex)}
+                            >
+                                <i className={codicon('discard')} aria-hidden='true' />
+                            </button>
+                        </span>
+                    )}
+                </div>
                 {hunk.lines.map((line, lineIndex) => (
                     <DiffLine key={lineIndex} line={line} />
                 ))}
@@ -1262,6 +1288,34 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     protected async rejectFile(path: string): Promise<void> {
         await this.runFileAction(`${QAAP_GIT_REVIEW_API_PATH}/discard`, path);
+    }
+
+    protected async runHunkAction(endpoint: string, file: string, hunkIndex: number): Promise<void> {
+        if (this.runningFileAction || !this.rootFsPath || !this.bulkActionsEnabled) {
+            return;
+        }
+        this.runningFileAction = true;
+        this.error = undefined;
+        this.update();
+        try {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ root: this.rootFsPath, file, hunkIndex }),
+            });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({})) as { error?: string };
+                throw new Error(body.error ?? `request failed (${response.status})`);
+            }
+            await this.refresh();
+        } catch (error) {
+            this.error = error instanceof Error ? error.message : String(error);
+            this.update();
+        } finally {
+            this.runningFileAction = false;
+            this.update();
+        }
     }
 
     protected async runFileAction(endpoint: string, file: string): Promise<void> {

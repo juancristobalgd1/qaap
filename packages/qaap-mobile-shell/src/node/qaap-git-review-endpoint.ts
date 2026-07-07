@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     QAAP_GIT_REVIEW_API_PATH,
+    buildSingleHunkPatch,
     computePrReadiness,
     parseUnifiedDiff,
     type QaapGitChangedFile,
@@ -59,6 +60,12 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         });
         app.post(`${QAAP_GIT_REVIEW_API_PATH}/stage`, (req, res) => {
             void this.handleStage(req, res);
+        });
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/stage-hunk`, (req, res) => {
+            void this.handleStageHunk(req, res);
+        });
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/discard-hunk`, (req, res) => {
+            void this.handleDiscardHunk(req, res);
         });
         app.post(`${QAAP_GIT_REVIEW_API_PATH}/discard`, (req, res) => {
             void this.handleDiscard(req, res);
@@ -552,6 +559,68 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 }
             });
         });
+    }
+
+    /** Run git feeding `input` on stdin (for `git apply -`). Rejects with stderr on non-zero exit. */
+    protected gitStdin(root: string, args: string[], input: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const child = execFile('git', args, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout, stderr) => {
+                if (error) {
+                    reject(Object.assign(error, { stdout, stderr }));
+                } else {
+                    resolve(stdout);
+                }
+            });
+            child.stdin?.end(input);
+        });
+    }
+
+    /** Stage or discard a single hunk by index, from the authoritative unstaged diff of the file. */
+    protected async applyFileHunk(root: string, file: string, hunkIndex: number, mode: 'stage' | 'discard'): Promise<boolean> {
+        // Working-tree-vs-index diff for the file; -U3 keeps enough context for a clean apply.
+        const diffText = await this.git(root, ['diff', '-U3', '--', file]);
+        const patch = buildSingleHunkPatch(diffText, hunkIndex);
+        if (!patch) {
+            return false;
+        }
+        // Stage: apply the hunk to the index. Discard: reverse-apply it to the working tree.
+        // --recount lets git fix up line numbers so a slightly stale hunk index still applies.
+        const args = mode === 'stage'
+            ? ['apply', '--cached', '--recount', '-']
+            : ['apply', '--reverse', '--recount', '-'];
+        await this.gitStdin(root, args, patch);
+        return true;
+    }
+
+    protected async handleStageHunk(req: Request, res: Response): Promise<void> {
+        return this.handleHunkAction(req, res, 'stage');
+    }
+
+    protected async handleDiscardHunk(req: Request, res: Response): Promise<void> {
+        return this.handleHunkAction(req, res, 'discard');
+    }
+
+    protected async handleHunkAction(req: Request, res: Response, mode: 'stage' | 'discard'): Promise<void> {
+        const root = await this.resolveRepositoryBody(req, res);
+        if (!root) {
+            return;
+        }
+        const file = this.sanitizeRelativePath(req.body?.file);
+        const hunkIndex = Number(req.body?.hunkIndex);
+        if (!file || !Number.isInteger(hunkIndex) || hunkIndex < 0) {
+            res.status(400).json({ error: 'Missing or invalid "file"/"hunkIndex" in request body.' });
+            return;
+        }
+        try {
+            const applied = await this.applyFileHunk(root, file, hunkIndex, mode);
+            if (!applied) {
+                res.status(409).json({ error: 'Hunk no longer exists — the file changed. Refresh the diff.' });
+                return;
+            }
+            res.json({ ok: true });
+        } catch (error) {
+            res.status(500).json({ error: this.errorMessage(error) });
+        }
     }
 
     /** Reject absolute paths and parent-directory traversal so git stays inside the repo. */
