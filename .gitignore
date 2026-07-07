@@ -44,8 +44,12 @@ license-check-summary.txt*
 test-results/
 /.theia/chatSessions
 .tmp.cfg
-# Deployment env — contains secrets (VAPID private key, OAuth secret). Never commit.
+# Env files — contain secrets (VAPID private key, OAuth client secret). Never commit.
+# Only *.env.example templates (with placeholder values) belong in the repo.
 /.env
+.env
+**/.env
+!**/.env.example
 /qaiq/
 
 # Ad-hoc metrics/audit/flow-trace run artifacts (one-run snapshots from working-tree
