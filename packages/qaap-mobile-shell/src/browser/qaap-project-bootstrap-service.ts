@@ -788,8 +788,11 @@ export class QaapProjectBootstrapService {
         if (existing) {
             return;
         }
-        // Claim the port for this workspace so the backend proxy denies other tenants (best-effort).
-        void this.claimDevPreviewPort(port);
+        // Claim the port for this workspace FIRST (proves ownership), then open the preview. The
+        // backend proxy fails closed on unclaimed ports, so opening before the claim lands would
+        // 403 the owner's own preview. claimDevPreviewPort is best-effort and resolves even on
+        // failure, so a claim error still lets the preview attempt (and fail closed) rather than hang.
+        const claimed = this.claimDevPreviewPort(port);
         const isPrimary = this._forwardedPorts.length === 0;
         const next: QaapForwardedPort = {
             port,
@@ -805,17 +808,19 @@ export class QaapProjectBootstrapService {
             // action instead of a generic "Run & Preview" CTA.
             this._lastPort = port;
             if (options?.alreadyReady) {
-                void this.openPreview(url, /* primary */ true);
+                void claimed.then(() => this.openPreview(url, /* primary */ true));
             } else {
-                void this.openPrimaryPreviewWhenReady(port, url);
+                void claimed.then(() => this.openPrimaryPreviewWhenReady(port, url));
             }
         }
     }
 
     /**
-     * Tells the backend that this workspace owns {@link port}, so the `/qaap-dev/:port` proxy can
-     * deny other tenants on a shared host. Best-effort: on failure the proxy simply falls back to
-     * its any-signed-in-user gate. Same-origin fetch carries the session cookie.
+     * Tells the backend that this workspace owns {@link port}. The `/qaap-dev/:port` proxy fails
+     * closed — an authenticated user may only reach ports they have claimed — so this claim is what
+     * lets the owner's own preview through while denying other tenants on the shared host. Awaited
+     * before the preview opens. Best-effort: swallows errors and resolves, so a claim failure lets
+     * the preview attempt (and be denied) rather than hang. Same-origin fetch carries the cookie.
      */
     protected async claimDevPreviewPort(port: number): Promise<void> {
         const origin = getQaapPublicOrigin();

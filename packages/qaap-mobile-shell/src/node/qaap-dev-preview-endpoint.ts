@@ -100,17 +100,23 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         res.sendStatus(204);
     }
 
-    /** True when the port is claimed by a different login than the authenticated caller. */
-    protected isForeignClaimedPort(req: Request | http.IncomingMessage, port: number): boolean {
-        const owner = this.portRegistry.ownerOf(port);
-        if (!owner) {
-            return false; // unclaimed → fall back to the requireAuth gate
-        }
+    /**
+     * Whether the caller may proxy this dev-preview port. FAIL CLOSED: an authenticated user may
+     * only reach a port they have CLAIMED (which proves workspace ownership). An unclaimed port is
+     * denied — otherwise any signed-in user could reach another tenant's dev server on the shared
+     * loopback before its owner happened to claim it. Skip-auth (single-user / local dev) is allowed
+     * through; the owner's frontend claims the port before opening the preview.
+     */
+    protected mayProxyPort(req: Request | http.IncomingMessage, port: number): boolean {
         const ctx = this.auth.authenticate(req as unknown as Request);
         if (ctx.kind === 'skip') {
+            return true;
+        }
+        if (ctx.kind === 'unauthorized') {
             return false;
         }
-        return this.auth.resolveUserLogin(ctx) !== owner;
+        const owner = this.portRegistry.ownerOf(port);
+        return owner !== undefined && this.auth.resolveUserLogin(ctx) === owner;
     }
 
     onStart(server: http.Server): void {
@@ -148,7 +154,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             res.status(403).type('text/plain').send('Cannot proxy the Qaap IDE port. Use a different dev-server port.');
             return;
         }
-        if (this.isForeignClaimedPort(req, port)) {
+        if (!this.mayProxyPort(req, port)) {
             res.status(403).type('text/plain').send('This preview port belongs to another workspace.');
             return;
         }
@@ -179,7 +185,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             socket.destroy();
             return;
         }
-        if (this.isForeignClaimedPort(req, parsed.port)) {
+        if (!this.mayProxyPort(req, parsed.port)) {
             socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
             socket.destroy();
             return;
