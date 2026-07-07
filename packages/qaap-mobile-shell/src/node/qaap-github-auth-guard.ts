@@ -17,6 +17,7 @@ import {
     resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
+import { isRealPathUnder } from './qaap-realpath-guard';
 
 export type QaapGithubAuthContext =
     | { readonly kind: 'authenticated'; readonly session: QaapGithubStoredSession; readonly sessionId: string; readonly userLogin: string }
@@ -80,7 +81,25 @@ export class QaapGithubAuthGuard {
         if (ctx.kind === 'unauthorized') {
             return false;
         }
-        return isPathUnderUserWorkspace(targetPath, this.reposRoot, ctx.userLogin);
+        return this.pathBelongsToUser(ctx.userLogin, targetPath);
+    }
+
+    /**
+     * Ownership check combining the fast lexical prefix test with a symlink-safe realpath test.
+     * The lexical check alone can be defeated by a symlink planted inside the user's own workspace
+     * (e.g. `.../alice/link -> .../bob/secret`): the string still starts with alice's root, but the
+     * real target is bob's tree. Requiring BOTH closes that cross-tenant escape.
+     */
+    protected pathBelongsToUser(userLogin: string, targetPath: string): boolean {
+        if (!isPathUnderUserWorkspace(targetPath, this.reposRoot, userLogin)) {
+            return false;
+        }
+        const userRoot = resolveUserReposRoot(this.reposRoot, userLogin);
+        if (!isRealPathUnder(targetPath, userRoot)) {
+            this.logSecurityEvent('symlink_escape_denied', { userLogin, targetPath });
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -106,7 +125,7 @@ export class QaapGithubAuthGuard {
         if (!userLogin?.trim()) {
             return true;
         }
-        return isPathUnderUserWorkspace(targetPath, this.reposRoot, userLogin);
+        return this.pathBelongsToUser(userLogin, targetPath);
     }
 
     /** Returns false and sends 403 when the path is outside the user's workspace tree. */
@@ -119,7 +138,7 @@ export class QaapGithubAuthGuard {
         if (ctx.kind === 'skip') {
             return true;
         }
-        if (!isPathUnderUserWorkspace(targetPath, this.reposRoot, ctx.userLogin)) {
+        if (!this.pathBelongsToUser(ctx.userLogin, targetPath)) {
             this.logSecurityEvent('ownership_denied', {
                 action,
                 userLogin: ctx.userLogin,
@@ -151,8 +170,40 @@ export class QaapGithubAuthGuard {
         }));
     }
 
+    protected skipAuthInProductionWarned = false;
+
+    /**
+     * Skip-auth (no login, everyone becomes the shared `_dev` bucket) is a LOCAL-DEV-ONLY switch.
+     * Honoring it in a production runtime would disable all multi-tenant isolation, so it is refused
+     * there regardless of the env var — fail safe (auth stays ON) with a loud one-time warning.
+     * An explicit `QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION=true` is required to override (e.g. a private
+     * single-user box behind a separate auth proxy).
+     */
     isSkipAuthEnabled(): boolean {
-        return process.env.QAAP_SKIP_AUTH === 'true' || process.env.QAAP_SKIP_AUTH === '1';
+        const requested = process.env.QAAP_SKIP_AUTH === 'true' || process.env.QAAP_SKIP_AUTH === '1';
+        if (!requested) {
+            return false;
+        }
+        if (this.isProductionRuntime() && !this.isSkipAuthProductionOverride()) {
+            if (!this.skipAuthInProductionWarned) {
+                this.skipAuthInProductionWarned = true;
+                console.error('[qaap-security] REFUSING QAAP_SKIP_AUTH in a production runtime — authentication stays ON. '
+                    + 'Skip-auth is local-dev only; set QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION=true only if you fully understand the risk.');
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /** True when this looks like a hosted/production deployment rather than local dev. */
+    protected isProductionRuntime(): boolean {
+        const cloudMode = process.env.QAAP_CLOUD_MODE?.trim().toLowerCase();
+        return process.env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
+    }
+
+    protected isSkipAuthProductionOverride(): boolean {
+        const value = process.env.QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION?.trim().toLowerCase();
+        return value === 'true' || value === '1';
     }
 
     /** Returns a persisted GitHub OAuth session, ignoring stale cookie/header ids. */

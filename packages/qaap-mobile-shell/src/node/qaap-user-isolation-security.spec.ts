@@ -97,6 +97,44 @@ describe('qaap-github-auth-guard security', () => {
         );
     });
 
+    describe('skip-auth is refused in a production runtime', () => {
+        const saved: Record<string, string | undefined> = {};
+        const KEYS = ['QAAP_SKIP_AUTH', 'NODE_ENV', 'QAAP_CLOUD_MODE', 'QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION'];
+        beforeEach(() => { for (const k of KEYS) { saved[k] = process.env[k]; delete process.env[k]; } });
+        afterEach(() => { for (const k of KEYS) { if (saved[k] === undefined) { delete process.env[k]; } else { process.env[k] = saved[k]; } } });
+
+        const guard = (): QaapGithubAuthGuard => new QaapGithubAuthGuard();
+
+        it('honors skip-auth in local dev', () => {
+            process.env.QAAP_SKIP_AUTH = 'true';
+            expect(guard().isSkipAuthEnabled()).to.equal(true);
+        });
+
+        it('refuses skip-auth when NODE_ENV=production', () => {
+            process.env.QAAP_SKIP_AUTH = 'true';
+            process.env.NODE_ENV = 'production';
+            expect(guard().isSkipAuthEnabled()).to.equal(false);
+        });
+
+        it('refuses skip-auth when QAAP_CLOUD_MODE is a non-local hosted mode', () => {
+            process.env.QAAP_SKIP_AUTH = '1';
+            process.env.QAAP_CLOUD_MODE = 'hosted';
+            expect(guard().isSkipAuthEnabled()).to.equal(false);
+        });
+
+        it('allows the explicit production override', () => {
+            process.env.QAAP_SKIP_AUTH = 'true';
+            process.env.NODE_ENV = 'production';
+            process.env.QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION = 'true';
+            expect(guard().isSkipAuthEnabled()).to.equal(true);
+        });
+
+        it('is off by default regardless of runtime', () => {
+            process.env.NODE_ENV = 'production';
+            expect(guard().isSkipAuthEnabled()).to.equal(false);
+        });
+    });
+
     it('scopes work-hub routine ownership by ownerLogin', () => {
         const routineAlice = { id: 'r1', ownerLogin: 'alice', cwd: '/any/path' };
         const routineBob = { id: 'r2', ownerLogin: 'bob', cwd: '/any/path' };
