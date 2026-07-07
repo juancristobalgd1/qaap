@@ -354,6 +354,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
         );
         host.dataset.transcriptStreamParsedLen = String(cleanLength);
         host.dataset.transcriptStreamParsedAt = String(Date.now());
+        enhanceTranscriptMarkdownRichContent(host);
         this.attachTranscriptMarkdownLinkHandler(host);
     }
 

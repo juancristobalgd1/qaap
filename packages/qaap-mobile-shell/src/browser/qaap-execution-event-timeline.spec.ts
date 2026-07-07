@@ -225,6 +225,7 @@ describe('qaap-execution-event-timeline', () => {
             expect(terminal).to.not.equal(null);
             expect(terminal?.querySelector('.theia-mobile-terminal-output-label')).to.equal(null);
             expect(terminal?.querySelector('.theia-mobile-terminal-output-detail')?.textContent).to.equal('npm run test');
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-detail .theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('npm');
         });
 
         it('marks active tool group header text for shimmer while running', () => {

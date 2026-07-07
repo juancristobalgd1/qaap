@@ -223,15 +223,117 @@ function appendScriptLine(host: HTMLElement, line: string): void {
     appendScriptTail(host, line);
 }
 
+const SCRIPT_KEYWORDS = new Set([
+    'as',
+    'async',
+    'await',
+    'break',
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'default',
+    'else',
+    'export',
+    'extends',
+    'false',
+    'finally',
+    'for',
+    'from',
+    'function',
+    'if',
+    'import',
+    'in',
+    'instanceof',
+    'interface',
+    'let',
+    'new',
+    'null',
+    'of',
+    'return',
+    'switch',
+    'throw',
+    'true',
+    'try',
+    'type',
+    'undefined',
+    'var',
+    'while',
+]);
+
 function appendScriptTail(host: HTMLElement, line: string): void {
-    const stringMatch = line.match(/^(\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)(.*)$/);
-    if (stringMatch) {
-        appendSpan(host, stringMatch[1] ?? '', 'plain');
-        appendSpan(host, stringMatch[2], 'string');
-        appendScriptTail(host, stringMatch[3] ?? '');
+    if (!line) {
+        host.textContent = ' ';
         return;
     }
-    host.textContent = line || ' ';
+    let index = 0;
+    while (index < line.length) {
+        const rest = line.slice(index);
+        const whitespace = rest.match(/^\s+/)?.[0];
+        if (whitespace) {
+            appendSpan(host, whitespace, 'plain');
+            index += whitespace.length;
+            continue;
+        }
+        if (rest.startsWith('//')) {
+            appendSpan(host, rest, 'comment');
+            return;
+        }
+        if (rest[0] === '"' || rest[0] === '\'' || rest[0] === '`') {
+            const end = findScriptQuoteEnd(line, index);
+            appendSpan(host, line.slice(index, end), 'string');
+            index = end;
+            continue;
+        }
+        const number = rest.match(/^\b\d+(?:\.\d+)?\b/)?.[0];
+        if (number) {
+            appendSpan(host, number, 'number');
+            index += number.length;
+            continue;
+        }
+        const identifier = rest.match(/^[A-Za-z_$][\w$]*/)?.[0];
+        if (identifier) {
+            const after = line.slice(index + identifier.length);
+            if (SCRIPT_KEYWORDS.has(identifier)) {
+                appendSpan(host, identifier, 'keyword');
+            } else if (/^\s*\(/.test(after)) {
+                appendSpan(host, identifier, 'function');
+            } else {
+                appendSpan(host, identifier, 'plain');
+            }
+            index += identifier.length;
+            continue;
+        }
+        const operator = rest.match(/^(=>|===|!==|==|!=|<=|>=|\+\+|--|&&|\|\||[=+\-*/%<>!?:]+)/)?.[0];
+        if (operator) {
+            appendSpan(host, operator, 'operator');
+            index += operator.length;
+            continue;
+        }
+        const punctuation = rest.match(/^[()[\]{}.,;]/)?.[0];
+        if (punctuation) {
+            appendSpan(host, punctuation, 'sep');
+            index += punctuation.length;
+            continue;
+        }
+        appendSpan(host, rest[0], 'plain');
+        index += 1;
+    }
+}
+
+function findScriptQuoteEnd(line: string, start: number): number {
+    const quote = line[start];
+    for (let index = start + 1; index < line.length; index++) {
+        if (line[index] === '\\' && index + 1 < line.length) {
+            index += 1;
+            continue;
+        }
+        if (line[index] === quote) {
+            return index + 1;
+        }
+    }
+    return line.length;
 }
 
 function appendCssLine(host: HTMLElement, line: string): void {
@@ -306,7 +408,7 @@ function appendShellTokens(host: HTMLElement, line: string): void {
             appendSpan(host, line.slice(index), 'comment');
             return;
         }
-        const token = rest.match(/^(\$\{[^}]+\}|\$[\w@#*!?-]+|-[\w-]+|[^\s#"'|$;&<>]+)/)?.[0];
+        const token = rest.match(/^(\$\{[^}]+\}|\$[\w@#*!?-]+|--?[\w-]+|[^\s#"'|$;&<>]+)/)?.[0];
         if (!token) {
             appendSpan(host, rest[0], 'plain');
             index += 1;
@@ -314,11 +416,15 @@ function appendShellTokens(host: HTMLElement, line: string): void {
         }
         if (token.startsWith('$')) {
             appendSpan(host, token, 'string');
-        } else if (token.startsWith('-')) {
+        } else if (/^--?[\w-]+$/.test(token)) {
             appendSpan(host, token, 'keyword');
         } else if (expectCommand) {
             appendSpan(host, token, 'keyword');
             expectCommand = false;
+        } else if (/^(?:\d+|2>&1|\d?>&\d)$/.test(token)) {
+            appendSpan(host, token, 'number');
+        } else if (/[/.]/.test(token)) {
+            appendSpan(host, token, 'path');
         } else {
             appendSpan(host, token, 'plain');
         }

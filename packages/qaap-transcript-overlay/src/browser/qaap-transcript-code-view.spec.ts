@@ -4,12 +4,25 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
+    createTranscriptCodeView,
     normalizeTranscriptCodeText,
     resolveTranscriptCodeLanguage,
 } from './qaap-transcript-code-view';
 
 describe('qaap-transcript-code-view', () => {
+    let disableJSDOM: (() => void) | undefined;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM?.();
+        disableJSDOM = undefined;
+    });
+
     it('resolves json from file extension', () => {
         expect(resolveTranscriptCodeLanguage('package.json')).to.equal('json');
     });
@@ -36,5 +49,21 @@ describe('qaap-transcript-code-view', () => {
     it('prefers grep language for ripgrep-style paths', () => {
         expect(resolveTranscriptCodeLanguage('package.json', 'src/index.ts:12:const value = 1')).to.equal('json');
         expect(resolveTranscriptCodeLanguage(undefined, 'src/index.ts:12:const value = 1\nsrc/util.ts:4:export function run()')).to.equal('grep');
+    });
+
+    it('highlights inline TypeScript comments, calls, and operators', () => {
+        const view = createTranscriptCodeView('const x = useStore.setState(resolved); // raw setter', 'typescript');
+
+        expect(view.querySelector('.theia-mobile-agent-token.theia-mod-function')?.textContent).to.equal('setState');
+        expect(view.querySelector('.theia-mobile-agent-token.theia-mod-operator')?.textContent).to.equal('=');
+        expect(view.querySelector('.theia-mobile-agent-token.theia-mod-comment')?.textContent).to.equal('// raw setter');
+    });
+
+    it('highlights shell commands, flags, paths, and separators', () => {
+        const view = createTranscriptCodeView('npx vitest run src/store.test.ts --run 2>&1 | tail -60', 'shell');
+
+        expect(view.querySelector('.theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('npx');
+        expect([...view.querySelectorAll('.theia-mobile-agent-token.theia-mod-path')].map(node => node.textContent)).to.include('src/store.test.ts');
+        expect([...view.querySelectorAll('.theia-mobile-agent-token.theia-mod-sep')].map(node => node.textContent?.trim())).to.include('|');
     });
 });

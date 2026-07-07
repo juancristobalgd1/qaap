@@ -31,6 +31,7 @@ import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
+import { createTranscriptCodeView } from './qaap-transcript-code-view';
 
 /** Data attribute: stable id of the execution event a `section` element renders. */
 const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
@@ -1091,7 +1092,7 @@ function patchMobileToolDetail(
         if (prevTool.detail !== nextTool.detail) {
             const detailEl = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-detail');
             if (detailEl) {
-                detailEl.textContent = nextTool.detail;
+                renderMobileShellCommandDetail(detailEl, nextTool.detail);
             }
         }
 
@@ -1468,7 +1469,7 @@ function createMobileTerminalOutputElement(
 
     const detail = document.createElement('span');
     detail.className = 'theia-mobile-terminal-output-detail';
-    detail.textContent = tool.detail;
+    renderMobileShellCommandDetail(detail, tool.detail);
 
     const state = document.createElement('span');
     state.className = `codicon ${tool.isError ? 'codicon-error' : tool.isFinished ? 'codicon-check' : 'codicon-loading theia-animation-spin'} theia-mobile-terminal-output-state`;
@@ -1506,6 +1507,17 @@ function createMobileTerminalOutputElement(
     details.append(content);
 
     return details;
+}
+
+function renderMobileShellCommandDetail(host: HTMLElement, command: string): void {
+    host.replaceChildren();
+    const codeView = createTranscriptCodeView(command, 'shell');
+    const code = codeView.querySelector<HTMLElement>('.theia-mobile-agent-code-text');
+    if (!code) {
+        host.textContent = command;
+        return;
+    }
+    host.append(...[...code.childNodes].map(child => child.cloneNode(true)));
 }
 
 // ─── Closing Error Card ──────────────────────────────────────────────────────
