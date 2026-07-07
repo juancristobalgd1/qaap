@@ -97,6 +97,11 @@ agents, use the deployment guide:
 
 [doc/qaap-vps-deployment.md](doc/qaap-vps-deployment.md)
 
+> **Security note:** a single-user deployment is safe by default, but exposing
+> Qaap to **multiple users** requires hardening (the hosted agent runs as root
+> in a shared container by default). Read the deployment security model in
+> [SECURITY.md](SECURITY.md) before inviting other users.
+
 ## Architecture Notes
 
 QAAP is intentionally a product fork, but it avoids burying product behavior in
