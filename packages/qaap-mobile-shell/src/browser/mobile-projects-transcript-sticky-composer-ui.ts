@@ -27,6 +27,7 @@ import {
     type QaapAgentTaskAgentOption,
 } from '../common/qaap-agent-task-client';
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
+import { formatCommitFeedback } from '../common/qaap-commit-feedback';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
@@ -853,6 +854,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 const body = await response.json().catch(() => ({})) as { error?: string };
                 throw new Error(body.error ?? `commit workflow failed (${response.status})`);
             }
+            const result = await response.json().catch(() => ({})) as {
+                branch?: string;
+                stat?: { files: number; insertions: number; deletions: number };
+            };
             if (action === 'commit-create-pr' && this.host.commands) {
                 try {
                     await this.host.commands.executeCommand('pr.pushAndCreate', { repoPath: cwd });
@@ -867,8 +872,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 .then(() => this.refreshComposerActivityStack())
                 .catch(() => undefined);
             MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/stickyComposerCommitDone', 'Changes committed'),
-                { kind: 'success', duration: 1800 },
+                formatCommitFeedback(
+                    nls.localize('qaap/mobileProjects/stickyComposerCommitDone', 'Changes committed'),
+                    result.branch,
+                    result.stat,
+                ),
+                { kind: 'success', duration: 2400 },
             );
         } catch (error) {
             MobileSnackbar.show(

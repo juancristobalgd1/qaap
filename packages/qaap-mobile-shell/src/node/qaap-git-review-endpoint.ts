@@ -193,10 +193,11 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             }
             await this.git(root, ['add', '-A']);
             await this.git(root, ['commit', '-m', message]);
+            const stat = await this.readLastCommitStat(root);
             if (this.shouldPush(action)) {
                 await this.pushCurrentBranch(root);
             }
-            res.json({ ok: true, action, branch: branchName ?? await this.readCurrentBranch(root) });
+            res.json({ ok: true, action, branch: branchName ?? await this.readCurrentBranch(root), stat });
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
@@ -417,6 +418,30 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         try {
             const name = (await this.git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
             return name && name !== 'HEAD' ? name : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** Files changed + insertions/deletions of the just-created HEAD commit, for commit feedback. */
+    protected async readLastCommitStat(root: string): Promise<{ files: number; insertions: number; deletions: number } | undefined> {
+        try {
+            // --numstat with an empty format prints only "<added>\t<deleted>\t<path>" rows for HEAD.
+            const out = await this.git(root, ['show', '--numstat', '--format=', 'HEAD']);
+            let files = 0;
+            let insertions = 0;
+            let deletions = 0;
+            for (const line of out.split('\n')) {
+                const parts = line.trim().split('\t');
+                if (parts.length < 3) {
+                    continue;
+                }
+                files += 1;
+                // Binary files report "-"; count them as a changed file but add 0 lines.
+                insertions += Number.parseInt(parts[0], 10) || 0;
+                deletions += Number.parseInt(parts[1], 10) || 0;
+            }
+            return { files, insertions, deletions };
         } catch {
             return undefined;
         }
