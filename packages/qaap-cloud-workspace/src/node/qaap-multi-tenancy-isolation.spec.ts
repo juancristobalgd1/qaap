@@ -20,6 +20,7 @@ import type {
 } from '../common/qaap-cloud-api-types';
 import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapDeployRunner } from './qaap-deploy-runner';
+import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 
 type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
@@ -70,22 +71,26 @@ describe('Multi-tenancy isolation', () => {
     // ─── C-1: Docker container namespacing ───────────────────────────
 
     describe('C-1: Docker container namespacing', () => {
+        // Exercise the REAL orchestrator method, not a reimplementation of its hashing inline.
+        const orchestrator = new class extends QaapDockerOrchestrator {
+            nameFor(repoKey: string, ownerLogin?: string): string {
+                return this.containerNameFor(repoKey, ownerLogin);
+            }
+        }();
+        const repoKey = 'octocat/hello-world';
+
         it('produces different container names for the same repo opened by different users', () => {
-            const repoKey = 'octocat/hello-world';
-            const hashA = require('crypto').createHash('sha256')
-                .update(`${userA}\u0000${repoKey}`).digest('hex').slice(0, 12);
-            const hashB = require('crypto').createHash('sha256')
-                .update(`${userB}\u0000${repoKey}`).digest('hex').slice(0, 12);
-            expect(`qaap-ws-${hashA}`).to.not.equal(`qaap-ws-${hashB}`);
+            expect(orchestrator.nameFor(repoKey, userA)).to.not.equal(orchestrator.nameFor(repoKey, userB));
         });
 
-        it('falls back to __anonymous__ bucket for undefined ownerLogin', () => {
-            const repoKey = 'octocat/hello-world';
-            const hashAnon = require('crypto').createHash('sha256')
-                .update(`__anonymous__\u0000${repoKey}`).digest('hex').slice(0, 12);
-            const hashA = require('crypto').createHash('sha256')
-                .update(`${userA}\u0000${repoKey}`).digest('hex').slice(0, 12);
-            expect(`qaap-ws-${hashAnon}`).to.not.equal(`qaap-ws-${hashA}`);
+        it('is stable and well-formed for the same (user, repo) pair', () => {
+            expect(orchestrator.nameFor(repoKey, userA)).to.equal(orchestrator.nameFor(repoKey, userA));
+            expect(orchestrator.nameFor(repoKey, userA)).to.match(/^qaap-ws-[0-9a-f]{12}$/);
+        });
+
+        it('falls back to a distinct __anonymous__ bucket for undefined ownerLogin', () => {
+            expect(orchestrator.nameFor(repoKey, undefined)).to.not.equal(orchestrator.nameFor(repoKey, userA));
+            expect(orchestrator.nameFor(repoKey, 'Alice')).to.equal(orchestrator.nameFor(repoKey, 'alice'));
         });
     });
 

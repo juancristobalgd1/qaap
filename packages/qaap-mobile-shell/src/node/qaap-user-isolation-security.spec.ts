@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {
     isPathUnderUserWorkspace,
@@ -16,6 +18,17 @@ import {
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import type { Request, Response } from '@theia/core/shared/express';
+
+/** Builds a fake req carrying a session cookie, and a res capturing status/body, for guard tests. */
+function fakeReqRes(sessionId: string): { req: Request; res: Response; status: () => number } {
+    const captured = { code: 0 };
+    const req = { headers: { cookie: `qaap_sid=${encodeURIComponent(sessionId)}` } } as unknown as Request;
+    const res = {
+        status(code: number) { captured.code = code; return this; },
+        json() { return this; },
+    } as unknown as Response;
+    return { req, res, status: () => captured.code };
+}
 
 describe('qaap-user-isolation', () => {
 
@@ -95,6 +108,46 @@ describe('qaap-github-auth-guard security', () => {
         expect(resolveUserReposRoot('/data/repos', 'alice')).to.equal(
             path.join('/data/repos', 'users', 'alice'),
         );
+    });
+
+    describe('symlink escape is denied end-to-end through the real guard (C3 / M2)', () => {
+        let reposRoot: string;
+        let sessions: QaapGithubSessionStore;
+        let guard: QaapGithubAuthGuard;
+        let aliceSession: string;
+
+        beforeEach(() => {
+            reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-tenancy-'));
+            fs.mkdirSync(path.join(reposRoot, 'users', 'alice', 'repo'), { recursive: true });
+            fs.mkdirSync(path.join(reposRoot, 'users', 'bob', 'secret'), { recursive: true });
+            sessions = new QaapGithubSessionStore();
+            guard = new QaapGithubAuthGuard();
+            (guard as unknown as { sessions: QaapGithubSessionStore }).sessions = sessions;
+            (guard as unknown as { reposRoot: string }).reposRoot = reposRoot;
+            aliceSession = sessions.createSession({
+                accessToken: 't', user: { provider: 'github', login: 'alice', name: 'Alice' },
+            });
+        });
+
+        afterEach(() => fs.rmSync(reposRoot, { recursive: true, force: true }));
+
+        it('403s a lexically-owned path that symlinks into another tenant', () => {
+            // alice plants a symlink inside her own workspace pointing at bob's tree.
+            const link = path.join(reposRoot, 'users', 'alice', 'evil');
+            fs.symlinkSync(path.join(reposRoot, 'users', 'bob', 'secret'), link);
+            const { req, res, status } = fakeReqRes(aliceSession);
+            // The path string still starts with alice's root (lexical check passes) — the guard must
+            // still deny it because realpath lands in bob's tree.
+            const allowed = guard.assertWorkspacePathOwned(req, res, link, 'agent_conversation');
+            expect(allowed).to.equal(false);
+            expect(status()).to.equal(403);
+        });
+
+        it('allows a genuine path inside the user workspace', () => {
+            const { req, res } = fakeReqRes(aliceSession);
+            const ownPath = path.join(reposRoot, 'users', 'alice', 'repo');
+            expect(guard.assertWorkspacePathOwned(req, res, ownPath, 'agent_conversation')).to.equal(true);
+        });
     });
 
     describe('skip-auth is refused in a production runtime', () => {
