@@ -50,6 +50,10 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             agentsHubInlineExecutionRoot: undefined,
             agentsHubInlineTabStrip: undefined,
             stickyComposerHost: document.createElement('div'),
+            transcriptComposerSummary: undefined,
+            transcriptStickyComposerUi: {
+                flushTranscriptComposerDraft: () => undefined,
+            } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptStickyComposerUi'],
             root: document.createElement('div'),
             scroll: document.createElement('div'),
             executionTabOverflowMenu: undefined,
@@ -253,5 +257,24 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(labels).to.include.members(['Chat', 'Plan', 'Changes', 'Preview', 'Files', 'Terminal']);
         expect(labels).to.not.include('Editor');
         expect(labels[0]).to.equal('Chat');
+    });
+
+    it('flushes the composer draft before clearing the composer when leaving Messages', () => {
+        const flushed: Array<string | undefined> = [];
+        const host = createHost({
+            transcriptComposerSummary: { id: 'conv-42' } as MobileProjectsExecutionSurfaceTabsHost['transcriptComposerSummary'],
+            transcriptStickyComposerUi: {
+                flushTranscriptComposerDraft: (id?: string) => { flushed.push(id); },
+            } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptStickyComposerUi'],
+        });
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+
+        ui.showOnlyExecutionSurfaceTab('plan');
+        expect(flushed).to.deep.equal(['conv-42']);
+        expect(host.stickyComposerHost.childElementCount).to.equal(0);
+
+        // Returning to Messages should not trigger another flush (nothing is being torn down).
+        ui.showOnlyExecutionSurfaceTab('messages');
+        expect(flushed).to.deep.equal(['conv-42']);
     });
 });

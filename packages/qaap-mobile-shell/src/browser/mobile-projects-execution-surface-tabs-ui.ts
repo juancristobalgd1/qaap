@@ -60,6 +60,8 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     agentsHubInlineTabStrip: HTMLElement | undefined;
     stickyComposerHost: HTMLElement;
     transcriptComposerMountKey?: string | undefined;
+    transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
+    transcriptStickyComposerUi: import('./mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
     stickyComposerSheetsUi?: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     root: HTMLElement;
     scroll: HTMLElement;
@@ -274,6 +276,12 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             this.host.root.classList.toggle('theia-mod-sticky-composer', showMessages);
             this.host.stickyComposerHost.classList.toggle('theia-mod-show-quick-actions', showMessages);
             if (!showMessages) {
+                // Leaving Messages destroys the mounted composer. Its draft is live in
+                // `transcriptComposerDraft` but the localStorage persist is debounced, so flush it
+                // now — otherwise a fast tab switch loses the last <280ms of typing when the composer
+                // remounts and re-reads the stale stored value.
+                const composingId = this.host.transcriptComposerSummary?.id ?? this.host.transcriptOpenSummary?.id;
+                this.host.transcriptStickyComposerUi.flushTranscriptComposerDraft(composingId);
                 this.host.stickyComposerHost.replaceChildren();
                 this.host.transcriptComposerMountKey = undefined;
                 this.host.stickyComposerSheetsUi?.closeStickyComposerSheets();
