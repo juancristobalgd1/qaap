@@ -238,6 +238,42 @@ docker compose up -d
 Put **Caddy** or **nginx** in front with TLS and set `QAAP_OAUTH_PUBLIC_URL` to
 `https://ide.example.com`. Update the GitHub OAuth callback URL to match.
 
+## Hardening the agent for multi-tenant use (non-root privilege drop)
+
+By default the hosted agent runs as **root** with `--dangerously-skip-permissions`. On a
+single-user box that is fine, but before you invite other users you should drop the agent to a
+non-root uid so one tenant's agent cannot read another tenant's secrets (API keys, GitHub OAuth
+tokens, helper tokens) — all of which live under the root-owned `/root/.qaap` and `/root/.theia`.
+
+The image already ships a `qaap-agent` user (uid 1001) and locks `/root` to `0700`. Activation is
+opt-in via env, and you should **verify before flipping it on**:
+
+1. Build/pull the new image and set in your VPS `.env`:
+   ```
+   QAAP_AGENT_UID=1001
+   QAAP_AGENT_GID=1001
+   ```
+2. If your `/workspace` volume predates this image it is still root-owned — chown it once so the
+   non-root agent can write:
+   ```
+   docker compose exec theia chown -R 1001:1001 /workspace
+   ```
+3. `docker compose up -d` and verify inside the container:
+   ```
+   # the agent process should run as uid 1001, not 0
+   docker compose exec theia sh -c 'ps -o uid,cmd -C qaiq'
+   # the agent user must NOT be able to read tenant secrets
+   docker compose exec -u 1001 theia sh -c 'cat /root/.qaap/* 2>&1 | head'   # expect: Permission denied
+   # the agent user MUST be able to write its workspace
+   docker compose exec -u 1001 theia sh -c 'touch /workspace/.__perm_test && rm /workspace/.__perm_test && echo OK'
+   ```
+4. Run a real agent task end-to-end (edit a file, run the dev server) to confirm nothing regressed.
+   If a CLI complains it can't write its config, confirm `QAAP_AGENT_HOME=/home/qaap-agent` is set.
+
+> This closes the cross-tenant **secret** leak. It does **not** yet isolate cross-tenant **code**
+> reads (all agents share uid 1001 on the shared `/workspace`). Full isolation (a container or uid
+> per user) is the next step for a large public deployment.
+
 ## Related docs
 
 - [qaap-background-agents.md](./qaap-background-agents.md) — agent templates, `QAAP_AGENT_COMMANDS`, custom providers
