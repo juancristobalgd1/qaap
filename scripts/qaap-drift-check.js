@@ -262,6 +262,9 @@ const ALLOWED = [
     /^package-lock\.json$/,
     /^README\.md$/,
     /^CLAUDE\.md$/,
+    // Product security policy: Qaap reporting channel + multi-tenant deployment
+    // security model prepended above the upstream Eclipse Theia policy.
+    /^SECURITY\.md$/,
     /^doc\/qaap-.*\.(md|html)$/,
     /^\.github\/workflows\/qaap-.*\.yml$/,
     // Fork CI matrix (Node heap, test hooks) — not upstream Theia workflow content.
