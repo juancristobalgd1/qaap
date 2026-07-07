@@ -203,7 +203,9 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             res.status(400).json({ error: 'title and body are required' });
             return;
         }
-        const targetLogin = ctx.kind === 'authenticated' ? ctx.userLogin : (ctx.kind === 'skip' ? ctx.userLogin : body.userLogin);
+        // Always the session-derived login — never a client-supplied body field, which would let a
+        // caller push notifications into another tenant's subscriptions.
+        const targetLogin = ctx.kind === 'authenticated' || ctx.kind === 'skip' ? ctx.userLogin : undefined;
         const stats = await this.webPush.notify({
             title: body.title,
             body: body.body,

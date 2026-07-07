@@ -45,6 +45,7 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
+import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
 import {
@@ -2202,7 +2203,7 @@ export class QaapAgentTaskRunner {
     protected readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
         try {
             const userSettingsPath = ownerLogin?.trim()
-                ? path.join(os.homedir(), '.qaap', 'users', ownerLogin.trim().toLowerCase(), 'settings.json')
+                ? path.join(os.homedir(), '.qaap', 'users', safeUserIdSegment(ownerLogin), 'settings.json')
                 : undefined;
             const sharedSettingsPath = path.join(os.homedir(), '.theia', 'settings.json');
             const settingsPath = userSettingsPath && fs.existsSync(userSettingsPath)
