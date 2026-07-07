@@ -31,7 +31,7 @@ import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
-import { createTranscriptCodeView } from './qaap-transcript-code-view';
+import { createTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from './qaap-transcript-code-view';
 
 /** Data attribute: stable id of the execution event a `section` element renders. */
 const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
@@ -42,10 +42,10 @@ const timelineEventCache = new WeakMap<HTMLElement, readonly MobileExecutionEven
 
 /** Latest raw (un-stripped) terminal result for a collapsed terminal `<details>`
  *  card, keyed by the details element. Terminal cards are collapsed by
- *  default, so building the `<pre>` (which requires stripAnsiEscapes over the
- *  full — possibly large — result) is deferred until the card is first
- *  opened; this map lets the deferred render pick up whatever the latest
- *  streamed result was by then. */
+ *  default, so building the highlighted output (which requires
+ *  stripAnsiEscapes over the full — possibly large — result) is deferred
+ *  until the card is first opened; this map lets the deferred render pick up
+ *  whatever the latest streamed result was by then. */
 const pendingTerminalOutputResult = new WeakMap<HTMLDetailsElement, string>();
 
 /**
@@ -1039,26 +1039,44 @@ function patchMobileExecutionEventSection(
 }
 
 /**
- * Builds (or refreshes) the terminal `<pre>` from `result`, replacing the
+ * Builds (or refreshes) the terminal output from `result`, replacing the
  * pending placeholder if present. Shared by the eager render path (terminal
  * created/patched while open) and the lazy first-open handler below.
  */
-function renderMobileTerminalOutputPre(content: HTMLElement, result: string): void {
-    let pre = content.querySelector<HTMLElement>('.theia-mobile-terminal-output-pre');
-    if (!pre) {
-        const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
-        if (placeholder) {
-            placeholder.remove();
-        }
-        pre = document.createElement('pre');
-        pre.className = 'theia-mobile-terminal-output-pre';
-        content.append(pre);
+function renderMobileTerminalOutput(content: HTMLElement, result: string): void {
+    const clean = stripAnsiEscapes(result);
+    const existing = content.querySelector<HTMLElement>('.theia-mobile-terminal-output-pre, .theia-mobile-terminal-output-code-view');
+    const language = resolveMobileTerminalOutputLanguage(clean);
+    const next = createMobileTerminalCodeView(clean, language);
+    const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
+    if (placeholder) {
+        placeholder.remove();
     }
-    pre.textContent = stripAnsiEscapes(result);
+    if (existing) {
+        existing.replaceWith(next);
+    } else {
+        content.append(next);
+    }
+}
+
+type MobileTerminalOutputLanguage = Exclude<TranscriptCodeLanguage, 'plain'>;
+
+function resolveMobileTerminalOutputLanguage(output: string): MobileTerminalOutputLanguage {
+    const inferred = resolveTranscriptCodeLanguage(undefined, output);
+    if (inferred !== 'plain') {
+        return inferred;
+    }
+    return 'log';
+}
+
+function createMobileTerminalCodeView(output: string, language: MobileTerminalOutputLanguage): HTMLElement {
+    const view = createTranscriptCodeView(output, language);
+    view.classList.add('theia-mobile-terminal-output-code-view');
+    return view;
 }
 
 /**
- * Defers building the terminal `<pre>` until the `<details>` is first opened,
+ * Defers building terminal output until the `<details>` is first opened,
  * so collapsed terminal cards never pay the stripAnsiEscapes + DOM cost while
  * streaming. Reads whatever the latest result is from
  * {@link pendingTerminalOutputResult} at open time, not just what was known
@@ -1072,7 +1090,7 @@ function attachMobileTerminalLazyOpenHandler(details: HTMLDetailsElement, conten
         details.removeEventListener('toggle', onFirstOpen);
         const latest = pendingTerminalOutputResult.get(details);
         if (latest !== undefined) {
-            renderMobileTerminalOutputPre(content, latest);
+            renderMobileTerminalOutput(content, latest);
         }
     });
 }
@@ -1111,7 +1129,7 @@ function patchMobileToolDetail(
                 pendingTerminalOutputResult.set(el, nextResult);
             }
             if (!el.open) {
-                // Collapsed: skip the stripAnsiEscapes + <pre> DOM work
+                // Collapsed: skip the stripAnsiEscapes + code-view DOM work
                 // entirely — the lazy open handler attached at creation
                 // covers it once the user expands the card. Still clear a
                 // stale pending placeholder so a later open doesn't show
@@ -1123,10 +1141,10 @@ function patchMobileToolDetail(
                     }
                 }
             } else if (nextResult) {
-                renderMobileTerminalOutputPre(content, nextResult);
+                renderMobileTerminalOutput(content, nextResult);
             } else if (nextTool.isFinished) {
                 // Mirrors the builder: a finished tool with no result renders
-                // neither the pending placeholder nor a <pre> — don't leave a
+                // neither the pending placeholder nor output — don't leave a
                 // stale "Running…" placeholder behind once it finishes empty.
                 const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
                 if (placeholder) {
@@ -1218,11 +1236,11 @@ function restoreTimelineOpenStateById(fresh: HTMLElement, captured: MobileTimeli
             details.open = true;
             // Programmatic `open` does not fire `toggle` synchronously, so the
             // lazy first-open handler will not run here — render the deferred
-            // <pre> eagerly to avoid an open-but-empty terminal card.
+            // output eagerly to avoid an open-but-empty terminal card.
             const content = details.querySelector<HTMLElement>('.theia-mobile-terminal-output-content');
             const result = pendingTerminalOutputResult.get(details);
             if (content && result !== undefined && result !== '') {
-                renderMobileTerminalOutputPre(content, result);
+                renderMobileTerminalOutput(content, result);
             }
         }
     });
@@ -1486,7 +1504,7 @@ function createMobileTerminalOutputElement(
     // (see the matching comment in createMobileToolGroupElement) — setting
     // `open` here (rather than after the lazy-render wiring below) lets the
     // existing `if (details.open) { ... }` branch further down render the
-    // pending `<pre>` eagerly, exactly as it already does for the "created
+    // pending output eagerly, exactly as it already does for the "created
     // already open" case.
     const terminalStateKey = timelineTerminalOpenStateKey(tool.segment.toolUseId);
     if (timelineDetailsOpenState.get(terminalStateKey)) {
@@ -1510,10 +1528,9 @@ function createMobileTerminalOutputElement(
     details.append(summary);
 
     // Output content — show the tool result. Terminal cards are collapsed by
-    // default (details.open starts false), so building the <pre> — which
-    // requires stripAnsiEscapes over the full result — is deferred until the
-    // card is first opened. Strip ANSI escape sequences (color codes, OSC
-    // titles, etc.) so they don't render as visible garbage in the <pre>.
+    // default (details.open starts false), so building the rendered output is
+    // deferred until the card is first opened. Strip ANSI escape sequences
+    // (color codes, OSC titles, etc.) before syntax highlighting.
     // Mirrors the cleaning done by cleanTranscriptDisplayText in the content
     // UI layer.
     const content = document.createElement('div');
@@ -1531,7 +1548,7 @@ function createMobileTerminalOutputElement(
     if (details.open) {
         // Created already open (rare) — render eagerly as before.
         if (result) {
-            renderMobileTerminalOutputPre(content, result);
+            renderMobileTerminalOutput(content, result);
         }
     } else {
         attachMobileTerminalLazyOpenHandler(details, content);

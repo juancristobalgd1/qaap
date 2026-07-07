@@ -267,13 +267,13 @@ describe('qaap-execution-event-timeline', () => {
             expect(group?.querySelector('.theia-mobile-tool-group-meta')?.classList.contains('theia-mod-shimmer')).to.equal(true);
         });
 
-        it('strips ANSI escape sequences from terminal output', () => {
-            const rawOutput = '\u001b[32msuccess\u001b[0m\n\u001b]0;title\u0007done';
+        it('renders log terminal output as highlighted code view and strips ANSI escape sequences', () => {
+            const rawOutput = '\u001b[32mPASS\u001b[0m src/foo.test.ts 12ms';
             const el = createMobileExecutionEventTimeline([
                 toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'echo' }), true, false, rawOutput),
             ]);
 
-            // Terminal output <pre> is built lazily on first open (collapsed
+            // Terminal output code view is built lazily on first open (collapsed
             // by default) -- expand it before asserting on its content.
             const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
             terminal!.open = true;
@@ -281,10 +281,36 @@ describe('qaap-execution-event-timeline', () => {
             // `Event` class produces an object jsdom's dispatchEvent rejects.
             terminal!.dispatchEvent(new window.Event('toggle'));
 
-            const pre = el.querySelector<HTMLPreElement>('.theia-mobile-terminal-output-pre');
-            expect(pre).to.not.equal(null);
+            const codeView = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-code-view.theia-mod-log');
+            expect(codeView).to.not.equal(null);
             // ANSI CSI and OSC sequences must be removed
-            expect(pre?.textContent).to.equal('success\ndone');
+            expect(codeView?.textContent).to.include('PASS');
+            expect(codeView?.textContent).to.include('src/foo.test.ts');
+            expect(codeView?.textContent).to.not.include('\u001b');
+            expect(codeView?.querySelector('.theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('PASS');
+            expect(codeView?.querySelector('.theia-mobile-agent-token.theia-mod-path')?.textContent).to.equal('src/foo.test.ts');
+        });
+
+        it('renders verification JSON output with highlighted code view when expanded', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment(
+                    'Bash',
+                    'tool-1',
+                    JSON.stringify({ command: 'cat package.json | grep -A 20 "\\"scripts\\""' }),
+                    true,
+                    false,
+                    '"scripts": {\n  "dev": "pnpm dev",\n  "typecheck": "tsc"\n}',
+                ),
+            ]);
+
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+            terminal!.dispatchEvent(new window.Event('toggle'));
+
+            const codeView = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-code-view.theia-mod-json');
+            expect(codeView).to.not.equal(null);
+            expect(codeView?.querySelector('.theia-mobile-agent-token.theia-mod-key')?.textContent).to.equal('"scripts"');
+            expect(el.querySelector('.theia-mobile-terminal-output-pre')).to.equal(null);
         });
 
         it('does not render closing narrative (caller handles it)', () => {
@@ -915,12 +941,12 @@ describe('qaap-execution-event-timeline', () => {
             const restoredTerminal = second.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
             expect(restoredTerminal).to.not.equal(null);
             expect(restoredTerminal?.open).to.equal(true);
-            // The lazy <pre> must be rendered eagerly at creation time, since
+            // The lazy code view must be rendered eagerly at creation time, since
             // a programmatic `open = true` never fires the lazy first-open
             // 'toggle' handler.
-            const pre = restoredTerminal?.querySelector('.theia-mobile-terminal-output-pre');
-            expect(pre).to.not.equal(null);
-            expect(pre?.textContent).to.equal('hello output');
+            const output = restoredTerminal?.querySelector('.theia-mobile-terminal-output-code-view');
+            expect(output).to.not.equal(null);
+            expect(output?.textContent).to.include('hello output');
         });
 
         it('restores a user-opened tool group in a freshly created timeline', () => {

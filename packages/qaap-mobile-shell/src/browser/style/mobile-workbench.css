@@ -18326,7 +18326,11 @@ body>.theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-function {
-  color: var(--theia-symbolIcon-functionForeground, #dcdcaa);
+  color: #dcdcaa;
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-parameter {
+  color: #d7ba7d;
 }
 
 .theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-operator {
@@ -22427,7 +22431,11 @@ body>.theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-agent-token.theia-mod-function {
-  color: var(--theia-symbolIcon-functionForeground, #dcdcaa);
+  color: #dcdcaa;
+}
+
+.theia-mobile-agent-token.theia-mod-parameter {
+  color: #d7ba7d;
 }
 
 .theia-mobile-agent-token.theia-mod-operator {
@@ -22445,6 +22453,10 @@ body>.theia-mobile-transcript-files-menu {
 
 .theia-mobile-agent-token.theia-mod-line {
   color: color-mix(in srgb, var(--theia-descriptionForeground) 88%, var(--q-accent, #E58E40));
+}
+
+.theia-mobile-agent-token.theia-mod-error {
+  color: var(--theia-errorForeground, #f14c4c);
 }
 
 .theia-mobile-agent-token.theia-mod-sep {
@@ -27207,6 +27219,27 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.theia-mobile-terminal-output-code-view {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-width: max-content;
+}
+
+.theia-mobile-terminal-output-code-view .theia-mobile-agent-code-line {
+  padding: 0;
+  gap: 10px;
+}
+
+.theia-mobile-terminal-output-code-view .theia-mobile-agent-code-gutter {
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 58%, transparent);
+}
+
+.theia-mobile-terminal-output-code-view .theia-mobile-agent-code-text {
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .theia-mobile-terminal-output-pending {

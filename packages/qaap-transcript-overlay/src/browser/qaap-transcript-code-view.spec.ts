@@ -51,12 +51,35 @@ describe('qaap-transcript-code-view', () => {
         expect(resolveTranscriptCodeLanguage(undefined, 'src/index.ts:12:const value = 1\nsrc/util.ts:4:export function run()')).to.equal('grep');
     });
 
+    it('resolves json fragments from command output', () => {
+        const output = [
+            '"scripts": {',
+            '  "dev": "pnpm dev",',
+            '  "typecheck": "tsc"',
+            '}',
+        ].join('\n');
+        expect(resolveTranscriptCodeLanguage(undefined, output)).to.equal('json');
+    });
+
     it('highlights inline TypeScript comments, calls, and operators', () => {
         const view = createTranscriptCodeView('const x = useStore.setState(resolved); // raw setter', 'typescript');
 
         expect(view.querySelector('.theia-mobile-agent-token.theia-mod-function')?.textContent).to.equal('setState');
         expect(view.querySelector('.theia-mobile-agent-token.theia-mod-operator')?.textContent).to.equal('=');
         expect(view.querySelector('.theia-mobile-agent-token.theia-mod-comment')?.textContent).to.equal('// raw setter');
+    });
+
+    it('highlights TypeScript call arguments as parameters', () => {
+        const view = createTranscriptCodeView('if (skipHistory) skipNextHistory();\nsetHistory(updates);', 'typescript');
+
+        expect([...view.querySelectorAll('.theia-mobile-agent-token.theia-mod-function')].map(node => node.textContent)).to.deep.equal([
+            'skipNextHistory',
+            'setHistory',
+        ]);
+        expect([...view.querySelectorAll('.theia-mobile-agent-token.theia-mod-parameter')].map(node => node.textContent)).to.deep.equal([
+            'skipHistory',
+            'updates',
+        ]);
     });
 
     it('highlights shell commands, flags, paths, and separators', () => {

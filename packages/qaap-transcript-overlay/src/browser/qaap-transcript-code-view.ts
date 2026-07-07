@@ -10,7 +10,8 @@ export type TranscriptCodeLanguage =
     | 'javascript'
     | 'css'
     | 'shell'
-    | 'plain';
+    | 'plain'
+    | 'log';
 
 const EXTENSION_LANGUAGE: Record<string, TranscriptCodeLanguage> = {
     json: 'json',
@@ -35,6 +36,7 @@ const LANGUAGE_HINT: Record<string, TranscriptCodeLanguage> = {
     bash: 'shell',
     sh: 'shell',
     zsh: 'shell',
+    log: 'log',
     plain: 'plain',
     text: 'plain',
     txt: 'plain',
@@ -61,6 +63,12 @@ export function resolveTranscriptCodeLanguage(
     const trimmed = text?.trim();
     if (trimmed && looksLikeGrepOutput(trimmed)) {
         return 'grep';
+    }
+    if (trimmed && looksLikeJsonFragment(trimmed)) {
+        return 'json';
+    }
+    if (trimmed && looksLikeShellTranscript(trimmed)) {
+        return 'shell';
     }
     if (trimmed && looksLikeJson(trimmed)) {
         return 'json';
@@ -108,6 +116,18 @@ function looksLikeJson(text: string): boolean {
         || (text.startsWith('[') && text.endsWith(']'));
 }
 
+function looksLikeJsonFragment(text: string): boolean {
+    const sample = text.split('\n').slice(0, 8).filter(line => line.trim());
+    if (sample.length === 0) {
+        return false;
+    }
+    const jsonish = sample.filter(line =>
+        /^\s*"[^"]+"\s*:/.test(line)
+        || /^\s*[{}\]][,]?\s*$/.test(line),
+    ).length;
+    return jsonish >= Math.min(2, sample.length);
+}
+
 function looksLikeGrepOutput(text: string): boolean {
     const sample = text.split('\n').slice(0, 6).filter(line => line.trim());
     if (sample.length === 0) {
@@ -134,6 +154,9 @@ function appendHighlightedLine(host: HTMLElement, line: string, language: Transc
             return;
         case 'shell':
             appendShellLine(host, line);
+            return;
+        case 'log':
+            appendLogLine(host, line);
             return;
         default:
             host.textContent = line || ' ';
@@ -299,6 +322,8 @@ function appendScriptTail(host: HTMLElement, line: string): void {
                 appendSpan(host, identifier, 'keyword');
             } else if (/^\s*\(/.test(after)) {
                 appendSpan(host, identifier, 'function');
+            } else if (isInsideCallArgument(line, index)) {
+                appendSpan(host, identifier, 'parameter');
             } else {
                 appendSpan(host, identifier, 'plain');
             }
@@ -320,6 +345,19 @@ function appendScriptTail(host: HTMLElement, line: string): void {
         appendSpan(host, rest[0], 'plain');
         index += 1;
     }
+}
+
+function isInsideCallArgument(line: string, identifierStart: number): boolean {
+    let depth = 0;
+    for (let index = 0; index < identifierStart; index++) {
+        const char = line[index];
+        if (char === '(') {
+            depth++;
+        } else if (char === ')' && depth > 0) {
+            depth--;
+        }
+    }
+    return depth > 0;
 }
 
 function findScriptQuoteEnd(line: string, start: number): number {
@@ -430,6 +468,44 @@ function appendShellTokens(host: HTMLElement, line: string): void {
         }
         index += token.length;
     }
+}
+
+function looksLikeShellTranscript(text: string): boolean {
+    const sample = text.split('\n').slice(0, 6).filter(line => line.trim());
+    if (sample.length === 0) {
+        return false;
+    }
+    const shellish = sample.filter(line =>
+        /^\s*(?:\$|npm|pnpm|yarn|npx|node|git|cat|grep|rg|sed|awk|tail|head|cd|ls|mkdir|rm|cp|mv)\b/.test(line),
+    ).length;
+    return shellish >= Math.min(2, sample.length);
+}
+
+function appendLogLine(host: HTMLElement, line: string): void {
+    if (!line) {
+        host.textContent = ' ';
+        return;
+    }
+    const levelMatch = line.match(/^(\s*)(PASS|FAIL|ERROR|WARN|INFO|DONE|✓|✔|✗|×)(\b|:)?(.*)$/i);
+    if (levelMatch) {
+        appendSpan(host, levelMatch[1] ?? '', 'plain');
+        appendSpan(host, levelMatch[2] ?? '', /fail|error|✗|×/i.test(levelMatch[2] ?? '') ? 'error' : 'keyword');
+        appendSpan(host, levelMatch[3] ?? '', 'sep');
+        appendLogLine(host, levelMatch[4] ?? '');
+        return;
+    }
+    const pathMatch = line.match(/^(\s*)([^\s:]+\.\w+)(?::(\d+))?(.*)$/);
+    if (pathMatch) {
+        appendSpan(host, pathMatch[1] ?? '', 'plain');
+        appendSpan(host, pathMatch[2] ?? '', 'path');
+        if (pathMatch[3]) {
+            appendSpan(host, ':', 'sep');
+            appendSpan(host, pathMatch[3], 'line');
+        }
+        appendSpan(host, pathMatch[4] ?? '', 'plain');
+        return;
+    }
+    appendSpan(host, line, 'plain');
 }
 
 function findShellQuoteEnd(line: string, start: number): number {
