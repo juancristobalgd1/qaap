@@ -435,6 +435,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         conv: QaapAgentConversationDTO | undefined,
     ): {
         readonly files: StickyComposerChangedFileView[];
+        readonly count?: number;
         readonly stats?: { readonly added: number; readonly removed: number };
     } {
         const activityFiles = this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
@@ -466,10 +467,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (selection.files) {
             return {
                 files: selection.files,
+                count: Math.max(selection.files.length, activityFiles.files.length),
                 stats: this.resolveChangedFilesStats(selection.files, activityFiles.stats),
             };
         }
-        return activityFiles;
+        return {
+            ...activityFiles,
+            count: activityFiles.files.length,
+        };
     }
 
     /**
@@ -525,8 +530,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
             added += file.added ?? 0;
             removed += file.removed ?? 0;
         }
-        if (added > 0 || removed > 0) {
-            return { added, removed };
+        const fileStats = added > 0 || removed > 0 ? { added, removed } : undefined;
+        if (fileStats && fallback) {
+            return fallback.added + fallback.removed > fileStats.added + fileStats.removed
+                ? fallback
+                : fileStats;
+        }
+        if (fileStats) {
+            return fileStats;
         }
         return fallback;
     }
@@ -760,6 +771,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 this.refreshComposerActivityStack();
             },
             changedFiles: activityFiles.files,
+            changedFileCount: activityFiles.count,
             diffStats: activityFiles.stats,
             hasFileActivity,
             hasCommittableChanges,

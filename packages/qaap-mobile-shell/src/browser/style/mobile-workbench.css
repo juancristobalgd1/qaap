@@ -7253,6 +7253,14 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex: 0 0 auto;
 }
 
+.theia-mobile-sticky-composer-changes-pill-count {
+  flex: 0 0 auto;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 .theia-mobile-sticky-composer-next-actions {
   flex: 0 0 auto;
   display: inline-flex;

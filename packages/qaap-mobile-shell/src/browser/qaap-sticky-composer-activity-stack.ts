@@ -72,6 +72,8 @@ export interface StickyComposerActivityStackOptions {
     onQueueMoveUp?: (index: number) => void;
     onQueueRemove?: (index: number) => void;
     changedFiles?: readonly StickyComposerChangedFileView[];
+    /** Display count for the Changes pill when transcript evidence has more files than the git snapshot. */
+    changedFileCount?: number;
     diffStats?: { readonly added: number; readonly removed: number };
     /**
      * True once the agent has edited files in this conversation, even if the
@@ -213,6 +215,7 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
     const paths = files.map(file => file.path).sort().join('\n');
     return [
         files.length,
+        options.changedFileCount ?? '',
         stats?.added ?? 0,
         stats?.removed ?? 0,
         paths,
@@ -245,9 +248,9 @@ export function patchStickyComposerChangesPillHost(
     }
     const files = options.changedFiles ?? [];
     const stats = options.diffStats;
-    const fileCount = files.length > 0
+    const fileCount = options.changedFileCount ?? (files.length > 0
         ? files.length
-        : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
+        : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0));
     const hasCommitAction = !!options.onCommitAction && !!options.hasCommittableChanges;
     const hasNextActions = !!options.onRunApp || !!options.onOpenPreview;
     const hasChangesMenu = buildChangesMenuItems(options).length > 0;
@@ -276,6 +279,20 @@ export function patchStickyComposerChangesPillHost(
             return false;
         }
         pill.setAttribute('aria-label', buildChangesPillAriaLabel(fileCount, stats));
+        let count = pill.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-changes-pill-count');
+        if (fileCount > 0) {
+            if (!count) {
+                count = document.createElement('span');
+                count.className = 'theia-mobile-sticky-composer-changes-pill-count';
+                const label = pill.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-label');
+                label?.after(count);
+            }
+            count.textContent = fileCount === 1
+                ? nls.localize('qaap/mobileProjects/stickyComposerChangesOneFileShort', '1 file')
+                : nls.localize('qaap/mobileProjects/stickyComposerChangesManyFilesShort', '{0} files', String(fileCount));
+        } else {
+            count?.remove();
+        }
         let statsInline = pill.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-activity-inline-stats');
         if (!statsInline) {
             statsInline = document.createElement('span');
@@ -447,10 +464,10 @@ function appendDiffStatsInline(
         added.textContent = `+${stats.added}`;
         statsInline.append(added);
     }
-    if ((stats.removed ?? 0) > 0) {
+    if ((stats.added ?? 0) > 0 || (stats.removed ?? 0) > 0) {
         const removed = document.createElement('span');
         removed.className = 'theia-mobile-agent-diff-stat theia-mod-removed';
-        removed.textContent = `-${stats.removed}`;
+        removed.textContent = `-${stats.removed ?? 0}`;
         statsInline.append(removed);
     }
     host.append(statsInline);
@@ -482,9 +499,9 @@ function buildChangesPillAriaLabel(
 function renderStickyComposerChangedFilesSection(options: StickyComposerActivityStackOptions): HTMLElement {
     const files = options.changedFiles ?? [];
     const stats = options.diffStats;
-    const fileCount = files.length > 0
+    const fileCount = options.changedFileCount ?? (files.length > 0
         ? files.length
-        : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
+        : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0));
 
     const section = document.createElement('div');
     section.className = 'theia-mobile-sticky-composer-activity-section theia-mod-files theia-mod-changes-pill';
@@ -510,6 +527,14 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
         label.className = 'theia-mobile-sticky-composer-changes-pill-label';
         label.textContent = nls.localize('qaap/mobileProjects/changes', 'Changes');
         pill.append(label);
+        if (fileCount > 0) {
+            const count = document.createElement('span');
+            count.className = 'theia-mobile-sticky-composer-changes-pill-count';
+            count.textContent = fileCount === 1
+                ? nls.localize('qaap/mobileProjects/stickyComposerChangesOneFileShort', '1 file')
+                : nls.localize('qaap/mobileProjects/stickyComposerChangesManyFilesShort', '{0} files', String(fileCount));
+            pill.append(count);
+        }
         appendDiffStatsInline(pill, stats);
         pill.addEventListener('click', ev => {
             ev.preventDefault();
