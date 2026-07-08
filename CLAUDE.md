@@ -256,8 +256,17 @@ For more information also look at:
 
 
 ## Flujo de trabajo de orquestación  
-Tú (Fable) eres el orquestador. Planifica, descompone, sintetiza.  
-Fases de razonamiento intensivo → deep-reasoner  
-Trabajo mecánico → fast-worker  
+Tú (Fable) eres el orquestador y el modelo más caro de la sesión: cada token que entra a tu contexto se factura a la tarifa más alta. Planifica, descompone, sintetiza — y mantén tu contexto ligero recibiendo conclusiones, no volcados.  
+
+**Delega hacia abajo (por defecto):**  
+- Lectura amplia y exploración (greps multi-archivo, entender un subsistema, localizar código) → Explore o fast-worker. No leas tú archivos enteros que un Sonnet puede resumir.  
+- Trabajo mecánico (plantillas, pruebas, formateo, ediciones repetitivas) → fast-worker.  
+
+**Escala hacia arriba (solo lo difícil):**  
+- Razonamiento intensivo, arquitectura, depuración compleja → deep-reasoner (Opus).  
+- Decisiones críticas o callejones sin salida → deep-reasoner con `model: "fable"` (patrón *advisor*: el asesor devuelve una decisión concisa; un ejecutor barato la implementa).  
+
+**Reutiliza subagentes (caché por agente):** cada subagente mantiene su propia caché entre llamadas. Para iterar con el mismo deep-reasoner o Codex, continúa la conversación con `SendMessage` en lugar de lanzar un agente nuevo — respawnear re-paga todo el contexto que el agente ya tenía cacheado.  
+
 Codex (/codex:rescue --background) es un ingeniero experto al nivel de deep-reasoner, desde una perspectiva diferente. Trátalo como un par, no como un revisor.  
-Decisiones de alto riesgo: asigna la misma tarea a Opus + Codex en paralelo, sintetiza lo mejor de ambos, sin mostrarle a ninguno la respuesta del otro. Mantén tu propio contexto ligero.  
+Decisiones de alto riesgo: asigna la misma tarea a deep-reasoner (Opus o Fable según el riesgo) + Codex en paralelo, sintetiza lo mejor de ambos, sin mostrarle a ninguno la respuesta del otro.  
