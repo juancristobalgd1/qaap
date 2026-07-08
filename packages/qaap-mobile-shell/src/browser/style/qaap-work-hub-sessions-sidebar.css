@@ -70,6 +70,19 @@
   max-width: 100% !important;
 }
 
+@media (max-width: 767px) {
+  .theia-mobile-projects>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded {
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+  }
+
+  .theia-mobile-projects>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel {
+    width: 100% !important;
+    max-width: 100vw !important;
+  }
+}
+
 /* Mockup: full-screen sheet, no dimmed scrim; close via ← or left-edge swipe-left. */
 .theia-mobile-work-hub-sessions-sidebar-backdrop {
   display: none;
