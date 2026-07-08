@@ -54,6 +54,7 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
 import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
 import {
+    autoContinueAllowedForInteraction,
     buildAgentAutoContinuePrompt,
     buildDevPreviewAutoContinueExhaustedReason,
     isIncompleteAgentTurn,
@@ -1394,6 +1395,12 @@ export class QaapAgentConversationStore {
         const userMessage = conv.messages.find(message => message.id === userMessageId);
         const agentMessage = conv.messages[conv.messages.length - 1];
         if (!userMessage || !agentMessage || agentMessage.role !== 'agent' || conv.status !== 'idle') {
+            return;
+        }
+        // Only auto-continue in the fully-autonomous agent contract. plan/ask modes and
+        // request-approval / manual-approve turns are deliberate stops the user opted into —
+        // re-posting a "keep working" prompt there contradicts the chosen interaction mode.
+        if (!autoContinueAllowedForInteraction(conv)) {
             return;
         }
         if (!isIncompleteAgentTurn(userMessage.content, agentMessage)) {

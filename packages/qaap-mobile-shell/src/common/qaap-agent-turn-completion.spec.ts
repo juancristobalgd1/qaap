@@ -8,6 +8,7 @@ import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import {
     agentMessageDeliversTaskOutcome,
     agentMessageHasOpenTodos,
+    autoContinueAllowedForInteraction,
     buildAgentAutoContinuePrompt,
     isActionableAgentTaskMessage,
     isIncompleteAgentTurn,
@@ -246,5 +247,55 @@ describe('qaap-agent-turn-completion', () => {
         const prompt = 'add a formatDate function in a new file';
         expect(agentMessageDeliversTaskOutcome(prompt, agent)).to.equal(true);
         expect(isIncompleteAgentTurn(prompt, agent)).to.equal(false);
+    });
+
+    it('autoContinueAllowedForInteraction only allows the autonomous agent contract', () => {
+        // agent mode (explicit or missing) with autonomous approval → allowed
+        expect(autoContinueAllowedForInteraction({ interactionModeId: 'agent' })).to.equal(true);
+        expect(autoContinueAllowedForInteraction({})).to.equal(true);
+        expect(autoContinueAllowedForInteraction({ interactionModeId: 'agent', approvalPolicyId: 'approve-for-me' })).to.equal(true);
+        // plan / ask are deliberate non-executing stops → never auto-continue
+        expect(autoContinueAllowedForInteraction({ interactionModeId: 'plan' })).to.equal(false);
+        expect(autoContinueAllowedForInteraction({ interactionModeId: 'ask' })).to.equal(false);
+        // user opted to stay in the loop → do not auto-continue
+        expect(autoContinueAllowedForInteraction({ interactionModeId: 'agent', approvalPolicyId: 'request-approval' })).to.equal(false);
+        expect(autoContinueAllowedForInteraction({ interactionModeId: 'agent', autoApprove: false })).to.equal(false);
+    });
+
+    it('treats a written review after reads as complete (analytical task), not an exploration stop', () => {
+        const agent: QaapAgentMessageDTO = {
+            id: 'a7',
+            role: 'agent',
+            content: '',
+            createdAt: 2,
+            segments: [
+                { type: 'tool', toolUseId: 't1', name: 'Read', args: '{"path":"src/app.ts"}', finished: true },
+                { type: 'tool', toolUseId: 't2', name: 'Grep', args: '{"pattern":"export"}', finished: true },
+                {
+                    type: 'text',
+                    content: 'The code is well structured. Two issues: the fetch lacks error handling, '
+                        + 'and the date parser assumes ISO input. I would add a try/catch and validate the format.',
+                },
+            ],
+        };
+        const prompt = 'review this code and tell me what could be improved';
+        expect(agentMessageDeliversTaskOutcome(prompt, agent)).to.equal(true);
+        expect(isIncompleteAgentTurn(prompt, agent)).to.equal(false);
+    });
+
+    it('still requires edits when a review also asks to fix (execution verb present)', () => {
+        const agent: QaapAgentMessageDTO = {
+            id: 'a8',
+            role: 'agent',
+            content: '',
+            createdAt: 2,
+            segments: [
+                { type: 'tool', toolUseId: 't1', name: 'Read', args: '{"path":"src/app.ts"}', finished: true },
+                { type: 'text', content: 'I found a null-deref on line 20 and a missing await on line 33.' },
+            ],
+        };
+        const prompt = 'review this code and fix the bugs';
+        expect(agentMessageDeliversTaskOutcome(prompt, agent)).to.equal(false);
+        expect(isIncompleteAgentTurn(prompt, agent)).to.equal(true);
     });
 });

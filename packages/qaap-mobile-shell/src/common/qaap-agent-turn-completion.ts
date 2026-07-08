@@ -12,10 +12,45 @@ import {
     messageExplicitlyRequestsWebPage,
 } from './qaap-agent-web-generation-quality-gate';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
+import { normalizeInteractionModeId } from './qaap-qaiq-interaction-flags';
 
 const ACTIONABLE_TASK_RE = /\b(?:fix|explore|implement|build|run|test|debug|review|refactor|add|create|update|install|deploy|figure\s+out)\b/i;
 const PLANNING_TEXT_RE = /\b(?:let me|i will|i'll|i am going to|going to (?:start|explore|check|look|figure)|need to (?:explore|check|understand|figure)|start by (?:exploring|looking|checking|understanding))\b/i;
 const TASK_OUTCOME_TEXT_RE = /\b(?:done|completed|finished|ready on port|listening on|running (?:at|on)|installed|dependencies (?:are )?ready|node_modules|here(?:'s| is) the url|preview(?:\s+is)?(?:\s+)?ready|dev server)\b/i;
+// Analytical tasks whose deliverable is written prose, not tool execution. Symmetric to the
+// explore-only heuristic — a substantive review/analysis after reads is a complete answer.
+const ANALYTICAL_TASK_RE = /\b(?:review|explain|analy[sz]e|summari[sz]e|describe|document|audit|compare|investigate)\b/i;
+const EXECUTION_TASK_RE = /\b(?:build|run|install|fix|implement|deploy|start|create|add|refactor|update|figure\s+out)\b/i;
+
+/**
+ * Auto-continue only applies to the fully-autonomous `agent` contract. In `plan`/`ask` modes the
+ * agent deliberately stops after planning/answering (the QAIQ CLI even blocks Edit/Write/Bash), and
+ * when the user opted into approving each step (`request-approval` / `autoApprove === false`) they
+ * chose to stay in the loop — re-posting "Continue… use Bash" contradicts all of these. Missing
+ * mode normalizes to `agent`, so legacy conversations keep auto-continuing.
+ */
+export function autoContinueAllowedForInteraction(options: {
+    readonly interactionModeId?: string;
+    readonly approvalPolicyId?: string;
+    readonly autoApprove?: boolean;
+}): boolean {
+    if (normalizeInteractionModeId(options.interactionModeId) !== 'agent') {
+        return false;
+    }
+    if (options.approvalPolicyId === 'request-approval' || options.autoApprove === false) {
+        return false;
+    }
+    return true;
+}
+
+/** Analytical task ("review"/"explain"/…) whose deliverable is prose, not execution. */
+function isAnalyticalTaskMessage(userContent: string | undefined): boolean {
+    const text = userContent?.trim() ?? '';
+    if (!text || messageRequestsDevPreview(text)) {
+        return false;
+    }
+    return ANALYTICAL_TASK_RE.test(text) && !EXECUTION_TASK_RE.test(text);
+}
 
 /** User message that expects the agent to run tools, not stop after planning. */
 export function isActionableAgentTaskMessage(text: string | undefined): boolean {
@@ -125,6 +160,11 @@ function agentMessageDeliversBaseTaskOutcome(
         return false;
     }
     if (stats.searches + stats.fileReads + stats.otherTools > 0 && stats.shells + stats.edits === 0) {
+        // A read/search-only turn is usually an exploration stop — except for analytical tasks
+        // ("review this code"), where a substantive written answer after reads IS the deliverable.
+        if (isAnalyticalTaskMessage(userContent)) {
+            return !!text.trim();
+        }
         return false;
     }
     return !!text.trim();
@@ -141,12 +181,10 @@ export function isIncompleteAgentTurn(
     if (agentMessageDeliversTaskOutcome(userContent, agentMessage)) {
         return false;
     }
-    const segments = resolveAgentMessageSegments(agentMessage);
-    if (segments.length) {
-        const hasUnfinishedTool = segments.some(segment => segment.type === 'tool' && !segment.finished);
-        if (hasUnfinishedTool) {
-            return true;
-        }
+    // Actionable message + role agent + did not deliver an outcome: any produced segments (whether a
+    // tool was cut off mid-run or the agent stopped after search/read/planning) mean the turn is
+    // incomplete. An empty/ellipsis-only content with no segments is incomplete too.
+    if (resolveAgentMessageSegments(agentMessage).length) {
         return true;
     }
     const content = agentMessage.content?.trim();
