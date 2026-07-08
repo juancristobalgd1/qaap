@@ -4,7 +4,13 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveAgentSpawnIdentity, evaluateAgentIsolationPolicy, isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+import {
+    resolveAgentSpawnIdentity,
+    evaluateAgentIsolationPolicy,
+    isQaapProductionRuntime,
+    isTenantUidPerUserEnabled,
+    resolvePerTenantSpawnIdentity,
+} from './qaap-agent-spawn-identity';
 
 describe('resolveAgentSpawnIdentity', () => {
     it('returns empty when QAAP_AGENT_UID is unset (local dev unchanged)', () => {
@@ -79,5 +85,36 @@ describe('evaluateAgentIsolationPolicy', () => {
             { NODE_ENV: 'production', QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION: 'true' }, true).refuse).to.equal(false);
         expect(evaluateAgentIsolationPolicy(
             { NODE_ENV: 'production', QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION: '1' }, true).refuse).to.equal(false);
+    });
+});
+
+describe('isTenantUidPerUserEnabled', () => {
+    it('is true only for 1/true (default off)', () => {
+        expect(isTenantUidPerUserEnabled({ QAAP_AGENT_UID_PER_USER: '1' })).to.equal(true);
+        expect(isTenantUidPerUserEnabled({ QAAP_AGENT_UID_PER_USER: 'true' })).to.equal(true);
+        expect(isTenantUidPerUserEnabled({ QAAP_AGENT_UID_PER_USER: '0' })).to.equal(false);
+        expect(isTenantUidPerUserEnabled({ QAAP_AGENT_UID_PER_USER: '' })).to.equal(false);
+        expect(isTenantUidPerUserEnabled({})).to.equal(false);
+    });
+});
+
+describe('resolvePerTenantSpawnIdentity', () => {
+    const lookup = (segment: string): { uid: number; gid: number } => ({ uid: 20000 + segment.length, gid: 20000 + segment.length });
+
+    it('returns the tenant uid/gid when enabled, root, and a segment resolved', () => {
+        expect(resolvePerTenantSpawnIdentity({ enabled: true, isRoot: true, segment: 'alice', lookup }))
+            .to.deep.equal({ uid: 20005, gid: 20005 });
+    });
+
+    it('falls back (undefined) when disabled, not root, or no segment', () => {
+        expect(resolvePerTenantSpawnIdentity({ enabled: false, isRoot: true, segment: 'alice', lookup })).to.equal(undefined);
+        expect(resolvePerTenantSpawnIdentity({ enabled: true, isRoot: false, segment: 'alice', lookup })).to.equal(undefined);
+        expect(resolvePerTenantSpawnIdentity({ enabled: true, isRoot: true, segment: undefined, lookup })).to.equal(undefined);
+    });
+
+    it('propagates a registry failure so the caller fails closed', () => {
+        const throwing = (): { uid: number; gid: number } => { throw new Error('range exhausted'); };
+        expect(() => resolvePerTenantSpawnIdentity({ enabled: true, isRoot: true, segment: 'alice', lookup: throwing }))
+            .to.throw(/range exhausted/);
     });
 });

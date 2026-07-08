@@ -69,6 +69,22 @@ export function isPathUnderUserWorkspace(
 }
 
 /**
+ * Extract the per-user path segment ({@link safeUserIdSegment} of the login) from a workspace path of
+ * the form `{reposRoot}/users/{segment}/...`, or `undefined` when the path is not under the per-user
+ * tree. Used to derive which tenant a spawned process belongs to from its cwd, so it can run under
+ * that tenant's uid (uid-per-user isolation).
+ */
+export function resolveTenantSegmentFromWorkspacePath(reposRoot: string, targetPath: string): string | undefined {
+    const usersRoot = path.resolve(reposRoot, QAAP_USER_REPOS_SEGMENT);
+    const relative = path.relative(usersRoot, path.resolve(targetPath));
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+        return undefined;
+    }
+    const [segment] = relative.split(path.sep);
+    return segment || undefined;
+}
+
+/**
  * True when `targetPath` is a CONTAINER level of the user's workspace tree
  * rather than a repository: the user root itself (depth 0) or an owner
  * directory (depth 1). Repositories live at `{userRoot}/{owner}/{repo}`

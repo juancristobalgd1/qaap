@@ -45,12 +45,19 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import {
+    safeUserIdSegment,
+    resolveQaapReposRoot,
+    resolveTenantSegmentFromWorkspacePath,
+} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
     evaluateAgentIsolationPolicy,
+    isTenantUidPerUserEnabled,
+    resolvePerTenantSpawnIdentity,
     QaapAgentIsolationDecision,
 } from './qaap-agent-spawn-identity';
+import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
 import { extractRetrievalKeywords, formatRelevantFilesHint } from '../common/qaap-agent-retrieval';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
@@ -1683,7 +1690,7 @@ export class QaapAgentTaskRunner {
                 shell: true,
                 env: this.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
-                ...this.resolveAgentSpawnIdentity(),
+                ...this.resolveAgentSpawnIdentity(task.cwd),
             });
             this.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
@@ -2042,7 +2049,7 @@ export class QaapAgentTaskRunner {
                     shell: true,
                     env,
                     stdio: ['ignore', 'pipe', 'pipe'],
-                    ...this.resolveAgentSpawnIdentity(),
+                    ...this.resolveAgentSpawnIdentity(cwd),
                 });
             } catch (error) {
                 stderr = error instanceof Error ? error.message : String(error);
@@ -2180,8 +2187,33 @@ export class QaapAgentTaskRunner {
         }
     }
 
-    protected resolveAgentSpawnIdentity(): { uid?: number; gid?: number } {
+    protected tenantUidRegistry: QaapTenantUidRegistry | undefined;
+
+    protected getTenantUidRegistry(): QaapTenantUidRegistry {
+        if (!this.tenantUidRegistry) {
+            this.tenantUidRegistry = new QaapTenantUidRegistry(resolveDefaultTenantUidRegistryPath(resolveQaapReposRoot()));
+        }
+        return this.tenantUidRegistry;
+    }
+
+    /**
+     * The uid/gid to spawn a process under, given its working directory. In uid-per-user mode
+     * (`QAAP_AGENT_UID_PER_USER`, default off) a cwd under `{reposRoot}/users/{segment}/...` resolves to
+     * that tenant's stable uid from the registry (fail-closed: a registry failure throws and the caller
+     * fails the spawn). Any other case (flag off, not root, cwd outside a tenant tree) falls back to the
+     * global `QAAP_AGENT_UID` path — byte-identical to before, and still never root while 1001 is set.
+     */
+    protected resolveAgentSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
         const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+        const tenant = resolvePerTenantSpawnIdentity({
+            enabled: isTenantUidPerUserEnabled(process.env),
+            isRoot,
+            segment: resolveTenantSegmentFromWorkspacePath(resolveQaapReposRoot(), cwd),
+            lookup: segment => this.getTenantUidRegistry().resolve(segment),
+        });
+        if (tenant) {
+            return { uid: tenant.uid, gid: tenant.gid };
+        }
         const identity = resolveAgentSpawnIdentityFromEnv(process.env, isRoot);
         if (identity.warnNotRoot && !this.agentSpawnIdentityWarned) {
             this.agentSpawnIdentityWarned = true;
@@ -2204,7 +2236,7 @@ export class QaapAgentTaskRunner {
         // When the agent is dropped to a non-root uid (QAAP_AGENT_UID), its inherited HOME still
         // points at root's /root, which it cannot write — CLI caches/configs would fail. Point HOME
         // at a writable agent home so the non-root process has somewhere to write.
-        if (this.resolveAgentSpawnIdentity().uid !== undefined) {
+        if (this.resolveAgentSpawnIdentity(task.cwd).uid !== undefined) {
             env.HOME = process.env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent';
         }
         // Strip shared provider API keys from process.env so per-user settings
@@ -2559,7 +2591,7 @@ export class QaapAgentTaskRunner {
                     shell: true,
                     env,
                     stdio: ['ignore', 'pipe', 'pipe'],
-                    ...this.resolveAgentSpawnIdentity(),
+                    ...this.resolveAgentSpawnIdentity(cwd),
                 });
             } catch (error) {
                 reject(error instanceof Error ? error : new Error(String(error)));

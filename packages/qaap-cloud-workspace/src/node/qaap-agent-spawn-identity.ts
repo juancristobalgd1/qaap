@@ -51,6 +51,32 @@ export function resolveAgentSpawnIdentity(
 /** Env var to explicitly accept the risk of running the agent as root in a production runtime. */
 export const QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION = 'QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION';
 
+/** Whether uid-per-user tenant isolation is enabled (`QAAP_AGENT_UID_PER_USER`). Default off. */
+export function isTenantUidPerUserEnabled(env: NodeJS.ProcessEnv): boolean {
+    return /^(1|true)$/i.test(env.QAAP_AGENT_UID_PER_USER?.trim() ?? '');
+}
+
+/**
+ * Per-tenant spawn identity for uid-per-user mode. Returns the tenant's uid/gid ONLY when the flag is
+ * on, the backend is root, and the cwd resolved to a tenant segment; otherwise `undefined`, so the
+ * caller falls back to the global `QAAP_AGENT_UID` path (still non-root — 1001 stays set — so a cwd
+ * outside any tenant tree never runs as root). `lookup` is the uid registry; if it throws (range
+ * exhausted / persistence failure) the exception propagates so the caller FAILS CLOSED and refuses
+ * the spawn, rather than silently running the tenant as a shared/root uid.
+ */
+export function resolvePerTenantSpawnIdentity(options: {
+    readonly enabled: boolean;
+    readonly isRoot: boolean;
+    readonly segment: string | undefined;
+    readonly lookup: (segment: string) => { readonly uid: number; readonly gid: number };
+}): { uid: number; gid: number } | undefined {
+    if (!options.enabled || !options.isRoot || !options.segment) {
+        return undefined;
+    }
+    const { uid, gid } = options.lookup(options.segment);
+    return { uid, gid };
+}
+
 /** Outcome of the fail-closed isolation policy: whether a spawn must be refused, and why. */
 export interface QaapAgentIsolationDecision {
     /** True when the spawn must be refused because the agent would run as root in a production runtime. */
