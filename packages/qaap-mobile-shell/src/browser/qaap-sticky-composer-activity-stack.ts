@@ -27,10 +27,10 @@ export interface StickyComposerActivityStackOptions {
     filesExpanded?: boolean;
     onFilesExpandedChange?: (expanded: boolean) => void;
     agentWorking?: boolean;
+    /** Discard all pending changes — surfaced as "Discard" in the Changes split-button menu. */
     onUndoAll?: () => void;
+    /** Keep (stage) all pending changes — surfaced as "Accept" in the Changes split-button menu. */
     onKeepAll?: () => void;
-    onRestoreCheckpoint?: () => void;
-    restoreCheckpointBusy?: boolean;
     changedFilesBulkBusy?: boolean;
     onReview?: () => void;
     onRunApp?: () => void;
@@ -142,8 +142,9 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         options.onCommitAction ? 1 : 0,
         options.onRunApp ? 1 : 0,
         options.onOpenPreview ? 1 : 0,
-        options.onRestoreCheckpoint ? 1 : 0,
-        options.restoreCheckpointBusy ? 1 : 0,
+        options.onKeepAll ? 1 : 0,
+        options.onUndoAll ? 1 : 0,
+        options.changedFilesBulkBusy ? 1 : 0,
     ].join('|');
 }
 
@@ -167,7 +168,7 @@ export function patchStickyComposerChangesPillHost(
         : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
     const hasCommitAction = !!options.onCommitAction;
     const hasNextActions = !!options.onRunApp || !!options.onOpenPreview;
-    const hasRestoreCheckpoint = !!options.onRestoreCheckpoint;
+    const hasChangesMenu = buildChangesMenuItems(options).length > 0;
     const existingCommitGroup = row.querySelector(':scope > .theia-mobile-sticky-composer-commit-group');
     if (!!existingCommitGroup !== hasCommitAction) {
         return false;
@@ -176,14 +177,18 @@ export function patchStickyComposerChangesPillHost(
     if (!!existingNextActions !== hasNextActions) {
         return false;
     }
-    const existingRestoreBtn = row.querySelector(':scope > .theia-mobile-sticky-composer-checkpoint-revert');
-    if (!!existingRestoreBtn !== hasRestoreCheckpoint) {
+
+    const changesGroup = row.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-changes-group');
+    if (!!changesGroup !== !!options.onReview) {
         return false;
     }
-
-    const pill = row.querySelector<HTMLButtonElement>(':scope > .theia-mobile-sticky-composer-changes-pill');
-    if (options.onReview) {
+    if (changesGroup) {
+        const pill = changesGroup.querySelector<HTMLButtonElement>(':scope > .theia-mobile-sticky-composer-changes-pill');
         if (!pill) {
+            return false;
+        }
+        const changesMenuBtn = changesGroup.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-menu');
+        if (!!changesMenuBtn !== hasChangesMenu) {
             return false;
         }
         pill.setAttribute('aria-label', buildChangesPillAriaLabel(fileCount, stats));
@@ -195,8 +200,9 @@ export function patchStickyComposerChangesPillHost(
         }
         statsInline.replaceChildren();
         appendDiffStatsInline(statsInline, stats);
-    } else if (pill) {
-        return false;
+        if (changesMenuBtn) {
+            changesMenuBtn.disabled = !!options.changedFilesBulkBusy || !!options.agentWorking;
+        }
     }
 
     if (hasCommitAction && existingCommitGroup instanceof HTMLElement) {
@@ -213,10 +219,6 @@ export function patchStickyComposerChangesPillHost(
 
     if (hasNextActions && existingNextActions instanceof HTMLElement) {
         patchChangesNextActions(existingNextActions, options);
-    }
-
-    if (hasRestoreCheckpoint && existingRestoreBtn instanceof HTMLButtonElement) {
-        existingRestoreBtn.disabled = !!options.restoreCheckpointBusy || !!options.agentWorking;
     }
 
     return true;
@@ -406,6 +408,9 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
     row.className = 'theia-mobile-sticky-composer-changes-pill-row';
 
     if (options.onReview) {
+        const changesGroup = document.createElement('div');
+        changesGroup.className = 'theia-mobile-sticky-composer-changes-group';
+
         const pill = document.createElement('button');
         pill.type = 'button';
         pill.className = 'theia-mobile-sticky-composer-changes-pill';
@@ -415,7 +420,7 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
         );
         const label = document.createElement('span');
         label.className = 'theia-mobile-sticky-composer-changes-pill-label';
-        label.textContent = nls.localize('qaap/mobileProjects/reviewChanges', 'Review changes');
+        label.textContent = nls.localize('qaap/mobileProjects/changes', 'Changes');
         pill.append(label);
         appendDiffStatsInline(pill, stats);
         pill.addEventListener('click', ev => {
@@ -423,26 +428,18 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
             ev.stopPropagation();
             options.onReview?.();
         });
-        row.append(pill);
-    }
+        changesGroup.append(pill);
 
-    if (options.onRestoreCheckpoint) {
-        const revertBtn = document.createElement('button');
-        revertBtn.type = 'button';
-        revertBtn.className = 'theia-mobile-sticky-composer-checkpoint-revert';
-        revertBtn.title = nls.localize(
-            'qaap/mobileProjects/stickyComposerRestoreCheckpoint',
-            'Revert workspace to last checkpoint',
-        );
-        revertBtn.setAttribute('aria-label', revertBtn.title);
-        revertBtn.textContent = nls.localize('qaap/mobileProjects/stickyComposerRestoreCheckpointShort', 'Revert');
-        revertBtn.disabled = !!options.restoreCheckpointBusy || !!options.agentWorking;
-        revertBtn.addEventListener('click', ev => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            options.onRestoreCheckpoint?.();
-        });
-        row.append(revertBtn);
+        const changesMenuItems = buildChangesMenuItems(options);
+        if (changesMenuItems.length > 0) {
+            changesGroup.append(createStickyComposerSplitMenu(
+                changesGroup,
+                nls.localize('qaap/mobileProjects/changesOptions', 'Changes options'),
+                changesMenuItems,
+                !!options.changedFilesBulkBusy || !!options.agentWorking,
+            ));
+        }
+        row.append(changesGroup);
     }
 
     if (options.onCommitAction) {
@@ -458,6 +455,24 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
     return section;
 }
 
+/** "Accept" / "Discard" entries for the Changes split-button menu. */
+function buildChangesMenuItems(options: StickyComposerActivityStackOptions): StickyComposerSplitMenuItem[] {
+    const items: StickyComposerSplitMenuItem[] = [];
+    if (options.onKeepAll) {
+        items.push({
+            label: nls.localize('qaap/mobileProjects/changesAccept', 'Accept'),
+            onSelect: options.onKeepAll,
+        });
+    }
+    if (options.onUndoAll) {
+        items.push({
+            label: nls.localize('qaap/mobileProjects/changesDiscard', 'Discard'),
+            onSelect: options.onUndoAll,
+        });
+    }
+    return items;
+}
+
 function renderChangesNextActions(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
     if (!options.onRunApp && !options.onOpenPreview) {
         return undefined;
@@ -470,20 +485,22 @@ function renderChangesNextActions(options: StickyComposerActivityStackOptions): 
 
 function patchChangesNextActions(group: HTMLElement, options: StickyComposerActivityStackOptions): void {
     group.replaceChildren();
-    if (options.onRunApp) {
-        group.append(createChangesNextActionButton({
-            className: 'theia-mod-run',
-            label: nls.localize('qaap/agentsHub/quickAction/runApp', 'Run app'),
-            iconClass: 'codicon-rocket',
-            onClick: options.onRunApp,
-        }));
-    }
+    // The two are alternatives, not a sequence: with a live preview URL the app
+    // is already up, so the next step is opening it; without one it first has
+    // to be started. Never show both.
     if (options.onOpenPreview) {
         group.append(createChangesNextActionButton({
             className: 'theia-mod-preview',
             label: nls.localize('qaap/mobileProjects/openPreview', 'Open preview'),
             iconClass: 'codicon-globe',
             onClick: options.onOpenPreview,
+        }));
+    } else if (options.onRunApp) {
+        group.append(createChangesNextActionButton({
+            className: 'theia-mod-run',
+            label: nls.localize('qaap/agentsHub/quickAction/runApp', 'Run app'),
+            iconClass: 'codicon-rocket',
+            onClick: options.onRunApp,
         }));
     }
 }
@@ -515,29 +532,27 @@ function createNextActionIcon(iconClass: string): HTMLElement {
     return icon;
 }
 
-/** Split button beside the Changes pill: primary "Commit & Push" + a menu with the other git workflows. */
-function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): HTMLElement {
-    const disabled = !!options.commitBusy;
+interface StickyComposerSplitMenuItem {
+    readonly label: string;
+    readonly onSelect: () => void;
+}
 
-    const group = document.createElement('div');
-    // theia-mod-busy drives the animated border beam while the commit workflow runs.
-    group.className = `theia-mobile-sticky-composer-commit-group${disabled ? ' theia-mod-busy' : ''}`;
-
-    const commitBtn = document.createElement('button');
-    commitBtn.type = 'button';
-    commitBtn.className = 'theia-mobile-sticky-composer-commit-btn';
-    commitBtn.disabled = disabled;
-    commitBtn.textContent = nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push');
-    commitBtn.addEventListener('click', ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        options.onCommitAction?.('commit-push');
-    });
-
+/**
+ * Chevron button + dropdown shared by the composer split-buttons (Commit &
+ * Push, Changes). The changes-pill row is a horizontal scroll container
+ * (overflow-x: auto), which clips absolutely-positioned descendants — so while
+ * open, the menu is portaled to <body> with fixed viewport coords,
+ * right-aligned to the chevron and opening upwards.
+ */
+function createStickyComposerSplitMenu(
+    group: HTMLElement,
+    menuLabel: string,
+    items: readonly StickyComposerSplitMenuItem[],
+    disabled: boolean,
+): HTMLElement {
     const menuWrap = document.createElement('div');
     menuWrap.className = 'theia-mobile-sticky-composer-commit-menu-wrap';
 
-    const menuLabel = nls.localize('qaap/mobileProjects/commitOptions', 'Commit options');
     const menuBtn = document.createElement('button');
     menuBtn.type = 'button';
     menuBtn.className = 'theia-mobile-sticky-composer-commit-menu';
@@ -582,10 +597,6 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
         window.removeEventListener('resize', closeMenu);
     };
     const openMenu = (): void => {
-        // The changes-pill row is a horizontal scroll container (overflow-x: auto),
-        // which clips absolutely-positioned descendants — so the menu can never
-        // escape it from inside. Portal it to <body> with fixed viewport coords,
-        // right-aligned to the chevron and opening upwards.
         const rect = menuBtn.getBoundingClientRect();
         dropdown.classList.add('theia-mod-portal');
         dropdown.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
@@ -609,22 +620,54 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
         }
     });
 
-    for (const option of stickyComposerCommitMenuOptions()) {
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'theia-mobile-sticky-composer-commit-dropdown-item';
-        item.setAttribute('role', 'menuitem');
-        item.textContent = option.label;
-        item.addEventListener('click', ev => {
+    for (const item of items) {
+        const itemBtn = document.createElement('button');
+        itemBtn.type = 'button';
+        itemBtn.className = 'theia-mobile-sticky-composer-commit-dropdown-item';
+        itemBtn.setAttribute('role', 'menuitem');
+        itemBtn.textContent = item.label;
+        itemBtn.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();
             closeMenu();
-            options.onCommitAction?.(option.action);
+            item.onSelect();
         });
-        dropdown.append(item);
+        dropdown.append(itemBtn);
     }
 
     menuWrap.append(menuBtn, dropdown);
+    return menuWrap;
+}
+
+/** Split button beside the Changes pill: primary "Commit & Push" + a menu with the other git workflows. */
+function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): HTMLElement {
+    const disabled = !!options.commitBusy;
+
+    const group = document.createElement('div');
+    // theia-mod-busy drives the animated border beam while the commit workflow runs.
+    group.className = `theia-mobile-sticky-composer-commit-group${disabled ? ' theia-mod-busy' : ''}`;
+
+    const commitBtn = document.createElement('button');
+    commitBtn.type = 'button';
+    commitBtn.className = 'theia-mobile-sticky-composer-commit-btn';
+    commitBtn.disabled = disabled;
+    commitBtn.textContent = nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push');
+    commitBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        options.onCommitAction?.('commit-push');
+    });
+
+    const menuWrap = createStickyComposerSplitMenu(
+        group,
+        nls.localize('qaap/mobileProjects/commitOptions', 'Commit options'),
+        stickyComposerCommitMenuOptions().map(option => ({
+            label: option.label,
+            onSelect: () => options.onCommitAction?.(option.action),
+        })),
+        disabled,
+    );
+
     // Same bloom layer as the composer's border beam; CSS only shows it while theia-mod-busy is set.
     const borderBeamBloom = document.createElement('div');
     borderBeamBloom.className = 'qaap-border-beam-bloom';

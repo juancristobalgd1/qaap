@@ -7296,36 +7296,29 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   border-color: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
 }
 
-.theia-mobile-sticky-composer-checkpoint-revert {
+/* Split-button group around the Changes pill: pill (opens review) + chevron
+   menu (Accept / Discard). The pill keeps its look; the group carries the
+   shared border so the chevron reads as part of one control. */
+.theia-mobile-sticky-composer-changes-group {
   flex: 0 0 auto;
+  position: relative;
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  padding: 4px 10px;
-  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, #f48771) 28%, transparent);
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--theia-errorForeground, #f48771) 8%, var(--theia-editor-background));
-  color: color-mix(in srgb, var(--theia-errorForeground, #f48771) 82%, var(--theia-foreground));
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+  background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background));
+  color: var(--theia-foreground);
 }
 
-.theia-mobile-sticky-composer-checkpoint-revert:hover,
-.theia-mobile-sticky-composer-checkpoint-revert:focus-visible {
-  background: color-mix(in srgb, var(--theia-errorForeground, #f48771) 14%, var(--theia-editor-background));
-  border-color: color-mix(in srgb, var(--theia-errorForeground, #f48771) 42%, transparent);
+.theia-mobile-sticky-composer-changes-group > .theia-mobile-sticky-composer-changes-pill {
+  border: none;
+  background: transparent;
+  border-radius: 999px 0 0 999px;
 }
 
-.theia-mobile-sticky-composer-checkpoint-revert:disabled {
-  opacity: 0.45;
-  cursor: default;
+.theia-mobile-sticky-composer-changes-group .theia-mobile-sticky-composer-commit-menu {
+  width: 32px;
 }
 
 @media (max-width: 430px) {

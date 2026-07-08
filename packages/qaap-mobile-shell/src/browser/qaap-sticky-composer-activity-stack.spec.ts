@@ -47,13 +47,56 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(host!.className).to.equal('theia-mobile-sticky-composer-changes-pill-host');
             const pill = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-changes-pill');
             expect(pill).to.exist;
-            expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-label')?.textContent).to.equal('Review changes');
+            expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-label')?.textContent).to.equal('Changes');
             expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+5');
             expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('-1');
             expect(host!.querySelector('.theia-mobile-sticky-composer-changed-file-row')).to.equal(null);
 
             pill!.click();
             expect(reviewCalled).to.equal(true);
+        });
+
+        it('renders the Changes split-button menu with Accept and Discard actions', () => {
+            const actions: string[] = [];
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 3, removed: 1 },
+                onReview: () => undefined,
+                onKeepAll: () => { actions.push('accept'); },
+                onUndoAll: () => { actions.push('discard'); },
+            });
+            document.body.append(host!);
+
+            const group = host!.querySelector<HTMLElement>('.theia-mobile-sticky-composer-changes-group');
+            expect(group).to.exist;
+            const menuBtn = group!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-menu');
+            expect(menuBtn).to.exist;
+            const dropdown = group!.querySelector<HTMLElement>('.theia-mobile-sticky-composer-commit-dropdown');
+            expect(dropdown!.hidden).to.equal(true);
+
+            menuBtn!.click();
+            expect(dropdown!.hidden).to.equal(false);
+            const items = Array.from(dropdown!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-dropdown-item'));
+            expect(items.map(item => item.textContent)).to.deep.equal(['Accept', 'Discard']);
+
+            items[0].click();
+            expect(actions).to.deep.equal(['accept']);
+            expect(dropdown!.hidden).to.equal(true);
+
+            menuBtn!.click();
+            items[1].click();
+            expect(actions).to.deep.equal(['accept', 'discard']);
+        });
+
+        it('renders no Changes menu chevron without Accept/Discard handlers', () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 3, removed: 1 },
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+
+            const group = host!.querySelector<HTMLElement>('.theia-mobile-sticky-composer-changes-group');
+            expect(group).to.exist;
+            expect(group!.querySelector('.theia-mobile-sticky-composer-commit-menu')).to.equal(null);
         });
 
         it('shows the Changes pill for stats-only activity before per-file rows are available', () => {
@@ -124,7 +167,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(dropdown!.classList.contains('theia-mod-portal')).to.equal(false);
         });
 
-        it('renders explicit next-step actions after changes are available', () => {
+        it('shows only Open preview when the app is already up (preview URL available)', () => {
             const actions: string[] = [];
             const host = renderStickyComposerChangesPill({
                 diffStats: { added: 10, removed: 1 },
@@ -135,10 +178,24 @@ describe('qaap-sticky-composer-activity-stack', () => {
             document.body.append(host!);
 
             const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
-            expect(nextActions.map(action => action.textContent)).to.deep.equal(['Run app', 'Open preview']);
+            expect(nextActions.map(action => action.textContent)).to.deep.equal(['Open preview']);
             nextActions[0].click();
-            nextActions[1].click();
-            expect(actions).to.deep.equal(['run', 'preview']);
+            expect(actions).to.deep.equal(['preview']);
+        });
+
+        it('shows only Run app while no preview URL exists yet', () => {
+            const actions: string[] = [];
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 10, removed: 1 },
+                onReview: () => undefined,
+                onRunApp: () => { actions.push('run'); },
+            });
+            document.body.append(host!);
+
+            const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
+            expect(nextActions.map(action => action.textContent)).to.deep.equal(['Run app']);
+            nextActions[0].click();
+            expect(actions).to.deep.equal(['run']);
         });
 
         it('marks the commit group busy (border beam) and disables its buttons while committing', () => {
