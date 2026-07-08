@@ -101,6 +101,29 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(dropdown!.hidden).to.equal(true);
         });
 
+        it('portals the commit menu to <body> while open so scroll containers cannot clip it', () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 1, removed: 0 },
+                onReview: () => undefined,
+                onCommitAction: () => undefined,
+            });
+            document.body.append(host!);
+
+            const menuBtn = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-menu');
+            const dropdown = host!.querySelector<HTMLElement>('.theia-mobile-sticky-composer-commit-dropdown');
+            const menuWrap = dropdown!.parentElement;
+
+            menuBtn!.click();
+            expect(dropdown!.hidden).to.equal(false);
+            expect(dropdown!.parentElement).to.equal(document.body);
+            expect(dropdown!.classList.contains('theia-mod-portal')).to.equal(true);
+
+            menuBtn!.click();
+            expect(dropdown!.hidden).to.equal(true);
+            expect(dropdown!.parentElement).to.equal(menuWrap);
+            expect(dropdown!.classList.contains('theia-mod-portal')).to.equal(false);
+        });
+
         it('renders explicit next-step actions after changes are available', () => {
             const actions: string[] = [];
             const host = renderStickyComposerChangesPill({

@@ -7428,6 +7428,18 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   bottom: calc(100% + 8px);
   right: 0;
   z-index: 30;
+}
+
+/* Open state: the menu is portaled to <body> (the pill row's overflow-x: auto
+   would clip it in place), positioned with fixed viewport coords set inline. */
+.theia-mobile-sticky-composer-commit-dropdown.theia-mod-portal {
+  position: fixed;
+  bottom: auto;
+  right: auto;
+  z-index: 3000;
+}
+
+.theia-mobile-sticky-composer-commit-dropdown {
   min-width: 220px;
   padding: 4px;
   border-radius: 14px;

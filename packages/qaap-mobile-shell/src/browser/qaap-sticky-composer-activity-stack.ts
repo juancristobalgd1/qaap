@@ -555,7 +555,15 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
 
     const onDocumentPointerDown = (ev: PointerEvent): void => {
         const target = ev.target;
-        if (target instanceof Node && group.isConnected && group.contains(target)) {
+        if (target instanceof Node && ((group.isConnected && group.contains(target)) || dropdown.contains(target))) {
+            return;
+        }
+        closeMenu();
+    };
+    const onWindowScroll = (ev: Event): void => {
+        // Scrolling inside the open menu itself is fine; anything else moves the
+        // anchor button, so close instead of tracking it.
+        if (ev.target instanceof Node && dropdown.contains(ev.target)) {
             return;
         }
         closeMenu();
@@ -564,13 +572,31 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
         dropdown.hidden = true;
         menuBtn.classList.remove('theia-mod-open');
         menuBtn.setAttribute('aria-expanded', 'false');
+        // Return the portaled menu home so a later open starts from a clean slate.
+        dropdown.classList.remove('theia-mod-portal');
+        dropdown.style.right = '';
+        dropdown.style.bottom = '';
+        menuWrap.append(dropdown);
         document.removeEventListener('pointerdown', onDocumentPointerDown, true);
+        window.removeEventListener('scroll', onWindowScroll, true);
+        window.removeEventListener('resize', closeMenu);
     };
     const openMenu = (): void => {
+        // The changes-pill row is a horizontal scroll container (overflow-x: auto),
+        // which clips absolutely-positioned descendants — so the menu can never
+        // escape it from inside. Portal it to <body> with fixed viewport coords,
+        // right-aligned to the chevron and opening upwards.
+        const rect = menuBtn.getBoundingClientRect();
+        dropdown.classList.add('theia-mod-portal');
+        dropdown.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
+        dropdown.style.bottom = `${Math.max(8, window.innerHeight - rect.top + 8)}px`;
+        menuBtn.ownerDocument.body.append(dropdown);
         dropdown.hidden = false;
         menuBtn.classList.add('theia-mod-open');
         menuBtn.setAttribute('aria-expanded', 'true');
         document.addEventListener('pointerdown', onDocumentPointerDown, true);
+        window.addEventListener('scroll', onWindowScroll, true);
+        window.addEventListener('resize', closeMenu);
     };
 
     menuBtn.addEventListener('click', ev => {

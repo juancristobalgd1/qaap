@@ -265,6 +265,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             transcriptComposerSummary: { id: 'conv-42' } as MobileProjectsExecutionSurfaceTabsHost['transcriptComposerSummary'],
             transcriptStickyComposerUi: {
                 flushTranscriptComposerDraft: (id?: string) => { flushed.push(id); },
+                syncTranscriptComposerQuickActionsVisibility: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptStickyComposerUi'],
         });
         const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
@@ -276,5 +277,40 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         // Returning to Messages should not trigger another flush (nothing is being torn down).
         ui.showOnlyExecutionSurfaceTab('messages');
         expect(flushed).to.deep.equal(['conv-42']);
+    });
+
+    it('re-derives quick-action chips from the conversation instead of force-showing them on Messages', () => {
+        const synced: Array<{ target: unknown; summaryId: string }> = [];
+        const host = createHost({
+            transcriptComposerSummary: { id: 'conv-7' } as MobileProjectsExecutionSurfaceTabsHost['transcriptComposerSummary'],
+            transcriptStickyComposerUi: {
+                flushTranscriptComposerDraft: () => undefined,
+                syncTranscriptComposerQuickActionsVisibility: (target: HTMLElement, summary: { id: string }) => {
+                    synced.push({ target, summaryId: summary.id });
+                },
+            } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptStickyComposerUi'],
+        });
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+
+        // Leaving Messages always hides the chips.
+        host.stickyComposerHost.classList.add('theia-mod-show-quick-actions');
+        ui.showOnlyExecutionSurfaceTab('files');
+        expect(host.stickyComposerHost.classList.contains('theia-mod-show-quick-actions')).to.equal(false);
+        expect(synced).to.deep.equal([]);
+
+        // Returning to Messages delegates to the conversation-aware sync instead of force-adding the class.
+        ui.showOnlyExecutionSurfaceTab('messages');
+        expect(host.stickyComposerHost.classList.contains('theia-mod-show-quick-actions')).to.equal(false);
+        expect(synced.length).to.equal(1);
+        expect(synced[0].target).to.equal(host.stickyComposerHost);
+        expect(synced[0].summaryId).to.equal('conv-7');
+    });
+
+    it('keeps quick-action chips when returning to Messages with no conversation yet', () => {
+        const host = createHost();
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+
+        ui.showOnlyExecutionSurfaceTab('messages');
+        expect(host.stickyComposerHost.classList.contains('theia-mod-show-quick-actions')).to.equal(true);
     });
 });

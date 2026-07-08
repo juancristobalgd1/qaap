@@ -274,7 +274,18 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         if (this.host.agentsHubShellActive) {
             this.host.stickyComposerHost.hidden = !showMessages;
             this.host.root.classList.toggle('theia-mod-sticky-composer', showMessages);
-            this.host.stickyComposerHost.classList.toggle('theia-mod-show-quick-actions', showMessages);
+            // Quick-action chips are an empty-chat affordance, not a Messages-tab one:
+            // re-derive their visibility from the conversation instead of force-showing
+            // them on every return to Messages (which surfaced them on non-empty chats).
+            const quickActionsSummary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
+            if (!showMessages) {
+                this.host.stickyComposerHost.classList.remove('theia-mod-show-quick-actions');
+            } else if (quickActionsSummary) {
+                this.host.transcriptStickyComposerUi.syncTranscriptComposerQuickActionsVisibility(this.host.stickyComposerHost, quickActionsSummary);
+            } else {
+                // No conversation resolved yet — pre-first-message state, keep the chips.
+                this.host.stickyComposerHost.classList.add('theia-mod-show-quick-actions');
+            }
             if (!showMessages) {
                 // Leaving Messages destroys the mounted composer. Its draft is live in
                 // `transcriptComposerDraft` but the localStorage persist is debounced, so flush it

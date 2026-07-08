@@ -325,7 +325,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return this.host.resolveActiveTranscriptChatHost() ?? fallback;
     }
 
-    protected syncTranscriptComposerQuickActionsVisibility(
+    syncTranscriptComposerQuickActionsVisibility(
         host: HTMLElement,
         summary: QaapAgentConversationSummaryDTO,
     ): void {
