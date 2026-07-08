@@ -20,7 +20,6 @@ import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
     attachDeviceFilesOptimistic,
-    attachDeviceImagesOptimistic,
     attachDeviceImagesFromPicker,
     attachDeviceFilesFromPicker,
     pickFilesFromDevice,
@@ -599,7 +598,7 @@ async function resolveDeviceAttachSelection(
                 return [];
             }
             if (handlers) {
-                attachDeviceImagesOptimistic(files, handlers);
+                attachDeviceFilesOptimistic(files, attachServices, handlers);
                 return [];
             }
             return attachDeviceImagesFromPicker();

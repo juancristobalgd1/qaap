@@ -6,7 +6,7 @@
 
 import { AIVariableResolutionRequest } from '@theia/ai-core';
 import { FILE_VARIABLE } from '@theia/ai-core/lib/browser/file-variable-contribution';
-import { IMAGE_CONTEXT_VARIABLE } from '@theia/ai-chat/lib/common/image-context-variable';
+import { IMAGE_CONTEXT_VARIABLE, ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import { URI, generateUuid, nls } from '@theia/core';
 import { fileToStream } from '@theia/core/lib/common/stream';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
@@ -88,6 +88,20 @@ async function uploadDeviceFileToWorkspace(
     // URI, which the FILE_VARIABLE resolver still resolves (see FileVariableContribution.makeAbsolute).
     const wsPath = await workspaceService.getWorkspaceRelativePath(targetUri);
     return { variable: FILE_VARIABLE, arg: wsPath || targetUri.toString() };
+}
+
+async function uploadDeviceImageToWorkspace(
+    file: File,
+    root: URI,
+    fileService: FileService,
+    workspaceService: WorkspaceService,
+): Promise<AIVariableResolutionRequest | undefined> {
+    const request = await uploadDeviceFileToWorkspace(file, root, fileService, workspaceService);
+    const path = request?.arg?.trim();
+    if (!path) {
+        return undefined;
+    }
+    return ImageContextVariable.createPathBasedRequest(path, file.name);
 }
 
 export async function createFileContextFromDeviceFiles(
@@ -195,8 +209,14 @@ export function attachDeviceFilesOptimistic(
         handlers.appendOptimistic(entry);
 
         if (isImageAttachmentFileName(file.name)) {
-            void createImageContextFromDeviceFile(file)
-                .then(request => handlers.finalizeOptimistic(entry.id, request))
+            void uploadDeviceImageToWorkspace(file, root, services.fileService, services.workspaceService)
+                .then(request => {
+                    if (request) {
+                        handlers.finalizeOptimistic(entry.id, request);
+                    } else {
+                        handlers.removeOptimistic(entry.id);
+                    }
+                })
                 .catch(() => handlers.removeOptimistic(entry.id));
             continue;
         }

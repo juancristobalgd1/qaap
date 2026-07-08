@@ -9,6 +9,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import URI from '@theia/core/lib/common/uri';
 import { BinaryBuffer } from '@theia/core/lib/common/buffer';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
+import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import type { StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 
@@ -160,6 +161,26 @@ describe('qaap-mobile-composer-device-attach', () => {
             expect(result.request.arg).to.equal('file:///proj/notes.txt');
         }
         expect(backend.files.has('file:///proj/notes.txt')).to.equal(true);
+    });
+
+    it('uploads image files and finalizes them as path-based image context', async () => {
+        const { attachDeviceFilesOptimistic } = loadAttach();
+        const backend = inMemoryBackend([]);
+        const { handlers, settled } = deferredHandlers(new URI('file:///proj'));
+        const file = new File(['fake-webp'], 'openrouter.webp', { type: 'image/webp' });
+
+        attachDeviceFilesOptimistic([file], backend as never, handlers);
+        const result = await settled;
+
+        expect(result.kind).to.equal('finalize');
+        if (result.kind === 'finalize') {
+            expect(result.request.variable.name).to.equal('imageContext');
+            const parsed = ImageContextVariable.parseRequest(result.request);
+            expect(parsed?.wsRelativePath).to.equal('file:///proj/openrouter.webp');
+            expect(parsed?.name).to.equal('openrouter.webp');
+            expect(parsed?.data).to.equal(undefined);
+        }
+        expect(backend.files.has('file:///proj/openrouter.webp')).to.equal(true);
     });
 
     it("the real Theia FILE_VARIABLE resolves that arg to the file's content (no workspace root)", async () => {
