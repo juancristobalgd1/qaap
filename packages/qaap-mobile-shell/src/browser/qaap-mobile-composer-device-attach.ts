@@ -32,6 +32,12 @@ export interface MobileComposerAttachHandlers {
     removeOptimistic(id: string): void;
     /** Inserts `/skill-name` into the sticky composer draft (Cursor-style skill slash). */
     insertComposerSkill?: (skillName: string) => void;
+    /**
+     * Directory to upload device files into when no Theia workspace root is open — the mobile chat
+     * surface runs against the project cwd without opening it as a workspace, so `tryGetRoots()` is
+     * empty there. Without this the file upload would throw before any chip is shown.
+     */
+    readonly uploadTargetDir?: URI;
 }
 
 export interface MobileComposerDeviceAttachServices {
@@ -78,11 +84,10 @@ async function uploadDeviceFileToWorkspace(
         await fileService.delete(targetUri);
     }
     await fileService.writeFile(targetUri, fileToStream(file));
+    // Prefer a workspace-relative path when a root is open; otherwise fall back to the absolute file
+    // URI, which the FILE_VARIABLE resolver still resolves (see FileVariableContribution.makeAbsolute).
     const wsPath = await workspaceService.getWorkspaceRelativePath(targetUri);
-    if (!wsPath) {
-        return undefined;
-    }
-    return { variable: FILE_VARIABLE, arg: wsPath };
+    return { variable: FILE_VARIABLE, arg: wsPath || targetUri.toString() };
 }
 
 export async function createFileContextFromDeviceFiles(
@@ -175,7 +180,9 @@ export function attachDeviceFilesOptimistic(
     services: MobileComposerDeviceAttachServices,
     handlers: MobileComposerAttachHandlers,
 ): void {
-    const root = services.workspaceService.tryGetRoots()[0]?.resource;
+    // On the mobile chat surface there is usually no open Theia workspace root, so upload into the
+    // project directory the composer is bound to. Only bail when neither is available.
+    const root = services.workspaceService.tryGetRoots()[0]?.resource ?? handlers.uploadTargetDir;
     if (!root) {
         throw new Error(nls.localize(
             'qaap/mobileProjects/stickyComposerAttachNoWorkspace',

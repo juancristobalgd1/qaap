@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import type { URI } from '@theia/core/lib/common/uri';
 import { AIVariableResolutionRequest } from '@theia/ai-core';
 import {
     applyStickyComposerToken,
@@ -16,6 +17,7 @@ import { buildStickyComposerSlashSections, type StickyComposerSlashSection } fro
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
+    applyComposerContextEntryPreview,
     resolveStickyComposerContextChip,
     resolveStickyComposerContextEntry,
     type StickyComposerContextChipView,
@@ -53,13 +55,13 @@ export class MobileProjectsStickyComposerContextUi {
     constructor(protected readonly host: MobileProjectsStickyComposerContextHost) { }
 
     async onStickyComposerAttach(
-        _project: MobileProjectEntry,
+        project: MobileProjectEntry,
         anchor: HTMLElement,
     ): Promise<void> {
         if (!this.host.pickContextVariable) {
             return;
         }
-        const variables = await this.host.pickContextVariable(anchor, this.createStickyComposerAttachHandlers());
+        const variables = await this.host.pickContextVariable(anchor, this.createStickyComposerAttachHandlers(project.uri));
         if (variables.length === 0) {
             return;
         }
@@ -68,8 +70,9 @@ export class MobileProjectsStickyComposerContextUi {
         }
         this.host.stickyComposerRenderUi.renderStickyComposer();
     }
-    createStickyComposerAttachHandlers(): MobileComposerAttachHandlers {
+    createStickyComposerAttachHandlers(uploadTargetDir?: URI): MobileComposerAttachHandlers {
         return {
+            uploadTargetDir,
             insertComposerSkill: skillName => {
                 this.insertComposerSkillInDraft(
                     skillName,
@@ -112,8 +115,9 @@ export class MobileProjectsStickyComposerContextUi {
             },
         };
     }
-    createTranscriptComposerAttachHandlers(): MobileComposerAttachHandlers {
+    createTranscriptComposerAttachHandlers(uploadTargetDir?: URI): MobileComposerAttachHandlers {
         return {
+            uploadTargetDir,
             insertComposerSkill: skillName => {
                 this.insertComposerSkillInDraft(
                     skillName,
@@ -171,8 +175,12 @@ export class MobileProjectsStickyComposerContextUi {
     }
     formatComposerContextEntry(entry: StickyComposerContextEntry): StickyComposerContextChipView {
         const fromProvider = this.host.formatContextChip?.(entry.request);
-        const base = fromProvider ?? resolveStickyComposerContextEntry(entry);
-        return base;
+        if (!fromProvider) {
+            return resolveStickyComposerContextEntry(entry);
+        }
+        // The host provider only sees `entry.request`, so a pending attachment's local blob preview,
+        // pending flag and device file name are lost. Merge them back so the miniature renders.
+        return applyComposerContextEntryPreview(fromProvider, entry);
     }
     formatComposerContextChip(item: AIVariableResolutionRequest): StickyComposerContextChipView {
         return this.host.formatContextChip?.(item) ?? resolveStickyComposerContextChip(item);

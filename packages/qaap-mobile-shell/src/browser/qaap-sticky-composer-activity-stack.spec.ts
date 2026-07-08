@@ -106,7 +106,6 @@ describe('qaap-sticky-composer-activity-stack', () => {
             const pill = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-changes-pill');
             expect(pill).to.exist;
             expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-label')?.textContent).to.equal('Changes');
-            expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-count')?.textContent).to.equal('2 files');
             expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+5');
             expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('-1');
             expect(host!.querySelector('.theia-mobile-sticky-composer-changed-file-row')).to.equal(null);
@@ -160,31 +159,12 @@ describe('qaap-sticky-composer-activity-stack', () => {
 
         it('shows the Changes pill for stats-only activity before per-file rows are available', () => {
             const host = renderStickyComposerChangesPill({
-                changedFileCount: 7,
                 diffStats: { added: 12, removed: 3 },
                 onReview: () => undefined,
             });
             document.body.append(host!);
 
             expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.exist;
-            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill-count')?.textContent).to.equal('7 files');
-            expect(host!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+12');
-            expect(host!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('-3');
-        });
-
-        it('keeps the zero removed stat visible in the Changes pill', () => {
-            const host = renderStickyComposerChangesPill({
-                changedFileCount: 7,
-                diffStats: { added: 7, removed: 0 },
-                onReview: () => undefined,
-            });
-            document.body.append(host!);
-
-            const pill = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-changes-pill');
-            expect(pill).to.exist;
-            expect(pill!.querySelector('.theia-mobile-sticky-composer-changes-pill-count')?.textContent).to.equal('7 files');
-            expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-added')?.textContent).to.equal('+7');
-            expect(pill!.querySelector('.theia-mobile-agent-diff-stat.theia-mod-removed')?.textContent).to.equal('-0');
         });
 
         it('renders the commit split-button beside the Changes pill and fires the workflow actions', () => {

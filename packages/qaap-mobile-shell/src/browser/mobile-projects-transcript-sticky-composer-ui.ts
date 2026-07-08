@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import URI from '@theia/core/lib/common/uri';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
@@ -352,13 +353,17 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     async onTranscriptComposerAttach(
-        _project: MobileProjectEntry,
+        project: MobileProjectEntry,
         anchor: HTMLElement,
     ): Promise<void> {
         if (!this.host.pickContextVariable) {
             return;
         }
-        const variables = await this.host.pickContextVariable(anchor, this.host.stickyComposerContextUi.createTranscriptComposerAttachHandlers());
+        const uploadTargetDir = this.resolveComposerUploadTargetDir(project);
+        const variables = await this.host.pickContextVariable(
+            anchor,
+            this.host.stickyComposerContextUi.createTranscriptComposerAttachHandlers(uploadTargetDir),
+        );
         if (variables.length === 0) {
             return;
         }
@@ -366,6 +371,19 @@ export class MobileProjectsTranscriptStickyComposerUi {
             this.host.transcriptComposerContext.push(createComposerContextEntry(request));
         }
         this.remountTranscriptStickyComposer();
+    }
+
+    /**
+     * Directory that device-file uploads land in. The mobile chat runs against the project cwd
+     * without opening it as a Theia workspace, so we bind uploads to the project directory instead
+     * of relying on `WorkspaceService.tryGetRoots()` (empty here).
+     */
+    protected resolveComposerUploadTargetDir(project: MobileProjectEntry): URI | undefined {
+        if (project.uri) {
+            return project.uri;
+        }
+        const cwd = this.host.projectsService.getProjectCwd(project);
+        return cwd ? new URI().withScheme('file').withPath(cwd) : undefined;
     }
 
     resolveTranscriptContextUsageTarget(
@@ -435,7 +453,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
         conv: QaapAgentConversationDTO | undefined,
     ): {
         readonly files: StickyComposerChangedFileView[];
-        readonly count?: number;
         readonly stats?: { readonly added: number; readonly removed: number };
     } {
         const activityFiles = this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
@@ -467,14 +484,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (selection.files) {
             return {
                 files: selection.files,
-                count: Math.max(selection.files.length, activityFiles.files.length),
                 stats: this.resolveChangedFilesStats(selection.files, activityFiles.stats),
             };
         }
-        return {
-            ...activityFiles,
-            count: activityFiles.files.length,
-        };
+        return activityFiles;
     }
 
     /**
@@ -530,14 +543,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
             added += file.added ?? 0;
             removed += file.removed ?? 0;
         }
-        const fileStats = added > 0 || removed > 0 ? { added, removed } : undefined;
-        if (fileStats && fallback) {
-            return fallback.added + fallback.removed > fileStats.added + fileStats.removed
-                ? fallback
-                : fileStats;
-        }
-        if (fileStats) {
-            return fileStats;
+        if (added > 0 || removed > 0) {
+            return { added, removed };
         }
         return fallback;
     }
@@ -771,7 +778,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 this.refreshComposerActivityStack();
             },
             changedFiles: activityFiles.files,
-            changedFileCount: activityFiles.count,
             diffStats: activityFiles.stats,
             hasFileActivity,
             hasCommittableChanges,

@@ -6,12 +6,13 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
+import { ImageContextVariable, IMAGE_CONTEXT_VARIABLE } from '@theia/ai-chat/lib/common/image-context-variable';
 import {
     buildPendingComposerContextArg,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
 import {
+    applyComposerContextEntryPreview,
     collectComposerImagePreviews,
     renderStickyComposerContextStrip,
     resolveStickyComposerContextChip,
@@ -190,6 +191,49 @@ describe('qaap-sticky-composer-context-ui', () => {
         expect(await collectComposerImagePreviews([entry], resolvePreview)).to.deep.equal([
             { src: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=', fileName: 'logo.svg' },
         ]);
+    });
+
+    describe('applyComposerContextEntryPreview', () => {
+        function pendingImageEntry(): StickyComposerContextEntry {
+            return {
+                id: 'img-1',
+                pending: true,
+                displayName: 'photo.png',
+                localPreviewSrc: 'blob:local-preview',
+                request: { variable: IMAGE_CONTEXT_VARIABLE, arg: buildPendingComposerContextArg('img-1') },
+            };
+        }
+
+        it('restores the local blob miniature onto a request-only provider chip (the attach bug)', () => {
+            // Simulate exactly what MobileProjectsStickyComposerContextUi.formatComposerContextEntry does
+            // in production: the host provider resolves from entry.request alone (no preview), then the
+            // entry state is merged back in.
+            const entry = pendingImageEntry();
+            const providerChip = resolveStickyComposerContextChip(entry.request);
+            expect(providerChip.previewSrc).to.equal(undefined); // provider cannot see the blob url
+
+            const view = applyComposerContextEntryPreview(providerChip, entry);
+            expect(view.attachmentKind).to.equal('image');
+            expect(view.previewSrc).to.equal('blob:local-preview');
+            expect(view.pending).to.equal(true);
+            expect(view.title).to.equal('photo.png');
+        });
+
+        it('does not overwrite a preview the provider already resolved', () => {
+            const view = applyComposerContextEntryPreview(
+                { title: 'screenshot.png', iconClasses: '', kind: 'imageContext', attachmentKind: 'image', previewSrc: 'data:image/png;base64,ZmFrZQ==' },
+                { id: 'x', pending: true, localPreviewSrc: 'blob:should-not-win', request: { variable: IMAGE_CONTEXT_VARIABLE, arg: '' } },
+            );
+            expect(view.previewSrc).to.equal('data:image/png;base64,ZmFrZQ==');
+        });
+
+        it('leaves a finalized entry (no local preview) untouched', () => {
+            const providerChip = { title: 'a.txt', iconClasses: 'codicon codicon-file', kind: 'file', attachmentKind: 'file' as const };
+            const view = applyComposerContextEntryPreview(providerChip, { id: 'y', request: { variable: IMAGE_CONTEXT_VARIABLE, arg: '' } });
+            expect(view.previewSrc).to.equal(undefined);
+            expect(view.pending).to.equal(undefined);
+            expect(view.title).to.equal('a.txt');
+        });
     });
 
     describe('renderStickyComposerContextStrip', () => {

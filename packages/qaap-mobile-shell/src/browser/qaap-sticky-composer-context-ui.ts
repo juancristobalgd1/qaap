@@ -67,6 +67,29 @@ export function resolveStickyComposerContextEntry(
     return view;
 }
 
+/**
+ * Merge optimistic-entry state (blob thumbnail, pending flag, device file name) onto a chip view
+ * that was resolved from the entry's `request` alone. A host-level chip provider only receives the
+ * `AIVariableResolutionRequest` — for a freshly attached file the request arg is just a pending
+ * sentinel, so the provider can't see `entry.localPreviewSrc`. Without this merge the composer shows
+ * a placeholder icon instead of the attachment miniature until the upload finalizes.
+ */
+export function applyComposerContextEntryPreview(
+    view: StickyComposerContextChipView,
+    entry: StickyComposerContextEntry,
+): StickyComposerContextChipView {
+    if (entry.localPreviewSrc && !view.previewSrc) {
+        view.previewSrc = entry.localPreviewSrc;
+    }
+    if (entry.pending) {
+        view.pending = true;
+    }
+    if (entry.displayName?.trim()) {
+        view.title = entry.displayName.trim();
+    }
+    return view;
+}
+
 /** Snapshot attachment previews from composer context before submit clears entries. */
 export async function collectComposerImagePreviews(
     entries: readonly StickyComposerContextEntry[],
