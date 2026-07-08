@@ -37,7 +37,7 @@
     "clean": "theiaext clean",
     "compile": "theiaext compile",
     "lint": "theiaext lint",
-    "test": "node -e \"console.log('No tests found')\"",
+    "test": "theiaext test",
     "watch": "theiaext watch"
   },
   "devDependencies": {
