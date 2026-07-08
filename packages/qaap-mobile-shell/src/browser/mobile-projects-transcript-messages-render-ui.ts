@@ -269,8 +269,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     /**
      * Index of the first message that survived a *completed* compaction, i.e. the seam where the
-     * inline "Context automatically compacted" marker is glued. `undefined` while compaction is
-     * still running, when nothing was compacted, or when the boundary falls outside the live list.
+     * inline "Context automatically compacted" marker is glued. When the backend has already
+     * trimmed compacted messages out of the live list, the original boundary can be beyond the
+     * current array; in that case anchor the seam to the first visible message.
      */
     protected transcriptContextCompactionBoundaryIndex(conv: QaapAgentConversationDTO): number | undefined {
         const compaction = conv.contextCompaction;
@@ -279,7 +280,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         const boundary = compaction.compactedMessageCount;
         if (boundary <= 0 || boundary >= conv.messages.length) {
-            return undefined;
+            return conv.messages.length > 0 && boundary > 0 ? 0 : undefined;
         }
         return boundary;
     }
@@ -323,20 +324,14 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         label.className = 'theia-mobile-agent-transcript-context-compaction-label';
         if (compaction.status === 'running') {
             label.classList.add('theia-mod-shimmer');
-            label.textContent = nls.localize(
-                'qaap/mobileProjects/contextCompacting',
-                'Automatically compacting context',
-            );
+            label.textContent = 'Automatically compacting context';
         } else {
             const icon = document.createElement('span');
             icon.className = 'codicon codicon-go-to-editing-session theia-mobile-agent-transcript-context-compaction-icon';
             icon.setAttribute('aria-hidden', 'true');
             label.append(
                 icon,
-                document.createTextNode(nls.localize(
-                    'qaap/mobileProjects/contextCompacted',
-                    'Context automatically compacted',
-                )),
+                document.createTextNode('Context automatically compacted'),
             );
         }
 

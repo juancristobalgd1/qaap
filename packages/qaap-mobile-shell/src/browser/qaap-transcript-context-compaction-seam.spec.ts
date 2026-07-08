@@ -104,9 +104,9 @@ describe('qaap-transcript-context-compaction-seam', () => {
             expect(render.boundaryIndex(conv)).to.equal(undefined);
         });
 
-        it('is undefined when the boundary falls outside the live message list', () => {
+        it('anchors to the first visible message when compacted messages were trimmed from the live list', () => {
             const conv = conversation([message('a', 'user'), message('b', 'agent')], completeCompaction(2, 2));
-            expect(render.boundaryIndex(conv)).to.equal(undefined);
+            expect(render.boundaryIndex(conv)).to.equal(0);
         });
 
         it('is undefined when there is no compaction at all', () => {
@@ -151,6 +151,19 @@ describe('qaap-transcript-context-compaction-seam', () => {
             expect(boundaryRow.firstElementChild?.matches(COMPACTION_SELECTOR)).to.equal(true);
             expect(boundaryRow.lastElementChild?.matches(MESSAGE_SELECTOR)).to.equal(true);
             expect(boundaryRow.querySelector(COMPACTION_SELECTOR)?.textContent).to.contain('Context automatically compacted');
+        });
+
+        it('glues the completed seam above the first visible message after trimming', () => {
+            const conv = conversation(
+                [message('a', 'agent', ''), message('b', 'agent', '')],
+                completeCompaction(2, 2),
+            );
+
+            const firstRow = render.createTranscriptMessageRowAtIndex(conv, 0);
+            expect(firstRow.matches(SEAM_SELECTOR)).to.equal(true);
+            expect(firstRow.firstElementChild?.matches(COMPACTION_SELECTOR)).to.equal(true);
+            expect(firstRow.lastElementChild?.matches(MESSAGE_SELECTOR)).to.equal(true);
+            expect(firstRow.querySelector(COMPACTION_SELECTOR)?.textContent).to.contain('Context automatically compacted');
         });
 
         it('leaves non-boundary messages unwrapped', () => {
