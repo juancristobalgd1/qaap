@@ -65,6 +65,12 @@ export interface StickyComposerActivityStackOptions {
     onQueueRemove?: (index: number) => void;
     changedFiles?: readonly StickyComposerChangedFileView[];
     diffStats?: { readonly added: number; readonly removed: number };
+    /**
+     * True once the agent has edited files in this conversation, even if the
+     * changes were since Accepted/Discarded. Keeps the Commit and preview/run
+     * controls in the row after the review-only "Changes" group drops off.
+     */
+    hasFileActivity?: boolean;
     filesExpanded?: boolean;
     onFilesExpandedChange?: (expanded: boolean) => void;
     agentWorking?: boolean;
@@ -169,6 +175,19 @@ export function patchStickyComposerActivityStack(
     return true;
 }
 
+/** True when there are unresolved (pending-review) changes worth a "Changes" pill. */
+function stickyComposerHasChangesToReview(options: StickyComposerActivityStackOptions): boolean {
+    const hasFiles = (options.changedFiles?.length ?? 0) > 0;
+    const stats = options.diffStats;
+    const hasStats = !!stats && ((stats.added ?? 0) > 0 || (stats.removed ?? 0) > 0);
+    return hasFiles || hasStats;
+}
+
+/** True when the activity row should render at all (either pending review, or persistent actions after activity). */
+function stickyComposerHasActivityRow(options: StickyComposerActivityStackOptions): boolean {
+    return stickyComposerHasChangesToReview(options) || !!options.hasFileActivity;
+}
+
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
     const files = options.changedFiles ?? [];
     const stats = options.diffStats;
@@ -178,6 +197,8 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         stats?.added ?? 0,
         stats?.removed ?? 0,
         paths,
+        stickyComposerHasChangesToReview(options) ? 1 : 0,
+        options.hasFileActivity ? 1 : 0,
         options.agentWorking ? 1 : 0,
         options.commitBusy ? 1 : 0,
         options.onCommitAction ? 1 : 0,
@@ -220,7 +241,9 @@ export function patchStickyComposerChangesPillHost(
     }
 
     const changesGroup = row.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-changes-group');
-    if (!!changesGroup !== !!options.onReview) {
+    // A changed review state (present ↔ absent as Accept/Discard resolve changes) is a
+    // structural change — bail to a full re-render so the group is added or removed.
+    if (!!changesGroup !== (!!options.onReview && stickyComposerHasChangesToReview(options))) {
         return false;
     }
     if (changesGroup) {
@@ -266,9 +289,10 @@ export function patchStickyComposerChangesPillHost(
 }
 
 export function renderStickyComposerChangesPill(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
-    const hasFiles = (options.changedFiles?.length ?? 0) > 0;
-    const hasStats = !!options.diffStats && ((options.diffStats.added ?? 0) > 0 || (options.diffStats.removed ?? 0) > 0);
-    if (!hasFiles && !hasStats) {
+    // The row survives after the review is resolved so the user can still Commit
+    // the staged work or open the preview — only the "Changes" review group
+    // itself drops off. It hides entirely once the agent has no file activity.
+    if (!stickyComposerHasActivityRow(options)) {
         return undefined;
     }
     const host = document.createElement('div');
@@ -448,7 +472,10 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
     const row = document.createElement('div');
     row.className = 'theia-mobile-sticky-composer-changes-pill-row';
 
-    if (options.onReview) {
+    // The review "Changes" group only appears while there are unresolved changes;
+    // Accept/Discard resolve them and it drops off, but the row (Commit, preview)
+    // stays. See stickyComposerHasActivityRow.
+    if (options.onReview && stickyComposerHasChangesToReview(options)) {
         const changesGroup = document.createElement('div');
         changesGroup.className = 'theia-mobile-sticky-composer-changes-group';
 

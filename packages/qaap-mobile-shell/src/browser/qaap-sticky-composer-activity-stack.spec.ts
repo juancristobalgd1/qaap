@@ -270,6 +270,37 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
         });
 
+        it('keeps Commit and preview after the review is resolved, dropping only the Changes group', () => {
+            // Accept/Discard resolved the review (no changed files/stats) but the agent did edit files.
+            const host = renderStickyComposerChangesPill({
+                hasFileActivity: true,
+                onReview: () => undefined,
+                onKeepAll: () => undefined,
+                onUndoAll: () => undefined,
+                onCommitAction: () => undefined,
+                onOpenPreview: () => undefined,
+            });
+            expect(host).to.exist;
+            document.body.append(host!);
+
+            // The review "Changes" group is gone…
+            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-group')).to.equal(null);
+            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.equal(null);
+            // …but Commit & Push and Open preview remain.
+            expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.exist;
+            const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
+            expect(nextActions.map(a => a.textContent)).to.deep.equal(['Open preview']);
+        });
+
+        it('hides the whole row when the agent has no file activity and no changes', () => {
+            const host = renderStickyComposerChangesPill({
+                onReview: () => undefined,
+                onCommitAction: () => undefined,
+                onRunApp: () => undefined,
+            });
+            expect(host).to.equal(undefined);
+        });
+
         it('patchStickyComposerChangesPillHost updates stats without replacing the pill node', () => {
             const host = renderStickyComposerChangesPill({
                 diffStats: { added: 648, removed: 384 },

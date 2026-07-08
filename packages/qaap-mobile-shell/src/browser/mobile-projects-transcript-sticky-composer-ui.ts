@@ -436,14 +436,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         readonly stats?: { readonly added: number; readonly removed: number };
     } {
         const activityFiles = this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        // The Changes pill + commit button only surface for edits the agent made in this
-        // conversation. The gate needs evidence from the transcript itself (file-edit tool calls
-        // or agent-reported diff stats): `summary.linesAdded` alone is not enough because the
-        // backend stamps repo-wide `git diff` stats on every turn, so a tree left dirty by another
-        // session would surface the buttons in conversations that never touched a file.
-        const transcriptEvidence = this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, undefined, { allTurns: true });
-        if (!this.hasComposerAgentActivity(transcriptEvidence)
-            && !this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv)) {
+        if (!this.hasComposerFileActivity(conv)) {
             return { files: [] };
         }
         const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
@@ -466,6 +459,19 @@ export class MobileProjectsTranscriptStickyComposerUi {
             };
         }
         return activityFiles;
+    }
+
+    /**
+     * True when the agent has edited files in this conversation — evidence from the transcript
+     * itself (file-edit tool calls or agent-reported diff stats), NOT `summary.linesAdded`, since
+     * the backend stamps repo-wide `git diff` stats on every turn and a tree left dirty by another
+     * session would otherwise surface the buttons in conversations that never touched a file.
+     * Stays true after Accept/Discard, so the Commit and preview controls persist.
+     */
+    protected hasComposerFileActivity(conv: QaapAgentConversationDTO | undefined): boolean {
+        const transcriptEvidence = this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, undefined, { allTurns: true });
+        return this.hasComposerAgentActivity(transcriptEvidence)
+            || this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv);
     }
 
     protected hasComposerAgentActivity(activityFiles: {
@@ -722,6 +728,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             },
             changedFiles: activityFiles.files,
             diffStats: activityFiles.stats,
+            hasFileActivity: this.hasComposerFileActivity(conv),
             filesExpanded: this.peekTranscriptComposerChangedFilesExpanded(summary.id),
             onFilesExpandedChange: expanded => { this.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
             agentWorking,
