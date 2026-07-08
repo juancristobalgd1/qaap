@@ -492,8 +492,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
      * (staged or unstaged). Falls back to the clean-tree latch while the snapshot is momentarily
      * absent so the Commit button doesn't flicker back after a Discard. Must be read AFTER
      * {@link resolveComposerActivityFilesForStack} updates the latch for this render.
+     *
+     * NOTE: the caller MUST gate this on {@link hasComposerFileActivity} — without a snapshot AND
+     * without a clean latch (a fresh/idle conversation) this returns `true`, so on its own it would
+     * surface Commit in a conversation the agent never touched.
      */
-    protected hasComposerCommittableChanges(summary: QaapAgentConversationSummaryDTO): boolean {
+    protected hasComposerCommittableChangesFromGit(summary: QaapAgentConversationSummaryDTO): boolean {
         const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
         if (gitFiles) {
             return gitFiles.length > 0;
@@ -735,6 +739,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const activityFiles = this.resolveComposerActivityFilesForStack(project, summary, conv);
         void this.refreshComposerActivityGitFilesIfNeeded(project, summary, conv, activityFiles);
         const agentWorking = this.isTranscriptStickyComposerAgentWorking();
+        // Everything below is gated on the agent having actually edited files in THIS conversation.
+        // A fresh/idle conversation has no activity and no git snapshot, so the whole row stays gone.
+        const hasFileActivity = this.hasComposerFileActivity(conv);
+        const hasCommittableChanges = hasFileActivity && this.hasComposerCommittableChangesFromGit(summary);
         return {
             queueEntries: this.host.transcriptFollowUpQueue.peek(summary.id),
             queueExpanded: this.host.transcriptComposerQueueExpanded,
@@ -755,8 +763,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
             },
             changedFiles: activityFiles.files,
             diffStats: activityFiles.stats,
-            hasFileActivity: this.hasComposerFileActivity(conv),
-            hasCommittableChanges: this.hasComposerCommittableChanges(summary),
+            hasFileActivity,
+            hasCommittableChanges,
             filesExpanded: this.peekTranscriptComposerChangedFilesExpanded(summary.id),
             onFilesExpandedChange: expanded => { this.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
             agentWorking,

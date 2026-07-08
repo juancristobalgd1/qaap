@@ -196,9 +196,14 @@ function stickyComposerHasChangesToReview(options: StickyComposerActivityStackOp
     return hasFiles || hasStats;
 }
 
-/** True when the activity row should render at all (pending review, committable changes, or activity that keeps preview/run relevant). */
+/**
+ * True when the activity row should render at all. Gated on the agent having edited files in this
+ * conversation (`hasFileActivity`) or there being changes to review — a fresh/idle conversation has
+ * neither, so the whole row (Commit, preview, Changes) stays hidden. `hasCommittableChanges` is a
+ * subset of `hasFileActivity`, so it needn't be checked here.
+ */
 function stickyComposerHasActivityRow(options: StickyComposerActivityStackOptions): boolean {
-    return stickyComposerHasChangesToReview(options) || !!options.hasCommittableChanges || !!options.hasFileActivity;
+    return stickyComposerHasChangesToReview(options) || !!options.hasFileActivity;
 }
 
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
