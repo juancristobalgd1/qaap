@@ -828,6 +828,7 @@
   .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-icon,
   .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-chevron,
   .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-streaming .theia-mobile-agent-activity-item.theia-mod-active .theia-mobile-agent-activity-copy::after,
+  .theia-mobile-agent-transcript-context-compaction-label.theia-mod-shimmer,
   .theia-mobile-agent-stream-line .theia-mobile-agent-stream-dot {
     animation: none !important;
     transition: none !important;
@@ -852,6 +853,58 @@
 
 .theia-mobile-agent-transcript-segments {
   min-width: 0;
+}
+
+.theia-mobile-agent-transcript-context-compaction {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 18px 22px;
+  color: color-mix(in srgb, var(--theia-foreground, #d7d7d7) 68%, transparent);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.theia-mobile-agent-transcript-context-compaction-line {
+  flex: 1 1 auto;
+  min-width: 28px;
+  height: 1px;
+  background: color-mix(in srgb, var(--theia-foreground, #d7d7d7) 14%, transparent);
+}
+
+.theia-mobile-agent-transcript-context-compaction-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: min(78vw, 560px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theia-mobile-agent-transcript-context-compaction-label.theia-mod-shimmer {
+  color: color-mix(in srgb, var(--theia-foreground, #d7d7d7) 46%, transparent);
+  background: linear-gradient(90deg,
+      color-mix(in srgb, var(--theia-foreground, #d7d7d7) 36%, transparent) 0%,
+      var(--theia-foreground, #f2f2f2) 48%,
+      color-mix(in srgb, var(--theia-foreground, #d7d7d7) 36%, transparent) 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-trace-text-shimmer 2s linear infinite;
+}
+
+.theia-mobile-agent-transcript-context-compaction-icon {
+  flex: 0 0 auto;
+  font-size: 16px;
+  -webkit-text-fill-color: currentColor;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace {

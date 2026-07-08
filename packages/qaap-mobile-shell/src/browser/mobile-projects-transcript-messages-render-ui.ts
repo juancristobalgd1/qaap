@@ -256,6 +256,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     buildTranscriptVirtualFooter(conv: QaapAgentConversationDTO): HTMLElement[] {
         const footers: HTMLElement[] = [];
+        const contextCompaction = this.createTranscriptContextCompactionRow(conv);
+        if (contextCompaction) {
+            footers.push(contextCompaction);
+        }
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming' && conv.messages.at(-1)?.role === 'user') {
             const row = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
             if (row) {
@@ -263,6 +267,50 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
         }
         return footers;
+    }
+
+    protected createTranscriptContextCompactionRow(conv: QaapAgentConversationDTO): HTMLElement | undefined {
+        const compaction = conv.contextCompaction;
+        if (!compaction) {
+            return undefined;
+        }
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-agent-transcript-context-compaction';
+        row.classList.toggle('theia-mod-running', compaction.status === 'running');
+        row.classList.toggle('theia-mod-complete', compaction.status === 'complete');
+        row.setAttribute('role', 'status');
+        row.setAttribute('aria-live', compaction.status === 'running' ? 'polite' : 'off');
+
+        const before = document.createElement('span');
+        before.className = 'theia-mobile-agent-transcript-context-compaction-line';
+        before.setAttribute('aria-hidden', 'true');
+
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agent-transcript-context-compaction-label';
+        if (compaction.status === 'running') {
+            label.classList.add('theia-mod-shimmer');
+            label.textContent = nls.localize(
+                'qaap/mobileProjects/contextCompacting',
+                'Compactando el contexto automáticamente',
+            );
+        } else {
+            const icon = document.createElement('span');
+            icon.className = 'codicon codicon-go-to-editing-session theia-mobile-agent-transcript-context-compaction-icon';
+            icon.setAttribute('aria-hidden', 'true');
+            label.append(
+                icon,
+                document.createTextNode(nls.localize(
+                    'qaap/mobileProjects/contextCompacted',
+                    'Contexto compactado automáticamente',
+                )),
+            );
+        }
+
+        const after = document.createElement('span');
+        after.className = 'theia-mobile-agent-transcript-context-compaction-line';
+        after.setAttribute('aria-hidden', 'true');
+        row.append(before, label, after);
+        return row;
     }
 
     protected shouldFollowTranscriptTail(scroller: HTMLElement): boolean {
@@ -452,7 +500,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             // paying the O(messages × segments) full fingerprint. A background host re-running on
             // another conversation's ~8/s SSE ticks now does a string compare instead of a full hash.
             const lastSettledMessage = conv.messages[conv.messages.length - 1];
-            const cheapKey = `${conv.id}|${conv.updatedAt}|${conv.messages.length}|${lastSettledMessage?.content?.length ?? 0}`;
+            const cheapKey = `${conv.id}|${conv.updatedAt}|${conv.messages.length}|${lastSettledMessage?.content?.length ?? 0}|${conv.contextCompaction?.status ?? ''}:${conv.contextCompaction?.completedAt ?? ''}:${conv.contextCompaction?.compactedMessageCount ?? 0}`;
             if (settledHost.childElementCount > 0 && settledHost.dataset.qaapSettledCheapKey === cheapKey) {
                 recordTranscriptRenderMetric('render_skip_unchanged_settled');
                 this.clearTranscriptEmptyQuickActions(settledHost, conv);
@@ -555,14 +603,25 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
         const last = conv.messages[conv.messages.length - 1];
+        const contextCompaction = this.createTranscriptContextCompactionRow(conv);
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
             if (last?.role === 'agent') {
                 messageHost.lastElementChild?.classList.add('theia-mod-streaming');
+                if (contextCompaction) {
+                    messageHost.append(contextCompaction);
+                }
             } else {
+                if (contextCompaction) {
+                    messageHost.append(contextCompaction);
+                }
                 const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
                 if (activityRow) {
                     messageHost.append(activityRow);
                 }
+            }
+        } else {
+            if (contextCompaction) {
+                messageHost.append(contextCompaction);
             }
         }
         if (newTurnStarted) {

@@ -31,12 +31,19 @@ import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-ss
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
+import {
+    estimateConversationTokensFromMessages,
+    resolveConversationContextWindowSize,
+} from '../common/qaap-agent-context-usage';
 import { QaapTurnSettleNotifier } from './qaap-turn-settle-notifier';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
+
+const OPTIMISTIC_CONTEXT_COMPACTION_THRESHOLD_RATIO = 0.35;
+const OPTIMISTIC_CONTEXT_COMPACTION_ABSOLUTE_TOKENS = 25_000;
 
 /** Panel surface for VPS/backend transcript message submit and optimistic render. */
 export interface MobileProjectsTranscriptSubmitHost {
@@ -155,6 +162,14 @@ export class MobileProjectsTranscriptSubmitUi {
             ...baseConv,
             status: 'streaming',
             messages: appendOptimisticPendingUserMessage(baseConv.messages, pending),
+            contextCompaction: this.shouldShowOptimisticContextCompaction(baseConv, pending)
+                ? {
+                    status: 'running',
+                    startedAt: Date.now(),
+                    compactedMessageCount: Math.max(0, baseConv.messages.length - 4),
+                    sourceMessageCount: baseConv.messages.length + 1,
+                }
+                : baseConv.contextCompaction,
         }, summary);
         const renderedAt = Date.now();
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'optimistic_render_done', renderedAt);
@@ -336,5 +351,22 @@ export class MobileProjectsTranscriptSubmitUi {
             }
             throw error;
         }
+    }
+
+    protected shouldShowOptimisticContextCompaction(
+        conv: QaapAgentConversationDTO,
+        pendingUserMessage: QaapAgentConversationDTO['messages'][number],
+    ): boolean {
+        if (conv.contextCompaction?.status === 'complete') {
+            return false;
+        }
+        const messages = appendOptimisticPendingUserMessage(conv.messages, pendingUserMessage);
+        const estimated = estimateConversationTokensFromMessages(messages, conv.contextPreamble);
+        const contextWindow = resolveConversationContextWindowSize(conv.contextWindowSize);
+        const budget = Math.min(
+            Math.floor(contextWindow * OPTIMISTIC_CONTEXT_COMPACTION_THRESHOLD_RATIO),
+            OPTIMISTIC_CONTEXT_COMPACTION_ABSOLUTE_TOKENS,
+        );
+        return estimated > budget;
     }
 }

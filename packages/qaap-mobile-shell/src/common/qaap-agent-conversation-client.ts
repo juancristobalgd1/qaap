@@ -88,6 +88,7 @@ export interface QaapAgentConversationSummaryDTO {
     readonly contextWindowSize?: number;
     readonly contextUsageEstimated?: boolean;
     readonly estimatedContextTokens?: number;
+    readonly contextCompaction?: QaapContextCompactionDTO;
 }
 
 export type QaapAgentMessageSegmentDTO =
@@ -122,6 +123,15 @@ export interface QaapAgentMessageDTO {
     readonly error?: string;
     /** Client-only attachment previews for optimistic pending-user rows (never sent to VPS). */
     readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
+}
+
+export interface QaapContextCompactionDTO {
+    readonly status: 'running' | 'complete';
+    readonly summary?: string;
+    readonly startedAt: number;
+    readonly completedAt?: number;
+    readonly compactedMessageCount: number;
+    readonly sourceMessageCount: number;
 }
 
 /** A per-turn working-tree snapshot (Timeline / rollback). Mirrors the backend checkpoint. */
@@ -169,6 +179,7 @@ export interface QaapAgentConversationDTO {
     readonly contextUsage?: QaapAgentContextUsage;
     readonly contextWindowSize?: number;
     readonly contextUsageEstimated?: boolean;
+    readonly contextCompaction?: QaapContextCompactionDTO;
 }
 
 function resolveEffectiveConversationStatus(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO['status'] {
@@ -299,6 +310,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ...(conv.contextUsageEstimated
             ? { estimatedContextTokens: estimateConversationTokensFromMessages(conv.messages, conv.contextPreamble) }
             : {}),
+        ...(conv.contextCompaction ? { contextCompaction: conv.contextCompaction } : {}),
     };
 }
 

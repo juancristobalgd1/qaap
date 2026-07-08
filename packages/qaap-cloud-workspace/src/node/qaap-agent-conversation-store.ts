@@ -18,6 +18,7 @@ import {
     QaapAgentConversationEvent,
     QaapAgentConversationSummary,
     QaapAgentMessage,
+    QaapContextCompaction,
     QaapConversationCheckpoint,
     QaapCreateAgentConversationRequest,
     QaapLinkConversationsByBranchRequest,
@@ -61,7 +62,11 @@ import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/q
 import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
-import { buildConversationAgentPrompt } from '../common/qaap-agent-conversation-prompt';
+import {
+    buildConversationAgentPrompt,
+    partitionConversationHistory,
+    shouldCompressConversationPrompt,
+} from '../common/qaap-agent-conversation-prompt';
 import { deriveConversationTitle } from '../common/qaap-conversation-title';
 import {
     areAllSubtasksSettled,
@@ -382,6 +387,11 @@ export class QaapAgentConversationStore {
         this.recordSubmitLatencyMarks(id, latencyMarks);
         this.streamMetrics.recordLatencyMark(id, 'backend_user_message_persisted');
         this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        next = this.prepareContextCompactionForTurn(next);
+        if (this.conversations.get(id) !== next) {
+            this.conversations.set(id, next);
+            this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        }
 
         let task: QaapAgentTask | undefined;
         try {
@@ -1639,6 +1649,92 @@ export class QaapAgentConversationStore {
         return last;
     }
 
+    protected prepareContextCompactionForTurn(conv: QaapAgentConversation): QaapAgentConversation {
+        if (conv.messages.length < 6 || !shouldCompressConversationPrompt(conv.messages, conv.contextPreamble, conv.contextWindowSize)) {
+            return conv;
+        }
+        const lastUser = conv.messages[conv.messages.length - 1];
+        if (lastUser?.role !== 'user') {
+            return conv;
+        }
+        const history = conv.messages.slice(0, -1);
+        const { compressed } = partitionConversationHistory(history);
+        if (compressed.length === 0) {
+            return conv;
+        }
+        const existing = conv.contextCompaction;
+        if (existing?.status === 'complete' && existing.compactedMessageCount >= compressed.length && existing.summary?.trim()) {
+            return conv;
+        }
+        const now = Date.now();
+        const running: QaapContextCompaction = {
+            status: 'running',
+            startedAt: now,
+            compactedMessageCount: compressed.length,
+            sourceMessageCount: conv.messages.length,
+        };
+        const withRunning: QaapAgentConversation = {
+            ...conv,
+            contextCompaction: running,
+            updatedAt: now,
+        };
+        this.conversations.set(conv.id, withRunning);
+        this.fire({ type: 'updated', conversation: toConversationSummary(withRunning) });
+
+        return {
+            ...withRunning,
+            contextCompaction: {
+                ...running,
+                status: 'complete',
+                summary: this.buildContextCompactionSummary(compressed),
+                completedAt: Date.now(),
+            },
+            contextUsageEstimated: true,
+            contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
+            updatedAt: Date.now(),
+        };
+    }
+
+    protected buildContextCompactionSummary(messages: readonly QaapAgentMessage[]): string {
+        const lines: string[] = [
+            'Automatic context compaction summary. Use this as the authoritative memory for earlier turns.',
+        ];
+        let lastRole: 'User' | 'Assistant' | undefined;
+        for (const message of messages) {
+            const body = this.contextCompactionMessageText(message);
+            if (!body) {
+                continue;
+            }
+            const role = message.role === 'user' ? 'User' : 'Assistant';
+            const prefix = role === lastRole ? '-' : `${role}:`;
+            lines.push(`${prefix} ${body}`);
+            lastRole = role;
+            if (lines.join('\n').length > 5_500) {
+                lines.push('…');
+                break;
+            }
+        }
+        return lines.join('\n');
+    }
+
+    protected contextCompactionMessageText(message: QaapAgentMessage): string {
+        const parts: string[] = [];
+        const content = message.content.replace(/\s+/g, ' ').trim();
+        if (content) {
+            parts.push(content);
+        }
+        for (const segment of message.segments ?? []) {
+            if (segment.type === 'text' && segment.content.trim()) {
+                parts.push(segment.content.replace(/\s+/g, ' ').trim());
+            } else if (segment.type === 'tool') {
+                const result = segment.result?.replace(/\s+/g, ' ').trim();
+                parts.push(result ? `[tool ${segment.name}] ${result}` : `[tool ${segment.name}]`);
+            }
+        }
+        const text = parts.join(' ').trim();
+        return text.length > 520 ? `${text.slice(0, 519).trimEnd()}…` : text;
+    }
+
     protected buildTaskCreateRequest(
         conv: QaapAgentConversation,
         turnAgentId: string,
@@ -1691,18 +1787,33 @@ export class QaapAgentConversationStore {
     protected buildPrompt(conv: QaapAgentConversation): string {
         const lastUser = conv.messages[conv.messages.length - 1];
         const skipDelegation = isTeamSynthesisUserMessage(lastUser.content);
-        const history = conv.messages.slice(0, -1);
+        const compaction = conv.contextCompaction?.status === 'complete' && conv.contextCompaction.summary?.trim()
+            ? conv.contextCompaction
+            : undefined;
+        const historyStart = compaction?.compactedMessageCount ?? 0;
+        const history = conv.messages.slice(historyStart, -1);
         const latestUser = this.stripLeadingAgentMention(lastUser.content);
         if (history.length === 0) {
-            return skipDelegation ? latestUser : this.appendTeamDelegation(latestUser, conv.agentId);
+            const prompt = compaction
+                ? `${this.contextPreambleWithCompaction(conv.contextPreamble, compaction.summary!)}\n\nNow respond to the latest user message:\n\nUSER: ${latestUser}`
+                : latestUser;
+            return skipDelegation ? prompt : this.appendTeamDelegation(prompt, conv.agentId);
         }
         const transcript = buildConversationAgentPrompt({
             history,
             latestUserContent: latestUser,
-            contextPreamble: conv.contextPreamble,
+            contextPreamble: compaction
+                ? this.contextPreambleWithCompaction(conv.contextPreamble, compaction.summary!)
+                : conv.contextPreamble,
             contextWindowSize: conv.contextWindowSize,
         });
         return skipDelegation ? transcript : this.appendTeamDelegation(transcript, conv.agentId);
+    }
+
+    protected contextPreambleWithCompaction(contextPreamble: string | undefined, summary: string): string {
+        const parts = [contextPreamble?.trim(), `Earlier conversation context has been compacted:\n${summary.trim()}`]
+            .filter((part): part is string => !!part);
+        return parts.join('\n\n');
     }
 
     /** Inject lightweight team-delegation instructions so the leader can spawn sub-tasks via `qaap-task`. */

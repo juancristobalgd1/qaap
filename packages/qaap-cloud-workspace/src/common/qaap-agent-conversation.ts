@@ -67,6 +67,15 @@ export interface QaapAgentMessage {
     readonly error?: string;
 }
 
+export interface QaapContextCompaction {
+    readonly status: 'running' | 'complete';
+    readonly summary?: string;
+    readonly startedAt: number;
+    readonly completedAt?: number;
+    readonly compactedMessageCount: number;
+    readonly sourceMessageCount: number;
+}
+
 /** A working-tree snapshot anchored to a conversation turn (Timeline / rollback). */
 export interface QaapConversationCheckpoint {
     readonly id: string;
@@ -140,6 +149,8 @@ export interface QaapAgentConversation {
     readonly contextWindowSize?: number;
     /** When true, {@link contextUsage} is absent and the UI may show a transcript-based estimate. */
     readonly contextUsageEstimated?: boolean;
+    /** Internal long-context summary used for future turns and rendered as a transcript system marker. */
+    readonly contextCompaction?: QaapContextCompaction;
     /** Login of the user who owns this conversation — used for multi-tenant isolation. */
     readonly ownerLogin?: string;
 }
@@ -195,6 +206,7 @@ export interface QaapAgentConversationSummary {
     readonly contextUsageEstimated?: boolean;
     /** Cached estimate for list rows when {@link contextUsageEstimated} is set. */
     readonly estimatedContextTokens?: number;
+    readonly contextCompaction?: QaapContextCompaction;
 }
 
 /** Conversations bucketed by project working directory. */
@@ -354,6 +366,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         parallelBaseCwd: conv.parallelBaseCwd,
         worktreeBranch: conv.worktreeBranch,
         linkedPullRequest: conv.linkedPullRequest,
+        contextCompaction: conv.contextCompaction,
     };
     const metrics = buildConversationListMetrics({ status, messages: conv.messages });
     const hasGitOperation = metrics.hasGitOperation || conv.linkedPullRequest

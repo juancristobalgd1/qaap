@@ -17,6 +17,7 @@ export type QaapConversationSummaryField =
     | 'priority'
     | 'paused'
     | 'contextUsage'
+    | 'contextCompaction'
     | 'linesChanged'
     | 'linkedPullRequest'
     | 'activityLabel'
@@ -53,6 +54,7 @@ const SUMMARY_FIELD_KEYS: readonly (keyof QaapAgentConversationSummaryDTO)[] = [
     'priority',
     'paused',
     'contextUsage',
+    'contextCompaction',
     'linesAdded',
     'linesRemoved',
     'linkedPullRequest',

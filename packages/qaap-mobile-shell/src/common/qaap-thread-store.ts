@@ -118,13 +118,15 @@ export class QaapThreadStore {
             return;
         }
         if (document.status === summary.status
-            && document.updatedAt >= summary.updatedAt) {
+            && document.updatedAt >= summary.updatedAt
+            && JSON.stringify(document.contextCompaction) === JSON.stringify(summary.contextCompaction)) {
             return;
         }
         this.documents.set(conversationId, {
             ...document,
             status: summary.status,
             updatedAt: Math.max(document.updatedAt, summary.updatedAt),
+            contextCompaction: summary.contextCompaction,
         });
     }
 
