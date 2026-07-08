@@ -31,7 +31,7 @@ import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
-import { createTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from './qaap-transcript-code-view';
+import { createTranscriptCodeView, patchTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from './qaap-transcript-code-view';
 
 /** Data attribute: stable id of the execution event a `section` element renders. */
 const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
@@ -895,25 +895,14 @@ export function tryPatchMobileExecutionEventTimeline(
         if (prevEvent.id !== nextEvent.id) {
             return false;
         }
-        // Args can keep streaming in after an event/tool has already been
-        // classified, which can flip its resolved kind (e.g. a `run` command
+        // Event `kind` can flip while args stream in (e.g. a `run` command
         // turning out to be a `verification` command once the full args are
-        // in). The section class, group icon/verb, and terminal label are all
-        // derived from `kind`, so a mismatch here means the DOM would render
-        // stale chrome — fall back to a full rebuild instead of patching text.
-        if (prevEvent.kind !== nextEvent.kind) {
-            return false;
-        }
-        // A synthetic narrative renders no <p> at all (see
-        // createMobileExecutionEventElement), so a transition between
-        // synthetic and agent-authored narrative changes whether the section
-        // even has a narrative element to patch. This is a rare transition
-        // (agent text arriving after a synthetic placeholder was already
-        // rendered) — fall back to a full rebuild instead of trying to
-        // insert/remove the <p> in place.
-        if ((prevEvent.narrativeSource === 'synthetic') !== (nextEvent.narrativeSource === 'synthetic')) {
-            return false;
-        }
+        // in), and a synthetic narrative can be replaced by agent-authored
+        // text. Both used to force a full rebuild here, which recreated every
+        // node and visibly restarted the shimmer/spinner animations mid-edit.
+        // patchMobileExecutionEventSection now patches the kind-derived chrome
+        // (section class, group icon/verb, tool rows) and inserts/removes the
+        // narrative <p> in place instead.
         if (nextEvent.tools.length < prevEvent.tools.length) {
             return false;
         }
@@ -977,17 +966,28 @@ function patchMobileExecutionEventSection(
     prev: MobileExecutionEvent,
     next: MobileExecutionEvent,
 ): void {
-    const narrativeEl = section.querySelector<HTMLElement>(':scope > p.theia-mobile-execution-event-narrative');
-    if (narrativeEl) {
-        if (prev.narrative !== next.narrative) {
+    // A synthetic narrative renders no <p> at all (see
+    // createMobileExecutionEventElement), so a synthetic↔agent transition
+    // inserts or removes the narrative element in place.
+    const existingNarrative = section.querySelector<HTMLElement>(':scope > p.theia-mobile-execution-event-narrative');
+    if (next.narrativeSource === 'synthetic') {
+        existingNarrative?.remove();
+    } else {
+        let narrativeEl = existingNarrative;
+        if (!narrativeEl) {
+            narrativeEl = document.createElement('p');
+            narrativeEl.className = 'theia-mobile-execution-event-narrative theia-mod-agent';
             narrativeEl.textContent = next.narrative;
-        }
-        if (prev.narrativeSource !== next.narrativeSource) {
-            narrativeEl.classList.toggle('theia-mod-synthetic', next.narrativeSource === 'synthetic');
-            narrativeEl.classList.toggle('theia-mod-agent', next.narrativeSource === 'agent');
+            section.prepend(narrativeEl);
+        } else if (prev.narrative !== next.narrative) {
+            narrativeEl.textContent = next.narrative;
         }
     }
 
+    if (prev.kind !== next.kind) {
+        section.classList.remove(`theia-mod-${prev.kind}`);
+        section.classList.add(`theia-mod-${next.kind}`);
+    }
     section.classList.toggle('theia-mod-error', next.hasError);
     section.classList.toggle('theia-mod-running', next.hasPending);
 
@@ -1000,6 +1000,10 @@ function patchMobileExecutionEventSection(
     }
     group.className = `theia-mobile-tool-group ${next.hasError ? 'failed' : ''} ${next.hasPending ? 'running' : 'finished'}`;
 
+    const icon = group.querySelector<HTMLElement>('.theia-mobile-tool-group-icon');
+    if (icon && prev.icon !== next.icon) {
+        icon.className = `codicon ${next.icon} theia-mobile-tool-group-icon`;
+    }
     const meta = group.querySelector<HTMLElement>('.theia-mobile-tool-group-meta');
     if (meta) {
         meta.classList.toggle('theia-mod-shimmer', next.hasPending);
@@ -1011,6 +1015,9 @@ function patchMobileExecutionEventSection(
     const verb = group.querySelector<HTMLElement>('.theia-mobile-tool-group-verb');
     if (verb) {
         verb.classList.toggle('theia-mod-shimmer', next.hasPending);
+        if (prev.verb !== next.verb) {
+            verb.textContent = next.verb;
+        }
     }
 
     const state = group.querySelector<HTMLElement>('.theia-mobile-tool-group-state');
@@ -1030,7 +1037,7 @@ function patchMobileExecutionEventSection(
     for (let j = 0; j < prev.tools.length; j++) {
         const el = detailsContainer.children.item(j) as HTMLElement | null;
         if (el) {
-            patchMobileToolDetail(el, prev.tools[j], next.tools[j], next, j);
+            patchMobileToolDetail(el, prev.tools[j], next.tools[j], prev, next, j);
         }
     }
     for (let j = prev.tools.length; j < next.tools.length; j++) {
@@ -1047,11 +1054,17 @@ function renderMobileTerminalOutput(content: HTMLElement, result: string): void 
     const clean = stripAnsiEscapes(result);
     const existing = content.querySelector<HTMLElement>('.theia-mobile-terminal-output-pre, .theia-mobile-terminal-output-code-view');
     const language = resolveMobileTerminalOutputLanguage(clean);
-    const next = createMobileTerminalCodeView(clean, language);
     const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
     if (placeholder) {
         placeholder.remove();
     }
+    // Streaming output grows tick by tick — patch the existing view so only
+    // changed/new lines are re-tokenized, instead of rebuilding (and
+    // re-highlighting) the entire output on every tick.
+    if (existing && patchTranscriptCodeView(existing, clean, language)) {
+        return;
+    }
+    const next = createMobileTerminalCodeView(clean, language);
     if (existing) {
         existing.replaceWith(next);
     } else {
@@ -1100,6 +1113,7 @@ function patchMobileToolDetail(
     el: HTMLElement,
     prevTool: MobileExecutionTool,
     nextTool: MobileExecutionTool,
+    prevEvent: MobileExecutionEvent,
     event: MobileExecutionEvent,
     index: number,
 ): void {
@@ -1155,9 +1169,49 @@ function patchMobileToolDetail(
         return;
     }
 
-    if (prevTool.detail !== nextTool.detail || prevTool.isError !== nextTool.isError) {
+    // Structural transitions (error flip adds an error icon, a kind flip
+    // changes icon/link semantics) are rare one-shot changes and plain rows
+    // carry no animations, so a targeted row replace is safe there.
+    if (prevTool.isError !== nextTool.isError || prevEvent.kind !== event.kind) {
         el.replaceWith(createMobileToolDetailElement(event, nextTool, index));
+        return;
     }
+    if (prevTool.detail === nextTool.detail && prevTool.filePath === nextTool.filePath) {
+        return;
+    }
+
+    // Hot path — the detail (usually a file path) keeps changing while args
+    // stream in. Mutate the row in place instead of replacing it so nothing
+    // repaints beyond the changed text.
+    const kindIsFile = isMobileFileDetailKind(event.kind);
+    const shouldHaveIcon = kindIsFile && !!nextTool.detail;
+    const existingIcon = el.querySelector<HTMLElement>(':scope > .theia-mobile-tool-detail-file-icon');
+    if (!shouldHaveIcon) {
+        existingIcon?.remove();
+    } else if (existingIcon) {
+        const iconClass = `codicon ${getFileIconClass(nextTool.detail)} theia-mobile-tool-detail-file-icon`;
+        if (existingIcon.className !== iconClass) {
+            existingIcon.className = iconClass;
+        }
+    } else {
+        el.prepend(createMobileFileIconSpan(nextTool.detail));
+    }
+
+    const detailSpan = el.querySelector<HTMLElement>(':scope > .theia-mobile-tool-detail-detail');
+    if (!detailSpan) {
+        el.replaceWith(createMobileToolDetailElement(event, nextTool, index));
+        return;
+    }
+    const canOpenFile = kindIsFile && event.kind !== 'delete' && !!nextTool.filePath;
+    const couldOpenFile = kindIsFile && event.kind !== 'delete' && !!prevTool.filePath;
+    if (canOpenFile !== couldOpenFile || prevTool.filePath !== nextTool.filePath) {
+        // The file-link wiring captures `filePath` in its listeners — swap
+        // just the span (no animations attached) instead of the whole row.
+        detailSpan.replaceWith(createMobileToolFileDetailSpan(nextTool, canOpenFile));
+    } else if (prevTool.detail !== nextTool.detail) {
+        detailSpan.textContent = nextTool.detail;
+    }
+    el.classList.toggle('theia-mod-clickable', canOpenFile);
 }
 
 /** Open/closed `<details>` state captured before a fallback full rebuild, keyed

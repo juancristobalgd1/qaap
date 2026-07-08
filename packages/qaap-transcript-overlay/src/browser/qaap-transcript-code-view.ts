@@ -88,6 +88,11 @@ export function normalizeTranscriptCodeText(text: string, language: TranscriptCo
     }
 }
 
+/** Raw (normalized) lines last rendered into a code view, keyed by the wrap
+ *  element, so {@link patchTranscriptCodeView} can re-tokenize only changed
+ *  lines instead of rebuilding the whole view on every streaming tick. */
+const codeViewLinesCache = new WeakMap<HTMLElement, string[]>();
+
 export function createTranscriptCodeView(text: string, language: TranscriptCodeLanguage): HTMLElement {
     const normalized = normalizeTranscriptCodeText(text, language);
     const wrap = document.createElement('div');
@@ -96,19 +101,73 @@ export function createTranscriptCodeView(text: string, language: TranscriptCodeL
     linesHost.className = 'theia-mobile-agent-code-lines';
     const lines = normalized.split('\n');
     for (let index = 0; index < lines.length; index++) {
-        const row = document.createElement('div');
-        row.className = 'theia-mobile-agent-code-line';
-        const gutter = document.createElement('span');
-        gutter.className = 'theia-mobile-agent-code-gutter';
-        gutter.textContent = String(index + 1);
-        const code = document.createElement('code');
-        code.className = 'theia-mobile-agent-code-text';
-        appendHighlightedLine(code, lines[index] ?? '', language);
-        row.append(gutter, code);
-        linesHost.append(row);
+        linesHost.append(createTranscriptCodeLineRow(lines[index] ?? '', index, language));
     }
     wrap.append(linesHost);
+    codeViewLinesCache.set(wrap, lines);
     return wrap;
+}
+
+function createTranscriptCodeLineRow(line: string, index: number, language: TranscriptCodeLanguage): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'theia-mobile-agent-code-line';
+    const gutter = document.createElement('span');
+    gutter.className = 'theia-mobile-agent-code-gutter';
+    gutter.textContent = String(index + 1);
+    const code = document.createElement('code');
+    code.className = 'theia-mobile-agent-code-text';
+    appendHighlightedLine(code, line, language);
+    row.append(gutter, code);
+    return row;
+}
+
+/**
+ * Patches a code view previously built by {@link createTranscriptCodeView} so
+ * it shows `text`, re-tokenizing only the lines that actually changed —
+ * streaming output typically appends, so unchanged prefix lines keep their DOM
+ * nodes untouched. Returns `false` (without mutating anything) when the view
+ * can't be patched safely — different language, foreign element, or DOM shape
+ * that no longer matches the cache — so callers fall back to a full rebuild.
+ */
+export function patchTranscriptCodeView(view: HTMLElement, text: string, language: TranscriptCodeLanguage): boolean {
+    if (!view.classList.contains('theia-mobile-agent-code-view') || !view.classList.contains(`theia-mod-${language}`)) {
+        return false;
+    }
+    const linesHost = view.querySelector<HTMLElement>(':scope > .theia-mobile-agent-code-lines');
+    const prevLines = codeViewLinesCache.get(view);
+    if (!linesHost || !prevLines || linesHost.children.length !== prevLines.length) {
+        return false;
+    }
+    const nextLines = normalizeTranscriptCodeText(text, language).split('\n');
+
+    // Validate before mutating: collect the <code> hosts of every line that
+    // needs re-tokenizing, so a shape mismatch bails with the DOM untouched
+    // rather than leaving it half-patched.
+    const shared = Math.min(prevLines.length, nextLines.length);
+    const changed: Array<{ code: HTMLElement; line: string }> = [];
+    for (let index = 0; index < shared; index++) {
+        if (prevLines[index] === nextLines[index]) {
+            continue;
+        }
+        const code = linesHost.children.item(index)?.querySelector<HTMLElement>(':scope > .theia-mobile-agent-code-text');
+        if (!code) {
+            return false;
+        }
+        changed.push({ code, line: nextLines[index] ?? '' });
+    }
+
+    for (const entry of changed) {
+        entry.code.textContent = '';
+        appendHighlightedLine(entry.code, entry.line, language);
+    }
+    for (let index = prevLines.length - 1; index >= nextLines.length; index--) {
+        linesHost.children.item(index)?.remove();
+    }
+    for (let index = prevLines.length; index < nextLines.length; index++) {
+        linesHost.append(createTranscriptCodeLineRow(nextLines[index] ?? '', index, language));
+    }
+    codeViewLinesCache.set(view, nextLines);
+    return true;
 }
 
 function looksLikeJson(text: string): boolean {

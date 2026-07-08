@@ -8,6 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     createTranscriptCodeView,
     normalizeTranscriptCodeText,
+    patchTranscriptCodeView,
     resolveTranscriptCodeLanguage,
 } from './qaap-transcript-code-view';
 
@@ -88,5 +89,66 @@ describe('qaap-transcript-code-view', () => {
         expect(view.querySelector('.theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('npx');
         expect([...view.querySelectorAll('.theia-mobile-agent-token.theia-mod-path')].map(node => node.textContent)).to.include('src/store.test.ts');
         expect([...view.querySelectorAll('.theia-mobile-agent-token.theia-mod-sep')].map(node => node.textContent?.trim())).to.include('|');
+    });
+
+    describe('patchTranscriptCodeView', () => {
+
+        it('appends new lines without touching unchanged line nodes', () => {
+            const view = createTranscriptCodeView('line one\nline two', 'log');
+            const firstRow = view.querySelectorAll('.theia-mobile-agent-code-line')[0];
+
+            expect(patchTranscriptCodeView(view, 'line one\nline two\nline three', 'log')).to.equal(true);
+
+            const rows = view.querySelectorAll('.theia-mobile-agent-code-line');
+            expect(rows.length).to.equal(3);
+            expect(rows[0]).to.equal(firstRow);
+            expect(rows[2]?.querySelector('.theia-mobile-agent-code-gutter')?.textContent).to.equal('3');
+            expect(rows[2]?.querySelector('.theia-mobile-agent-code-text')?.textContent).to.equal('line three');
+        });
+
+        it('re-tokenizes only the lines that changed', () => {
+            const view = createTranscriptCodeView('first line\nsecond line', 'log');
+            const rows = view.querySelectorAll('.theia-mobile-agent-code-line');
+            const firstCode = rows[0]?.querySelector('.theia-mobile-agent-code-text');
+            const secondCode = rows[1]?.querySelector('.theia-mobile-agent-code-text');
+
+            expect(patchTranscriptCodeView(view, 'first line\nsecond line CHANGED', 'log')).to.equal(true);
+
+            expect(rows[0]?.querySelector('.theia-mobile-agent-code-text')).to.equal(firstCode);
+            expect(rows[1]?.querySelector('.theia-mobile-agent-code-text')).to.equal(secondCode);
+            expect(secondCode?.textContent).to.equal('second line CHANGED');
+        });
+
+        it('removes trailing lines when the content shrinks', () => {
+            const view = createTranscriptCodeView('a\nb\nc', 'log');
+
+            expect(patchTranscriptCodeView(view, 'a\nb', 'log')).to.equal(true);
+
+            expect(view.querySelectorAll('.theia-mobile-agent-code-line').length).to.equal(2);
+        });
+
+        it('bails without mutating when the language changes', () => {
+            const view = createTranscriptCodeView('$ npm test', 'shell');
+            const before = view.innerHTML;
+
+            expect(patchTranscriptCodeView(view, '{"a": 1}', 'json')).to.equal(false);
+
+            expect(view.innerHTML).to.equal(before);
+        });
+
+        it('bails on elements it did not create', () => {
+            const foreign = document.createElement('div');
+            expect(patchTranscriptCodeView(foreign, 'text', 'log')).to.equal(false);
+        });
+
+        it('leaves the view rendering the patched text (round-trip with create)', () => {
+            const view = createTranscriptCodeView('one', 'log');
+
+            expect(patchTranscriptCodeView(view, 'one\ntwo', 'log')).to.equal(true);
+            expect(patchTranscriptCodeView(view, 'one\ntwo', 'log')).to.equal(true);
+
+            const fresh = createTranscriptCodeView('one\ntwo', 'log');
+            expect(view.textContent).to.equal(fresh.textContent);
+        });
     });
 });
