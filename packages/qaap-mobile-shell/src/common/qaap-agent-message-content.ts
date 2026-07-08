@@ -11,6 +11,7 @@ import {
     extractComposerAttachmentImagePaths,
     stripComposerAttachmentPreamble,
 } from './qaap-composer-attachment-prompt';
+import { parseComposerSkillDisplayMarker, type ComposerSkillDisplayMetadata } from './qaap-composer-skill-display';
 import { isQaiqStreamMetadataEnvelope } from './qaap-qaiq-stream';
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 
@@ -66,6 +67,7 @@ type MessagePreviewLike = {
 export interface TranscriptUserMessageView {
     readonly displayText: string;
     readonly imagePreviews: readonly QaapTranscriptUserImagePreview[];
+    readonly skillInvocation?: ComposerSkillDisplayMetadata;
 }
 
 function basenameFromWorkspacePath(path: string): string {
@@ -86,22 +88,45 @@ export function resolveTranscriptUserMessageView(
 ): TranscriptUserMessageView {
     const raw = resolveMessagePreviewText(message);
     if (message?.optimisticImagePreviews?.length) {
+        const display = resolveTranscriptUserSkillDisplay(stripComposerAttachmentPreamble(raw));
         return {
-            displayText: stripComposerAttachmentPreamble(raw),
+            displayText: display.displayText,
             imagePreviews: message.optimisticImagePreviews,
+            ...(display.skillInvocation ? { skillInvocation: display.skillInvocation } : {}),
         };
     }
     const imagePaths = extractComposerAttachmentImagePaths(raw);
     if (imagePaths.length === 0) {
-        return { displayText: raw, imagePreviews: [] };
+        return {
+            ...resolveTranscriptUserSkillDisplay(raw),
+            imagePreviews: [],
+        };
     }
+    const display = resolveTranscriptUserSkillDisplay(stripComposerAttachmentPreamble(raw));
     return {
-        displayText: stripComposerAttachmentPreamble(raw),
+        displayText: display.displayText,
+        ...(display.skillInvocation ? { skillInvocation: display.skillInvocation } : {}),
         imagePreviews: imagePaths.map(path => ({
             src: '',
             fileName: basenameFromWorkspacePath(path),
             wsRelativePath: path,
         })),
+    };
+}
+
+function resolveTranscriptUserSkillDisplay(text: string): Pick<TranscriptUserMessageView, 'displayText' | 'skillInvocation'> {
+    const skillInvocation = parseComposerSkillDisplayMarker(text);
+    if (!skillInvocation) {
+        return { displayText: text };
+    }
+    const displayParts = [
+        skillInvocation.prefix,
+        `/${skillInvocation.skillName}`,
+        skillInvocation.userText,
+    ].map(part => part?.trim()).filter((part): part is string => !!part);
+    return {
+        displayText: displayParts.join(' '),
+        skillInvocation,
     };
 }
 

@@ -8,6 +8,7 @@ import { URI } from '@theia/core';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { parseSkillFile, type Skill } from '@theia/ai-core/lib/common/skill';
 import type { SkillService } from '@theia/ai-core/lib/browser/skill-service';
+import { createComposerSkillDisplayMarker } from './qaap-composer-skill-display';
 
 /** Same kebab-case names as {@link SkillService} / Cursor skills folders. */
 const COMPOSER_SKILL_SLASH_PATTERN = /(?:^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+([\s\S]*))?$/;
@@ -64,6 +65,11 @@ export async function expandComposerSkillSlashCommands(
         skillBody,
     ].join('\n');
 
-    const segments = [prefix, skillBlock, trailingUserText].filter(segment => segment.length > 0);
+    const displayMarker = createComposerSkillDisplayMarker({
+        skillName,
+        prefix,
+        userText: trailingUserText,
+    });
+    const segments = [displayMarker, prefix, skillBlock, trailingUserText].filter(segment => segment.length > 0);
     return segments.join('\n\n');
 }

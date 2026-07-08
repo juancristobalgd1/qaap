@@ -6,6 +6,7 @@
 
 import { expect } from 'chai';
 import { expandComposerSkillSlashCommands, type ComposerSkillSubmitDeps } from './qaap-composer-skill-submit';
+import { parseComposerSkillDisplayMarker } from './qaap-composer-skill-display';
 
 describe('qaap-composer-skill-submit', () => {
 
@@ -26,6 +27,11 @@ describe('qaap-composer-skill-submit', () => {
         expect(result).to.contain('Run react-doctor on the diff.');
         expect(result).to.contain('review login');
         expect(result).to.not.contain('/react-doctor');
+        expect(parseComposerSkillDisplayMarker(result)).to.deep.equal({
+            skillName: 'react-doctor',
+            prefix: '',
+            userText: 'review login',
+        });
     });
 
     it('leaves drafts without a known skill unchanged', async () => {

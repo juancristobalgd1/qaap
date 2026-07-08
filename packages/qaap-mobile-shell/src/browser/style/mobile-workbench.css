@@ -8508,36 +8508,36 @@ body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
 }
 
 .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-skill {
-  color: #D9F2FF;
-  background: color-mix(in srgb, #38BDF8 34%, #1f1f1f);
+  color: #FFD89A;
+  background: color-mix(in srgb, #D8953A 38%, #1f1f1f);
   border-radius: 7px;
   font-weight: 650;
   box-shadow:
-    0 0 0 2px color-mix(in srgb, #38BDF8 24%, transparent),
-    0 0 16px color-mix(in srgb, #38BDF8 24%, transparent);
+    0 0 0 2px color-mix(in srgb, #D8953A 24%, transparent),
+    0 0 16px color-mix(in srgb, #D8953A 24%, transparent);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
 
 .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-slash-command {
-  color: #D9F2FF;
-  background: color-mix(in srgb, #38BDF8 38%, #1f1f1f);
+  color: #FFD89A;
+  background: color-mix(in srgb, #D8953A 42%, #1f1f1f);
   border-radius: 7px;
   font-weight: 650;
   box-shadow:
-    0 0 0 2px color-mix(in srgb, #38BDF8 26%, transparent),
-    0 0 16px color-mix(in srgb, #38BDF8 28%, transparent);
+    0 0 0 2px color-mix(in srgb, #D8953A 26%, transparent),
+    0 0 16px color-mix(in srgb, #D8953A 28%, transparent);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
 
 body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-skill,
 body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-slash-command {
-  color: #075985;
-  background: color-mix(in srgb, #7DD3FC 42%, white);
+  color: #6B3F08;
+  background: color-mix(in srgb, #F0B35C 40%, white);
   box-shadow:
-    0 0 0 2px color-mix(in srgb, #38BDF8 24%, transparent),
-    0 0 12px color-mix(in srgb, #38BDF8 18%, transparent);
+    0 0 0 2px color-mix(in srgb, #D8953A 24%, transparent),
+    0 0 12px color-mix(in srgb, #D8953A 18%, transparent);
 }
 
 .theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input {
@@ -17823,6 +17823,40 @@ body>.theia-mobile-transcript-files-menu {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-user-skill-invocation {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--theia-foreground);
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.theia-mobile-agent-transcript-skill-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #D8953A 42%, #1f1f1f);
+  color: #FFD89A;
+  font-weight: 700;
+  line-height: 1.25;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    0 0 0 1px color-mix(in srgb, #D8953A 18%, transparent);
+}
+
+body.qaap-theme-light .theia-mobile-agent-transcript-skill-pill {
+  background: color-mix(in srgb, #F0B35C 40%, white);
+  color: #6B3F08;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 44%, transparent),
+    0 0 0 1px color-mix(in srgb, #D8953A 20%, transparent);
 }
 
 .theia-mobile-agent-transcript-user-attachment-body {

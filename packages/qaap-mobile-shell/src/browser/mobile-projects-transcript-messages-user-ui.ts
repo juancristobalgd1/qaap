@@ -51,7 +51,11 @@ export class MobileProjectsTranscriptMessagesUserUi {
         contentEl.className = 'theia-mobile-agent-transcript-content';
         const displayContent = messageView.displayText;
         if (displayContent.trim()) {
-            this.toolUi.renderTranscriptRichContent(contentEl, displayContent, { defer, sync: !defer });
+            if (messageView.skillInvocation) {
+                this.renderTranscriptUserSkillInvocation(contentEl, messageView.skillInvocation);
+            } else {
+                this.toolUi.renderTranscriptRichContent(contentEl, displayContent, { defer, sync: !defer });
+            }
             row.append(contentEl);
         } else if (!imagePreviews.length) {
             const fallback = resolveTranscriptUserMessageView(msg).displayText;
@@ -77,6 +81,25 @@ export class MobileProjectsTranscriptMessagesUserUi {
             onUndo: () => { void this.undoTranscriptUserMessage(msg, conv); },
         }));
         return wrap;
+    }
+
+    protected renderTranscriptUserSkillInvocation(
+        contentEl: HTMLElement,
+        skillInvocation: NonNullable<ReturnType<typeof resolveTranscriptUserMessageView>['skillInvocation']>,
+    ): void {
+        contentEl.classList.add('theia-mod-user-skill-invocation');
+        const prefix = skillInvocation.prefix?.trim();
+        if (prefix) {
+            contentEl.append(document.createTextNode(`${prefix} `));
+        }
+        const pill = document.createElement('span');
+        pill.className = 'theia-mobile-agent-transcript-skill-pill';
+        pill.textContent = `/${skillInvocation.skillName}`;
+        contentEl.append(pill);
+        const userText = skillInvocation.userText?.trim();
+        if (userText) {
+            contentEl.append(document.createTextNode(` ${userText}`));
+        }
     }
 
     createTranscriptUserImagePreviews(previews: readonly QaapTranscriptUserImagePreview[]): HTMLElement {

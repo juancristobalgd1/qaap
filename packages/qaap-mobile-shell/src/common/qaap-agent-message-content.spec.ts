@@ -11,6 +11,7 @@ import {
     resolveTranscriptUserMessageView,
 } from './qaap-agent-message-content';
 import { applyResolvedAttachmentsToPrompt } from './qaap-composer-attachment-prompt';
+import { createComposerSkillDisplayMarker } from './qaap-composer-skill-display';
 import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import type { ResolvedAIContextVariable } from '@theia/ai-core';
 
@@ -161,6 +162,31 @@ describe('resolveTranscriptUserMessageView', () => {
                 fileName: 'huggingface-color.svg',
                 wsRelativePath: 'huggingface-color.svg',
             }],
+        });
+    });
+
+    it('compacts expanded skill prompts to a slash pill display text', () => {
+        const content = [
+            createComposerSkillDisplayMarker({
+                skillName: 'loop',
+                userText: 'mejora de rendimiento',
+            }),
+            'Follow the "loop" skill. Skill instructions:',
+            '',
+            '# Long skill markdown',
+            '',
+            'Do many internal things.',
+            '',
+            'mejora de rendimiento',
+        ].join('\n');
+        expect(resolveTranscriptUserMessageView({ content })).to.deep.equal({
+            displayText: '/loop mejora de rendimiento',
+            imagePreviews: [],
+            skillInvocation: {
+                skillName: 'loop',
+                prefix: undefined,
+                userText: 'mejora de rendimiento',
+            },
         });
     });
 });
