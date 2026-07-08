@@ -251,14 +251,48 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (streamingTail) {
             row.classList.add('theia-mod-streaming');
         }
+        // A completed compaction seam is rendered inline, glued to the top of the first
+        // message that survived compaction, so the user can see exactly where the context
+        // was folded (everything above the seam was summarized). The running/live shimmer
+        // stays in the footer — see buildTranscriptVirtualFooter.
+        if (this.transcriptContextCompactionBoundaryIndex(normalized) === index) {
+            const seam = this.createTranscriptContextCompactionRow(normalized);
+            if (seam) {
+                const wrap = document.createElement('div');
+                wrap.className = 'theia-mobile-agent-transcript-compaction-seam';
+                wrap.append(seam, row);
+                return wrap;
+            }
+        }
         return row;
+    }
+
+    /**
+     * Index of the first message that survived a *completed* compaction, i.e. the seam where the
+     * inline "Context automatically compacted" marker is glued. `undefined` while compaction is
+     * still running, when nothing was compacted, or when the boundary falls outside the live list.
+     */
+    protected transcriptContextCompactionBoundaryIndex(conv: QaapAgentConversationDTO): number | undefined {
+        const compaction = conv.contextCompaction;
+        if (!compaction || compaction.status !== 'complete') {
+            return undefined;
+        }
+        const boundary = compaction.compactedMessageCount;
+        if (boundary <= 0 || boundary >= conv.messages.length) {
+            return undefined;
+        }
+        return boundary;
     }
 
     buildTranscriptVirtualFooter(conv: QaapAgentConversationDTO): HTMLElement[] {
         const footers: HTMLElement[] = [];
-        const contextCompaction = this.createTranscriptContextCompactionRow(conv);
-        if (contextCompaction) {
-            footers.push(contextCompaction);
+        // Only the live shimmer belongs in the footer; the completed seam is rendered inline at the
+        // compaction boundary (see createTranscriptMessageRowAtIndex).
+        if (conv.contextCompaction?.status === 'running') {
+            const contextCompaction = this.createTranscriptContextCompactionRow(conv);
+            if (contextCompaction) {
+                footers.push(contextCompaction);
+            }
         }
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming' && conv.messages.at(-1)?.role === 'user') {
             const row = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
@@ -291,7 +325,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             label.classList.add('theia-mod-shimmer');
             label.textContent = nls.localize(
                 'qaap/mobileProjects/contextCompacting',
-                'Compactando el contexto automáticamente',
+                'Automatically compacting context',
             );
         } else {
             const icon = document.createElement('span');
@@ -301,7 +335,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 icon,
                 document.createTextNode(nls.localize(
                     'qaap/mobileProjects/contextCompacted',
-                    'Contexto compactado automáticamente',
+                    'Context automatically compacted',
                 )),
             );
         }
@@ -603,26 +637,28 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
         const last = conv.messages[conv.messages.length - 1];
-        const contextCompaction = this.createTranscriptContextCompactionRow(conv);
+        // The completed seam is emitted inline by createTranscriptMessageRowAtIndex during the loop
+        // above; only the live shimmer is appended here as a footer.
+        const runningCompaction = conv.contextCompaction?.status === 'running'
+            ? this.createTranscriptContextCompactionRow(conv)
+            : undefined;
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
             if (last?.role === 'agent') {
                 messageHost.lastElementChild?.classList.add('theia-mod-streaming');
-                if (contextCompaction) {
-                    messageHost.append(contextCompaction);
+                if (runningCompaction) {
+                    messageHost.append(runningCompaction);
                 }
             } else {
-                if (contextCompaction) {
-                    messageHost.append(contextCompaction);
+                if (runningCompaction) {
+                    messageHost.append(runningCompaction);
                 }
                 const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
                 if (activityRow) {
                     messageHost.append(activityRow);
                 }
             }
-        } else {
-            if (contextCompaction) {
-                messageHost.append(contextCompaction);
-            }
+        } else if (runningCompaction) {
+            messageHost.append(runningCompaction);
         }
         if (newTurnStarted) {
             this.scrollTranscriptToLastUserTurn(messageHost);
