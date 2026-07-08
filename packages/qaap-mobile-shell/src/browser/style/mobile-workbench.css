@@ -8508,8 +8508,36 @@ body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
 }
 
 .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-skill {
-  color: var(--q-accent, var(--qaap-accent, #C4924A));
-  font-weight: 500;
+  color: #D9F2FF;
+  background: color-mix(in srgb, #38BDF8 34%, #1f1f1f);
+  border-radius: 7px;
+  font-weight: 650;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, #38BDF8 24%, transparent),
+    0 0 16px color-mix(in srgb, #38BDF8 24%, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-slash-command {
+  color: #D9F2FF;
+  background: color-mix(in srgb, #38BDF8 38%, #1f1f1f);
+  border-radius: 7px;
+  font-weight: 650;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, #38BDF8 26%, transparent),
+    0 0 16px color-mix(in srgb, #38BDF8 28%, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-skill,
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-slash-command {
+  color: #075985;
+  background: color-mix(in srgb, #7DD3FC 42%, white);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, #38BDF8 24%, transparent),
+    0 0 12px color-mix(in srgb, #38BDF8 18%, transparent);
 }
 
 .theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input {

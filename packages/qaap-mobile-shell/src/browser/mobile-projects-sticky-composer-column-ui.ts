@@ -362,6 +362,19 @@ export class MobileProjectsStickyComposerColumnUi {
             });
         });
 
+        const inputEditor = document.createElement('div');
+        inputEditor.className = 'theia-mobile-projects-sticky-composer-input-editor';
+        inputEditor.append(input);
+        const syntaxHighlight = options.getSkillNames || options.getSlashMenuSections
+            ? attachStickyComposerSyntaxHighlight({
+                inputEditor,
+                input,
+                getSkillNames: options.getSkillNames,
+                getSlashCommandNames: () => options.getSlashMenuSections?.()
+                    .flatMap(section => section.entries.map(entry => entry.label)) ?? [],
+            })
+            : undefined;
+
         if (options.getMentionOptions || options.getVariableOptions || options.getSkillOptions || options.getSlashMenuSections) {
             attachStickyComposerMentionUi({
                 inputWrap: inputPanel,
@@ -377,22 +390,12 @@ export class MobileProjectsStickyComposerColumnUi {
                 onBrowseMcpMarketplace: options.onBrowseMcpMarketplace,
                 onDraftChange: value => {
                     options.setDraft(value);
+                    syntaxHighlight?.refresh();
                     updateSend();
                 },
                 afterInputChange: options.afterInputChange,
                 mentionButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerMention', 'Mention agent (@)'),
                 variableButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerVariable', 'Insert variable (#)'),
-            });
-        }
-
-        const inputEditor = document.createElement('div');
-        inputEditor.className = 'theia-mobile-projects-sticky-composer-input-editor';
-        inputEditor.append(input);
-        if (options.getSkillNames) {
-            attachStickyComposerSyntaxHighlight({
-                inputEditor,
-                input,
-                getSkillNames: options.getSkillNames,
             });
         }
 

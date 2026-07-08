@@ -47,3 +47,52 @@ export function resolveAgentSpawnIdentity(
     }
     return identity;
 }
+
+/** Env var to explicitly accept the risk of running the agent as root in a production runtime. */
+export const QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION = 'QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION';
+
+/** Outcome of the fail-closed isolation policy: whether a spawn must be refused, and why. */
+export interface QaapAgentIsolationDecision {
+    /** True when the spawn must be refused because the agent would run as root in a production runtime. */
+    readonly refuse: boolean;
+    /** Human-readable reason, surfaced to the task log and console when `refuse` is true. */
+    readonly reason?: string;
+}
+
+/**
+ * Whether this is a hosted/production runtime. Mirrors `QaapGithubAuthGuard.isProductionRuntime`
+ * (`packages/qaap-mobile-shell/src/node/qaap-github-auth-guard.ts`) deliberately: a run is production
+ * when `NODE_ENV=production` or `QAAP_CLOUD_MODE` is set to anything other than `local`. Keep in sync.
+ */
+export function isQaapProductionRuntime(env: NodeJS.ProcessEnv): boolean {
+    const cloudMode = env.QAAP_CLOUD_MODE?.trim().toLowerCase();
+    return env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
+}
+
+/**
+ * Fail-closed guard for the shared-container isolation risk. In a production runtime the agent must
+ * NOT run as root: as root with `--dangerously-skip-permissions` it can read every tenant's secrets,
+ * tokens and code on the shared filesystem. Refuse the spawn unless privileges are dropped
+ * (`QAAP_AGENT_UID`, which the shipped image defaults to `1001`) or an operator explicitly accepts the
+ * risk via `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION`.
+ *
+ * Local/single-user dev is unaffected: nothing is refused when the backend is not root or the runtime
+ * is not production.
+ */
+export function evaluateAgentIsolationPolicy(env: NodeJS.ProcessEnv, isRoot: boolean): QaapAgentIsolationDecision {
+    const identity = resolveAgentSpawnIdentity(env, isRoot);
+    const agentRunsAsRoot = isRoot && identity.uid === undefined;
+    if (!agentRunsAsRoot || !isQaapProductionRuntime(env)) {
+        return { refuse: false };
+    }
+    const override = env[QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION]?.trim().toLowerCase();
+    if (override === 'true' || override === '1') {
+        return { refuse: false };
+    }
+    return {
+        refuse: true,
+        reason: 'Refusing to spawn the agent as root in a production runtime: set QAAP_AGENT_UID=1001 to drop '
+            + 'the agent to a non-root user (the shipped image provisions uid 1001), or set '
+            + 'QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true to override at your own risk. See SECURITY.md.',
+    };
+}

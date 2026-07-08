@@ -88,12 +88,14 @@ WORKDIR /app/examples/browser
 
 COPY --from=build /app /app
 
-# --- Agent privilege-drop capability (opt-in via QAAP_AGENT_UID) --------------
+# --- Agent privilege-drop (on by default via QAAP_AGENT_UID below) -------------
 # The backend runs as root so it can spawn the agent under a non-root uid. A non-root agent cannot
 # traverse the root-owned /root/{.qaap,.theia} trees where every tenant's API keys, OAuth tokens and
 # helper tokens live — bounding the agent's --dangerously-skip-permissions to OS permissions.
-# Capability only: the drop activates when QAAP_AGENT_UID is set (see docker-compose.yml). Until then
-# the agent runs as root exactly as before, so this image stays behaviour-compatible.
+# The image provisions the qaap-agent user (uid 1001) and owns /workspace + /home/qaap-agent by it, so
+# the drop is safe to enable by default (see the QAAP_AGENT_UID ENV below). The backend additionally
+# refuses to spawn the agent as root in a production runtime unless the drop is applied — see
+# evaluateAgentIsolationPolicy in packages/qaap-cloud-workspace.
 RUN groupadd --gid 1001 qaap-agent \
     && useradd --uid 1001 --gid 1001 --create-home --home-dir /home/qaap-agent --shell /usr/sbin/nologin qaap-agent \
     && chmod 700 /root \
@@ -106,7 +108,9 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=${QAAP_IDE_PORT} \
     THEIA_PLUGINS_DIR=/app/plugins \
-    QAAP_AGENT_HOME=/home/qaap-agent
+    QAAP_AGENT_HOME=/home/qaap-agent \
+    QAAP_AGENT_UID=1001 \
+    QAAP_AGENT_GID=1001
 
 EXPOSE ${QAAP_IDE_PORT}
 

@@ -15,15 +15,18 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
 
 - **Single-user is safe by default.** One person on their own box: the defaults
   are fine.
-- **Multi-user requires hardening.** By default the agent runs as **root** in a
-  single shared container, so one tenant's agent could read other tenants'
-  secrets and code on the shared filesystem. Before inviting other users you
-  **must**:
-  - Activate the non-root agent drop: set `QAAP_AGENT_UID=1001` (the image ships
-    a `qaap-agent` user). This stops the agent from reading other tenants'
-    secrets/tokens under `/root`. See
-    [doc/qaap-vps-deployment.md](doc/qaap-vps-deployment.md) for the verification
-    steps.
+- **Multi-user requires hardening.** In a shared container one tenant's agent
+  could read other tenants' secrets and code on the shared filesystem. Before
+  inviting other users you **must**:
+  - Keep the non-root agent drop enabled. The shipped image sets
+    `QAAP_AGENT_UID=1001` (a provisioned `qaap-agent` user) **by default**, so the
+    agent cannot read other tenants' secrets/tokens under the root-owned `/root`
+    tree. As a backstop, the backend **refuses to spawn the agent as root in a
+    production runtime** (`NODE_ENV=production` or a non-local `QAAP_CLOUD_MODE`)
+    unless the drop is applied — override only via
+    `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true` if you fully understand the risk.
+    See [doc/qaap-vps-deployment.md](doc/qaap-vps-deployment.md) for the
+    verification steps.
   - Serve over **HTTPS** and never set `QAAP_SKIP_AUTH` in production (it is
     refused in a production runtime, but do not rely on that alone).
   - Provide **your own** GitHub OAuth app credentials and VAPID keys — never

@@ -33,4 +33,45 @@ describe('qaap-sticky-composer-syntax-highlight', () => {
         expect(highlight?.innerHTML).to.contain('theia-mod-token-skill');
         expect(highlight?.textContent).to.contain('/react-doctor');
     });
+
+    it('highlights known slash commands in the mirror layer', () => {
+        const inputEditor = document.createElement('div');
+        const input = document.createElement('textarea');
+        inputEditor.append(input);
+        document.body.append(inputEditor);
+
+        const ui = attachStickyComposerSyntaxHighlight({
+            inputEditor,
+            input,
+            getSlashCommandNames: () => ['loop'],
+        });
+
+        input.value = '/loop run this until it passes';
+        ui.refresh();
+
+        const highlight = inputEditor.querySelector('.theia-mobile-projects-sticky-composer-input-highlight');
+        expect(highlight?.innerHTML).to.contain('theia-mod-token-slash-command');
+        expect(highlight?.textContent).to.contain('/loop');
+    });
+
+    it('prefers slash command highlighting when a token is also a skill', () => {
+        const inputEditor = document.createElement('div');
+        const input = document.createElement('textarea');
+        inputEditor.append(input);
+        document.body.append(inputEditor);
+
+        const ui = attachStickyComposerSyntaxHighlight({
+            inputEditor,
+            input,
+            getSkillNames: () => ['loop'],
+            getSlashCommandNames: () => ['loop'],
+        });
+
+        input.value = '/loop';
+        ui.refresh();
+
+        const highlight = inputEditor.querySelector('.theia-mobile-projects-sticky-composer-input-highlight');
+        expect(highlight?.innerHTML).to.contain('theia-mod-token-slash-command');
+        expect(highlight?.innerHTML).not.to.contain('theia-mod-token-skill');
+    });
 });

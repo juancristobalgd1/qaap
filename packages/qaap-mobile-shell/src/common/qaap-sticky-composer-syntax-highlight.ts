@@ -18,7 +18,11 @@ function escapeHtml(text: string): string {
         .replace(/>/g, '&gt;');
 }
 
-function renderHighlightedDraft(text: string, skillNames: ReadonlySet<string>): string {
+function renderHighlightedDraft(
+    text: string,
+    skillNames: ReadonlySet<string>,
+    slashCommandNames: ReadonlySet<string>,
+): string {
     if (!text) {
         return '';
     }
@@ -31,7 +35,9 @@ function renderHighlightedDraft(text: string, skillNames: ReadonlySet<string>): 
             html += escapeHtml(text.slice(lastIndex, start));
         }
         const skillName = token.slice(1);
-        if (skillNames.has(skillName)) {
+        if (slashCommandNames.has(skillName)) {
+            html += `<span class="theia-mod-token-slash-command">${escapeHtml(token)}</span>`;
+        } else if (skillNames.has(skillName)) {
             html += `<span class="theia-mod-token-skill">${escapeHtml(token)}</span>`;
         } else {
             html += escapeHtml(token);
@@ -48,9 +54,10 @@ function renderHighlightedDraft(text: string, skillNames: ReadonlySet<string>): 
 export function attachStickyComposerSyntaxHighlight(options: {
     inputEditor: HTMLElement;
     input: HTMLTextAreaElement;
-    getSkillNames: () => readonly string[];
+    getSkillNames?: () => readonly string[];
+    getSlashCommandNames?: () => readonly string[];
 }): StickyComposerSyntaxHighlightUi {
-    const { inputEditor, input, getSkillNames } = options;
+    const { inputEditor, input, getSkillNames, getSlashCommandNames } = options;
     inputEditor.classList.add('theia-mod-syntax-highlight-host');
 
     const highlight = document.createElement('div');
@@ -60,8 +67,9 @@ export function attachStickyComposerSyntaxHighlight(options: {
     input.classList.add('theia-mod-highlight-input');
 
     const refresh = (): void => {
-        const skillNames = new Set(getSkillNames());
-        highlight.innerHTML = renderHighlightedDraft(input.value, skillNames);
+        const skillNames = new Set(getSkillNames?.() ?? []);
+        const slashCommandNames = new Set(getSlashCommandNames?.() ?? []);
+        highlight.innerHTML = renderHighlightedDraft(input.value, skillNames, slashCommandNames);
         highlight.scrollTop = input.scrollTop;
     };
 

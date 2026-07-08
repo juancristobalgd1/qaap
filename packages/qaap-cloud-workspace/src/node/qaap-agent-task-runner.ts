@@ -46,7 +46,11 @@ import {
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import { resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv } from './qaap-agent-spawn-identity';
+import {
+    resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
+    evaluateAgentIsolationPolicy,
+    QaapAgentIsolationDecision,
+} from './qaap-agent-spawn-identity';
 import { extractRetrievalKeywords, formatRelevantFilesHint } from '../common/qaap-agent-retrieval';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
@@ -1672,6 +1676,7 @@ export class QaapAgentTaskRunner {
         };
         let child: ChildProcess;
         try {
+            this.enforceAgentIsolationPolicy();
             this.recordTaskLatencyMark(task.id, 'spawn_start');
             child = spawn(task.command, {
                 cwd: task.cwd,
@@ -2031,6 +2036,7 @@ export class QaapAgentTaskRunner {
                 resolve({ exitCode, stdout, stderr, timedOut });
             };
             try {
+                this.enforceAgentIsolationPolicy();
                 child = spawn(command, {
                     cwd,
                     shell: true,
@@ -2151,6 +2157,29 @@ export class QaapAgentTaskRunner {
      * `--dangerously-skip-permissions` to OS permissions. No-op (empty) when the env is unset or the
      * backend is not root, so local dev and non-containerized runs are unchanged.
      */
+    protected agentIsolationDecision: QaapAgentIsolationDecision | undefined;
+    protected agentIsolationRefusalLogged = false;
+
+    /**
+     * Fail-closed guard against the shared-container risk: throws (refusing the spawn) when the agent
+     * would run as root in a production runtime without an explicit override. Called at the top of every
+     * agent spawn `try` block, so the surrounding catch turns the refusal into a failed task instead of a
+     * root-privileged agent. The decision is static for the process lifetime, so it is evaluated once.
+     */
+    protected enforceAgentIsolationPolicy(): void {
+        if (!this.agentIsolationDecision) {
+            const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+            this.agentIsolationDecision = evaluateAgentIsolationPolicy(process.env, isRoot);
+        }
+        if (this.agentIsolationDecision.refuse) {
+            if (!this.agentIsolationRefusalLogged) {
+                this.agentIsolationRefusalLogged = true;
+                console.error(`[qaap-security] ${this.agentIsolationDecision.reason}`);
+            }
+            throw new Error(this.agentIsolationDecision.reason);
+        }
+    }
+
     protected resolveAgentSpawnIdentity(): { uid?: number; gid?: number } {
         const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
         const identity = resolveAgentSpawnIdentityFromEnv(process.env, isRoot);
@@ -2524,6 +2553,7 @@ export class QaapAgentTaskRunner {
             let stderr = '';
             let child: ChildProcess;
             try {
+                this.enforceAgentIsolationPolicy();
                 child = spawn(command, {
                     cwd,
                     shell: true,
