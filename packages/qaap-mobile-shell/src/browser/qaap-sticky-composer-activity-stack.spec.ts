@@ -23,43 +23,55 @@ describe('qaap-sticky-composer-activity-stack', () => {
         const unstaged: StickyComposerChangedFileView = { path: 'a.ts', kind: 'edited', added: 3, removed: 1 };
         const staged: StickyComposerChangedFileView = { path: 'b.ts', kind: 'edited', added: 2, removed: 0, staged: true };
 
-        it('shows only unstaged files and is not resolved', () => {
-            const sel = selectComposerPillChanges([unstaged, staged], false);
+        it('shows only unstaged files, not resolved, tree dirty', () => {
+            const sel = selectComposerPillChanges([unstaged, staged], false, false);
             expect(sel.hidden).to.equal(false);
             expect(sel.resolved).to.equal(false);
+            expect(sel.clean).to.equal(false);
             expect(sel.unstaged).to.deep.equal([unstaged]);
         });
 
-        it('hides and latches resolved once every change is staged (Accept)', () => {
-            const sel = selectComposerPillChanges([staged], false);
+        it('hides + resolved but tree stays dirty (Accept leaves staged, still committable)', () => {
+            const sel = selectComposerPillChanges([staged], false, false);
             expect(sel.hidden).to.equal(true);
             expect(sel.resolved).to.equal(true);
+            expect(sel.clean).to.equal(false);
             expect(sel.unstaged).to.equal(undefined);
         });
 
-        it('hides and latches resolved on a clean tree (Discard/commit)', () => {
-            const sel = selectComposerPillChanges([], false);
+        it('hides + resolved + clean on an empty tree (Discard leaves nothing to commit)', () => {
+            const sel = selectComposerPillChanges([], false, false);
             expect(sel.hidden).to.equal(true);
             expect(sel.resolved).to.equal(true);
+            expect(sel.clean).to.equal(true);
         });
 
-        it('keeps the pill hidden while resolved and the snapshot is momentarily absent', () => {
-            const sel = selectComposerPillChanges(undefined, true);
+        it('keeps the pill hidden and preserves the clean latch while the snapshot is absent', () => {
+            const sel = selectComposerPillChanges(undefined, true, true);
             expect(sel.hidden).to.equal(true);
             expect(sel.resolved).to.equal(true);
+            expect(sel.clean).to.equal(true);
+        });
+
+        it('preserves a dirty latch while the snapshot is absent (staged, resolved, still committable)', () => {
+            const sel = selectComposerPillChanges(undefined, true, false);
+            expect(sel.hidden).to.equal(true);
+            expect(sel.resolved).to.equal(true);
+            expect(sel.clean).to.equal(false);
         });
 
         it('falls back to the transcript view when no snapshot exists and nothing is resolved', () => {
-            const sel = selectComposerPillChanges(undefined, false);
+            const sel = selectComposerPillChanges(undefined, false, false);
             expect(sel.hidden).to.equal(false);
             expect(sel.resolved).to.equal(false);
             expect(sel.unstaged).to.equal(undefined);
         });
 
-        it('clears resolved once a genuinely new unstaged change appears', () => {
-            const sel = selectComposerPillChanges([unstaged], true);
+        it('clears resolved and marks dirty once a genuinely new unstaged change appears', () => {
+            const sel = selectComposerPillChanges([unstaged], true, true);
             expect(sel.hidden).to.equal(false);
             expect(sel.resolved).to.equal(false);
+            expect(sel.clean).to.equal(false);
             expect(sel.unstaged).to.deep.equal([unstaged]);
         });
     });
@@ -161,6 +173,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
                 diffStats: { added: 4, removed: 2 },
                 onReview: () => undefined,
                 onCommitAction: action => { actions.push(action); },
+                hasCommittableChanges: true,
             });
             document.body.append(host!);
 
@@ -195,6 +208,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
                 diffStats: { added: 1, removed: 0 },
                 onReview: () => undefined,
                 onCommitAction: () => undefined,
+                hasCommittableChanges: true,
             });
             document.body.append(host!);
 
@@ -249,6 +263,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
                 diffStats: { added: 4, removed: 2 },
                 onReview: () => undefined,
                 onCommitAction: () => undefined,
+                hasCommittableChanges: true,
                 commitBusy: true,
             });
             document.body.append(host!);
@@ -278,6 +293,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
                 onKeepAll: () => undefined,
                 onUndoAll: () => undefined,
                 onCommitAction: () => undefined,
+                hasCommittableChanges: true,
                 onOpenPreview: () => undefined,
             });
             expect(host).to.exist;
@@ -292,13 +308,30 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(nextActions.map(a => a.textContent)).to.deep.equal(['Open preview']);
         });
 
-        it('hides the whole row when the agent has no file activity and no changes', () => {
+        it('hides the whole row when the agent has no file activity, no changes, nothing to commit', () => {
             const host = renderStickyComposerChangesPill({
                 onReview: () => undefined,
                 onCommitAction: () => undefined,
                 onRunApp: () => undefined,
             });
             expect(host).to.equal(undefined);
+        });
+
+        it('drops the Commit button once the tree is clean (Discard), keeping the preview', () => {
+            const host = renderStickyComposerChangesPill({
+                hasFileActivity: true,
+                hasCommittableChanges: false,
+                onReview: () => undefined,
+                onCommitAction: () => undefined,
+                onOpenPreview: () => undefined,
+            });
+            expect(host).to.exist;
+            document.body.append(host!);
+
+            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-group')).to.equal(null);
+            expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
+            const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
+            expect(nextActions.map(a => a.textContent)).to.deep.equal(['Open preview']);
         });
 
         it('patchStickyComposerChangesPillHost updates stats without replacing the pill node', () => {

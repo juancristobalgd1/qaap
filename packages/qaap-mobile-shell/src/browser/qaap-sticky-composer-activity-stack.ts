@@ -25,35 +25,42 @@ export interface ComposerPillChangesSelection {
     readonly unstaged?: StickyComposerChangedFileView[];
     /** Whether this conversation's changes are now considered resolved (Accepted/Discarded). */
     readonly resolved: boolean;
+    /** Whether the working tree is clean (nothing to commit) — drives the Commit button. */
+    readonly clean: boolean;
 }
 
 /**
  * Decides what the composer Changes pill should show, given the latest git
- * snapshot (or `undefined` if it hasn't been fetched / was just invalidated)
- * and whether the user has already resolved this conversation's changes.
+ * snapshot (or `undefined` if it hasn't been fetched / was just invalidated),
+ * whether the user already resolved this conversation's review, and whether
+ * the tree was last known clean.
  *
  * Staged files count as "Accepted" (resolved); a clean/all-staged tree hides
- * the pill and latches `resolved` so a later snapshot gap doesn't let the
- * permanent transcript evidence resurrect it. Genuinely new unstaged files
- * clear the latch and re-show the pill. `hidden: false` with no `unstaged`
- * means "no snapshot yet, not resolved" — the caller falls back to its
- * transcript-derived view.
+ * the review pill and latches `resolved` so a later snapshot gap doesn't let
+ * the permanent transcript evidence resurrect it. `clean` is a separate latch
+ * for the Commit button: after Accept the tree is dirty (staged files are
+ * committable) so `clean` is false; after Discard it is truly clean so `clean`
+ * is true and Commit drops off. Both latches survive a momentarily-absent
+ * snapshot. `hidden: false` with no `unstaged` means "no snapshot yet, not
+ * resolved" — the caller falls back to its transcript-derived view.
  */
 export function selectComposerPillChanges(
     gitFiles: readonly StickyComposerChangedFileView[] | undefined,
     alreadyResolved: boolean,
+    alreadyClean: boolean,
 ): ComposerPillChangesSelection {
     if (gitFiles) {
         const unstaged = gitFiles.filter(file => !file.staged);
+        const clean = gitFiles.length === 0;
         if (unstaged.length === 0) {
-            return { hidden: true, resolved: true };
+            return { hidden: true, resolved: true, clean };
         }
-        return { hidden: false, unstaged: [...unstaged], resolved: false };
+        return { hidden: false, unstaged: [...unstaged], resolved: false, clean };
     }
     if (alreadyResolved) {
-        return { hidden: true, resolved: true };
+        return { hidden: true, resolved: true, clean: alreadyClean };
     }
-    return { hidden: false, resolved: false };
+    return { hidden: false, resolved: false, clean: alreadyClean };
 }
 
 export interface StickyComposerActivityStackOptions {
@@ -67,10 +74,16 @@ export interface StickyComposerActivityStackOptions {
     diffStats?: { readonly added: number; readonly removed: number };
     /**
      * True once the agent has edited files in this conversation, even if the
-     * changes were since Accepted/Discarded. Keeps the Commit and preview/run
-     * controls in the row after the review-only "Changes" group drops off.
+     * changes were since Accepted/Discarded. Keeps the preview/run controls in
+     * the row after the review-only "Changes" group drops off.
      */
     hasFileActivity?: boolean;
+    /**
+     * True when the working tree has something to commit (staged or unstaged).
+     * Gates the Commit split-button: it stays after Accept (staged files are
+     * committable) but drops off after a Discard that leaves the tree clean.
+     */
+    hasCommittableChanges?: boolean;
     filesExpanded?: boolean;
     onFilesExpandedChange?: (expanded: boolean) => void;
     agentWorking?: boolean;
@@ -183,9 +196,9 @@ function stickyComposerHasChangesToReview(options: StickyComposerActivityStackOp
     return hasFiles || hasStats;
 }
 
-/** True when the activity row should render at all (either pending review, or persistent actions after activity). */
+/** True when the activity row should render at all (pending review, committable changes, or activity that keeps preview/run relevant). */
 function stickyComposerHasActivityRow(options: StickyComposerActivityStackOptions): boolean {
-    return stickyComposerHasChangesToReview(options) || !!options.hasFileActivity;
+    return stickyComposerHasChangesToReview(options) || !!options.hasCommittableChanges || !!options.hasFileActivity;
 }
 
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
@@ -199,6 +212,7 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         paths,
         stickyComposerHasChangesToReview(options) ? 1 : 0,
         options.hasFileActivity ? 1 : 0,
+        options.hasCommittableChanges ? 1 : 0,
         options.agentWorking ? 1 : 0,
         options.commitBusy ? 1 : 0,
         options.onCommitAction ? 1 : 0,
@@ -228,7 +242,7 @@ export function patchStickyComposerChangesPillHost(
     const fileCount = files.length > 0
         ? files.length
         : ((stats?.added ?? 0) > 0 || (stats?.removed ?? 0) > 0 ? 1 : 0);
-    const hasCommitAction = !!options.onCommitAction;
+    const hasCommitAction = !!options.onCommitAction && !!options.hasCommittableChanges;
     const hasNextActions = !!options.onRunApp || !!options.onOpenPreview;
     const hasChangesMenu = buildChangesMenuItems(options).length > 0;
     const existingCommitGroup = row.querySelector(':scope > .theia-mobile-sticky-composer-commit-group');
@@ -510,7 +524,10 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
         row.append(changesGroup);
     }
 
-    if (options.onCommitAction) {
+    // Commit is tied to real git state: it shows only when there is something to
+    // commit (staged after Accept, or still-unstaged), and drops off once a
+    // Discard leaves the tree clean.
+    if (options.onCommitAction && options.hasCommittableChanges) {
         row.append(renderChangesCommitGroup(options));
     }
 

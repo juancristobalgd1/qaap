@@ -248,6 +248,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
     /** Conversations whose changes the user already resolved via Accept/Discard — the Changes pill
      *  stays hidden until a fresh git snapshot shows genuinely new unstaged edits. */
     protected readonly composerChangesResolvedByConversationId = new Set<string>();
+    /** Conversations whose working tree is clean (nothing to commit) — the Commit button stays
+     *  hidden across a momentary snapshot gap until fresh changes appear. */
+    protected readonly composerCleanTreeByConversationId = new Set<string>();
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
 
@@ -440,14 +443,24 @@ export class MobileProjectsTranscriptStickyComposerUi {
             return { files: [] };
         }
         const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
-        const selection = selectComposerPillChanges(gitFiles, this.composerChangesResolvedByConversationId.has(summary.id));
+        const selection = selectComposerPillChanges(
+            gitFiles,
+            this.composerChangesResolvedByConversationId.has(summary.id),
+            this.composerCleanTreeByConversationId.has(summary.id),
+        );
         // Persist the resolution: the transcript permanently records the agent's edits, so a later
         // snapshot invalidation would otherwise fall through to the transcript-derived stats and
-        // resurrect the pill after the user already Accepted/Discarded.
+        // resurrect the pill after the user already Accepted/Discarded. The clean-tree latch does the
+        // same for the Commit button so it doesn't flicker back after a Discard.
         if (selection.resolved) {
             this.composerChangesResolvedByConversationId.add(summary.id);
         } else {
             this.composerChangesResolvedByConversationId.delete(summary.id);
+        }
+        if (selection.clean) {
+            this.composerCleanTreeByConversationId.add(summary.id);
+        } else {
+            this.composerCleanTreeByConversationId.delete(summary.id);
         }
         if (selection.hidden) {
             return { files: [] };
@@ -472,6 +485,20 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const transcriptEvidence = this.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, undefined, { allTurns: true });
         return this.hasComposerAgentActivity(transcriptEvidence)
             || this.host.transcriptMessagesUi.hasComposerFileChangeToolCalls(conv);
+    }
+
+    /**
+     * True when the working tree has something to commit — the git snapshot has ≥1 changed file
+     * (staged or unstaged). Falls back to the clean-tree latch while the snapshot is momentarily
+     * absent so the Commit button doesn't flicker back after a Discard. Must be read AFTER
+     * {@link resolveComposerActivityFilesForStack} updates the latch for this render.
+     */
+    protected hasComposerCommittableChanges(summary: QaapAgentConversationSummaryDTO): boolean {
+        const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
+        if (gitFiles) {
+            return gitFiles.length > 0;
+        }
+        return !this.composerCleanTreeByConversationId.has(summary.id);
     }
 
     protected hasComposerAgentActivity(activityFiles: {
@@ -729,6 +756,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             changedFiles: activityFiles.files,
             diffStats: activityFiles.stats,
             hasFileActivity: this.hasComposerFileActivity(conv),
+            hasCommittableChanges: this.hasComposerCommittableChanges(summary),
             filesExpanded: this.peekTranscriptComposerChangedFilesExpanded(summary.id),
             onFilesExpandedChange: expanded => { this.setTranscriptComposerChangedFilesExpanded(summary.id, expanded); },
             agentWorking,
