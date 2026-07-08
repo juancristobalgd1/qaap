@@ -444,13 +444,15 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
         if (gitFiles) {
-            if (gitFiles.length === 0) {
-                // Working tree is clean (e.g. changes were just committed) — nothing left to review.
+            // Staged files are "Accepted" — resolved and no longer pending review. Once every
+            // change is staged (or the tree was cleaned by Discard/commit), the pill drops off.
+            const unresolved = gitFiles.filter(file => !file.staged);
+            if (unresolved.length === 0) {
                 return { files: [] };
             }
             return {
-                files: gitFiles,
-                stats: this.resolveChangedFilesStats(gitFiles, activityFiles.stats),
+                files: unresolved,
+                stats: this.resolveChangedFilesStats(unresolved, activityFiles.stats),
             };
         }
         return activityFiles;
@@ -627,6 +629,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             kind: created ? 'created' : 'edited',
             added: file.adds > 0 ? file.adds : undefined,
             removed: file.dels > 0 ? file.dels : undefined,
+            staged: file.staged,
         };
     }
 

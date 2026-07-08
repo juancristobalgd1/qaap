@@ -13,6 +13,8 @@ export interface StickyComposerChangedFileView {
     readonly kind: 'edited' | 'created';
     readonly added?: number;
     readonly removed?: number;
+    /** True once the change has been staged ("Accepted") — resolved, so the Changes pill drops it. */
+    readonly staged?: boolean;
 }
 
 export interface StickyComposerActivityStackOptions {
@@ -589,7 +591,7 @@ function createStickyComposerSplitMenu(
         menuBtn.setAttribute('aria-expanded', 'false');
         // Return the portaled menu home so a later open starts from a clean slate.
         dropdown.classList.remove('theia-mod-portal');
-        dropdown.style.right = '';
+        dropdown.style.left = '';
         dropdown.style.bottom = '';
         menuWrap.append(dropdown);
         document.removeEventListener('pointerdown', onDocumentPointerDown, true);
@@ -597,12 +599,23 @@ function createStickyComposerSplitMenu(
         window.removeEventListener('resize', closeMenu);
     };
     const openMenu = (): void => {
+        const view = menuBtn.ownerDocument.defaultView ?? window;
         const rect = menuBtn.getBoundingClientRect();
         dropdown.classList.add('theia-mod-portal');
-        dropdown.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
-        dropdown.style.bottom = `${Math.max(8, window.innerHeight - rect.top + 8)}px`;
+        // Append (visible) before measuring so we get the real rendered width,
+        // then anchor by `left` clamped into the viewport. Anchoring by `right`
+        // aligned to the chevron pushed the menu off-screen left when the split
+        // button sat on the left of the row (narrow phones).
         menuBtn.ownerDocument.body.append(dropdown);
         dropdown.hidden = false;
+        const width = dropdown.offsetWidth;
+        const margin = 8;
+        // Right-align to the chevron by default, then clamp both edges in.
+        let left = rect.right - width;
+        left = Math.min(left, view.innerWidth - margin - width);
+        left = Math.max(margin, left);
+        dropdown.style.left = `${left}px`;
+        dropdown.style.bottom = `${Math.max(margin, view.innerHeight - rect.top + margin)}px`;
         menuBtn.classList.add('theia-mod-open');
         menuBtn.setAttribute('aria-expanded', 'true');
         document.addEventListener('pointerdown', onDocumentPointerDown, true);

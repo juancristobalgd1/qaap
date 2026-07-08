@@ -7268,7 +7268,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   justify-content: center;
   gap: 5px;
   min-width: 0;
-  min-height: 28px;
+  /* Shared row height — must match the Changes and Commit split-button groups. */
+  min-height: 34px;
   padding: 4px 10px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
   border-radius: 999px;
@@ -7286,9 +7287,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   touch-action: manipulation;
 }
 
-.theia-mobile-sticky-composer-next-action.theia-mod-preview {
-  color: color-mix(in srgb, var(--theia-button-background, #0e639c) 70%, var(--theia-foreground));
-}
 
 .theia-mobile-sticky-composer-next-action:hover,
 .theia-mobile-sticky-composer-next-action:focus-visible {
@@ -7305,6 +7303,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: inline-flex;
   align-items: stretch;
   min-width: 0;
+  /* Shared row height — must match the Commit group and the next-action pills. */
+  min-height: 34px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background));
@@ -7315,6 +7315,9 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   border: none;
   background: transparent;
   border-radius: 999px 0 0 999px;
+  /* Stretch to the group's height; its own min-height would otherwise cap it
+     shorter than the sibling chevron. */
+  min-height: 0;
 }
 
 .theia-mobile-sticky-composer-changes-group .theia-mobile-sticky-composer-commit-menu {
@@ -7339,8 +7342,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: inline-flex;
   align-items: stretch;
   min-width: 0;
-  /* ≥40px thumb target — this split-button is the primary commit control on a phone. */
-  min-height: 40px;
+  /* Shared row height — must match the Changes group and the next-action pills. */
+  min-height: 34px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background));
