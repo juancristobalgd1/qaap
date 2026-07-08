@@ -13,10 +13,56 @@ import {
     patchStickyComposerChangesPillHost,
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
+    selectComposerPillChanges,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
 
 describe('qaap-sticky-composer-activity-stack', () => {
+
+    describe('selectComposerPillChanges', () => {
+        const unstaged: StickyComposerChangedFileView = { path: 'a.ts', kind: 'edited', added: 3, removed: 1 };
+        const staged: StickyComposerChangedFileView = { path: 'b.ts', kind: 'edited', added: 2, removed: 0, staged: true };
+
+        it('shows only unstaged files and is not resolved', () => {
+            const sel = selectComposerPillChanges([unstaged, staged], false);
+            expect(sel.hidden).to.equal(false);
+            expect(sel.resolved).to.equal(false);
+            expect(sel.unstaged).to.deep.equal([unstaged]);
+        });
+
+        it('hides and latches resolved once every change is staged (Accept)', () => {
+            const sel = selectComposerPillChanges([staged], false);
+            expect(sel.hidden).to.equal(true);
+            expect(sel.resolved).to.equal(true);
+            expect(sel.unstaged).to.equal(undefined);
+        });
+
+        it('hides and latches resolved on a clean tree (Discard/commit)', () => {
+            const sel = selectComposerPillChanges([], false);
+            expect(sel.hidden).to.equal(true);
+            expect(sel.resolved).to.equal(true);
+        });
+
+        it('keeps the pill hidden while resolved and the snapshot is momentarily absent', () => {
+            const sel = selectComposerPillChanges(undefined, true);
+            expect(sel.hidden).to.equal(true);
+            expect(sel.resolved).to.equal(true);
+        });
+
+        it('falls back to the transcript view when no snapshot exists and nothing is resolved', () => {
+            const sel = selectComposerPillChanges(undefined, false);
+            expect(sel.hidden).to.equal(false);
+            expect(sel.resolved).to.equal(false);
+            expect(sel.unstaged).to.equal(undefined);
+        });
+
+        it('clears resolved once a genuinely new unstaged change appears', () => {
+            const sel = selectComposerPillChanges([unstaged], true);
+            expect(sel.hidden).to.equal(false);
+            expect(sel.resolved).to.equal(false);
+            expect(sel.unstaged).to.deep.equal([unstaged]);
+        });
+    });
 
     describe('renderStickyComposerChangesPill', () => {
         let disableJSDOM: () => void;

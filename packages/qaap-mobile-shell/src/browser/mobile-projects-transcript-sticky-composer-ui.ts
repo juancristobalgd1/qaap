@@ -97,6 +97,7 @@ import {
     patchStickyComposerActivityStack,
     patchStickyComposerChangesPillHost,
     renderStickyComposerChangesPill,
+    selectComposerPillChanges,
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
@@ -244,6 +245,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
     protected lastComposerChangesPillFingerprint = '';
     protected lastComposerActivityStackFingerprint = '';
     protected readonly composerActivityGitFilesByConversationId = new Map<string, StickyComposerChangedFileView[]>();
+    /** Conversations whose changes the user already resolved via Accept/Discard — the Changes pill
+     *  stays hidden until a fresh git snapshot shows genuinely new unstaged edits. */
+    protected readonly composerChangesResolvedByConversationId = new Set<string>();
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
 
@@ -443,16 +447,22 @@ export class MobileProjectsTranscriptStickyComposerUi {
             return { files: [] };
         }
         const gitFiles = this.composerActivityGitFilesByConversationId.get(summary.id);
-        if (gitFiles) {
-            // Staged files are "Accepted" — resolved and no longer pending review. Once every
-            // change is staged (or the tree was cleaned by Discard/commit), the pill drops off.
-            const unresolved = gitFiles.filter(file => !file.staged);
-            if (unresolved.length === 0) {
-                return { files: [] };
-            }
+        const selection = selectComposerPillChanges(gitFiles, this.composerChangesResolvedByConversationId.has(summary.id));
+        // Persist the resolution: the transcript permanently records the agent's edits, so a later
+        // snapshot invalidation would otherwise fall through to the transcript-derived stats and
+        // resurrect the pill after the user already Accepted/Discarded.
+        if (selection.resolved) {
+            this.composerChangesResolvedByConversationId.add(summary.id);
+        } else {
+            this.composerChangesResolvedByConversationId.delete(summary.id);
+        }
+        if (selection.hidden) {
+            return { files: [] };
+        }
+        if (selection.unstaged) {
             return {
-                files: unresolved,
-                stats: this.resolveChangedFilesStats(unresolved, activityFiles.stats),
+                files: selection.unstaged,
+                stats: this.resolveChangedFilesStats(selection.unstaged, activityFiles.stats),
             };
         }
         return activityFiles;

@@ -17,6 +17,45 @@ export interface StickyComposerChangedFileView {
     readonly staged?: boolean;
 }
 
+/** Outcome of {@link selectComposerPillChanges}. */
+export interface ComposerPillChangesSelection {
+    /** When true, no Changes pill should render (all changes resolved / clean tree). */
+    readonly hidden: boolean;
+    /** The still-unstaged (pending-review) files, when a git snapshot is available and non-empty. */
+    readonly unstaged?: StickyComposerChangedFileView[];
+    /** Whether this conversation's changes are now considered resolved (Accepted/Discarded). */
+    readonly resolved: boolean;
+}
+
+/**
+ * Decides what the composer Changes pill should show, given the latest git
+ * snapshot (or `undefined` if it hasn't been fetched / was just invalidated)
+ * and whether the user has already resolved this conversation's changes.
+ *
+ * Staged files count as "Accepted" (resolved); a clean/all-staged tree hides
+ * the pill and latches `resolved` so a later snapshot gap doesn't let the
+ * permanent transcript evidence resurrect it. Genuinely new unstaged files
+ * clear the latch and re-show the pill. `hidden: false` with no `unstaged`
+ * means "no snapshot yet, not resolved" — the caller falls back to its
+ * transcript-derived view.
+ */
+export function selectComposerPillChanges(
+    gitFiles: readonly StickyComposerChangedFileView[] | undefined,
+    alreadyResolved: boolean,
+): ComposerPillChangesSelection {
+    if (gitFiles) {
+        const unstaged = gitFiles.filter(file => !file.staged);
+        if (unstaged.length === 0) {
+            return { hidden: true, resolved: true };
+        }
+        return { hidden: false, unstaged: [...unstaged], resolved: false };
+    }
+    if (alreadyResolved) {
+        return { hidden: true, resolved: true };
+    }
+    return { hidden: false, resolved: false };
+}
+
 export interface StickyComposerActivityStackOptions {
     queueEntries?: readonly TranscriptFollowUpEntry[];
     queueExpanded?: boolean;
