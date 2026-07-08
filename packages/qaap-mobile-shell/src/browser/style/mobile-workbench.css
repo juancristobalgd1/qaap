@@ -7432,7 +7432,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   position: fixed;
   bottom: auto;
   right: auto;
-  z-index: 3000;
+  z-index: 2147483003;
 }
 
 .theia-mobile-sticky-composer-commit-dropdown {

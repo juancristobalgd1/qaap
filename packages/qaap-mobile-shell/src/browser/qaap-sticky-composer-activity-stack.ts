@@ -13,16 +13,16 @@ export interface StickyComposerChangedFileView {
     readonly kind: 'edited' | 'created';
     readonly added?: number;
     readonly removed?: number;
-    /** True once the change has been staged ("Accepted") — resolved, so the Changes pill drops it. */
+    /** True once the change has been staged ("Accepted"). */
     readonly staged?: boolean;
 }
 
 /** Outcome of {@link selectComposerPillChanges}. */
 export interface ComposerPillChangesSelection {
-    /** When true, no Changes pill should render (all changes resolved / clean tree). */
+    /** When true, no Changes pill should render (clean tree or latched resolved state without a git snapshot). */
     readonly hidden: boolean;
-    /** The still-unstaged (pending-review) files, when a git snapshot is available and non-empty. */
-    readonly unstaged?: StickyComposerChangedFileView[];
+    /** The files the Changes pill should represent, when a git snapshot is available and non-empty. */
+    readonly files?: StickyComposerChangedFileView[];
     /** Whether this conversation's changes are now considered resolved (Accepted/Discarded). */
     readonly resolved: boolean;
     /** Whether the working tree is clean (nothing to commit) — drives the Commit button. */
@@ -35,14 +35,16 @@ export interface ComposerPillChangesSelection {
  * whether the user already resolved this conversation's review, and whether
  * the tree was last known clean.
  *
- * Staged files count as "Accepted" (resolved); a clean/all-staged tree hides
- * the review pill and latches `resolved` so a later snapshot gap doesn't let
- * the permanent transcript evidence resurrect it. `clean` is a separate latch
- * for the Commit button: after Accept the tree is dirty (staged files are
- * committable) so `clean` is false; after Discard it is truly clean so `clean`
- * is true and Commit drops off. Both latches survive a momentarily-absent
- * snapshot. `hidden: false` with no `unstaged` means "no snapshot yet, not
- * resolved" — the caller falls back to its transcript-derived view.
+ * A non-empty git snapshot means there are still real files to review, whether
+ * staged or unstaged, so the Changes pill stays visible and can still expose
+ * Accept/Discard. A clean tree hides the review pill and latches `resolved` so
+ * a later snapshot gap doesn't let the permanent transcript evidence resurrect
+ * it. `clean` is a separate latch for the Commit button: after Accept the tree
+ * is dirty (staged files are committable) so `clean` is false; after Discard it
+ * is truly clean so `clean` is true and Commit drops off. Both latches survive
+ * a momentarily-absent snapshot. `hidden: false` with no `files` means "no
+ * snapshot yet, not resolved" — the caller falls back to its transcript-derived
+ * view.
  */
 export function selectComposerPillChanges(
     gitFiles: readonly StickyComposerChangedFileView[] | undefined,
@@ -50,12 +52,11 @@ export function selectComposerPillChanges(
     alreadyClean: boolean,
 ): ComposerPillChangesSelection {
     if (gitFiles) {
-        const unstaged = gitFiles.filter(file => !file.staged);
         const clean = gitFiles.length === 0;
-        if (unstaged.length === 0) {
+        if (clean) {
             return { hidden: true, resolved: true, clean };
         }
-        return { hidden: false, unstaged: [...unstaged], resolved: false, clean };
+        return { hidden: false, files: [...gitFiles], resolved: false, clean };
     }
     if (alreadyResolved) {
         return { hidden: true, resolved: true, clean: alreadyClean };
@@ -308,9 +309,9 @@ export function patchStickyComposerChangesPillHost(
 }
 
 export function renderStickyComposerChangesPill(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
-    // The row survives after the review is resolved so the user can still Commit
-    // the staged work or open the preview — only the "Changes" review group
-    // itself drops off. It hides entirely once the agent has no file activity.
+    // The row survives after the git review controls are gone so the user can still
+    // Commit remaining work or open the preview. It hides entirely once the agent
+    // has no file activity.
     if (!stickyComposerHasActivityRow(options)) {
         return undefined;
     }

@@ -23,20 +23,20 @@ describe('qaap-sticky-composer-activity-stack', () => {
         const unstaged: StickyComposerChangedFileView = { path: 'a.ts', kind: 'edited', added: 3, removed: 1 };
         const staged: StickyComposerChangedFileView = { path: 'b.ts', kind: 'edited', added: 2, removed: 0, staged: true };
 
-        it('shows only unstaged files, not resolved, tree dirty', () => {
+        it('shows staged and unstaged files, not resolved, tree dirty', () => {
             const sel = selectComposerPillChanges([unstaged, staged], false, false);
             expect(sel.hidden).to.equal(false);
             expect(sel.resolved).to.equal(false);
             expect(sel.clean).to.equal(false);
-            expect(sel.unstaged).to.deep.equal([unstaged]);
+            expect(sel.files).to.deep.equal([unstaged, staged]);
         });
 
-        it('hides + resolved but tree stays dirty (Accept leaves staged, still committable)', () => {
+        it('keeps the pill visible when Accept leaves staged files, still committable', () => {
             const sel = selectComposerPillChanges([staged], false, false);
-            expect(sel.hidden).to.equal(true);
-            expect(sel.resolved).to.equal(true);
+            expect(sel.hidden).to.equal(false);
+            expect(sel.resolved).to.equal(false);
             expect(sel.clean).to.equal(false);
-            expect(sel.unstaged).to.equal(undefined);
+            expect(sel.files).to.deep.equal([staged]);
         });
 
         it('hides + resolved + clean on an empty tree (Discard leaves nothing to commit)', () => {
@@ -64,7 +64,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             const sel = selectComposerPillChanges(undefined, false, false);
             expect(sel.hidden).to.equal(false);
             expect(sel.resolved).to.equal(false);
-            expect(sel.unstaged).to.equal(undefined);
+            expect(sel.files).to.equal(undefined);
         });
 
         it('clears resolved and marks dirty once a genuinely new unstaged change appears', () => {
@@ -72,7 +72,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(sel.hidden).to.equal(false);
             expect(sel.resolved).to.equal(false);
             expect(sel.clean).to.equal(false);
-            expect(sel.unstaged).to.deep.equal([unstaged]);
+            expect(sel.files).to.deep.equal([unstaged]);
         });
     });
 

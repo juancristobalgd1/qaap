@@ -245,8 +245,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
     protected lastComposerChangesPillFingerprint = '';
     protected lastComposerActivityStackFingerprint = '';
     protected readonly composerActivityGitFilesByConversationId = new Map<string, StickyComposerChangedFileView[]>();
-    /** Conversations whose changes the user already resolved via Accept/Discard — the Changes pill
-     *  stays hidden until a fresh git snapshot shows genuinely new unstaged edits. */
+    /** Conversations whose changes were resolved while the git snapshot was absent or clean. */
     protected readonly composerChangesResolvedByConversationId = new Set<string>();
     /** Conversations whose working tree is clean (nothing to commit) — the Commit button stays
      *  hidden across a momentary snapshot gap until fresh changes appear. */
@@ -448,10 +447,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
             this.composerChangesResolvedByConversationId.has(summary.id),
             this.composerCleanTreeByConversationId.has(summary.id),
         );
-        // Persist the resolution: the transcript permanently records the agent's edits, so a later
-        // snapshot invalidation would otherwise fall through to the transcript-derived stats and
-        // resurrect the pill after the user already Accepted/Discarded. The clean-tree latch does the
-        // same for the Commit button so it doesn't flicker back after a Discard.
+        // Persist clean/resolved only when the git snapshot confirms there is nothing left. The
+        // transcript permanently records agent edits, so a later snapshot invalidation would
+        // otherwise fall through to transcript-derived stats and resurrect stale controls.
         if (selection.resolved) {
             this.composerChangesResolvedByConversationId.add(summary.id);
         } else {
@@ -465,10 +463,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (selection.hidden) {
             return { files: [] };
         }
-        if (selection.unstaged) {
+        if (selection.files) {
             return {
-                files: selection.unstaged,
-                stats: this.resolveChangedFilesStats(selection.unstaged, activityFiles.stats),
+                files: selection.files,
+                stats: this.resolveChangedFilesStats(selection.files, activityFiles.stats),
             };
         }
         return activityFiles;
