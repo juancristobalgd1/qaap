@@ -143,6 +143,25 @@ describe('toTaskView', () => {
         const view = toTaskView({ id: 'x', cwd: '/a/b/', state: 'running', createdAt: 1000 });
         expect(view.cwd).to.equal('/a/b');
     });
+
+    it('carries the backend self-verification result to the view', () => {
+        const passed = toTaskView({
+            id: 'x', cwd: '/a', state: 'completed', createdAt: 1000,
+            verification: { status: 'passed', command: 'npm run build', attempts: 0 },
+        });
+        expect(passed.verification).to.deep.equal({ status: 'passed', command: 'npm run build', attempts: 0 });
+
+        const failed = toTaskView({
+            id: 'y', cwd: '/a', state: 'completed', createdAt: 1000,
+            verification: { status: 'failed', command: 'npm run test', attempts: 2, summary: 'boom' },
+        });
+        expect(failed.verification).to.deep.include({ status: 'failed', attempts: 2 });
+    });
+
+    it('leaves verification undefined when the payload omits it', () => {
+        const view = toTaskView({ id: 'x', cwd: '/a', state: 'running', createdAt: 1000 });
+        expect(view.verification).to.equal(undefined);
+    });
 });
 
 describe('MobileProjectsActiveTasks', () => {

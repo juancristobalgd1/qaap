@@ -23,6 +23,16 @@ const WS_PATH = `${AGENT_TASK_API_PATH}/ws`;
 const RECONNECT_MAX_MS = 30_000;
 const ACTIVE_TASKS_BACKGROUND_CHANGE_COALESCE_MS = 120;
 
+/**
+ * Backend self-verification outcome for a QAIQ task that edited files. Mirrors
+ * `QaapAgentTaskVerification` in `@theia/qaap-cloud-workspace`; kept local on purpose to avoid a
+ * package dependency cycle (cloud-workspace already imports from mobile-shell).
+ */
+export type MobileProjectTaskVerification =
+    | { readonly status: 'skipped' }
+    | { readonly status: 'passed'; readonly command: string; readonly attempts: number }
+    | { readonly status: 'failed'; readonly command: string; readonly attempts: number; readonly summary: string };
+
 /** Task row as shown in the mobile Projects panel (mirrors VPS agent-task API). */
 export interface MobileProjectTaskView {
     readonly id: string;
@@ -34,6 +44,8 @@ export interface MobileProjectTaskView {
     readonly finishedAt?: number;
     /** Set when spawned by a leader via `qaap-task`. */
     readonly parentId?: string;
+    /** Backend self-verification result (passed/failed/skipped) when QAAP_AGENT_VERIFY ran. */
+    readonly verification?: MobileProjectTaskVerification;
 }
 
 interface TaskEventPayload {
@@ -45,6 +57,7 @@ interface TaskEventPayload {
     readonly createdAt?: number;
     readonly finishedAt?: number;
     readonly parentId?: string;
+    readonly verification?: MobileProjectTaskVerification;
 }
 
 export interface MobileProjectAgentDescriptor {
@@ -367,6 +380,7 @@ export function toTaskView(task: TaskEventPayload): MobileProjectTaskView {
         createdAt: task.createdAt ?? Date.now(),
         finishedAt: task.finishedAt,
         parentId: task.parentId,
+        verification: task.verification,
     };
 }
 

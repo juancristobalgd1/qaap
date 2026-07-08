@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { createAgentTaskVerificationBadge } from './qaap-agent-ui';
 import { resolveLeaderTaskIdFromMessages } from '../common/qaap-agent-task-tree';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectTaskView } from './mobile-projects-active-tasks';
@@ -78,6 +79,10 @@ export class MobileProjectsTeamUi {
         const meta = document.createElement('div');
         meta.className = 'theia-mobile-transcript-team-meta';
         meta.textContent = this.stateLabel(task.state);
+        const verifyBadge = createAgentTaskVerificationBadge(task.verification);
+        if (verifyBadge) {
+            meta.append(verifyBadge);
+        }
         body.append(title, meta);
         row.append(dot, body);
         if (interactive) {

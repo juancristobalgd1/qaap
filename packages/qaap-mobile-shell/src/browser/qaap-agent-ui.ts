@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
 import { appendAgentBrandIcon, createAgentBrandIcon, resolveAgentBrand } from '../common/qaap-agent-branding';
+import type { MobileProjectTaskVerification } from './mobile-projects-active-tasks';
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
 import type { QaapAgentApprovalPolicyOption } from '../common/qaap-sticky-composer-approval-policy';
 
@@ -289,6 +291,34 @@ export function createAgentTaskBadge(options: {
     }
     text.textContent = options.label;
     badge.append(text);
+    return badge;
+}
+
+/**
+ * Task-foot badge for the backend self-verification result. Renders a green "Checks passed" or red
+ * "Checks failed" chip; returns `undefined` for skipped/absent verification so callers can omit it.
+ * The failed chip's tooltip carries the failing command + summary.
+ */
+export function createAgentTaskVerificationBadge(verification?: MobileProjectTaskVerification): HTMLElement | undefined {
+    if (!verification || verification.status === 'skipped') {
+        return undefined;
+    }
+    const passed = verification.status === 'passed';
+    const badge = document.createElement('span');
+    badge.className = `theia-qaap-agent-task-verify-badge ${passed ? 'theia-mod-passed' : 'theia-mod-failed'}`;
+    const icon = document.createElement('span');
+    icon.className = `codicon ${passed ? 'codicon-pass' : 'codicon-error'}`;
+    icon.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.className = 'theia-qaap-agent-task-verify-badge-label';
+    text.textContent = passed
+        ? nls.localize('qaap/mobileProjects/verifyChecksPassed', 'Checks passed')
+        : nls.localize('qaap/mobileProjects/verifyChecksFailed', 'Checks failed');
+    badge.append(icon, text);
+    badge.title = passed
+        ? nls.localize('qaap/mobileProjects/verifyChecksPassedTip', 'Backend self-verification passed: {0}', verification.command)
+        : nls.localize('qaap/mobileProjects/verifyChecksFailedTip', 'Backend self-verification failed ({0}): {1}',
+            verification.command, verification.summary);
     return badge;
 }
 

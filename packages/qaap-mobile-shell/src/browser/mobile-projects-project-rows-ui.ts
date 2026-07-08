@@ -18,7 +18,7 @@ import {
 import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
 import { formatConversationComposerSessionMeta } from '../common/qaap-conversation-composer-state';
 import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { createAgentTaskBadge } from './qaap-agent-ui';
+import { createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
 import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
@@ -715,6 +715,12 @@ export class MobileProjectsProjectRowsUi {
                 footRow.append(prChip);
             }
             this.appendConversationFootMetrics(footRow, summary, isRunning);
+
+            const verifyBadge = createAgentTaskVerificationBadge(task.verification);
+            if (verifyBadge) {
+                this.appendTaskFootSeparator(footRow);
+                footRow.append(verifyBadge);
+            }
 
             if (summary && summary.messageCount > 0 && !this.hasConversationDiffStats(summary)) {
                 this.appendTaskFootSeparator(footRow);

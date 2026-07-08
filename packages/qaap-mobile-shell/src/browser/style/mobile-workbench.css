@@ -11841,6 +11841,30 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
   opacity: 0.35;
 }
 
+.theia-qaap-agent-task-verify-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.theia-qaap-agent-task-verify-badge .codicon {
+  font-size: 12px;
+}
+
+.theia-qaap-agent-task-verify-badge.theia-mod-passed {
+  color: var(--theia-testing-iconPassed, var(--theia-charts-green));
+}
+
+.theia-qaap-agent-task-verify-badge.theia-mod-failed {
+  color: var(--theia-testing-iconFailed, var(--theia-errorForeground));
+}
+
+.theia-mobile-transcript-team-meta .theia-qaap-agent-task-verify-badge {
+  margin-left: 6px;
+}
+
 .theia-mobile-projects-task-message-count {
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
