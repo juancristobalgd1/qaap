@@ -5,7 +5,6 @@
 
 import {
     MobileWorkMissionControl,
-    isWorkMissionControlEnabled,
     type MissionControlItem,
     type MissionControlLaneFilter,
     type MissionControlSurfaceFilter,
@@ -50,10 +49,6 @@ export class MobileProjectsMissionControlHubUi {
 
     constructor(protected readonly host: MobileProjectsMissionControlHubHost) { }
 
-    isEnabled(): boolean {
-        return isWorkMissionControlEnabled();
-    }
-
     collectItems(): MissionControlItem[] {
         return collectMissionControlItems({
             projects: this.host.projects,
@@ -66,9 +61,6 @@ export class MobileProjectsMissionControlHubUi {
     }
 
     render(host: HTMLElement): void {
-        if (!this.isEnabled()) {
-            return;
-        }
         const items = this.collectItems();
         const expanded = this.host.missionControlExpanded;
         const panelHost = document.createElement('div');
@@ -93,9 +85,6 @@ export class MobileProjectsMissionControlHubUi {
      * Attempt in-place mission-control row patches before {@link HTMLElement.replaceChildren} on the hub scroll host.
      */
     tryPatchBeforeRebuild(): boolean {
-        if (!this.isEnabled()) {
-            return false;
-        }
         const panel = this.findMissionControlPanel();
         if (!panel) {
             return false;

@@ -6,7 +6,6 @@
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { ChatService } from '@theia/ai-chat';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
-import { isWorkMissionControlEnabled } from './mobile-work-mission-control';
 import { isPreviewOnlyConversationChange } from '../common/qaap-conversation-change';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import {
@@ -319,7 +318,7 @@ export class MobileProjectsPanelLifecycleUi {
                         return;
                     }
                     this.host.scheduleRenderList();
-                } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView() && isWorkMissionControlEnabled()) {
+                } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView()) {
                     this.host.scheduleRenderList();
                 } else if (this.host.visible && !this.host.transcriptSheet) {
                     void this.applyActiveTasksRefresh();
@@ -355,7 +354,7 @@ export class MobileProjectsPanelLifecycleUi {
                         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummaryId) {
                             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
                         }
-                    } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView() && isWorkMissionControlEnabled()) {
+                    } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView()) {
                         this.host.scheduleRenderList();
                     } else if (this.host.visible && !this.host.transcriptSheet) {
                         void this.applyActiveTasksRefresh();

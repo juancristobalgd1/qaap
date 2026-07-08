@@ -179,20 +179,6 @@ const SURFACE_FILTER_LABEL: Record<MissionControlSurfaceFilter, { key: string; l
     'pr': { key: 'qaap/workMissionControl/surfacePr', label: 'PRs' },
 };
 
-const FLAG_KEY = 'qaap.workMissionControl';
-
-/**
- * Work mission control is the default Work Hub surface. Keep a local opt-out for comparing the
- * previous landing while iterating: `localStorage.setItem('qaap.workMissionControl', '0')`.
- */
-export function isWorkMissionControlEnabled(): boolean {
-    try {
-        return typeof localStorage === 'undefined' || localStorage.getItem(FLAG_KEY) !== '0';
-    } catch {
-        return true;
-    }
-}
-
 export class MobileWorkMissionControl {
 
     constructor(protected readonly deps: MobileWorkMissionControlDeps) { }
