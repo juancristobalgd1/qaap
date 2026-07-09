@@ -1684,6 +1684,7 @@ export class QaapAgentTaskRunner {
         let child: ChildProcess;
         try {
             this.enforceAgentIsolationPolicy();
+            this.ensureAgentCwdOwnership(task.cwd);
             this.recordTaskLatencyMark(task.id, 'spawn_start');
             child = spawn(task.command, {
                 cwd: task.cwd,
@@ -2044,6 +2045,7 @@ export class QaapAgentTaskRunner {
             };
             try {
                 this.enforceAgentIsolationPolicy();
+                this.ensureAgentCwdOwnership(cwd);
                 child = spawn(command, {
                     cwd,
                     shell: true,
@@ -2228,6 +2230,40 @@ export class QaapAgentTaskRunner {
             spawnOptions.gid = identity.gid;
         }
         return spawnOptions;
+    }
+
+    /**
+     * Give the agent's spawn uid ownership of its working tree. The backend clones/creates repos as
+     * root (see ensureRepositoryWorkspace / worktree creation), but the agent is dropped to a
+     * non-root uid ({@link resolveAgentSpawnIdentity}) that otherwise cannot write those root-owned
+     * files — so edits, git ops and caches would fail with EACCES. Runs `chown -R` to the resolved
+     * uid/gid once per tree (idempotent: skips when the tree is already owned, when no uid drop
+     * applies, or when the backend is not root). Failures are logged but never block the spawn.
+     */
+    protected ensureAgentCwdOwnership(cwd: string): void {
+        const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+        if (!isRoot) {
+            return;
+        }
+        const identity = this.resolveAgentSpawnIdentity(cwd);
+        if (identity.uid === undefined) {
+            return;
+        }
+        let currentUid: number | undefined;
+        try {
+            currentUid = fs.statSync(cwd).uid;
+        } catch {
+            return; // cwd missing — let the spawn surface the real error
+        }
+        if (currentUid === identity.uid) {
+            return; // already owned by the agent uid
+        }
+        const gid = identity.gid ?? identity.uid;
+        const result = spawnSync('chown', ['-R', `${identity.uid}:${gid}`, cwd], { stdio: 'ignore' });
+        if (result.status !== 0) {
+            console.warn(`[qaap-security] could not chown agent cwd ${cwd} to ${identity.uid}:${gid} `
+                + `(exit ${result.status ?? 'signal'}); the agent may not be able to write.`);
+        }
     }
 
     protected buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
@@ -2586,6 +2622,7 @@ export class QaapAgentTaskRunner {
             let child: ChildProcess;
             try {
                 this.enforceAgentIsolationPolicy();
+                this.ensureAgentCwdOwnership(cwd);
                 child = spawn(command, {
                     cwd,
                     shell: true,
