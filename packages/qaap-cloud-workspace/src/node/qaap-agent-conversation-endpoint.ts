@@ -274,6 +274,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             const ping = setInterval(() => {
                 if (client.readyState === WsClient.OPEN) {
                     client.ping();
+                    // App-level heartbeat: browser JS never sees WS protocol pings, so also send a
+                    // visible frame the client can use to keep its transport-liveness clock fresh
+                    // while the model is slow to produce its first token.
+                    client.send(JSON.stringify({ type: 'heartbeat' }));
                 } else {
                     clearInterval(ping);
                 }
@@ -487,7 +491,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
         });
-        const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), SSE_HEARTBEAT_MS);
+        // Named `heartbeat` event (not just a `:` comment) so EventSource surfaces it to JS: the
+        // client refreshes its transport-liveness clock and won't mislabel a slow-but-live turn as
+        // a dropped connection.
+        const heartbeat = setInterval(() => res.write('event: heartbeat\ndata: {}\n\n'), SSE_HEARTBEAT_MS);
 
         const cleanup = (): void => {
             clearInterval(heartbeat);

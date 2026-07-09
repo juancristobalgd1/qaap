@@ -89,7 +89,8 @@ type ConversationServerEvent =
     | ConversationMessageDeltaEvent
     | ConversationDeletedEvent
     | ConversationParallelRunEvent
-    | { readonly type: 'pong' };
+    | { readonly type: 'pong' }
+    | { readonly type: 'heartbeat' };
 
 /**
  * Cross-project live view of agent conversations on the VPS. The Projects panel subscribes to
@@ -158,6 +159,11 @@ export class MobileProjectsConversations {
     protected readonly onDidReconnectTransportEmitter = new Emitter<void>();
     /** Fires after WS/SSE reconnect — open transcript should refetch (MessagesSnapshot-style). */
     readonly onDidReconnectTransport: Event<void> = this.onDidReconnectTransportEmitter.event;
+
+    /** Fires on any transport-liveness frame (heartbeat / pong) so the transcript can keep its
+     *  stream-health clock fresh while the connection is alive but no message has arrived yet. */
+    protected readonly onDidReceiveTransportActivityEmitter = new Emitter<void>();
+    readonly onDidReceiveTransportActivity: Event<void> = this.onDidReceiveTransportActivityEmitter.event;
 
     @inject(FileService)
     protected readonly fileService: FileService;
@@ -590,6 +596,7 @@ export class MobileProjectsConversations {
             source.addEventListener('message_delta', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('deleted', ev => this.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('parallel-run', ev => this.dispatchSseEvent(ev as MessageEvent));
+            source.addEventListener('heartbeat', () => this.onDidReceiveTransportActivityEmitter.fire());
             source.addEventListener('open', () => {
                 if (this.transportWasDisconnected) {
                     this.transportWasDisconnected = false;
@@ -652,6 +659,10 @@ export class MobileProjectsConversations {
                 this.onDidReceiveParallelRunEmitter.fire(payload);
                 return;
             case 'pong':
+            case 'heartbeat':
+                // Transport-liveness frames carry no conversation payload — they only prove the
+                // socket is alive so the transcript can avoid a false "connection dropped" timeout.
+                this.onDidReceiveTransportActivityEmitter.fire();
                 return;
             default:
                 return;

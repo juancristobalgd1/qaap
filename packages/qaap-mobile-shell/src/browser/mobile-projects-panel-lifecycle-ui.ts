@@ -363,6 +363,11 @@ export class MobileProjectsPanelLifecycleUi {
                 this.host.conversations.onDidReceiveMessage(payload => {
                     this.host.transcriptLiveUi.handleTranscriptSseMessage(payload);
                 }),
+                this.host.conversations.onDidReceiveTransportActivity(() => {
+                    // Heartbeat/pong: the connection is alive even if no message arrived — keep the
+                    // stream-health clock fresh so a slow model never shows "live connection dropped".
+                    this.host.transcriptLiveUi.touchTranscriptTransportEvent();
+                }),
                 this.host.conversations.onDidReconnectTransport(() => {
                     void this.host.transcriptLiveUi.refreshOpenTranscriptConversation({ forcePoll: true });
                 }),

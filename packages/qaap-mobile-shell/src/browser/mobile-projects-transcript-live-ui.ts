@@ -187,7 +187,7 @@ export class MobileProjectsTranscriptLiveUi {
         this.ensureVisibilityResumeListener();
     }
 
-    protected touchTranscriptTransportEvent(): void {
+    touchTranscriptTransportEvent(): void {
         this.host.transcriptLastTransportEventAt = Date.now();
     }
 
