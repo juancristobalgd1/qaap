@@ -188,6 +188,88 @@ describe('qaap-github-auth-guard security', () => {
         });
     });
 
+    describe('resolveOwnedRepositoryCwd normalizes legacy / bare / container cwds', () => {
+        let tmpBase: string;
+        let reposRoot: string;
+        let guard: QaapGithubAuthGuard;
+
+        const p = (...seg: string[]): string => path.join(reposRoot, ...seg);
+        const resolveFor = (login: string, cwd: string): { kind: string; cwd?: string } =>
+            guard.resolveOwnedRepositoryCwdForLogin(login, cwd);
+
+        beforeEach(() => {
+            tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-cwd-'));
+            // reposRoot MUST end in `repos` so legacy `.../repos/{owner}/{repo}` paths are recognizable.
+            reposRoot = path.join(tmpBase, 'repos');
+            for (const rel of [
+                ['users', 'alice', 'acme', 'demo'],
+                ['users', 'alice', 'acme', 'Vamello'], // uppercase — case-sensitivity guard
+                ['users', 'alice', 'acme', 'dup'],
+                ['users', 'alice', 'other', 'dup'],    // second owner with `dup` → ambiguous bare name
+                ['users', 'alice', 'alice', 'solo'],   // unique bare name
+                ['users', 'bob', 'acme', 'demo'],
+            ]) {
+                fs.mkdirSync(path.join(reposRoot, ...rel), { recursive: true });
+            }
+            guard = new QaapGithubAuthGuard();
+            (guard as unknown as { reposRoot: string }).reposRoot = reposRoot;
+        });
+
+        afterEach(() => fs.rmSync(tmpBase, { recursive: true, force: true }));
+
+        it('passes through an already-correct per-user repository path', () => {
+            expect(resolveFor('alice', p('users', 'alice', 'acme', 'demo')))
+                .to.deep.equal({ kind: 'ok', cwd: p('users', 'alice', 'acme', 'demo') });
+        });
+
+        it('rebuilds a legacy flat path to the per-user clone when it exists', () => {
+            expect(resolveFor('alice', p('acme', 'demo')))
+                .to.deep.equal({ kind: 'ok', cwd: p('users', 'alice', 'acme', 'demo') });
+        });
+
+        it('denies a legacy flat path whose per-user clone does not exist', () => {
+            expect(resolveFor('alice', p('acme', 'missing'))).to.deep.equal({ kind: 'denied' });
+        });
+
+        it('never crosses tenants — B requesting A\'s path rebuilds under B and is denied when absent', () => {
+            // bob has no acme/Vamello clone → rebuilds under bob, does not exist → denied (no leak to alice).
+            expect(resolveFor('bob', p('users', 'alice', 'acme', 'Vamello'))).to.deep.equal({ kind: 'denied' });
+        });
+
+        it('resolves a github:owner/repo key, preserving case', () => {
+            // The resolver must NOT lowercase owner/repo (unlike parseGithubFullNameFromWorkspacePath):
+            // on the case-sensitive production FS a lowercased tail would miss the real `Vamello` dir.
+            expect(resolveFor('alice', 'github:acme/Vamello'))
+                .to.deep.equal({ kind: 'ok', cwd: p('users', 'alice', 'acme', 'Vamello') });
+        });
+
+        it('resolves a unique bare repo name under the caller\'s own root', () => {
+            expect(resolveFor('alice', 'solo'))
+                .to.deep.equal({ kind: 'ok', cwd: p('users', 'alice', 'alice', 'solo') });
+        });
+
+        it('asks for a project when a bare name is ambiguous across owners', () => {
+            expect(resolveFor('alice', 'dup')).to.deep.equal({ kind: 'needs-project' });
+        });
+
+        it('denies a bare name with no matching clone', () => {
+            expect(resolveFor('alice', 'nope')).to.deep.equal({ kind: 'denied' });
+        });
+
+        it('treats container levels (repos root, user root, owner dir) as needs-project', () => {
+            expect(resolveFor('alice', reposRoot).kind).to.equal('needs-project');
+            expect(resolveFor('alice', p('users', 'alice')).kind).to.equal('needs-project');
+            expect(resolveFor('alice', p('users', 'alice', 'acme')).kind).to.equal('needs-project');
+        });
+
+        it('makes ownsWorkspacePath tolerant of legacy paths that map to an owned clone', () => {
+            const ctx = { kind: 'authenticated' as const, userLogin: 'alice', session: {} as never, sessionId: 's' };
+            expect(guard.ownsWorkspacePath(ctx, p('acme', 'demo'))).to.equal(true);
+            expect(guard.ownsWorkspacePath(ctx, p('acme', 'missing'))).to.equal(false);
+            expect(guard.ownsWorkspacePath(ctx, reposRoot)).to.equal(false);
+        });
+    });
+
     it('scopes work-hub routine ownership by ownerLogin', () => {
         const routineAlice = { id: 'r1', ownerLogin: 'alice', cwd: '/any/path' };
         const routineBob = { id: 'r2', ownerLogin: 'bob', cwd: '/any/path' };

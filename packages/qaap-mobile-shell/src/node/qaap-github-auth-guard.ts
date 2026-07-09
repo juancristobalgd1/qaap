@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import type { Request, Response } from '@theia/core/shared/express';
 import {
@@ -13,11 +15,25 @@ import {
     isPathUnderUserWorkspace,
     isUserWorkspaceContainerPath,
     QAAP_SKIP_AUTH_USER_LOGIN,
+    QAAP_USER_REPOS_SEGMENT,
     resolveQaapReposRoot,
+    resolveRepositoryWorkspacePath,
     resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { isRealPathUnder } from './qaap-realpath-guard';
+
+/**
+ * Outcome of normalizing a client-supplied agent `cwd` to the authenticated user's per-user
+ * repository tree. `ok` carries the canonical `/workspace/repos/users/{login}/{owner}/{repo}` path
+ * to actually run in; `needs-project` means the path is a workspace container (no single repo) and
+ * the client must pick a project (HTTP 400); `denied` means the path could not be resolved to an
+ * owned repository (HTTP 403).
+ */
+export type QaapResolvedRepositoryCwd =
+    | { readonly kind: 'ok'; readonly cwd: string }
+    | { readonly kind: 'needs-project' }
+    | { readonly kind: 'denied' };
 
 export type QaapGithubAuthContext =
     | { readonly kind: 'authenticated'; readonly session: QaapGithubStoredSession; readonly sessionId: string; readonly userLogin: string }
@@ -81,7 +97,127 @@ export class QaapGithubAuthGuard {
         if (ctx.kind === 'unauthorized') {
             return false;
         }
-        return this.pathBelongsToUser(ctx.userLogin, targetPath);
+        if (this.pathBelongsToUser(ctx.userLogin, targetPath)) {
+            return true;
+        }
+        // A legacy/flat (`.../repos/{owner}/{repo}`) or bare-name cwd that maps to an existing clone
+        // inside the caller's own per-user tree is still theirs — accept it so pre-migration
+        // conversations/tasks remain visible and resumable.
+        return this.resolveOwnedRepositoryCwdForLogin(ctx.userLogin, targetPath).kind === 'ok';
+    }
+
+    /**
+     * Normalize a client-supplied agent `cwd` to the authenticated user's canonical per-user
+     * repository path, so agent turns run under `/workspace/repos/users/{login}/{owner}/{repo}` even
+     * when the client sends the container root (`/workspace`), a bare repo name (`laaaaa`), a legacy
+     * flat path (`/workspace/repos/{owner}/{repo}`), or a `github:owner/repo` key.
+     *
+     * SECURITY: the destination is ALWAYS rebuilt from the authenticated `login` — a caller can only
+     * ever influence the `{owner}/{repo}` tail, never the tenant segment. A path pointing at another
+     * user's tree rebuilds under the caller's own root and is rejected when that clone does not exist.
+     * The candidate must exist on disk as a directory and pass the symlink-safe ownership check.
+     */
+    resolveOwnedRepositoryCwd(ctx: QaapGithubAuthContext, rawCwd: string | undefined): QaapResolvedRepositoryCwd {
+        if (ctx.kind === 'skip') {
+            const trimmed = rawCwd?.trim();
+            return trimmed ? { kind: 'ok', cwd: trimmed } : { kind: 'denied' };
+        }
+        if (ctx.kind === 'unauthorized') {
+            return { kind: 'denied' };
+        }
+        return this.resolveOwnedRepositoryCwdForLogin(ctx.userLogin, rawCwd);
+    }
+
+    /** Login-scoped core of {@link resolveOwnedRepositoryCwd}, usable by token-authenticated callers. */
+    resolveOwnedRepositoryCwdForLogin(userLogin: string | undefined, rawCwd: string | undefined): QaapResolvedRepositoryCwd {
+        const login = userLogin?.trim();
+        const trimmed = rawCwd?.trim();
+        if (!login || !trimmed) {
+            return { kind: 'denied' };
+        }
+        // 1. Already a concrete owned repository path (not a container level) — keep as-is.
+        if (isPathUnderUserWorkspace(trimmed, this.reposRoot, login)
+            && !isUserWorkspaceContainerPath(trimmed, this.reposRoot, login)) {
+            return this.acceptOwnedRepositoryCwd(login, trimmed);
+        }
+        // 2. Derive {owner, repo} from a `github:` key or a legacy/new repository path.
+        const derived = this.deriveOwnerRepoFromCwd(trimmed);
+        if (derived) {
+            const candidate = resolveRepositoryWorkspacePath(this.reposRoot, login, derived.owner, derived.repo);
+            return this.acceptOwnedRepositoryCwd(login, candidate);
+        }
+        // 3. Bare repo name (no separators) — accept only a unique match under the caller's own root.
+        if (!trimmed.includes('/') && !trimmed.includes('\\')) {
+            const match = this.findUniqueOwnedRepoByName(resolveUserReposRoot(this.reposRoot, login), trimmed);
+            if (match === 'ambiguous') {
+                return { kind: 'needs-project' };
+            }
+            return match ? this.acceptOwnedRepositoryCwd(login, match) : { kind: 'denied' };
+        }
+        // 4. A workspace container (`/workspace`, repos root, user root, owner dir) — no single repo.
+        return { kind: 'needs-project' };
+    }
+
+    /** Extract `{owner, repo}` from a cwd, PRESERVING case (disk lookups are case-sensitive on Linux). */
+    protected deriveOwnerRepoFromCwd(rawCwd: string): { owner: string; repo: string } | undefined {
+        const schemeMatch = /^github:([^/]+)\/(.+)$/.exec(rawCwd);
+        if (schemeMatch) {
+            return { owner: schemeMatch[1], repo: schemeMatch[2] };
+        }
+        const segments = rawCwd.replace(/\\/g, '/').split('/').filter(Boolean);
+        const reposIndex = segments.lastIndexOf('repos');
+        if (reposIndex < 0) {
+            return undefined;
+        }
+        const after = segments.slice(reposIndex + 1);
+        if (after[0] === QAAP_USER_REPOS_SEGMENT) {
+            return after.length >= 4 ? { owner: after[2], repo: after[3] } : undefined;
+        }
+        return after.length >= 2 ? { owner: after[0], repo: after[1] } : undefined;
+    }
+
+    /** Find a single `{userRoot}/{owner}/{repoName}` directory; `'ambiguous'` when more than one owner has it. */
+    protected findUniqueOwnedRepoByName(userRoot: string, repoName: string): string | 'ambiguous' | undefined {
+        let ownerDirs: string[];
+        try {
+            ownerDirs = fs.readdirSync(userRoot, { withFileTypes: true })
+                .filter(entry => entry.isDirectory())
+                .map(entry => entry.name);
+        } catch {
+            return undefined;
+        }
+        const matches: string[] = [];
+        for (const owner of ownerDirs) {
+            const candidate = path.join(userRoot, owner, repoName);
+            try {
+                if (fs.statSync(candidate).isDirectory()) {
+                    matches.push(candidate);
+                }
+            } catch {
+                /* not a directory */
+            }
+        }
+        if (matches.length > 1) {
+            return 'ambiguous';
+        }
+        return matches[0];
+    }
+
+    /** Accept a candidate only when it exists on disk and passes the lexical + realpath ownership check. */
+    protected acceptOwnedRepositoryCwd(userLogin: string, candidate: string): QaapResolvedRepositoryCwd {
+        let isDirectory = false;
+        try {
+            isDirectory = fs.statSync(candidate).isDirectory();
+        } catch {
+            isDirectory = false;
+        }
+        if (!isDirectory) {
+            return { kind: 'denied' };
+        }
+        if (!this.pathBelongsToUser(userLogin, candidate)) {
+            return { kind: 'denied' };
+        }
+        return { kind: 'ok', cwd: path.resolve(candidate) };
     }
 
     /**

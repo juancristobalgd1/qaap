@@ -298,28 +298,30 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             res.status(400).json({ error: '"cwd" is required.' });
             return;
         }
-        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
-            this.auth.denyForbidden(res, req, 'agent_conversation', { cwd: body.cwd });
+        // Normalize the client-supplied cwd to the caller's canonical per-user repository path.
+        // Legacy/flat, bare-name, and container-root cwds are resolved (or rejected) here so the
+        // agent always runs under `/workspace/repos/users/{login}/{owner}/{repo}` in production.
+        const resolvedCwd = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+        if (resolvedCwd.kind === 'needs-project') {
+            // A container cwd would hand the agent every repo at once (wrong scope, massive LLM
+            // context). The client must send a repository path.
+            res.status(400).json({ error: 'Select a project first — this path is the workspace container, not a repository.' });
             return;
         }
-        if (this.auth.isWorkspaceContainerPath(ctx, body.cwd)) {
-            // Defense in depth for the "no project selected → workspace root"
-            // client bug: a container cwd would hand the agent every repo at
-            // once (wrong scope, massive LLM context). The client must send a
-            // repository path.
-            res.status(400).json({ error: 'Select a project first — this path is the workspace container, not a repository.' });
+        if (resolvedCwd.kind !== 'ok') {
+            this.auth.denyForbidden(res, req, 'agent_conversation', { cwd: body.cwd });
             return;
         }
         try {
             // "New Worktree" destination: run the conversation in an isolated git worktree,
             // grouped under the originating repository via parallelBaseCwd.
-            let cwd = body.cwd;
+            let cwd = resolvedCwd.cwd;
             let baseCwd: string | undefined;
             let worktreeBranch: string | undefined;
             if (body.worktree === true) {
                 const worktreeOwnerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
-                const worktree = await this.worktrees.create(body.cwd, worktreeOwnerLogin);
-                baseCwd = body.cwd;
+                const worktree = await this.worktrees.create(cwd, worktreeOwnerLogin);
+                baseCwd = cwd;
                 cwd = worktree.worktreePath;
                 worktreeBranch = worktree.branch;
             }

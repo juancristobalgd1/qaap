@@ -93,17 +93,18 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 return;
             }
             const body = (req.body ?? {}) as { cwd?: unknown };
-            const cwd = typeof body.cwd === 'string' ? body.cwd.trim() : '';
-            if (!cwd) {
+            const rawCwd = typeof body.cwd === 'string' ? body.cwd.trim() : '';
+            if (!rawCwd) {
                 res.status(400).json({ error: '"cwd" is required.' });
                 return;
             }
-            if (!this.auth.ownsWorkspacePath(ctx, cwd)) {
-                this.auth.denyForbidden(res, req, 'agent_task', { cwd });
+            const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, rawCwd);
+            if (resolved.kind !== 'ok') {
+                this.auth.denyForbidden(res, req, 'agent_task', { cwd: rawCwd });
                 return;
             }
             try {
-                res.json(this.runner.warmForCwd(cwd));
+                res.json(this.runner.warmForCwd(resolved.cwd));
             } catch (error) {
                 res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
             }
@@ -227,10 +228,14 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: '"prompt" and "agentId" are required.' });
             return;
         }
-        const cwd = typeof body.cwd === 'string' ? body.cwd.trim() : undefined;
-        if (cwd && !this.auth.ownsWorkspacePath(ctx, cwd)) {
-            this.auth.denyForbidden(res, req, 'agent_task', { cwd });
-            return;
+        let cwd = typeof body.cwd === 'string' ? body.cwd.trim() : undefined;
+        if (cwd) {
+            const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, cwd);
+            if (resolved.kind !== 'ok') {
+                this.auth.denyForbidden(res, req, 'agent_task', { cwd });
+                return;
+            }
+            cwd = resolved.cwd;
         }
         try {
             const improved = await this.runner.improveComposerPrompt({
@@ -262,11 +267,19 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
 
         let ownerLogin: string | undefined;
         let parentId: string | undefined;
+        // Normalized to the owner's canonical per-user repository path (see resolveOwnedRepositoryCwd).
+        let cwd = body.cwd;
         if (ctx.kind === 'authenticated') {
-            if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
+            const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+            if (resolved.kind === 'needs-project') {
+                res.status(400).json({ error: 'Select a project first — this path is the workspace container, not a repository.' });
+                return;
+            }
+            if (resolved.kind !== 'ok') {
                 this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
                 return;
             }
+            cwd = resolved.cwd;
             ownerLogin = ctx.userLogin;
             // Only honor parentId when the helper token belongs to this same user.
             parentId = helperOwner?.ownerLogin === ctx.userLogin ? body.parentId : undefined;
@@ -276,10 +289,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         } else if (helperOwner) {
             // Helper-CLI callback authenticated purely by its per-user token.
             ownerLogin = helperOwner.ownerLogin;
-            if (!this.auth.loginOwnsWorkspacePath(ownerLogin, body.cwd)) {
+            const resolved = this.auth.resolveOwnedRepositoryCwdForLogin(ownerLogin, body.cwd);
+            if (resolved.kind !== 'ok') {
                 this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
                 return;
             }
+            cwd = resolved.cwd;
             parentId = body.parentId;
         } else {
             res.status(401).json({ error: 'Not signed in' });
@@ -292,7 +307,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 agent: body.agent,
                 agentModel: body.agentModel ?? body.qaiqModel,
                 qaiqModel: body.agentModel ?? body.qaiqModel,
-                cwd: body.cwd,
+                cwd,
                 contextPreamble: body.contextPreamble,
                 title: body.title,
                 parentId,

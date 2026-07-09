@@ -81,8 +81,11 @@ export class MobileProjectsBackgroundTaskUi {
     constructor(protected readonly host: MobileProjectsBackgroundTaskHost) { }
 
     async ensureInlineComposerCwd(project: MobileProjectEntry): Promise<string | undefined> {
+        // Reuse the open workspace path ONLY when the tapped project IS that workspace. Otherwise the
+        // tapped project has its own per-user repository path — falling back to the workspace root
+        // (`/workspace`) here sent a container cwd the server rejects (403/400), stalling the agent.
         const workspaceCwd = this.host.projectsService.getCurrentWorkspaceCwd();
-        if (workspaceCwd && !this.host.projectsService.projectMatchesCurrentWorkspace(project)) {
+        if (workspaceCwd && this.host.projectsService.projectMatchesCurrentWorkspace(project)) {
             this.host.preparedCwdByProjectId.set(project.id, workspaceCwd);
             return workspaceCwd;
         }
