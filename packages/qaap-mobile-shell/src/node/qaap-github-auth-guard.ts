@@ -20,6 +20,7 @@ import {
     resolveRepositoryWorkspacePath,
     resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { isRealPathUnder } from './qaap-realpath-guard';
 
@@ -120,7 +121,12 @@ export class QaapGithubAuthGuard {
     resolveOwnedRepositoryCwd(ctx: QaapGithubAuthContext, rawCwd: string | undefined): QaapResolvedRepositoryCwd {
         if (ctx.kind === 'skip') {
             const trimmed = rawCwd?.trim();
-            return trimmed ? { kind: 'ok', cwd: trimmed } : { kind: 'denied' };
+            if (!trimmed) {
+                return { kind: 'denied' };
+            }
+            // Skip-auth (local dev) leaves paths unmanaged, but a managed container must still be
+            // refused: an agent turn there would ingest every repository at once.
+            return isQaapWorkspaceContainerPath(trimmed) ? { kind: 'needs-project' } : { kind: 'ok', cwd: trimmed };
         }
         if (ctx.kind === 'unauthorized') {
             return { kind: 'denied' };

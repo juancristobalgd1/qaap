@@ -26,6 +26,7 @@ import type {
     QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { readQaapAuthUser, readQaapSignedIn, type QaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     MobileProjectEntry,
@@ -987,15 +988,20 @@ export class MobileProjectsService {
         return this.getProjectCwd(project);
     }
 
+    /**
+     * The single place a `file:` URI becomes an agent cwd. Workspace containers
+     * (`/workspace`, the repos root, the per-user root, an owner directory) are rejected here:
+     * running an agent turn there would feed it every repository the user owns at once, which is
+     * the wrong scope and burns the user's credits on an enormous LLM context. Callers see
+     * `undefined` and fall back to cloning/selecting a real project.
+     */
     protected cwdFromFileUri(uri: URI | undefined): string | undefined {
         if (!uri || uri.scheme !== 'file') {
             return undefined;
         }
         const raw = uri.path.toString();
-        if (/^\/[A-Za-z]:/.test(raw)) {
-            return raw.slice(1);
-        }
-        return raw;
+        const fsPath = /^\/[A-Za-z]:/.test(raw) ? raw.slice(1) : raw;
+        return isQaapWorkspaceContainerPath(fsPath) ? undefined : fsPath;
     }
 
     /** Records hub metrics for the active workspace (local + server when signed in). */
@@ -1163,7 +1169,9 @@ export class MobileProjectsService {
 
     protected buildEphemeralCurrentWorkspaceEntry(): MobileProjectEntry | undefined {
         const uri = this.workspaceService.workspace?.resource;
-        if (!uri || uri.scheme !== 'file') {
+        if (!uri || uri.scheme !== 'file' || !this.cwdFromFileUri(uri)) {
+            // No usable repository cwd (e.g. the open workspace is the container of every repo):
+            // never surface it as a targetable project.
             return undefined;
         }
         const id = `ws:${uri.toString()}`;

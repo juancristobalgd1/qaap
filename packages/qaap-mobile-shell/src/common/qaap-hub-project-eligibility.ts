@@ -29,8 +29,23 @@ export function isVpsWorkspaceInfrastructurePath(fsPath: string): boolean {
 }
 
 /**
- * A path is a user repository when it resolves to `{reposRoot}/{owner}/{repo}` on the VPS
- * (`/workspace/repos/...`) or the local dev mirror (`~/.qaap/workspaces/...`).
+ * True for a repositories-root tail that names exactly one repository: `{owner}/{repo}`, or
+ * `users/{login}/{owner}/{repo}` in the per-user tenant layout. Anything shorter is a container
+ * (the users root, a tenant root, an owner directory) and must never be treated as a project.
+ */
+function isOwnerRepoTail(relative: string): boolean {
+    const parts = relative.split('/').filter(Boolean);
+    const tail = parts[0] === 'users' ? parts.slice(2) : parts;
+    if (parts[0] === 'users' && parts.length < 4) {
+        return false;
+    }
+    return tail.length === 2 && !tail[0].startsWith('.') && !tail[1].startsWith('.');
+}
+
+/**
+ * A path is a user repository when it resolves to `{reposRoot}/{owner}/{repo}` — or
+ * `{reposRoot}/users/{login}/{owner}/{repo}` — on the VPS (`/workspace/repos/...`) or the local
+ * dev mirror (`~/.qaap/workspaces/...`).
  */
 export function isUserRepositoryFilesystemPath(fsPath: string): boolean {
     const normalized = normalizeFilesystemPath(fsPath);
@@ -39,17 +54,13 @@ export function isUserRepositoryFilesystemPath(fsPath: string): boolean {
     }
 
     if (normalized.startsWith(`${VPS_REPOS_ROOT}/`)) {
-        const relative = normalized.slice(VPS_REPOS_ROOT.length + 1);
-        const parts = relative.split('/').filter(Boolean);
-        return parts.length === 2 && !parts[0].startsWith('.') && !parts[1].startsWith('.');
+        return isOwnerRepoTail(normalized.slice(VPS_REPOS_ROOT.length + 1));
     }
 
     const workspacesMarker = '/.qaap/workspaces/';
     const workspacesIdx = normalized.indexOf(workspacesMarker);
     if (workspacesIdx >= 0) {
-        const relative = normalized.slice(workspacesIdx + workspacesMarker.length);
-        const parts = relative.split('/').filter(Boolean);
-        return parts.length === 2 && !parts[0].startsWith('.') && !parts[1].startsWith('.');
+        return isOwnerRepoTail(normalized.slice(workspacesIdx + workspacesMarker.length));
     }
 
     const segments = normalized.split('/').filter(Boolean);

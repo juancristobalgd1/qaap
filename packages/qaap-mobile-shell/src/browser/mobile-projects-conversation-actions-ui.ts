@@ -323,26 +323,41 @@ export class MobileProjectsConversationActionsUi {
         if (!confirmed) {
             return;
         }
+
+        if (summary.source === 'theia-chat' && (!summary.sessionId || !this.host.chatService)) {
+            return;
+        }
+
+        // Paint the deletion before waiting for storage/backend I/O. The sessions sidebar has
+        // its own DOM/fingerprint cache, so renderList() alone cannot remove the visible row.
+        this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+        this.host.transcriptSheetUi.closeTranscriptSheet();
+        this.refreshConversationLists();
+
         try {
             if (summary.source === 'theia-chat') {
-                if (!summary.sessionId || !this.host.chatService) {
-                    return;
-                }
-                await this.host.chatService.deleteSession(summary.sessionId);
-                this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+                await this.host.chatService!.deleteSession(summary.sessionId!);
                 await this.host.conversations?.refreshTheiaChatSessionsForProjects(this.host.projects);
             } else {
                 await deleteConversation(summary.id);
-                this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
             }
-            this.host.transcriptSheetUi.closeTranscriptSheet();
-            this.host.renderList();
+            this.refreshConversationLists();
         } catch (error) {
+            // Restore the exact row when persistence fails, including flags and display metadata.
+            this.host.conversations?.restoreSnapshot(summary);
+            this.refreshConversationLists();
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/deleteTaskFailed',
                 'Could not delete task: {0}',
                 error instanceof Error ? error.message : String(error)
             ));
+        }
+    }
+
+    protected refreshConversationLists(): void {
+        this.host.renderList();
+        if (this.host.sessionsSidebar?.isVisible()) {
+            this.host.sessionsSidebar.refreshList({ force: true });
         }
     }
 }

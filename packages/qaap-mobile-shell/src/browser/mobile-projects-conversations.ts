@@ -102,6 +102,8 @@ export class MobileProjectsConversations {
 
     /** Canonical per-thread summaries + lazy documents (AG-UI MessagesSnapshot path). */
     readonly threadStore = new QaapThreadStore();
+    /** Keeps stale HTTP/WS snapshots from resurrecting rows deleted optimistically. */
+    protected readonly deletedConversationIds = new Set<string>();
     /** E2E perf probe: survives server snapshot clears in {@link applyConversationGroups}. */
     protected readonly perfProbeByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected readonly theiaByCwd = new Map<string, QaapAgentConversationSummaryDTO[]>();
@@ -400,6 +402,12 @@ export class MobileProjectsConversations {
         });
     }
 
+    /** Roll back a failed optimistic deletion and allow server updates for the row again. */
+    restoreSnapshot(conv: QaapAgentConversationSummaryDTO): void {
+        this.deletedConversationIds.delete(conv.id);
+        this.recordSnapshot(conv);
+    }
+
     /**
      * Cache a full conversation document for transcript/context surfaces.
      * Emits `document_loaded` once per conversation id (not on every SSE tick).
@@ -469,6 +477,7 @@ export class MobileProjectsConversations {
 
     /** Optimistic update after deleting a conversation before SSE/storage refresh catches up. */
     removeSnapshot(conversationId: string, cwd: string, source?: QaapAgentConversationSummaryDTO['source']): void {
+        this.deletedConversationIds.add(conversationId);
         if (source === 'theia-chat') {
             const map = this.theiaByCwd;
             const normalized = normalizeCwd(cwd);
@@ -501,7 +510,10 @@ export class MobileProjectsConversations {
     protected applyConversationGroups(
         groups: ReadonlyArray<{ readonly cwd: string; readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO> }>,
     ): void {
-        this.threadStore.applySummarySnapshot(groups);
+        this.threadStore.applySummarySnapshot(groups.map(group => ({
+            ...group,
+            conversations: group.conversations.filter(conversation => !this.deletedConversationIds.has(conversation.id)),
+        })));
         this.emitConversationChange({ kind: 'snapshot' });
     }
 
@@ -628,6 +640,9 @@ export class MobileProjectsConversations {
                 return;
             case 'created':
             case 'updated': {
+                if (this.deletedConversationIds.has(payload.conversation.id)) {
+                    return;
+                }
                 const result = this.upsert(payload.conversation);
                 this.recordClientStreamMetrics(payload);
                 this.emitConversationChange({
@@ -647,6 +662,7 @@ export class MobileProjectsConversations {
                 return;
             case 'deleted': {
                 const cwd = normalizeCwd(payload.cwd);
+                this.deletedConversationIds.add(payload.conversationId);
                 this.threadStore.removeSummary(payload.conversationId, cwd);
                 this.emitConversationChange({
                     kind: 'deleted',
