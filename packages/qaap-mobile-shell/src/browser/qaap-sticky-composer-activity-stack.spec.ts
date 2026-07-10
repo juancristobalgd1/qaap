@@ -31,12 +31,13 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(sel.files).to.deep.equal([unstaged, staged]);
         });
 
-        it('keeps the pill visible when Accept leaves staged files, still committable', () => {
+        it('hides the Changes pill once every change is staged (Accept), still committable for Commit', () => {
             const sel = selectComposerPillChanges([staged], false, false);
-            expect(sel.hidden).to.equal(false);
-            expect(sel.resolved).to.equal(false);
+            // Accept resolved the review — the Changes pill drops, but the staged files stay committable
+            // (clean === false) so the separate Commit button remains.
+            expect(sel.hidden).to.equal(true);
+            expect(sel.resolved).to.equal(true);
             expect(sel.clean).to.equal(false);
-            expect(sel.files).to.deep.equal([staged]);
         });
 
         it('hides + resolved + clean on an empty tree (Discard leaves nothing to commit)', () => {

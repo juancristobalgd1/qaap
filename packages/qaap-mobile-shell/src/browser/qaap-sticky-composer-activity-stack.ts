@@ -53,7 +53,12 @@ export function selectComposerPillChanges(
 ): ComposerPillChangesSelection {
     if (gitFiles) {
         const clean = gitFiles.length === 0;
-        if (clean) {
+        // The review "Changes" pill (Accept/Discard) is for UNRESOLVED work only. Once every change is
+        // staged (Accept all) or the tree is clean (Discard all), the review is resolved: hide the pill.
+        // Any staged/committable changes are carried by the separate Commit button (driven by `clean`),
+        // which stays after Accept and drops after Discard.
+        const hasUnresolved = gitFiles.some(file => !file.staged);
+        if (!hasUnresolved) {
             return { hidden: true, resolved: true, clean };
         }
         return { hidden: false, files: [...gitFiles], resolved: false, clean };
