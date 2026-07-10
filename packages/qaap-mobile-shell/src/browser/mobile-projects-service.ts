@@ -587,10 +587,19 @@ export class MobileProjectsService {
             const names = this.readDisplayNames();
             delete names[project.id];
             this.writeDisplayNames(names);
+            const hiddenIds = this.readHiddenProjectIds();
+            hiddenIds.delete(project.id);
+            this.writeHiddenProjectIds(hiddenIds);
             return true;
         }
         if (project.uri) {
             await this.workspaceService.removeRecentWorkspace(project.uri.toString());
+            // The recent-workspace service can briefly return a stale snapshot after removal.
+            // Persisting the id as hidden makes the removal stable across immediate refreshes,
+            // restarts, and every surface that consumes loadProjects/peekCachedProjects.
+            const hiddenIds = this.readHiddenProjectIds();
+            hiddenIds.add(project.id);
+            this.writeHiddenProjectIds(hiddenIds);
             return true;
         }
         return false;

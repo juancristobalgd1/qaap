@@ -139,12 +139,34 @@ export class MobileProjectsProjectActionsUi {
 
     async onRemoveProject(project: MobileProjectEntry): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
-        const removed = await this.host.projectsService.removeProject(project);
-        if (!removed) {
+        if (!this.host.projectsService.canRemove(project)) {
             return;
         }
-        this.host.projects = await this.host.projectsService.loadProjects();
+
+        const previousProjects = this.host.projects;
+        this.host.projects = previousProjects.filter(candidate => candidate.id !== project.id);
         this.host.render();
         this.host.delegate.onProjectsChanged?.();
+
+        try {
+            const removed = await this.host.projectsService.removeProject(project);
+            if (!removed) {
+                throw new Error(nls.localize('qaap/mobileProjects/removeRejected', 'The project could not be removed.'));
+            }
+            // Reconcile with storage in the background after the optimistic paint. The service
+            // keeps removed recent workspaces hidden even if its upstream list is momentarily stale.
+            this.host.projects = await this.host.projectsService.loadProjects();
+            this.host.render();
+            this.host.delegate.onProjectsChanged?.();
+        } catch (error) {
+            this.host.projects = previousProjects;
+            this.host.render();
+            this.host.delegate.onProjectsChanged?.();
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/removeFailed',
+                'Could not remove project: {0}',
+                error instanceof Error ? error.message : String(error),
+            ));
+        }
     }
 }

@@ -92,10 +92,22 @@ export class MobileProjectsRepoLifecycleUi {
 
     async onTogglePin(project: MobileProjectEntry): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
-        this.host.projectsService.togglePin(project);
-        this.host.projects = await this.host.projectsService.loadProjects();
+        const nextPinned = !project.pinned;
+        this.host.projects = this.host.projects.map(candidate => candidate.id === project.id
+            ? { ...candidate, pinned: nextPinned }
+            : candidate);
         this.host.render();
         this.host.delegate.onProjectsChanged?.();
+
+        this.host.projectsService.togglePin(project);
+        try {
+            this.host.projects = await this.host.projectsService.loadProjects();
+            this.host.render();
+            this.host.delegate.onProjectsChanged?.();
+        } catch {
+            // localStorage is already the source of truth; keep the optimistic state when a
+            // remote project refresh is temporarily unavailable.
+        }
     }
 
     async openAgentComposer(project: MobileProjectEntry, draft?: string): Promise<void> {
