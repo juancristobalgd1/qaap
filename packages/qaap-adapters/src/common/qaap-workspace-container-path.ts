@@ -20,6 +20,10 @@
  * check only recognizes the two managed layouts, so local development is unaffected.
  */
 
+/** Shared message for the HTTP 400 and for the thrown error, so every surface reads the same. */
+export const QAAP_CONTAINER_CWD_ERROR =
+    'Select a project first — this path is the workspace container, not a repository.';
+
 const DEV_REPOS_ROOT_PARENT = '.qaap';
 const DEV_REPOS_ROOT_SEGMENT = 'workspaces';
 const QAAP_USERS_SEGMENT = 'users';

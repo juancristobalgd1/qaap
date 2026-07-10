@@ -284,6 +284,19 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             // Only honor parentId when the helper token belongs to this same user.
             parentId = helperOwner?.ownerLogin === ctx.userLogin ? body.parentId : undefined;
         } else if (ctx.kind === 'skip') {
+            // Skip-auth leaves paths unmanaged, but a managed container must still be refused —
+            // the resolver's skip branch does exactly that, so route through it instead of
+            // trusting `body.cwd` verbatim.
+            const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+            if (resolved.kind === 'needs-project') {
+                res.status(400).json({ error: 'Select a project first — this path is the workspace container, not a repository.' });
+                return;
+            }
+            if (resolved.kind !== 'ok') {
+                this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
+                return;
+            }
+            cwd = resolved.cwd;
             ownerLogin = undefined;
             parentId = helperOwner ? body.parentId : undefined;
         } else if (helperOwner) {

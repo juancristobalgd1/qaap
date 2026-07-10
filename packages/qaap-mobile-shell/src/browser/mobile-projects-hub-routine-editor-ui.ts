@@ -78,9 +78,13 @@ export class MobileProjectsHubRoutineEditorUi {
         if (cwd) {
             return cwd;
         }
-        const withUri = this.host.projects.find(p => p.uri);
-        if (withUri?.uri) {
-            return withUri.uri.path.toString();
+        // Always go through getProjectCwd, never the raw URI: that is what rejects a workspace
+        // container, which as a routine cwd would run the agent over every repo on every tick.
+        for (const project of this.host.projects) {
+            const candidate = this.host.projectsService.getProjectCwd(project);
+            if (candidate) {
+                return candidate;
+            }
         }
         return '';
     }

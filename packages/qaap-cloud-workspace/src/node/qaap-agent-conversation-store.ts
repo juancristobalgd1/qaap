@@ -12,6 +12,7 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import {
     QaapAgentConversation,
     QaapAgentConversationCwdGroup,
@@ -277,6 +278,10 @@ export class QaapAgentConversationStore {
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
             throw new Error('A valid absolute "cwd" directory is required.');
+        }
+        // See QaapAgentTaskRunner.create: a container cwd feeds every repository to the agent.
+        if (isQaapWorkspaceContainerPath(cwd)) {
+            throw new Error(QAAP_CONTAINER_CWD_ERROR);
         }
         const seedAgent = (request.agent ?? '').trim() || this.taskRunner.defaultAgent();
         const firstMessage = (request.message ?? '').trim();

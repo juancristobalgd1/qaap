@@ -16,6 +16,7 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapParallelRunStore } from './qaap-parallel-run-store';
 
 /** HTTP surface for parallel agent runs (variants in isolated git worktrees). */
@@ -55,6 +56,11 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
         }
         if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
             this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
+            return;
+        }
+        // `ownsWorkspacePath` is blind to container levels of the caller's own tree.
+        if (isQaapWorkspaceContainerPath(body.cwd)) {
+            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
             return;
         }
         try {

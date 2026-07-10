@@ -30,6 +30,7 @@ import {
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
+import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
     QAAP_BUILTIN_AGENT_DEFINITIONS,
@@ -933,6 +934,12 @@ export class QaapAgentTaskRunner {
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
             throw new Error('A valid absolute "cwd" directory is required.');
+        }
+        // Last line of defence, shared by every caller (endpoints, routine runner, retries): a
+        // container cwd would spawn the agent over EVERY repository the user owns at once — wrong
+        // scope, and an enormous LLM context billed to them. Endpoints normally reject it earlier.
+        if (isQaapWorkspaceContainerPath(cwd)) {
+            throw new Error(QAAP_CONTAINER_CWD_ERROR);
         }
         const id = randomUUID();
         const parentId = request.parentId && this.tasks.has(request.parentId) ? request.parentId : undefined;

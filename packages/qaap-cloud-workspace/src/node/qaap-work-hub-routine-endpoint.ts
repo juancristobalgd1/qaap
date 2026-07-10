@@ -17,6 +17,7 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
@@ -80,6 +81,13 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
             this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
             return;
         }
+        // `ownsWorkspacePath` accepts container levels of the caller's OWN tree (their per-user root,
+        // an owner directory). A routine stored with such a cwd would run the agent over every repo
+        // they own, on every tick. Reject it here, as the conversation/task endpoints already do.
+        if (isQaapWorkspaceContainerPath(body.cwd)) {
+            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
+            return;
+        }
         try {
             const ownerLogin = this.auth.resolveUserLogin(ctx);
             const routine = this.store.create({
@@ -111,6 +119,10 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
         const body = (req.body ?? {}) as QaapUpdateWorkHubRoutineBody;
         if (body.cwd !== undefined && !this.auth.ownsWorkspacePath(ctx, body.cwd)) {
             this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
+            return;
+        }
+        if (body.cwd !== undefined && isQaapWorkspaceContainerPath(body.cwd)) {
+            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
             return;
         }
         const updated = this.store.update(req.params.id, body);
