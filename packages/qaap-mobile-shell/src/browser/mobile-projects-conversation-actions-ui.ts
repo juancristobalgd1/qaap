@@ -65,7 +65,7 @@ export class MobileProjectsConversationActionsUi {
             const full = await forkConversation(summary.id);
             const forked = conversationToSummary(full);
             this.host.conversations?.recordSnapshot(forked);
-            this.host.renderList();
+            this.refreshConversationLists();
             await this.host.transcriptSheetUi.openTranscriptSheet(project, forked);
         } catch (error) {
             this.host.messageService?.error(nls.localize(
@@ -100,6 +100,10 @@ export class MobileProjectsConversationActionsUi {
         if (!title || title === summary.title) {
             return;
         }
+
+        const optimistic = { ...summary, title, updatedAt: Date.now() };
+        this.host.conversations?.recordSnapshot(optimistic);
+        this.refreshConversationLists();
         try {
             if (summary.source === 'theia-chat') {
                 await this.host.getOrRestoreProjectChatSession(project, summary);
@@ -109,8 +113,10 @@ export class MobileProjectsConversationActionsUi {
                 const full = await renameConversation(summary.id, title);
                 this.host.conversations?.recordSnapshot(conversationToSummary(full));
             }
-            this.host.renderList();
+            this.refreshConversationLists();
         } catch (error) {
+            this.host.conversations?.recordSnapshot(summary);
+            this.refreshConversationLists();
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/renameTaskFailed',
                 'Could not rename task: {0}',
@@ -124,22 +130,25 @@ export class MobileProjectsConversationActionsUi {
         priority: boolean,
     ): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        const optimistic = { ...summary, priority: priority || undefined, updatedAt: Date.now() };
+        this.host.conversations?.recordSnapshot(optimistic);
+        this.refreshConversationLists();
         try {
             if (summary.source === 'theia-chat') {
                 if (!this.host.conversationFlags) {
+                    this.host.conversations?.recordSnapshot(summary);
+                    this.refreshConversationLists();
                     return;
                 }
                 this.host.conversationFlags.set(summary.id, { priority });
-                this.host.conversations?.recordSnapshot({ ...summary, priority: priority || undefined });
             } else {
                 const full = await updateConversation(summary.id, { priority });
                 this.host.conversations?.recordSnapshot(conversationToSummary(full));
             }
-            this.host.renderList();
-            if (this.host.sessionsSidebar?.isVisible()) {
-                this.host.sessionsSidebar.refreshList();
-            }
+            this.refreshConversationLists();
         } catch (error) {
+            this.host.conversations?.recordSnapshot(summary);
+            this.refreshConversationLists();
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/priorityFailed',
                 'Could not update task priority: {0}',
@@ -154,22 +163,37 @@ export class MobileProjectsConversationActionsUi {
         paused: boolean,
     ): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
+        const optimistic = {
+            ...summary,
+            paused: paused || undefined,
+            status: paused && summary.status === 'streaming' ? 'idle' as const : summary.status,
+            updatedAt: Date.now(),
+        };
+        this.host.conversations?.recordSnapshot(optimistic);
+        this.refreshConversationLists();
         try {
             if (paused && summary.status === 'streaming') {
                 await this.onCancelConversation(project, summary);
             }
             if (summary.source === 'theia-chat') {
                 if (!this.host.conversationFlags) {
+                    this.host.conversations?.recordSnapshot(summary);
+                    this.refreshConversationLists();
                     return;
                 }
                 this.host.conversationFlags.set(summary.id, { paused });
-                this.host.conversations?.recordSnapshot({ ...summary, paused: paused || undefined });
             } else {
                 const full = await updateConversation(summary.id, { paused });
                 this.host.conversations?.recordSnapshot(conversationToSummary(full));
             }
-            this.host.renderList();
+            this.refreshConversationLists();
         } catch (error) {
+            this.host.conversations?.recordSnapshot({
+                ...summary,
+                status: optimistic.status,
+                updatedAt: Date.now(),
+            });
+            this.refreshConversationLists();
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/pauseFailed',
                 'Could not change task pause state: {0}',
@@ -224,7 +248,7 @@ export class MobileProjectsConversationActionsUi {
         this.host.cardMenuUi.closeCardMenu();
 
         this.host.conversations?.recordSnapshot({ ...summary, status: 'idle', updatedAt: Date.now() });
-        this.host.renderList();
+        this.refreshConversationLists();
 
         if (summary.source === 'theia-chat') {
             const sessionId = summary.sessionId;
@@ -283,7 +307,7 @@ export class MobileProjectsConversationActionsUi {
         this.host.transcriptLiveUi.applyOptimisticFailedTaskRetry(summary);
         this.host.conversations?.recordSnapshot({ ...summary, status: 'streaming', updatedAt: Date.now() });
         this.host.applyTaskStartedToProject(summary.cwd, retriedTurnContent, summary.id);
-        this.host.renderList();
+        this.refreshConversationLists();
 
         try {
             const retried = await retryConversation(summary.id);
@@ -302,7 +326,7 @@ export class MobileProjectsConversationActionsUi {
             );
         } catch (error) {
             this.host.conversations?.recordSnapshot(rollbackSnapshot);
-            this.host.renderList();
+            this.refreshConversationLists();
             if (rollbackConv && this.host.isWatchingOpenTranscript(summary.id)) {
                 this.host.transcriptLiveUi.restoreOpenTranscriptSnapshot(rollbackConv);
             }
