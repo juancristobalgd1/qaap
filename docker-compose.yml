@@ -69,8 +69,19 @@ services:
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       OLLAMA_HOST: ${OLLAMA_HOST:-}
       HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY:-}
+      # Web search for @qaiq: the bundled SearXNG service (free, no API key, Docker only).
+      # QAIQ's WebSearch selects the custom->searxng provider; all four WEB_* must be set
+      # together. SearXNG lives on the private compose network (http, private host), so the
+      # SSRF guardrails are opened for it. See the `searxng` service below.
+      WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-custom}
+      WEB_PROVIDER: ${WEB_PROVIDER:-searxng}
+      WEB_SEARCH_API: ${WEB_SEARCH_API:-http://searxng:8080/search?format=json}
+      WEB_CUSTOM_ALLOW_PRIVATE: ${WEB_CUSTOM_ALLOW_PRIVATE:-true}
+      WEB_CUSTOM_ALLOW_HTTP: ${WEB_CUSTOM_ALLOW_HTTP:-true}
       # Optional: mount a host folder as the default workspace
       # THEIA_PLUGINS_DIR: /app/plugins
+    depends_on:
+      - searxng
     volumes:
       - theia-workspace:/workspace
       # Persist GitHub OAuth, agent-task index, qaap-task helper token.
@@ -82,6 +93,23 @@ services:
       resources:
         limits:
           memory: 4G
+
+  # Free, self-hosted web search for @qaiq — no API key, only Docker. Reachable ONLY from
+  # the theia backend over the compose network (no host port published). Config + JSON-format
+  # toggle live in deploy/searxng/settings.yml.
+  searxng:
+    image: searxng/searxng:latest
+    environment:
+      # Replaces the "ultrasecretkey" placeholder in settings.yml. Generate one with
+      # `openssl rand -hex 32` and set SEARXNG_SECRET in .env for a hardened instance.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-ultrasecretkey}
+    volumes:
+      - ./deploy/searxng:/etc/searxng:rw
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
 volumes:
   theia-workspace:

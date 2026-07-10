@@ -1,0 +1,23 @@
+# SearXNG configuration for @qaiq's WebSearch tool (custom -> searxng preset).
+#
+# This is a PRIVATE instance: only the qaap backend reaches it over the compose
+# network (service name `searxng`), never the public internet. It exists so QAIQ
+# can search the web for free, without any API key — just Docker.
+#
+# It inherits every upstream default (use_default_settings) and overrides only the
+# three things QAIQ needs:
+#   1. a secret_key (required by SearXNG; the container entrypoint replaces the
+#      "ultrasecretkey" placeholder with $SEARXNG_SECRET when that env var is set),
+#   2. the JSON output format — OFF upstream by default; QAIQ parses ?format=json,
+#   3. the bot-detection limiter OFF — it otherwise blocks programmatic JSON queries.
+use_default_settings: true
+
+server:
+  secret_key: "ultrasecretkey"
+  limiter: false
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json
