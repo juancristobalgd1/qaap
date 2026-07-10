@@ -101,7 +101,12 @@ RUN groupadd --gid 1001 qaap-agent \
     && chmod 700 /root \
     && chmod -R a+rX /opt/qaiq \
     && mkdir -p /workspace \
-    && chown -R 1001:1001 /workspace /home/qaap-agent
+    && chown -R 1001:1001 /workspace /home/qaap-agent \
+    # The root backend runs git (status/stage/discard/commit/diff) on per-user repos that the agent
+    # (uid 1001, or a per-tenant uid) owns after chown-on-spawn. Without this, git aborts every such
+    # command with "detected dubious ownership", breaking the composer Accept/Discard/Commit and the
+    # diff review. Root deliberately manages these repos, so trust them all.
+    && git config --system --add safe.directory '*'
 
 ARG QAAP_IDE_PORT=4873
 ENV NODE_ENV=production \
