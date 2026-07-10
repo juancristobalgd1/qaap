@@ -236,6 +236,33 @@ describe('qaap-transcript-turn-status', () => {
         expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'idle' }, { ...settledTurn, status: 'idle' })).to.equal(false);
     });
 
+    it('execution chrome is idle once the backend is idle, even with an unfinished-looking tool', () => {
+        // A flaky model can leave a tool_call without its result so the trace looks "running" forever.
+        // The backend status is authoritative for execution chrome: an idle turn must NOT keep Stop /
+        // the Changes Accept/Discard menu disabled. Rendering still streams the tail — that's separate.
+        const idleWithRunningTool = conv({
+            status: 'idle',
+            messages: [
+                { id: 'u1', role: 'user', content: 'fix a bug', createdAt: 1 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: 'Done — applied the fix.',
+                    createdAt: 2,
+                    segments: [
+                        { type: 'tool', toolUseId: 't1', name: 'Bash', args: '{"command":"npm test"}', finished: false },
+                        { type: 'text', content: 'Done — applied the fix.' },
+                    ],
+                },
+            ],
+        });
+        expect(resolveTranscriptAgentExecutionState({ id: 'c1', status: 'idle' }, idleWithRunningTool))
+            .to.deep.equal({ phase: 'ready', busy: false });
+        expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'idle' }, idleWithRunningTool)).to.equal(false);
+        // Rendering deliberately keeps the tail streaming (separation of concerns).
+        expect(resolveTranscriptEffectiveStatus(idleWithRunningTool)).to.equal('streaming');
+    });
+
     it('resolveTranscriptEffectiveStatus keeps failed over unfinished trace work', () => {
         const failedWithRunningTool = conv({
             status: 'failed',

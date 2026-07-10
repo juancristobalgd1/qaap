@@ -145,6 +145,33 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(actions).to.deep.equal(['accept', 'discard']);
         });
 
+        it('keeps Accept/Discard reachable even while the agent is (or looks) still working', () => {
+            // Regression: a stale agentWorking signal after a finished turn (backend idle, composer
+            // summary/DOM lagging) must not lock the user out of managing changes already on disk.
+            const workingHost = renderStickyComposerChangesPill({
+                diffStats: { added: 3, removed: 1 },
+                onReview: () => undefined,
+                onKeepAll: () => undefined,
+                onUndoAll: () => undefined,
+                agentWorking: true,
+            });
+            document.body.append(workingHost!);
+            expect(workingHost!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-menu')!.disabled)
+                .to.equal(false);
+
+            // A running bulk Accept/Discard is the one thing that still disables the menu.
+            const bulkBusyHost = renderStickyComposerChangesPill({
+                diffStats: { added: 3, removed: 1 },
+                onReview: () => undefined,
+                onKeepAll: () => undefined,
+                onUndoAll: () => undefined,
+                changedFilesBulkBusy: true,
+            });
+            document.body.append(bulkBusyHost!);
+            expect(bulkBusyHost!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-menu')!.disabled)
+                .to.equal(true);
+        });
+
         it('renders no Changes menu chevron without Accept/Discard handlers', () => {
             const host = renderStickyComposerChangesPill({
                 diffStats: { added: 3, removed: 1 },

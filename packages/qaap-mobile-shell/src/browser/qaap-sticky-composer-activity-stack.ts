@@ -302,7 +302,11 @@ export function patchStickyComposerChangesPillHost(
         statsInline.replaceChildren();
         appendDiffStatsInline(statsInline, stats);
         if (changesMenuBtn) {
-            changesMenuBtn.disabled = !!options.changedFilesBulkBusy || !!options.agentWorking;
+            // Accept/Discard act on changes already written to disk, so they must stay reachable once
+            // the changes exist. Gating on agentWorking wedged the menu disabled whenever that
+            // client-derived signal went stale after a turn finished (backend idle, but the composer
+            // summary/DOM lagged) — only a running bulk Accept/Discard should disable it.
+            changesMenuBtn.disabled = !!options.changedFilesBulkBusy;
         }
     }
 
@@ -549,7 +553,9 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
                 changesGroup,
                 nls.localize('qaap/mobileProjects/changesOptions', 'Changes options'),
                 changesMenuItems,
-                !!options.changedFilesBulkBusy || !!options.agentWorking,
+                // Only a running bulk Accept/Discard disables the menu — not agentWorking, whose stale
+                // value locked the user out of managing on-disk changes after a finished turn.
+                !!options.changedFilesBulkBusy,
             ));
         }
         row.append(changesGroup);

@@ -94,10 +94,9 @@ export function resolveTranscriptAgentExecutionState(
         if (conv.status === 'failed') {
             return { phase: 'failed', busy: false };
         }
-        if (hasUnfinishedAgentWork(conv)) {
-            return { phase: 'working', busy: true };
-        }
         if (conv.status === 'streaming') {
+            // A settled-looking snapshot mid-stream (unfinished trace) is still 'working'; a visually
+            // complete one is 'finalizing' while the backend task detaches. Both are busy.
             return {
                 phase: isConversationTurnVisuallySettled(conv) ? 'finalizing' : 'working',
                 busy: true,
@@ -106,6 +105,12 @@ export function resolveTranscriptAgentExecutionState(
         if (conv.status === 'settled') {
             return { phase: 'finalizing', busy: true };
         }
+        // Terminal/idle backend status: the task has ended, so execution chrome (Stop, composer glow,
+        // and the Changes Accept/Discard menu) is NOT busy — even if the last message's trace still
+        // looks unfinished. A flaky model can leave a tool_call 'pending' forever, which previously
+        // wedged the turn in a permanent "working" state and disabled Accept/Discard. Rendering may
+        // still show the tail as streaming (resolveTranscriptEffectiveStatus) — that is a deliberate
+        // visual choice, not execution state.
         return { phase: 'ready', busy: false };
     }
     if (summary?.status === 'failed') {
