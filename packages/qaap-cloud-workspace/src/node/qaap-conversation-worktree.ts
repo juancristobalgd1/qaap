@@ -8,8 +8,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
+import { resolveQaapWorktreesRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -39,8 +39,10 @@ export class QaapConversationWorktreeService {
         await this.assertGitRepo(cwd);
         const slug = randomUUID().slice(0, 8);
         const branch = `qaap/worktree/${slug}`;
-        const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
-        const worktreePath = path.join(os.tmpdir(), 'qaap-worktrees', tenant, slug);
+        // Use the same tenant segment as the repos root (safeUserIdSegment) so the uid registry keys
+        // and the tenant-root isolation line up between repos and worktrees (SEC-1).
+        const tenant = ownerLogin?.trim() ? safeUserIdSegment(ownerLogin.trim()) : '__anonymous__';
+        const worktreePath = path.join(resolveQaapWorktreesRoot(), tenant, slug);
         await this.git(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
         return { worktreePath, branch };
     }

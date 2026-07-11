@@ -29,6 +29,11 @@ export function resolveQaapReposRoot(): string {
     return path.join(os.homedir(), '.qaap', 'workspaces');
 }
 
+/** Root under which per-conversation git worktrees live: `{tmpdir}/qaap-worktrees/{segment}/{slug}`. */
+export function resolveQaapWorktreesRoot(): string {
+    return path.join(os.tmpdir(), 'qaap-worktrees');
+}
+
 /** Sanitize GitHub login / user id for use as a single path segment. */
 export function safeUserIdSegment(login: string): string {
     const trimmed = login.trim();
@@ -75,13 +80,40 @@ export function isPathUnderUserWorkspace(
  * that tenant's uid (uid-per-user isolation).
  */
 export function resolveTenantSegmentFromWorkspacePath(reposRoot: string, targetPath: string): string | undefined {
-    const usersRoot = path.resolve(reposRoot, QAAP_USER_REPOS_SEGMENT);
-    const relative = path.relative(usersRoot, path.resolve(targetPath));
+    return firstPathSegmentUnder(path.resolve(reposRoot, QAAP_USER_REPOS_SEGMENT), targetPath);
+}
+
+/** The first path segment of `targetPath` directly under `base`, or `undefined` when not under it. */
+export function firstPathSegmentUnder(base: string, targetPath: string): string | undefined {
+    const relative = path.relative(path.resolve(base), path.resolve(targetPath));
     if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
         return undefined;
     }
     const [segment] = relative.split(path.sep);
     return segment || undefined;
+}
+
+/**
+ * The directory whose owner-only (0700) lock isolates the tenant that `cwd` belongs to, plus that
+ * tenant's path segment — covering BOTH the per-user repos root (`{reposRoot}/users/{segment}`) and
+ * the per-conversation worktree root (`{worktreesRoot}/{segment}`). `undefined` when `cwd` is under
+ * neither. The `segment` is the {@link safeUserIdSegment} of the login, so it keys the uid registry.
+ */
+export function resolveTenantIsolationRoot(
+    reposRoot: string,
+    worktreesRoot: string,
+    cwd: string,
+): { readonly root: string; readonly segment: string } | undefined {
+    const usersRoot = path.resolve(reposRoot, QAAP_USER_REPOS_SEGMENT);
+    const reposSegment = firstPathSegmentUnder(usersRoot, cwd);
+    if (reposSegment) {
+        return { root: path.join(usersRoot, reposSegment), segment: reposSegment };
+    }
+    const worktreeSegment = firstPathSegmentUnder(worktreesRoot, cwd);
+    if (worktreeSegment) {
+        return { root: path.join(path.resolve(worktreesRoot), worktreeSegment), segment: worktreeSegment };
+    }
+    return undefined;
 }
 
 /**

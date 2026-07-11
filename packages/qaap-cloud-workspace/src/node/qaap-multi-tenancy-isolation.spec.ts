@@ -11,6 +11,7 @@ import {
     isPathUnderUserWorkspace,
     isUserWorkspaceContainerPath,
     resolveQaapReposRoot,
+    resolveQaapWorktreesRoot,
     resolveUserReposRoot,
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
@@ -143,6 +144,14 @@ describe('Multi-tenancy isolation', () => {
             const runner = new IsolationRunner();
             runner.isolate('/tmp/not/a/tenant/path');
             expect(runner.calls).to.have.length(0);
+        });
+
+        it('chowns + 0700-locks the per-conversation worktree root too (not just the repos root)', () => {
+            process.env.QAAP_AGENT_UID_PER_USER = '1';
+            const worktreeRoot = path.join(resolveQaapWorktreesRoot(), userA);
+            const runner = new IsolationRunner();
+            runner.isolate(path.join(worktreeRoot, 'deadbeef'));
+            expect(runner.calls).to.deep.equal([{ userRoot: worktreeRoot, uid: 4200, gid: 4200 }]);
         });
     });
 

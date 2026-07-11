@@ -50,8 +50,8 @@ import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model
 import {
     safeUserIdSegment,
     resolveQaapReposRoot,
-    resolveTenantSegmentFromWorkspacePath,
-    resolveUserReposRoot,
+    resolveTenantIsolationRoot,
+    resolveQaapWorktreesRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
@@ -2287,7 +2287,7 @@ export class QaapAgentTaskRunner {
         const tenant = resolvePerTenantSpawnIdentity({
             enabled: isTenantUidPerUserEnabled(process.env),
             isRoot,
-            segment: resolveTenantSegmentFromWorkspacePath(resolveQaapReposRoot(), cwd),
+            segment: resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd)?.segment,
             lookup: segment => this.getTenantUidRegistry().resolve(segment),
         });
         if (tenant) {
@@ -2347,18 +2347,18 @@ export class QaapAgentTaskRunner {
         if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env)) {
             return;
         }
-        const reposRoot = resolveQaapReposRoot();
-        const segment = resolveTenantSegmentFromWorkspacePath(reposRoot, cwd);
-        if (!segment) {
+        // Covers both layouts: the per-user repos root AND the per-conversation worktree root.
+        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
+        if (!target) {
             return;
         }
         let identity: { uid: number; gid: number };
         try {
-            identity = this.getTenantUidRegistry().resolve(segment);
+            identity = this.getTenantUidRegistry().resolve(target.segment);
         } catch {
             return; // a registry failure already fails the spawn via resolveAgentSpawnIdentity
         }
-        this.applyTenantRootIsolation(resolveUserReposRoot(reposRoot, segment), identity.uid, identity.gid);
+        this.applyTenantRootIsolation(target.root, identity.uid, identity.gid);
     }
 
     protected ensureAgentCwdOwnership(cwd: string): void {
