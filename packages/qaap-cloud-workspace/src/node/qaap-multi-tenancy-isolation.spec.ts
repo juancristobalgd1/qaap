@@ -22,6 +22,7 @@ import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
+import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
 type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
 
@@ -398,6 +399,25 @@ describe('Multi-tenancy isolation', () => {
             // Non-provider keys are preserved
             expect(env.PATH).to.equal('/usr/bin:/bin');
             expect(env.HOME).to.equal(os.homedir());
+        });
+
+        it('stripSharedProviderEnv deletes backend-only secrets the agent could exfiltrate (SEC-3)', () => {
+            const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+            const env: NodeJS.ProcessEnv = {
+                QAAP_GITHUB_CLIENT_SECRET: 'gh-oauth-secret',
+                QAAP_VAPID_PRIVATE_KEY: 'vapid-private',
+                QAAP_VAPID_SUBJECT: 'mailto:ops@example.com',
+                QAAP_VAPID_PUBLIC_KEY: 'vapid-public',
+                PATH: '/usr/bin:/bin',
+            };
+            (runner as unknown as { stripSharedProviderEnv(e: NodeJS.ProcessEnv): void }).stripSharedProviderEnv(env);
+            // The two real secrets (OAuth app impersonation, forged Web Push) must be gone.
+            expect(env.QAAP_GITHUB_CLIENT_SECRET).to.be.undefined;
+            expect(env.QAAP_VAPID_PRIVATE_KEY).to.be.undefined;
+            expect(env.QAAP_VAPID_SUBJECT).to.be.undefined;
+            // Non-secret / needed vars survive so the agent still runs.
+            expect(env.PATH).to.equal('/usr/bin:/bin');
+            expect(env.QAAP_VAPID_PUBLIC_KEY).to.equal('vapid-public');
         });
     });
 });

@@ -2398,6 +2398,13 @@ export class QaapAgentTaskRunner {
         delete env.OPENAI_BASE_URL;
         delete env.CLAUDE_CODE_USE_OPENAI;
         delete env.NVIDIA_NIM;
+        // Backend-only secrets the agent never needs. Without this the child inherits them via
+        // {...process.env}, so any user could exfiltrate them with `env | grep -i secret`: the OAuth
+        // client secret enables app impersonation, and the VAPID private key lets it forge Web Push
+        // to other users. Deleting them here (the single spawn-env chokepoint) closes SEC-3.
+        delete env.QAAP_GITHUB_CLIENT_SECRET;
+        delete env.QAAP_VAPID_PRIVATE_KEY;
+        delete env.QAAP_VAPID_SUBJECT;
     }
 
     /** Fallback when the backend PreferenceService has no User provider (common in VPS containers).
