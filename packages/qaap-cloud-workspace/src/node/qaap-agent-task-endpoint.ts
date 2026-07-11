@@ -44,6 +44,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
 
     configure(app: Application): void {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
+            if (!this.requireAuth(req, res)) {
+                return;
+            }
             const agent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
             if (!agent) {
                 res.status(400).json({ error: '"agent" query parameter is required.' });

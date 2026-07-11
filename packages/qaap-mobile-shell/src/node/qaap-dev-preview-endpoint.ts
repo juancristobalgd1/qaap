@@ -132,6 +132,12 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             res.status(400).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
         }
+        // Gate the probe by ownership like the proxy/WS paths — otherwise a signed-in user could
+        // enumerate the liveness of other tenants' dev servers on the shared loopback (SEC-8).
+        if (!this.mayProxyPort(req, port)) {
+            res.status(403).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
+            return;
+        }
         if (this.isIdeListenPort(port)) {
             res.json({ ready: false, previewUrl: buildQaapDevPreviewOpenUrl(origin, port) } satisfies QaapDevPreviewProbeResponse);
             return;

@@ -22,6 +22,10 @@ class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
         return this.mayProxyPort(req, port);
     }
 
+    async exposeHandleProbe(req: Request, res: unknown): Promise<void> {
+        return this.handleProbe(req, res as never);
+    }
+
     setFakes(ctx: QaapGithubAuthContext, claimedOwner: string | undefined): void {
         const mutable = this as unknown as { auth: QaapGithubAuthGuard; portRegistry: QaapDevPreviewPortRegistry };
         mutable.auth = {
@@ -96,6 +100,24 @@ describe('QaapDevPreviewEndpoint', () => {
             const ep = new TestQaapDevPreviewEndpoint();
             ep.setFakes(authed('bob'), 'alice');
             expect(ep.exposeMayProxyPort(req, 5173)).to.equal(false);
+        });
+    });
+
+    describe('probe ownership (SEC-8)', () => {
+        const probeReq = (port: string): Request => ({
+            params: { port },
+            headers: {},
+            protocol: 'http',
+            get: (name: string) => (name === 'host' ? 'localhost:4873' : undefined),
+        }) as unknown as Request;
+
+        it('403s an authenticated user on an unclaimed port — no liveness enumeration', async () => {
+            const ep = new TestQaapDevPreviewEndpoint();
+            ep.setFakes({ kind: 'authenticated', userLogin: 'alice', session: {} as never, sessionId: 's' }, undefined);
+            let status = 0;
+            const res = { status(code: number): unknown { status = code; return this; }, json(): unknown { return this; } };
+            await ep.exposeHandleProbe(probeReq('5173'), res);
+            expect(status).to.equal(403);
         });
     });
 });
