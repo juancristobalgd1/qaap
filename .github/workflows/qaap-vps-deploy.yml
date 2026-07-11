@@ -75,6 +75,13 @@ jobs:
 
       - name: Start browser backend with mock QAIQ
         shell: bash
+        # The eval drives the composer UI, which only mounts once past the Work Hub login gate. With
+        # no GitHub OAuth configured in CI, the gate shows "sign-in unavailable" and #theia-app-shell
+        # never renders — so the gate must boot in skip-auth (local-dev) mode. QAAP_CLOUD_MODE=local
+        # keeps QAAP_SKIP_AUTH honored (it is refused in a production runtime).
+        env:
+          QAAP_SKIP_AUTH: 'true'
+          QAAP_CLOUD_MODE: local
         run: |
           MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
           mkdir -p "${MOCK_BIN}"
