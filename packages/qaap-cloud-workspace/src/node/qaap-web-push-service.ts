@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import type { QaapPushNotifyRequest } from '../common/qaap-cloud-api-types';
 import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
 
@@ -12,6 +12,16 @@ export class QaapWebPushService {
 
     @inject(QaapPushSubscriptionStore)
     protected readonly subscriptions: QaapPushSubscriptionStore;
+
+    @postConstruct()
+    protected init(): void {
+        // Make the "silently disabled" state visible: without VAPID keys, every notify() is a no-op,
+        // so "task finished" push notifications never arrive and nothing said why. (ONB-5)
+        if (!this.isConfigured()) {
+            console.warn('[qaap-web-push] disabled: QAAP_VAPID_PUBLIC_KEY / QAAP_VAPID_PRIVATE_KEY not set — '
+                + 'push notifications will not be delivered. Generate keys with `npx web-push generate-vapid-keys`.');
+        }
+    }
 
     isConfigured(): boolean {
         return Boolean(

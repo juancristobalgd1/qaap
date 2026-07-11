@@ -131,7 +131,9 @@ export async function fetchGithubRepositories(accessToken: string): Promise<Qaap
             },
         });
         if (!response.ok) {
-            throw new Error(`GitHub repositories API failed (${response.status})`);
+            const error = new Error(`GitHub repositories API failed (${response.status})`) as Error & { status?: number };
+            error.status = response.status;
+            throw error;
         }
         const batch = await response.json() as GithubRepoResponse[];
         if (batch.length === 0) {

@@ -116,6 +116,12 @@ export async function upsertQaapProjectSession(patch: QaapProjectSessionUpsertRe
 
 export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositoriesResponse> {
     const response = await fetch(`${QAAP_GITHUB_API_PATH}/repositories`, qaapAuthenticatedFetchInit());
+    if (response.status === 401) {
+        // Stored GitHub token expired/revoked — drop the stale session so the login gate returns and
+        // the user re-authorizes, instead of staying stuck on a signed-in-but-broken UI. (ONB-5)
+        clearQaapAuthSession();
+        throw new Error('GitHub session expired — please sign in again.');
+    }
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || `Failed to load GitHub repositories (${response.status})`);
