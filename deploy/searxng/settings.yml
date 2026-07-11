@@ -6,14 +6,17 @@
 #
 # It inherits every upstream default (use_default_settings) and overrides only the
 # three things QAIQ needs:
-#   1. a secret_key (required by SearXNG; the container entrypoint replaces the
-#      "ultrasecretkey" placeholder with $SEARXNG_SECRET when that env var is set),
+#   1. a real secret_key — SearXNG REFUSES to boot with the default "ultrasecretkey", and
+#      the image only auto-generates one when it creates settings.yml from its template;
+#      because we ship our own file, we must set a non-default value here. This signs
+#      sessions/CSRF for an instance with no user accounts, reachable only from the qaap
+#      backend on the compose network — low sensitivity. Rotate with `openssl rand -hex 32`.
 #   2. the JSON output format — OFF upstream by default; QAIQ parses ?format=json,
 #   3. the bot-detection limiter OFF — it otherwise blocks programmatic JSON queries.
 use_default_settings: true
 
 server:
-  secret_key: "ultrasecretkey"
+  secret_key: "13fdf66d2d1f2771cf4cd9bc55dccb77a7544a1f906b65d8fa55386604318f12"
   limiter: false
   image_proxy: false
 

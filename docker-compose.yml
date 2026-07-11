@@ -99,10 +99,8 @@ services:
   # toggle live in deploy/searxng/settings.yml.
   searxng:
     image: searxng/searxng:latest
-    environment:
-      # Replaces the "ultrasecretkey" placeholder in settings.yml. Generate one with
-      # `openssl rand -hex 32` and set SEARXNG_SECRET in .env for a hardened instance.
-      SEARXNG_SECRET: ${SEARXNG_SECRET:-ultrasecretkey}
+    # secret_key lives in deploy/searxng/settings.yml (the image only auto-generates one when it
+    # creates settings.yml from its template — since we ship our own file, we set it there).
     volumes:
       - ./deploy/searxng:/etc/searxng:rw
     restart: unless-stopped
