@@ -210,6 +210,15 @@ const QUEUED_APPROVAL_GRACE_TIMEOUT_MS = 5 * 60 * 1000;
 /** Default cap on simultaneously running VPS agent processes per backend instance. */
 const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
 const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
+/**
+ * Default cap on simultaneously running agents for ONE authenticated user. Without it the global
+ * cap is per-instance, so one user (or a fan-out of sub-tasks) fills every slot and starves all
+ * other tenants — and each agent can spawn its own subprocesses, so RAM saturates first on a small
+ * VPS. Only enforced for authenticated owners; the shared/anonymous (local single-user) bucket
+ * keeps using the global cap alone.
+ */
+const DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER = 2;
+const MAX_CONCURRENT_AGENTS_PER_USER_ENV = 'QAAP_MAX_CONCURRENT_AGENTS_PER_USER';
 
 /** Legacy single-token file (pre per-user tokens); retained only for directory creation. */
 const TOKEN_PATH = path.join(os.homedir(), '.qaap', 'task-token');
@@ -675,10 +684,44 @@ export class QaapAgentTaskRunner {
         return count;
     }
 
+    protected maxConcurrentAgentsPerUser(): number {
+        const raw = process.env[MAX_CONCURRENT_AGENTS_PER_USER_ENV]?.trim();
+        if (!raw) {
+            return DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER;
+        }
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER;
+    }
+
+    protected runningTaskCountForOwner(ownerLogin: string): number {
+        let count = 0;
+        for (const task of this.tasks.values()) {
+            if (task.state === 'running' && task.ownerLogin === ownerLogin) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * True when this owner already has their per-user quota of running agents. Only authenticated
+     * owners are capped; the shared/anonymous bucket (`undefined`/empty, i.e. local single-user)
+     * is governed by the global cap alone so it is never throttled below it.
+     */
+    protected ownerAtConcurrencyCap(ownerLogin: string | undefined): boolean {
+        const owner = ownerLogin?.trim();
+        if (!owner) {
+            return false;
+        }
+        return this.runningTaskCountForOwner(owner) >= this.maxConcurrentAgentsPerUser();
+    }
+
     protected drainQueuedTasks(): void {
         while (this.countRunningTasks() < this.maxConcurrentAgents()) {
+            // Skip queued tasks whose owner is already at their per-user cap so one busy user can't
+            // block everyone behind them in the FIFO queue — promote the next eligible tenant instead.
             const next = [...this.tasks.values()]
-                .filter(task => task.state === 'queued')
+                .filter(task => task.state === 'queued' && !this.ownerAtConcurrencyCap(task.ownerLogin))
                 .sort((left, right) => left.createdAt - right.createdAt)[0];
             if (!next) {
                 return;
@@ -948,7 +991,8 @@ export class QaapAgentTaskRunner {
         const autoApprove = resolveAgentAutoApprove(
             request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
         );
-        const atCapacity = this.countRunningTasks() >= this.maxConcurrentAgents();
+        const atCapacity = this.countRunningTasks() >= this.maxConcurrentAgents()
+            || this.ownerAtConcurrencyCap(ownerLogin);
         const task: QaapAgentTask = {
             id,
             title: (request.title ?? '').trim() || prompt || rawCommand,
