@@ -117,8 +117,10 @@ export function evaluateAgentIsolationPolicy(env: NodeJS.ProcessEnv, isRoot: boo
     }
     return {
         refuse: true,
-        reason: 'Refusing to spawn the agent as root in a production runtime: set QAAP_AGENT_UID=1001 to drop '
-            + 'the agent to a non-root user (the shipped image provisions uid 1001), or set '
-            + 'QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true to override at your own risk. See SECURITY.md.',
+        reason: 'Refusing to spawn the agent as root in a production runtime — as root it can read every '
+            + 'tenant\'s secrets, tokens and code on the shared filesystem. Fix: set QAAP_AGENT_UID=1001 '
+            + '(the shipped image provisions that user and owns the workspace). Do NOT run multi-tenant as '
+            + 'root; QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true is a last resort only for a trusted '
+            + 'single-user box behind your own auth. See SECURITY.md.',
     };
 }
