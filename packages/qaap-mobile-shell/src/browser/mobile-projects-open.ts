@@ -227,14 +227,38 @@ export function setMobileWorkHubHideIdeSidePanels(hidden: boolean): void {
     document.body.classList.toggle(QAAP_MOBILE_WORKHUB_HIDE_IDE_SIDE_PANELS_BODY_CLASS, hidden);
 }
 
+/**
+ * Whether an IDE side sheet (Explorer/Chat file browser) is INTENTIONALLY open in the Work Hub.
+ * This is the only thing that may reveal `#theia-left-content-panel` while Work Hub is the surface.
+ * It cannot be inferred from the panel's expanded state: the Theia layout restorer also leaves that
+ * panel expanded on reload — which is precisely the leak this guards against.
+ */
+let mobileWorkHubSideSheetOpen = false;
+
+/**
+ * Recompute the hide-IDE-side-panels class from the single invariant that governs it: restored IDE
+ * side panels stay hidden across EVERY Work Hub surface (landing, tasks, chat, transcript, and the
+ * desktop-width hub), on every viewport, and are revealed only when the classic IDE is open
+ * (`desktop-ide`) or the user explicitly opened a side sheet. Keeping this class present is what
+ * beats the layout restorer — the CSS hides `#theia-left-content-panel` by visibility whether it
+ * ends up expanded or collapsed, so no runtime re-collapse is required.
+ */
+export function recomputeMobileWorkHubHideIdeSidePanels(): void {
+    setMobileWorkHubHideIdeSidePanels(!peekPreferDesktopIde() && !mobileWorkHubSideSheetOpen);
+}
+
+/** Record an explicit side-sheet open/close so {@link recomputeMobileWorkHubHideIdeSidePanels} honors it. */
+export function setMobileWorkHubSideSheetOpen(open: boolean): void {
+    mobileWorkHubSideSheetOpen = open;
+    recomputeMobileWorkHubHideIdeSidePanels();
+}
+
+/**
+ * Kept for the surface-transition call sites. Hiding no longer depends on the composer/transcript
+ * chrome being present — it is the Work-Hub-wide invariant in {@link recomputeMobileWorkHubHideIdeSidePanels}.
+ */
 export function syncMobileWorkHubHideIdeSidePanelsFromComposerHeader(): void {
-    if (typeof document === 'undefined') {
-        return;
-    }
-    const hide = (document.body.classList.contains(QAAP_MOBILE_WORKHUB_COMPOSER_HEADER_BODY_CLASS)
-        || document.body.classList.contains(QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS))
-        && !peekPreferDesktopIde();
-    setMobileWorkHubHideIdeSidePanels(hide);
+    recomputeMobileWorkHubHideIdeSidePanels();
 }
 
 export function setMobileWorkHubComposerHeaderChrome(visible: boolean): void {
@@ -242,7 +266,7 @@ export function setMobileWorkHubComposerHeaderChrome(visible: boolean): void {
         return;
     }
     document.body.classList.toggle(QAAP_MOBILE_WORKHUB_COMPOSER_HEADER_BODY_CLASS, visible);
-    setMobileWorkHubHideIdeSidePanels(visible && !peekPreferDesktopIde());
+    recomputeMobileWorkHubHideIdeSidePanels();
 }
 
 /** Full-screen agent transcript: hide hub landing chrome and hub bottom bar. */

@@ -15,6 +15,7 @@ import {
     OPEN_AI_CONFIGURATION_COMMAND,
     WORKBENCH_TOGGLE_TERMINAL,
 } from './mobile-shell-bottom-bar-widget';
+import { setMobileWorkHubSideSheetOpen } from './mobile-projects-open';
 import type { MobileShellBottomBarController } from './mobile-shell-bottom-bar-controller';
 
 export interface MobileShellSideSheetHost {
@@ -187,6 +188,9 @@ export class MobileShellSideSheetController {
         if (tasks.length) {
             await Promise.all(tasks);
         }
+        // Every close path (backdrop dismiss, navigation, surface teardown, bootstrap) funnels through
+        // here — clear the reveal intent so the Work-Hub hide invariant re-hides the IDE side panels.
+        setMobileWorkHubSideSheetOpen(false);
     }
 
     async collapseMobileSidePanels(): Promise<void> {
@@ -202,6 +206,7 @@ export class MobileShellSideSheetController {
         }
         this.markMobileSidePanelCollapsed('left');
         this.markMobileSidePanelCollapsed('right');
+        setMobileWorkHubSideSheetOpen(false);
         this.host.updateBackdropVisibility();
     }
 

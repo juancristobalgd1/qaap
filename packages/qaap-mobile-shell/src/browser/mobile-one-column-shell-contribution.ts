@@ -92,7 +92,8 @@ import {
     setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
-    setMobileWorkHubHideIdeSidePanels,
+    setMobileWorkHubSideSheetOpen,
+    recomputeMobileWorkHubHideIdeSidePanels,
     syncMobileWorkHubHideIdeSidePanelsFromComposerHeader,
 } from './mobile-projects-open';
 import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
@@ -698,6 +699,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 break;
             case 'landing':
                 document.body.classList.add('theia-mobile-mod-landing');
+                // The landing case sets no composer chrome; recompute so restored IDE side panels
+                // start hidden here too (no Explorer flash before the hub overlay mounts).
+                recomputeMobileWorkHubHideIdeSidePanels();
                 break;
             case 'none':
                 setMobileWorkHubComposerHeaderChrome(false);
@@ -1602,7 +1606,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     protected async prepareSideSheetOpen(side: 'left' | 'right'): Promise<void> {
         const other: 'left' | 'right' = side === 'left' ? 'right' : 'left';
-        setMobileWorkHubHideIdeSidePanels(false);
+        // Explicit intent to reveal an IDE side sheet in the Work Hub — the only thing that may
+        // un-hide the left/right panel while Work Hub is the surface. Cleared when the sheet collapses.
+        setMobileWorkHubSideSheetOpen(true);
         this.hideProjectsPanel();
         this.hidePullRequestPanel();
         if (this.shell.isExpanded(other)) {

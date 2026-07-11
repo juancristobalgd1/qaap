@@ -13,6 +13,9 @@ import {
     markMobileProjectsPanelDismiss,
     markPreferAgentsSurface,
     markPreferDesktopIde,
+    recomputeMobileWorkHubHideIdeSidePanels,
+    setMobileWorkHubComposerHeaderChrome,
+    setMobileWorkHubSideSheetOpen,
     shouldBootstrapMobileAgentsChat,
     shouldPreferWorkHubAgentsLayout,
 } from '../browser/mobile-projects-open';
@@ -94,6 +97,62 @@ describe('mobile-projects-open work hub bootstrap', () => {
         markPreferDesktopIde();
         installMobileWorkHubBootGuard();
         expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(false);
+    });
+
+});
+
+describe('work hub hide-ide-side-panels invariant', () => {
+
+    const HIDE_CLASS = 'theia-mobile-mod-workhub-hide-ide-side-panels';
+    const storage = new Map<string, string>();
+
+    before(() => {
+        enableJSDOM();
+    });
+
+    beforeEach(() => {
+        storage.clear();
+        document.body.className = '';
+        const sessionStorage = {
+            getItem: (key: string) => storage.get(key) ?? null,
+            setItem: (key: string, value: string) => { storage.set(key, value); },
+            removeItem: (key: string) => { storage.delete(key); },
+            clear: () => { storage.clear(); },
+            key: () => null,
+            length: 0,
+        };
+        (global as unknown as { sessionStorage: Storage }).sessionStorage = sessionStorage as Storage;
+        Object.defineProperty(window, 'sessionStorage', { value: sessionStorage, configurable: true });
+        clearPreferDesktopIde();
+        setMobileWorkHubSideSheetOpen(false);
+        document.body.className = '';
+    });
+
+    const hasHideClass = (): boolean => document.body.classList.contains(HIDE_CLASS);
+
+    it('hides restored IDE side panels on EVERY Work Hub surface, not only composer/transcript', () => {
+        // The landing/tasks-home surface removes the composer chrome; the panels must still be hidden.
+        setMobileWorkHubComposerHeaderChrome(false);
+        expect(hasHideClass()).to.equal(true);
+        setMobileWorkHubComposerHeaderChrome(true);
+        expect(hasHideClass()).to.equal(true);
+    });
+
+    it('reveals the panels only while a side sheet is explicitly open', () => {
+        recomputeMobileWorkHubHideIdeSidePanels();
+        expect(hasHideClass()).to.equal(true);
+        setMobileWorkHubSideSheetOpen(true);
+        expect(hasHideClass()).to.equal(false);
+        setMobileWorkHubSideSheetOpen(false);
+        expect(hasHideClass()).to.equal(true);
+    });
+
+    it('never hides when the classic IDE is open (desktop-ide)', () => {
+        markPreferDesktopIde();
+        setMobileWorkHubComposerHeaderChrome(false);
+        expect(hasHideClass()).to.equal(false);
+        recomputeMobileWorkHubHideIdeSidePanels();
+        expect(hasHideClass()).to.equal(false);
     });
 
 });
