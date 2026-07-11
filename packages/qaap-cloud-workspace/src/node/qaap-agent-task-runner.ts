@@ -51,6 +51,7 @@ import {
     safeUserIdSegment,
     resolveQaapReposRoot,
     resolveTenantSegmentFromWorkspacePath,
+    resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
@@ -2316,7 +2317,52 @@ export class QaapAgentTaskRunner {
      * uid/gid once per tree (idempotent: skips when the tree is already owned, when no uid drop
      * applies, or when the backend is not root). Failures are logged but never block the spawn.
      */
+    /** Whether the backend process is root (can chown / drop privileges). Overridable in tests. */
+    protected isBackendRoot(): boolean {
+        return typeof process.getuid === 'function' && process.getuid() === 0;
+    }
+
+    /** Chown the tenant's per-user root to its uid and lock it owner-only (0700). Overridable in tests. */
+    protected applyTenantRootIsolation(userRoot: string, uid: number, gid: number): void {
+        try {
+            fs.chownSync(userRoot, uid, gid);
+            fs.chmodSync(userRoot, 0o700);
+        } catch (error) {
+            console.warn(`[qaap-security] could not isolate tenant root ${userRoot} to 0700 uid ${uid}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * In uid-per-user mode, lock each tenant's per-user root ({reposRoot}/users/{segment}) to owner-only
+     * (chown to the tenant uid + chmod 0700) so a DIFFERENT tenant's uid cannot even traverse into it —
+     * closing the cross-tenant READ that per-user uids alone do NOT (repos are cloned world-readable
+     * 0755). No-op when uid-per-user is off, the backend is not root, or the cwd is outside a tenant
+     * tree, so the shared-uid deployment is byte-identical. (SEC-1)
+     *
+     * NOTE: enable QAAP_AGENT_UID_PER_USER only after verifying on the real box that each tenant uid can
+     * still write its own tree — this changes on-disk ownership/permissions.
+     */
+    protected ensureTenantRootIsolated(cwd: string): void {
+        if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env)) {
+            return;
+        }
+        const reposRoot = resolveQaapReposRoot();
+        const segment = resolveTenantSegmentFromWorkspacePath(reposRoot, cwd);
+        if (!segment) {
+            return;
+        }
+        let identity: { uid: number; gid: number };
+        try {
+            identity = this.getTenantUidRegistry().resolve(segment);
+        } catch {
+            return; // a registry failure already fails the spawn via resolveAgentSpawnIdentity
+        }
+        this.applyTenantRootIsolation(resolveUserReposRoot(reposRoot, segment), identity.uid, identity.gid);
+    }
+
     protected ensureAgentCwdOwnership(cwd: string): void {
+        this.ensureTenantRootIsolated(cwd);
         const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
         if (!isRoot) {
             return;

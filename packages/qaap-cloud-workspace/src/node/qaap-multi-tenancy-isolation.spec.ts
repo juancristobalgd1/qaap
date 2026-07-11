@@ -98,6 +98,54 @@ describe('Multi-tenancy isolation', () => {
         });
     });
 
+    // ─── SEC-1: uid-per-user locks each tenant root owner-only ───────
+
+    describe('SEC-1: tenant root isolation (uid-per-user, chmod 0700)', () => {
+        class IsolationRunner extends QaapAgentTaskRunner {
+            readonly calls: Array<{ userRoot: string; uid: number; gid: number }> = [];
+            protected override isBackendRoot(): boolean { return true; }
+            protected override applyTenantRootIsolation(userRoot: string, uid: number, gid: number): void {
+                this.calls.push({ userRoot, uid, gid });
+            }
+            protected override getTenantUidRegistry(): never {
+                return { resolve: () => ({ uid: 4200, gid: 4200 }) } as unknown as never;
+            }
+            isolate(cwd: string): void {
+                (this as unknown as { ensureTenantRootIsolated(cwd: string): void }).ensureTenantRootIsolated(cwd);
+            }
+        }
+
+        const original = process.env.QAAP_AGENT_UID_PER_USER;
+        afterEach(() => {
+            if (original === undefined) {
+                delete process.env.QAAP_AGENT_UID_PER_USER;
+            } else {
+                process.env.QAAP_AGENT_UID_PER_USER = original;
+            }
+        });
+
+        it('chowns + 0700-locks the tenant root when uid-per-user is on', () => {
+            process.env.QAAP_AGENT_UID_PER_USER = '1';
+            const runner = new IsolationRunner();
+            runner.isolate(`${reposRoot}/users/${userA}/octocat/hello`);
+            expect(runner.calls).to.deep.equal([{ userRoot: `${reposRoot}/users/${userA}`, uid: 4200, gid: 4200 }]);
+        });
+
+        it('is a no-op when uid-per-user is off (shared-uid deployment unchanged)', () => {
+            delete process.env.QAAP_AGENT_UID_PER_USER;
+            const runner = new IsolationRunner();
+            runner.isolate(`${reposRoot}/users/${userA}/octocat/hello`);
+            expect(runner.calls).to.have.length(0);
+        });
+
+        it('is a no-op for a cwd outside any tenant tree', () => {
+            process.env.QAAP_AGENT_UID_PER_USER = '1';
+            const runner = new IsolationRunner();
+            runner.isolate('/tmp/not/a/tenant/path');
+            expect(runner.calls).to.have.length(0);
+        });
+    });
+
     // ─── SEC-2: ensure-workspace bind-mount ownership ────────────────
 
     describe('SEC-2: /workspaces/ensure validates workspaceUri ownership', () => {
