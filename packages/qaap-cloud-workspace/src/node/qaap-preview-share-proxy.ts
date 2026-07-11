@@ -13,6 +13,7 @@ import {
     parseQaapDevPreviewPort,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
 import { QaapDevPreviewTargetHostResolver } from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-target-host';
+import { QaapDevPreviewPortRegistry } from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-port-registry';
 import { FileUri } from '@theia/core/lib/node';
 import { QAAP_DEV_PREVIEW_PUBLIC_PREFIX, parseQaapPublicPreviewSharePath } from '../common/qaap-preview-share';
 import { buildQaapPreviewFailureHtml } from '../common/qaap-preview-supervisor-types';
@@ -32,7 +33,24 @@ export class QaapPreviewShareProxyContribution implements BackendApplicationCont
     @inject(QaapCloudWorkspaceStore)
     protected readonly workspaces: QaapCloudWorkspaceStore;
 
+    @inject(QaapDevPreviewPortRegistry)
+    protected readonly portRegistry: QaapDevPreviewPortRegistry;
+
     protected readonly targetHostResolver = new QaapDevPreviewTargetHostResolver();
+
+    /**
+     * A public share pins a loopback port at creation time, but ports on the shared backend can be
+     * reassigned to another tenant later. If the port is now CLAIMED by a DIFFERENT owner, the share
+     * would leak that tenant's dev server — refuse and revoke it. Undefined/matching ownership is
+     * allowed (a reassignment can't be proven; unclaimed raw servers stay reachable). (SEC-6)
+     */
+    protected portReassignedToAnotherTenant(entry: QaapPreviewShareEntry, port: number): boolean {
+        if (entry.ownerLogin === undefined) {
+            return false;
+        }
+        const currentOwner = this.portRegistry.ownerOf(port);
+        return currentOwner !== undefined && currentOwner !== entry.ownerLogin;
+    }
 
     configure(app: Application): void {
         app.use(`${QAAP_DEV_PREVIEW_PUBLIC_PREFIX}/:token`, (req, res) => {
@@ -56,6 +74,11 @@ export class QaapPreviewShareProxyContribution implements BackendApplicationCont
         const port = parseQaapDevPreviewPort(entry.port);
         if (port === undefined || !isAllowedDevPreviewPort(port)) {
             res.status(400).send('Invalid preview port');
+            return;
+        }
+        if (this.portReassignedToAnotherTenant(entry, port)) {
+            await this.shares.revoke(token);
+            res.status(404).type('text/plain').send('Preview share link expired or unknown.');
             return;
         }
         await this.forwardHttp(req, res, port, req.url || '/', entry);
@@ -110,6 +133,11 @@ export class QaapPreviewShareProxyContribution implements BackendApplicationCont
         }
         const port = parseQaapDevPreviewPort(entry.port);
         if (port === undefined) {
+            socket.destroy();
+            return;
+        }
+        if (this.portReassignedToAnotherTenant(entry, port)) {
+            await this.shares.revoke(parsed.token);
             socket.destroy();
             return;
         }

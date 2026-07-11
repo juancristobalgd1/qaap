@@ -25,6 +25,7 @@ import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
 import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
+import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
 
 type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
 
@@ -206,6 +207,33 @@ describe('Multi-tenancy isolation', () => {
             await call(h.endpoint, { cwd: '../evil', prompt: 'p', agents: ['a'] }, fakeRes());
             expect(h.denyCalls).to.equal(1);
             expect(h.storeCwd).to.be.undefined;
+        });
+    });
+
+    // ─── SEC-6: preview share re-anchors the loopback port to its owner ─
+
+    describe('SEC-6: preview share port ownership re-anchor', () => {
+        const reassigned = (currentOwner: string | undefined, entry: { ownerLogin?: string; port: number }): boolean => {
+            const proxy = Object.create(QaapPreviewShareProxyContribution.prototype) as QaapPreviewShareProxyContribution;
+            Object.assign(proxy, { portRegistry: { ownerOf: () => currentOwner } });
+            return (proxy as unknown as { portReassignedToAnotherTenant(e: unknown, p: number): boolean })
+                .portReassignedToAnotherTenant(entry, entry.port);
+        };
+
+        it('blocks a share whose port is now claimed by a DIFFERENT tenant', () => {
+            expect(reassigned('bob', { ownerLogin: 'alice', port: 5173 })).to.equal(true);
+        });
+
+        it('allows a share whose port is still claimed by its owner', () => {
+            expect(reassigned('alice', { ownerLogin: 'alice', port: 5173 })).to.equal(false);
+        });
+
+        it('allows when the port has no current claim (unclaimed raw server)', () => {
+            expect(reassigned(undefined, { ownerLogin: 'alice', port: 5173 })).to.equal(false);
+        });
+
+        it('allows an ownerless share (nothing to re-anchor against)', () => {
+            expect(reassigned('bob', { ownerLogin: undefined, port: 5173 })).to.equal(false);
         });
     });
 
