@@ -104,12 +104,25 @@ services:
   # the theia backend over the compose network (no host port published). Config + JSON-format
   # toggle live in deploy/searxng/settings.yml.
   searxng:
-    image: searxng/searxng:latest
+    # Pinned by digest for reproducible deploys — `:latest` can change under any `up` and ship
+    # settings-incompatible builds (that is how the crash-loop happened). Digest is 2026.7.10.
+    # Bump deliberately: docker pull searxng/searxng:latest && docker inspect --format '{{index .RepoDigests 0}}'.
+    image: searxng/searxng@sha256:1e9c9535cffd1d9d209985905091308257e23b2f4783fbd3b626c0a56285b80c
     # secret_key lives in deploy/searxng/settings.yml (the image only auto-generates one when it
     # creates settings.yml from its template — since we ship our own file, we set it there).
     volumes:
       - ./deploy/searxng:/etc/searxng:rw
     restart: unless-stopped
+    # Surface crash-loops / up-but-broken searxng as "unhealthy" in `docker compose ps` and to the
+    # deploy script. NOT wired into theia's depends_on on purpose: search is a feature, not the IDE,
+    # so a broken searxng must never block the whole IDE from starting. start_period is generous
+    # because a cold searxng takes ~45s to answer.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:

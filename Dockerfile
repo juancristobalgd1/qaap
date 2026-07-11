@@ -40,7 +40,9 @@ RUN npm run build:production && node scripts/copy-frontend-static.mjs
 # --- Runtime -----------------------------------------------------------------
 FROM node:22-bookworm-slim AS runtime
 
-# QAIQ ref pinned at build time; override: docker build --build-arg QAIQ_REF=v0.15.0-qaap.1
+# QAIQ source. Default tracks `main`; the deploy script pins each build to the current main SHA via
+# CACHE_BUST (below) so builds are reproducible AND never frozen. Override the ref with
+# `--build-arg QAIQ_REF=<tag-or-branch>`.
 ARG QAIQ_REPO=https://github.com/juancristobalgd1/qaiq.git
 ARG QAIQ_REF=main
 ARG CODEX_CLI_VERSION=latest
@@ -74,12 +76,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && copilot --version \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
     && antigravity --version \
-    && git clone --depth 1 --branch "${QAIQ_REF}" "${QAIQ_REPO}" /opt/qaiq \
-    && cd /opt/qaiq && bun install && bun run build \
-    && ln -sf /opt/qaiq/bin/qaiq /usr/local/bin/qaiq \
-    && qaiq --version \
     && pipx install aider-chat \
     && /root/.local/bin/aider --version
+
+# QAIQ builds in its OWN layer so a deploy can pull a fresh `main` (or a pinned ref) without
+# rebuilding the whole toolchain above, and so it is never silently frozen at the first build's
+# commit (the RUN above stays cached; only this layer re-runs). Cached by (QAIQ_REF, CACHE_BUST) —
+# the deploy script passes the current `main` SHA as CACHE_BUST, so it re-clones exactly when
+# upstream advances. Manual force: --build-arg CACHE_BUST=$(date +%s).
+ARG CACHE_BUST=unpinned
+RUN git clone --depth 1 --branch "${QAIQ_REF}" "${QAIQ_REPO}" /opt/qaiq \
+    && cd /opt/qaiq && bun install && bun run build \
+    && ln -sf /opt/qaiq/bin/qaiq /usr/local/bin/qaiq \
+    && qaiq --version
 
 ENV PATH="/root/.local/bin:${PATH}" \
     QAAP_DEFAULT_AGENT=qaiq

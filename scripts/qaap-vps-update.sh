@@ -48,10 +48,19 @@ git pull --ff-only origin "$BRANCH"
 BEFORE="$(git rev-parse --short HEAD)"
 echo "[qaap-vps-update] commit: $BEFORE"
 
+# Pin this build to the exact upstream QAIQ commit so the image is reproducible and never frozen:
+# same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones
+# QAIQ in its own CACHE_BUST-keyed layer, so this only re-clones qaiq (not the whole toolchain).
+QAIQ_REPO_URL="${QAIQ_REPO:-https://github.com/juancristobalgd1/qaiq.git}"
+QAIQ_REF="${QAIQ_REF:-main}"
+CACHE_BUST="$(git ls-remote "$QAIQ_REPO_URL" "$QAIQ_REF" 2>/dev/null | cut -f1)"
+CACHE_BUST="${CACHE_BUST:-$(date +%s)}"
+echo "[qaap-vps-update] qaiq: $QAIQ_REF @ ${CACHE_BUST:0:12}"
+
 if [[ "$NO_CACHE" -eq 1 ]]; then
-    docker compose build --no-cache theia
+    docker compose build --no-cache --build-arg "CACHE_BUST=$CACHE_BUST" theia
 else
-    docker compose build theia
+    docker compose build --build-arg "CACHE_BUST=$CACHE_BUST" theia
 fi
 
 docker compose up -d
@@ -61,6 +70,12 @@ echo "[qaap-vps-update] waiting for health..."
 for _ in $(seq 1 60); do
     if docker compose exec -T theia node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))" 2>/dev/null; then
         echo "[qaap-vps-update] ready at commit $BEFORE"
+        # Report searxng health (non-fatal — the IDE runs without it, only @qaiq web search needs it).
+        SX_HEALTH="$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q searxng 2>/dev/null)" 2>/dev/null || echo unknown)"
+        echo "[qaap-vps-update] searxng health: ${SX_HEALTH:-unknown}"
+        if [[ "$SX_HEALTH" == "unhealthy" ]]; then
+            echo "[qaap-vps-update] WARNING: searxng is unhealthy — @qaiq web search will fail (docker compose logs searxng)" >&2
+        fi
         exit 0
     fi
     sleep 5
