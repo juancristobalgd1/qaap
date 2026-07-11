@@ -3,11 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
-import { QAAP_LOGIN_GITHUB_SVG, QAAP_LOGIN_GITLAB_SVG } from './qaap-login-icons';
-import { QaapAuthProvider, readQaapSignedIn, writeQaapAuthSession } from './qaap-login-storage';
+import { fetchQaapAuthConfig, startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { QAAP_LOGIN_GITHUB_SVG } from './qaap-login-icons';
+import { readQaapSignedIn } from './qaap-login-storage';
 
-const AUTH_PLACEHOLDER_MS = 1200;
 const BODY_CLASS = 'qaap-login-active';
 const HOST_ID = 'qaap-login-host';
 
@@ -24,7 +23,7 @@ export function dismissQaapLoginGate(): void {
     document.body.classList.remove(BODY_CLASS);
 }
 
-export function presentQaapLoginGate(onSignedIn?: () => void): void {
+export function presentQaapLoginGate(): void {
     if (readQaapSignedIn() || isQaapLoginGateMounted()) {
         return;
     }
@@ -53,10 +52,6 @@ export function presentQaapLoginGate(onSignedIn?: () => void): void {
       <span class="qaap-login-btn-icon-slot" data-icon="github">${QAAP_LOGIN_GITHUB_SVG}</span>
       <span class="qaap-login-btn-label">Iniciar con GitHub</span>
     </button>
-    <button type="button" id="qaap-login-gitlab" class="qaap-login-btn qaap-login-btn--secondary" data-provider="gitlab" aria-label="Iniciar con GitLab">
-      <span class="qaap-login-btn-icon-slot" data-icon="gitlab">${QAAP_LOGIN_GITLAB_SVG}</span>
-      <span class="qaap-login-btn-label">Iniciar con GitLab</span>
-    </button>
   </div>
   <footer class="qaap-login-footer">
     By continuing you agree to the <a href="#" data-qaap-link="terms">terms</a> &amp; <a href="#" data-qaap-link="privacy">privacy</a>.
@@ -70,29 +65,19 @@ export function presentQaapLoginGate(onSignedIn?: () => void): void {
         (el as HTMLElement).style.display = 'none';
     }
 
-    const complete = (): void => {
-        dismissQaapLoginGate();
-        onSignedIn?.();
-    };
-
-    const wire = (button: HTMLButtonElement | null, provider: QaapAuthProvider): void => {
-        if (!button) {
-            return;
-        }
+    const githubButton = host.querySelector<HTMLButtonElement>('#qaap-login-github');
+    if (githubButton) {
         const handler = (event: Event): void => {
             event.preventDefault();
-            authorize(provider, button, host, complete);
+            authorize(githubButton);
         };
-        button.addEventListener('click', handler);
-        button.addEventListener('keydown', event => {
+        githubButton.addEventListener('click', handler);
+        githubButton.addEventListener('keydown', event => {
             if (event.key === 'Enter' || event.key === ' ') {
                 handler(event);
             }
         });
-    };
-
-    wire(host.querySelector<HTMLButtonElement>('#qaap-login-github'), 'github');
-    wire(host.querySelector<HTMLButtonElement>('#qaap-login-gitlab'), 'gitlab');
+    }
 
     host.addEventListener('click', event => {
         if ((event.target as HTMLElement | null)?.closest('[data-qaap-link]')) {
@@ -100,43 +85,52 @@ export function presentQaapLoginGate(onSignedIn?: () => void): void {
         }
     });
 
-    host.querySelector<HTMLButtonElement>('#qaap-login-github')?.focus();
+    // If the server has no GitHub OAuth app configured, clicking would navigate to a 503 blank page.
+    // Detect that and disable the button with an explanation instead (see ONB-1).
+    void reflectGithubAvailability(host);
+    githubButton?.focus();
 }
 
-function authorize(
-    provider: QaapAuthProvider,
-    button: HTMLButtonElement,
-    host: HTMLElement,
-    onComplete: () => void
-): void {
+function authorize(button: HTMLButtonElement): void {
     if (button.disabled || button.classList.contains('qaap-login-btn--loading')) {
         return;
     }
+    // Full-page redirect to GitHub OAuth; the session lands after the callback and is picked up on
+    // reload (presentQaapLoginGate early-returns when already signed in).
+    startGithubOAuth();
+}
 
-    if (provider === 'github') {
-        startGithubOAuth();
+/**
+ * Reflect whether GitHub sign-in is actually usable. When the backend reports no OAuth app (and
+ * skip-auth is off), disable the button and explain, so the user never lands on the raw 503 page.
+ */
+async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
+    let available = true;
+    try {
+        const config = await fetchQaapAuthConfig();
+        available = config.githubOAuth === true || config.skipAuth === true;
+    } catch {
+        // Config unknown (fetch error/timeout) — leave the button enabled; a transient blip must
+        // never lock out a working login.
         return;
     }
-
-    for (const btn of host.querySelectorAll<HTMLButtonElement>('button[data-provider]')) {
-        btn.disabled = true;
-        btn.classList.add('qaap-login-btn--loading');
-        btn.setAttribute('aria-busy', 'true');
+    if (available) {
+        return;
     }
-
-    const iconSlot = button.querySelector('.qaap-login-btn-icon-slot');
-    if (iconSlot) {
-        iconSlot.innerHTML = '<span class="qaap-login-spinner" aria-hidden="true"></span>';
+    const button = host.querySelector<HTMLButtonElement>('#qaap-login-github');
+    if (button) {
+        button.disabled = true;
+        button.setAttribute('aria-disabled', 'true');
+        const label = button.querySelector('.qaap-login-btn-label');
+        if (label) {
+            label.textContent = 'GitHub sign-in unavailable';
+        }
     }
-    const label = button.querySelector('.qaap-login-btn-label');
-    if (label) {
-        label.textContent = 'Autorizando…';
+    const tagline = host.querySelector('.qaap-login-tagline');
+    if (tagline) {
+        tagline.textContent = 'GitHub sign-in isn’t configured on this server yet. '
+            + 'Ask the administrator to set the GitHub OAuth credentials (or enable QAAP_SKIP_AUTH for local use).';
     }
-
-    window.setTimeout(() => {
-        writeQaapAuthSession(provider);
-        onComplete();
-    }, AUTH_PLACEHOLDER_MS);
 }
 
 function escapeHtml(value: string): string {

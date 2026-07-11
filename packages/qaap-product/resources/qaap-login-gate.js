@@ -311,8 +311,6 @@
             '<div class="qaap-login-actions">' +
             '<button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary">' +
             '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span>Iniciar con GitHub</button>' +
-            '<button type="button" id="qaap-login-gitlab" class="qaap-login-btn qaap-login-btn--secondary">' +
-            '<span class="qaap-login-btn-icon">' + GITLAB_SVG + '</span>Iniciar con GitLab</button>' +
             '</div>' +
             '<footer class="qaap-login-footer">By continuing you agree to the terms &amp; privacy.</footer>' +
             '</div>';
@@ -324,47 +322,54 @@
             preloadEls[p].style.display = 'none';
         }
 
-        function authorize(provider, button) {
+        function authorize(button) {
             if (button.disabled) {
                 return;
             }
-            if (provider === 'github') {
-                try {
-                    window.history.replaceState({}, '', window.location.pathname + window.location.search);
-                } catch (e) { /* ignore */ }
-                window.location.href = '/qaap/oauth/github/start';
-                return;
-            }
-            var buttons = host.querySelectorAll('button');
-            for (var b = 0; b < buttons.length; b++) {
-                buttons[b].disabled = true;
-            }
-            button.innerHTML = '<span class="qaap-login-spinner"></span> Authorizing…';
-            window.setTimeout(function () {
-                writeSignedIn(provider);
-                host.remove();
-                document.body.classList.remove('qaap-login-active');
-                loadBundle();
-            }, AUTH_MS);
+            // Full-page redirect to GitHub OAuth; the session lands after the callback.
+            try {
+                window.history.replaceState({}, '', window.location.pathname + window.location.search);
+            } catch (e) { /* ignore */ }
+            window.location.href = '/qaap/oauth/github/start';
         }
 
         var github = document.getElementById('qaap-login-github');
-        var gitlab = document.getElementById('qaap-login-gitlab');
         if (github) {
             github.addEventListener('click', function (e) {
                 e.preventDefault();
-                authorize('github', github);
+                authorize(github);
             });
-        }
-        if (gitlab) {
-            gitlab.addEventListener('click', function (e) {
-                e.preventDefault();
-                authorize('gitlab', gitlab);
-            });
-        }
-        if (github) {
             github.focus();
         }
+
+        // If the server has no GitHub OAuth app configured, a click would land on a raw 503 page.
+        // Detect that and disable the button with an explanation instead (ONB-1).
+        reflectGithubAvailability(host);
+    }
+
+    function reflectGithubAvailability(host) {
+        fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, 4000)
+            .then(function (res) { return res && res.ok ? res.json() : null; })
+            .then(function (config) {
+                // Only disable when the server AFFIRMATIVELY reports no OAuth app. On a fetch
+                // error/timeout (config === null) leave the button enabled — a transient blip must
+                // never lock out a working login.
+                if (!config || config.githubOAuth === true || config.skipAuth === true) {
+                    return;
+                }
+                var button = document.getElementById('qaap-login-github');
+                if (button) {
+                    button.disabled = true;
+                    button.setAttribute('aria-disabled', 'true');
+                    button.innerHTML = '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span>GitHub sign-in unavailable';
+                }
+                var tagline = host.querySelector('.qaap-login-tagline');
+                if (tagline) {
+                    tagline.textContent = 'GitHub sign-in isn’t configured on this server yet. '
+                        + 'Ask the administrator to set the GitHub OAuth credentials (or enable QAAP_SKIP_AUTH for local use).';
+                }
+            })
+            .catch(function () { /* config unknown (timeout/error) — leave the button enabled */ });
     }
 
     if (window.location.search.indexOf('qaapLogout=1') !== -1) {
