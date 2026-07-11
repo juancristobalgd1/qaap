@@ -2148,11 +2148,25 @@ export class QaapAgentConversationStore {
      * 'idle' (used only at startup: after a restart the live task handle is gone either way, so a
      * turn under budget can never complete normally — same fallback the store always applied).
      */
+    /** True when the conversation's current turn is paused waiting on a user approval (REL-5). */
+    protected turnHasPendingApproval(conv: QaapAgentConversation): boolean {
+        const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
+        return !!lastUser?.taskId && this.taskRunner.listPendingQaiqControlRequests(lastUser.taskId).length > 0;
+    }
+
     protected sweepZombieStreamingTurns(nowMs: number, options?: { readonly resetSurvivorsToIdle?: boolean }): boolean {
         const maxTurnMinutes = resolveQaapMaxTurnMinutes(process.env[QAAP_MAX_TURN_MINUTES_ENV]);
         const streaming: QaapStreamingTurnSnapshot[] = [];
         for (const conv of this.conversations.values()) {
             if (conv.status !== 'streaming') {
+                continue;
+            }
+            // A turn paused on a pending approval is NOT a zombie — the user is being asked to
+            // approve a tool. Force-failing it at the watchdog with a misleading "exceeded max time"
+            // message punishes a present user who simply took a while to decide; the task idle-timer
+            // already makes the same exception. Pending requests only exist while the runner is up,
+            // so a stale post-restart turn (runner empty) is still reset/finalized normally. (REL-5)
+            if (this.turnHasPendingApproval(conv)) {
                 continue;
             }
             const streamingSinceMs = resolveStreamingSinceMs(conv);

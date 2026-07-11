@@ -105,6 +105,24 @@ describe('QaapAgentConversationStore turn watchdog', () => {
         expect(agentMessage.error).to.equal('Stopped automatically after 50 hours: the turn exceeded the maximum allowed time.');
     });
 
+    it('spares an expired turn that is paused on a pending approval (REL-5)', () => {
+        delete process.env[QAAP_MAX_TURN_MINUTES_ENV];
+        const runner = new TestTaskRunner();
+        // The turn is waiting on a user approval — a live pending can_use_tool request for its task.
+        (runner as unknown as { pendingQaiqControlRequests: Map<string, unknown[]> })
+            .pendingQaiqControlRequests.set('paused-task', [{ id: 'req' }]);
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        const now = Date.now();
+        store.seed(streamingConversation('paused', now - 50 * 60 * 1000)); // 50m > 45m default
+
+        const changed = store.sweep(now);
+
+        expect(changed).to.be.false;
+        expect(runner.cancelledIds).to.deep.equal([]);
+        expect(store.get('paused')!.status).to.equal('streaming');
+    });
+
     it('leaves a conversation streaming within the max duration untouched', () => {
         delete process.env[QAAP_MAX_TURN_MINUTES_ENV];
         const runner = new TestTaskRunner();
