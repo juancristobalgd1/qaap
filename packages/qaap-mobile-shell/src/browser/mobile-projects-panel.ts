@@ -37,7 +37,7 @@ import {
 } from '../common/qaap-work-hub-team';
 import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
 import { MobileProjectsService } from './mobile-projects-service';
-import { isAgentsHubExecutionSurfacePainted } from '../common/qaap-agents-hub-landing';
+import { isAgentsHubExecutionSurfacePainted, isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
     buildProbeStreamingSummaries,
@@ -2312,9 +2312,19 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     retryOpenTranscriptStream(): void {
-        const project = this.transcriptController.state.transcriptOpenProject;
-        const summary = this.transcriptController.state.transcriptOpenSummary;
+        let project = this.transcriptController.state.transcriptOpenProject;
+        let summary = this.transcriptController.state.transcriptOpenSummary;
         if (!project || !summary) {
+            // Mirror cancelOpenTranscriptStream: no transcript sheet is open means the
+            // conversation is showing in the Agents Hub inline shell (the default surface).
+            // A bare sheet-state check silently no-ops there — which left the timeout card's
+            // "Retry" dead in the inline shell.
+            project = this.resolveAgentsHubShellProject();
+            summary = project ? this.resolveAgentsHubShellSummary(project) : undefined;
+        }
+        if (!project || !summary || isAgentsHubIdleConversationSummary(summary)) {
+            // Nothing real to retry (no live conversation yet, or it ended between the
+            // watchdog and the click) — never seed a phantom {...idle, streaming} snapshot.
             return;
         }
         this.transcriptLiveUi.applyOptimisticStreamTimeoutRetry(summary);

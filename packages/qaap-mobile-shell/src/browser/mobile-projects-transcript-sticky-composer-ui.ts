@@ -1477,7 +1477,21 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 : undefined,
             isAgentWorking: () => this.isTranscriptStickyComposerAgentWorking(),
             isAgentBeamIdle: () => this.isTranscriptStickyComposerAgentBeamIdle(),
-            onStop: () => { void this.host.onCancelConversation(project, summary); },
+            onStop: () => {
+                // Re-resolve the target when the mount closure captured the idle placeholder
+                // (a freshly-delegated task, or a new-chat that replaced idle→real after mount):
+                // the closure summary would be `__qaap_agents_hub_idle__`, so a bare cancel hit a
+                // conversation id the backend doesn't have and the Stop button did nothing. When
+                // the closure already holds a REAL conversation, keep it — never re-resolve to the
+                // shell's currently-selected project and cancel a different project's stream.
+                let stopProject = project;
+                let stopSummary = summary;
+                if (isAgentsHubIdleConversationSummary(summary)) {
+                    stopProject = this.workHub.resolveShellProject() ?? project;
+                    stopSummary = this.workHub.resolveShellSummary(stopProject) ?? summary;
+                }
+                void this.host.onCancelConversation(stopProject, stopSummary);
+            },
             onSendControlMounted: refresh => { this.host.transcriptComposerSendRefresh = refresh; },
             onAttach: anchor => { void this.onTranscriptComposerAttach(project, anchor); },
             onOpenAgentSheet: isLegacyTheiaChat
