@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import * as fs from 'fs';
+import { writeJsonAtomicSync } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -36,7 +37,7 @@ function readSettingsObject(settingsPath: string): Record<string, unknown> {
 
 function writeSettingsObject(settingsPath: string, settings: Record<string, unknown>): void {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    fs.writeFileSync(settingsPath, `${JSON.stringify(settings, undefined, 2)}\n`, 'utf8');
+    writeJsonAtomicSync(settingsPath, settings, { trailingNewline: true });
 }
 
 /** Restore settings left behind when a prior task exited without calling {@link restore}. */

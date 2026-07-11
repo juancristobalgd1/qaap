@@ -6,6 +6,7 @@
 import { injectable } from '@theia/core/shared/inversify';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
+import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import { buildQaapPublicPreviewShareUrl } from '../common/qaap-preview-share';
@@ -116,6 +117,6 @@ export class QaapPreviewShareStore {
 
     protected async writeAll(data: Record<string, QaapPreviewShareEntry>): Promise<void> {
         await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-        await fs.writeFile(STORE_PATH, JSON.stringify(data, undefined, 2), 'utf8');
+        await writeJsonAtomic(STORE_PATH, data);
     }
 }

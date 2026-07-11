@@ -5,6 +5,7 @@
 
 import { injectable } from '@theia/core/shared/inversify';
 import * as fs from 'fs/promises';
+import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import type {
@@ -58,6 +59,6 @@ export class QaapTerminalSessionStore {
         data: Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>,
     ): Promise<void> {
         await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-        await fs.writeFile(STORE_PATH, JSON.stringify(data, undefined, 2), 'utf8');
+        await writeJsonAtomic(STORE_PATH, data);
     }
 }

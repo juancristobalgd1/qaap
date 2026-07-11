@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -2259,7 +2260,7 @@ export class QaapAgentConversationStore {
     protected async persist(): Promise<void> {
         try {
             await fsp.mkdir(STORE_DIR, { recursive: true });
-            await fsp.writeFile(INDEX_PATH, JSON.stringify([...this.conversations.values()], undefined, 2), 'utf8');
+            await writeJsonAtomic(INDEX_PATH, [...this.conversations.values()]);
             this.persistFailureLoggedAtMs = 0;
         } catch (error) {
             // Best-effort persistence, but a swallowed error hides disk-full/corruption; surface it

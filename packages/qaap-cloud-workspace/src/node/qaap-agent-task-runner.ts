@@ -10,6 +10,7 @@ import { ChildProcess, spawn, spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import { writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import {
@@ -399,7 +400,7 @@ export class QaapAgentTaskRunner {
             for (const [owner, token] of this.helperTokens) {
                 obj[owner] = token;
             }
-            fs.writeFileSync(TOKENS_PATH, JSON.stringify(obj), { mode: 0o600 });
+            writeJsonAtomicSync(TOKENS_PATH, obj, { space: 0, mode: 0o600 });
         } catch {
             /* persistence is best-effort */
         }
@@ -2554,7 +2555,7 @@ export class QaapAgentTaskRunner {
     protected async persist(): Promise<void> {
         try {
             await fsp.mkdir(STORE_DIR, { recursive: true });
-            await fsp.writeFile(INDEX_PATH, JSON.stringify([...this.tasks.values()], undefined, 2), 'utf8');
+            await writeJsonAtomic(INDEX_PATH, [...this.tasks.values()]);
         } catch {
             /* persistence is best-effort */
         }

@@ -9,6 +9,7 @@ import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
@@ -331,7 +332,7 @@ export class QaapParallelRunStore {
     protected async persist(): Promise<void> {
         try {
             await fsp.mkdir(STORE_DIR, { recursive: true });
-            await fsp.writeFile(INDEX_PATH, JSON.stringify([...this.runs.values()], undefined, 2), 'utf8');
+            await writeJsonAtomic(INDEX_PATH, [...this.runs.values()]);
         } catch {
             /* persistence is best-effort */
         }

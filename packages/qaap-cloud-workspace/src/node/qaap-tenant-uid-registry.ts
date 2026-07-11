@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import * as fs from 'fs';
+import { writeJsonAtomicSync } from './qaap-write-json-atomic';
 import * as path from 'path';
 import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
@@ -135,13 +136,6 @@ export class QaapTenantUidRegistry {
     protected persist(data: QaapTenantUidRegistryData): void {
         const dir = path.dirname(this.registryPath);
         fs.mkdirSync(dir, { recursive: true });
-        const tmp = `${this.registryPath}.${process.pid}.tmp`;
-        fs.writeFileSync(tmp, JSON.stringify(data, undefined, 2), { mode: 0o600 });
-        fs.renameSync(tmp, this.registryPath);
-        try {
-            fs.chmodSync(this.registryPath, 0o600);
-        } catch {
-            /* best-effort tighten; the write above already set the mode on create */
-        }
+        writeJsonAtomicSync(this.registryPath, data, { mode: 0o600 });
     }
 }

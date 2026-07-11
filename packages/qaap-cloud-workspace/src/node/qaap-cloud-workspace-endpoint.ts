@@ -26,6 +26,7 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
 import { QAAP_PREVIEW_RESTART_PATH, type QaapPreviewRestartRequest } from '../common/qaap-preview-supervisor-types';
 import { QaapCloudOrchestrator } from './qaap-cloud-orchestrator';
+import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
@@ -363,7 +364,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         const path = await import('path');
         const file = this.deployEnvPath(workspaceKey, ownerLogin);
         await fs.mkdir(path.dirname(file), { recursive: true });
-        await fs.writeFile(file, JSON.stringify({ vars }, undefined, 2), 'utf8');
+        await writeJsonAtomic(file, { vars });
     }
 
     protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {

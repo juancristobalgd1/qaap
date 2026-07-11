@@ -7,6 +7,7 @@ import { Emitter, Event } from '@theia/core/lib/common/event';
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
+import { writeJsonAtomicSync } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import {
@@ -299,7 +300,7 @@ export class QaapWorkHubRoutineStore {
                 routines: this.list(),
                 seeded: seeded || undefined,
             };
-            fs.writeFileSync(STORE_PATH, JSON.stringify(payload, undefined, 2), { mode: STORE_FILE_MODE });
+            writeJsonAtomicSync(STORE_PATH, payload, { mode: STORE_FILE_MODE });
         } catch (error) {
             console.warn('[qaap-work-hub-routines] failed to persist:', error);
         }
