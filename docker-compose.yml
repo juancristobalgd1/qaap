@@ -55,6 +55,20 @@ services:
       QAAP_AGENT_UID: ${QAAP_AGENT_UID:-1001}
       QAAP_AGENT_GID: ${QAAP_AGENT_GID:-1001}
       QAAP_AGENT_HOME: ${QAAP_AGENT_HOME:-/home/qaap-agent}
+      # Multi-tenant CODE isolation (SEC-1). Default OFF → the deployment above runs every tenant's
+      # agent under the SHARED uid 1001 (secrets isolated, code is NOT). Set QAAP_AGENT_UID_PER_USER=1
+      # to give each GitHub login a distinct, persistent uid (20000+), chown its repos/worktrees to
+      # that uid + chmod 0700, and run its agent + a private per-tenant HOME under it — so one tenant's
+      # agent cannot read/write another's code. REQUIRES the backend to be root (it is, in this image).
+      # ⚠️ Enabling rewrites on-disk ownership; read doc/qaap-uid-per-user.md before flipping it, and
+      # keep the revert script handy (turning it back off leaves files owned by 20000+).
+      QAAP_AGENT_UID_PER_USER: ${QAAP_AGENT_UID_PER_USER:-}
+      # Where per-tenant agent HOMEs live (image provisions /home/qaap-tenants at 0711). Only used
+      # when uid-per-user is on.
+      QAAP_TENANT_HOME_ROOT: ${QAAP_TENANT_HOME_ROOT:-/home/qaap-tenants}
+      # Persistent login→uid map (root-owned, outside every tenant tree). Defaults to
+      # /workspace/.qaap/uid-registry.json (on the theia-workspace volume, so it survives rebuilds).
+      QAAP_TENANT_UID_REGISTRY_PATH: ${QAAP_TENANT_UID_REGISTRY_PATH:-}
       # Opt-in relevance retrieval: ripgrep the user's message keywords over the repo and inject the
       # top matching file paths as a "likely relevant files" hint (Cursor-style priming). Adds a small
       # per-turn token + ripgrep cost — set QAAP_AGENT_RETRIEVAL=1 and measure. Default off.

@@ -52,6 +52,8 @@ import {
     resolveQaapReposRoot,
     resolveTenantIsolationRoot,
     resolveQaapWorktreesRoot,
+    resolveTenantHome,
+    QAAP_USER_REPOS_SEGMENT,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
@@ -2361,8 +2363,134 @@ export class QaapAgentTaskRunner {
         this.applyTenantRootIsolation(target.root, identity.uid, identity.gid);
     }
 
+    /**
+     * Provision everything a per-tenant uid needs to actually RUN before the agent spawns under it:
+     * an `/etc/passwd`+`/etc/group` entry (so `getpwuid`/`os.userInfo`/`git commit` don't fail for a
+     * uid with no passwd record — the #1 blocker for a "homeless" uid), a private writable HOME, and
+     * traversable parent dirs. No-op unless uid-per-user is on, the backend is root, and the cwd
+     * resolves to a tenant tree — so the shared-uid deployment is byte-identical. (SEC-1)
+     *
+     * Fail closed: a registry throw (range exhausted / persistence failure) propagates out of the
+     * spawn `try` and fails the task rather than running the tenant under a shared/root uid.
+     */
+    protected ensureTenantIdentityProvisioned(cwd: string): void {
+        if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env)) {
+            return;
+        }
+        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
+        if (!target) {
+            return;
+        }
+        const identity = this.getTenantUidRegistry().resolve(target.segment);
+        const home = resolveTenantHome(target.segment);
+        this.ensureTenantParentsTraversable();
+        this.provisionTenantOsUser(target.segment, identity.uid, identity.gid, home);
+        this.provisionTenantHome(identity.uid, identity.gid, home);
+    }
+
+    protected tenantParentsHardened = false;
+
+    /**
+     * chmod 0711 the shared parent dirs (the per-user repos root and the worktrees root) so a tenant
+     * uid can TRAVERSE to its own 0700 subdir without being able to LIST sibling tenants (0755 would
+     * leak the set of logins). Idempotent, runs once per process. Overridable in tests.
+     */
+    protected ensureTenantParentsTraversable(): void {
+        if (this.tenantParentsHardened) {
+            return;
+        }
+        this.tenantParentsHardened = true;
+        const usersRoot = path.join(resolveQaapReposRoot(), QAAP_USER_REPOS_SEGMENT);
+        for (const dir of [usersRoot, resolveQaapWorktreesRoot()]) {
+            try {
+                fs.mkdirSync(dir, { recursive: true });
+                fs.chmodSync(dir, 0o711);
+            } catch (error) {
+                console.warn(`[qaap-security] could not harden tenant parent ${dir} to 0711: `
+                    + `${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+    }
+
+    /** Append an idempotent `/etc/passwd`+`/etc/group` record for a tenant uid. Overridable in tests. */
+    protected provisionTenantOsUser(segment: string, uid: number, gid: number, home: string): void {
+        const userName = `qaap-t-${segment}`;
+        this.appendOsRecordIfMissing('/etc/group', `:x:${gid}:`, `${userName}:x:${gid}:\n`);
+        this.appendOsRecordIfMissing('/etc/passwd', `:x:${uid}:`, `${userName}:x:${uid}:${gid}:Qaap tenant:${home}:/usr/sbin/nologin\n`);
+    }
+
+    /**
+     * Append `line` to a colon-delimited OS account file only when no existing record contains
+     * `marker` (e.g. `:x:20000:`). Synchronous, so within the single `--no-cluster` backend process
+     * it is a serialized critical section — concurrent tenant spawns cannot interleave partial writes.
+     */
+    protected appendOsRecordIfMissing(file: string, marker: string, line: string): void {
+        try {
+            let current: string;
+            try {
+                current = fs.readFileSync(file, 'utf8');
+            } catch {
+                return; // no account file (non-glibc / unexpected base image) — nothing safe to do
+            }
+            if (current.includes(marker)) {
+                return; // already provisioned
+            }
+            fs.appendFileSync(file, current === '' || current.endsWith('\n') ? line : `\n${line}`);
+        } catch (error) {
+            console.warn(`[qaap-security] could not provision ${file} for a tenant uid: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /** Create + lock a tenant's private agent HOME (0700, tenant-owned), seeding shared config once. Overridable in tests. */
+    protected provisionTenantHome(uid: number, gid: number, home: string): void {
+        try {
+            if (fs.existsSync(home) && fs.statSync(home).uid === uid) {
+                return; // already provisioned and owned by this tenant
+            }
+            fs.mkdirSync(home, { recursive: true });
+            this.seedTenantHome(home);
+            const result = spawnSync('chown', ['-R', `${uid}:${gid}`, home], { stdio: 'ignore' });
+            if (result.status !== 0) {
+                console.warn(`[qaap-security] could not chown tenant home ${home} to ${uid}:${gid} `
+                    + `(exit ${result.status ?? 'signal'}); the agent may not be able to write it.`);
+            }
+            fs.chmodSync(home, 0o700);
+        } catch (error) {
+            console.warn(`[qaap-security] could not provision tenant home ${home} for uid ${uid}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /** Seed a fresh tenant HOME with the shared agent's `.claude` config so qaiq starts configured. */
+    protected seedTenantHome(home: string): void {
+        const sharedHome = process.env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent';
+        const sharedClaude = path.join(sharedHome, '.claude');
+        if (!fs.existsSync(sharedClaude)) {
+            return;
+        }
+        try {
+            fs.cpSync(sharedClaude, path.join(home, '.claude'), { recursive: true });
+        } catch (error) {
+            console.warn(`[qaap-security] could not seed tenant home ${home} from ${sharedClaude}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /** The writable HOME for the dropped agent: a per-tenant home in uid-per-user mode, else the shared one. */
+    protected resolveAgentHome(cwd: string): string {
+        if (isTenantUidPerUserEnabled(process.env)) {
+            const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
+            if (target) {
+                return resolveTenantHome(target.segment);
+            }
+        }
+        return process.env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent';
+    }
+
     protected ensureAgentCwdOwnership(cwd: string): void {
         this.ensureTenantRootIsolated(cwd);
+        this.ensureTenantIdentityProvisioned(cwd);
         const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
         if (!isRoot) {
             return;
@@ -2393,9 +2521,11 @@ export class QaapAgentTaskRunner {
         env.PWD = task.cwd;
         // When the agent is dropped to a non-root uid (QAAP_AGENT_UID), its inherited HOME still
         // points at root's /root, which it cannot write — CLI caches/configs would fail. Point HOME
-        // at a writable agent home so the non-root process has somewhere to write.
+        // at a writable agent home so the non-root process has somewhere to write. In uid-per-user
+        // mode this is a PER-TENANT home (the shared /home/qaap-agent is owned by uid 1001 and is
+        // neither writable nor private under a tenant uid) — see resolveAgentHome.
         if (this.resolveAgentSpawnIdentity(task.cwd).uid !== undefined) {
-            env.HOME = process.env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent';
+            env.HOME = this.resolveAgentHome(task.cwd);
         }
         // Strip shared provider API keys from process.env so per-user settings
         // are the sole source. Without this, User B's agent would inherit User

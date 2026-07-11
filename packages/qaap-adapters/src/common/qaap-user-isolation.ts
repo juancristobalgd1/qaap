@@ -34,6 +34,22 @@ export function resolveQaapWorktreesRoot(): string {
     return path.join(os.tmpdir(), 'qaap-worktrees');
 }
 
+/**
+ * Root under which each tenant gets its own agent HOME in uid-per-user mode:
+ * `{QAAP_TENANT_HOME_ROOT}/{segment}` (default `/home/qaap-tenants/{segment}`). A distinct,
+ * tenant-owned (0700) HOME is required because the shared `QAAP_AGENT_HOME` (`/home/qaap-agent`)
+ * is owned by the single fallback uid 1001 — under a per-tenant uid it is neither writable nor
+ * private, so all tenants would otherwise share one home (leaking `~/.claude`, caches, tokens).
+ */
+export function resolveQaapTenantHomeRoot(): string {
+    return process.env.QAAP_TENANT_HOME_ROOT?.trim() || '/home/qaap-tenants';
+}
+
+/** A single tenant's agent HOME: `{tenantHomeRoot}/{segment}`. `segment` is a {@link safeUserIdSegment}. */
+export function resolveTenantHome(segment: string): string {
+    return path.join(resolveQaapTenantHomeRoot(), segment);
+}
+
 /** Sanitize GitHub login / user id for use as a single path segment. */
 export function safeUserIdSegment(login: string): string {
     const trimmed = login.trim();

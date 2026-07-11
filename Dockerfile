@@ -111,11 +111,21 @@ RUN groupadd --gid 1001 qaap-agent \
     && chmod -R a+rX /opt/qaiq \
     && mkdir -p /workspace \
     && chown -R 1001:1001 /workspace /home/qaap-agent \
+    # uid-per-user mode (QAAP_AGENT_UID_PER_USER=1): each tenant gets a private agent HOME under here.
+    # 0711 root-owned lets a tenant uid enter its own 0700 subdir by name but not list sibling logins;
+    # the root backend creates the per-tenant subdirs at spawn. No-op when the flag is off.
+    && mkdir -p /home/qaap-tenants \
+    && chmod 0711 /home/qaap-tenants \
     # The root backend runs git (status/stage/discard/commit/diff) on per-user repos that the agent
     # (uid 1001, or a per-tenant uid) owns after chown-on-spawn. Without this, git aborts every such
     # command with "detected dubious ownership", breaking the composer Accept/Discard/Commit and the
     # diff review. Root deliberately manages these repos, so trust them all.
-    && git config --system --add safe.directory '*'
+    && git config --system --add safe.directory '*' \
+    # Belt-and-suspenders identity so a tenant uid (even before its /etc/passwd record is written) can
+    # `git commit` without "unable to look up current user in the passwd file". The backend writes a
+    # real passwd record per tenant at spawn; this is the fallback.
+    && git config --system user.name 'Qaap Agent' \
+    && git config --system user.email 'agent@qaap.local'
 
 ARG QAAP_IDE_PORT=4873
 ENV NODE_ENV=production \

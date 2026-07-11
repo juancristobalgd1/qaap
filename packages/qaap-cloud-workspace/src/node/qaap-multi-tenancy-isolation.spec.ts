@@ -12,6 +12,7 @@ import {
     isUserWorkspaceContainerPath,
     resolveQaapReposRoot,
     resolveQaapWorktreesRoot,
+    resolveTenantHome,
     resolveUserReposRoot,
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
@@ -152,6 +153,81 @@ describe('Multi-tenancy isolation', () => {
             const runner = new IsolationRunner();
             runner.isolate(path.join(worktreeRoot, 'deadbeef'));
             expect(runner.calls).to.deep.equal([{ userRoot: worktreeRoot, uid: 4200, gid: 4200 }]);
+        });
+    });
+
+    // ─── SEC-1: per-tenant /etc/passwd + private HOME provisioning ────
+
+    describe('SEC-1: tenant OS-user + HOME provisioning (uid-per-user)', () => {
+        class ProvisionRunner extends QaapAgentTaskRunner {
+            readonly osUsers: Array<{ segment: string; uid: number; gid: number; home: string }> = [];
+            readonly homes: Array<{ uid: number; gid: number; home: string }> = [];
+            parentsHardenedCount = 0;
+            protected override isBackendRoot(): boolean { return true; }
+            protected override getTenantUidRegistry(): never {
+                return { resolve: () => ({ uid: 4200, gid: 4200 }) } as unknown as never;
+            }
+            protected override provisionTenantOsUser(segment: string, uid: number, gid: number, home: string): void {
+                this.osUsers.push({ segment, uid, gid, home });
+            }
+            protected override provisionTenantHome(uid: number, gid: number, home: string): void {
+                this.homes.push({ uid, gid, home });
+            }
+            protected override ensureTenantParentsTraversable(): void {
+                this.parentsHardenedCount++;
+            }
+            provision(cwd: string): void {
+                (this as unknown as { ensureTenantIdentityProvisioned(cwd: string): void }).ensureTenantIdentityProvisioned(cwd);
+            }
+            home(cwd: string): string {
+                return (this as unknown as { resolveAgentHome(cwd: string): string }).resolveAgentHome(cwd);
+            }
+        }
+
+        const original = process.env.QAAP_AGENT_UID_PER_USER;
+        afterEach(() => {
+            if (original === undefined) {
+                delete process.env.QAAP_AGENT_UID_PER_USER;
+            } else {
+                process.env.QAAP_AGENT_UID_PER_USER = original;
+            }
+        });
+
+        it('provisions an OS user + private HOME + hardened parents for a tenant repo cwd (flag on)', () => {
+            process.env.QAAP_AGENT_UID_PER_USER = '1';
+            const runner = new ProvisionRunner();
+            runner.provision(`${reposRoot}/users/${userA}/octocat/hello`);
+            expect(runner.osUsers).to.deep.equal([{ segment: userA, uid: 4200, gid: 4200, home: resolveTenantHome(userA) }]);
+            expect(runner.homes).to.deep.equal([{ uid: 4200, gid: 4200, home: resolveTenantHome(userA) }]);
+            expect(runner.parentsHardenedCount).to.equal(1);
+        });
+
+        it('provisions for a worktree cwd too', () => {
+            process.env.QAAP_AGENT_UID_PER_USER = '1';
+            const runner = new ProvisionRunner();
+            runner.provision(path.join(resolveQaapWorktreesRoot(), userB, 'deadbeef'));
+            expect(runner.osUsers).to.deep.equal([{ segment: userB, uid: 4200, gid: 4200, home: resolveTenantHome(userB) }]);
+        });
+
+        it('is a no-op when uid-per-user is off (shared-uid deployment unchanged)', () => {
+            delete process.env.QAAP_AGENT_UID_PER_USER;
+            const runner = new ProvisionRunner();
+            runner.provision(`${reposRoot}/users/${userA}/octocat/hello`);
+            expect(runner.osUsers).to.have.length(0);
+            expect(runner.homes).to.have.length(0);
+            expect(runner.parentsHardenedCount).to.equal(0);
+        });
+
+        it('resolveAgentHome returns a per-tenant home for a tenant cwd (flag on)', () => {
+            process.env.QAAP_AGENT_UID_PER_USER = '1';
+            const runner = new ProvisionRunner();
+            expect(runner.home(`${reposRoot}/users/${userA}/octocat/hello`)).to.equal(resolveTenantHome(userA));
+        });
+
+        it('resolveAgentHome falls back to the shared agent home when the flag is off', () => {
+            delete process.env.QAAP_AGENT_UID_PER_USER;
+            const runner = new ProvisionRunner();
+            expect(runner.home(`${reposRoot}/users/${userA}/octocat/hello`)).to.equal('/home/qaap-agent');
         });
     });
 
