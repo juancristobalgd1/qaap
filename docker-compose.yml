@@ -78,6 +78,12 @@ services:
       WEB_SEARCH_API: ${WEB_SEARCH_API:-http://searxng:8080/search?format=json}
       WEB_CUSTOM_ALLOW_PRIVATE: ${WEB_CUSTOM_ALLOW_PRIVATE:-true}
       WEB_CUSTOM_ALLOW_HTTP: ${WEB_CUSTOM_ALLOW_HTTP:-true}
+      # Send tool schemas eagerly instead of deferring them behind a ToolSearch meta-tool.
+      # QAIQ defers `shouldDefer` tools (incl. WebSearch) by default via Anthropic's
+      # tool_reference beta — but that transport isn't honored over OpenAI-compat/OpenRouter
+      # (how the free models here run), so a deferred WebSearch never reaches the model and it
+      # answers "I have no web access". `false` = standard mode: WebSearch ships in turn 1.
+      ENABLE_TOOL_SEARCH: ${ENABLE_TOOL_SEARCH:-false}
       # Optional: mount a host folder as the default workspace
       # THEIA_PLUGINS_DIR: /app/plugins
     depends_on:
