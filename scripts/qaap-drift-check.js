@@ -289,6 +289,8 @@ const ALLOWED = [
     /^\.dockerignore$/,
     /^Dockerfile$/,
     /^docker-compose\.yml$/,
+    // Bundled SearXNG (free, no-API-key web search for @qaiq) deploy config — fork infra, not upstream Theia.
+    /^deploy\//,
     /^vercel\.json$/,
     /^\.env\.docker\.example$/,
     /^\.gitignore$/,
