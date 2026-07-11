@@ -1895,28 +1895,52 @@ export class QaapAgentTaskRunner {
         });
     }
 
+    /** In-flight self-verification passes. Each may spawn an extra (fix-turn) qaiq — bounded below. */
+    protected activeVerificationPasses = 0;
+
+    protected maxConcurrentVerificationPasses(): number {
+        const raw = process.env.QAAP_AGENT_VERIFY_MAX_CONCURRENT?.trim();
+        const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : this.maxConcurrentAgents();
+    }
+
     protected async finishSuccessfulTaskAfterVerification(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
-        let verification: QaapAgentTaskVerification | undefined;
-        try {
-            verification = await this.verifySuccessfulQaiqTask(task);
-        } catch (error) {
-            verification = {
-                status: 'failed',
-                command: 'qaap self-verification',
-                attempts: 0,
-                summary: error instanceof Error ? error.message : String(error),
-            };
-        }
-        if (this.tasks.get(task.id)?.state !== 'running') {
+        // Self-verification runs an extra qaiq fix-turn that is NOT otherwise counted against the
+        // concurrency budget, so many tasks verifying at once could spawn N uncounted agents and
+        // saturate the box's RAM. Bound the number of simultaneous verification passes; when full,
+        // complete the task without the (optional) auto-fix rather than pile on more processes. The
+        // task already holds its own slot, so we cap verification separately instead of waiting on a
+        // free slot (which could deadlock when every slot is held by a task in verification). (REL-3)
+        if (this.activeVerificationPasses >= this.maxConcurrentVerificationPasses()) {
+            this.finishTask(task.id, 'completed', exitCode);
             return;
         }
-        if (verification) {
-            const current = this.tasks.get(task.id);
-            if (current) {
-                this.tasks.set(task.id, { ...current, verification });
+        this.activeVerificationPasses++;
+        try {
+            let verification: QaapAgentTaskVerification | undefined;
+            try {
+                verification = await this.verifySuccessfulQaiqTask(task);
+            } catch (error) {
+                verification = {
+                    status: 'failed',
+                    command: 'qaap self-verification',
+                    attempts: 0,
+                    summary: error instanceof Error ? error.message : String(error),
+                };
             }
+            if (this.tasks.get(task.id)?.state !== 'running') {
+                return;
+            }
+            if (verification) {
+                const current = this.tasks.get(task.id);
+                if (current) {
+                    this.tasks.set(task.id, { ...current, verification });
+                }
+            }
+            this.finishTask(task.id, 'completed', exitCode);
+        } finally {
+            this.activeVerificationPasses--;
         }
-        this.finishTask(task.id, 'completed', exitCode);
     }
 
     protected async verifySuccessfulQaiqTask(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {

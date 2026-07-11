@@ -84,4 +84,41 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         runner.exposeDrainQueuedTasks();
         expect(tasks.get(a3.id)?.state).to.equal('running');
     });
+
+    it('skips the extra verification pass when the verification budget is full (REL-3)', async () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        let verifyCalls = 0;
+        let finishState = '';
+        Object.assign(runner, {
+            activeVerificationPasses: 1,               // already at cap
+            maxConcurrentVerificationPasses: () => 1,
+            tasks: new Map([['t', { id: 't', state: 'running' }]]),
+            verifySuccessfulQaiqTask: async () => { verifyCalls++; return undefined; },
+            finishTask: (_id: string, state: string) => { finishState = state; },
+        });
+
+        await (runner as unknown as { finishSuccessfulTaskAfterVerification(task: unknown, code: number): Promise<void> })
+            .finishSuccessfulTaskAfterVerification({ id: 't' }, 0);
+
+        expect(verifyCalls).to.equal(0);         // no extra fix-turn qaiq spawned
+        expect(finishState).to.equal('completed'); // task still completes cleanly
+    });
+
+    it('runs verification when the budget has room and releases the slot (REL-3)', async () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        let verifyCalls = 0;
+        Object.assign(runner, {
+            activeVerificationPasses: 0,
+            maxConcurrentVerificationPasses: () => 2,
+            tasks: new Map([['t', { id: 't', state: 'running' }]]),
+            verifySuccessfulQaiqTask: async () => { verifyCalls++; return undefined; },
+            finishTask: () => undefined,
+        });
+
+        await (runner as unknown as { finishSuccessfulTaskAfterVerification(task: unknown, code: number): Promise<void> })
+            .finishSuccessfulTaskAfterVerification({ id: 't' }, 0);
+
+        expect(verifyCalls).to.equal(1);
+        expect((runner as unknown as { activeVerificationPasses: number }).activeVerificationPasses).to.equal(0);
+    });
 });
