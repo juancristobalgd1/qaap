@@ -6,8 +6,9 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { json } from 'body-parser';
-import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import * as http from 'http';
+import * as path from 'path';
 import {
     QAAP_CDP_PROBE_URL,
     QAAP_CLOUD_API_PATH,
@@ -137,6 +138,18 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             return;
         }
         const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        // A client-supplied workspaceUri becomes a Docker bind-mount source, so it must resolve to a
+        // path the caller owns — otherwise a tenant could mount another user's tree (or /root/.qaap)
+        // into their own container. skip-auth (local single-user) is exempt. (SEC-2)
+        if (body.workspaceUri && ctx.kind !== 'skip') {
+            const targetPath = body.workspaceUri.startsWith('file://')
+                ? FileUri.fsPath(body.workspaceUri)
+                : path.resolve(body.workspaceUri);
+            if (!this.auth.ownsWorkspacePath(ctx, targetPath)) {
+                this.auth.denyForbidden(res, req, 'workspace_path', { repoKey: body.repoKey });
+                return;
+            }
+        }
         const workspace = await this.orchestrator.ensure({
             repoKey: body.repoKey,
             workspaceUri: body.workspaceUri,

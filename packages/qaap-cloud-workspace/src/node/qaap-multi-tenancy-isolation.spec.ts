@@ -23,6 +23,7 @@ import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
 
 type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
 
@@ -92,6 +93,61 @@ describe('Multi-tenancy isolation', () => {
         it('falls back to a distinct __anonymous__ bucket for undefined ownerLogin', () => {
             expect(orchestrator.nameFor(repoKey, undefined)).to.not.equal(orchestrator.nameFor(repoKey, userA));
             expect(orchestrator.nameFor(repoKey, 'Alice')).to.equal(orchestrator.nameFor(repoKey, 'alice'));
+        });
+    });
+
+    // ─── SEC-2: ensure-workspace bind-mount ownership ────────────────
+
+    describe('SEC-2: /workspaces/ensure validates workspaceUri ownership', () => {
+        function buildEndpoint(owns: (targetPath: string) => boolean): {
+            endpoint: QaapCloudWorkspaceEndpoint;
+            ensureCalls: number;
+            denyCalls: number;
+        } {
+            const counters = { ensureCalls: 0, denyCalls: 0 };
+            const endpoint = Object.create(QaapCloudWorkspaceEndpoint.prototype) as QaapCloudWorkspaceEndpoint;
+            Object.assign(endpoint, {
+                requireAuth: () => ({ kind: 'authenticated', userLogin: userA }),
+                auth: {
+                    ownsWorkspacePath: (_ctx: unknown, targetPath: string) => owns(targetPath),
+                    denyForbidden: (res: { statusCode: number }) => { counters.denyCalls++; res.statusCode = 403; return false; },
+                },
+                orchestrator: {
+                    ensure: async () => { counters.ensureCalls++; return { repoKey: 'x' }; },
+                },
+            });
+            return { endpoint, get ensureCalls(): number { return counters.ensureCalls; }, get denyCalls(): number { return counters.denyCalls; } };
+        }
+
+        const fakeRes = (): { statusCode: number; body: unknown; status(c: number): unknown; json(b: unknown): unknown } => ({
+            statusCode: 200,
+            body: undefined,
+            status(code: number) { this.statusCode = code; return this; },
+            json(payload: unknown) { this.body = payload; return this; },
+        });
+
+        it('403s a workspaceUri the caller does not own — orchestrator never reached', async () => {
+            const h = buildEndpoint(() => false);
+            const res = fakeRes();
+            await (h.endpoint as unknown as { handleEnsureWorkspace(req: unknown, res: unknown): Promise<void> })
+                .handleEnsureWorkspace(
+                    { body: { repoKey: 'octocat/hello', workspaceUri: `file://${reposRoot}/users/${userB}/octocat/hello` } },
+                    res,
+                );
+            expect(h.denyCalls).to.equal(1);
+            expect(h.ensureCalls).to.equal(0);
+        });
+
+        it('allows a workspaceUri the caller owns', async () => {
+            const h = buildEndpoint(() => true);
+            const res = fakeRes();
+            await (h.endpoint as unknown as { handleEnsureWorkspace(req: unknown, res: unknown): Promise<void> })
+                .handleEnsureWorkspace(
+                    { body: { repoKey: 'octocat/hello', workspaceUri: `file://${reposRoot}/users/${userA}/octocat/hello` } },
+                    res,
+                );
+            expect(h.denyCalls).to.equal(0);
+            expect(h.ensureCalls).to.equal(1);
         });
     });
 
