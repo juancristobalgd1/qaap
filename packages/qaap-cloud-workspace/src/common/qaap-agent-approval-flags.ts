@@ -128,9 +128,9 @@ function ensureQaiqCoreTools(
     policyId: QaapAgentApprovalPolicyId,
     rules: QaapAgentToolApprovalRules | undefined,
 ): string {
-    const network = policyId === 'full-access' || rules?.network === true;
+    // Read-only web tools (WebSearch/WebFetch) are always in the allowlist now — no `network` gate.
     const shell = policyId !== 'request-approval' && rules?.shell !== false;
-    const flag = formatQaiqCoreToolsFlag({ network, shell });
+    const flag = formatQaiqCoreToolsFlag({ shell });
     const existing = /--tools\s+[^\s-][^\s]*/.exec(command);
     if (existing) {
         return command.replace(existing[0], flag);

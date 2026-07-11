@@ -24,7 +24,13 @@ export const QAAP_QAIQ_CORE_CODING_TOOLS = [
     'Agent',
 ] as const;
 
-/** Optional network tools when the composer policy grants network access. */
+/**
+ * Read-only network tools. These do not mutate anything, so they are ALWAYS available — they are
+ * intentionally NOT gated behind the "Full access" approval policy. Gating web search behind a
+ * policy that also auto-approves every file write and shell command was a dangerous coupling and
+ * left the default "Approve for me" policy unable to search the web (the agent would claim it had
+ * no internet access). SSRF exposure of these tools is controlled separately at the CLI guardrail.
+ */
 export const QAAP_QAIQ_NETWORK_TOOLS = ['WebFetch', 'WebSearch'] as const;
 
 /**
@@ -90,16 +96,13 @@ const BLOCKED_THEIA_TOOL_NAMES = new Set([
 ]);
 
 export interface QaapQaiqCoreToolsOptions {
-    readonly network?: boolean;
     readonly shell?: boolean;
 }
 
 export function resolveQaiqCoreToolNames(options: QaapQaiqCoreToolsOptions = {}): readonly string[] {
     const tools = QAAP_QAIQ_CORE_CODING_TOOLS.filter(tool => options.shell !== false || tool !== 'Bash');
-    if (options.network) {
-        return [...tools, ...QAAP_QAIQ_NETWORK_TOOLS];
-    }
-    return tools;
+    // Read-only web tools are always available (see QAAP_QAIQ_NETWORK_TOOLS) — not gated by policy.
+    return [...tools, ...QAAP_QAIQ_NETWORK_TOOLS];
 }
 
 /** {@code --tools} allowlist injected on every QAIQ VPS launch. */

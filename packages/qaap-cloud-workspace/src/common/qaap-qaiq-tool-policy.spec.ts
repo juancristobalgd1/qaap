@@ -14,15 +14,15 @@ import {
 
 describe('qaap-qaiq-tool-policy', () => {
 
-    it('formats core coding tools without network by default', () => {
+    it('always includes the read-only web tools in the core allowlist', () => {
         expect(formatQaiqCoreToolsFlag()).to.equal(
-            '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent',
+            '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch',
         );
-        expect(resolveQaiqCoreToolNames()).to.not.include('WebSearch');
+        expect(resolveQaiqCoreToolNames()).to.include.members(['WebFetch', 'WebSearch']);
     });
 
-    it('adds network tools when network is enabled', () => {
-        expect(resolveQaiqCoreToolNames({ network: true })).to.include.members(['WebFetch', 'WebSearch']);
+    it('keeps the read-only web tools even when shell is disabled', () => {
+        expect(resolveQaiqCoreToolNames({ shell: false })).to.include.members(['WebFetch', 'WebSearch']);
     });
 
     it('parses --tools from a spawned command', () => {
@@ -33,7 +33,7 @@ describe('qaap-qaiq-tool-policy', () => {
 
     it('omits Bash when shell is disabled in the core tool list', () => {
         expect(formatQaiqCoreToolsFlag({ shell: false })).to.equal(
-            '--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,Agent',
+            '--tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,Agent,WebFetch,WebSearch',
         );
     });
 
