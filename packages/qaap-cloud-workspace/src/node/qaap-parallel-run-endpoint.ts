@@ -16,7 +16,7 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
-import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapParallelRunStore } from './qaap-parallel-run-store';
 
 /** HTTP surface for parallel agent runs (variants in isolated git worktrees). */
@@ -54,18 +54,22 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: '"cwd", "prompt" and "agents" are required.' });
             return;
         }
-        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
-            this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
+        // Normalize + ownership-check the cwd to the caller's canonical per-user repo path, and pass
+        // THAT to the store — `ownsWorkspacePath` accepts bare/legacy names by canonical resolution,
+        // but the store used to `path.resolve(body.cwd)` the literal string, so validation and
+        // execution could diverge (SEC-7). resolveOwnedRepositoryCwd also rejects container cwds.
+        const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+        if (resolved.kind === 'needs-project') {
+            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
             return;
         }
-        // `ownsWorkspacePath` is blind to container levels of the caller's own tree.
-        if (isQaapWorkspaceContainerPath(body.cwd)) {
-            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
+        if (resolved.kind !== 'ok') {
+            this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
             return;
         }
         try {
             const run = await this.store.create(
-                { cwd: body.cwd, prompt: body.prompt, agents: body.agents },
+                { cwd: resolved.cwd, prompt: body.prompt, agents: body.agents },
                 this.auth.resolveUserLogin(ctx),
             );
             res.status(201).json(run);

@@ -24,6 +24,7 @@ import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
+import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
 
 type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
 
@@ -148,6 +149,63 @@ describe('Multi-tenancy isolation', () => {
                 );
             expect(h.denyCalls).to.equal(0);
             expect(h.ensureCalls).to.equal(1);
+        });
+    });
+
+    // ─── SEC-7: parallel-run executes the resolved canonical cwd ──────
+
+    describe('SEC-7: parallel-run passes the resolved canonical cwd to the store', () => {
+        function buildEndpoint(resolved: { kind: string; cwd?: string }): {
+            endpoint: QaapParallelRunEndpoint;
+            storeCwd: string | undefined;
+            denyCalls: number;
+        } {
+            const state = { storeCwd: undefined as string | undefined, denyCalls: 0 };
+            const endpoint = Object.create(QaapParallelRunEndpoint.prototype) as QaapParallelRunEndpoint;
+            Object.assign(endpoint, {
+                requireAuth: () => ({ kind: 'authenticated', userLogin: userA }),
+                auth: {
+                    resolveOwnedRepositoryCwd: () => resolved,
+                    resolveUserLogin: () => userA,
+                    denyForbidden: (res: { statusCode: number }) => { state.denyCalls++; res.statusCode = 403; return false; },
+                },
+                store: { create: async (req: { cwd: string }) => { state.storeCwd = req.cwd; return { id: 'r' }; } },
+                errorMessage: (e: unknown) => String(e),
+            });
+            return { endpoint, get storeCwd(): string | undefined { return state.storeCwd; }, get denyCalls(): number { return state.denyCalls; } };
+        }
+
+        const fakeRes = (): { statusCode: number; status(c: number): unknown; json(b: unknown): unknown } => ({
+            statusCode: 200,
+            status(code: number) { this.statusCode = code; return this; },
+            json() { return this; },
+        });
+
+        const call = (endpoint: QaapParallelRunEndpoint, body: unknown, res: unknown): Promise<void> =>
+            (endpoint as unknown as { handleCreate(req: unknown, res: unknown): Promise<void> })
+                .handleCreate({ body }, res);
+
+        it('executes the canonical resolved.cwd, not the raw body.cwd (validate == execute)', async () => {
+            const canonical = `${reposRoot}/users/${userA}/octocat/hello`;
+            const h = buildEndpoint({ kind: 'ok', cwd: canonical });
+            await call(h.endpoint, { cwd: 'hello', prompt: 'p', agents: ['a'] }, fakeRes());
+            expect(h.storeCwd).to.equal(canonical);
+            expect(h.denyCalls).to.equal(0);
+        });
+
+        it('400s a container cwd (needs-project) without reaching the store', async () => {
+            const h = buildEndpoint({ kind: 'needs-project' });
+            const res = fakeRes();
+            await call(h.endpoint, { cwd: '/workspace', prompt: 'p', agents: ['a'] }, res);
+            expect(res.statusCode).to.equal(400);
+            expect(h.storeCwd).to.be.undefined;
+        });
+
+        it('denies a non-owned cwd without reaching the store', async () => {
+            const h = buildEndpoint({ kind: 'denied' });
+            await call(h.endpoint, { cwd: '../evil', prompt: 'p', agents: ['a'] }, fakeRes());
+            expect(h.denyCalls).to.equal(1);
+            expect(h.storeCwd).to.be.undefined;
         });
     });
 
