@@ -212,8 +212,11 @@ jobs:
             echo "::warning::Backend did not report a build SHA (pre-QAAP_BUILD_SHA image?) — skipping assertion this once."
             exit 0
           fi
-          echo "deployed=$DEPLOYED expected=${GITHUB_SHA}"
-          case "$GITHUB_SHA" in
-            "$DEPLOYED"*) echo "OK: serving container runs the pushed commit." ;;
-            *) echo "::error::Deployed build $DEPLOYED does not match pushed commit $GITHUB_SHA — the serving container is stale."; exit 1 ;;
+          # The VPS script pulls the CURRENT master tip, which may already be ahead of the
+          # commit that triggered this run (queued pushes) — accept either.
+          TIP="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/master | cut -f1)"
+          echo "deployed=$DEPLOYED triggering=${GITHUB_SHA} master-tip=${TIP}"
+          case "$GITHUB_SHA $TIP" in
+            "$DEPLOYED"*|*" $DEPLOYED"*) echo "OK: serving container runs the pushed commit (or a newer master tip)." ;;
+            *) echo "::error::Deployed build $DEPLOYED matches neither the pushed commit nor the current master tip — the serving container is stale."; exit 1 ;;
           esac
