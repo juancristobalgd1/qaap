@@ -354,7 +354,7 @@ export class MobileProjectsHomeHubUi {
     async onHomeQuickAction(action: WorkHubHomeQuickActionId): Promise<void> {
         switch (action) {
             case 'all-projects':
-                this.host.selectHubLandingView('repos');
+                this.host.selectHubLandingView('tasks');
                 return;
             case 'open-review':
                 this.host.selectHubLandingView('review');
@@ -362,7 +362,7 @@ export class MobileProjectsHomeHubUi {
             case 'new-chat': {
                 const project = this.resolveHomePinnedProject();
                 if (!project) {
-                    this.host.selectHubLandingView('repos');
+                    this.host.selectHubLandingView('tasks');
                     return;
                 }
                 this.host.preferComposerSurface('chat', this.host.projectsService.getProjectCwd(project));
@@ -372,7 +372,7 @@ export class MobileProjectsHomeHubUi {
             case 'delegate-task': {
                 const project = this.resolveHomePinnedProject();
                 if (!project) {
-                    this.host.selectHubLandingView('repos');
+                    this.host.selectHubLandingView('tasks');
                     return;
                 }
                 this.host.preferComposerSurface('task', this.host.projectsService.getProjectCwd(project));

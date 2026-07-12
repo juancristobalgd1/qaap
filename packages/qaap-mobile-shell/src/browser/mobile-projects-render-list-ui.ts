@@ -83,6 +83,12 @@ export class MobileProjectsRenderListUi {
             this.host.diffProjectTabsHost.hidden = true;
             this.host.diffWidgetHost.hidden = true;
 
+            // The repos list surface was removed from the hub: 'repos' only renders the
+            // project-detail view. Without an expanded project, land on the Work view.
+            if (this.host.homeMode && this.host.hubView === 'repos' && this.host.expandedId === undefined) {
+                this.host.hubView = 'tasks';
+            }
+
             const filtered = this.host.hubQueryUi.projectsForCurrentHubList();
 
             if (this.host.hubView === 'home') {

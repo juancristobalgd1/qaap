@@ -49,8 +49,8 @@ export class MobileProjectsRepoLifecycleUi {
             this.host.openRepoDialog = new MobileOpenRepositoryDialog(this.host.projectsService, {
                 onProjectsChanged: nextProjects => {
                     this.host.projects = nextProjects;
-                    this.host.hubView = 'repos';
-                    this.host.projectsService.setHubView('repos');
+                    this.host.hubView = 'tasks';
+                    this.host.projectsService.setHubView('tasks');
                     this.host.render();
                     this.host.delegate.onProjectsChanged?.();
                 },

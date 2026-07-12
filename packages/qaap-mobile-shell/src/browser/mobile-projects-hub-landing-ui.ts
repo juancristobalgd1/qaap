@@ -78,10 +78,6 @@ export class MobileProjectsHubLandingUi {
             this.host.delegate.onHubLandingViewChanged?.();
             return;
         }
-        if (!force && this.host.hubView === view && view === 'repos' && this.host.expandedId === undefined) {
-            this.host.delegate.onHubLandingViewChanged?.();
-            return;
-        }
         if (!force && this.host.hubView === view && view === 'diff' && !preferredDiffProjectId) {
             void this.host.refreshDiffHubView();
             this.host.delegate.onHubLandingViewChanged?.();
@@ -202,15 +198,18 @@ export class MobileProjectsHubLandingUi {
             return;
         }
         this.host.diffScopedToProject = false;
-        this.host.hubView = 'repos';
-        this.host.projectsService.setHubView('repos');
+        // The repos list is gone: return to the scoped project's detail view, or to the Work view.
+        if (this.host.diffReturnProjectId) {
+            this.host.hubView = 'repos';
+            this.host.expandedId = this.host.diffReturnProjectId;
+            this.host.soloExpanded = true;
+        } else {
+            this.host.hubView = 'tasks';
+        }
+        this.host.projectsService.setHubView(this.host.hubView);
         this.host.diffPendingPreferredProjectId = undefined;
         this.host.diffProjectTabs = [];
         this.host.diffActiveProjectId = undefined;
-        if (this.host.diffReturnProjectId) {
-            this.host.expandedId = this.host.diffReturnProjectId;
-            this.host.soloExpanded = true;
-        }
         this.host.diffReturnProjectId = undefined;
         this.host.detachDiffReviewWidget();
         this.host.render();
