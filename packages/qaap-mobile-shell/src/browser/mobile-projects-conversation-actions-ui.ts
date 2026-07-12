@@ -19,6 +19,7 @@ import {
     updateConversation,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
+import { reportQaapClientError } from '../common/qaap-client-error-report';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -284,6 +285,7 @@ export class MobileProjectsConversationActionsUi {
             }).catch(() => { /* already updated local state */ });
         } else {
             cancelConversation(summary.id).catch(err => {
+                reportQaapClientError('conversation-cancel', err);
                 this.host.messageService?.error(nls.localize(
                     'qaap/mobileProjects/cancelTaskFailed',
                     'Could not cancel run: {0}',

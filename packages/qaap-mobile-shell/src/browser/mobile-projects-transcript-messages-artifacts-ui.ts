@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
+import { reportQaapClientError } from '../common/qaap-client-error-report';
 import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, conversationToSummary, restoreConversationCheckpoint } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import {
@@ -1773,6 +1774,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             banner.setAttribute(attr, 'true');
             segmentsBody.append(banner);
             this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+            // First appearance of the "didn't respond in time" card: leave a server-side
+            // breadcrumb. This card marks exactly the failures the backend cannot see on its
+            // own (silent streams, client-only stalls) — production diagnosis repeatedly
+            // depended on the user describing this screen.
+            reportQaapClientError('transcript-stream-timeout', this.resolveTranscriptStreamTimeoutDetail(cause) ?? 'no visible progress');
             return;
         }
         const message = banner.querySelector<HTMLElement>('.theia-mobile-agent-stream-timeout-message');

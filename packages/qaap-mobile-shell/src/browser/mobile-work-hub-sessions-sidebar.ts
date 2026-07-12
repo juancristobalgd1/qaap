@@ -12,6 +12,7 @@ import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
 import { installMobileVerticalTouchScroll } from './mobile-vertical-touch-scroll';
 import { MobileHaptics } from './mobile-haptics';
 import { hashString } from '../common/qaap-agent-task-client';
+import { setQaapClientErrorBuild } from '../common/qaap-client-error-report';
 import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
@@ -241,6 +242,7 @@ export class MobileWorkHubSessionsSidebar {
     protected appendDeployedBuildBadge(footer: HTMLElement): void {
         void fetchQaapAuthConfig().then(config => {
             const build = config.build?.trim();
+            setQaapClientErrorBuild(build);
             if (!build || !footer.isConnected) {
                 return;
             }

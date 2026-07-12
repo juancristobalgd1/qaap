@@ -28,6 +28,7 @@ import {
     type QaapCreateAgentTaskQaiqModel,
 } from '../common/qaap-agent-task-client';
 import { shouldRouteSubmitToTheiaCoder } from '../common/qaap-agent-submit-routing';
+import { reportQaapClientError } from '../common/qaap-client-error-report';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { applyBackendInteractionModeToPrompt } from '../common/qaap-sticky-composer-mode';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
@@ -255,6 +256,7 @@ export class MobileProjectsBackgroundTaskUi {
             // Roll it back, or the rejected submit lingers as a phantom stream until the
             // watchdog shows "didn't respond in time" with nothing to cancel or retry.
             this.host.rollbackTranscriptOptimisticSubmit?.();
+            reportQaapClientError('background-task-submit', error);
             const detail = error instanceof Error ? error.message : String(error);
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/taskStartFailed',

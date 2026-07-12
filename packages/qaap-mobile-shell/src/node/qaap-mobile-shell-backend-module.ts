@@ -5,6 +5,7 @@
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { QaapClientErrorEndpoint } from './qaap-client-error-endpoint';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
@@ -29,4 +30,6 @@ export default new ContainerModule(bind => {
     bind(BackendApplicationContribution).toService(QaapDevPreviewEndpoint);
     bind(QaapGitReviewEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapGitReviewEndpoint);
+    bind(QaapClientErrorEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapClientErrorEndpoint);
 });
