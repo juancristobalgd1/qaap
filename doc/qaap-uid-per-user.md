@@ -6,7 +6,10 @@ back off leaves files owned by high uids.
 
 ## What the flag does
 
-By default (`QAAP_AGENT_UID_PER_USER` unset) every tenant's background agent runs under the SHARED
+**Since July 2026 the flag defaults to ON in `docker-compose.yml`** (`QAAP_AGENT_UID_PER_USER: ${...:-1}`),
+and the backend is fail-closed: in a production runtime it REFUSES to spawn an agent under a shared
+uid unless the operator explicitly sets `QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true` (acceptable
+only on a single-user box). With the flag off, every tenant's background agent runs under the SHARED
 uid `1001`. Secrets are isolated (the agent can't read root-owned `/root/.qaap` or `/root/.theia`),
 but every tenant's CODE lives as sibling paths owned by the same uid `1001`, so a prompt-injected
 agent could read/write another tenant's repository.
@@ -46,12 +49,9 @@ one-shot/composer).
 ## Enable
 
 1. Use **two disposable GitHub accounts** for the test, not real user data (see rollback caveat).
-2. In the VPS `.env`:
-   ```
-   QAAP_AGENT_UID_PER_USER=1
-   ```
-   (Leave `QAAP_AGENT_UID=1001` set — it's the fallback for any cwd outside a tenant tree, so nothing
-   ever runs as root.)
+2. Nothing to set: the compose default is `QAAP_AGENT_UID_PER_USER=1`. Just make sure the VPS `.env`
+   does not override it to empty/`0`. (Leave `QAAP_AGENT_UID=1001` set — it's the fallback for any
+   cwd outside a tenant tree, so nothing ever runs as root.)
 3. Redeploy: `docker compose up -d --build` (or restart the `theia` service if the image is current).
 4. Sign in as tenant **A**, open one of A's repos, and run a `@qaiq` task (e.g. "list the files
    here"). Repeat as tenant **B** in a different browser/session with B's own repo.
@@ -100,13 +100,12 @@ on the next container recreate. The uid registry is kept (so re-enabling reuses 
 
 ## Known limitations / follow-ups
 
-- **Supplementary groups (defense-in-depth, pending):** Node's `child_process.spawn({uid,gid})` does
-  not call `setgroups`, so the dropped agent retains root's supplementary groups (incl. gid 0). Files
-  are `0700` with a private gid, so there is **no cross-tenant read** via groups — but a
-  `g+rwx`/group-`root` *system* path would be reachable. This is identical to the current shared-uid
-  (`1001`) behavior. The hardening is to spawn via `setpriv --reuid U --regid G --clear-groups` (or
-  `gosu`) instead of Node's `{uid,gid}`; deferred because it changes the spawn mechanism for all three
-  paths and is best validated on its own.
+- **Supplementary groups (DONE, July 2026):** Node's `child_process.spawn({uid,gid})` does not call
+  `setgroups`, so a Node-level drop retains root's supplementary groups (incl. gid 0). The spawn
+  paths now wrap the command in `setpriv --reuid U --regid G --clear-groups -- /bin/sh -c <cmd>`
+  whenever a uid drop applies and `setpriv` exists (util-linux, present in the image). If `setpriv`
+  is missing (e.g. local macOS dev) the code falls back to the old Node `{uid,gid}` drop — files are
+  `0700` with a private gid, so there is still no cross-tenant read via groups on that path.
 - **Parent enumeration:** the `/etc/passwd` records use `qaap-t-{login}` usernames; a tenant that can
   read `/etc/passwd` learns other logins (names only, no code access). Acceptable.
 - **Single process:** uid assignment is safe only under `--no-cluster` (documented in

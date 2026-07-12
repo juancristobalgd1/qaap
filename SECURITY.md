@@ -27,6 +27,15 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
     `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true` if you fully understand the risk.
     See [doc/qaap-vps-deployment.md](doc/qaap-vps-deployment.md) for the
     verification steps.
+  - Keep per-tenant CODE isolation enabled. `QAAP_AGENT_UID_PER_USER` defaults to
+    **on** in `docker-compose.yml`: each GitHub login gets its own OS uid, its
+    repos/worktrees are locked to `0700`, and the agent (wrapped in
+    `setpriv --clear-groups`) runs under that uid — so one tenant's agent cannot
+    read or write another tenant's code. The backend **refuses to spawn an agent
+    under a shared uid in a production runtime**; a single-user box can opt out
+    with `QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true`. See
+    [doc/qaap-uid-per-user.md](doc/qaap-uid-per-user.md) for verification and
+    rollback.
   - Serve over **HTTPS** and never set `QAAP_SKIP_AUTH` in production (it is
     refused in a production runtime, but do not rely on that alone).
   - Provide **your own** GitHub OAuth app credentials and VAPID keys — never

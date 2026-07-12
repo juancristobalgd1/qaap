@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     resolveAgentSpawnIdentity,
+    buildAgentSpawnInvocation,
     evaluateAgentIsolationPolicy,
     isQaapProductionRuntime,
     isTenantUidPerUserEnabled,
@@ -76,15 +77,67 @@ describe('evaluateAgentIsolationPolicy', () => {
         expect(evaluateAgentIsolationPolicy({ QAAP_CLOUD_MODE: 'cloud' }, true).refuse).to.equal(true);
     });
 
-    it('does not refuse when the drop is applied (QAAP_AGENT_UID set and backend root)', () => {
-        expect(evaluateAgentIsolationPolicy({ NODE_ENV: 'production', QAAP_AGENT_UID: '1001' }, true).refuse).to.equal(false);
+    it('does not refuse when the drop is applied AND uid-per-user is on', () => {
+        expect(evaluateAgentIsolationPolicy(
+            { NODE_ENV: 'production', QAAP_AGENT_UID: '1001', QAAP_AGENT_UID_PER_USER: '1' }, true).refuse).to.equal(false);
     });
 
-    it('does not refuse when the operator explicitly overrides', () => {
+    it('does not refuse when the operator explicitly overrides the root refusal', () => {
         expect(evaluateAgentIsolationPolicy(
             { NODE_ENV: 'production', QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION: 'true' }, true).refuse).to.equal(false);
         expect(evaluateAgentIsolationPolicy(
             { NODE_ENV: 'production', QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION: '1' }, true).refuse).to.equal(false);
+    });
+
+    it('REFUSES a shared-uid agent in production when uid-per-user is off (SEC-1 fail-closed)', () => {
+        const decision = evaluateAgentIsolationPolicy({ NODE_ENV: 'production', QAAP_AGENT_UID: '1001' }, true);
+        expect(decision.refuse).to.equal(true);
+        expect(decision.reason).to.contain('QAAP_AGENT_UID_PER_USER');
+    });
+
+    it('does not refuse a shared uid when the operator explicitly accepts it (single-user box)', () => {
+        expect(evaluateAgentIsolationPolicy(
+            { NODE_ENV: 'production', QAAP_AGENT_UID: '1001', QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION: 'true' },
+            true).refuse).to.equal(false);
+    });
+
+    it('does not refuse a shared uid outside production (local dev container)', () => {
+        expect(evaluateAgentIsolationPolicy({ QAAP_AGENT_UID: '1001' }, true).refuse).to.equal(false);
+    });
+});
+
+describe('buildAgentSpawnInvocation', () => {
+    it('keeps the plain shell spawn when no uid drop applies (local dev unchanged)', () => {
+        expect(buildAgentSpawnInvocation('qaiq -p "hi"', {}, true)).to.deep.equal({
+            file: 'qaiq -p "hi"',
+            options: { shell: true },
+        });
+    });
+
+    it('wraps in setpriv --clear-groups when a drop applies and setpriv exists', () => {
+        expect(buildAgentSpawnInvocation('qaiq -p "hi"', { uid: 20005, gid: 20005 }, true)).to.deep.equal({
+            file: 'setpriv',
+            args: ['--reuid', '20005', '--regid', '20005', '--clear-groups', '--', '/bin/sh', '-c', 'qaiq -p "hi"'],
+            options: { shell: false },
+        });
+    });
+
+    it('passes the command as ONE argv element — no re-quoting of shell syntax', () => {
+        const command = 'echo "a b" && printf \'%s\' "$HOME" | wc -c';
+        const invocation = buildAgentSpawnInvocation(command, { uid: 1001 }, true);
+        expect(invocation.args?.[invocation.args.length - 1]).to.equal(command);
+    });
+
+    it('defaults the regid to the uid when no gid resolved', () => {
+        const invocation = buildAgentSpawnInvocation('true', { uid: 1001 }, true);
+        expect(invocation.args?.slice(0, 4)).to.deep.equal(['--reuid', '1001', '--regid', '1001']);
+    });
+
+    it('falls back to the Node-level uid/gid drop when setpriv is unavailable', () => {
+        expect(buildAgentSpawnInvocation('true', { uid: 1001, gid: 1001 }, false)).to.deep.equal({
+            file: 'true',
+            options: { shell: true, uid: 1001, gid: 1001 },
+        });
     });
 });
 

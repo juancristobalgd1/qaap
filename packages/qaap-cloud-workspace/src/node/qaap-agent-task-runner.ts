@@ -57,6 +57,7 @@ import {
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
+    buildAgentSpawnInvocation,
     evaluateAgentIsolationPolicy,
     isTenantUidPerUserEnabled,
     resolvePerTenantSpawnIdentity,
@@ -1779,16 +1780,11 @@ export class QaapAgentTaskRunner {
             this.enforceAgentIsolationPolicy();
             this.ensureAgentCwdOwnership(task.cwd);
             this.recordTaskLatencyMark(task.id, 'spawn_start');
-            child = spawn(task.command, {
+            // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
+            child = this.spawnAgentCommand(task.command, {
                 cwd: task.cwd,
-                shell: true,
-                // Process-group leader so cancel/timeout can kill the WHOLE tree (the wrapper
-                // shell AND the agent under it) via killAgentProcessTree. Pipes stay attached
-                // (no unref()), so logging and stdio approvals are unaffected.
-                detached: true,
                 env: this.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
-                ...this.resolveAgentSpawnIdentity(task.cwd),
             });
             this.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
@@ -2167,13 +2163,10 @@ export class QaapAgentTaskRunner {
             try {
                 this.enforceAgentIsolationPolicy();
                 this.ensureAgentCwdOwnership(cwd);
-                child = spawn(command, {
+                child = this.spawnAgentCommand(command, {
                     cwd,
-                    shell: true,
-                    detached: true, // group leader — see killAgentProcessTree
                     env,
                     stdio: ['ignore', 'pipe', 'pipe'],
-                    ...this.resolveAgentSpawnIdentity(cwd),
                 });
             } catch (error) {
                 stderr = error instanceof Error ? error.message : String(error);
@@ -2351,6 +2344,42 @@ export class QaapAgentTaskRunner {
             spawnOptions.gid = identity.gid;
         }
         return spawnOptions;
+    }
+
+    protected setprivAvailable: boolean | undefined;
+
+    /** Whether `setpriv` (util-linux) exists on PATH — probed once. Overridable in tests. */
+    protected isSetprivAvailable(): boolean {
+        if (this.setprivAvailable === undefined) {
+            const probe = spawnSync('setpriv', ['--version'], { stdio: 'ignore' });
+            this.setprivAvailable = !probe.error && probe.status === 0;
+        }
+        return this.setprivAvailable;
+    }
+
+    /**
+     * Spawn an agent shell command under the identity resolved for its cwd. When a uid drop applies
+     * and `setpriv` is available, the command is wrapped in `setpriv --reuid U --regid G
+     * --clear-groups -- /bin/sh -c <command>` so the child also loses root's supplementary groups
+     * (Node's `{ uid, gid }` drop never calls `setgroups`). Otherwise falls back to the plain
+     * `shell: true` spawn with the Node-level drop — byte-identical to the previous behavior.
+     */
+    protected spawnAgentCommand(command: string, options: {
+        cwd: string;
+        env: NodeJS.ProcessEnv;
+        stdio: ('pipe' | 'ignore')[];
+    }): ChildProcess {
+        const identity = this.resolveAgentSpawnIdentity(options.cwd);
+        const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable());
+        return spawn(invocation.file, invocation.args ? [...invocation.args] : [], {
+            cwd: options.cwd,
+            // Process-group leader so cancel/timeout can kill the WHOLE tree (the wrapper
+            // shell AND the agent under it) via killAgentProcessTree.
+            detached: true,
+            env: options.env,
+            stdio: options.stdio,
+            ...invocation.options,
+        });
     }
 
     /**
@@ -2924,13 +2953,10 @@ export class QaapAgentTaskRunner {
             try {
                 this.enforceAgentIsolationPolicy();
                 this.ensureAgentCwdOwnership(cwd);
-                child = spawn(command, {
+                child = this.spawnAgentCommand(command, {
                     cwd,
-                    shell: true,
-                    detached: true, // group leader — see killAgentProcessTree
                     env,
                     stdio: ['ignore', 'pipe', 'pipe'],
-                    ...this.resolveAgentSpawnIdentity(cwd),
                 });
             } catch (error) {
                 reject(error instanceof Error ? error : new Error(String(error)));

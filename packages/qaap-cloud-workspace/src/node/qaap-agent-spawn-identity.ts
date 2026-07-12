@@ -51,6 +51,13 @@ export function resolveAgentSpawnIdentity(
 /** Env var to explicitly accept the risk of running the agent as root in a production runtime. */
 export const QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION = 'QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION';
 
+/**
+ * Env var to explicitly accept running every tenant's agent under one SHARED uid in a production
+ * runtime (i.e. with `QAAP_AGENT_UID_PER_USER` off). Secrets stay isolated, but one tenant's agent
+ * can read/write another tenant's code. Only acceptable on a single-user box.
+ */
+export const QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION = 'QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION';
+
 /** Whether uid-per-user tenant isolation is enabled (`QAAP_AGENT_UID_PER_USER`). Default off. */
 export function isTenantUidPerUserEnabled(env: NodeJS.ProcessEnv): boolean {
     return /^(1|true)$/i.test(env.QAAP_AGENT_UID_PER_USER?.trim() ?? '');
@@ -96,31 +103,102 @@ export function isQaapProductionRuntime(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
- * Fail-closed guard for the shared-container isolation risk. In a production runtime the agent must
- * NOT run as root: as root with `--dangerously-skip-permissions` it can read every tenant's secrets,
- * tokens and code on the shared filesystem. Refuse the spawn unless privileges are dropped
- * (`QAAP_AGENT_UID`, which the shipped image defaults to `1001`) or an operator explicitly accepts the
- * risk via `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION`.
+ * Fail-closed guard for the shared-container isolation risk. In a production runtime:
+ *
+ * 1. The agent must NOT run as root: as root with `--dangerously-skip-permissions` it can read every
+ *    tenant's secrets, tokens and code on the shared filesystem. Refuse the spawn unless privileges
+ *    are dropped (`QAAP_AGENT_UID`, which the shipped image defaults to `1001`) or an operator
+ *    explicitly accepts the risk via `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION`.
+ * 2. The agent must NOT run under a uid SHARED across tenants: with `QAAP_AGENT_UID_PER_USER` off,
+ *    every tenant's code is sibling paths owned by the same uid, so a prompt-injected agent can
+ *    read/write another tenant's repository (SEC-1). Refuse the spawn unless uid-per-user isolation
+ *    is on or an operator explicitly accepts the risk via `QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION`
+ *    (single-user boxes).
  *
  * Local/single-user dev is unaffected: nothing is refused when the backend is not root or the runtime
  * is not production.
  */
 export function evaluateAgentIsolationPolicy(env: NodeJS.ProcessEnv, isRoot: boolean): QaapAgentIsolationDecision {
+    if (!isRoot || !isQaapProductionRuntime(env)) {
+        return { refuse: false };
+    }
     const identity = resolveAgentSpawnIdentity(env, isRoot);
-    const agentRunsAsRoot = isRoot && identity.uid === undefined;
-    if (!agentRunsAsRoot || !isQaapProductionRuntime(env)) {
-        return { refuse: false };
+    if (identity.uid === undefined) {
+        if (isOverrideAccepted(env[QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION])) {
+            return { refuse: false };
+        }
+        return {
+            refuse: true,
+            reason: 'Refusing to spawn the agent as root in a production runtime — as root it can read every '
+                + 'tenant\'s secrets, tokens and code on the shared filesystem. Fix: set QAAP_AGENT_UID=1001 '
+                + '(the shipped image provisions that user and owns the workspace). Do NOT run multi-tenant as '
+                + 'root; QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true is a last resort only for a trusted '
+                + 'single-user box behind your own auth. See SECURITY.md.',
+        };
     }
-    const override = env[QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION]?.trim().toLowerCase();
-    if (override === 'true' || override === '1') {
-        return { refuse: false };
+    if (!isTenantUidPerUserEnabled(env)) {
+        if (isOverrideAccepted(env[QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION])) {
+            return { refuse: false };
+        }
+        return {
+            refuse: true,
+            reason: 'Refusing to spawn the agent under a shared uid in a production runtime — with '
+                + 'QAAP_AGENT_UID_PER_USER off, every tenant\'s code is owned by the same uid, so one tenant\'s '
+                + 'agent can read/write another tenant\'s repository. Fix: set QAAP_AGENT_UID_PER_USER=1 '
+                + '(read doc/qaap-uid-per-user.md first — enabling rewrites on-disk ownership). '
+                + 'QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true is acceptable only on a single-user box. '
+                + 'See SECURITY.md.',
+        };
     }
-    return {
-        refuse: true,
-        reason: 'Refusing to spawn the agent as root in a production runtime — as root it can read every '
-            + 'tenant\'s secrets, tokens and code on the shared filesystem. Fix: set QAAP_AGENT_UID=1001 '
-            + '(the shipped image provisions that user and owns the workspace). Do NOT run multi-tenant as '
-            + 'root; QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true is a last resort only for a trusted '
-            + 'single-user box behind your own auth. See SECURITY.md.',
-    };
+    return { refuse: false };
+}
+
+function isOverrideAccepted(raw: string | undefined): boolean {
+    const value = raw?.trim().toLowerCase();
+    return value === 'true' || value === '1';
+}
+
+/**
+ * How to invoke the agent command so the privilege drop also CLEARS SUPPLEMENTARY GROUPS.
+ * Node's `child_process.spawn({ uid, gid })` never calls `setgroups`, so a dropped agent retains the
+ * backend's (root's) supplementary groups — including gid 0. Wrapping the command in
+ * `setpriv --reuid U --regid G --clear-groups -- /bin/sh -c <command>` closes that hole.
+ */
+export interface QaapAgentSpawnInvocation {
+    /** Executable or full shell command line, depending on `shell`. */
+    readonly file: string;
+    /** Argv when `shell` is false (setpriv wrapping); undefined for the plain shell path. */
+    readonly args?: readonly string[];
+    /** Spawn options fragment: `shell` plus the Node-level uid/gid drop for the fallback path. */
+    readonly options: { readonly shell: boolean; readonly uid?: number; readonly gid?: number };
+}
+
+/**
+ * Build the spawn invocation for an agent shell command under the resolved identity.
+ *
+ * - No uid drop → plain `spawn(command, { shell: true })`, byte-identical to before.
+ * - Drop + `setpriv` available → `setpriv --reuid U --regid G --clear-groups -- /bin/sh -c <command>`.
+ *   The command travels as a single argv element (no re-quoting), exactly what `shell: true` would
+ *   have passed to `/bin/sh -c`.
+ * - Drop + no `setpriv` (e.g. local dev on macOS) → fall back to Node's `{ uid, gid }` drop, which
+ *   keeps supplementary groups (pre-existing behavior; cross-tenant reads are still blocked by the
+ *   0700 tenant trees).
+ */
+export function buildAgentSpawnInvocation(
+    command: string,
+    identity: { readonly uid?: number; readonly gid?: number },
+    setprivAvailable: boolean,
+): QaapAgentSpawnInvocation {
+    if (identity.uid === undefined) {
+        return { file: command, options: { shell: true } };
+    }
+    const gid = identity.gid ?? identity.uid;
+    if (setprivAvailable) {
+        return {
+            file: 'setpriv',
+            args: ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', '/bin/sh', '-c', command],
+            options: { shell: false },
+        };
+    }
+    return { file: command, options: { shell: true, uid: identity.uid, gid } };
 }
