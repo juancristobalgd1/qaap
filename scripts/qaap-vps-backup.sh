@@ -61,11 +61,23 @@ if [[ ! -s "$ARCHIVE" ]]; then
 fi
 
 # Integrity gate: a truncated/corrupt archive fails to list. Never keep a backup we cannot read back.
-if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
+LISTING="$(tar -tzf "$ARCHIVE" 2>/dev/null)" || {
     echo "[qaap-backup] FAILED: archive is corrupt or truncated (tar -tzf could not read it)" >&2
     rm -f "$ARCHIVE"
     exit 1
-fi
+}
+
+# Completeness gate: `tar ... || true` above swallows a HARD tar failure (e.g. a source path missing
+# or unreadable), which can still leave a well-formed but INCOMPLETE archive that `tar -tzf` accepts.
+# Require an entry from each of the three state surfaces (tar stores absolute paths without the leading
+# slash, so match `workspace/`, `root/.qaap/`, `root/.theia/`).
+for expect in 'workspace/' 'root/.qaap/' 'root/.theia/'; do
+    if ! grep -q "^${expect}" <<< "$LISTING"; then
+        echo "[qaap-backup] FAILED: archive is incomplete — no '${expect}' entries (a source path failed to read)" >&2
+        rm -f "$ARCHIVE"
+        exit 1
+    fi
+done
 
 chmod 600 "$ARCHIVE"
 

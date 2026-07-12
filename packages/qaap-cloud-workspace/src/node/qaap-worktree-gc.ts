@@ -113,13 +113,9 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
                         console.warn(`[qaap-worktree-gc] skipping ${dir}: uncommitted changes (commit or discard them to let GC collect it)`);
                         continue;
                     }
-                    // Re-validate immediately before the destructive rmSync — a task may have been
-                    // queued during the isDirty/lastCommit awaits above.
-                    if (this.activeCwds().has(path.resolve(dir))) {
-                        continue;
+                    if (await this.collect(dir)) {
+                        removed++;
                     }
-                    await this.collect(dir);
-                    removed++;
                 } catch (error) {
                     console.warn(`[qaap-worktree-gc] could not evaluate ${dir}: ${error instanceof Error ? error.message : String(error)}`);
                 }
@@ -149,8 +145,13 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
         }
     }
 
-    /** Remove the worktree directory, then prune the stale registration in the base repository. */
-    protected async collect(dir: string): Promise<void> {
+    /**
+     * Remove the worktree directory, then prune the stale registration in the base repository.
+     * Returns false (without deleting) if the worktree became active during the git resolution below —
+     * the FINAL activity check, as close to the destructive `rm` as possible, closes the TOCTOU where a
+     * task is queued onto this cwd after the caller's check but before the delete. Overridable in tests.
+     */
+    protected async collect(dir: string): Promise<boolean> {
         let baseRepo: string | undefined;
         try {
             const { stdout } = await execFileAsync(
@@ -159,10 +160,15 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
             );
             baseRepo = path.dirname(stdout.trim()); // <repo>/.git → <repo>
         } catch { /* base gone (repo deleted) — still remove the dir */ }
+        // Last check before the irreversible delete — after every await in this sweep.
+        if (this.activeCwds().has(path.resolve(dir))) {
+            return false;
+        }
         // Async rm so a large worktree deletion does not block the event loop (freezing HTTP/SSE/WS).
         await fsp.rm(dir, { recursive: true, force: true });
         if (baseRepo) {
             await execFileAsync('git', ['-C', baseRepo, 'worktree', 'prune'], { timeout: 30_000 }).catch(() => undefined);
         }
+        return true;
     }
 }

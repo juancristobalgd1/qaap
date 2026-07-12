@@ -68,6 +68,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
      * to the newest {@link CLIENT_REQUEST_DEDUP_MAX} entries so it can never grow without limit.
      */
     protected readonly clientRequestDedup = new Map<string, string>();
+    /** Dedup keys whose create is in progress (reserved before the first await) to block a concurrent fan-out. */
+    protected readonly clientRequestInFlight = new Set<string>();
     protected static readonly CLIENT_REQUEST_DEDUP_MAX = 512;
 
     configure(app: Application): void {
@@ -341,6 +343,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 res.status(201).json(prior);
                 return;
             }
+            // Reserve the key SYNCHRONOUSLY, before the first await (worktree.create / store.create).
+            // Otherwise two concurrent requests with the same key both see the map empty and each
+            // creates a worktree + conversation (fan-out). A concurrent duplicate is told the create is
+            // already in progress rather than spawning a second one.
+            if (this.clientRequestInFlight.has(dedupKey)) {
+                res.status(409).json({ error: 'A conversation for this request is already being created.' });
+                return;
+            }
+            this.clientRequestInFlight.add(dedupKey);
         }
         try {
             // "New Worktree" destination: run the conversation in an isolated git worktree,
@@ -379,6 +390,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             res.status(201).json(conv);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+        } finally {
+            if (dedupKey) {
+                this.clientRequestInFlight.delete(dedupKey);
+            }
         }
     }
 

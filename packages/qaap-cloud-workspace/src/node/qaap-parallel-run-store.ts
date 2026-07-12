@@ -400,7 +400,12 @@ export class QaapParallelRunStore {
     }
 
     protected async git(cwd: string, args: string[]): Promise<string> {
-        const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], { maxBuffer: GIT_MAX_BUFFER });
+        // SEC-1/C-3 hardening: parallel-run finalize runs `worktree add`/`merge`/`add`/`commit` over
+        // tenant repos as the backend uid (root in prod). Disable hooks so a tenant-planted `.git/hooks/*`
+        // (or a merge/commit hook) cannot execute as root. (Residual: tenant-defined clean/smudge/merge
+        // FILTER drivers in `.git/config` can still run during merge/checkout — the complete fix is to
+        // run these under the tenant uid; gated on the multi-tenant flip, see SECURITY.md.)
+        const { stdout } = await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args], { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
     }
 

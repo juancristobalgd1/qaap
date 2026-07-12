@@ -44,21 +44,39 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
   cannot read each other's *code* either) is on the roadmap and recommended for
   any larger public deployment.
 
-### Known residual: git-over-tenant-repo run as root (staging pass)
+### Known residual: git-over-tenant-repo run as root — GATE THE MULTI-TENANT FLIP
 
-Every process that runs *tenant-controlled code* — the agent, preview dev
-server, terminal, deploy build, and the git checkpoint/restore in the
-conversation store — now drops to the tenant uid via `setpriv --clear-groups`
-(no-op when uid-per-user is off). **One residual remains**: the GitHub
-clone/fetch/**pull** in `qaap-github-oauth-endpoint.ts` still run as the backend
-uid. Hooks are disabled there (`core.hooksPath=/dev/null`), so a planted
-`.git/hooks/*` cannot execute as root, but a tenant-defined clean/smudge
-**filter** in `.git/config` could still run during a `pull` checkout. The
-complete fix is to run these under the tenant uid too; it is blocked by a
-package dependency cycle to `QaapTenantSpawnService` (that service lives in
-`@theia/qaap-cloud-workspace`, which depends on `@theia/qaap-mobile-shell`).
-Resolve by relocating the service to a lower shared package. Verify on staging
-as part of the `QAAP_AGENT_UID_PER_USER` flip.
+Every process that runs *tenant-controlled program code* — the agent, preview
+dev server, terminal, and deploy build — drops to the tenant uid via
+`setpriv --clear-groups`. The git checkpoint/restore in the conversation store
+also drops (it runs checkout/add over the tenant repo). **But several git
+operations that touch tenant repos still run as the backend uid (root in prod).**
+git executes tenant-controlled hooks (`.git/hooks/*`) and clean/smudge/merge
+**filter drivers** (`.git/config`, tenant-writable) during checkout/merge/add,
+so running them as root is a root-RCE vector, and they leave root-owned files.
+
+Current state of these paths:
+
+- `qaap-github-oauth-endpoint.ts` (clone/fetch/**pull**),
+  `qaap-conversation-worktree.ts` (**`git worktree add`** for "New Worktree"),
+  and `qaap-parallel-run-store.ts` (parallel-run `worktree add` / `merge` /
+  `add` / `commit`): **hooks are disabled** on all of them
+  (`-c core.hooksPath=/dev/null`), which closes the easy hook-plant vector.
+- **Residual (not yet closed):** a tenant-defined clean/smudge/merge **filter
+  driver** can still run as root during those checkouts/merges, and these ops
+  leave root-owned files that break the tenant's own later git.
+
+The complete fix is to run every mutating git over a tenant repo under the
+tenant uid (like the agent/terminal), which for `git worktree add` also needs
+the worktree parent dir provisioned tenant-owned first. `QaapConversationWorktreeService`
+and `QaapParallelRunStore` are in the same package as `QaapTenantSpawnService`
+so they can inject it directly; the OAuth endpoint (`@theia/qaap-mobile-shell`)
+needs the service relocated to a lower shared package (dep cycle).
+
+**⚠️ This must be closed and staging-verified BEFORE flipping
+`QAAP_AGENT_UID_PER_USER=1` with real multiple tenants.** It does not affect a
+single-tenant or shared-uid (`QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true`)
+deployment, where there is no other tenant to attack.
 
 ## Dependency audit notes
 

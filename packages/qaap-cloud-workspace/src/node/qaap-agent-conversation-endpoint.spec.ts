@@ -32,6 +32,7 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
             clientRequestDedup: new Map<string, string>(),
+            clientRequestInFlight: new Set<string>(),
             store: {
                 create: (_req: unknown, _owner?: string) => {
                     createCalls += 1;
@@ -41,7 +42,10 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
                 },
                 get: (id: string) => store.get(id),
             },
-            worktrees: {},
+            worktrees: {
+                // Async so a second concurrent request can observe the first still in flight.
+                create: async (cwd: string) => { await Promise.resolve(); return { worktreePath: `${cwd}/.wt`, branch: 'qaap/wt' }; },
+            },
             auth: {
                 resolveOwnedRepositoryCwd: (_ctx: unknown, cwd: string) => ({ kind: 'ok', cwd }),
                 denyForbidden: () => false,
@@ -86,6 +90,20 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
         await call(h.endpoint, { ...base }, fakeRes());
         await call(h.endpoint, { ...base }, fakeRes());
         expect(h.createCalls).to.equal(2);
+    });
+
+    it('blocks a CONCURRENT duplicate (same key, worktree=true) instead of fanning out worktrees', async () => {
+        const h = buildEndpoint();
+        const res1 = fakeRes();
+        const res2 = fakeRes();
+        // Fire both before awaiting: the first reserves the key + enters the async worktree.create,
+        // the second must see it in flight and 409 rather than create a second worktree/conversation.
+        const p1 = call(h.endpoint, { ...base, clientRequestId: 'req-C', worktree: true }, res1);
+        const p2 = call(h.endpoint, { ...base, clientRequestId: 'req-C', worktree: true }, res2);
+        await Promise.all([p1, p2]);
+        const statuses = [res1.statusCode, res2.statusCode].sort();
+        expect(statuses).to.deep.equal([201, 409]); // exactly one created, one rejected
+        expect(h.createCalls).to.equal(1);
     });
 
     it('re-creates if the remembered conversation no longer exists (e.g. deleted)', async () => {

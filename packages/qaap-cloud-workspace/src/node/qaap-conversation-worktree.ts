@@ -56,7 +56,13 @@ export class QaapConversationWorktreeService {
     }
 
     protected async git(cwd: string, args: string[]): Promise<string> {
-        const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], { maxBuffer: GIT_MAX_BUFFER });
+        // SEC-1/C-3 hardening: `git worktree add` checks out HEAD into a new tree as the backend uid
+        // (root in prod) over a repo the tenant controls. Disable hooks so a `.git/hooks/*` planted by
+        // the tenant cannot execute as root on checkout. (Residual: a tenant-defined clean/smudge FILTER
+        // in `.git/config` can still run during the checkout — the complete fix is to run this under the
+        // tenant uid, which needs the worktree parent provisioned first; gated on the multi-tenant flip,
+        // see SECURITY.md.)
+        const { stdout } = await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args], { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
     }
 
