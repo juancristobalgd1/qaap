@@ -76,4 +76,32 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect(ui.resolveWorktreeForSession('/repo', false)).to.equal(false);
         expect(ui.resolveWorktreeForSession('/other', true)).to.equal(true);
     });
+
+    it('auto-enables worktree when a QUEUED task (concurrency cap) targets the same cwd', () => {
+        const ui = new MobileProjectsBackgroundTaskUi({
+            projects: [],
+            preparedCwdByProjectId: new Map(),
+            justAddedTaskId: undefined,
+            agentsHubShellActive: false,
+            projectsService: {} as never,
+            conversations: {
+                getStreamingCountForCwd: () => 0,
+            } as never,
+            activeTasks: {
+                getTasksForCwd: (cwd: string) => cwd === '/repo'
+                    ? [{ state: 'queued' }]
+                    : [{ state: 'completed' }],
+            } as never,
+            delegate: {},
+            transcriptSheetUi: {} as never,
+            transcriptLiveUi: {} as never,
+            shouldUseAgentsHubLanding: () => false,
+            renderSubtitle: () => undefined,
+            renderList: () => undefined,
+            seedTranscriptOptimisticSubmit: () => undefined,
+        });
+
+        expect(ui.resolveWorktreeForSession('/repo')).to.equal(true);
+        expect(ui.resolveWorktreeForSession('/other')).to.equal(false);
+    });
 });

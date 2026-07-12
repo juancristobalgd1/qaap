@@ -363,7 +363,15 @@ export class MobileProjectsBackgroundTaskUi {
         if (explicitWorktree === true || explicitWorktree === false) {
             return explicitWorktree;
         }
-        return (this.host.conversations?.getStreamingCountForCwd(cwd) ?? 0) > 0;
+        if ((this.host.conversations?.getStreamingCountForCwd(cwd) ?? 0) > 0) {
+            return true;
+        }
+        // A QUEUED task (per-user concurrency cap) is not streaming yet but WILL write to this
+        // tree the moment a slot frees up — treat it as a collision too, or two submits in quick
+        // succession share the same working tree. (Paused-on-approval turns keep their process
+        // alive and stay 'streaming', so they are already covered above.)
+        return (this.host.activeTasks?.getTasksForCwd(cwd) ?? [])
+            .some(task => task.state === 'running' || task.state === 'queued');
     }
     shouldUseTheiaCoder(content: string, selectedAgentId?: string, options: { forceVps?: boolean; isLegacyTheiaChat?: boolean } = {}): boolean {
         return shouldRouteSubmitToTheiaCoder({
