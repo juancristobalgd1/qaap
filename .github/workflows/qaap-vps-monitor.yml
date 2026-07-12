@@ -1,0 +1,91 @@
+# Synthetic uptime monitor for the production VPS.
+# Every 15 minutes: hit the public config endpoint; on failure open (or reuse) a "vps-down"
+# issue so the operator hears about an outage before the users do. When the VPS recovers,
+# the next green run closes the issue automatically — no manual bookkeeping.
+name: Qaap VPS monitor
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: qaap-vps-monitor
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.repository == 'juancristobalgd1/qaap'
+    steps:
+      - name: Probe public endpoint
+        id: probe
+        env:
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+        run: |
+          if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
+            echo "QAAP_VPS_PUBLIC_URL not set — nothing to monitor"
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 3 attempts, 20s apart: a single blip must not page anyone.
+          for attempt in 1 2 3; do
+            BODY="$(curl -fsS --max-time 15 "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" 2>/dev/null || true)"
+            BUILD="$(printf '%s' "$BODY" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("build") or "")
+except Exception: print("")' 2>/dev/null)"
+            if [ -n "$BODY" ]; then
+              echo "healthy (attempt $attempt) — build=${BUILD:-unknown}"
+              echo "status=healthy" >> "$GITHUB_OUTPUT"
+              echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "attempt $attempt failed"
+            [ "$attempt" -lt 3 ] && sleep 20
+          done
+          echo "status=down" >> "$GITHUB_OUTPUT"
+
+      - name: Open or reuse the outage issue
+        if: steps.probe.outputs.status == 'down'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          EXISTING="$(gh issue list --label vps-down --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Still down at $(date -u +%FT%TZ) (monitor run ${{ github.run_id }})."
+            echo "commented on existing issue #$EXISTING"
+          else
+            gh label create vps-down --description "Production VPS unreachable" --color B60205 2>/dev/null || true
+            gh issue create \
+              --title "🔴 VPS down: public endpoint unreachable" \
+              --label vps-down \
+              --body "The synthetic monitor could not reach \`/qaap/api/auth/config\` after 3 attempts at $(date -u +%FT%TZ).
+
+**Check:**
+1. \`ssh root@<vps>\` → \`cd /opt/qaap && docker compose ps\` and \`docker compose logs --since 30m theia\`
+2. Provider status / disk space (\`df -h\`).
+3. This issue closes automatically when the monitor sees the endpoint healthy again.
+
+Monitor run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "opened new outage issue"
+          fi
+          exit 1
+
+      - name: Auto-close the outage issue on recovery
+        if: steps.probe.outputs.status == 'healthy'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          EXISTING="$(gh issue list --label vps-down --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --comment "Recovered: endpoint healthy again at $(date -u +%FT%TZ) (build ${{ steps.probe.outputs.build || 'unknown' }})."
+            echo "closed issue #$EXISTING"
+          else
+            echo "healthy — nothing to close"
+          fi
