@@ -6,7 +6,7 @@
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
-import { ChildProcess, spawn, spawnSync } from 'child_process';
+import { ChildProcess, spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
@@ -47,23 +47,8 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import {
-    safeUserIdSegment,
-    resolveQaapReposRoot,
-    resolveTenantIsolationRoot,
-    resolveQaapWorktreesRoot,
-    resolveTenantHome,
-    QAAP_USER_REPOS_SEGMENT,
-} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import {
-    resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
-    buildAgentSpawnInvocation,
-    evaluateAgentIsolationPolicy,
-    isTenantUidPerUserEnabled,
-    resolvePerTenantSpawnIdentity,
-    QaapAgentIsolationDecision,
-} from './qaap-agent-spawn-identity';
-import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
+import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { extractRetrievalKeywords, formatRelevantFilesHint } from '../common/qaap-agent-retrieval';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
@@ -2267,324 +2252,41 @@ export class QaapAgentTaskRunner {
     }
 
     /**
-     * Env handed to the spawned agent process. Prepends the helper-CLI dir to PATH and exposes
-     * the token + API URL + this task's id, so the agent can fan out sub-tasks via `qaap-task`.
+     * All multi-tenant isolation (identity resolution, fail-closed policy, tenant provisioning, and the
+     * `setpriv --clear-groups` privilege drop) lives in {@link QaapTenantSpawnService} so it is shared
+     * verbatim with the preview dev server and the terminal shell — one uid registry, one drop. The
+     * methods below are thin delegators kept for readable call sites and test override points.
      */
-    protected agentSpawnIdentityWarned = false;
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
 
-    /**
-     * Optional privilege drop for the spawned agent process. When `QAAP_AGENT_UID` (and optionally
-     * `QAAP_AGENT_GID`) is set AND the backend runs as root, the agent is spawned under that
-     * non-root uid — so it cannot enter the root-owned `/root/.qaap` and `/root/.theia` trees where
-     * every tenant's API keys, OAuth tokens and helper tokens live, bounding
-     * `--dangerously-skip-permissions` to OS permissions. No-op (empty) when the env is unset or the
-     * backend is not root, so local dev and non-containerized runs are unchanged.
-     */
-    protected agentIsolationDecision: QaapAgentIsolationDecision | undefined;
-    protected agentIsolationRefusalLogged = false;
-
-    /**
-     * Fail-closed guard against the shared-container risk: throws (refusing the spawn) when the agent
-     * would run as root in a production runtime without an explicit override. Called at the top of every
-     * agent spawn `try` block, so the surrounding catch turns the refusal into a failed task instead of a
-     * root-privileged agent. The decision is static for the process lifetime, so it is evaluated once.
-     */
+    /** @see QaapTenantSpawnService.enforceIsolationPolicy — throws to fail the spawn when refused. */
     protected enforceAgentIsolationPolicy(): void {
-        if (!this.agentIsolationDecision) {
-            const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-            this.agentIsolationDecision = evaluateAgentIsolationPolicy(process.env, isRoot);
-        }
-        if (this.agentIsolationDecision.refuse) {
-            if (!this.agentIsolationRefusalLogged) {
-                this.agentIsolationRefusalLogged = true;
-                console.error(`[qaap-security] ${this.agentIsolationDecision.reason}`);
-            }
-            throw new Error(this.agentIsolationDecision.reason);
-        }
+        this.tenantSpawn.enforceIsolationPolicy();
     }
 
-    protected tenantUidRegistry: QaapTenantUidRegistry | undefined;
-
-    protected getTenantUidRegistry(): QaapTenantUidRegistry {
-        if (!this.tenantUidRegistry) {
-            this.tenantUidRegistry = new QaapTenantUidRegistry(resolveDefaultTenantUidRegistryPath(resolveQaapReposRoot()));
-        }
-        return this.tenantUidRegistry;
-    }
-
-    /**
-     * The uid/gid to spawn a process under, given its working directory. In uid-per-user mode
-     * (`QAAP_AGENT_UID_PER_USER`, default off) a cwd under `{reposRoot}/users/{segment}/...` resolves to
-     * that tenant's stable uid from the registry (fail-closed: a registry failure throws and the caller
-     * fails the spawn). Any other case (flag off, not root, cwd outside a tenant tree) falls back to the
-     * global `QAAP_AGENT_UID` path — byte-identical to before, and still never root while 1001 is set.
-     */
+    /** @see QaapTenantSpawnService.resolveSpawnIdentity */
     protected resolveAgentSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
-        const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-        const tenant = resolvePerTenantSpawnIdentity({
-            enabled: isTenantUidPerUserEnabled(process.env),
-            isRoot,
-            segment: resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd)?.segment,
-            lookup: segment => this.getTenantUidRegistry().resolve(segment),
-        });
-        if (tenant) {
-            return { uid: tenant.uid, gid: tenant.gid };
-        }
-        const identity = resolveAgentSpawnIdentityFromEnv(process.env, isRoot);
-        if (identity.warnNotRoot && !this.agentSpawnIdentityWarned) {
-            this.agentSpawnIdentityWarned = true;
-            console.warn('[qaap-security] QAAP_AGENT_UID is set but the backend is not root — '
-                + 'cannot drop agent privileges; the agent will run with the backend uid.');
-        }
-        const spawnOptions: { uid?: number; gid?: number } = {};
-        if (identity.uid !== undefined) {
-            spawnOptions.uid = identity.uid;
-        }
-        if (identity.gid !== undefined) {
-            spawnOptions.gid = identity.gid;
-        }
-        return spawnOptions;
+        return this.tenantSpawn.resolveSpawnIdentity(cwd);
     }
 
-    protected setprivAvailable: boolean | undefined;
-
-    /** Whether `setpriv` (util-linux) exists on PATH — probed once. Overridable in tests. */
-    protected isSetprivAvailable(): boolean {
-        if (this.setprivAvailable === undefined) {
-            const probe = spawnSync('setpriv', ['--version'], { stdio: 'ignore' });
-            this.setprivAvailable = !probe.error && probe.status === 0;
-        }
-        return this.setprivAvailable;
-    }
-
-    /**
-     * Spawn an agent shell command under the identity resolved for its cwd. When a uid drop applies
-     * and `setpriv` is available, the command is wrapped in `setpriv --reuid U --regid G
-     * --clear-groups -- /bin/sh -c <command>` so the child also loses root's supplementary groups
-     * (Node's `{ uid, gid }` drop never calls `setgroups`). Otherwise falls back to the plain
-     * `shell: true` spawn with the Node-level drop — byte-identical to the previous behavior.
-     */
+    /** @see QaapTenantSpawnService.spawn */
     protected spawnAgentCommand(command: string, options: {
         cwd: string;
         env: NodeJS.ProcessEnv;
         stdio: ('pipe' | 'ignore')[];
     }): ChildProcess {
-        const identity = this.resolveAgentSpawnIdentity(options.cwd);
-        const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable());
-        return spawn(invocation.file, invocation.args ? [...invocation.args] : [], {
-            cwd: options.cwd,
-            // Process-group leader so cancel/timeout can kill the WHOLE tree (the wrapper
-            // shell AND the agent under it) via killAgentProcessTree.
-            detached: true,
-            env: options.env,
-            stdio: options.stdio,
-            ...invocation.options,
-        });
+        return this.tenantSpawn.spawn(command, options);
     }
 
-    /**
-     * Give the agent's spawn uid ownership of its working tree. The backend clones/creates repos as
-     * root (see ensureRepositoryWorkspace / worktree creation), but the agent is dropped to a
-     * non-root uid ({@link resolveAgentSpawnIdentity}) that otherwise cannot write those root-owned
-     * files — so edits, git ops and caches would fail with EACCES. Runs `chown -R` to the resolved
-     * uid/gid once per tree (idempotent: skips when the tree is already owned, when no uid drop
-     * applies, or when the backend is not root). Failures are logged but never block the spawn.
-     */
-    /** Whether the backend process is root (can chown / drop privileges). Overridable in tests. */
-    protected isBackendRoot(): boolean {
-        return typeof process.getuid === 'function' && process.getuid() === 0;
-    }
-
-    /** Chown the tenant's per-user root to its uid and lock it owner-only (0700). Overridable in tests. */
-    protected applyTenantRootIsolation(userRoot: string, uid: number, gid: number): void {
-        try {
-            fs.chownSync(userRoot, uid, gid);
-            fs.chmodSync(userRoot, 0o700);
-        } catch (error) {
-            console.warn(`[qaap-security] could not isolate tenant root ${userRoot} to 0700 uid ${uid}: `
-                + `${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-
-    /**
-     * In uid-per-user mode, lock each tenant's per-user root ({reposRoot}/users/{segment}) to owner-only
-     * (chown to the tenant uid + chmod 0700) so a DIFFERENT tenant's uid cannot even traverse into it —
-     * closing the cross-tenant READ that per-user uids alone do NOT (repos are cloned world-readable
-     * 0755). No-op when uid-per-user is off, the backend is not root, or the cwd is outside a tenant
-     * tree, so the shared-uid deployment is byte-identical. (SEC-1)
-     *
-     * NOTE: enable QAAP_AGENT_UID_PER_USER only after verifying on the real box that each tenant uid can
-     * still write its own tree — this changes on-disk ownership/permissions.
-     */
-    protected ensureTenantRootIsolated(cwd: string): void {
-        if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env)) {
-            return;
-        }
-        // Covers both layouts: the per-user repos root AND the per-conversation worktree root.
-        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
-        if (!target) {
-            return;
-        }
-        let identity: { uid: number; gid: number };
-        try {
-            identity = this.getTenantUidRegistry().resolve(target.segment);
-        } catch {
-            return; // a registry failure already fails the spawn via resolveAgentSpawnIdentity
-        }
-        this.applyTenantRootIsolation(target.root, identity.uid, identity.gid);
-    }
-
-    /**
-     * Provision everything a per-tenant uid needs to actually RUN before the agent spawns under it:
-     * an `/etc/passwd`+`/etc/group` entry (so `getpwuid`/`os.userInfo`/`git commit` don't fail for a
-     * uid with no passwd record — the #1 blocker for a "homeless" uid), a private writable HOME, and
-     * traversable parent dirs. No-op unless uid-per-user is on, the backend is root, and the cwd
-     * resolves to a tenant tree — so the shared-uid deployment is byte-identical. (SEC-1)
-     *
-     * Fail closed: a registry throw (range exhausted / persistence failure) propagates out of the
-     * spawn `try` and fails the task rather than running the tenant under a shared/root uid.
-     */
-    protected ensureTenantIdentityProvisioned(cwd: string): void {
-        if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env)) {
-            return;
-        }
-        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
-        if (!target) {
-            return;
-        }
-        const identity = this.getTenantUidRegistry().resolve(target.segment);
-        const home = resolveTenantHome(target.segment);
-        this.ensureTenantParentsTraversable();
-        this.provisionTenantOsUser(target.segment, identity.uid, identity.gid, home);
-        this.provisionTenantHome(identity.uid, identity.gid, home);
-    }
-
-    protected tenantParentsHardened = false;
-
-    /**
-     * chmod 0711 the shared parent dirs (the per-user repos root and the worktrees root) so a tenant
-     * uid can TRAVERSE to its own 0700 subdir without being able to LIST sibling tenants (0755 would
-     * leak the set of logins). Idempotent, runs once per process. Overridable in tests.
-     */
-    protected ensureTenantParentsTraversable(): void {
-        if (this.tenantParentsHardened) {
-            return;
-        }
-        this.tenantParentsHardened = true;
-        const usersRoot = path.join(resolveQaapReposRoot(), QAAP_USER_REPOS_SEGMENT);
-        for (const dir of [usersRoot, resolveQaapWorktreesRoot()]) {
-            try {
-                fs.mkdirSync(dir, { recursive: true });
-                fs.chmodSync(dir, 0o711);
-            } catch (error) {
-                console.warn(`[qaap-security] could not harden tenant parent ${dir} to 0711: `
-                    + `${error instanceof Error ? error.message : String(error)}`);
-            }
-        }
-    }
-
-    /** Append an idempotent `/etc/passwd`+`/etc/group` record for a tenant uid. Overridable in tests. */
-    protected provisionTenantOsUser(segment: string, uid: number, gid: number, home: string): void {
-        const userName = `qaap-t-${segment}`;
-        this.appendOsRecordIfMissing('/etc/group', `:x:${gid}:`, `${userName}:x:${gid}:\n`);
-        this.appendOsRecordIfMissing('/etc/passwd', `:x:${uid}:`, `${userName}:x:${uid}:${gid}:Qaap tenant:${home}:/usr/sbin/nologin\n`);
-    }
-
-    /**
-     * Append `line` to a colon-delimited OS account file only when no existing record contains
-     * `marker` (e.g. `:x:20000:`). Synchronous, so within the single `--no-cluster` backend process
-     * it is a serialized critical section — concurrent tenant spawns cannot interleave partial writes.
-     */
-    protected appendOsRecordIfMissing(file: string, marker: string, line: string): void {
-        try {
-            let current: string;
-            try {
-                current = fs.readFileSync(file, 'utf8');
-            } catch {
-                return; // no account file (non-glibc / unexpected base image) — nothing safe to do
-            }
-            if (current.includes(marker)) {
-                return; // already provisioned
-            }
-            fs.appendFileSync(file, current === '' || current.endsWith('\n') ? line : `\n${line}`);
-        } catch (error) {
-            console.warn(`[qaap-security] could not provision ${file} for a tenant uid: `
-                + `${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-
-    /** Create + lock a tenant's private agent HOME (0700, tenant-owned), seeding shared config once. Overridable in tests. */
-    protected provisionTenantHome(uid: number, gid: number, home: string): void {
-        try {
-            if (fs.existsSync(home) && fs.statSync(home).uid === uid) {
-                return; // already provisioned and owned by this tenant
-            }
-            fs.mkdirSync(home, { recursive: true });
-            this.seedTenantHome(home);
-            const result = spawnSync('chown', ['-R', `${uid}:${gid}`, home], { stdio: 'ignore' });
-            if (result.status !== 0) {
-                console.warn(`[qaap-security] could not chown tenant home ${home} to ${uid}:${gid} `
-                    + `(exit ${result.status ?? 'signal'}); the agent may not be able to write it.`);
-            }
-            fs.chmodSync(home, 0o700);
-        } catch (error) {
-            console.warn(`[qaap-security] could not provision tenant home ${home} for uid ${uid}: `
-                + `${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-
-    /** Seed a fresh tenant HOME with the shared agent's `.claude` config so qaiq starts configured. */
-    protected seedTenantHome(home: string): void {
-        const sharedHome = process.env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent';
-        const sharedClaude = path.join(sharedHome, '.claude');
-        if (!fs.existsSync(sharedClaude)) {
-            return;
-        }
-        try {
-            fs.cpSync(sharedClaude, path.join(home, '.claude'), { recursive: true });
-        } catch (error) {
-            console.warn(`[qaap-security] could not seed tenant home ${home} from ${sharedClaude}: `
-                + `${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-
-    /** The writable HOME for the dropped agent: a per-tenant home in uid-per-user mode, else the shared one. */
+    /** @see QaapTenantSpawnService.resolveTenantHome */
     protected resolveAgentHome(cwd: string): string {
-        if (isTenantUidPerUserEnabled(process.env)) {
-            const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
-            if (target) {
-                return resolveTenantHome(target.segment);
-            }
-        }
-        return process.env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent';
+        return this.tenantSpawn.resolveTenantHome(cwd);
     }
 
+    /** @see QaapTenantSpawnService.prepareTenantIsolation */
     protected ensureAgentCwdOwnership(cwd: string): void {
-        this.ensureTenantRootIsolated(cwd);
-        this.ensureTenantIdentityProvisioned(cwd);
-        const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-        if (!isRoot) {
-            return;
-        }
-        const identity = this.resolveAgentSpawnIdentity(cwd);
-        if (identity.uid === undefined) {
-            return;
-        }
-        let currentUid: number | undefined;
-        try {
-            currentUid = fs.statSync(cwd).uid;
-        } catch {
-            return; // cwd missing — let the spawn surface the real error
-        }
-        if (currentUid === identity.uid) {
-            return; // already owned by the agent uid
-        }
-        const gid = identity.gid ?? identity.uid;
-        const result = spawnSync('chown', ['-R', `${identity.uid}:${gid}`, cwd], { stdio: 'ignore' });
-        if (result.status !== 0) {
-            console.warn(`[qaap-security] could not chown agent cwd ${cwd} to ${identity.uid}:${gid} `
-                + `(exit ${result.status ?? 'signal'}); the agent may not be able to write.`);
-        }
+        this.tenantSpawn.prepareTenantIsolation(cwd);
     }
 
     protected buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {

@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
-import { ChildProcess, spawn } from 'child_process';
+import { inject, injectable } from '@theia/core/shared/inversify';
+import { ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -14,6 +14,7 @@ import {
     type QaapPreviewProcessSnapshot,
     type QaapPreviewProcessStatus,
 } from '../common/qaap-preview-supervisor-types';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
 interface QaapPreviewProcessRecord {
     port: number;
@@ -40,6 +41,9 @@ interface QaapPreviewProcessRecord {
  */
 @injectable()
 export class QaapPreviewSupervisor {
+
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
 
     protected readonly records = new Map<number, QaapPreviewProcessRecord>();
     protected cleanupRegistered = false;
@@ -93,11 +97,30 @@ export class QaapPreviewSupervisor {
             return 'exited';
         }
         this.registerCleanup();
-        const child = spawn(plan.command, plan.args, {
-            cwd,
-            env: { ...process.env, PORT: String(port), BROWSER: 'none' },
-            shell: false,
-        });
+        // SEC-1: the dev server runs the workspace's own package.json script (tenant-controlled code),
+        // so it MUST drop to the tenant uid — otherwise a malicious repo's `dev` script runs as root and
+        // defeats uid-per-user isolation. spawnArgvPrepared enforces the fail-closed policy, provisions
+        // + chowns the tenant tree, and wraps the command in `setpriv --clear-groups`. resolveProcessEnv
+        // points HOME/USER at the tenant's writable home. No-op when uid-per-user is off / not root.
+        let child: ChildProcess;
+        try {
+            const env = this.tenantSpawn.resolveProcessEnv(cwd, { ...process.env, PORT: String(port), BROWSER: 'none' });
+            child = this.tenantSpawn.spawnArgvPrepared(plan.command, plan.args, { cwd, env });
+        } catch (error) {
+            const refused: QaapPreviewProcessRecord = {
+                port,
+                cwd,
+                status: 'exited',
+                everStarted: false,
+                exitCode: 1,
+                exitedAt: Date.now(),
+                stderr: new QaapStderrRing(),
+                autoRestartAt,
+            };
+            refused.stderr.push(`Refusing to start the dev server: ${error instanceof Error ? error.message : String(error)}\n`);
+            this.records.set(port, refused);
+            return 'exited';
+        }
         const record: QaapPreviewProcessRecord = {
             port,
             cwd,

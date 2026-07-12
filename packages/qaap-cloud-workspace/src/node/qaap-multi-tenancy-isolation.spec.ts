@@ -25,6 +25,7 @@ import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
 import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
@@ -103,7 +104,7 @@ describe('Multi-tenancy isolation', () => {
     // ─── SEC-1: uid-per-user locks each tenant root owner-only ───────
 
     describe('SEC-1: tenant root isolation (uid-per-user, chmod 0700)', () => {
-        class IsolationRunner extends QaapAgentTaskRunner {
+        class IsolationRunner extends QaapTenantSpawnService {
             readonly calls: Array<{ userRoot: string; uid: number; gid: number }> = [];
             protected override isBackendRoot(): boolean { return true; }
             protected override applyTenantRootIsolation(userRoot: string, uid: number, gid: number): void {
@@ -159,7 +160,7 @@ describe('Multi-tenancy isolation', () => {
     // ─── SEC-1: per-tenant /etc/passwd + private HOME provisioning ────
 
     describe('SEC-1: tenant OS-user + HOME provisioning (uid-per-user)', () => {
-        class ProvisionRunner extends QaapAgentTaskRunner {
+        class ProvisionRunner extends QaapTenantSpawnService {
             readonly osUsers: Array<{ segment: string; uid: number; gid: number; home: string }> = [];
             readonly homes: Array<{ uid: number; gid: number; home: string }> = [];
             parentsHardenedCount = 0;
@@ -180,7 +181,7 @@ describe('Multi-tenancy isolation', () => {
                 (this as unknown as { ensureTenantIdentityProvisioned(cwd: string): void }).ensureTenantIdentityProvisioned(cwd);
             }
             home(cwd: string): string {
-                return (this as unknown as { resolveAgentHome(cwd: string): string }).resolveAgentHome(cwd);
+                return this.resolveTenantHome(cwd);
             }
         }
 
