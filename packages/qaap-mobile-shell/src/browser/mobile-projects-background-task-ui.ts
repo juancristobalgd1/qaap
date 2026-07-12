@@ -130,6 +130,23 @@ export class MobileProjectsBackgroundTaskUi {
             return workspaceCwd;
         }
         let cwd = this.host.projectsService.getProjectCwd(project);
+        if (!cwd) {
+            // Hosted hub entries carry NO usable uri (`uri: isCurrent ? current : undefined`
+            // resolves to the container workspace, which getProjectCwd rightly filters), so on
+            // the VPS this was ALWAYS undefined and every submit fell through to the network
+            // prepare — or failed instantly. The client already KNOWS the repo's real path:
+            // reuse the prepared-cwd cache, then the project's own conversations (their cwd is
+            // the canonical per-user repository path).
+            const prepared = this.host.preparedCwdByProjectId.get(project.id);
+            if (prepared && !isQaapWorkspaceContainerPath(prepared)) {
+                cwd = prepared;
+            }
+        }
+        if (!cwd) {
+            cwd = this.host.conversations?.findConversationsForProject(project)
+                .map(summary => summary.cwd)
+                .find(known => !!known && !isQaapWorkspaceContainerPath(known));
+        }
         if (!cwd && project.github) {
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/preparingRepo', 'Preparing {0}…', project.name),

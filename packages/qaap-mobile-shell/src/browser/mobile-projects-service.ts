@@ -973,7 +973,11 @@ export class MobileProjectsService {
         if (existing) {
             return existing;
         }
-        if (!project.github || !readQaapSignedIn()) {
+        // Deliberately no readQaapSignedIn() gate here: the localStorage hint can lag the real
+        // session (observed live: hint false while the authenticated hub was working), and an
+        // instant-undefined here bricks every composer submit for hosted projects. The /open
+        // fetch itself is the authority — signed-out just fails it with a 401.
+        if (!project.github) {
             return undefined;
         }
         try {
