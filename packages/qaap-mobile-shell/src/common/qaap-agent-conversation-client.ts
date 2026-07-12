@@ -323,6 +323,12 @@ export interface QaapAgentConversationGroupDTO {
 
 export interface QaapCreateConversationBody {
     readonly cwd: string;
+    /**
+     * Client-generated idempotency key for this submit. The server returns the already-created
+     * conversation if a request with the same key already succeeded, so a retry after a slow/timed-out
+     * create does not spawn a duplicate conversation + task. Reused across retries of the same submit.
+     */
+    readonly clientRequestId?: string;
     readonly agent?: string;
     readonly title?: string;
     readonly message?: string;
@@ -393,12 +399,16 @@ export async function rewindConversationToMessage(id: string, messageId: string)
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
 
-export async function createConversation(body: QaapCreateConversationBody): Promise<QaapAgentConversationDTO> {
+export async function createConversation(
+    body: QaapCreateConversationBody,
+    signal?: AbortSignal,
+): Promise<QaapAgentConversationDTO> {
     const response = await fetch(QAAP_AGENT_CONVERSATION_API_PATH, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal,
     });
     if (!response.ok) {
         throw new Error((await response.text()) || response.statusText);

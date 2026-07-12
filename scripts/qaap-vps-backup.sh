@@ -18,6 +18,10 @@
 # provider's snapshot/backup feature (e.g. Hetzner backups) or sync $QAAP_BACKUP_DIR offsite.
 set -euo pipefail
 
+# The archive contains OAuth sessions, helper tokens and AI API keys — make every file this script
+# creates owner-only (0600 files, 0700 dirs) so a non-root user on the VPS cannot read the secrets.
+umask 077
+
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
@@ -32,23 +36,46 @@ if [[ -z "$THEIA_CONTAINER" ]]; then
 fi
 
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+ARCHIVE="$BACKUP_DIR/qaap-$STAMP.tar.gz"
 
 # --volumes-from mounts the same named volumes the app uses; tar sees live, atomic-written JSON
 # (every store writes via tmp+rename), so archives are consistent enough for restore.
+#
+# busybox tar exits non-zero on the benign "file changed as we read it" race, so we tolerate its
+# exit code here — but we do NOT trust it: the archive is integrity-checked below with `tar -tzf`,
+# which fails on a TRUNCATED archive. That catches a real tar failure that left a partial file (the
+# old `|| [ -s ... ]` marked any non-empty file — including a truncated one — as success).
 docker run --rm \
     --volumes-from "$THEIA_CONTAINER" \
     -v "$BACKUP_DIR:/backup" \
-    busybox sh -c "tar czf '/backup/qaap-$STAMP.tar.gz' \
+    busybox sh -c "umask 077; tar czf '/backup/qaap-$STAMP.tar.gz' \
         --exclude 'node_modules' \
-        /workspace /root/.qaap /root/.theia 2>/dev/null || [ -s '/backup/qaap-$STAMP.tar.gz' ]"
+        /workspace /root/.qaap /root/.theia 2>/dev/null || true"
 
-if [[ ! -s "$BACKUP_DIR/qaap-$STAMP.tar.gz" ]]; then
+if [[ ! -s "$ARCHIVE" ]]; then
     echo "[qaap-backup] FAILED: archive is empty or missing" >&2
+    rm -f "$ARCHIVE"
     exit 1
 fi
 
-SIZE="$(du -h "$BACKUP_DIR/qaap-$STAMP.tar.gz" | cut -f1)"
-echo "[qaap-backup] wrote $BACKUP_DIR/qaap-$STAMP.tar.gz ($SIZE)"
+# Integrity gate: a truncated/corrupt archive fails to list. Never keep a backup we cannot read back.
+if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
+    echo "[qaap-backup] FAILED: archive is corrupt or truncated (tar -tzf could not read it)" >&2
+    rm -f "$ARCHIVE"
+    exit 1
+fi
+
+chmod 600 "$ARCHIVE"
+
+SIZE="$(du -h "$ARCHIVE" | cut -f1)"
+echo "[qaap-backup] wrote $ARCHIVE ($SIZE, 0600)"
+
+# ⚠️ This archive holds OAuth sessions, helper tokens and AI API keys in the CLEAR. It is safe at
+# rest on this host (0600, dir 0700), but you MUST encrypt it before any offsite copy — e.g.
+#   gpg --symmetric --cipher-algo AES256 "$ARCHIVE"   # or `age -p`
+# and sync only the encrypted `.gpg`/`.age` file. Never rsync/upload the plaintext `.tar.gz`.
 
 # Rotate: keep the newest $KEEP archives.
 ls -1t "$BACKUP_DIR"/qaap-*.tar.gz 2>/dev/null | tail -n "+$((KEEP + 1))" | xargs -r rm -f

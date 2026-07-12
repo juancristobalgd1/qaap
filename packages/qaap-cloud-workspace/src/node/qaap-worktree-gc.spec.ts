@@ -101,4 +101,20 @@ describe('QaapWorktreeGcContribution.sweep', function (): void {
         await gc.sweep();
         expect(fs.existsSync(dir)).to.equal(true);
     });
+
+    it('does NOT collect a worktree that becomes active mid-sweep (TOCTOU: queued after the initial check)', async () => {
+        const dir = addWorktree('race5678');
+        age(dir);
+        // Empty at the first per-candidate check, then populated on the re-validation before collect —
+        // simulating a task queued onto this cwd during the isDirty/lastCommit awaits.
+        let calls = 0;
+        const gc = buildGc({
+            activeCwds: () => {
+                calls += 1;
+                return calls === 1 ? new Set<string>() : new Set([path.resolve(dir)]);
+            },
+        });
+        await gc.sweep();
+        expect(fs.existsSync(dir)).to.equal(true);
+    });
 });

@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { resolveQaapWorktreesRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
@@ -80,33 +80,42 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
         const root = this.worktreesRoot();
         let tenants: string[];
         try {
-            tenants = fs.readdirSync(root);
+            tenants = await fsp.readdir(root);
         } catch {
             return; // no worktrees root yet — nothing to do
         }
         const maxAge = this.maxAgeMs();
         const now = Date.now();
-        const active = this.activeCwds();
         let removed = 0;
         let skippedDirty = 0;
         for (const tenant of tenants) {
             const tenantDir = path.join(root, tenant);
             let slugs: string[] = [];
             try {
-                slugs = fs.statSync(tenantDir).isDirectory() ? fs.readdirSync(tenantDir) : [];
+                slugs = (await fsp.stat(tenantDir)).isDirectory() ? await fsp.readdir(tenantDir) : [];
             } catch { /* raced away */ }
             for (const slug of slugs) {
                 const dir = path.join(tenantDir, slug);
                 try {
-                    if (!fs.statSync(dir).isDirectory() || active.has(path.resolve(dir))) {
+                    const stat = await fsp.stat(dir);
+                    // Snapshot activity per-candidate, not once for the whole sweep: this loop has
+                    // several awaits (lastCommitMs/isDirty) during which a task can be queued onto this
+                    // very worktree. Checking here AND again immediately before collect() closes the
+                    // TOCTOU where the GC would delete a tree that was just assigned to a live agent.
+                    if (!stat.isDirectory() || this.activeCwds().has(path.resolve(dir))) {
                         continue;
                     }
-                    if (now - fs.statSync(dir).mtimeMs < maxAge || now - await this.lastCommitMs(dir) < maxAge) {
+                    if (now - stat.mtimeMs < maxAge || now - await this.lastCommitMs(dir) < maxAge) {
                         continue; // recent activity on either signal keeps it
                     }
                     if (await this.isDirty(dir)) {
                         skippedDirty++;
                         console.warn(`[qaap-worktree-gc] skipping ${dir}: uncommitted changes (commit or discard them to let GC collect it)`);
+                        continue;
+                    }
+                    // Re-validate immediately before the destructive rmSync — a task may have been
+                    // queued during the isDirty/lastCommit awaits above.
+                    if (this.activeCwds().has(path.resolve(dir))) {
                         continue;
                     }
                     await this.collect(dir);
@@ -150,7 +159,8 @@ export class QaapWorktreeGcContribution implements BackendApplicationContributio
             );
             baseRepo = path.dirname(stdout.trim()); // <repo>/.git → <repo>
         } catch { /* base gone (repo deleted) — still remove the dir */ }
-        fs.rmSync(dir, { recursive: true, force: true });
+        // Async rm so a large worktree deletion does not block the event loop (freezing HTTP/SSE/WS).
+        await fsp.rm(dir, { recursive: true, force: true });
         if (baseRepo) {
             await execFileAsync('git', ['-C', baseRepo, 'worktree', 'prune'], { timeout: 30_000 }).catch(() => undefined);
         }

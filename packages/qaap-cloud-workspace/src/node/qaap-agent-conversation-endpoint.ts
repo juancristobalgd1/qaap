@@ -59,6 +59,17 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
+    /**
+     * Idempotency guard for conversation creation: `${ownerLogin}:${clientRequestId}` → the id of the
+     * conversation that request already created. A create POST can take >60s under load; the client
+     * gives up (its bounded submit times out) but the backend still creates the conversation, and a
+     * user retry would spawn a DUPLICATE. When the retry carries the same client-generated
+     * `clientRequestId`, we return the already-created conversation instead of making another. Bounded
+     * to the newest {@link CLIENT_REQUEST_DEDUP_MAX} entries so it can never grow without limit.
+     */
+    protected readonly clientRequestDedup = new Map<string, string>();
+    protected static readonly CLIENT_REQUEST_DEDUP_MAX = 512;
+
     configure(app: Application): void {
         // List for one cwd (or all).
         app.get(QAAP_AGENT_CONVERSATION_API_PATH, (req, res) => {
@@ -316,6 +327,21 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             this.auth.denyForbidden(res, req, 'agent_conversation', { cwd: body.cwd });
             return;
         }
+        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        // Idempotency: if this exact client submit (same clientRequestId) already produced a
+        // conversation, return it instead of creating a duplicate + a second worktree/task.
+        const clientRequestId = typeof (req.body as { clientRequestId?: unknown }).clientRequestId === 'string'
+            ? (req.body as { clientRequestId: string }).clientRequestId.trim()
+            : undefined;
+        const dedupKey = clientRequestId ? `${ownerLogin ?? '_'}:${clientRequestId}` : undefined;
+        if (dedupKey) {
+            const priorId = this.clientRequestDedup.get(dedupKey);
+            const prior = priorId ? this.store.get(priorId) : undefined;
+            if (prior) {
+                res.status(201).json(prior);
+                return;
+            }
+        }
         try {
             // "New Worktree" destination: run the conversation in an isolated git worktree,
             // grouped under the originating repository via parallelBaseCwd.
@@ -331,7 +357,6 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
             const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
-            const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
             const conv = this.store.create({
                 cwd,
                 ...(baseCwd ? { parallelBaseCwd: baseCwd } : {}),
@@ -348,9 +373,24 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 ...(toolApprovalRules ? { toolApprovalRules } : {}),
                 latencyMarks: sanitizeLatencyMarks(body.latencyMarks),
             }, ownerLogin);
+            if (dedupKey) {
+                this.rememberClientRequest(dedupKey, conv.id);
+            }
             res.status(201).json(conv);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    /** Record a client request → conversation mapping, evicting the oldest entry past the cap. */
+    protected rememberClientRequest(dedupKey: string, conversationId: string): void {
+        this.clientRequestDedup.set(dedupKey, conversationId);
+        while (this.clientRequestDedup.size > QaapAgentConversationEndpoint.CLIENT_REQUEST_DEDUP_MAX) {
+            const oldest = this.clientRequestDedup.keys().next().value;
+            if (oldest === undefined) {
+                break;
+            }
+            this.clientRequestDedup.delete(oldest);
         }
     }
 

@@ -93,14 +93,24 @@ export class MobileProjectsBackgroundTaskUi {
      * visible error + optimistic rollback. The in-flight guard's `finally` also depends on the
      * inner promise settling, so an unbounded hang silently swallowed every later submit too.
      */
-    protected async boundedSubmitStage<T>(work: Promise<T> | T, ms: number, stage: string): Promise<T> {
+    protected async boundedSubmitStage<T>(
+        work: Promise<T> | T,
+        ms: number,
+        stage: string,
+        onTimeout?: () => void,
+    ): Promise<T> {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
             return await Promise.race([
                 Promise.resolve(work),
                 new Promise<never>((_, reject) => {
                     timer = setTimeout(
-                        () => reject(new Error(`Timed out after ${Math.round(ms / 1000)}s while ${stage}.`)),
+                        () => {
+                            // Abort the underlying request (if any) so a timed-out create does not keep
+                            // running on a connection the UI has already abandoned.
+                            onTimeout?.();
+                            reject(new Error(`Timed out after ${Math.round(ms / 1000)}s while ${stage}.`));
+                        },
                         ms,
                     );
                 }),
@@ -110,6 +120,15 @@ export class MobileProjectsBackgroundTaskUi {
                 clearTimeout(timer);
             }
         }
+    }
+
+    /** A unique idempotency key for one create submit (see the create call site). Overridable in tests. */
+    protected newClientRequestId(): string {
+        const g = globalThis as { crypto?: { randomUUID?: () => string } };
+        if (typeof g.crypto?.randomUUID === 'function') {
+            return g.crypto.randomUUID();
+        }
+        return `qaap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     }
 
     async ensureInlineComposerCwd(project: MobileProjectEntry): Promise<string | undefined> {
@@ -318,8 +337,14 @@ export class MobileProjectsBackgroundTaskUi {
                 'resolving the background context',
             ).catch(() => undefined)
             : undefined;
+        // Idempotency key for this submit: if the create POST is slow enough that the 60s bound below
+        // fires, the backend may still create the conversation. A retry carrying the SAME key returns
+        // that conversation instead of spawning a duplicate. Reused for the whole submit intent.
+        const clientRequestId = this.newClientRequestId();
+        const createController = new AbortController();
         const conversation = await this.boundedSubmitStage(createConversation({
             cwd,
+            clientRequestId,
             agent,
             title: draft,
             message: outbound,
@@ -335,7 +360,7 @@ export class MobileProjectsBackgroundTaskUi {
                 : options.autoApprove === true
                     ? { autoApprove: true }
                     : {}),
-        }), 60_000, 'creating the conversation');
+        }, createController.signal), 60_000, 'creating the conversation', () => createController.abort());
         const summary = conversationToSummary(conversation);
         this.host.conversations?.recordSnapshot(summary);
         return { summary, outbound };
