@@ -83,6 +83,34 @@ export class MobileProjectsBackgroundTaskUi {
 
     constructor(protected readonly host: MobileProjectsBackgroundTaskHost) { }
 
+    /**
+     * Bound a pre-create submit stage. Every await between the composer submit and the
+     * `createConversation` POST is a client-side fetch/resolver with NO timeout of its own —
+     * one hung stage froze the whole submit BEFORE any request reached the backend (observed
+     * live: optimistic paint stuck, zero server activity, watchdog "didn't respond in time",
+     * dead buttons). A bounded stage rejects instead, which the submit catch turns into a
+     * visible error + optimistic rollback. The in-flight guard's `finally` also depends on the
+     * inner promise settling, so an unbounded hang silently swallowed every later submit too.
+     */
+    protected async boundedSubmitStage<T>(work: Promise<T> | T, ms: number, stage: string): Promise<T> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+            return await Promise.race([
+                Promise.resolve(work),
+                new Promise<never>((_, reject) => {
+                    timer = setTimeout(
+                        () => reject(new Error(`Timed out after ${Math.round(ms / 1000)}s while ${stage}.`)),
+                        ms,
+                    );
+                }),
+            ]);
+        } finally {
+            if (timer !== undefined) {
+                clearTimeout(timer);
+            }
+        }
+    }
+
     async ensureInlineComposerCwd(project: MobileProjectEntry): Promise<string | undefined> {
         // Reuse the open workspace path ONLY when the tapped project IS that workspace. Otherwise the
         // tapped project has its own per-user repository path — falling back to the workspace root
@@ -107,8 +135,17 @@ export class MobileProjectsBackgroundTaskUi {
                 nls.localize('qaap/mobileProjects/preparingRepo', 'Preparing {0}…', project.name),
                 { kind: 'loading' }
             );
-            cwd = await this.host.projectsService.prepareProjectCwd(project);
-            MobileSnackbar.dismiss();
+            try {
+                // Bounded: a hung repositories/open fetch froze the submit forever with the
+                // loading snackbar up and no request ever reaching the conversation endpoint.
+                cwd = await this.boundedSubmitStage(
+                    this.host.projectsService.prepareProjectCwd(project),
+                    90_000,
+                    'preparing the repository',
+                );
+            } finally {
+                MobileSnackbar.dismiss();
+            }
         }
         if (!cwd) {
             MobileSnackbar.show(
@@ -171,11 +208,14 @@ export class MobileProjectsBackgroundTaskUi {
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
         } = {},
     ): Promise<void> {
-        const cwd = await this.ensureInlineComposerCwd(project);
-        if (!cwd) {
-            return;
-        }
         try {
+            const cwd = await this.ensureInlineComposerCwd(project);
+            if (!cwd) {
+                // No usable repository path (snackbar already explained why). Roll the
+                // optimistic paint back or it lingers as a phantom "streaming" conversation.
+                this.host.rollbackTranscriptOptimisticSubmit?.();
+                return;
+            }
             const { summary, outbound } = await this.createProjectChatSession(project, cwd, draft, options);
             this.host.seedTranscriptOptimisticSubmit(summary, outbound, options.selectedAgentId, options.imagePreviews);
             const wantsDevPreview = messageRequestsDevPreview(draft);
@@ -235,18 +275,31 @@ export class MobileProjectsBackgroundTaskUi {
                 { duration: 2200 },
             );
         }
-        const agent = await this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId ?? QAAP_COMPOSER_DEFAULT_AGENT_ID);
-        const outbound = await this.resolveOutboundMessage(draft, options);
+        const agent = await this.boundedSubmitStage(
+            this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId ?? QAAP_COMPOSER_DEFAULT_AGENT_ID),
+            20_000,
+            'selecting the agent',
+        );
+        const outbound = await this.boundedSubmitStage(
+            this.resolveOutboundMessage(draft, options),
+            30_000,
+            'expanding the draft',
+        );
         const agentModel = resolveAgentModelForSubmit(agent, cwd, options.agentModel);
         const approvalPolicyId = (options.approvalPolicyId
             ?? reconcileAgentApprovalPolicyId(undefined, cwd)) as QaapAgentApprovalPolicyId;
         const toolApprovalRules = options.toolApprovalRules
             ?? reconcileAgentToolApprovalRules(approvalPolicyId, cwd, undefined);
-        const contextPreamble = await this.host.backgroundContext?.resolve({
-            text: draft,
-            variables: options.variables,
-        });
-        const conversation = await createConversation({
+        // Optional preamble: on a hung/failed prompt-variable resolution, degrade to none
+        // rather than failing the submit.
+        const contextPreamble = this.host.backgroundContext
+            ? await this.boundedSubmitStage(
+                this.host.backgroundContext.resolve({ text: draft, variables: options.variables }),
+                15_000,
+                'resolving the background context',
+            ).catch(() => undefined)
+            : undefined;
+        const conversation = await this.boundedSubmitStage(createConversation({
             cwd,
             agent,
             title: draft,
@@ -263,7 +316,7 @@ export class MobileProjectsBackgroundTaskUi {
                 : options.autoApprove === true
                     ? { autoApprove: true }
                     : {}),
-        });
+        }), 60_000, 'creating the conversation');
         const summary = conversationToSummary(conversation);
         this.host.conversations?.recordSnapshot(summary);
         return { summary, outbound };
