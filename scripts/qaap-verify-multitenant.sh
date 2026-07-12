@@ -38,8 +38,14 @@ seg() {
 SEG_A="$(seg "$1")"; SEG_B="$(seg "$2")"
 TREE_A="$REPOS_ROOT/users/$SEG_A"; TREE_B="$REPOS_ROOT/users/$SEG_B"
 
-# Defensive cleanup: remove the throwaway verify repos even if the script is interrupted mid-run.
-cleanup() { dexec "rm -rf '$TREE_A/.qaap-verify-'* '$TREE_B/.qaap-verify-'*" >/dev/null 2>&1 || true; }
+# Defensive cleanup: remove ONLY the exact throwaway paths this script creates (never a glob — a
+# `.qaap-verify-*` wildcard could delete a real pre-existing entry in the tenant's tree). UID_A/UID_B
+# are resolved before any dir is created, so they are set by the time this runs.
+cleanup() {
+    [[ -n "${UID_A:-}" ]] && dexec "rm -rf '$TREE_A/.qaap-verify-$UID_A' '$TREE_A/.qaap-verify-probe-$UID_A'" >/dev/null 2>&1
+    [[ -n "${UID_B:-}" ]] && dexec "rm -rf '$TREE_B/.qaap-verify-$UID_B' '$TREE_B/.qaap-verify-probe-$UID_B'" >/dev/null 2>&1
+    return 0
+}
 trap cleanup EXIT INT TERM
 
 # Robustly read map[segment] from the registry JSON with node (NOT a fragile sed on JSON). Empty if absent.
@@ -54,10 +60,14 @@ FLAG="$(dexec 'printf %s "${QAAP_AGENT_UID_PER_USER:-}"')"
 [[ "$FLAG" == "1" || "$FLAG" == "true" ]] && ok "QAAP_AGENT_UID_PER_USER=$FLAG" || bad "QAAP_AGENT_UID_PER_USER='$FLAG', expected 1"
 # --no-cluster is required: uid assignment is only safe single-process (doc/qaap-uid-per-user.md). The
 # image CMD is `exec node … --no-cluster`, so the backend REPLACES sh and IS PID 1 — check its cmdline.
-if dexec 'tr "\0" " " < /proc/1/cmdline 2>/dev/null | grep -q -- "--no-cluster"'; then
+# Exact-token match (one arg per line, grep -Fxq) so a substring can't spoof it. NOTE: this checks
+# PID 1 — correct for this image (CMD `exec node … --no-cluster`). If you add an init (docker --init /
+# tini) PID 1 becomes the init and this reports FAIL even when the node child has --no-cluster; verify
+# the backend argv manually in that case (conservative false FAIL, never a false OK).
+if dexec 'tr "\0" "\n" < /proc/1/cmdline 2>/dev/null | grep -Fxq -- "--no-cluster"'; then
     ok "backend (PID 1) runs with --no-cluster (single-process uid assignment)"
 else
-    bad "PID 1 cmdline has no --no-cluster — clustered workers would race uid assignment"
+    bad "PID 1 cmdline has no --no-cluster token — clustered workers would race uid assignment (or PID 1 is an init; verify manually)"
 fi
 
 echo "== 1. uid registry =="
@@ -85,24 +95,34 @@ check_dir "$REPOS_ROOT/users" 0 711 "repos parent"
 dexec "test -d '$WORKTREES_ROOT'" && check_dir "$WORKTREES_ROOT" 0 711 "conversation-worktrees parent"
 dexec "test -d '$PARALLEL_ROOT'"  && check_dir "$PARALLEL_ROOT"  0 711 "parallel-run parent"
 # Per-tenant private HOME must be 0700 owned by the uid (else the dropped agent cannot write its config).
-[[ -n "$UID_A" ]] && dexec "test -d '$TENANT_HOME_ROOT/$SEG_A'" && check_dir "$TENANT_HOME_ROOT/$SEG_A" "$UID_A" 700 "A tenant HOME"
-[[ -n "$UID_B" ]] && dexec "test -d '$TENANT_HOME_ROOT/$SEG_B'" && check_dir "$TENANT_HOME_ROOT/$SEG_B" "$UID_B" 700 "B tenant HOME"
+# check_dir already reports a hard FAIL when the dir is missing — do NOT guard with `&& test -d`, which
+# would silently skip (a false OK) if the HOME was never provisioned.
+[[ -n "$UID_A" ]] && check_dir "$TENANT_HOME_ROOT/$SEG_A" "$UID_A" 700 "A tenant HOME"
+[[ -n "$UID_B" ]] && check_dir "$TENANT_HOME_ROOT/$SEG_B" "$UID_B" 700 "B tenant HOME"
 
 echo "== 3. Cross-tenant read is DENIED (the test that matters) =="
-cross_read() { # $1=reader_uid $2=victim_tree $3=label
-    # The victim's tree ROOT is 0700 owned by the victim, so a different uid cannot even traverse into
-    # it and therefore cannot read ANY file inside. Test that boundary against the FIXED, operator-
-    # controlled tree path — NEVER a tenant-controlled filename (interpolating one into the shell would
-    # let a crafted name break quoting so `cat` fails for the wrong reason and we'd report a false OK).
-    if ! dexec "test -d '$2'"; then bad "$3: victim tree $2 does not exist (cannot test isolation)"; return; fi
-    if dexec "setpriv --reuid $1 --regid $1 --clear-groups -- ls -A '$2' >/dev/null 2>&1"; then
-        bad "LEAK: uid $1 could list $2 — the tree is NOT 0700-isolated from other tenants"
+cross_read() { # $1=reader_uid $2=victim_tree $3=victim_uid $4=label
+    # The victim's tree ROOT is 0700 owned by the victim, so a different uid can neither LIST it nor
+    # TRAVERSE into it to read a known path. Test BOTH — all against FIXED, operator-controlled paths
+    # (never a tenant-controlled filename, which could break shell quoting into a false OK):
+    #   (a) `ls` the root  -> needs read on the 0700 dir;
+    #   (b) `cat` a known probe file at a fixed path -> needs traverse (execute) on the root. (b) catches
+    #       an execute-only / ACL-traversable root that (a) alone would miss (children may be readable).
+    if ! dexec "test -d '$2'"; then bad "$4: victim tree $2 does not exist (cannot test isolation)"; return; fi
+    local listed=0 read=0
+    dexec "setpriv --reuid $1 --regid $1 --clear-groups -- ls -A '$2' >/dev/null 2>&1" && listed=1
+    local probe="$2/.qaap-verify-probe-$3"
+    dexec "printf secret > '$probe' && chmod 0644 '$probe' && chown $3:$3 '$probe'" >/dev/null 2>&1
+    dexec "setpriv --reuid $1 --regid $1 --clear-groups -- cat '$probe' >/dev/null 2>&1" && read=1
+    dexec "rm -f '$probe'" >/dev/null 2>&1 || true
+    if [[ "$listed" -eq 0 && "$read" -eq 0 ]]; then
+        ok "$4 (uid $1 can neither list nor read the other tenant's tree)"
     else
-        ok "$3 (uid $1 cannot enter/read the other tenant's tree)"
+        bad "LEAK: uid $1 could${listed:+ }$([[ $listed -eq 1 ]] && echo 'list')$([[ $read -eq 1 ]] && echo ' read a known path') in $2"
     fi
 }
-[[ -n "$UID_A" && -n "$UID_B" ]] && cross_read "$UID_A" "$TREE_B" "A cannot read B"
-[[ -n "$UID_A" && -n "$UID_B" ]] && cross_read "$UID_B" "$TREE_A" "B cannot read A"
+[[ -n "$UID_A" && -n "$UID_B" ]] && cross_read "$UID_A" "$TREE_B" "$UID_B" "A cannot read B"
+[[ -n "$UID_A" && -n "$UID_B" ]] && cross_read "$UID_B" "$TREE_A" "$UID_A" "B cannot read A"
 
 echo "== 4. Each tenant uid is functional (passwd + group + getpwuid-less git commit) =="
 func_check() { # $1=uid $2=seg $3=tree $4=label
