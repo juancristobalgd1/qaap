@@ -13,6 +13,8 @@ import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { resolveQaapParallelRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     QaapChooseParallelVariantResponse,
     QaapCreateParallelRunRequest,
@@ -39,6 +41,9 @@ export class QaapParallelRunStore {
 
     @inject(QaapAgentConversationStore)
     protected readonly conversationStore: QaapAgentConversationStore;
+
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
 
     protected readonly runs = new Map<string, QaapParallelRun>();
     protected readonly liveStatsTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -87,15 +92,20 @@ export class QaapParallelRunStore {
 
         const id = randomUUID();
         const slug = id.slice(0, 8);
-        const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
-        const root = path.join(os.tmpdir(), 'qaap-parallel', tenant, slug);
+        // SEC-1: use safeUserIdSegment (NOT toLowerCase) + the well-known parallel root so the tenant
+        // segment matches the uid registry and resolveTenantIsolationRoot recognizes these worktrees.
+        const tenant = ownerLogin?.trim() ? safeUserIdSegment(ownerLogin.trim()) : '__anonymous__';
+        const root = path.join(resolveQaapParallelRoot(), tenant, slug);
+        // Make the run's worktree parent tenant-owned so the dropped `git worktree add` (below) can
+        // create the variant dirs under it. No-op in dev / when uid-per-user is off.
+        this.tenantSpawn.provisionTenantDir(cwd, root);
         const variants: QaapParallelRunVariant[] = [];
         try {
             for (const agentId of agents) {
                 const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, '-');
                 const branch = `qaap/parallel/${slug}/${safe}`;
                 const worktreePath = path.join(root, safe);
-                await this.git(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
+                await this.mutatingGit(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
                 const conversation = this.conversationStore.create({
                     cwd: worktreePath,
                     agent: agentId,
@@ -207,14 +217,18 @@ export class QaapParallelRunStore {
             return { ok: true, branch: winner.branch };
         }
 
+        // SEC-1: the winner's commit writes objects to the SHARED base-repo .git, and the merge below
+        // checks out into the base repo — both must run as the tenant uid over a tenant-owned base repo.
+        // Provision the base repo first so its .git is tenant-owned before the commit writes to it.
+        this.tenantSpawn.prepareTenantIsolation(run.cwd);
         // Commit the winner's working-tree changes so the branch carries them once its worktree is removed.
         await this.commitWorktree(winner.worktreePath, `qaap: parallel variant ${winner.agentId}`);
 
         if (action === 'merge') {
             try {
-                await this.git(run.cwd, ['merge', '--no-ff', '--no-edit', winner.branch]);
+                await this.mutatingGit(run.cwd, ['merge', '--no-ff', '--no-edit', winner.branch]);
             } catch (error) {
-                await this.git(run.cwd, ['merge', '--abort']).catch(() => undefined);
+                await this.mutatingGit(run.cwd, ['merge', '--abort']).catch(() => undefined);
                 return { ok: false, error: `Merge failed (your tree was left untouched): ${this.errorMessage(error)}` };
             }
             await this.finalizeRun(run);
@@ -354,8 +368,8 @@ export class QaapParallelRunStore {
         if (!status.trim()) {
             return; // nothing to commit
         }
-        await this.git(worktreePath, ['add', '-A']);
-        await this.git(worktreePath, [
+        await this.mutatingGit(worktreePath, ['add', '-A']);
+        await this.mutatingGit(worktreePath, [
             '-c', 'user.email=qaap@local', '-c', 'user.name=qaap',
             'commit', '--no-verify', '-m', message,
         ]);
@@ -399,13 +413,24 @@ export class QaapParallelRunStore {
         }
     }
 
+    /**
+     * READ-ONLY git (status/diff/rev-parse) and non-code-executing writes (worktree remove, branch -D).
+     * Runs as the backend uid with hooks disabled. MUTATING git that checks out / applies filters
+     * (worktree add, merge, add, commit) must go through {@link mutatingGit} instead.
+     */
     protected async git(cwd: string, args: string[]): Promise<string> {
-        // SEC-1/C-3 hardening: parallel-run finalize runs `worktree add`/`merge`/`add`/`commit` over
-        // tenant repos as the backend uid (root in prod). Disable hooks so a tenant-planted `.git/hooks/*`
-        // (or a merge/commit hook) cannot execute as root. (Residual: tenant-defined clean/smudge/merge
-        // FILTER drivers in `.git/config` can still run during merge/checkout — the complete fix is to
-        // run these under the tenant uid; gated on the multi-tenant flip, see SECURITY.md.)
         const { stdout } = await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args], { maxBuffer: GIT_MAX_BUFFER });
+        return stdout;
+    }
+
+    /**
+     * MUTATING git over a tenant repo/worktree, run UNDER THE TENANT UID (setpriv). git applies
+     * tenant-controlled clean/smudge/merge filter drivers + hooks during checkout/merge/add; run as
+     * the tenant they cannot escalate, and outputs are tenant-owned. See QaapTenantSpawnService.
+     */
+    protected async mutatingGit(cwd: string, args: string[]): Promise<string> {
+        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+        const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
     }
 

@@ -58,32 +58,36 @@ so running them as root is a root-RCE vector, and they leave root-owned files.
 Current state of these paths:
 
 - **`qaap-conversation-worktree.ts` ("New Worktree" `git worktree add`) — CLOSED.**
-  It now runs under the tenant uid via `QaapTenantSpawnService.wrapGitForTenant`
+  Runs under the tenant uid via `QaapTenantSpawnService.wrapGitForTenant`
   (parent provisioned with `provisionTenantDir` first), so filters/hooks run as
-  the tenant and the worktree is tenant-owned. No-op in dev / flag off.
-- **`qaap-github-oauth-endpoint.ts` (clone/fetch/pull): hooks disabled**
-  (`-c core.hooksPath=/dev/null`); smudge/clean **filter** residual on a `pull`
-  checkout remains. Full fix needs the service relocated to a lower package
-  (dep cycle: `qaap-cloud-workspace` → `qaap-mobile-shell`).
-- **`qaap-parallel-run-store.ts` (parallel-run): hooks disabled, but a DEEPER
-  gap remains.** Parallel-run worktrees live under `{tmpdir}/qaap-parallel/{login}`
-  (lower-cased login), which is OUTSIDE the tenant-isolation model — `resolveTenantIsolationRoot`
-  only recognizes `{reposRoot}/users/{segment}` and `{worktreesRoot}/{segment}`
-  (`qaap-worktrees`), and the segment there is `safeUserIdSegment(login)` (NOT
-  lower-cased). Consequences of the flip on parallel-run, both to fix first:
-  1. The `assertTenantCwdInProduction` guard would REFUSE a parallel-run agent
-     spawn (its cwd resolves to no tenant tree) — parallel-run breaks under the flip.
-  2. Its mutating git (`worktree add`/`merge`/`add`/`commit`) cannot be dropped to
-     the tenant uid until the layout is recognized.
-  Fix: unify the parallel-run worktree layout onto `resolveQaapWorktreesRoot()` +
-  `safeUserIdSegment`, teach `resolveTenantIsolationRoot` that root, then route its
-  git through `wrapGitForTenant`. This is a focused refactor of `qaap-parallel-run-store.ts`.
+  the tenant and the worktree is tenant-owned.
+- **`qaap-parallel-run-store.ts` (parallel-run) — CLOSED.** Its worktrees were
+  outside the isolation model (`{tmpdir}/qaap-parallel/{lower-cased login}`);
+  unified onto `resolveQaapParallelRoot()` + `safeUserIdSegment` and taught to
+  `resolveTenantIsolationRoot`, so parallel agents spawn under the flip and the
+  mutating git (`worktree add` / `merge` / `add` / `commit`) runs under the tenant
+  uid (`mutatingGit`). The base repo is provisioned before finalize so the shared
+  `.git` is tenant-owned when the commit/merge write to it.
+- **`qaap-github-oauth-endpoint.ts` (clone/fetch/pull) — RESIDUAL.** Hooks are
+  disabled (`-c core.hooksPath=/dev/null`). Clone/fetch are safe (a fresh clone's
+  `.git/config` is not tenant-controlled; fetch does not check out). The one
+  remaining vector is **`git pull --ff-only`**: if the tenant pre-set a
+  clean/smudge **filter** in their repo's `.git/config` and the remote advanced,
+  the ff checkout runs that filter as root. Closing it needs the tenant drop in
+  `qaap-mobile-shell`, which cannot import `QaapTenantSpawnService` (dep cycle:
+  `qaap-cloud-workspace` → `qaap-mobile-shell`) — relocate the service (and the
+  uid registry) to a lower shared package, or move the repo `open` flow behind
+  the drop.
 
-**⚠️ The OAuth filter residual and the parallel-run unification must be closed and
-staging-verified BEFORE flipping `QAAP_AGENT_UID_PER_USER=1` with real multiple
-tenants.** None of this affects a single-tenant or shared-uid
-(`QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true`) deployment, where there is no
-other tenant to attack.
+> [!IMPORTANT]
+> **None of the uid-per-user work above is verified on a real box.** It is
+> no-op in dev/CI (not root, no `setpriv`, flag off), so unit tests only exercise
+> the argv-shaping and the fail-closed logic — NOT the actual privilege drop,
+> ownership, or `setpriv`/`getpwuid` behavior under Linux. Before opening to real
+> multiple tenants you MUST run the 2-tenant staging verification in
+> `doc/qaap-uid-per-user.md` (uidA cannot read B's tree; agent + terminal + preview
+> + deploy + New Worktree + parallel-run all run under a `getpwuid`-less uid and
+> can still commit) AND close the OAuth `pull` residual above.
 
 ## Dependency audit notes
 

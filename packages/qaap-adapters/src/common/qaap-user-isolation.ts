@@ -35,6 +35,15 @@ export function resolveQaapWorktreesRoot(): string {
 }
 
 /**
+ * Root under which parallel-run variant worktrees live: `{tmpdir}/qaap-parallel/{segment}/{slug}/{variant}`.
+ * The `{segment}` MUST be {@link safeUserIdSegment} of the login (like the repos + worktrees roots) so
+ * the tenant-isolation model ({@link resolveTenantIsolationRoot}) and the uid registry recognize it.
+ */
+export function resolveQaapParallelRoot(): string {
+    return path.join(os.tmpdir(), 'qaap-parallel');
+}
+
+/**
  * Root under which each tenant gets its own agent HOME in uid-per-user mode:
  * `{QAAP_TENANT_HOME_ROOT}/{segment}` (default `/home/qaap-tenants/{segment}`). A distinct,
  * tenant-owned (0700) HOME is required because the shared `QAAP_AGENT_HOME` (`/home/qaap-agent`)
@@ -128,6 +137,13 @@ export function resolveTenantIsolationRoot(
     const worktreeSegment = firstPathSegmentUnder(worktreesRoot, cwd);
     if (worktreeSegment) {
         return { root: path.join(path.resolve(worktreesRoot), worktreeSegment), segment: worktreeSegment };
+    }
+    // Parallel-run variant worktrees ({tmpdir}/qaap-parallel/{segment}/{slug}/{variant}) are tenant
+    // trees too — recognize them so the fail-closed cwd guard and the uid drop apply there as well.
+    const parallelRoot = resolveQaapParallelRoot();
+    const parallelSegment = firstPathSegmentUnder(parallelRoot, cwd);
+    if (parallelSegment) {
+        return { root: path.join(parallelRoot, parallelSegment), segment: parallelSegment };
     }
     return undefined;
 }

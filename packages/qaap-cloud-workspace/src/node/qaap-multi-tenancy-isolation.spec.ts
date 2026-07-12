@@ -10,9 +10,11 @@ import * as os from 'os';
 import {
     isPathUnderUserWorkspace,
     isUserWorkspaceContainerPath,
+    resolveQaapParallelRoot,
     resolveQaapReposRoot,
     resolveQaapWorktreesRoot,
     resolveTenantHome,
+    resolveTenantIsolationRoot,
     resolveUserReposRoot,
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
@@ -98,6 +100,30 @@ describe('Multi-tenancy isolation', () => {
         it('falls back to a distinct __anonymous__ bucket for undefined ownerLogin', () => {
             expect(orchestrator.nameFor(repoKey, undefined)).to.not.equal(orchestrator.nameFor(repoKey, userA));
             expect(orchestrator.nameFor(repoKey, 'Alice')).to.equal(orchestrator.nameFor(repoKey, 'alice'));
+        });
+    });
+
+    // ─── SEC-1: parallel-run worktrees are recognized tenant trees ───
+
+    describe('SEC-1: resolveTenantIsolationRoot recognizes the parallel-run root', () => {
+        const worktreesRoot = resolveQaapWorktreesRoot();
+
+        it('resolves a parallel-run variant worktree to its tenant segment', () => {
+            const cwd = path.join(resolveQaapParallelRoot(), safeUserIdSegment(userA), 'slug1234', 'agent-x');
+            const target = resolveTenantIsolationRoot(reposRoot, worktreesRoot, cwd);
+            expect(target?.segment).to.equal(safeUserIdSegment(userA));
+            expect(target?.root).to.equal(path.join(resolveQaapParallelRoot(), safeUserIdSegment(userA)));
+        });
+
+        it('still resolves repos + conversation-worktree trees (unchanged)', () => {
+            expect(resolveTenantIsolationRoot(reposRoot, worktreesRoot, `${reposRoot}/users/${userA}/o/r`)?.segment)
+                .to.equal(userA);
+            expect(resolveTenantIsolationRoot(reposRoot, worktreesRoot, path.join(worktreesRoot, userB, 'deadbeef'))?.segment)
+                .to.equal(userB);
+        });
+
+        it('returns undefined for a path under none of the tenant roots', () => {
+            expect(resolveTenantIsolationRoot(reposRoot, worktreesRoot, '/tmp/somewhere/else')).to.equal(undefined);
         });
     });
 
