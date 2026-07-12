@@ -634,8 +634,13 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const target = resolveRepositoryWorkspacePath(this.reposRoot, userLogin, repository.owner, repository.name);
         await fs.mkdir(path.dirname(target), { recursive: true });
         if (await this.isGitRepository(target)) {
+            // SEC-1/C-3: `fetch` updates refs + downloads objects with NO checkout and NO filters, so it
+            // is safe to run as the backend uid (root in prod). The former `pull --ff-only` here CHECKED
+            // OUT into the tenant-writable repo as root — that runs a tenant-defined clean/smudge FILTER
+            // (from the repo's own .git/config) as ROOT, i.e. a root-RCE. We deliberately do NOT check
+            // out in the open flow: the working tree fast-forwards on the tenant's next git operation
+            // (agent / terminal), which runs UNDER THE TENANT UID and is therefore safe. See SECURITY.md.
             await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken);
-            await this.runGit(['-C', target, 'pull', '--ff-only'], accessToken);
             return target;
         }
         if (await this.pathExists(target)) {

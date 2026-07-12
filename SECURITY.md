@@ -68,26 +68,28 @@ Current state of these paths:
   mutating git (`worktree add` / `merge` / `add` / `commit`) runs under the tenant
   uid (`mutatingGit`). The base repo is provisioned before finalize so the shared
   `.git` is tenant-owned when the commit/merge write to it.
-- **`qaap-github-oauth-endpoint.ts` (clone/fetch/pull) — RESIDUAL.** Hooks are
+- **`qaap-github-oauth-endpoint.ts` (clone/fetch/pull) — CLOSED.** Hooks are
   disabled (`-c core.hooksPath=/dev/null`). Clone/fetch are safe (a fresh clone's
-  `.git/config` is not tenant-controlled; fetch does not check out). The one
-  remaining vector is **`git pull --ff-only`**: if the tenant pre-set a
-  clean/smudge **filter** in their repo's `.git/config` and the remote advanced,
-  the ff checkout runs that filter as root. Closing it needs the tenant drop in
-  `qaap-mobile-shell`, which cannot import `QaapTenantSpawnService` (dep cycle:
-  `qaap-cloud-workspace` → `qaap-mobile-shell`) — relocate the service (and the
-  uid registry) to a lower shared package, or move the repo `open` flow behind
-  the drop.
+  `.git/config` is git-generated, not tenant-controlled; fetch downloads objects
+  with no checkout). The one dangerous op was **`git pull --ff-only`** on an
+  existing repo — its ff checkout ran a tenant-defined clean/smudge **filter**
+  (from the repo's own `.git/config`) as root. The repo-`open` flow no longer
+  checks out as root: it does `fetch --all --prune` only (refs + objects, no
+  checkout), and the working tree fast-forwards on the tenant's NEXT git operation
+  (agent / terminal), which runs under the tenant uid and is safe. Tradeoff: an
+  opened repo is not auto-fast-forwarded to the remote tip until the tenant's next
+  git op — a deliberate exchange of an auto-pull convenience for eliminating the
+  root-checkout RCE (avoids relocating `QaapTenantSpawnService` across the
+  `qaap-cloud-workspace` → `qaap-mobile-shell` dep cycle).
 
 > [!IMPORTANT]
-> **None of the uid-per-user work above is verified on a real box.** It is
-> no-op in dev/CI (not root, no `setpriv`, flag off), so unit tests only exercise
-> the argv-shaping and the fail-closed logic — NOT the actual privilege drop,
-> ownership, or `setpriv`/`getpwuid` behavior under Linux. Before opening to real
-> multiple tenants you MUST run the 2-tenant staging verification in
-> `doc/qaap-uid-per-user.md` (uidA cannot read B's tree; agent + terminal + preview
-> + deploy + New Worktree + parallel-run all run under a `getpwuid`-less uid and
-> can still commit) AND close the OAuth `pull` residual above.
+> **The uid-per-user drop is not verified on a real box by these unit tests.** It
+> is no-op in dev/CI (not root, no `setpriv`, flag off), so tests only exercise the
+> argv-shaping and fail-closed logic — NOT the actual privilege drop, ownership, or
+> `setpriv`/`getpwuid` behavior under Linux. Before opening to real multiple tenants
+> you MUST run `scripts/qaap-verify-multitenant.sh <login-A> <login-B>` on the VPS
+> (after the two test tenants exercise agent + New Worktree + a parallel run); a
+> green PASSED is the gate.
 
 ## Dependency audit notes
 
