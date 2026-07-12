@@ -59,17 +59,19 @@ jobs:
             echo "commented on existing issue #$EXISTING"
           else
             gh label create vps-down --description "Production VPS unreachable" --color B60205 2>/dev/null || true
+            BODY="$(printf '%s\n' \
+              "The synthetic monitor could not reach \`/qaap/api/auth/config\` after 3 attempts at $(date -u +%FT%TZ)." \
+              '' \
+              '**Check:**' \
+              '1. `ssh root@<vps>` → `cd /opt/qaap && docker compose ps` and `docker compose logs --since 30m theia`' \
+              '2. Provider status / disk space (`df -h`).' \
+              '3. This issue closes automatically when the monitor sees the endpoint healthy again.' \
+              '' \
+              'Monitor run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}')"
             gh issue create \
               --title "🔴 VPS down: public endpoint unreachable" \
               --label vps-down \
-              --body "The synthetic monitor could not reach \`/qaap/api/auth/config\` after 3 attempts at $(date -u +%FT%TZ).
-
-**Check:**
-1. \`ssh root@<vps>\` → \`cd /opt/qaap && docker compose ps\` and \`docker compose logs --since 30m theia\`
-2. Provider status / disk space (\`df -h\`).
-3. This issue closes automatically when the monitor sees the endpoint healthy again.
-
-Monitor run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              --body "$BODY"
             echo "opened new outage issue"
           fi
           exit 1
