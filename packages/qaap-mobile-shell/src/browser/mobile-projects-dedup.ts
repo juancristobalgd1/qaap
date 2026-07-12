@@ -25,11 +25,11 @@ export function deduplicateMobileProjectEntries(
     const claimedKeys = new Set<string>();
 
     for (const project of sorted) {
-        const keys = collectProjectDeduplicationKeys(project, ctx);
-        if (keys.some(key => claimedKeys.has(key))) {
+        const { claims, probes } = collectProjectDeduplicationKeys(project, ctx);
+        if (claims.some(key => claimedKeys.has(key)) || probes.some(key => claimedKeys.has(key))) {
             continue;
         }
-        for (const key of keys) {
+        for (const key of claims) {
             claimedKeys.add(key);
         }
         kept.push(project);
@@ -67,32 +67,46 @@ function projectEntryPrecedence(project: MobileProjectEntry, ctx: MobileProjectD
     return score;
 }
 
+/**
+ * `claims` identify this project and are registered so later (lower-precedence) entries collapse
+ * into it. `probes` are only checked against already-claimed keys, never registered.
+ *
+ * The display name is a claim ONLY for the current workspace and a probe for everything else:
+ * the current repo often appears again as a github/custom/recent card whose URI takes a different
+ * form (legacy flat path vs per-user clone path, trailing slash), so the exact uri/cwd keys miss
+ * and the name is the only stable link. Registering the name for non-current entries would
+ * wrongly merge distinct repos that merely share a basename (forks, alpha/demo vs beta/demo) —
+ * as a probe, same-named non-current entries still coexist with each other.
+ */
 function collectProjectDeduplicationKeys(
     project: MobileProjectEntry,
     ctx: MobileProjectDedupContext,
-): string[] {
-    const keys = new Set<string>();
+): { claims: string[]; probes: string[] } {
+    const claims = new Set<string>();
+    const probes = new Set<string>();
 
     const uri = project.uri?.toString();
     if (uri) {
-        keys.add(`uri:${uri}`);
+        claims.add(`uri:${uri}`);
     }
 
     if (project.github) {
-        keys.add(`github:${project.github.owner}/${project.github.name}`.toLowerCase());
+        claims.add(`github:${project.github.owner}/${project.github.name}`.toLowerCase());
     }
 
     const cwd = ctx.cwdFromUri(project.uri);
     if (cwd) {
-        keys.add(`cwd:${cwd.toLowerCase()}`);
+        claims.add(`cwd:${cwd.toLowerCase()}`);
     }
 
-    if (project.isCurrent) {
-        const displayName = ctx.normalizeName(project.name);
-        if (displayName) {
-            keys.add(`name:${displayName}`);
+    const displayName = ctx.normalizeName(project.name);
+    if (displayName) {
+        if (project.isCurrent) {
+            claims.add(`name:${displayName}`);
+        } else {
+            probes.add(`name:${displayName}`);
         }
     }
 
-    return [...keys];
+    return { claims: [...claims], probes: [...probes] };
 }

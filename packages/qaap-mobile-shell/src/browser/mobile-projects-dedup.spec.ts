@@ -85,6 +85,75 @@ describe('mobile-projects-dedup', () => {
         expect(deduped[0].id).to.equal(workspace.id);
     });
 
+    it('drops a github card for the current repo even when its URI differs (legacy vs per-user clone path)', () => {
+        const workspace = project({
+            id: 'ws:file:///workspace/repos/users/jcristgd/Vamello',
+            name: 'Vamello',
+            uri: new URI('file:///workspace/repos/users/jcristgd/Vamello'),
+            isCurrent: true,
+        });
+        const github = project({
+            id: 'github:jcristgd/Vamello',
+            name: 'Vamello',
+            uri: new URI('file:///workspace/repos/Vamello'),
+            github: {
+                owner: 'jcristgd',
+                name: 'Vamello',
+                fullName: 'jcristgd/Vamello',
+                htmlUrl: 'https://github.com/jcristgd/Vamello',
+                private: true,
+            },
+        });
+
+        const deduped = deduplicateMobileProjectEntries([github, workspace], ctx);
+
+        expect(deduped).to.have.length(1);
+        expect(deduped[0].id).to.equal(workspace.id);
+    });
+
+    it('drops a custom card matching the current repo by name with no URI at all', () => {
+        const workspace = project({
+            id: 'ws:file:///workspace/repos/users/jcristgd/Vamello',
+            name: 'Vamello',
+            uri: new URI('file:///workspace/repos/users/jcristgd/Vamello'),
+            isCurrent: true,
+        });
+        const custom = project({
+            id: 'custom:1234567890',
+            name: 'vamello',
+        });
+
+        const deduped = deduplicateMobileProjectEntries([custom, workspace], ctx);
+
+        expect(deduped).to.have.length(1);
+        expect(deduped[0].id).to.equal(workspace.id);
+    });
+
+    it('keeps a non-current project whose name differs from the current workspace', () => {
+        const workspace = project({
+            id: 'ws:file:///workspace/repos/users/jcristgd/Vamello',
+            name: 'Vamello',
+            uri: new URI('file:///workspace/repos/users/jcristgd/Vamello'),
+            isCurrent: true,
+        });
+        const other = project({
+            id: 'github:jcristgd/otra-cosa',
+            name: 'otra-cosa',
+            uri: new URI('file:///workspace/repos/users/jcristgd/otra-cosa'),
+            github: {
+                owner: 'jcristgd',
+                name: 'otra-cosa',
+                fullName: 'jcristgd/otra-cosa',
+                htmlUrl: 'https://github.com/jcristgd/otra-cosa',
+                private: false,
+            },
+        });
+
+        const deduped = deduplicateMobileProjectEntries([other, workspace], ctx);
+
+        expect(deduped).to.have.length(2);
+    });
+
     it('keeps distinct projects that only share a basename in different folders', () => {
         const alpha = project({
             id: 'recent:file:///workspace/alpha/demo',
