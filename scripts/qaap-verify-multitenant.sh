@@ -39,13 +39,19 @@ SEG_A="$(seg "$1")"; SEG_B="$(seg "$2")"
 TREE_A="$REPOS_ROOT/users/$SEG_A"; TREE_B="$REPOS_ROOT/users/$SEG_B"
 
 # Defensive cleanup: remove ONLY the exact throwaway paths this script creates (never a glob — a
-# `.qaap-verify-*` wildcard could delete a real pre-existing entry in the tenant's tree). UID_A/UID_B
-# are resolved before any dir is created, so they are set by the time this runs.
-cleanup() {
-    [[ -n "${UID_A:-}" ]] && dexec "rm -rf '$TREE_A/.qaap-verify-$UID_A' '$TREE_A/.qaap-verify-probe-$UID_A'" >/dev/null 2>&1
-    [[ -n "${UID_B:-}" ]] && dexec "rm -rf '$TREE_B/.qaap-verify-$UID_B' '$TREE_B/.qaap-verify-probe-$UID_B'" >/dev/null 2>&1
+# `.qaap-verify-*` wildcard could delete a real pre-existing entry in the tenant's tree). The func_check
+# repo `.qaap-verify-$uid` lives in the repos tree; the cross_read probe `.qaap-verify-probe-$uid` may
+# live in any of the tenant's roots (repos, worktrees, parallel). UID_A/UID_B are resolved before any
+# path is created, so they are set by the time this runs.
+clean_one() { # $1=seg $2=uid
+    [[ -z "$2" ]] && return 0
+    dexec "rm -rf '$REPOS_ROOT/users/$1/.qaap-verify-$2' \
+        '$REPOS_ROOT/users/$1/.qaap-verify-probe-$2' \
+        '$WORKTREES_ROOT/$1/.qaap-verify-probe-$2' \
+        '$PARALLEL_ROOT/$1/.qaap-verify-probe-$2'" >/dev/null 2>&1
     return 0
 }
+cleanup() { clean_one "$SEG_A" "${UID_A:-}"; clean_one "$SEG_B" "${UID_B:-}"; return 0; }
 trap cleanup EXIT INT TERM
 
 # Robustly read map[segment] from the registry JSON with node (NOT a fragile sed on JSON). Empty if absent.
@@ -88,8 +94,19 @@ check_dir() { # $1=path $2=want_owner $3=want_mode $4=label
     [[ "$owner" == "$2" ]] && ok "$4 owned by uid $2" || bad "$4 owner is '$owner', expected $2"
     [[ "$mode" == "$3" ]] && ok "$4 is 0$3" || bad "$4 mode is '$mode', expected $3"
 }
-[[ -n "$UID_A" ]] && check_dir "$TREE_A" "$UID_A" 700 "A repos tree"
-[[ -n "$UID_B" ]] && check_dir "$TREE_B" "$UID_B" 700 "B repos tree"
+# A tenant's ISOLATED tree roots: repos (always) + conversation-worktree + parallel-run (each only if
+# that tenant used the feature). resolveTenantIsolationRoot treats ALL of them as tenant trees, so each
+# must be 0700/owned exactly like the repos tree — a non-isolated worktree/parallel root is a real leak
+# the parent-0711 check alone would miss. (Have the test tenants exercise New Worktree + a parallel run
+# so these roots exist and get checked.)
+tenant_roots() { # $1=segment -> prints each existing root, one per line
+    printf '%s\n' "$REPOS_ROOT/users/$1"
+    dexec "test -d '$WORKTREES_ROOT/$1'" && printf '%s\n' "$WORKTREES_ROOT/$1"
+    dexec "test -d '$PARALLEL_ROOT/$1'"  && printf '%s\n' "$PARALLEL_ROOT/$1"
+    return 0
+}
+if [[ -n "$UID_A" ]]; then while IFS= read -r r; do check_dir "$r" "$UID_A" 700 "A tree $r"; done < <(tenant_roots "$SEG_A"); fi
+if [[ -n "$UID_B" ]]; then while IFS= read -r r; do check_dir "$r" "$UID_B" 700 "B tree $r"; done < <(tenant_roots "$SEG_B"); fi
 # Every recognized tenant-tree PARENT must be root-owned 0711 (traversable, not listable).
 check_dir "$REPOS_ROOT/users" 0 711 "repos parent"
 dexec "test -d '$WORKTREES_ROOT'" && check_dir "$WORKTREES_ROOT" 0 711 "conversation-worktrees parent"
@@ -112,17 +129,26 @@ cross_read() { # $1=reader_uid $2=victim_tree $3=victim_uid $4=label
     local listed=0 read=0
     dexec "setpriv --reuid $1 --regid $1 --clear-groups -- ls -A '$2' >/dev/null 2>&1" && listed=1
     local probe="$2/.qaap-verify-probe-$3"
-    dexec "printf secret > '$probe' && chmod 0644 '$probe' && chown $3:$3 '$probe'" >/dev/null 2>&1
+    # Create the probe as root and CONFIRM it exists + is owned/readable before the reader test. A failed
+    # create would make `cat` fail for the wrong reason (missing file) and hide a real traversal leak — so
+    # a failed probe setup is a hard FAIL, not a silent pass (fail-open guard).
+    if ! dexec "printf secret > '$probe' && chmod 0644 '$probe' && chown $3:$3 '$probe' && test -r '$probe'"; then
+        bad "$4: could not create the read probe at $probe (cannot verify traversal denial)"
+        dexec "rm -f '$probe'" >/dev/null 2>&1 || true
+        return
+    fi
     dexec "setpriv --reuid $1 --regid $1 --clear-groups -- cat '$probe' >/dev/null 2>&1" && read=1
     dexec "rm -f '$probe'" >/dev/null 2>&1 || true
     if [[ "$listed" -eq 0 && "$read" -eq 0 ]]; then
-        ok "$4 (uid $1 can neither list nor read the other tenant's tree)"
+        ok "$4 (uid $1 can neither list nor read the tree)"
     else
-        bad "LEAK: uid $1 could${listed:+ }$([[ $listed -eq 1 ]] && echo 'list')$([[ $read -eq 1 ]] && echo ' read a known path') in $2"
+        bad "LEAK: uid $1 could$([[ $listed -eq 1 ]] && echo ' list')$([[ $read -eq 1 ]] && echo ' read a known path') in $2"
     fi
 }
-[[ -n "$UID_A" && -n "$UID_B" ]] && cross_read "$UID_A" "$TREE_B" "$UID_B" "A cannot read B"
-[[ -n "$UID_A" && -n "$UID_B" ]] && cross_read "$UID_B" "$TREE_A" "$UID_A" "B cannot read A"
+if [[ -n "$UID_A" && -n "$UID_B" ]]; then
+    while IFS= read -r r; do cross_read "$UID_A" "$r" "$UID_B" "A cannot read B ($r)"; done < <(tenant_roots "$SEG_B")
+    while IFS= read -r r; do cross_read "$UID_B" "$r" "$UID_A" "B cannot read A ($r)"; done < <(tenant_roots "$SEG_A")
+fi
 
 echo "== 4. Each tenant uid is functional (passwd + group + getpwuid-less git commit) =="
 func_check() { # $1=uid $2=seg $3=tree $4=label
