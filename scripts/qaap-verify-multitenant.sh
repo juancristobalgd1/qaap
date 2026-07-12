@@ -38,6 +38,10 @@ seg() {
 SEG_A="$(seg "$1")"; SEG_B="$(seg "$2")"
 TREE_A="$REPOS_ROOT/users/$SEG_A"; TREE_B="$REPOS_ROOT/users/$SEG_B"
 
+# Defensive cleanup: remove the throwaway verify repos even if the script is interrupted mid-run.
+cleanup() { dexec "rm -rf '$TREE_A/.qaap-verify-'* '$TREE_B/.qaap-verify-'*" >/dev/null 2>&1 || true; }
+trap cleanup EXIT INT TERM
+
 # Robustly read map[segment] from the registry JSON with node (NOT a fragile sed on JSON). Empty if absent.
 reg_uid() { dexec "node -e 'try{const j=require(process.argv[1]);const v=(j.map||{})[process.argv[2]];process.stdout.write(Number.isInteger(v)?String(v):\"\")}catch(e){}' '$REG' '$1'"; }
 # Mode + numeric owner of a path inside the container, as "OWNER MODE" (empty if the path is missing).
@@ -48,11 +52,12 @@ dexec 'id' | grep -q 'uid=0(root)' && ok "backend runs as root" || bad "backend 
 dexec 'command -v setpriv >/dev/null 2>&1' && ok "setpriv (util-linux) present" || bad "setpriv missing — the drop cannot clear supplementary groups"
 FLAG="$(dexec 'printf %s "${QAAP_AGENT_UID_PER_USER:-}"')"
 [[ "$FLAG" == "1" || "$FLAG" == "true" ]] && ok "QAAP_AGENT_UID_PER_USER=$FLAG" || bad "QAAP_AGENT_UID_PER_USER='$FLAG', expected 1"
-# --no-cluster is required: uid assignment is only safe single-process (see doc/qaap-uid-per-user.md).
-if dexec 'ps -eo args 2>/dev/null | grep -q "[-]-no-cluster"' || [[ "$(dexec 'printf %s "${THEIA_NO_CLUSTER:-}"')" == "1" ]]; then
-    ok "backend appears single-process (--no-cluster)"
+# --no-cluster is required: uid assignment is only safe single-process (doc/qaap-uid-per-user.md). The
+# image CMD is `exec node … --no-cluster`, so the backend REPLACES sh and IS PID 1 — check its cmdline.
+if dexec 'tr "\0" " " < /proc/1/cmdline 2>/dev/null | grep -q -- "--no-cluster"'; then
+    ok "backend (PID 1) runs with --no-cluster (single-process uid assignment)"
 else
-    bad "could not confirm --no-cluster — clustered workers would race uid assignment (verify manually)"
+    bad "PID 1 cmdline has no --no-cluster — clustered workers would race uid assignment"
 fi
 
 echo "== 1. uid registry =="
@@ -61,7 +66,8 @@ UID_A="$(reg_uid "$SEG_A")"; UID_B="$(reg_uid "$SEG_B")"
 [[ "$UID_A" =~ ^[0-9]+$ ]] && ok "tenant A ($SEG_A) uid = $UID_A" || { bad "no uid for A ($SEG_A) in registry.map"; UID_A=""; }
 [[ "$UID_B" =~ ^[0-9]+$ ]] && ok "tenant B ($SEG_B) uid = $UID_B" || { bad "no uid for B ($SEG_B) in registry.map"; UID_B=""; }
 [[ -n "$UID_A" && "$UID_A" == "$UID_B" ]] && bad "A and B resolved to the SAME uid ($UID_A) — no code isolation"
-[[ -n "$UID_A" && "$UID_A" -lt 20000 ]] && bad "A uid $UID_A is below the tenant base 20000 (a shared reserved bucket, not a real tenant)"
+[[ -n "$UID_A" && "$UID_A" -lt 20000 ]] && bad "A uid $UID_A is below the tenant base 20000 (shared reserved bucket, not a real tenant)"
+[[ -n "$UID_B" && "$UID_B" -lt 20000 ]] && bad "B uid $UID_B is below the tenant base 20000 (shared reserved bucket, not a real tenant)"
 
 echo "== 2. On-disk ownership + modes =="
 check_dir() { # $1=path $2=want_owner $3=want_mode $4=label
@@ -84,13 +90,15 @@ dexec "test -d '$PARALLEL_ROOT'"  && check_dir "$PARALLEL_ROOT"  0 711 "parallel
 
 echo "== 3. Cross-tenant read is DENIED (the test that matters) =="
 cross_read() { # $1=reader_uid $2=victim_tree $3=label
-    local vfile
-    vfile="$(dexec "find '$2' -type f ! -path '*/.git/*' 2>/dev/null | head -1")"
-    if [[ -z "$vfile" ]]; then bad "$3: no readable file found under $2 (did that tenant run a task?)"; return; fi
-    if dexec "setpriv --reuid $1 --regid $1 --clear-groups -- cat '$vfile' >/dev/null 2>&1"; then
-        bad "LEAK: uid $1 could read $vfile"
+    # The victim's tree ROOT is 0700 owned by the victim, so a different uid cannot even traverse into
+    # it and therefore cannot read ANY file inside. Test that boundary against the FIXED, operator-
+    # controlled tree path — NEVER a tenant-controlled filename (interpolating one into the shell would
+    # let a crafted name break quoting so `cat` fails for the wrong reason and we'd report a false OK).
+    if ! dexec "test -d '$2'"; then bad "$3: victim tree $2 does not exist (cannot test isolation)"; return; fi
+    if dexec "setpriv --reuid $1 --regid $1 --clear-groups -- ls -A '$2' >/dev/null 2>&1"; then
+        bad "LEAK: uid $1 could list $2 — the tree is NOT 0700-isolated from other tenants"
     else
-        ok "$3 (uid $1 cannot read the other tenant's tree)"
+        ok "$3 (uid $1 cannot enter/read the other tenant's tree)"
     fi
 }
 [[ -n "$UID_A" && -n "$UID_B" ]] && cross_read "$UID_A" "$TREE_B" "A cannot read B"
