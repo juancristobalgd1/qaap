@@ -189,9 +189,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected handleAuthConfig(_req: Request, res: Response): void {
+        const build = process.env.QAAP_BUILD_SHA?.trim();
         res.json({
             githubOAuth: !!readQaapGithubOAuthConfig(),
             skipAuth: this.auth.isSkipAuthEnabled(),
+            // Deployed-build identity (short git SHA, baked into the image at build time).
+            // Public by design: the repo is public, and this is the one signal that ends
+            // "which build am I actually on?" during deploys — the post-deploy gate asserts
+            // it matches the pushed commit.
+            ...(build ? { build } : {}),
         });
     }
 

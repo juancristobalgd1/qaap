@@ -12,6 +12,7 @@ import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
 import { installMobileVerticalTouchScroll } from './mobile-vertical-touch-scroll';
 import { MobileHaptics } from './mobile-haptics';
 import { hashString } from '../common/qaap-agent-task-client';
+import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -132,6 +133,7 @@ export class MobileWorkHubSessionsSidebar {
         });
         footer.append(this.accountBtn);
         this.updateAccountAvatar();
+        this.appendDeployedBuildBadge(footer);
 
         const nav = document.createElement('nav');
         nav.className = 'theia-mobile-work-hub-sessions-sidebar-nav';
@@ -229,6 +231,25 @@ export class MobileWorkHubSessionsSidebar {
     updateAccountAvatar(): void {
         renderQaapAccountAvatarVisual(this.accountAvatar, { titleTarget: this.accountBtn });
         this.accountLabel.textContent = this.accountBtn.title;
+    }
+
+    /**
+     * Muted deployed-build badge (short git SHA from `/qaap/api/auth/config`). One glance answers
+     * "which build am I actually on?" — the recurring deploy-debugging question. Absent in local
+     * dev (no `QAAP_BUILD_SHA`), and silently omitted when the config fetch fails.
+     */
+    protected appendDeployedBuildBadge(footer: HTMLElement): void {
+        void fetchQaapAuthConfig().then(config => {
+            const build = config.build?.trim();
+            if (!build || !footer.isConnected) {
+                return;
+            }
+            const badge = document.createElement('span');
+            badge.className = 'theia-mobile-work-hub-sessions-sidebar-build';
+            badge.textContent = build;
+            badge.title = nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build);
+            footer.append(badge);
+        }).catch(() => undefined);
     }
 
     /** Evita ghost-tap en la posición del botón de cerrar al abrir. */

@@ -200,6 +200,18 @@
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 6%, transparent);
 }
 
+/* Deployed-build badge: muted short SHA so "which build am I on?" is a glance, not a debug session. */
+.theia-mobile-work-hub-sessions-sidebar-build {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  font-family: var(--monaco-monospace-font, monospace);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--theia-foreground) 38%, transparent);
+  white-space: nowrap;
+  user-select: text;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-foot .theia-mobile-work-hub-sessions-sidebar-account-btn {
   box-sizing: border-box;
   display: flex;

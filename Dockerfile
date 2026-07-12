@@ -128,13 +128,18 @@ RUN groupadd --gid 1001 qaap-agent \
     && git config --system user.email 'agent@qaap.local'
 
 ARG QAAP_IDE_PORT=4873
+# Deployed-build identity: the short git SHA the image was built from. Surfaced via
+# /qaap/api/auth/config and the Work Hub footer so "which build is serving?" is answerable
+# at a glance; the deploy pipeline asserts it matches the pushed commit post-deploy.
+ARG QAAP_BUILD_SHA=dev
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=${QAAP_IDE_PORT} \
     THEIA_PLUGINS_DIR=/app/plugins \
     QAAP_AGENT_HOME=/home/qaap-agent \
     QAAP_AGENT_UID=1001 \
-    QAAP_AGENT_GID=1001
+    QAAP_AGENT_GID=1001 \
+    QAAP_BUILD_SHA=${QAAP_BUILD_SHA}
 
 EXPOSE ${QAAP_IDE_PORT}
 

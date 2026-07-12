@@ -14,6 +14,8 @@ services:
       dockerfile: Dockerfile
       args:
         QAAP_IDE_PORT: ${THEIA_PORT:-4873}
+        # Set by scripts/qaap-vps-update.sh to the deployed commit's short SHA.
+        QAAP_BUILD_SHA: ${QAAP_BUILD_SHA:-dev}
         CODEX_CLI_VERSION: ${CODEX_CLI_VERSION:-latest}
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
         ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-latest}

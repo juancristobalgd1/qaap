@@ -48,6 +48,11 @@ git pull --ff-only origin "$BRANCH"
 BEFORE="$(git rev-parse --short HEAD)"
 echo "[qaap-vps-update] commit: $BEFORE"
 
+# Bake the deployed commit into the image (served via /qaap/api/auth/config and shown in the
+# Work Hub footer) so "which build is serving?" is answerable at a glance. docker compose reads
+# this from the environment for the QAAP_BUILD_SHA build arg.
+export QAAP_BUILD_SHA="$BEFORE"
+
 # Pin this build to the exact upstream QAIQ commit so the image is reproducible and never frozen:
 # same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones
 # QAIQ in its own CACHE_BUST-keyed layer, so this only re-clones qaiq (not the whole toolchain).

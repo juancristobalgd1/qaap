@@ -18,6 +18,13 @@ export interface QaapAuthConfigResponse {
     githubOAuth: boolean;
     /** Local dev: skip login gate and use a placeholder session (`QAAP_SKIP_AUTH=true`). */
     skipAuth?: boolean;
+    /**
+     * Short git SHA of the DEPLOYED build (`QAAP_BUILD_SHA`, baked at image build time).
+     * Surfaced in the Work Hub so users and operators can tell at a glance which build is
+     * actually serving — a redeploy is only "live" once this matches the pushed commit.
+     * Absent in local dev.
+     */
+    build?: string;
 }
 
 export interface QaapAuthSessionUser {

@@ -192,3 +192,28 @@ jobs:
           done
           echo "Health check failed for $QAAP_VPS_PUBLIC_URL" >&2
           exit 1
+
+      - name: Verify deployed build matches pushed commit
+        if: steps.ready.outputs.configured == 'true'
+        env:
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
+        run: |
+          # A green "Deploy over SSH" only proves the script ran — NOT that the serving
+          # container is the new build (an image-cache miss, a compose no-op, or a user
+          # testing mid-rebuild all bit us in practice). The backend bakes QAAP_BUILD_SHA
+          # into the image and serves it at /qaap/api/auth/config; assert it is a prefix
+          # of the commit this workflow deployed.
+          if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
+            echo "QAAP_VPS_PUBLIC_URL not set — skip build check"
+            exit 0
+          fi
+          DEPLOYED="$(curl -fsS "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build") or "")')"
+          if [ -z "$DEPLOYED" ]; then
+            echo "::warning::Backend did not report a build SHA (pre-QAAP_BUILD_SHA image?) — skipping assertion this once."
+            exit 0
+          fi
+          echo "deployed=$DEPLOYED expected=${GITHUB_SHA}"
+          case "$GITHUB_SHA" in
+            "$DEPLOYED"*) echo "OK: serving container runs the pushed commit." ;;
+            *) echo "::error::Deployed build $DEPLOYED does not match pushed commit $GITHUB_SHA — the serving container is stale."; exit 1 ;;
+          esac
