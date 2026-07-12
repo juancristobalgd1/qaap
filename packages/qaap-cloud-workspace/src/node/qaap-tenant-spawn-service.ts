@@ -8,6 +8,7 @@ import { ChildProcess, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+    resolveQaapParallelRoot,
     resolveQaapReposRoot,
     resolveQaapWorktreesRoot,
     resolveTenantHome,
@@ -450,7 +451,10 @@ export class QaapTenantSpawnService {
         }
         this.tenantParentsHardened = true;
         const usersRoot = path.join(resolveQaapReposRoot(), QAAP_USER_REPOS_SEGMENT);
-        for (const dir of [usersRoot, resolveQaapWorktreesRoot()]) {
+        // Harden the parent of EVERY recognized tenant-tree root (repos, conversation worktrees, and
+        // parallel-run worktrees) to 0711 so a tenant can traverse to its own 0700 segment dir but
+        // cannot list sibling tenants. Must match the roots resolveTenantIsolationRoot recognizes.
+        for (const dir of [usersRoot, resolveQaapWorktreesRoot(), resolveQaapParallelRoot()]) {
             try {
                 fs.mkdirSync(dir, { recursive: true });
                 fs.chmodSync(dir, 0o711);
