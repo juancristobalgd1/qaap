@@ -9,6 +9,7 @@ import { json } from 'body-parser';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import {
@@ -21,6 +22,7 @@ import {
     type QaapGithubMergePullRequestRequest,
     type QaapGithubOpenRepositoryRequest,
     type QaapGithubRepositorySummary,
+    type QaapProjectSessionSummary,
     type QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
@@ -98,7 +100,36 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.json({ sessions: [] });
             return;
         }
-        res.json({ sessions: this.projectSessions.listForUser(auth.session.user.login) });
+        const login = auth.session.user.login;
+        res.json({
+            sessions: this.projectSessions.listForUser(login)
+                .map(session => this.enrichSessionWithWorkspaceUri(login, session)),
+        });
+    }
+
+    /**
+     * Attach the owner's on-disk clone path (as a `file:` URI) to a `github:` session when the
+     * repository is actually cloned. Derived at read time from the session owner + repoKey — never
+     * persisted, so it can neither go stale nor leak across users. Hub entries need it because on
+     * hosted deployments the open workspace is the multi-repo container, which is unusable as a
+     * project path; without this the client had to re-derive the path from its own conversations.
+     */
+    protected enrichSessionWithWorkspaceUri(
+        login: string,
+        session: QaapProjectSessionSummary,
+    ): QaapProjectSessionSummary {
+        if (session.workspaceUri || !session.repoKey.startsWith('github:')) {
+            return session;
+        }
+        const [owner, name] = session.repoKey.slice('github:'.length).split('/');
+        if (!owner || !name) {
+            return session;
+        }
+        const target = resolveRepositoryWorkspacePath(this.reposRoot, login, owner, name);
+        if (!existsSync(target)) {
+            return session; // not cloned yet — the client's prepare/clone flow handles it
+        }
+        return { ...session, workspaceUri: FileUri.create(target).toString() };
     }
 
     protected handleUpsertProjectSession(req: Request, res: Response): void {

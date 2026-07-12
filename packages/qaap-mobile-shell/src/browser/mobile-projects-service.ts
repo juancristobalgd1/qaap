@@ -733,7 +733,10 @@ export class MobileProjectsService {
             tokens: session.tokens ?? '—',
             cost: session.cost ?? '—',
             pinned: this.isPinned(session.repoKey, pinnedIds, isCurrent),
-            uri: isCurrent ? current : undefined,
+            // Prefer the server-derived clone path: `current` is the OPEN workspace, which on
+            // hosted deployments is the multi-repo container — getProjectCwd rightly filters it,
+            // which used to leave every hosted hub entry with no usable project path.
+            uri: session.workspaceUri ? new URI(session.workspaceUri) : (isCurrent ? current : undefined),
             github: {
                 owner,
                 name,

@@ -151,6 +151,13 @@ export type QaapGithubInboxEvent =
 export interface QaapProjectSessionSummary {
     /** Stable key, e.g. `github:owner/repo` or `ws:file:///path`. */
     readonly repoKey: string;
+    /**
+     * `file:` URI of the session owner's on-disk clone, derived server-side at read time and
+     * present only when the repository is actually cloned. This is the AUTHORITATIVE project
+     * path for hub entries: without it the client could only guess from the open workspace,
+     * which on hosted deployments is the multi-repo container — never a usable cwd.
+     */
+    readonly workspaceUri?: string;
     readonly branch: string;
     readonly tokens?: string;
     readonly cost?: string;
