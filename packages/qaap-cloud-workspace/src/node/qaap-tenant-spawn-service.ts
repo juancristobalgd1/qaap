@@ -317,6 +317,47 @@ export class QaapTenantSpawnService {
     }
 
     /**
+     * Provision `dir` (and its ancestors) so a tenant-uid process can create children under it — used
+     * before `git worktree add {dir}/{slug}` so the tenant can create the new worktree. `dir` is chowned
+     * to the tenant resolved from `cwd` and locked 0700; ancestors are created (root-owned, traversable).
+     * No-op unless uid-per-user is on, the backend is root, and `cwd` resolves to a tenant tree.
+     */
+    provisionTenantDir(cwd: string, dir: string): void {
+        if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env)) {
+            return;
+        }
+        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
+        if (!target) {
+            return;
+        }
+        let identity: { uid: number; gid: number };
+        try {
+            identity = this.getTenantUidRegistry().resolve(target.segment);
+        } catch {
+            return;
+        }
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+            fs.chownSync(dir, identity.uid, identity.gid);
+            fs.chmodSync(dir, 0o700);
+        } catch (error) {
+            console.warn(`[qaap-security] could not provision tenant dir ${dir} for uid ${identity.uid}: `
+                + `${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Wrap a git argv to run over a tenant repo/worktree under the tenant uid (setpriv), so
+     * tenant-controlled hooks AND clean/smudge/merge filter drivers run as the tenant (never root), and
+     * files git writes are tenant-owned. Enforces the policy + provisions/chowns `cwd`. Returns plain
+     * `git -C cwd …` when no drop applies (local dev); throws (fail-closed) if setpriv is missing.
+     * `-c core.hooksPath=/dev/null` stays as belt-and-suspenders.
+     */
+    wrapGitForTenant(cwd: string, gitArgs: readonly string[]): { file: string; args: string[] } {
+        return this.wrapShellForTenant(cwd, 'git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...gitArgs]);
+    }
+
+    /**
      * Rewrite an interactive shell (`file` + `args`) so it runs under the tenant uid with cleared
      * supplementary groups, for callers that spawn through a foreign mechanism we do not control (the
      * node-pty terminal). Enforces the fail-closed policy and provisions the tenant tree first. Returns

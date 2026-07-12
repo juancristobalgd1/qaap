@@ -3,13 +3,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveQaapWorktreesRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
 const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -31,6 +32,9 @@ export interface QaapConversationWorktree {
 @injectable()
 export class QaapConversationWorktreeService {
 
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
+
     async create(baseCwd: string, ownerLogin?: string): Promise<QaapConversationWorktree> {
         const cwd = path.resolve(baseCwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
@@ -43,8 +47,20 @@ export class QaapConversationWorktreeService {
         // and the tenant-root isolation line up between repos and worktrees (SEC-1).
         const tenant = ownerLogin?.trim() ? safeUserIdSegment(ownerLogin.trim()) : '__anonymous__';
         const worktreePath = path.join(resolveQaapWorktreesRoot(), tenant, slug);
-        await this.git(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
+        // SEC-1/C-3: run `git worktree add` (which checks out HEAD, applying tenant-controlled
+        // clean/smudge filters) UNDER THE TENANT UID, so any filter/hook runs as the tenant, not root,
+        // and the new worktree is tenant-owned. Provision the worktree parent tenant-owned first so the
+        // dropped git can create the slug dir. No-op in dev / when uid-per-user is off (plain git).
+        this.tenantSpawn.provisionTenantDir(cwd, path.dirname(worktreePath));
+        await this.mutatingGit(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
         return { worktreePath, branch };
+    }
+
+    /** Run a MUTATING git over the tenant repo under the tenant uid (setpriv). See QaapTenantSpawnService. */
+    protected async mutatingGit(cwd: string, args: string[]): Promise<string> {
+        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+        const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
+        return stdout;
     }
 
     protected async assertGitRepo(cwd: string): Promise<void> {

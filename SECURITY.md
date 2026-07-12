@@ -57,26 +57,33 @@ so running them as root is a root-RCE vector, and they leave root-owned files.
 
 Current state of these paths:
 
-- `qaap-github-oauth-endpoint.ts` (clone/fetch/**pull**),
-  `qaap-conversation-worktree.ts` (**`git worktree add`** for "New Worktree"),
-  and `qaap-parallel-run-store.ts` (parallel-run `worktree add` / `merge` /
-  `add` / `commit`): **hooks are disabled** on all of them
-  (`-c core.hooksPath=/dev/null`), which closes the easy hook-plant vector.
-- **Residual (not yet closed):** a tenant-defined clean/smudge/merge **filter
-  driver** can still run as root during those checkouts/merges, and these ops
-  leave root-owned files that break the tenant's own later git.
+- **`qaap-conversation-worktree.ts` ("New Worktree" `git worktree add`) — CLOSED.**
+  It now runs under the tenant uid via `QaapTenantSpawnService.wrapGitForTenant`
+  (parent provisioned with `provisionTenantDir` first), so filters/hooks run as
+  the tenant and the worktree is tenant-owned. No-op in dev / flag off.
+- **`qaap-github-oauth-endpoint.ts` (clone/fetch/pull): hooks disabled**
+  (`-c core.hooksPath=/dev/null`); smudge/clean **filter** residual on a `pull`
+  checkout remains. Full fix needs the service relocated to a lower package
+  (dep cycle: `qaap-cloud-workspace` → `qaap-mobile-shell`).
+- **`qaap-parallel-run-store.ts` (parallel-run): hooks disabled, but a DEEPER
+  gap remains.** Parallel-run worktrees live under `{tmpdir}/qaap-parallel/{login}`
+  (lower-cased login), which is OUTSIDE the tenant-isolation model — `resolveTenantIsolationRoot`
+  only recognizes `{reposRoot}/users/{segment}` and `{worktreesRoot}/{segment}`
+  (`qaap-worktrees`), and the segment there is `safeUserIdSegment(login)` (NOT
+  lower-cased). Consequences of the flip on parallel-run, both to fix first:
+  1. The `assertTenantCwdInProduction` guard would REFUSE a parallel-run agent
+     spawn (its cwd resolves to no tenant tree) — parallel-run breaks under the flip.
+  2. Its mutating git (`worktree add`/`merge`/`add`/`commit`) cannot be dropped to
+     the tenant uid until the layout is recognized.
+  Fix: unify the parallel-run worktree layout onto `resolveQaapWorktreesRoot()` +
+  `safeUserIdSegment`, teach `resolveTenantIsolationRoot` that root, then route its
+  git through `wrapGitForTenant`. This is a focused refactor of `qaap-parallel-run-store.ts`.
 
-The complete fix is to run every mutating git over a tenant repo under the
-tenant uid (like the agent/terminal), which for `git worktree add` also needs
-the worktree parent dir provisioned tenant-owned first. `QaapConversationWorktreeService`
-and `QaapParallelRunStore` are in the same package as `QaapTenantSpawnService`
-so they can inject it directly; the OAuth endpoint (`@theia/qaap-mobile-shell`)
-needs the service relocated to a lower shared package (dep cycle).
-
-**⚠️ This must be closed and staging-verified BEFORE flipping
-`QAAP_AGENT_UID_PER_USER=1` with real multiple tenants.** It does not affect a
-single-tenant or shared-uid (`QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true`)
-deployment, where there is no other tenant to attack.
+**⚠️ The OAuth filter residual and the parallel-run unification must be closed and
+staging-verified BEFORE flipping `QAAP_AGENT_UID_PER_USER=1` with real multiple
+tenants.** None of this affects a single-tenant or shared-uid
+(`QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true`) deployment, where there is no
+other tenant to attack.
 
 ## Dependency audit notes
 

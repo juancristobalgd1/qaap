@@ -167,6 +167,29 @@ describe('QaapTenantSpawnService.assertTenantCwdInProduction (B: fail-closed on 
     });
 });
 
+describe('QaapTenantSpawnService.wrapGitForTenant (mutating git over a tenant repo)', () => {
+
+    it('wraps git in setpriv + disables hooks when a uid drop applies', () => {
+        const svc = new TestTenantSpawnService();
+        svc.identity = { uid: 20005, gid: 20005 };
+        const wrapped = svc.wrapGitForTenant('/workspace/repos/users/alice/o/r', ['worktree', 'add', '-b', 'b', '/wt', 'HEAD']);
+        expect(wrapped.file).to.equal('setpriv');
+        expect(wrapped.args).to.deep.equal([
+            '--reuid', '20005', '--regid', '20005', '--clear-groups', '--',
+            'git', '-c', 'core.hooksPath=/dev/null', '-C', '/workspace/repos/users/alice/o/r',
+            'worktree', 'add', '-b', 'b', '/wt', 'HEAD',
+        ]);
+    });
+
+    it('returns plain git (still hooks-disabled) when no uid drop applies (local dev)', () => {
+        const svc = new TestTenantSpawnService();
+        svc.identity = {};
+        const wrapped = svc.wrapGitForTenant('/repo', ['merge', '--no-ff', 'x']);
+        expect(wrapped.file).to.equal('git');
+        expect(wrapped.args).to.deep.equal(['-c', 'core.hooksPath=/dev/null', '-C', '/repo', 'merge', '--no-ff', 'x']);
+    });
+});
+
 describe('QaapTenantSpawnService.resolveProcessEnv', () => {
 
     const original = process.env.QAAP_AGENT_UID_PER_USER;
