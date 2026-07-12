@@ -47,6 +47,7 @@ import { CommandContribution } from '@theia/core/lib/common/command';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
 import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
+import { QaapBuildFreshnessContribution } from './qaap-build-freshness-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
@@ -165,6 +166,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(FrontendApplicationContribution).toService(MobileProjectsReadmeContribution);
     bind(MobileOneColumnShellContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileOneColumnShellContribution);
+    bind(QaapBuildFreshnessContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapBuildFreshnessContribution);
     bind(CommandContribution).toService(MobileOneColumnShellContribution);
     bind(QaapShellLayoutRestoreContribution).toSelf().inSingletonScope();
     bind(ShellLayoutTransformer).toService(QaapShellLayoutRestoreContribution);
