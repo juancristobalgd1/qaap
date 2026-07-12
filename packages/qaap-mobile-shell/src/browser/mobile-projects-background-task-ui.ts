@@ -28,6 +28,7 @@ import {
     type QaapCreateAgentTaskQaiqModel,
 } from '../common/qaap-agent-task-client';
 import { shouldRouteSubmitToTheiaCoder } from '../common/qaap-agent-submit-routing';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { applyBackendInteractionModeToPrompt } from '../common/qaap-sticky-composer-mode';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '../common/qaap-agent-tool-approval-rules';
@@ -85,7 +86,16 @@ export class MobileProjectsBackgroundTaskUi {
         // tapped project has its own per-user repository path — falling back to the workspace root
         // (`/workspace`) here sent a container cwd the server rejects (403/400), stalling the agent.
         const workspaceCwd = this.host.projectsService.getCurrentWorkspaceCwd();
-        if (workspaceCwd && this.host.projectsService.projectMatchesCurrentWorkspace(project)) {
+        if (
+            workspaceCwd
+            // Never reuse the multi-repo container root (`/workspace`) as a task cwd: the server
+            // rejects it (ownership_denied → 403) and the agent stalls with "didn't respond in time"
+            // and no way to recover. When the open workspace IS the container, fall through to the
+            // project's own per-user repository path. (getProjectCwd already filters the container,
+            // but this earlier branch bypassed that guard.)
+            && !isQaapWorkspaceContainerPath(workspaceCwd)
+            && this.host.projectsService.projectMatchesCurrentWorkspace(project)
+        ) {
             this.host.preparedCwdByProjectId.set(project.id, workspaceCwd);
             return workspaceCwd;
         }
