@@ -9,7 +9,6 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import type { Request, Response } from '@theia/core/shared/express';
 import {
     QAAP_AUTH_SESSION_COOKIE,
-    QAAP_AUTH_SESSION_HEADER,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     isPathUnderUserWorkspace,
@@ -359,13 +358,11 @@ export class QaapGithubAuthGuard {
     }
 
     resolveSessionId(req: Request): string | undefined {
+        // Cookie-only: the legacy x-qaap-session-id header fallback was removed (July 2026)
+        // so a session id exfiltrated from an old localStorage copy is no longer usable.
         const cookieId = this.readSessionIdFromCookie(req);
         if (cookieId && this.sessions.getSession(cookieId)) {
             return cookieId;
-        }
-        const headerId = this.readSessionIdFromHeader(req);
-        if (headerId && this.sessions.getSession(headerId)) {
-            return headerId;
         }
         return undefined;
     }
@@ -392,11 +389,4 @@ export class QaapGithubAuthGuard {
         return undefined;
     }
 
-    protected readSessionIdFromHeader(req: Request): string | undefined {
-        const sessionHeader = req.headers[QAAP_AUTH_SESSION_HEADER];
-        if (typeof sessionHeader === 'string' && sessionHeader.length > 0) {
-            return sessionHeader;
-        }
-        return undefined;
-    }
 }

@@ -82,7 +82,9 @@
     var SIGNED_IN_SUFFIX = 'qaap.auth.signedIn';
     var PROVIDER_SUFFIX = 'qaap.auth.provider';
     var USER_SUFFIX = 'qaap.auth.user';
-    var SESSION_ID_SUFFIX = 'qaap.auth.sessionId';
+    // Legacy key, purged on every sign-in write: the session id must never live in
+    // localStorage (XSS could exfiltrate it) — the HttpOnly cookie is the only credential.
+    var LEGACY_SESSION_ID_SUFFIX = 'qaap.auth.sessionId';
     var AUTH_MS = 1200;
 
     function storagePrefix() {
@@ -126,15 +128,29 @@
         } catch (e) { /* ignore */ }
     }
 
-    function writeSignedIn(provider, user, sessionId) {
+    function purgeLegacySessionIdKeys() {
+        try {
+            var stale = [];
+            var i, key;
+            for (i = 0; i < localStorage.length; i++) {
+                key = localStorage.key(i);
+                if (key && key.indexOf(LEGACY_SESSION_ID_SUFFIX) !== -1) {
+                    stale.push(key);
+                }
+            }
+            for (i = 0; i < stale.length; i++) {
+                localStorage.removeItem(stale[i]);
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    function writeSignedIn(provider, user) {
         var prefix = storagePrefix();
+        purgeLegacySessionIdKeys();
         localStorage.setItem(prefix + SIGNED_IN_SUFFIX, JSON.stringify(true));
         localStorage.setItem(prefix + PROVIDER_SUFFIX, JSON.stringify(provider));
         if (user) {
             localStorage.setItem(prefix + USER_SUFFIX, JSON.stringify(user));
-        }
-        if (sessionId) {
-            localStorage.setItem(prefix + SESSION_ID_SUFFIX, JSON.stringify(sessionId));
         }
     }
 
@@ -414,7 +430,7 @@
                 })
                 .then(function (data) {
                     if (data && data.signedIn && data.user && data.user.provider) {
-                        writeSignedIn(data.user.provider, data.user, data.sessionId);
+                        writeSignedIn(data.user.provider, data.user);
                     }
                     document.body.classList.remove('qaap-login-active');
                     var host = document.getElementById('qaap-login-host');
@@ -447,7 +463,7 @@
             })
             .then(function (data) {
                 if (data && data.signedIn && data.user && data.user.provider) {
-                    writeSignedIn(data.user.provider, data.user, data.sessionId);
+                    writeSignedIn(data.user.provider, data.user);
                     loadBundle();
                     return;
                 }
@@ -495,7 +511,7 @@
             })
             .then(function (data) {
                 if (data && data.signedIn && data.user && data.user.provider) {
-                    writeSignedIn(data.user.provider, data.user, data.sessionId);
+                    writeSignedIn(data.user.provider, data.user);
                     loadBundle();
                     return;
                 }

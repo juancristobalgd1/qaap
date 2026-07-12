@@ -9,10 +9,14 @@ export const QAAP_GITHUB_OAUTH_START_PATH = '/qaap/oauth/github/start';
 /** Must match GitHub OAuth App «Authorization callback URL». */
 export const QAAP_GITHUB_OAUTH_CALLBACK_PATH = '/qaap/oauth/github/callback';
 
+/**
+ * The HttpOnly session cookie is the ONLY session credential. The id must never reach
+ * JavaScript-accessible surfaces (JSON responses, localStorage, headers): any XSS could
+ * otherwise exfiltrate a 30-day session. The legacy `x-qaap-session-id` header fallback
+ * and the `qaap.auth.sessionId` localStorage key were removed in July 2026 — the session
+ * store persists to the /workspace volume, so the post-restart desync it papered over is gone.
+ */
 export const QAAP_AUTH_SESSION_COOKIE = 'qaap_sid';
-/** Fallback when HttpOnly cookies are dropped (e.g. after a container restart with a stale browser cookie). */
-export const QAAP_AUTH_SESSION_HEADER = 'x-qaap-session-id';
-export const QAAP_AUTH_SESSION_ID_STORAGE_KEY = 'qaap.auth.sessionId';
 
 export interface QaapAuthConfigResponse {
     githubOAuth: boolean;
@@ -37,7 +41,6 @@ export interface QaapAuthSessionUser {
 export interface QaapAuthSessionResponse {
     signedIn: boolean;
     user?: QaapAuthSessionUser;
-    sessionId?: string;
 }
 
 export interface QaapGithubRepositorySummary {

@@ -6,7 +6,11 @@
 export const QAAP_AUTH_SIGNED_IN_KEY = 'qaap.auth.signedIn';
 export const QAAP_AUTH_PROVIDER_KEY = 'qaap.auth.provider';
 export const QAAP_AUTH_USER_KEY = 'qaap.auth.user';
-export const QAAP_AUTH_SESSION_ID_KEY = 'qaap.auth.sessionId';
+/**
+ * Legacy key, PURGED on every write: the session id must never live in localStorage
+ * (XSS could exfiltrate it). The HttpOnly cookie is the only session credential.
+ */
+export const QAAP_AUTH_LEGACY_SESSION_ID_KEY = 'qaap.auth.sessionId';
 
 export type QaapAuthProvider = 'github' | 'gitlab';
 
@@ -111,19 +115,21 @@ export function placeholderQaapAuthUser(provider: QaapAuthProvider): QaapAuthUse
     };
 }
 
-export function readQaapAuthSessionId(): string | undefined {
-    if (typeof window === 'undefined' || !window.localStorage) {
-        return undefined;
-    }
+/** Remove any pre-July-2026 session id from localStorage (all pathname-prefix variants). */
+function purgeLegacyQaapSessionIdKeys(): void {
     try {
-        const raw = window.localStorage.getItem(qaapAuthStorageKey(QAAP_AUTH_SESSION_ID_KEY));
-        if (raw === null) {
-            return undefined;
+        const stale: string[] = [];
+        for (let i = 0; i < window.localStorage.length; i++) {
+            const key = window.localStorage.key(i);
+            if (key?.includes(QAAP_AUTH_LEGACY_SESSION_ID_KEY)) {
+                stale.push(key);
+            }
         }
-        const value = JSON.parse(raw) as string;
-        return typeof value === 'string' && value.length > 0 ? value : undefined;
+        for (const key of stale) {
+            window.localStorage.removeItem(key);
+        }
     } catch {
-        return undefined;
+        /* best-effort hygiene */
     }
 }
 
@@ -137,18 +143,17 @@ function qaapAuthUsersEqual(a: QaapAuthUser | undefined, b: QaapAuthUser): boole
         && a.avatarUrl === b.avatarUrl;
 }
 
-export function writeQaapAuthSession(provider: QaapAuthProvider, user?: QaapAuthUser, sessionId?: string): void {
+export function writeQaapAuthSession(provider: QaapAuthProvider, user?: QaapAuthUser): void {
     if (typeof window === 'undefined' || !window.localStorage) {
         return;
     }
+    purgeLegacyQaapSessionIdKeys();
     const previousUser = readQaapAuthUser();
     const previousLogin = previousUser?.login;
     const profile = user ?? placeholderQaapAuthUser(provider);
-    const nextSessionId = sessionId ?? readQaapAuthSessionId();
     const sessionUnchanged = readQaapSignedIn()
         && readQaapAuthProvider() === provider
-        && qaapAuthUsersEqual(previousUser, profile)
-        && readQaapAuthSessionId() === nextSessionId;
+        && qaapAuthUsersEqual(previousUser, profile);
     if (sessionUnchanged) {
         return;
     }
@@ -160,9 +165,6 @@ export function writeQaapAuthSession(provider: QaapAuthProvider, user?: QaapAuth
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_SIGNED_IN_KEY), JSON.stringify(true));
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_PROVIDER_KEY), JSON.stringify(provider));
     window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_USER_KEY), JSON.stringify(profile));
-    if (nextSessionId) {
-        window.localStorage.setItem(qaapAuthStorageKey(QAAP_AUTH_SESSION_ID_KEY), JSON.stringify(nextSessionId));
-    }
     window.dispatchEvent(new CustomEvent('qaap-auth-session-changed'));
 }
 

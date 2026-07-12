@@ -83,7 +83,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_GITHUB_API_PATH}/repositories`, (req, res) => this.handleGithubRepositories(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/repositories`, (req, res) => this.handleCreateGithubRepository(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/repositories/open`, (req, res) => this.handleCloneGithubRepository(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo/open`, (req, res) => this.handleOpenGithubRepository(req, res));
+        // POST, not GET: opening clones/pulls to disk, and SameSite=Lax only shields non-GET
+        // requests from cross-site initiation (a top-level GET navigation would send the cookie).
+        app.post(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo/open`, (req, res) => this.handleOpenGithubRepository(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, (req, res) => this.handleGithubPullRequests(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, (req, res) => this.handleMergeGithubPullRequest(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleProjectSessions(req, res));
@@ -235,10 +237,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     protected handleAuthSession(req: Request, res: Response): void {
         const stored = this.auth.resolveGithubSession(req);
         if (stored) {
+            // Never include the session id: the HttpOnly cookie is the only credential,
+            // and echoing the id here would hand it to any XSS.
             res.json({
                 signedIn: true,
                 user: stored.stored.user,
-                sessionId: stored.sessionId,
             });
             return;
         }

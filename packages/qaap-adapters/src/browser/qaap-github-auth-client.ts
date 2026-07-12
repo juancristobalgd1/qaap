@@ -5,7 +5,6 @@
 
 import {
     QAAP_AUTH_API_PATH,
-    QAAP_AUTH_SESSION_HEADER,
     QAAP_GITHUB_API_PATH,
     QAAP_GITHUB_OAUTH_START_PATH,
     type QaapAuthConfigResponse,
@@ -23,50 +22,20 @@ import {
 } from '../common/qaap-github-api-types';
 import {
     clearQaapAuthSession,
-    readQaapAuthSessionId,
     readQaapSignedIn,
     writeQaapAuthSession,
     type QaapAuthProvider,
 } from './qaap-auth-session';
 
-/** Include session cookie and, when known, the stored session id for VPS/container restarts. */
+/**
+ * Send the HttpOnly session cookie — the ONLY session credential. The id itself is
+ * never available to JavaScript, so an XSS cannot exfiltrate the session.
+ */
 export function qaapAuthenticatedFetchInit(extra?: RequestInit): RequestInit {
-    const headers = new Headers(extra?.headers);
-    const sessionId = readQaapAuthSessionId();
-    if (sessionId) {
-        headers.set(QAAP_AUTH_SESSION_HEADER, sessionId);
-    }
     return {
         credentials: 'include',
         ...extra,
-        headers,
     };
-}
-
-/** Drop a stale session id that no longer exists on the server (avoids 401 loops). */
-export async function reconcileQaapAuthSessionHeader(): Promise<void> {
-    const sessionId = readQaapAuthSessionId();
-    if (!sessionId) {
-        return;
-    }
-    const session = await fetchQaapAuthSession();
-    if (session.signedIn && session.sessionId) {
-        if (session.sessionId !== sessionId) {
-            writeQaapAuthSession(
-                session.user!.provider as QaapAuthProvider,
-                session.user,
-                session.sessionId,
-            );
-        }
-        return;
-    }
-    const config = await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
-    if (config.skipAuth) {
-        return;
-    }
-    if (readQaapSignedIn()) {
-        await syncQaapAuthSessionFromServer();
-    }
 }
 
 export const QAAP_REQUIRE_LOGIN_EVENT = 'qaap-require-login';
@@ -88,10 +57,13 @@ export async function fetchQaapAuthSession(): Promise<QaapAuthSessionResponse> {
 }
 
 export async function fetchQaapProjectSessions(): Promise<QaapProjectSessionsResponse> {
-    await reconcileQaapAuthSessionHeader();
     const response = await fetch(`${QAAP_GITHUB_API_PATH}/project-sessions`, qaapAuthenticatedFetchInit());
     if (response.status === 401) {
-        await reconcileQaapAuthSessionHeader();
+        // Cookie session gone on the server — reconcile the local signed-in flag so the
+        // login gate returns instead of a signed-in-but-broken UI.
+        if (readQaapSignedIn()) {
+            await syncQaapAuthSessionFromServer();
+        }
         return { sessions: [] };
     }
     if (!response.ok) {
@@ -166,7 +138,9 @@ export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullReq
 
 export async function openQaapGithubRepository(owner: string, name: string): Promise<QaapGithubOpenRepositoryResponse> {
     const url = `${QAAP_GITHUB_API_PATH}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/open`;
-    const response = await fetch(url, qaapAuthenticatedFetchInit());
+    // POST, not GET: this endpoint clones/pulls to disk, and SameSite=Lax only protects
+    // non-GET requests from cross-site initiation.
+    const response = await fetch(url, qaapAuthenticatedFetchInit({ method: 'POST' }));
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || `Failed to open GitHub repository (${response.status})`);
@@ -227,7 +201,7 @@ export async function syncQaapAuthSessionFromServer(): Promise<boolean> {
         }
         return false;
     }
-    writeQaapAuthSession(session.user.provider as QaapAuthProvider, session.user, session.sessionId);
+    writeQaapAuthSession(session.user.provider as QaapAuthProvider, session.user);
     return true;
 }
 
