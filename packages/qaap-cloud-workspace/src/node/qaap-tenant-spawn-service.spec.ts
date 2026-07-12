@@ -90,6 +90,39 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
     });
 });
 
+describe('QaapTenantSpawnService.wrapShellForTenant (interactive terminal)', () => {
+
+    it('wraps the login shell in setpriv --clear-groups when a uid drop applies', () => {
+        const svc = new TestTenantSpawnService();
+        svc.identity = { uid: 20005, gid: 20005 };
+        const wrapped = svc.wrapShellForTenant(tenantCwd, '/bin/bash', ['-l']);
+        expect(wrapped.file).to.equal('setpriv');
+        expect(wrapped.args).to.deep.equal(
+            ['--reuid', '20005', '--regid', '20005', '--clear-groups', '--', '/bin/bash', '-l']);
+    });
+
+    it('provisions the tenant tree before returning the wrapped shell', () => {
+        const svc = new TestTenantSpawnService();
+        svc.identity = { uid: 20005, gid: 20005 };
+        svc.wrapShellForTenant(tenantCwd, '/bin/bash', []);
+        expect(svc.prepared).to.deep.equal([tenantCwd]);
+    });
+
+    it('returns the shell unchanged when no uid drop applies (local dev)', () => {
+        const svc = new TestTenantSpawnService();
+        svc.identity = {};
+        const wrapped = svc.wrapShellForTenant(tenantCwd, '/bin/zsh', ['-l']);
+        expect(wrapped).to.deep.equal({ file: '/bin/zsh', args: ['-l'] });
+    });
+
+    it('THROWS rather than leak a root shell when a drop is required but setpriv is missing', () => {
+        const svc = new TestTenantSpawnService();
+        svc.identity = { uid: 20005, gid: 20005 };
+        svc.setpriv = false;
+        expect(() => svc.wrapShellForTenant(tenantCwd, '/bin/bash', ['-l'])).to.throw(/setpriv/);
+    });
+});
+
 describe('QaapTenantSpawnService.resolveProcessEnv', () => {
 
     const original = process.env.QAAP_AGENT_UID_PER_USER;

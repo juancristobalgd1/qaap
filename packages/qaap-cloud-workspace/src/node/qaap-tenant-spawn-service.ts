@@ -257,21 +257,55 @@ export class QaapTenantSpawnService {
     }
 
     /**
+     * The tenant HOME/USER/LOGNAME overlay for a dropped process, or `{}` when no uid drop applies.
+     * Without a writable HOME a dropped process inherits root's `/root`, which it cannot write.
+     */
+    tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
+        if (this.resolveSpawnIdentity(cwd).uid === undefined) {
+            return {};
+        }
+        const overlay: { HOME?: string; USER?: string; LOGNAME?: string } = { HOME: this.resolveTenantHome(cwd) };
+        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
+        if (target) {
+            overlay.USER = `qaap-t-${target.segment}`;
+            overlay.LOGNAME = overlay.USER;
+        }
+        return overlay;
+    }
+
+    /**
      * Augment a child env with the tenant's writable HOME (and matching USER/LOGNAME) when a uid drop
-     * applies for `cwd`. Without this a dropped process inherits root's `/root` HOME, which it cannot
-     * write — dev servers and shells fail on cache/config writes. No-op when no drop applies.
+     * applies for `cwd`. No-op when no drop applies.
      */
     resolveProcessEnv(cwd: string, base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-        const env = { ...base };
-        if (this.resolveSpawnIdentity(cwd).uid !== undefined) {
-            env.HOME = this.resolveTenantHome(cwd);
-            const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
-            if (target) {
-                env.USER = `qaap-t-${target.segment}`;
-                env.LOGNAME = env.USER;
-            }
+        return { ...base, ...this.tenantHomeEnvOverlay(cwd) };
+    }
+
+    /**
+     * Rewrite an interactive shell (`file` + `args`) so it runs under the tenant uid with cleared
+     * supplementary groups, for callers that spawn through a foreign mechanism we do not control (the
+     * node-pty terminal). Enforces the fail-closed policy and provisions the tenant tree first. Returns
+     * the pair unchanged when no uid drop applies (local dev). THROWS when a drop is required but
+     * `setpriv` is missing — it never silently returns a root/shared shell (the shipped Linux image
+     * provisions util-linux; a missing setpriv is a misconfiguration, not a reason to leak root).
+     */
+    wrapShellForTenant(cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+        this.enforceIsolationPolicy();
+        const identity = this.resolveSpawnIdentity(cwd);
+        if (identity.uid === undefined) {
+            return { file, args: [...args] };
         }
-        return env;
+        this.prepareTenantIsolation(cwd);
+        const gid = identity.gid ?? identity.uid;
+        if (!this.isSetprivAvailable()) {
+            throw new Error('Refusing to open a terminal under a shared/root uid: setpriv (util-linux) is '
+                + 'required to drop privileges for the interactive shell but was not found on PATH. '
+                + 'Install util-linux in the backend image.');
+        }
+        return {
+            file: 'setpriv',
+            args: ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
+        };
     }
 
     // ─── Provisioning primitives (overridable in tests) ───────────────────────────────────────────

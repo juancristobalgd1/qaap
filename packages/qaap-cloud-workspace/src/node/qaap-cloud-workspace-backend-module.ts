@@ -7,6 +7,8 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { NodeFileUploadService } from '@theia/filesystem/lib/node/upload/node-file-upload-service';
 import { IShellTerminalServer, IShellTerminalServerOptions } from '@theia/terminal/lib/common/shell-terminal-protocol';
+import { ShellProcess, getRootPath } from '@theia/terminal/lib/node/shell-process';
+import { parseArgs } from '@theia/process/lib/node/utils';
 import { QaapNodeFileUploadService } from './qaap-node-file-upload-service';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
@@ -83,6 +85,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // intact.
     onActivation<IShellTerminalServer>(IShellTerminalServer, (ctx, server) => {
         const taskRunner = ctx.container.get(QaapAgentTaskRunner);
+        const tenantSpawn = ctx.container.get(QaapTenantSpawnService);
         const originalCreate = server.create.bind(server);
         server.create = async (options: IShellTerminalServerOptions) => {
             if (options.strictEnv !== true) {
@@ -103,6 +106,24 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
                         QAAP_TASK_API_URL: seeded.QAAP_TASK_API_URL ?? null,
                     };
                 }
+            }
+            // SEC-1: the interactive terminal shell runs as the backend uid (root in prod), bypassing
+            // the agent's uid drop — a user could read/write another tenant's code from the Terminal
+            // tab. Rewrite the shell to run under the tenant uid via `setpriv --clear-groups` (the pty
+            // execs setpriv, which execs the shell in the same TTY — signals/resize are preserved), and
+            // point HOME/USER at the tenant home. No-op when uid-per-user is off / not root / cwd is
+            // outside a tenant tree; throws (failing the terminal open) rather than leaking a root shell.
+            const cwd = getRootPath(options.rootURI);
+            const shell = options.shell || ShellProcess.getShellExecutablePath();
+            const shellArgs = options.args === undefined
+                ? ShellProcess.getShellExecutableArgs()
+                : (Array.isArray(options.args) ? options.args : parseArgs(options.args));
+            const wrapped = tenantSpawn.wrapShellForTenant(cwd, shell, shellArgs);
+            options.shell = wrapped.file;
+            options.args = wrapped.args;
+            const homeOverlay = tenantSpawn.tenantHomeEnvOverlay(cwd);
+            if (Object.keys(homeOverlay).length > 0) {
+                options.env = { ...(options.env ?? {}), ...homeOverlay };
             }
             return originalCreate(options);
         };
