@@ -274,6 +274,46 @@ opt-in via env, and you should **verify before flipping it on**:
 > reads (all agents share uid 1001 on the shared `/workspace`). Full isolation (a container or uid
 > per user) is the next step for a large public deployment.
 
+## Backups
+
+The deployment's state lives in three docker volumes; **without backups a bad deploy, a destructive
+agent run, or an operator mistake loses every user's repositories and sessions**:
+
+| Volume | Mounted at | Holds |
+|---|---|---|
+| `theia-workspace` | `/workspace` | user repositories, `.qaap/uid-registry.json`, project sessions |
+| `qaap-auth-data` | `/root/.qaap` | OAuth sessions, agent-task index/logs, conversations, helper tokens |
+| `qaap-theia-user` | `/root/.theia` | per-user settings, incl. Settings → AI API keys |
+
+**Install the nightly backup (one-time, as root on the VPS):**
+
+```bash
+echo '17 3 * * * root /opt/qaap/scripts/qaap-vps-backup.sh >> /var/log/qaap-backup.log 2>&1' \
+  > /etc/cron.d/qaap-backup
+/opt/qaap/scripts/qaap-vps-backup.sh   # run once now and check the output
+```
+
+Archives land in `/var/backups/qaap/qaap-<UTC timestamp>.tar.gz` (`QAAP_BACKUP_DIR` to change),
+keeping the newest 7 (`QAAP_BACKUP_KEEP`). `node_modules` are excluded — reinstallable, and they
+dominate the size otherwise.
+
+**Restore** (container stopped or fresh):
+
+```bash
+cd /opt/qaap && docker compose stop theia
+docker run --rm --volumes-from "$(docker compose ps -aq theia)" \
+  -v /var/backups/qaap:/backup busybox \
+  tar xzf /backup/qaap-<STAMP>.tar.gz -C /
+docker compose start theia
+```
+
+To restore a single user's repo or one JSON store, extract selectively with
+`tar xzf … -C / workspace/repos/users/<login>` etc.
+
+> **Local tars do not survive disk loss.** Pair them with the provider's snapshot feature (Hetzner
+> backups ≈ 20% of the server price) or sync `/var/backups/qaap` offsite (rclone/restic to any
+> object storage).
+
 ## Related docs
 
 - [qaap-background-agents.md](./qaap-background-agents.md) — agent templates, `QAAP_AGENT_COMMANDS`, custom providers
