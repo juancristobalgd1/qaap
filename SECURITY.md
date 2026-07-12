@@ -56,8 +56,14 @@ directory. `npm audit` keys off the version string and cannot see the patch, so
 the critical will persist in the report until upstream Theia drops `decompress`.
 Do not "fix" it by aliasing to the ESM fork `@xhmikosr/decompress` — Theia
 `require()`s it from CommonJS and the ESM default-export shape breaks every call
-site. All other production HIGHs are resolved via lockfile bumps and the root
-`overrides` block.
+site.
+
+Two HIGH advisories remain, both `tar` inside `scanoss` (pinned to `^6.2.1`):
+`tar@7` is ESM with no default export and `scanoss` does `import tar from
+'tar'`, which breaks `build:browser`. These paths only run when a SCANOSS scan
+is invoked, so they are deferred until upstream `scanoss` adopts tar 7. Every
+other production HIGH (multer, axios, form-data, tmp, ws, serialize-javascript,
+dompurify, …) is resolved via lockfile bumps and the root `overrides` block.
 
 If you find a gap in this model, report it privately as above.
 
