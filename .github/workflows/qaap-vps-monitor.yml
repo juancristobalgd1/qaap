@@ -53,6 +53,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          # Issues can be disabled on the repo; the workflow failure itself (GitHub emails the
+          # owner about failed scheduled runs) is then the alert channel.
+          if ! gh issue list --limit 1 >/dev/null 2>&1; then
+            echo "::warning::Repository has Issues disabled — enable them (Settings → Features → Issues) for outage tracking. Failing the run so the scheduled-failure email still alerts."
+            exit 1
+          fi
           EXISTING="$(gh issue list --label vps-down --state open --json number --jq '.[0].number // empty')"
           if [ -n "$EXISTING" ]; then
             gh issue comment "$EXISTING" --body "Still down at $(date -u +%FT%TZ) (monitor run ${{ github.run_id }})."
@@ -82,6 +88,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          if ! gh issue list --limit 1 >/dev/null 2>&1; then
+            echo "issues disabled — nothing to close"
+            exit 0
+          fi
           EXISTING="$(gh issue list --label vps-down --state open --json number --jq '.[0].number // empty')"
           if [ -n "$EXISTING" ]; then
             gh issue close "$EXISTING" --comment "Recovered: endpoint healthy again at $(date -u +%FT%TZ) (build ${{ steps.probe.outputs.build || 'unknown' }})."
