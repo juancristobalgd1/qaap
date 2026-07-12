@@ -3,14 +3,17 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
-import { spawn } from 'child_process';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { QaapDeployEnvVar, QaapDeployRunRequest, QaapDeployRunResponse } from '../common/qaap-cloud-api-types';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
 @injectable()
 export class QaapDeployRunner {
+
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
 
     async run(request: QaapDeployRunRequest, ownerLogin?: string): Promise<QaapDeployRunResponse> {
         const envMap = await this.loadEnv(request.workspaceKey, ownerLogin);
@@ -80,11 +83,19 @@ export class QaapDeployRunner {
         options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
     ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
         return new Promise(resolve => {
-            const child = spawn(command, args, {
-                cwd: options.cwd,
-                env: options.env,
-                shell: false,
-            });
+            let child;
+            try {
+                // SEC-1: a deploy runs the tenant's own build (e.g. `vercel deploy` executes the repo's
+                // build script) with cwd = the tenant repo — tenant-controlled code. Drop it to the
+                // tenant uid (setpriv --clear-groups) and point HOME/USER at the tenant home, exactly
+                // like the agent and preview. Fail-closed: a refused policy rejects the deploy instead
+                // of running the build as root.
+                const env = this.tenantSpawn.resolveProcessEnv(options.cwd, options.env);
+                child = this.tenantSpawn.spawnArgvPrepared(command, args, { cwd: options.cwd, env });
+            } catch (error) {
+                resolve({ stdout: '', stderr: error instanceof Error ? error.message : String(error), exitCode: 1 });
+                return;
+            }
             let stdout = '';
             let stderr = '';
             child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
