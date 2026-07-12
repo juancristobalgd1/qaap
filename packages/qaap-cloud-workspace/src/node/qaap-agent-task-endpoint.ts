@@ -22,6 +22,7 @@ import {
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
+import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 
 /** Keep SSE connections warm through proxies that idle-kill silent sockets. */
 const SSE_HEARTBEAT_MS = 25_000;
@@ -102,6 +103,14 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 return;
             }
             const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, rawCwd);
+            if (resolved.kind === 'needs-project') {
+                // A container path (`/workspace`, `.../repos/users/{login}`, …) means "no project
+                // selected" — there is nothing to warm and it is NOT an ownership violation, so
+                // answer benignly instead of stamping ownership_denied into the security log
+                // (the hosted IDE workspace is the container, so this fired on every reload).
+                res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
+                return;
+            }
             if (resolved.kind !== 'ok') {
                 this.auth.denyForbidden(res, req, 'agent_task', { cwd: rawCwd });
                 return;

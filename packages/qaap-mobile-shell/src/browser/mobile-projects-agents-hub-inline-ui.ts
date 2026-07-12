@@ -16,6 +16,7 @@ import {
     QAAP_AGENTS_HUB_LANDING_ENABLED,
 } from '../common/qaap-agents-hub-landing';
 import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -213,7 +214,10 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO {
-        if (this.host.transcriptOpenSummary) {
+        // Skip an open summary whose cwd is the multi-repo CONTAINER (a stale server DTO from
+        // before the container guard): the composer warm, follow-up create and stop/retry all
+        // inherit summary.cwd, so passing it through re-leaks `/workspace` to the backend.
+        if (this.host.transcriptOpenSummary && !isQaapWorkspaceContainerPath(this.host.transcriptOpenSummary.cwd)) {
             return this.host.transcriptOpenSummary;
         }
         const active = this.host.conversationsForProject(project)
@@ -468,6 +472,26 @@ export class MobileProjectsAgentsHubInlineUi {
         this.seedTranscriptOptimisticConversation(
             this.buildOptimisticSubmitConversation(summary, outbound, agentId, imagePreviews),
         );
+    }
+
+    /**
+     * Roll back a pre-create idle-submit optimistic paint after the server REJECTED the create
+     * (e.g. 400 needs-project for a container cwd). Without this the optimistic "streaming"
+     * conversation lingers under the idle id with no real task behind it, the stream-health
+     * watchdog eventually shows "didn't respond in time", and Cancel/Retry/Stop have nothing
+     * to act on. Only the idle placeholder is evicted — real conversations are untouched.
+     */
+    rollbackAgentsHubIdleSubmitOptimistic(): void {
+        this.host.transcriptConversationCache.delete(QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID);
+        if (this.host.transcriptLastConv?.id === QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID) {
+            this.host.transcriptLastConv = undefined;
+        }
+        this.host.transcriptLastFingerprint = undefined;
+        // Repaint only when the inline shell is mounted — ensureAgentsHubExecutionShell then takes
+        // its reuse branch (no new root is appended to the scroll host).
+        if (this.host.agentsHubInlineExecutionRoot?.isConnected && this.host.agentsHubInlineChatHost?.isConnected) {
+            this.renderAgentsHubExecutionShell();
+        }
     }
 
     renderAgentsHubIdleSubmitOptimistic(

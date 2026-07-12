@@ -69,6 +69,8 @@ export interface MobileProjectsBackgroundTaskHost {
         agentId?: string,
         imagePreviews?: readonly QaapTranscriptUserImagePreview[],
     ): void;
+    /** Roll back the pre-create idle optimistic paint when the create is rejected (e.g. 400 needs-project). */
+    rollbackTranscriptOptimisticSubmit?(): void;
 }
 
 export interface QaapProjectChatSessionCreated {
@@ -192,6 +194,10 @@ export class MobileProjectsBackgroundTaskUi {
                 { kind: 'success', duration: 1400 }
             );
         } catch (error) {
+            // The composer painted an optimistic "streaming" conversation BEFORE this create.
+            // Roll it back, or the rejected submit lingers as a phantom stream until the
+            // watchdog shows "didn't respond in time" with nothing to cancel or retry.
+            this.host.rollbackTranscriptOptimisticSubmit?.();
             const detail = error instanceof Error ? error.message : String(error);
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/taskStartFailed',

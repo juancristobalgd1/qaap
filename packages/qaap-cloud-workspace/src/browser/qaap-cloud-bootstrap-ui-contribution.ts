@@ -11,6 +11,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { QaapProjectBootstrapService } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-service';
 import { ensureQaapCloudWorkspace } from './qaap-cloud-workspace-client';
 import { QaapMobileEnvPanel } from './qaap-mobile-env-panel';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 
 export const QAAP_CLOUD_OPEN_ENV_COMMAND_ID = 'qaap.cloud.openEnv';
 
@@ -44,8 +45,15 @@ export class QaapCloudBootstrapUiContribution implements FrontendApplicationCont
     }
 
     protected async ensureCloudWorkspace(): Promise<void> {
-        const uri = this.workspace.workspace?.resource?.toString();
-        if (!uri) {
+        const resource = this.workspace.workspace?.resource;
+        if (!resource) {
+            return;
+        }
+        const uri = resource.toString();
+        // The hosted IDE opens the multi-repo CONTAINER (`/workspace`) as its workspace — that is
+        // not an ownable repository, so ensuring it just lands in the backend security log as
+        // ownership_denied (workspace_path ws:file:///workspace) on every reload.
+        if (isQaapWorkspaceContainerPath(resource.path.toString())) {
             return;
         }
         await ensureQaapCloudWorkspace({ repoKey: `ws:${uri}`, workspaceUri: uri });

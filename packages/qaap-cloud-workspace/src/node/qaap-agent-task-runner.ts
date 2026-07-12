@@ -1523,9 +1523,9 @@ export class QaapAgentTaskRunner {
     }
 
     cancel(id: string): QaapAgentTask | undefined {
-        const process = this.processes.get(id);
-        if (process) {
-            process.kill('SIGTERM');
+        const child = this.processes.get(id);
+        if (child) {
+            this.killAgentProcessTree(child);
         }
         this.queuedCreateRequests.delete(id);
         const task = this.tasks.get(id);
@@ -1535,6 +1535,44 @@ export class QaapAgentTaskRunner {
             return finished;
         }
         return task;
+    }
+
+    /**
+     * Kill the agent's WHOLE process tree, escalating SIGTERM → SIGKILL after 5s.
+     *
+     * The agent is spawned with `shell: true` + `detached: true`, so the shell is a
+     * process-group leader and `kill(-pid)` reaches the actual agent (qaiq/claude/…)
+     * underneath it. A single `child.kill('SIGTERM')` only signals the wrapper shell —
+     * a compound command (`cd … && qaiq …`) left the agent orphaned and still running,
+     * which is why the composer Stop appeared to do nothing on the VPS. The backend runs
+     * as root there, so signalling a uid-dropped (per-tenant) agent is never an EPERM.
+     *
+     * Returns the escalation timer (unref'ed) so callers that observe the process exit
+     * can clear it and avoid a stray SIGKILL to a recycled pid/group.
+     */
+    protected killAgentProcessTree(child: ChildProcess): NodeJS.Timeout | undefined {
+        const pid = child.pid;
+        if (!pid) {
+            return undefined;
+        }
+        if (globalThis.process.platform === 'win32') {
+            child.kill('SIGTERM'); // no process groups on Windows; dev-only path
+            return undefined;
+        }
+        try {
+            globalThis.process.kill(-pid, 'SIGTERM');
+        } catch {
+            try {
+                child.kill('SIGTERM');
+            } catch { /* already gone */ }
+        }
+        const escalation = setTimeout(() => {
+            try {
+                globalThis.process.kill(-pid, 'SIGKILL');
+            } catch { /* already gone */ }
+        }, 5_000);
+        escalation.unref?.();
+        return escalation;
     }
 
     /** Pending QAIQ stdio `can_use_tool` requests for a running task. */
@@ -1744,6 +1782,10 @@ export class QaapAgentTaskRunner {
             child = spawn(task.command, {
                 cwd: task.cwd,
                 shell: true,
+                // Process-group leader so cancel/timeout can kill the WHOLE tree (the wrapper
+                // shell AND the agent under it) via killAgentProcessTree. Pipes stay attached
+                // (no unref()), so logging and stdio approvals are unaffected.
+                detached: true,
                 env: this.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
                 ...this.resolveAgentSpawnIdentity(task.cwd),
@@ -1791,7 +1833,7 @@ export class QaapAgentTaskRunner {
                     return;
                 }
                 logStream.write(`\n[qaap] task timed out after ${Math.round(IDLE_TASK_TIMEOUT_MS / 1000)}s without output.\n`);
-                child.kill('SIGTERM');
+                this.killAgentProcessTree(child);
                 this.finishTask(task.id, 'failed', undefined);
             }, IDLE_TASK_TIMEOUT_MS);
         };
@@ -2128,6 +2170,7 @@ export class QaapAgentTaskRunner {
                 child = spawn(command, {
                     cwd,
                     shell: true,
+                    detached: true, // group leader — see killAgentProcessTree
                     env,
                     stdio: ['ignore', 'pipe', 'pipe'],
                     ...this.resolveAgentSpawnIdentity(cwd),
@@ -2141,8 +2184,7 @@ export class QaapAgentTaskRunner {
             let killTimer: NodeJS.Timeout | undefined;
             const timeout = setTimeout(() => {
                 timedOut = true;
-                child.kill('SIGTERM');
-                killTimer = setTimeout(() => child.kill('SIGKILL'), 5_000);
+                killTimer = this.killAgentProcessTree(child);
             }, Math.max(1, timeoutMs));
             child.stdout?.on('data', (chunk: Buffer | string) => {
                 const text = String(chunk);
@@ -2885,6 +2927,7 @@ export class QaapAgentTaskRunner {
                 child = spawn(command, {
                     cwd,
                     shell: true,
+                    detached: true, // group leader — see killAgentProcessTree
                     env,
                     stdio: ['ignore', 'pipe', 'pipe'],
                     ...this.resolveAgentSpawnIdentity(cwd),
@@ -2894,7 +2937,7 @@ export class QaapAgentTaskRunner {
                 return;
             }
             const timer = setTimeout(() => {
-                child.kill('SIGTERM');
+                this.killAgentProcessTree(child);
                 reject(new Error('Prompt improvement timed out.'));
             }, timeoutMs);
             child.stdout?.on('data', (chunk: Buffer | string) => {

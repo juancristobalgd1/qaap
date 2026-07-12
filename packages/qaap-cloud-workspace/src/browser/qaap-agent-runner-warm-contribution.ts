@@ -8,6 +8,7 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { warmAgentRunner } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 
 /**
  * Pre-warms the VPS agent runner when a workspace opens so the first chat message skips
@@ -37,7 +38,10 @@ export class QaapAgentRunnerWarmContribution implements FrontendApplicationContr
             return;
         }
         const cwd = FileUri.fsPath(root);
-        if (!cwd) {
+        // The hosted IDE opens the multi-repo CONTAINER (`/workspace`) as its workspace root.
+        // That is "no project selected" — warming it is pointless and each attempt lands in the
+        // backend security log as ownership_denied (agent_task cwd=/workspace).
+        if (!cwd || isQaapWorkspaceContainerPath(cwd)) {
             return;
         }
         await warmAgentRunner(cwd);

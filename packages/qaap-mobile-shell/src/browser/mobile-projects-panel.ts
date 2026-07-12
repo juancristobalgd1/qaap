@@ -2038,6 +2038,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.agentsHubInlineUi.seedTranscriptOptimisticSubmit(summary, outbound, agentId, imagePreviews);
     }
 
+    /** Roll back the pre-create idle optimistic paint after the server rejected the create. */
+    rollbackTranscriptOptimisticSubmit(): void {
+        this.agentsHubInlineUi.rollbackAgentsHubIdleSubmitOptimistic();
+    }
+
     protected shouldUseTheiaCoder(
         content: string,
         selectedAgentId?: string,

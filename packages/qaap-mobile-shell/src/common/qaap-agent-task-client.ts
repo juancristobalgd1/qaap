@@ -7,6 +7,7 @@
  * Shared HTTP + persistence helpers for background agent tasks.
  * Keep {@link QAAP_AGENT_TASK_API_PATH} in sync with `@theia/qaap-cloud-workspace`.
  */
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import {
     isUiHiddenVpsAgent,
     resolveQaapBuiltinAgentMentionId,
@@ -548,7 +549,10 @@ export interface QaapAgentWarmResult {
 
 export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult | undefined> {
     const trimmed = cwd.trim();
-    if (!trimmed) {
+    // The container root (`/workspace`, `.../repos/users/{login}`, …) is "no project selected",
+    // never a warmable cwd — warming it just spams the backend's ownership_denied security log
+    // (the hosted IDE workspace IS the container, so this fired on every workspace open).
+    if (!trimmed || isQaapWorkspaceContainerPath(trimmed)) {
         return undefined;
     }
     try {
