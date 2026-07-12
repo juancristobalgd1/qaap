@@ -26,6 +26,58 @@ describe('qaap-agent-turn-completion', () => {
         expect(isActionableAgentTaskMessage('thanks')).to.equal(false);
     });
 
+    it('isActionableAgentTaskMessage matches Spanish task prompts', () => {
+        expect(isActionableAgentTaskMessage('Arregla el bug del login')).to.equal(true);
+        expect(isActionableAgentTaskMessage('Implementa la vista de perfil')).to.equal(true);
+        expect(isActionableAgentTaskMessage('AÑADE UN BOTÓN DE GUARDAR')).to.equal(true);
+        expect(isActionableAgentTaskMessage('crea una landing page para mi negocio')).to.equal(true);
+        expect(isActionableAgentTaskMessage('instala las dependencias y corrige los tests')).to.equal(true);
+        expect(isActionableAgentTaskMessage('gracias')).to.equal(false);
+        expect(isActionableAgentTaskMessage('hola, ¿qué tal?')).to.equal(false);
+    });
+
+    it('detects Spanish planning-only agent stops as incomplete', () => {
+        const agent: QaapAgentMessageDTO = {
+            id: 'a-es',
+            role: 'agent',
+            content: '',
+            createdAt: 2,
+            segments: [{
+                type: 'text',
+                content: 'Voy a explorar el repositorio y primero necesito revisar la configuración.',
+            }],
+        };
+        expect(isIncompleteAgentTurn('Arregla el bug del login', agent)).to.equal(true);
+    });
+
+    it('accepts Spanish outcome text as a delivered result', () => {
+        const agent: QaapAgentMessageDTO = {
+            id: 'a-es-2',
+            role: 'agent',
+            content: '',
+            createdAt: 2,
+            segments: [{
+                type: 'text',
+                content: 'Listo: dependencias instaladas y el servidor de desarrollo está corriendo en el puerto 5173.',
+            }],
+        };
+        expect(isIncompleteAgentTurn('levanta la app', agent)).to.equal(false);
+    });
+
+    it('treats a Spanish written analysis after reads as complete (analytical task)', () => {
+        const agent: QaapAgentMessageDTO = {
+            id: 'a-es-3',
+            role: 'agent',
+            content: '',
+            createdAt: 2,
+            segments: [
+                { type: 'tool', toolUseId: 't-es-1', name: 'Read', args: '{"file":"auth.ts"}', finished: true },
+                { type: 'text', content: 'El módulo de auth tiene dos problemas: el token no expira y falta validación del lado servidor.' },
+            ],
+        };
+        expect(isIncompleteAgentTurn('analiza el módulo de auth y explícame los problemas', agent)).to.equal(false);
+    });
+
     it('isIncompleteAgentTurn detects thinking-only agent stops', () => {
         const agent: QaapAgentMessageDTO = {
             id: 'a1',

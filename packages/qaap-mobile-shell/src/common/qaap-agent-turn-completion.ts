@@ -14,13 +14,34 @@ import {
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 import { normalizeInteractionModeId } from './qaap-qaiq-interaction-flags';
 
-const ACTIONABLE_TASK_RE = /\b(?:fix|explore|implement|build|run|test|debug|review|refactor|add|create|update|install|deploy|figure\s+out)\b/i;
-const PLANNING_TEXT_RE = /\b(?:let me|i will|i'll|i am going to|going to (?:start|explore|check|look|figure)|need to (?:explore|check|understand|figure)|start by (?:exploring|looking|checking|understanding))\b/i;
-const TASK_OUTCOME_TEXT_RE = /\b(?:done|completed|finished|ready on port|listening on|running (?:at|on)|installed|dependencies (?:are )?ready|node_modules|here(?:'s| is) the url|preview(?:\s+is)?(?:\s+)?ready|dev server)\b/i;
+// Each heuristic matches English and Spanish forms — Qaap's user base writes prompts (and the
+// agent, mirroring the user's language, writes outcomes) in both. English words keep the strict
+// trailing `\b`; Spanish entries are verb stems with no trailing boundary so all conjugations
+// match (`\b` is ASCII-only and misbehaves around accented characters and `ñ`).
+const ACTIONABLE_TASK_ES = '\\b(?:arregl|corrig|correg|soluciona|implementa|constru|ejecuta|depura|revisa|refactoriza'
+    + '|añad|agrega|crea|actualiza|instala|despliega|mejora|genera|prueba|haz\\b)';
+const ACTIONABLE_TASK_RE = new RegExp(
+    '\\b(?:fix|explore|implement|build|run|test|debug|review|refactor|add|create|update|install|deploy|figure\\s+out)\\b'
+    + '|' + ACTIONABLE_TASK_ES, 'i');
+const PLANNING_TEXT_RE = new RegExp(
+    '\\b(?:let me|i will|i\'ll|i am going to|going to (?:start|explore|check|look|figure)|need to (?:explore|check|understand|figure)'
+    + '|start by (?:exploring|looking|checking|understanding))\\b'
+    + '|\\b(?:voy a|d[ée]jame|empezar[ée]|comenzar[ée]|empiezo por|primero (?:voy|necesito|tengo que)'
+    + '|necesito (?:explorar|revisar|entender|comprobar|mirar))', 'i');
+const TASK_OUTCOME_TEXT_RE = new RegExp(
+    '\\b(?:done|completed|finished|ready on port|listening on|running (?:at|on)|installed|dependencies (?:are )?ready'
+    + '|node_modules|here(?:\'s| is) the url|preview(?:\\s+is)?(?:\\s+)?ready|dev server)\\b'
+    + '|\\b(?:listo|hecho|completad|terminad|finalizad|instalad|corriendo en|funcionando en|escuchando en'
+    + '|servidor de desarrollo|aqu[íi] (?:est[áa]|tienes) la url)', 'i');
 // Analytical tasks whose deliverable is written prose, not tool execution. Symmetric to the
 // explore-only heuristic — a substantive review/analysis after reads is a complete answer.
-const ANALYTICAL_TASK_RE = /\b(?:review|explain|analy[sz]e|summari[sz]e|describe|document|audit|compare|investigate)\b/i;
-const EXECUTION_TASK_RE = /\b(?:build|run|install|fix|implement|deploy|start|create|add|refactor|update|figure\s+out)\b/i;
+const ANALYTICAL_TASK_RE = new RegExp(
+    '\\b(?:review|explain|analy[sz]e|summari[sz]e|describe|document|audit|compare|investigate)\\b'
+    + '|\\b(?:revisa|explica|expl[íi]came|analiza|resume|res[úu]meme|describe|documenta|audita|compara|investiga)', 'i');
+const EXECUTION_TASK_RE = new RegExp(
+    '\\b(?:build|run|install|fix|implement|deploy|start|create|add|refactor|update|figure\\s+out)\\b'
+    + '|\\b(?:constru|ejecuta|instala|arregl|corrig|correg|soluciona|implementa|despliega|crea'
+    + '|añad|agrega|actualiza|refactoriza|inicia|arranca|haz\\b)', 'i');
 
 /**
  * Auto-continue only applies to the fully-autonomous `agent` contract. In `plan`/`ask` modes the
@@ -86,8 +107,8 @@ function isExploreOnlyTaskMessage(userContent: string | undefined): boolean {
     if (!text || messageRequestsDevPreview(text)) {
         return false;
     }
-    return /\bexplore\b/i.test(text)
-        && !/\b(?:build|run|install|fix|implement|deploy|start|figure\s+out)\b/i.test(text);
+    return /\bexplor(?:e|a|ar|emos)\b/i.test(text)
+        && !EXECUTION_TASK_RE.test(text);
 }
 
 /** True when the latest TodoWrite checklist still has pending or in-progress items. */

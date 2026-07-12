@@ -63,6 +63,7 @@ import {
     parseQaiqStdioEvent,
     type QaapQaiqPendingControlRequest,
 } from '../common/qaap-qaiq-stdio-approvals';
+import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
 import {
     buildQaiqAutoDeniedToolMessage,
@@ -121,9 +122,9 @@ const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIO
  * (for example GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_BASE_URL).
  */
 const CUSTOM_AGENTS_ENV = 'QAAP_AGENT_COMMANDS';
-// Opt in with QAAP_AGENT_VERIFY=1 or QAAP_AGENT_VERIFY=true. Default-off keeps task completion
-// behavior unchanged for hosted runners and CI until the backend self-verification loop is enabled.
-const QAAP_AGENT_VERIFY_ENABLED = /^(1|true)$/i.test(process.env.QAAP_AGENT_VERIFY?.trim() ?? '');
+// Default-on so the `[QAAP honest reporting]` prompt contract is backed by a real backend check
+// (mirrors QAAP_AGENT_AUTO_CONTINUE). Opt out with QAAP_AGENT_VERIFY=0 (or `false`/`off`).
+const QAAP_AGENT_VERIFY_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_VERIFY?.trim() ?? '');
 const QAAP_AGENT_VERIFY_MAX_ATTEMPTS = 2;
 const QAAP_AGENT_VERIFY_WALL_CLOCK_MS = 5 * 60 * 1000;
 const QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS = 12_000;
@@ -144,13 +145,17 @@ const AGENT_INSTRUCTIONS_MAX_CHARS = 6000;
 /** Candidate agent-instruction filenames, in priority order (first match wins). */
 const AGENT_INSTRUCTION_FILES: readonly string[] = ['CLAUDE.md', 'AGENTS.md', '.cursorrules'];
 /** Cap on the generated repo-map block (shallow tree + recently-changed files). */
-const REPO_MAP_MAX_CHARS = 2400;
+const REPO_MAP_MAX_CHARS = 4000;
+/** Cap on the git status snapshot block (branch + working tree + recent commits). */
+const GIT_STATUS_SNAPSHOT_MAX_CHARS = 1500;
+/** Cap on the durable repo memory (`.qaap/memory.md`) injected into prompts. */
+const REPO_MEMORY_MAX_CHARS = 2000;
 /**
- * Opt-in query-specific retrieval: ripgrep the user's message keywords over source and inject the
- * top matching file paths as a "likely relevant files" hint. Off by default because it adds a small
- * per-turn token + ripgrep cost — enable with QAAP_AGENT_RETRIEVAL=1 and measure on real usage.
+ * Query-specific retrieval: ripgrep the user's message keywords over source and inject the top
+ * matching file paths as a "likely relevant files" hint. Default-on (bounded, 4s timeout) so the
+ * agent starts oriented in large repos; opt out with QAAP_AGENT_RETRIEVAL=0 (or `false`/`off`).
  */
-const QAAP_AGENT_RETRIEVAL_ENABLED = /^(1|true)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');
+const QAAP_AGENT_RETRIEVAL_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');
 /** Max relevant-file paths injected, and the char cap on that block. */
 const RETRIEVAL_MAX_FILES = 5;
 const RETRIEVAL_HINT_MAX_CHARS = 400;
@@ -1056,6 +1061,8 @@ export class QaapAgentTaskRunner {
                 agentInstructions: this.readAgentInstructions(resolvedCwd),
                 repoMap: this.readRepoMap(resolvedCwd),
                 relevantFiles: this.readRelevantFiles(resolvedCwd, userQuery),
+                gitStatus: this.readGitStatusSnapshot(resolvedCwd),
+                repoMemory: this.readRepoMemory(resolvedCwd),
             }
             : undefined;
         const agentPrompt = prependAgentTaskContextToPrompt(
@@ -1307,6 +1314,63 @@ export class QaapAgentTaskRunner {
             return undefined;
         }
         return `Recently changed files:\n${[...names].slice(0, 25).map(n => `- ${n}`).join('\n')}`;
+    }
+
+    /**
+     * Fresh branch + working-tree + recent-commits snapshot, so the agent starts every turn knowing
+     * where it stands instead of spending its first tool call on `git status`. Never cached — the
+     * working tree drifts as the agent edits between turns.
+     */
+    protected readGitStatusSnapshot(cwd: string): string | undefined {
+        if (!fs.existsSync(path.join(cwd, '.git'))) {
+            return undefined;
+        }
+        const run = (args: string[]): string | undefined => {
+            try {
+                const out = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 4000 });
+                return out.status === 0 && out.stdout.trim() ? out.stdout.trim() : undefined;
+            } catch {
+                return undefined;
+            }
+        };
+        const sections: string[] = [];
+        const branch = run(['rev-parse', '--abbrev-ref', 'HEAD']);
+        if (branch) {
+            sections.push(`Branch: ${branch}`);
+        }
+        const status = run(['status', '--porcelain']);
+        if (status) {
+            const lines = status.split('\n');
+            const shown = lines.slice(0, 20);
+            const more = lines.length > shown.length ? `\n…(${lines.length - shown.length} more)` : '';
+            sections.push(`Working tree:\n${shown.join('\n')}${more}`);
+        } else {
+            sections.push('Working tree: clean');
+        }
+        const log = run(['log', '--oneline', '-5']);
+        if (log) {
+            sections.push(`Recent commits:\n${log}`);
+        }
+        if (sections.length === 0) {
+            return undefined;
+        }
+        const text = sections.join('\n\n');
+        return text.length > GIT_STATUS_SNAPSHOT_MAX_CHARS
+            ? `${text.slice(0, GIT_STATUS_SNAPSHOT_MAX_CHARS - 1).trimEnd()}…`
+            : text;
+    }
+
+    /**
+     * Durable repo memory (`.qaap/memory.md`) appended by previous agent turns — user corrections,
+     * lasting preferences, non-obvious repo facts. Never cached: the agent updates it between turns.
+     */
+    protected readRepoMemory(cwd: string): string | undefined {
+        try {
+            const text = fs.readFileSync(path.join(cwd, '.qaap', 'memory.md'), 'utf8').trim();
+            return text ? truncateProjectInfo(text, REPO_MEMORY_MAX_CHARS) : undefined;
+        } catch {
+            return undefined;
+        }
     }
 
     protected resolveAgentId(prompt: string, agentId: string | undefined): string {
@@ -1838,12 +1902,16 @@ export class QaapAgentTaskRunner {
                     );
                     if (autoAction !== 'queue') {
                         const devServerDenial = findQaiqDevServerGuardDenial(event.request);
+                        const destructiveDenial = findQaiqDestructiveCommandGuardDenial(event.request);
                         const denyMessage = devServerDenial
+                            ?? destructiveDenial
                             ?? (autoAction === 'deny' && event.request.toolName
                                 ? buildQaiqAutoDeniedToolMessage(event.request.toolName, event.request.toolInput)
                                 : undefined);
                         if (devServerDenial) {
                             logStream.write('\n[qaap] auto-denied long-lived dev-server shell command; Qaap manages dev servers via the preview bootstrap.\n');
+                        } else if (destructiveDenial) {
+                            logStream.write('\n[qaap] auto-denied destructive shell command; the agent must propose it for explicit user approval.\n');
                         }
                         try {
                             child.stdin?.write(buildQaiqControlResponseLine(

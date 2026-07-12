@@ -9,6 +9,7 @@ import {
     truncateProjectInfo,
     QAAP_TASK_CONTEXT_MARKER,
     QAAP_PROJECT_INFO_TRUNCATION_NOTICE,
+    QAAP_REPO_CONTENT_BOUNDARY_NOTE,
 } from './qaap-agent-task-context';
 
 describe('prependAgentTaskContextToPrompt', () => {
@@ -66,6 +67,40 @@ describe('prependAgentTaskContextToPrompt', () => {
     it('adds no repo-context headings when the sources are empty', () => {
         const result = prependAgentTaskContextToPrompt('Do it', 'GLOBAL', undefined, { agentInstructions: '  ', repoMap: '' });
         expect(result).to.not.contain('# Repository');
+    });
+
+    it('prepends the instruction-source boundary note before any workspace-derived section', () => {
+        const result = prependAgentTaskContextToPrompt('Do it', 'GLOBAL', undefined, { agentInstructions: 'RULES' });
+        expect(result).to.contain(QAAP_REPO_CONTENT_BOUNDARY_NOTE);
+        expect(result.indexOf('GLOBAL')).to.be.lessThan(result.indexOf(QAAP_REPO_CONTENT_BOUNDARY_NOTE));
+        expect(result.indexOf(QAAP_REPO_CONTENT_BOUNDARY_NOTE)).to.be.lessThan(result.indexOf('RULES'));
+    });
+
+    it('omits the boundary note when only trusted global context is present', () => {
+        const result = prependAgentTaskContextToPrompt('Do it', 'GLOBAL');
+        expect(result).to.not.contain(QAAP_REPO_CONTENT_BOUNDARY_NOTE);
+    });
+
+    it('prepends the git status snapshot and repo memory under headings', () => {
+        const result = prependAgentTaskContextToPrompt('Do it', undefined, undefined, {
+            gitStatus: 'Branch: main\n\nWorking tree: clean',
+            repoMemory: '- always run npm run compile first',
+        });
+        expect(result).to.contain('# Git status');
+        expect(result).to.contain('Branch: main');
+        expect(result).to.contain('# Repository memory (.qaap/memory.md)');
+        expect(result).to.contain('always run npm run compile first');
+    });
+
+    it('orders memory before repo map before git status before the task', () => {
+        const result = prependAgentTaskContextToPrompt('THE-TASK', undefined, undefined, {
+            repoMemory: 'MEMORY',
+            repoMap: 'TREE',
+            gitStatus: 'GIT-SNAPSHOT',
+        });
+        expect(result.indexOf('MEMORY')).to.be.lessThan(result.indexOf('TREE'));
+        expect(result.indexOf('TREE')).to.be.lessThan(result.indexOf('GIT-SNAPSHOT'));
+        expect(result.indexOf('GIT-SNAPSHOT')).to.be.lessThan(result.indexOf('THE-TASK'));
     });
 });
 

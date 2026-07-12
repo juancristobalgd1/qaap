@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { findQaiqDestructiveCommandGuardDenial } from './qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
 import { buildSubagentDeniedMessage, extractRequestedSubagentType, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
 import { parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
@@ -45,8 +46,8 @@ function isShellTool(toolName: string): boolean {
  *
  * Tools the policy auto-allows resolve immediately; gated shell/network tools are
  * queued to the approvals UI so the user can grant them mid-turn (the runner applies
- * a grace timeout so an unattended run still finishes). Headless-blocked tools (Agent/Task/Skill/AskUserQuestion)
- * and the dev-server guard auto-deny — those can never be approved interactively.
+ * a grace timeout so an unattended run still finishes). Headless-blocked tools (Agent/Task/Skill/AskUserQuestion),
+ * the dev-server guard, and the destructive-command guard auto-deny — those can never be approved interactively.
  */
 export function resolveQaiqControlRequestAutoAction(
     command: string,
@@ -57,6 +58,11 @@ export function resolveQaiqControlRequestAutoAction(
         return 'queue';
     }
     if (findQaiqDevServerGuardDenial(request)) {
+        return 'deny';
+    }
+    // Destructive shell commands (force push, hard reset, rm -rf outside the workspace) can never
+    // be auto-approved — the agent must propose them and let the user run or approve them.
+    if (findQaiqDestructiveCommandGuardDenial(request)) {
         return 'deny';
     }
     const toolName = request.toolName?.trim() ?? '';

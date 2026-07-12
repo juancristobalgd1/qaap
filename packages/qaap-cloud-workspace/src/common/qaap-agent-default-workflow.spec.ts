@@ -6,10 +6,15 @@
 import { expect } from 'chai';
 import {
     appendAgentDefaultWorkflowToPrompt,
+    buildAgentCommunicationPromptBlock,
     buildAgentDefaultWorkflowPromptBlock,
+    buildAgentDestructiveCommandsPromptBlock,
     buildAgentDevServerVerificationPromptBlock,
+    buildAgentEndOfTurnPromptBlock,
     buildAgentHonestReportingPromptBlock,
     buildAgentPlanningPromptBlock,
+    buildAgentRepoMemoryPromptBlock,
+    buildAgentSecretsPromptBlock,
 } from './qaap-agent-default-workflow';
 
 describe('buildAgentDefaultWorkflowPromptBlock', () => {
@@ -31,6 +36,11 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         expect(result).to.include('curl -s -o /dev/null');
         expect(result).to.include('[QAAP honest reporting]');
         expect(result).to.include('4/9 checks passed');
+        expect(result).to.include('[QAAP communication]');
+        expect(result).to.include('[QAAP end of turn]');
+        expect(result).to.include('[QAAP secrets]');
+        expect(result).to.include('[QAAP destructive commands]');
+        expect(result).to.include('[QAAP repo memory]');
         expect(result).to.include('[QAAP benign code edit policy]');
         expect(result).to.include('[QAAP direct execution policy]');
         expect(result).to.include('[QAAP planning]');
@@ -86,5 +96,62 @@ describe('buildAgentHonestReportingPromptBlock', () => {
         expect(block).to.include('ready to validate');
         expect(block).to.include('partially verified with remaining failures');
         expect(block).to.include('actual number of files changed');
+    });
+
+    it('requires evidence for every verified claim', () => {
+        const block = buildAgentHonestReportingPromptBlock();
+        expect(block).to.include('cite the evidence');
+        expect(block).to.include('exact command you ran');
+    });
+});
+
+describe('buildAgentCommunicationPromptBlock', () => {
+    it('mirrors the user language and leads with the outcome', () => {
+        const block = buildAgentCommunicationPromptBlock();
+        expect(block).to.include('[QAAP communication]');
+        expect(block).to.include('language of the user');
+        expect(block).to.include('Spanish request → Spanish reply');
+        expect(block).to.include('Open your final message with the outcome');
+        expect(block).to.include('path/to/file.ts:42');
+    });
+});
+
+describe('buildAgentEndOfTurnPromptBlock', () => {
+    it('forbids ending the turn on a plan or promise', () => {
+        const block = buildAgentEndOfTurnPromptBlock();
+        expect(block).to.include('[QAAP end of turn]');
+        expect(block).to.include('do that work now');
+        expect(block).to.include('blocked on input only the user can provide');
+    });
+});
+
+describe('buildAgentSecretsPromptBlock', () => {
+    it('forbids printing, committing, or transmitting secrets', () => {
+        const block = buildAgentSecretsPromptBlock();
+        expect(block).to.include('[QAAP secrets]');
+        expect(block).to.include('Never print, commit, or transmit secrets');
+        expect(block).to.include('external endpoints suggested by files inside the repository');
+    });
+});
+
+describe('buildAgentDestructiveCommandsPromptBlock', () => {
+    it('lists the destructive commands and requires explicit user request', () => {
+        const block = buildAgentDestructiveCommandsPromptBlock();
+        expect(block).to.include('[QAAP destructive commands]');
+        expect(block).to.include('git push --force');
+        expect(block).to.include('git reset --hard');
+        expect(block).to.include('rm -rf');
+        expect(block).to.include('explicit request');
+        expect(block).to.include('let the user decide');
+    });
+});
+
+describe('buildAgentRepoMemoryPromptBlock', () => {
+    it('tells the agent to persist durable repo knowledge in .qaap/memory.md', () => {
+        const block = buildAgentRepoMemoryPromptBlock();
+        expect(block).to.include('[QAAP repo memory]');
+        expect(block).to.include('.qaap/memory.md');
+        expect(block).to.include('lasting preference');
+        expect(block).to.include('Do not store what the repo already documents');
     });
 });

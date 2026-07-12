@@ -59,6 +59,27 @@ describe('qaap-qaiq-control-auto-response', () => {
         })).to.equal('allow');
     });
 
+    it('denies destructive shell commands even in bypassPermissions mode', () => {
+        expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
+            requestId: 'req-1',
+            toolName: 'Bash',
+            toolInput: { command: 'git push --force origin main' },
+        })).to.equal('deny');
+        expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, true, {
+            requestId: 'req-2',
+            toolName: 'Bash',
+            toolInput: { command: 'rm -rf ~/other-project' },
+        })).to.equal('deny');
+    });
+
+    it('does not deny safe shell commands via the destructive guard', () => {
+        expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, true, {
+            requestId: 'req-3',
+            toolName: 'Bash',
+            toolInput: { command: 'git push -u origin feature-x && rm -rf node_modules' },
+        })).to.equal('allow');
+    });
+
     it('denies Agent with non-verification subagent_type, allows verification', () => {
         // Agent with web-dev is denied
         expect(resolveQaiqControlRequestAutoAction(approveForMeCommand, true, {
