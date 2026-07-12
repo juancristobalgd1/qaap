@@ -18,6 +18,7 @@ import {
     resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
     buildAgentSpawnInvocation,
     evaluateAgentIsolationPolicy,
+    isQaapProductionRuntime,
     isTenantUidPerUserEnabled,
     resolvePerTenantSpawnIdentity,
     QaapAgentIsolationDecision,
@@ -154,6 +155,7 @@ export class QaapTenantSpawnService {
      * (range exhausted / persistence failure) propagates out and fails the spawn.
      */
     prepareTenantIsolation(cwd: string): void {
+        this.assertTenantCwdInProduction(cwd);
         this.ensureTenantRootIsolated(cwd);
         this.ensureTenantIdentityProvisioned(cwd);
         if (!this.isBackendRoot()) {
@@ -192,6 +194,7 @@ export class QaapTenantSpawnService {
      */
     spawn(command: string, options: QaapTenantSpawnOptions): ChildProcess {
         const identity = this.resolveSpawnIdentity(options.cwd);
+        this.assertDropIsComplete(identity);
         const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable());
         return this.launchProcess(invocation.file, invocation.args ? [...invocation.args] : [], {
             cwd: options.cwd,
@@ -205,6 +208,41 @@ export class QaapTenantSpawnService {
     /** The single `child_process.spawn` seam — overridable in tests to capture argv without executing. */
     protected launchProcess(file: string, args: string[], options: object): ChildProcess {
         return spawn(file, args, options as Parameters<typeof spawn>[2]);
+    }
+
+    /**
+     * B (fail-closed on a non-tenant cwd): in a production runtime with uid-per-user ON, refuse to run
+     * a tenant-code process whose cwd does NOT resolve to a tenant tree — otherwise it would silently
+     * fall back to the SHARED `QAAP_AGENT_UID` (1001), reopening cross-tenant read/write between any
+     * repos that stayed 1001-owned (e.g. legacy clones outside `{reposRoot}/users/...`). Every real
+     * spawn goes through {@link prepareTenantIsolation}, so this is the one chokepoint. No-op outside
+     * production, when not root, or when uid-per-user is off (the shared-uid single-user box opts out
+     * via the isolation policy, not here).
+     */
+    protected assertTenantCwdInProduction(cwd: string): void {
+        if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env) || !isQaapProductionRuntime(process.env)) {
+            return;
+        }
+        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
+        if (!target) {
+            throw new Error('Refusing to run a workspace process outside a tenant tree while uid-per-user '
+                + `isolation is on: "${cwd}" does not resolve to {reposRoot}/users/<login>/... or a tenant `
+                + 'worktree, so it would fall back to the shared uid. Normalize the path to the tenant\'s '
+                + 'canonical repo before spawning (see resolveTenantIsolationRoot).');
+        }
+    }
+
+    /**
+     * A (fail-closed on an incomplete drop): when a uid drop is required but `setpriv` is unavailable,
+     * the Node `{ uid, gid }` fallback cannot clear root's supplementary groups. Refuse rather than run
+     * a tenant process that keeps them. Consistent across agent / preview / deploy / terminal.
+     */
+    protected assertDropIsComplete(identity: { uid?: number }): void {
+        if (identity.uid !== undefined && !this.isSetprivAvailable()) {
+            throw new Error('Refusing to spawn a tenant process with an incomplete privilege drop: setpriv '
+                + '(util-linux) is required to clear root\'s supplementary groups but was not found on PATH. '
+                + 'Install util-linux in the backend image.');
+        }
     }
 
     /**
@@ -235,7 +273,8 @@ export class QaapTenantSpawnService {
         this.enforceIsolationPolicy();
         this.prepareTenantIsolation(options.cwd);
         const identity = this.resolveSpawnIdentity(options.cwd);
-        const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean; uid?: number; gid?: number } = {
+        this.assertDropIsComplete(identity);
+        const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean } = {
             cwd: options.cwd,
             env: options.env,
             detached: options.detached ?? false,
@@ -244,16 +283,12 @@ export class QaapTenantSpawnService {
             return this.launchProcess(file, [...args], spawnOptions);
         }
         const gid = identity.gid ?? identity.uid;
-        if (this.isSetprivAvailable()) {
-            return this.launchProcess(
-                'setpriv',
-                ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
-                spawnOptions,
-            );
-        }
-        spawnOptions.uid = identity.uid;
-        spawnOptions.gid = gid;
-        return this.launchProcess(file, [...args], spawnOptions);
+        // assertDropIsComplete guarantees setpriv is present when uid is defined.
+        return this.launchProcess(
+            'setpriv',
+            ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
+            spawnOptions,
+        );
     }
 
     /**

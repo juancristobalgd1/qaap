@@ -6,7 +6,7 @@
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
-import { spawnSync } from 'child_process';
+import { spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
@@ -84,6 +84,7 @@ import type { QaapParallelRunVariantStats } from '../common/qaap-parallel-run';
 import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import {
     compressAgentMessageForWire,
@@ -164,6 +165,24 @@ export class QaapAgentConversationStore {
 
     @inject(QaapAgentTaskRunner)
     protected readonly taskRunner: QaapAgentTaskRunner;
+
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
+
+    /**
+     * SEC-1/C-3: run a MUTATING git command (checkout/restore/add/write-tree/…) over a tenant repo
+     * under the tenant uid, not root. Git applies tenant-controlled hooks (`.git/hooks/*`) and
+     * clean/smudge filters (`.git/config` filter commands) during these operations; run as root that
+     * is a root-RCE vector, and it also leaves root-owned files that break the tenant's later git. The
+     * `setpriv` wrap makes any such hook/filter run as the tenant uid (no escalation) and keeps the
+     * tree tenant-owned. No-op (plain root git) in local dev / non-tenant cwd. Read-only git (rev-parse,
+     * diff, remote get-url) stays as-is: it executes no tenant code and writes nothing.
+     */
+    protected mutatingGitSync(cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
+        const wrapped = this.tenantSpawn.wrapShellForTenant(cwd, 'git', args);
+        const runEnv = { ...(env ?? process.env), ...this.tenantSpawn.tenantHomeEnvOverlay(cwd) };
+        return spawnSync(wrapped.file, wrapped.args, { cwd, env: runEnv, encoding: 'utf8' });
+    }
 
     protected readonly conversations = new Map<string, QaapAgentConversation>();
     /** Reverse index: task id → conversation turn metadata so we can route output/completion. */
@@ -2340,26 +2359,26 @@ export class QaapAgentConversationStore {
         const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
         try {
             // Seed the throwaway index from HEAD when a commit exists (best-effort; empty repo is fine).
-            spawnSync('git', ['read-tree', 'HEAD'], { cwd, env, encoding: 'utf8' });
-            if (spawnSync('git', ['add', '-A'], { cwd, env, encoding: 'utf8' }).status !== 0) {
+            this.mutatingGitSync(cwd, ['read-tree', 'HEAD'], env);
+            if (this.mutatingGitSync(cwd, ['add', '-A'], env).status !== 0) {
                 return undefined;
             }
-            const tree = spawnSync('git', ['write-tree'], { cwd, env, encoding: 'utf8' });
+            const tree = this.mutatingGitSync(cwd, ['write-tree'], env);
             const treeId = tree.status === 0 ? tree.stdout.trim() : '';
             if (!treeId) {
                 return undefined;
             }
-            const commitRes = spawnSync(
-                'git',
+            const commitRes = this.mutatingGitSync(
+                cwd,
                 ['-c', 'user.email=qaap@local', '-c', 'user.name=qaap', 'commit-tree', treeId, '-m', `qaap checkpoint: ${label}`],
-                { cwd, env, encoding: 'utf8' },
+                env,
             );
             const commit = commitRes.status === 0 ? commitRes.stdout.trim() : '';
             if (!commit) {
                 return undefined;
             }
             const ref = `refs/qaap/checkpoints/${conversationId}/${messageId}-${Date.now()}`;
-            spawnSync('git', ['update-ref', ref, commit], { cwd, encoding: 'utf8' });
+            this.mutatingGitSync(cwd, ['update-ref', ref, commit]);
             return { id: randomUUID(), messageId, label, commit, ref, capturedAt: Date.now(), added: stats?.added, removed: stats?.removed };
         } catch {
             return undefined;
@@ -2405,10 +2424,9 @@ export class QaapAgentConversationStore {
                 throw new Error('The conversation workspace is not a git repository.');
             }
             const undo = this.captureCheckpoint(conv.cwd, conversationId, messageId, 'Before rewind');
-            const restore = spawnSync(
-                'git',
+            const restore = this.mutatingGitSync(
+                conv.cwd,
                 ['restore', '--source', plan.restoreCheckpoint.commit, '--worktree', '--', '.'],
-                { cwd: conv.cwd, encoding: 'utf8' },
             );
             if (restore.status !== 0) {
                 throw new Error(`Restore failed: ${(restore.stderr || '').trim() || 'git restore error'}`);
@@ -2441,7 +2459,7 @@ export class QaapAgentConversationStore {
             throw new Error('The conversation workspace is not a git repository.');
         }
         const undo = this.captureCheckpoint(conv.cwd, conversationId, checkpoint.messageId, 'Before restore');
-        const restore = spawnSync('git', ['restore', '--source', checkpoint.commit, '--worktree', '--', '.'], { cwd: conv.cwd, encoding: 'utf8' });
+        const restore = this.mutatingGitSync(conv.cwd, ['restore', '--source', checkpoint.commit, '--worktree', '--', '.']);
         if (restore.status !== 0) {
             throw new Error(`Restore failed: ${(restore.stderr || '').trim() || 'git restore error'}`);
         }

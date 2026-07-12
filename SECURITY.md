@@ -44,6 +44,22 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
   cannot read each other's *code* either) is on the roadmap and recommended for
   any larger public deployment.
 
+### Known residual: git-over-tenant-repo run as root (staging pass)
+
+Every process that runs *tenant-controlled code* — the agent, preview dev
+server, terminal, deploy build, and the git checkpoint/restore in the
+conversation store — now drops to the tenant uid via `setpriv --clear-groups`
+(no-op when uid-per-user is off). **One residual remains**: the GitHub
+clone/fetch/**pull** in `qaap-github-oauth-endpoint.ts` still run as the backend
+uid. Hooks are disabled there (`core.hooksPath=/dev/null`), so a planted
+`.git/hooks/*` cannot execute as root, but a tenant-defined clean/smudge
+**filter** in `.git/config` could still run during a `pull` checkout. The
+complete fix is to run these under the tenant uid too; it is blocked by a
+package dependency cycle to `QaapTenantSpawnService` (that service lives in
+`@theia/qaap-cloud-workspace`, which depends on `@theia/qaap-mobile-shell`).
+Resolve by relocating the service to a lower shared package. Verify on staging
+as part of the `QAAP_AGENT_UID_PER_USER` flip.
+
 ## Dependency audit notes
 
 `npm audit --omit=dev` still reports **one critical for `decompress@4.2.1`**

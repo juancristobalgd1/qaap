@@ -676,14 +676,22 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected runGit(args: string[], accessToken: string | undefined): Promise<void> {
+        // SEC-1/C-3 hardening: these clone/fetch/pull run as the backend uid (root in prod) over a repo
+        // the tenant controls. `core.hooksPath=/dev/null` disables ALL git hooks so a `.git/hooks/*`
+        // planted by the tenant cannot execute as root when `pull` fast-forwards. (Residual: a
+        // tenant-defined clean/smudge FILTER in `.git/config` can still run during a `pull` checkout —
+        // the complete fix is to run these under the tenant uid, which is blocked here by a package
+        // dependency cycle to QaapTenantSpawnService; tracked for the staging pass. See SECURITY.md.)
+        const hardening = ['-c', 'core.hooksPath=/dev/null'];
         const gitArgs = accessToken
             ? [
+                ...hardening,
                 '-c',
                 `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${accessToken}`).toString('base64')
                 }`,
                 ...args,
             ]
-            : args;
+            : [...hardening, ...args];
         return new Promise((resolve, reject) => {
             const child = spawn('git', gitArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
             let stderr = '';

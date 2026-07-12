@@ -62,15 +62,12 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         expect(svc.prepared).to.deep.equal([tenantCwd]);
     });
 
-    it('falls back to the Node uid/gid drop when setpriv is unavailable', () => {
+    it('THROWS (fail-closed) when a drop is required but setpriv is unavailable — never an incomplete drop', () => {
         const svc = new TestTenantSpawnService();
         svc.identity = { uid: 20005, gid: 20005 };
         svc.setpriv = false;
-        svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
-        expect(svc.launches[0].file).to.equal('npm');
-        expect(svc.launches[0].args).to.deep.equal(['run', 'dev']);
-        expect(svc.launches[0].options.uid).to.equal(20005);
-        expect(svc.launches[0].options.gid).to.equal(20005);
+        expect(() => svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} })).to.throw(/setpriv/);
+        expect(svc.launches).to.have.length(0);
     });
 
     it('spawns the command directly (no wrapper, no drop) when no uid applies (local dev)', () => {
@@ -120,6 +117,53 @@ describe('QaapTenantSpawnService.wrapShellForTenant (interactive terminal)', () 
         svc.identity = { uid: 20005, gid: 20005 };
         svc.setpriv = false;
         expect(() => svc.wrapShellForTenant(tenantCwd, '/bin/bash', ['-l'])).to.throw(/setpriv/);
+    });
+});
+
+describe('QaapTenantSpawnService.assertTenantCwdInProduction (B: fail-closed on non-tenant cwd)', () => {
+
+    class ProdRootService extends QaapTenantSpawnService {
+        protected override isBackendRoot(): boolean { return true; }
+        check(cwd: string): void {
+            (this as unknown as { assertTenantCwdInProduction(cwd: string): void }).assertTenantCwdInProduction(cwd);
+        }
+    }
+
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalFlag = process.env.QAAP_AGENT_UID_PER_USER;
+    afterEach(() => {
+        process.env.NODE_ENV = originalNodeEnv;
+        if (originalFlag === undefined) { delete process.env.QAAP_AGENT_UID_PER_USER; } else { process.env.QAAP_AGENT_UID_PER_USER = originalFlag; }
+    });
+
+    it('REFUSES a non-tenant cwd in production with uid-per-user on (would fall to shared uid 1001)', () => {
+        process.env.NODE_ENV = 'production';
+        process.env.QAAP_AGENT_UID_PER_USER = '1';
+        const svc = new ProdRootService();
+        expect(() => svc.check('/workspace/legacy/clone/outside/tenant-tree')).to.throw(/tenant tree/);
+    });
+
+    it('allows a real tenant cwd', () => {
+        process.env.NODE_ENV = 'production';
+        process.env.QAAP_AGENT_UID_PER_USER = '1';
+        // resolveQaapReposRoot() returns /workspace/repos under NODE_ENV=production, so the cwd must
+        // live under it for resolveTenantIsolationRoot to find the segment.
+        const svc = new ProdRootService();
+        expect(() => svc.check('/workspace/repos/users/alice/octocat/hello')).to.not.throw();
+    });
+
+    it('is a no-op outside production (local dev unaffected)', () => {
+        process.env.NODE_ENV = 'development';
+        process.env.QAAP_AGENT_UID_PER_USER = '1';
+        const svc = new ProdRootService();
+        expect(() => svc.check('/tmp/anything')).to.not.throw();
+    });
+
+    it('is a no-op when uid-per-user is off (shared-uid single-user box)', () => {
+        process.env.NODE_ENV = 'production';
+        delete process.env.QAAP_AGENT_UID_PER_USER;
+        const svc = new ProdRootService();
+        expect(() => svc.check('/tmp/anything')).to.not.throw();
     });
 });
 
