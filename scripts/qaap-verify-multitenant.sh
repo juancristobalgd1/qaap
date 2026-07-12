@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # qaap-verify-multitenant.sh — prove per-tenant OS-uid isolation on the VPS BEFORE opening to real
-# tenants. Run on the VPS HOST from the repo root, AFTER two DISPOSABLE tenants have each: signed in,
-# opened one of THEIR OWN repos, and run at least one @qaiq task (so their trees + uids are provisioned).
+# tenants. Run on the VPS HOST from the repo root, AFTER two DISPOSABLE tenants have EACH:
+#   - signed in and opened one of THEIR OWN repos,
+#   - run at least one @qaiq task (provisions the repos tree + uid),
+#   - started a "New Worktree" task AND a parallel run (provisions the worktree + parallel trees).
+# The last step is REQUIRED: the gate hard-FAILs if those roots are absent, so it never reports PASSED
+# while worktree/parallel isolation is merely untested.
 #
 #   ./scripts/qaap-verify-multitenant.sh <github-login-A> <github-login-B>
 #
@@ -107,6 +111,16 @@ tenant_roots() { # $1=segment -> prints each existing root, one per line
 }
 if [[ -n "$UID_A" ]]; then while IFS= read -r r; do check_dir "$r" "$UID_A" 700 "A tree $r"; done < <(tenant_roots "$SEG_A"); fi
 if [[ -n "$UID_B" ]]; then while IFS= read -r r; do check_dir "$r" "$UID_B" 700 "B tree $r"; done < <(tenant_roots "$SEG_B"); fi
+# Enforce COVERAGE: the gate must not PASS while the worktree/parallel isolation is merely "not tested".
+# Require each tenant's worktree + parallel roots to EXIST — i.e. the test tenants actually exercised New
+# Worktree AND a parallel run — so sections 2-3 above verified them. A missing root is a hard FAIL, not a
+# silent skip, so an incomplete test run can never report PASSED.
+require_root() { # $1=root_base $2=seg $3=label
+    dexec "test -d '$1/$2'" && ok "$3 exists (its isolation was checked above)" \
+        || bad "$3 MISSING — that tenant did not exercise it; run it and re-verify (isolation UNVERIFIED)"
+}
+if [[ -n "$UID_A" ]]; then require_root "$WORKTREES_ROOT" "$SEG_A" "A worktree root"; require_root "$PARALLEL_ROOT" "$SEG_A" "A parallel root"; fi
+if [[ -n "$UID_B" ]]; then require_root "$WORKTREES_ROOT" "$SEG_B" "B worktree root"; require_root "$PARALLEL_ROOT" "$SEG_B" "B parallel root"; fi
 # Every recognized tenant-tree PARENT must be root-owned 0711 (traversable, not listable).
 check_dir "$REPOS_ROOT/users" 0 711 "repos parent"
 dexec "test -d '$WORKTREES_ROOT'" && check_dir "$WORKTREES_ROOT" 0 711 "conversation-worktrees parent"
