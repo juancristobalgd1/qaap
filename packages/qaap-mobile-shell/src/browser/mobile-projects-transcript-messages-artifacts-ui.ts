@@ -1713,7 +1713,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         row.classList.toggle('theia-mod-stream-timed-out', timedOut);
         const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
         if (segmentsBody) {
-            this.syncTranscriptStreamTimeoutBanner(segmentsBody, timedOut, timeoutCause);
+            this.syncTranscriptStreamTimeoutBanner(segmentsBody, timedOut, timeoutCause, conv);
             // Codex-style execution event timeline: toggle stalled class on the container.
             if (hasMobileExecutionEventTimeline(row)) {
                 const eventTimeline = segmentsBody.querySelector<HTMLElement>(`.theia-mobile-execution-timeline`);
@@ -1752,7 +1752,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (line) {
                 this.syncTranscriptStreamingActivityLine(line, conv, stalled, timedOut);
             }
-            this.syncTranscriptStreamTimeoutBanner(row, timedOut, timeoutCause);
+            this.syncTranscriptStreamTimeoutBanner(row, timedOut, timeoutCause, conv);
             row.classList.toggle('theia-mod-stream-stalled', stalled);
             row.classList.toggle('theia-mod-stream-timed-out', timedOut);
         }
@@ -1762,6 +1762,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segmentsBody: ParentNode,
         timedOut: boolean,
         cause?: TranscriptStreamTimeoutCause,
+        conv?: QaapAgentConversationDTO,
     ): void {
         const attr = 'data-transcript-stream-timeout';
         let banner = segmentsBody.querySelector<HTMLElement>(`.theia-mobile-agent-stream-timeout-banner`);
@@ -1783,7 +1784,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         const message = banner.querySelector<HTMLElement>('.theia-mobile-agent-stream-timeout-message');
         const detail = banner.querySelector<HTMLElement>('.theia-mobile-agent-stream-timeout-detail');
-        const detailText = this.resolveTranscriptStreamTimeoutDetail(cause);
+        const detailText = this.appendFreeModelTimeoutHint(this.resolveTranscriptStreamTimeoutDetail(cause), conv);
         if (message) {
             message.textContent = nls.localize(
                 'qaap/mobileProjects/transcriptStreamTimedOut',
@@ -1802,6 +1803,24 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         } else {
             detail?.remove();
         }
+    }
+
+    /**
+     * Free-tier models (OpenRouter `:free`, `openrouter/free`, …) are historically the top cause
+     * of "didn't respond in time": the PROVIDER stalls, not the IDE. Say so on the timeout card,
+     * so users stop debugging the app when the fix is switching models.
+     */
+    protected appendFreeModelTimeoutHint(detail: string | undefined, conv?: QaapAgentConversationDTO): string | undefined {
+        const modelId = (conv?.agentModel?.modelId ?? conv?.qaiqModel?.modelId ?? '').toLowerCase();
+        if (!modelId || !(modelId.endsWith(':free') || modelId.endsWith('/free'))) {
+            return detail;
+        }
+        const hint = nls.localize(
+            'qaap/mobileProjects/freeModelTimeoutHint',
+            'Free models ({0}) can be slow or drop requests — if this repeats, try another model.',
+            modelId,
+        );
+        return detail ? `${detail} ${hint}` : hint;
     }
 
     protected resolveTranscriptStreamTimeoutDetail(

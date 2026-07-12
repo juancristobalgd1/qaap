@@ -1235,7 +1235,10 @@ export class MobileProjectsProjectRowsUi {
     }
 
     resolveConversationAgentLabel(summary?: QaapAgentConversationSummaryDTO): string {
-        const agentId = summary?.agentId?.trim()
+        const raw = summary?.agentId?.trim();
+        // 'task' is the idle-placeholder sentinel (buildAgentsHubIdleConversationSummary), not a
+        // real agent — rendering it produced a confusing "@task" chip on optimistic rows.
+        const agentId = (raw && raw !== 'task' ? raw : undefined)
             || this.host.activeTasks?.getDefaultAgent()
             || SHELL_AGENT_ID;
         const fromList = this.host.activeTasks?.getAgents().find(a => a.id === agentId)?.label;
