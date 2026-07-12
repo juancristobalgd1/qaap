@@ -1,0 +1,33 @@
+diff --git a/node_modules/decompress/index.js b/node_modules/decompress/index.js
+index 6aa67ca..0534b96 100644
+--- a/node_modules/decompress/index.js
++++ b/node_modules/decompress/index.js
+@@ -106,8 +106,28 @@ const extractFile = (input, output, opts) => runPlugins(input, opts).then(files
+ 						if (realDestinationDir.indexOf(realOutputPath) !== 0) {
+ 							throw (new Error('Refusing to write outside output directory: ' + realDestinationDir));
+ 						}
++						return realOutputPath;
+ 					});
+ 			})
++			.then(realOutputPath => {
++				// GHSA-mp2f-45pm-3cg9: a hardlink/symlink entry whose linkname escapes the
++				// output directory lets a crafted archive read or overwrite arbitrary files on
++				// the host (a malicious VSIX extracted server-side). Reject any link target that
++				// resolves outside the extraction root. Hardlink targets are resolved against the
++				// output root; symlink targets against the link's own directory.
++				if (x.type === 'link' || x.type === 'symlink') {
++					// Anchor the target to the realpath'd output root (never `dest`, which is built
++					// from the un-realpath'd output and would mismatch when /tmp -> /private/tmp).
++					// Hardlink targets are archive-root relative; symlink targets are relative to
++					// the link's own directory within the archive.
++					const base = x.type === 'link' ? realOutputPath : path.join(realOutputPath, path.dirname(x.path));
++					const resolvedTarget = path.resolve(base, x.linkname);
++					if (resolvedTarget !== realOutputPath && resolvedTarget.indexOf(realOutputPath + path.sep) !== 0) {
++						throw new Error('Refusing to create a link pointing outside the output directory: ' + x.linkname);
++					}
++				}
++				return realOutputPath;
++			})
+ 			.then(() => {
+ 				if (x.type === 'link') {
+ 					return fsP.link(x.linkname, dest);

@@ -44,6 +44,21 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
   cannot read each other's *code* either) is on the roadmap and recommended for
   any larger public deployment.
 
+## Dependency audit notes
+
+`npm audit --omit=dev` still reports **one critical for `decompress@4.2.1`**
+(GHSA-mp2f-45pm-3cg9, hardlink/symlink path traversal during archive
+extraction). It is a **false positive**: the package is unmaintained with no
+fixed release, so we neutralise the vulnerability in place with
+`dev-packages/cli/patches/decompress+4.2.1.patch` (applied by `theia-patch` on
+install), which refuses any link entry whose target escapes the extraction
+directory. `npm audit` keys off the version string and cannot see the patch, so
+the critical will persist in the report until upstream Theia drops `decompress`.
+Do not "fix" it by aliasing to the ESM fork `@xhmikosr/decompress` — Theia
+`require()`s it from CommonJS and the ESM default-export shape breaks every call
+site. All other production HIGHs are resolved via lockfile bumps and the root
+`overrides` block.
+
 If you find a gap in this model, report it privately as above.
 
 ---
