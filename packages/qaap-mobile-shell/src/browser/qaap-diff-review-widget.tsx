@@ -125,6 +125,8 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected prReadiness: QaapGitPrReadiness | undefined;
     protected commitMenuOpen = false;
     protected readonly agentFileDiffs = new Map<string, QaapGitFileDiffResponse>();
+    /** Per-file /diff failure detail (server error body or transport error), keyed by path. */
+    protected readonly agentFileDiffErrors = new Map<string, string>();
     protected loadingAgentDiffs = false;
     /** Agent Changes tab: per-file diff sections expanded in the accordion. */
     protected readonly expandedAgentFiles = new Set<string>();
@@ -152,6 +154,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.transcriptEmbed = true;
         this.transcriptExternalChrome = options?.externalChrome ?? false;
         this.agentFileDiffs.clear();
+        this.agentFileDiffErrors.clear();
         this.expandedAgentFiles.clear();
         this.expandedContextBlocks.clear();
         this.branchName = undefined;
@@ -307,13 +310,24 @@ export class QaapDiffReviewWidget extends ReactWidget {
             { credentials: 'include' },
         );
         if (!response.ok) {
-            throw new Error(`diff request failed (${response.status})`);
+            // Surface the server's error body — a blind status code hides the actual git failure.
+            let detail = '';
+            try {
+                const body = await response.json() as { error?: string };
+                detail = body.error?.trim() ?? '';
+            } catch {
+                /* non-JSON body (proxy error page) — keep the status-only message */
+            }
+            throw new Error(detail
+                ? `diff request failed (${response.status}): ${detail}`
+                : `diff request failed (${response.status})`);
         }
         return await response.json() as QaapGitFileDiffResponse;
     }
 
     protected async loadAllAgentDiffs(): Promise<void> {
         this.agentFileDiffs.clear();
+        this.agentFileDiffErrors.clear();
         if (this.files.length === 0 || !this.rootFsPath) {
             this.seedAgentFileAccordionDefaults();
             this.update();
@@ -322,19 +336,36 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.loadingAgentDiffs = true;
         this.update();
         try {
-            await Promise.all(this.files.map(async file => {
-                try {
-                    const diff = await this.fetchFileDiff(file.path);
-                    if (diff) {
-                        this.agentFileDiffs.set(file.path, diff);
-                    }
-                } catch {
-                    /* per-file errors are surfaced when that section renders */
-                }
-            }));
+            await Promise.all(this.files.map(file => this.loadAgentFileDiff(file.path)));
         } finally {
             this.loadingAgentDiffs = false;
             this.seedAgentFileAccordionDefaults();
+            this.update();
+        }
+    }
+
+    /** Fetch one file's diff for the agent accordion, recording the failure detail on error. */
+    protected async loadAgentFileDiff(path: string): Promise<void> {
+        try {
+            const diff = await this.fetchFileDiff(path);
+            if (diff) {
+                this.agentFileDiffs.set(path, diff);
+                this.agentFileDiffErrors.delete(path);
+            }
+        } catch (error) {
+            this.agentFileDiffErrors.set(path, error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    /** Retry a single failed file diff from the accordion error note. */
+    protected async retryAgentFileDiff(path: string): Promise<void> {
+        this.agentFileDiffErrors.delete(path);
+        this.loadingAgentDiffs = true;
+        this.update();
+        try {
+            await this.loadAgentFileDiff(path);
+        } finally {
+            this.loadingAgentDiffs = false;
             this.update();
         }
     }
@@ -837,15 +868,36 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     className='qaap-agent-changes-hunks'
                     hidden={!expanded}
                 >
-                    {diff ? this.renderAgentFileDiff(file.path, diff) : (
-                        <div className='qaap-diff-review-note qaap-mod-compact'>
-                            {this.loadingAgentDiffs
-                                ? nls.localize('qaap/diff/loading', 'Loading diff…')
-                                : nls.localize('qaap/diff/loadFailed', 'Could not load diff for this file.')}
-                        </div>
-                    )}
+                    {diff ? this.renderAgentFileDiff(file.path, diff) : this.renderAgentFileDiffFallback(file.path)}
                 </div>
             </section>
+        );
+    }
+
+    /** Loading note, or the recorded per-file failure with its server detail and a retry action. */
+    protected renderAgentFileDiffFallback(path: string): React.ReactNode {
+        if (this.loadingAgentDiffs) {
+            return (
+                <div className='qaap-diff-review-note qaap-mod-compact'>
+                    {nls.localize('qaap/diff/loading', 'Loading diff…')}
+                </div>
+            );
+        }
+        const detail = this.agentFileDiffErrors.get(path);
+        return (
+            <div className='qaap-diff-review-note qaap-mod-compact'>
+                <span>
+                    {nls.localize('qaap/diff/loadFailed', 'Could not load diff for this file.')}
+                    {detail ? ` (${detail})` : ''}
+                </span>
+                <button
+                    type='button'
+                    className='qaap-diff-review-inline-btn'
+                    onClick={() => { void this.retryAgentFileDiff(path); }}
+                >
+                    {nls.localize('qaap/diff/retry', 'Retry')}
+                </button>
+            </div>
         );
     }
 

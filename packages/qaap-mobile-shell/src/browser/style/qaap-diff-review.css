@@ -1276,3 +1276,19 @@
         transition: none;
     }
 }
+
+/* Inline retry action inside a diff note (per-file load failure). */
+.qaap-diff-review-note .qaap-diff-review-inline-btn {
+    margin-left: 8px;
+    padding: 2px 10px;
+    font-size: 11px;
+    border: 1px solid var(--theia-button-border, transparent);
+    border-radius: 4px;
+    background: var(--theia-button-secondaryBackground);
+    color: var(--theia-button-secondaryForeground);
+    cursor: pointer;
+}
+
+.qaap-diff-review-note .qaap-diff-review-inline-btn:hover {
+    background: var(--theia-button-secondaryHoverBackground);
+}

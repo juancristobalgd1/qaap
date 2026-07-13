@@ -29,6 +29,16 @@ import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 
+/**
+ * Flags for every git invocation whose stdout is parsed as a unified patch. A host-level
+ * `diff.external` / `GIT_EXTERNAL_DIFF` / `.gitattributes` diff driver (difftastic, delta, …)
+ * replaces or breaks the patch format — and errors out entirely when the tool is missing on the
+ * server — while `color.ui=always` injects ANSI codes the parser reads as context lines. Plumbing
+ * calls (`--numstat`, `status --porcelain`) ignore external diff drivers, which is how a broken
+ * host config makes `/changes` succeed while every `/diff` fails.
+ */
+const PATCH_SAFETY_FLAGS = ['--no-ext-diff', '--no-color'] as const;
+
 /** Max characters of combined diff returned by `commit-context` (roughly 6k tokens for the LLM prompt). */
 const COMMIT_CONTEXT_DIFF_LIMIT = 24_000;
 
@@ -106,11 +116,11 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     /** Combined staged + unstaged diff against HEAD (falls back when the repo has no commits yet). */
     protected async collectCommitDiff(root: string): Promise<string> {
         try {
-            return await this.git(root, ['diff', 'HEAD']);
+            return await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, 'HEAD']);
         } catch {
             const [staged, unstaged] = await Promise.all([
-                this.git(root, ['diff', '--cached']).catch(() => ''),
-                this.git(root, ['diff']).catch(() => ''),
+                this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--cached']).catch(() => ''),
+                this.git(root, ['diff', ...PATCH_SAFETY_FLAGS]).catch(() => ''),
             ]);
             return `${staged}\n${unstaged}`.trim();
         }
@@ -354,6 +364,9 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 hunks: parseUnifiedDiff(patch),
             } satisfies QaapGitFileDiffResponse);
         } catch (error) {
+            // Per-file diff failures are invisible in the UI accordion — leave a server-side trace
+            // so a hosted deployment's journal shows which git invocation failed and why.
+            console.warn('[qaap-git-review] diff failed', JSON.stringify({ root, file, error: this.errorMessage(error) }));
             res.status(500).json({ error: this.errorMessage(error) });
         }
     }
@@ -438,17 +451,17 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
 
     /** Resolve the most relevant diff for a file: unstaged, else staged, else untracked. */
     protected async computeFileDiff(root: string, file: string): Promise<string> {
-        const unstaged = await this.git(root, ['diff', '--', file]);
+        const unstaged = await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--', file]);
         if (unstaged.trim()) {
             return unstaged;
         }
-        const staged = await this.git(root, ['diff', '--cached', '--', file]);
+        const staged = await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--cached', '--', file]);
         if (staged.trim()) {
             return staged;
         }
         // Untracked file — diff against an empty tree so the whole file shows as added.
         try {
-            return await this.git(root, ['diff', '--no-index', '--', '/dev/null', file]);
+            return await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--no-index', '--', '/dev/null', file]);
         } catch (error) {
             // `git diff --no-index` exits 1 when files differ; its stdout still holds the patch.
             const stdout = (error as { stdout?: string }).stdout;
@@ -578,7 +591,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     /** Stage or discard a single hunk by index, from the authoritative unstaged diff of the file. */
     protected async applyFileHunk(root: string, file: string, hunkIndex: number, mode: 'stage' | 'discard'): Promise<boolean> {
         // Working-tree-vs-index diff for the file; -U3 keeps enough context for a clean apply.
-        const diffText = await this.git(root, ['diff', '-U3', '--', file]);
+        const diffText = await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '-U3', '--', file]);
         const patch = buildSingleHunkPatch(diffText, hunkIndex);
         if (!patch) {
             return false;
