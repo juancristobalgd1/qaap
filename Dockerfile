@@ -59,6 +59,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pipx \
     build-essential \
     ripgrep \
+    # Headless Chromium for server-side visual evidence (QaapHeadlessVisualCaptureService).
+    chromium \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable \
     && corepack prepare pnpm@10 --activate \
@@ -139,6 +142,7 @@ ENV NODE_ENV=production \
     QAAP_AGENT_HOME=/home/qaap-agent \
     QAAP_AGENT_UID=1001 \
     QAAP_AGENT_GID=1001 \
+    QAAP_HEADLESS_CHROMIUM=/usr/bin/chromium \
     QAAP_BUILD_SHA=${QAAP_BUILD_SHA}
 
 EXPOSE ${QAAP_IDE_PORT}

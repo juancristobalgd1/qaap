@@ -23,6 +23,7 @@ import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
+import { QaapHeadlessVisualCaptureService } from './qaap-headless-visual-capture';
 import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
 import { QaapParallelRunStore } from './qaap-parallel-run-store';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
@@ -62,6 +63,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentTaskEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentTaskEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
+    // Headless server-side visual evidence — subscribes to the store on startup, so it must be
+    // instantiated eagerly via the contribution provider (singletons are otherwise lazy).
+    bind(QaapHeadlessVisualCaptureService).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapHeadlessVisualCaptureService);
     bind(QaapConversationWorktreeService).toSelf().inSingletonScope();
     bind(QaapAgentConversationEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentConversationEndpoint);
