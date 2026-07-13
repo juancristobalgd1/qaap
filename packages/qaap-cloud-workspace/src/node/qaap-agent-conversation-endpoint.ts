@@ -35,8 +35,10 @@ import {
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 import type { QaapAgentConversation, QaapAgentConversationCwdGroup, QaapAgentConversationEvent } from '../common/qaap-agent-conversation';
+import type { QaapPreviewVisualValidationResult } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 
 const SSE_HEARTBEAT_MS = 25_000;
+const VISUAL_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
 /** Ping interval for WebSocket connections — keeps the socket alive through proxies. */
 const WS_PING_MS = 25_000;
 /** Negotiate permessage-deflate so large tool-result JSON frames shrink on the wire. */
@@ -103,6 +105,22 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         app.post(QAAP_AGENT_CONVERSATION_API_PATH, (req, res) => {
             void this.handleCreate(req, res);
         });
+        app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verifications/:evidenceId`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            const png = this.store.readVisualVerification(req.params.id, req.params.evidenceId);
+            if (!png) {
+                res.sendStatus(404);
+                return;
+            }
+            res.status(200).set({
+                'Content-Type': 'image/png',
+                'Content-Length': String(png.length),
+                'Cache-Control': 'private, max-age=31536000, immutable',
+                'X-Content-Type-Options': 'nosniff',
+            }).send(png);
+        });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             const conv = this.getConversationIfOwned(req, res, req.params.id);
             if (!conv) {
@@ -127,6 +145,12 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 return;
             }
             this.handlePostPreviewBootstrapFailure(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verifications`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            void this.handlePostVisualVerification(req, res);
         });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
@@ -469,6 +493,65 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return;
         }
         res.json(conv);
+    }
+
+    protected async handlePostVisualVerification(req: Request, res: Response): Promise<void> {
+        if (req.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'image/png') {
+            res.status(415).json({ error: 'Visual evidence must be an image/png body.' });
+            return;
+        }
+        const encoded = req.get('x-qaap-visual-result');
+        let result: QaapPreviewVisualValidationResult | undefined;
+        try {
+            const parsed = JSON.parse(decodeURIComponent(encoded ?? '')) as Partial<QaapPreviewVisualValidationResult>;
+            if ((parsed.status === 'passed' || parsed.status === 'warning')
+                && typeof parsed.summary === 'string'
+                && Array.isArray(parsed.issues)
+                && parsed.issues.every(issue => typeof issue === 'string')) {
+                result = {
+                    status: parsed.status,
+                    summary: parsed.summary.slice(0, 500),
+                    issues: parsed.issues.slice(0, 10).map(issue => issue.slice(0, 300)),
+                };
+            }
+        } catch {
+            /* validated below */
+        }
+        if (!result) {
+            res.status(400).json({ error: 'Missing or invalid x-qaap-visual-result metadata.' });
+            return;
+        }
+        const chunks: Buffer[] = [];
+        let total = 0;
+        try {
+            for await (const raw of req) {
+                const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+                total += chunk.length;
+                if (total > VISUAL_EVIDENCE_MAX_BYTES) {
+                    res.status(413).json({ error: 'Visual evidence exceeds the 5 MB limit.' });
+                    return;
+                }
+                chunks.push(chunk);
+            }
+        } catch {
+            res.status(400).json({ error: 'Could not read visual evidence.' });
+            return;
+        }
+        const png = Buffer.concat(chunks);
+        if (png.length < 8 || !png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+            res.status(400).json({ error: 'Visual evidence is not a valid PNG.' });
+            return;
+        }
+        try {
+            const conv = await this.store.recordVisualVerification(req.params.id, result, png);
+            if (!conv) {
+                res.status(404).json({ error: 'Conversation or agent response not found.' });
+                return;
+            }
+            res.status(201).json(conv);
+        } catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     protected handleUpdate(req: Request, res: Response): void {

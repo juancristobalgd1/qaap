@@ -24,6 +24,11 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('quota');
     });
 
+    it('does not classify an ordinary invalid request as exhausted quota', () => {
+        expect(detectAgentFailureKind('{"error":{"type":"invalid_request","message":"malformed input"}}'))
+            .to.equal(undefined);
+    });
+
     it('detectAgentFailureKind recognizes rate limits', () => {
         expect(detectAgentFailureKind('HTTP 429: rate_limit_exceeded'))
             .to.equal('rate_limit');

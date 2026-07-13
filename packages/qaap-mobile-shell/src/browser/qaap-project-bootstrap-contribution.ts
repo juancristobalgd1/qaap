@@ -373,6 +373,15 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
             case 'installing':
                 return descriptor.installCommand;
             case 'starting':
+                if (state.portRecoveryFrom && state.activePort && devCommand) {
+                    return nls.localize(
+                        'qaap/projectBootstrap/recoveringPort',
+                        '{0} · :{1} busy, trying :{2}',
+                        devCommand,
+                        state.portRecoveryFrom,
+                        state.activePort
+                    );
+                }
                 return devCommand ?? '';
             case 'running':
                 return devCommand ?? descriptor.name;
@@ -499,6 +508,23 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                             label: nls.localize('qaap/projectBootstrap/install', 'Install'),
                             primary: true,
                             run: () => this.bootstrap.runInstall(),
+                        },
+                        {
+                            label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),
+                            run: () => this.bootstrap.runDevServer(),
+                        },
+                        {
+                            label: nls.localize('qaap/projectBootstrap/dismiss', 'Dismiss'),
+                            run: () => this.bootstrap.skip(),
+                        },
+                    ];
+                }
+                if (state.failureKind === 'environment' && envAction) {
+                    return [
+                        {
+                            label: nls.localize('qaap/projectBootstrap/env', 'Env'),
+                            primary: true,
+                            run: envAction.run,
                         },
                         {
                             label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),

@@ -30,15 +30,18 @@ import {
     getImplicitDevPort,
     getQaapIdeListenPort,
     isReservedIdePort,
+    pickNextDevPort,
     resolveBootstrapDevPort,
     wrapDevCommandForPort,
 } from './qaap-project-bootstrap-port';
 import {
+    diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
     extractTerminalFailureLine,
     isTerminalDoesNotExistError,
     terminalOutputNeedsInstall,
     terminalOutputNextDevLock,
+    type QaapBootstrapFailureKind,
 } from './qaap-project-bootstrap-dev-errors';
 import { MobileProjectsService } from './mobile-projects-service';
 import { peekPreferDesktopIde } from './mobile-projects-open';
@@ -104,6 +107,12 @@ export interface QaapBootstrapStateChange {
     readonly portInUse?: boolean;
     /** Port we believe is already serving the app (for "Open preview" recovery). */
     readonly existingServerPort?: number;
+    /** Classified cause used by the UI and agent tools to offer the right recovery action. */
+    readonly failureKind?: QaapBootstrapFailureKind;
+    /** Port currently being started, including an automatic conflict-recovery retry. */
+    readonly activePort?: number;
+    /** Original occupied port when Qaap automatically moved this run to {@link activePort}. */
+    readonly portRecoveryFrom?: number;
     /** The monorepo app currently selected, when applicable. */
     readonly selectedApp?: QaapMonorepoAppCandidate;
     /**
@@ -188,6 +197,11 @@ export class QaapProjectBootstrapService {
     protected refreshDebounceTimer: number | undefined;
     /** Port we asked the dev server to bind to (may differ from the framework default when Qaap uses :3000). */
     protected activeDevPortHint: number | undefined;
+    /** One-run override used after an occupied port fails to expose a usable HTTP preview. */
+    protected devPortOverride: number | undefined;
+    /** Prevents an unhealthy project from cycling through ports forever. */
+    protected automaticPortRecoveryAttempted = false;
+    protected portRecoveryFrom: number | undefined;
     /** Tracks the in-flight install/dev terminals so we can clean up on workspace switch. */
     protected installTerminal: TerminalWidget | undefined;
     protected devTerminal: TerminalWidget | undefined;
@@ -371,7 +385,7 @@ export class QaapProjectBootstrapService {
     }): { command: string; targetPort?: number } {
         const idePort = getQaapIdeListenPort();
         const frameworkPort = plan.expectedPort ?? getImplicitDevPort(plan.kind);
-        const targetPort = resolveBootstrapDevPort(frameworkPort, idePort);
+        const targetPort = this.devPortOverride ?? resolveBootstrapDevPort(frameworkPort, idePort);
         if (targetPort === undefined) {
             return { command: plan.command, targetPort: undefined };
         }
@@ -475,6 +489,17 @@ export class QaapProjectBootstrapService {
         if (!plan || !descriptor || this._phase === 'starting' || this._phase === 'running') {
             return;
         }
+        this.devPortOverride = undefined;
+        this.automaticPortRecoveryAttempted = false;
+        this.portRecoveryFrom = undefined;
+        await this.startDevServer(plan, descriptor);
+    }
+
+    /** Starts a dev process, preserving an internal port-recovery override when present. */
+    protected async startDevServer(
+        plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
+        descriptor: QaapProjectDescriptor,
+    ): Promise<void> {
         this.beginDevRun();
         this.clearForwardedPorts();
         this._portConflictDetected = false;
@@ -1021,7 +1046,7 @@ export class QaapProjectBootstrapService {
      */
     protected async failDevRun(
         message: string,
-        plan: { expectedPort?: number },
+        plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
         runId: number,
     ): Promise<void> {
         if (runId !== this.devRunGeneration) {
@@ -1048,10 +1073,28 @@ export class QaapProjectBootstrapService {
             ?? extractDevOutputProbePorts(this.devOutputTail)[0]
             ?? this.activeDevPortHint
             ?? plan.expectedPort;
+        const descriptor = this._descriptor;
+        if (portConflict && conflictPort !== undefined && descriptor && !nextLock && !this.automaticPortRecoveryAttempted) {
+            const alternatePort = pickNextDevPort(conflictPort, [this.activeDevPortHint].filter((port): port is number => port !== undefined));
+            if (alternatePort !== undefined) {
+                this.automaticPortRecoveryAttempted = true;
+                this.portRecoveryFrom = conflictPort;
+                this.devPortOverride = alternatePort;
+                this.cleanupDevTerminal();
+                // startDevServer transitions to `starting` immediately; assigning directly avoids
+                // flashing a misleading ready-to-run banner between the two attempts.
+                this._phase = 'ready-to-run';
+                await this.startDevServer({ ...plan }, descriptor);
+                return;
+            }
+        }
         this._needsInstall = terminalOutputNeedsInstall(this.devOutputTail);
-        this._error = this.enrichDevRunError(portConflict && conflictPort
-            ? `Port :${conflictPort} is already in use. Another terminal may already be serving the app.`
-            : extractTerminalFailureLine(this.devOutputTail, this.toUserFacingDevError(message)));
+        const diagnosedError = nextLock
+            ? extractTerminalFailureLine(this.devOutputTail, this.toUserFacingDevError(message))
+            : portConflict && conflictPort
+            ? `Port :${conflictPort} is already in use and did not expose a usable preview. Qaap already tried an alternate port; stop the conflicting process, then retry.`
+            : extractTerminalFailureLine(this.devOutputTail, this.toUserFacingDevError(message));
+        this._error = this.enrichDevRunError(diagnosedError);
         this.setPhase('run-failed');
     }
 
@@ -1259,6 +1302,10 @@ export class QaapProjectBootstrapService {
     protected resetBootstrapSessionForWorkspace(): void {
         this.installGeneration++;
         this.beginDevRun();
+        this.devPortOverride = undefined;
+        this.automaticPortRecoveryAttempted = false;
+        this.portRecoveryFrom = undefined;
+        this.activeDevPortHint = undefined;
         this.disposeBootstrapTerminal(this.installTerminal);
         this.installTerminal = undefined;
         this.disposeOrphanBootstrapTerminals();
@@ -1356,6 +1403,9 @@ export class QaapProjectBootstrapService {
         const existingServerPort = this._portConflictPort
             ?? extractDevOutputProbePorts(this.devOutputTail)[0]
             ?? this._lastPort;
+        const failure = phase === 'install-failed' || phase === 'run-failed'
+            ? diagnoseBootstrapFailure(this.devOutputTail || this._error || '', this._error ?? 'Dev server failed')
+            : undefined;
         return {
             phase,
             descriptor: this._descriptor,
@@ -1366,6 +1416,11 @@ export class QaapProjectBootstrapService {
             lastPort: this._lastPort,
             portInUse: portInUse || undefined,
             existingServerPort: portInUse ? existingServerPort : undefined,
+            failureKind: terminalOutputNextDevLock(this.devOutputTail)
+                ? 'next-lock'
+                : portInUse ? 'port-conflict' : failure?.kind,
+            activePort: this.activeDevPortHint,
+            portRecoveryFrom: this.portRecoveryFrom,
             missingDescriptorHint: this._missingDescriptorHint,
         };
     }

@@ -72,6 +72,20 @@ const FRAMEWORK_BY_DEP: ReadonlyArray<readonly [string, QaapProjectKind, number 
     ['vite', 'node-vite', 5173],
 ];
 
+/** Fallback for repos that invoke a framework CLI from scripts without declaring it locally. */
+const FRAMEWORK_BY_SCRIPT: ReadonlyArray<readonly [RegExp, QaapProjectKind, number | undefined]> = [
+    [/\bnext(?:\.js)?\s+dev\b/i, 'node-next', 3000],
+    [/\bnuxt\s+(?:dev|start)\b/i, 'node-nuxt', 3000],
+    [/\bastro\s+dev\b/i, 'node-astro', 4321],
+    [/\b(?:remix|remix-serve)\b/i, 'node-remix', 3000],
+    [/\bsvelte-kit\s+dev\b/i, 'node-svelte', 5173],
+    [/\breact-scripts\s+start\b/i, 'node-cra', 3000],
+    [/\bvite(?:\s|$)/i, 'node-vite', 5173],
+];
+
+/** PORT=4173, --port 4173, --port=4173, or -p 4173 in a dev script. */
+const EXPLICIT_SCRIPT_PORT_REGEX = /(?:\bPORT\s*=\s*|--port(?:\s+|=)|(?:^|\s)-p\s+)(\d{2,5})\b/i;
+
 @injectable()
 export class QaapProjectBootstrapDetector {
 
@@ -687,15 +701,29 @@ export class QaapProjectBootstrapDetector {
             ...(pkg.dependencies && typeof pkg.dependencies === 'object' ? pkg.dependencies : {}),
             ...(pkg.devDependencies && typeof pkg.devDependencies === 'object' ? pkg.devDependencies : {}),
         };
+        const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
+        const runnableScripts = DEV_SCRIPT_PRIORITY
+            .map(name => scripts[name])
+            .filter((value): value is string => typeof value === 'string');
+        const scriptText = runnableScripts.join('\n');
+        const explicitPortMatch = EXPLICIT_SCRIPT_PORT_REGEX.exec(scriptText);
+        const explicitPort = explicitPortMatch ? Number(explicitPortMatch[1]) : undefined;
+        const validExplicitPort = explicitPort !== undefined && explicitPort > 0 && explicitPort < 65536
+            ? explicitPort
+            : undefined;
         for (const [dep, kind, port] of FRAMEWORK_BY_DEP) {
             if (dep in allDeps) {
-                return { kind, expectedPort: port };
+                return { kind, expectedPort: validExplicitPort ?? port };
+            }
+        }
+        for (const [pattern, kind, port] of FRAMEWORK_BY_SCRIPT) {
+            if (pattern.test(scriptText)) {
+                return { kind, expectedPort: validExplicitPort ?? port };
             }
         }
         if ('@theia/core' in allDeps || '@theia/cli' in allDeps) {
             return { kind: 'node-generic', expectedPort: QAAP_THEIA_DEV_PORT };
         }
-        const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
         const start = scripts.start;
         if (typeof start === 'string' && /\btheia\s+start\b/.test(start)) {
             return { kind: 'node-generic', expectedPort: QAAP_THEIA_DEV_PORT };

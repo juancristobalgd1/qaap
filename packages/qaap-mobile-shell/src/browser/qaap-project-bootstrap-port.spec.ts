@@ -8,6 +8,7 @@ import {
     getImplicitDevPort,
     isReservedIdePort,
     pickAlternateDevPort,
+    pickNextDevPort,
     resolveBootstrapDevPort,
     wrapDevCommandForPort,
 } from './qaap-project-bootstrap-port';
@@ -50,5 +51,11 @@ describe('qaap-project-bootstrap-port', () => {
 
     it('wrapDevCommandForPort passes -p to Next after PORT=', () => {
         expect(wrapDevCommandForPort('npm run dev', 3001, 'node-next')).to.equal('PORT=3001 npm run dev -- -p 3001');
+    });
+
+    it('pickNextDevPort advances past conflicts, prior attempts, and the IDE listener', () => {
+        expect(pickNextDevPort(5173, [], 3000)).to.equal(5174);
+        expect(pickNextDevPort(5173, [5174, 5175], 3000)).to.equal(5176);
+        expect(pickNextDevPort(2999, [], 3000)).to.equal(3001);
     });
 });

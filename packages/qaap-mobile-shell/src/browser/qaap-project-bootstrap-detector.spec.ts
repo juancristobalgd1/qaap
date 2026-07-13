@@ -113,6 +113,39 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         expect(descriptor!.devCommand).to.equal(undefined);
     });
 
+    it('detects Vite from the dev script when dependencies do not declare it', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'script-only-vite',
+            scripts: { dev: 'vite --host 0.0.0.0' },
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('node-vite');
+        expect(descriptor!.expectedPort).to.equal(5173);
+    });
+
+    it('prefers the explicit dev-script port over the framework default', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'custom-port-vite',
+            scripts: { dev: 'vite --port 4173' },
+            devDependencies: { vite: '^6.0.0' },
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('node-vite');
+        expect(descriptor!.expectedPort).to.equal(4173);
+    });
+
     it('prefers static index.html at workspace root over child Node projects', async () => {
         const mock = new MockFileService();
         mock.addDir('/ws');

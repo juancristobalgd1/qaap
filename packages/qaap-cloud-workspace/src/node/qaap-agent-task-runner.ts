@@ -94,6 +94,7 @@ import {
 } from './qaap-antigravity-settings';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
+import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 interface AgentCandidate {
@@ -1228,6 +1229,10 @@ export class QaapAgentTaskRunner {
 
     protected buildRepoMap(cwd: string): string | undefined {
         const sections: string[] = [];
+        const profile = buildQaapAgentRepoProfile(cwd);
+        if (profile) {
+            sections.push(profile);
+        }
         const tree = this.buildRepoTree(cwd);
         if (tree) {
             sections.push(tree);

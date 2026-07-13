@@ -18,6 +18,7 @@ import { resolveTranscriptEffectiveStatus } from './qaap-transcript-turn-status'
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
+import type { QaapPreviewVisualValidationResult } from './qaap-visual-verification';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -578,6 +579,33 @@ export async function reportPreviewBootstrapFailure(
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reason: trimmed }),
+        },
+    );
+    if (response.status === 404) {
+        return undefined;
+    }
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return await response.json() as QaapAgentConversationDTO;
+}
+
+/** Upload a PNG captured from the same-origin preview and attach it to the latest agent response. */
+export async function reportPreviewVisualVerification(
+    conversationId: string,
+    png: Blob,
+    result: QaapPreviewVisualValidationResult,
+): Promise<QaapAgentConversationDTO | undefined> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-verifications`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'image/png',
+                'X-Qaap-Visual-Result': encodeURIComponent(JSON.stringify(result)),
+            },
+            body: png,
         },
     );
     if (response.status === 404) {

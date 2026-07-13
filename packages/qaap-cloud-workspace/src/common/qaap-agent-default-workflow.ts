@@ -75,7 +75,7 @@ export function buildAgentRepoMemoryPromptBlock(): string {
     return [
         REPO_MEMORY_MARKER,
         'The file .qaap/memory.md holds durable repo-specific knowledge for future agent turns; when present, it is injected into your prompt as "Repository memory".',
-        'When the user corrects you, states a lasting preference, or you learn a non-obvious repo fact (a build gotcha, a required command sequence), append a short bullet to .qaap/memory.md — create the file if missing. Keep it under ~100 lines and prune entries that turned out wrong.',
+        'When the user corrects you, states a lasting preference, or you learn a non-obvious repo fact (an architectural decision, exact verification command, recurring error, build gotcha, or required command sequence), append a short bullet to .qaap/memory.md — create the file if missing. Keep it under ~100 lines and prune entries that turned out wrong.',
         'Do not store what the repo already documents (README, CLAUDE.md/AGENTS.md) or one-off details of the current task.',
     ].join('\n');
 }

@@ -73,4 +73,17 @@ describe('serializeQaapBootstrapState', () => {
         expect(json.terminalFailure).to.equal('npm error code 1');
         expect(json.terminalTail).to.equal('npm ERR! ...');
     });
+
+    it('exposes structured failure and automatic port recovery to agents', () => {
+        const state: QaapBootstrapStateChange = {
+            phase: 'starting',
+            failureKind: 'port-conflict',
+            activePort: 5174,
+            portRecoveryFrom: 5173,
+        };
+        const json = serializeQaapBootstrapState(state);
+        expect(json.failureKind).to.equal('port-conflict');
+        expect(json.activePort).to.equal(5174);
+        expect(json.portRecoveryFrom).to.equal(5173);
+    });
 });

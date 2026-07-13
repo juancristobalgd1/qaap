@@ -15,6 +15,7 @@ import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import {
+    QAAP_AGENT_CONVERSATION_API_PATH,
     QaapAgentConversation,
     QaapAgentConversationCwdGroup,
     QaapAgentConversationEvent,
@@ -111,6 +112,7 @@ import {
 import {
     agentModelKey,
     agentTurnHasRetryableEmptyOutput,
+    agentTurnHasRetryableQuotaFailure,
     resolveNextFallbackAgentModel,
 } from '../common/qaap-agent-model-fallback';
 import {
@@ -125,6 +127,11 @@ import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 import {
+    buildQaapVisualVerificationMarkdown,
+    QAAP_VISUAL_VERIFICATION_MARKER,
+    type QaapPreviewVisualValidationResult,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+import {
     QAAP_MAX_TURN_MINUTES_ENV,
     buildQaapTurnWatchdogMessage,
     findExpiredStreamingTurns,
@@ -136,6 +143,7 @@ import {
 const STORE_DIR = path.join(os.homedir(), '.qaap', 'agent-conversations');
 const STREAMING_PERSIST_DEBOUNCE_MS = 500;
 const INDEX_PATH = path.join(STORE_DIR, 'index.json');
+const VISUAL_EVIDENCE_DIR = path.join(STORE_DIR, 'visual-evidence');
 /** How often the turn watchdog scans for conversations stuck 'streaming' past the max duration. */
 const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 
@@ -679,8 +687,62 @@ export class QaapAgentConversationStore {
             }
         }
         this.fire({ type: 'deleted', conversationId: id, cwd: conv.cwd });
+        void fsp.rm(this.visualEvidenceDirectory(id), { recursive: true, force: true }).catch(() => undefined);
         void this.persist();
         return true;
+    }
+
+    protected visualEvidenceDirectory(conversationId: string): string {
+        return path.join(VISUAL_EVIDENCE_DIR, conversationId);
+    }
+
+    /** Persist a same-origin preview screenshot and attach the authenticated image to the last reply. */
+    async recordVisualVerification(
+        conversationId: string,
+        result: QaapPreviewVisualValidationResult,
+        png: Buffer,
+    ): Promise<QaapAgentConversation | undefined> {
+        const conv = this.conversations.get(conversationId);
+        if (!conv || png.length === 0) {
+            return undefined;
+        }
+        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
+        if (!lastAgent) {
+            return undefined;
+        }
+        if (lastAgent.content.includes(QAAP_VISUAL_VERIFICATION_MARKER)) {
+            return conv;
+        }
+        const evidenceId = randomUUID();
+        const directory = this.visualEvidenceDirectory(conversationId);
+        await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+        await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
+        const imageUrl = `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
+            + `/visual-verifications/${encodeURIComponent(evidenceId)}`;
+        const markdown = buildQaapVisualVerificationMarkdown(imageUrl, result);
+        const next: QaapAgentConversation = {
+            ...conv,
+            updatedAt: Date.now(),
+            messages: conv.messages.map(message => message.id === lastAgent.id
+                ? { ...message, content: `${message.content.trimEnd()}\n\n---\n\n${markdown}` }
+                : message),
+        };
+        this.conversations.set(conversationId, next);
+        this.publishFinalizedAgentMessage(conversationId, next, lastAgent.id);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        void this.persist();
+        return next;
+    }
+
+    readVisualVerification(conversationId: string, evidenceId: string): Buffer | undefined {
+        if (!this.conversations.has(conversationId) || !/^[a-f\d-]{36}$/i.test(evidenceId)) {
+            return undefined;
+        }
+        try {
+            return fs.readFileSync(path.join(this.visualEvidenceDirectory(conversationId), `${evidenceId}.png`));
+        } catch {
+            return undefined;
+        }
     }
 
     /**
@@ -1349,7 +1411,7 @@ export class QaapAgentConversationStore {
         if (task.state !== 'failed' || !agentSupportsModelPicker(conv.agentId)) {
             return false;
         }
-        if (!agentTurnHasRetryableEmptyOutput(agentMessage)) {
+        if (!agentTurnHasRetryableEmptyOutput(agentMessage) && !agentTurnHasRetryableQuotaFailure(agentMessage)) {
             return false;
         }
         if (!this.hasLoopSpawnBudget(userMessageId)) {

@@ -23,7 +23,6 @@ const AGENT_LOG_HINT_MAX_LENGTH = 220;
 const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
 const QUOTA_PATTERNS: readonly RegExp[] = [
-    /\binvalid[_\s-]?request\b/i,
     /\binsufficient[_\s-]?quota\b/i,
     /\bquota\b/i,
     /\bfree[_\s-]?credits?\b/i,

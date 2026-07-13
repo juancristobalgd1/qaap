@@ -89,6 +89,12 @@ export function formatQaapBootstrapVariableValue(
     if (state.error) {
         lines.push(`error: ${state.error}`);
     }
+    if (state.failureKind) {
+        lines.push(`failureKind: ${state.failureKind}`);
+    }
+    if (state.portRecoveryFrom && state.activePort) {
+        lines.push(`portRecovery: :${state.portRecoveryFrom} -> :${state.activePort}`);
+    }
     if (extras?.terminalFailure) {
         lines.push(`terminalFailure: ${extras.terminalFailure}`);
     }

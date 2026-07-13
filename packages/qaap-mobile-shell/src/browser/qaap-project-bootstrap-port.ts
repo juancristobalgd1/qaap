@@ -52,11 +52,12 @@ export function getQaapIdeListenPort(): number | undefined {
  * When the browser port is unknown (reverse proxy) or matches the default Theia port, treat
  * {@link QAAP_THEIA_DEV_PORT} as reserved — on Docker/VPS the backend still listens there.
  */
-export function isReservedIdePort(port: number, idePort: number | undefined = getQaapIdeListenPort()): boolean {
-    if (idePort !== undefined && port === idePort) {
+export function isReservedIdePort(port: number, idePort?: number): boolean {
+    const effectiveIdePort = arguments.length >= 2 ? idePort : getQaapIdeListenPort();
+    if (effectiveIdePort !== undefined && port === effectiveIdePort) {
         return true;
     }
-    if (port === QAAP_THEIA_DEV_PORT && (idePort === undefined || idePort === QAAP_THEIA_DEV_PORT)) {
+    if (port === QAAP_THEIA_DEV_PORT && (effectiveIdePort === undefined || effectiveIdePort === QAAP_THEIA_DEV_PORT)) {
         return true;
     }
     return false;
@@ -67,11 +68,12 @@ export function isReservedIdePort(port: number, idePort: number | undefined = ge
  */
 export function pickAlternateDevPort(
     frameworkPort: number,
-    idePort: number | undefined = getQaapIdeListenPort(),
+    idePort?: number,
 ): number {
+    const effectiveIdePort = arguments.length >= 2 ? idePort : getQaapIdeListenPort();
     const reserved = new Set<number>();
-    if (idePort !== undefined) {
-        reserved.add(idePort);
+    if (effectiveIdePort !== undefined) {
+        reserved.add(effectiveIdePort);
     }
     reserved.add(frameworkPort);
     let candidate = frameworkPort === QAAP_THEIA_DEV_PORT ? QAAP_THEIA_DEV_PORT + 1 : frameworkPort + 1;
@@ -82,19 +84,42 @@ export function pickAlternateDevPort(
 }
 
 /**
+ * Picks the next port after a runtime conflict, excluding ports already attempted by this run.
+ * This is intentionally deterministic: if :5173 is occupied, retry on :5174, then :5175.
+ */
+export function pickNextDevPort(
+    conflictedPort: number,
+    attemptedPorts: readonly number[] = [],
+    idePort?: number,
+): number | undefined {
+    const effectiveIdePort = arguments.length >= 3 ? idePort : getQaapIdeListenPort();
+    const unavailable = new Set<number>([conflictedPort, ...attemptedPorts]);
+    if (effectiveIdePort !== undefined) {
+        unavailable.add(effectiveIdePort);
+    }
+    for (let candidate = conflictedPort + 1; candidate < 65536; candidate++) {
+        if (!unavailable.has(candidate) && !isReservedIdePort(candidate, effectiveIdePort)) {
+            return candidate;
+        }
+    }
+    return undefined;
+}
+
+/**
  * Resolves the port the dev process should bind to inside the VPS/container.
  */
 export function resolveBootstrapDevPort(
     frameworkPort: number | undefined,
-    idePort: number | undefined = getQaapIdeListenPort(),
+    idePort?: number,
 ): number | undefined {
+    const effectiveIdePort = arguments.length >= 2 ? idePort : getQaapIdeListenPort();
     if (frameworkPort === undefined) {
         return undefined;
     }
-    if (!isReservedIdePort(frameworkPort, idePort)) {
+    if (!isReservedIdePort(frameworkPort, effectiveIdePort)) {
         return frameworkPort;
     }
-    return pickAlternateDevPort(frameworkPort, idePort);
+    return pickAlternateDevPort(frameworkPort, effectiveIdePort);
 }
 
 /**

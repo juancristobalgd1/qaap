@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     agentModelKey,
     agentTurnHasRetryableEmptyOutput,
+    agentTurnHasRetryableQuotaFailure,
     buildAgentModelFallbackChain,
     resolveNextFallbackAgentModel,
 } from './qaap-agent-model-fallback';
@@ -49,5 +50,19 @@ describe('qaap-agent-model-fallback', () => {
         expect(agentTurnHasRetryableEmptyOutput({
             segments: [{ type: 'text', content: 'done' }],
         })).to.be.false;
+    });
+
+    it('retries explicit credit exhaustion even when the provider returned text', () => {
+        expect(agentTurnHasRetryableQuotaFailure({
+            content: 'Free credits for this model are exhausted.',
+        })).to.be.true;
+        expect(agentTurnHasRetryableQuotaFailure({
+            segments: [{ type: 'text', content: 'Error: insufficient_quota' }],
+        })).to.be.true;
+    });
+
+    it('does not switch models for ordinary implementation errors', () => {
+        expect(agentTurnHasRetryableQuotaFailure({ content: 'TypeError: build failed' })).to.be.false;
+        expect(agentTurnHasRetryableQuotaFailure(undefined)).to.be.false;
     });
 });

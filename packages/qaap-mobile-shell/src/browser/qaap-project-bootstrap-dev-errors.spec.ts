@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import {
+    diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
     extractTerminalFailureLine,
     terminalOutputNeedsInstall,
@@ -40,5 +41,23 @@ describe('qaap-project-bootstrap-dev-errors', () => {
         const tail = 'using available port 3001 instead.\nUnable to acquire lock\n';
         expect(extractTerminalFailureLine(tail, 'fallback')).to.contain('Next.js is already running');
         expect(extractTerminalFailureLine(tail, 'fallback')).to.contain('3001');
+    });
+
+    it('diagnoses missing environment configuration with an actionable Env hint', () => {
+        const diagnosis = diagnoseBootstrapFailure('Error: Environment variable DATABASE_URL is not set', 'fallback');
+        expect(diagnosis.kind).to.equal('environment');
+        expect(diagnosis.message).to.contain('Env');
+    });
+
+    it('diagnoses incompatible Node versions', () => {
+        const diagnosis = diagnoseBootstrapFailure('npm error code EBADENGINE\nrequires Node >=20', 'fallback');
+        expect(diagnosis.kind).to.equal('runtime-version');
+        expect(diagnosis.message).to.contain('Node.js version');
+    });
+
+    it('diagnoses workspace permission failures', () => {
+        const diagnosis = diagnoseBootstrapFailure('Error: EACCES: permission denied, open .next/cache', 'fallback');
+        expect(diagnosis.kind).to.equal('permission');
+        expect(diagnosis.message).to.contain('permissions');
     });
 });

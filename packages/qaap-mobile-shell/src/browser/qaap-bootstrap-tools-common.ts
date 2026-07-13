@@ -24,6 +24,9 @@ export interface QaapBootstrapToolSnapshot {
     readonly error?: string;
     readonly portInUse?: boolean;
     readonly existingServerPort?: number;
+    readonly failureKind?: QaapBootstrapStateChange['failureKind'];
+    readonly activePort?: number;
+    readonly portRecoveryFrom?: number;
     readonly lastPort?: number;
     readonly selectedAppPath?: string;
     readonly scaffoldRelativePath?: string;
@@ -60,6 +63,9 @@ export function serializeQaapBootstrapState(
         error: state.error,
         portInUse: state.portInUse,
         existingServerPort: state.existingServerPort,
+        failureKind: state.failureKind,
+        activePort: state.activePort,
+        portRecoveryFrom: state.portRecoveryFrom,
         lastPort: state.lastPort,
         selectedAppPath: state.selectedApp?.relativePath,
         scaffoldRelativePath: descriptor?.scaffoldRelativePath,

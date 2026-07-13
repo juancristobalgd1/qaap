@@ -23409,6 +23409,22 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   min-width: 0;
 }
 
+.theia-mobile-projects-sticky-composer-cost-estimate {
+  color: var(--theia-descriptionForeground);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--theia-descriptionForeground) 28%, transparent);
+  border-radius: 999px;
+}
+
+.theia-mobile-projects-sticky-composer-cost-estimate.theia-mod-large {
+  color: var(--theia-editorWarning-foreground);
+  border-color: color-mix(in srgb, var(--theia-editorWarning-foreground) 45%, transparent);
+  background: color-mix(in srgb, var(--theia-editorWarning-background) 45%, transparent);
+}
+
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .theia-mobile-projects-sticky-composer-send,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-composer-improve-btn,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-chat-mic-btn-sticky {

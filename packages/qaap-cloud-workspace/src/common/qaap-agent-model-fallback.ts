@@ -13,6 +13,7 @@ import {
     findQaiqByokProvider,
     type QaapQaiqByokProviderDescriptor,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
+import { detectAgentFailureKind } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 
 /** Max alternate models to try after the first pick fails (inclusive of the original). */
 export const MAX_AGENT_MODEL_FALLBACK_ATTEMPTS = 4;
@@ -113,4 +114,28 @@ export function agentTurnHasRetryableEmptyOutput(
         return !hasText && !hasFinishedTool;
     }
     return !agentMessage.content?.trim();
+}
+
+/**
+ * True when a provider explicitly reports exhausted credits/quota. Unlike a normal model error,
+ * this is safe to retry with the next curated model because repeating the same model cannot help.
+ */
+export function agentTurnHasRetryableQuotaFailure(
+    agentMessage: {
+        readonly content?: string;
+        readonly segments?: readonly {
+            readonly type: string;
+            readonly content?: string;
+            readonly result?: string;
+        }[];
+    } | undefined,
+): boolean {
+    if (!agentMessage) {
+        return false;
+    }
+    const details = [
+        agentMessage.content,
+        ...(agentMessage.segments ?? []).flatMap(segment => [segment.content, segment.result]),
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0).join('\n');
+    return detectAgentFailureKind(details) === 'quota';
 }

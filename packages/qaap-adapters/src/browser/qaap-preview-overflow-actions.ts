@@ -283,9 +283,15 @@ async function runPreviewCopyCurrentUrl(ctx: QaapPreviewOverflowActionContext): 
     }
 }
 
-export async function captureSameOriginPreview(doc: Document, frame: HTMLIFrameElement): Promise<Blob | undefined> {
-    const width = Math.max(doc.documentElement.scrollWidth, frame.clientWidth);
-    const height = Math.max(doc.documentElement.scrollHeight, frame.clientHeight);
+export async function captureSameOriginPreview(
+    doc: Document,
+    frame: HTMLIFrameElement,
+    limits?: { readonly maxWidth?: number; readonly maxHeight?: number },
+): Promise<Blob | undefined> {
+    const naturalWidth = Math.max(doc.documentElement.scrollWidth, doc.documentElement.clientWidth, frame.clientWidth, 1);
+    const naturalHeight = Math.max(doc.documentElement.scrollHeight, doc.documentElement.clientHeight, frame.clientHeight, 1);
+    const width = Math.min(naturalWidth, limits?.maxWidth ?? naturalWidth);
+    const height = Math.min(naturalHeight, limits?.maxHeight ?? naturalHeight);
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
