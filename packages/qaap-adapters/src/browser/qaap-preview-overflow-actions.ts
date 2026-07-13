@@ -299,10 +299,11 @@ export async function captureSameOriginPreview(
     if (!ctx) {
         return undefined;
     }
+    const captureRoot = clonePreviewDocumentWithComputedStyles(doc);
     const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
   <foreignObject width="100%" height="100%">
-    ${new XMLSerializer().serializeToString(doc.documentElement)}
+    ${new XMLSerializer().serializeToString(captureRoot)}
   </foreignObject>
 </svg>`;
     const img = new Image();
@@ -316,6 +317,58 @@ export async function captureSameOriginPreview(
     return new Promise<Blob | undefined>(resolve => {
         canvas.toBlob(blob => resolve(blob ?? undefined), 'image/png');
     });
+}
+
+const CAPTURE_COMPUTED_STYLE_PROPERTIES = [
+    'position', 'display', 'visibility', 'box-sizing',
+    'top', 'right', 'bottom', 'left', 'inset', 'z-index',
+    'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height',
+    'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+    'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+    'border', 'border-width', 'border-style', 'border-color', 'border-radius',
+    'background', 'background-color', 'background-image', 'background-size', 'background-position',
+    'color', 'opacity', 'box-shadow', 'filter',
+    'font', 'font-family', 'font-size', 'font-style', 'font-weight', 'line-height',
+    'letter-spacing', 'text-align', 'text-decoration', 'text-transform', 'white-space',
+    'overflow', 'overflow-x', 'overflow-y', 'object-fit',
+    'flex', 'flex-basis', 'flex-direction', 'flex-grow', 'flex-shrink', 'flex-wrap',
+    'align-content', 'align-items', 'align-self', 'justify-content', 'justify-items', 'justify-self',
+    'grid', 'grid-template-columns', 'grid-template-rows', 'grid-column', 'grid-row',
+    'gap', 'column-gap', 'row-gap', 'place-content', 'place-items', 'place-self',
+    'transform', 'transform-origin', 'vertical-align', 'list-style',
+] as const;
+
+/** ForeignObject does not reliably retain linked/cascaded CSS, so freeze computed styles inline. */
+export function clonePreviewDocumentWithComputedStyles(doc: Document): HTMLElement {
+    const clone = doc.documentElement.cloneNode(true) as HTMLElement;
+    const originals = [doc.documentElement, ...doc.documentElement.querySelectorAll<HTMLElement>('*')];
+    const copies = [clone, ...clone.querySelectorAll<HTMLElement>('*')];
+    const view = doc.defaultView;
+    if (!view) {
+        return clone;
+    }
+    for (let index = 0; index < Math.min(originals.length, copies.length); index++) {
+        const original = originals[index];
+        const copy = copies[index];
+        if (!(original instanceof view.HTMLElement)) {
+            continue;
+        }
+        const computed = view.getComputedStyle(original);
+        const frozen = CAPTURE_COMPUTED_STYLE_PROPERTIES
+            .map(property => {
+                const value = computed.getPropertyValue(property);
+                return value ? `${property}:${value}` : '';
+            })
+            .filter(Boolean)
+            .join(';');
+        if (frozen) {
+            copy.setAttribute('style', frozen);
+        }
+        if (original instanceof view.HTMLInputElement || original instanceof view.HTMLTextAreaElement) {
+            copy.setAttribute('value', original.value);
+        }
+    }
+    return clone;
 }
 
 async function runPreviewTakeScreenshot(ctx: QaapPreviewOverflowActionContext): Promise<void> {

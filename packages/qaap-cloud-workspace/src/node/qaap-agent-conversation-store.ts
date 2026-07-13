@@ -193,6 +193,8 @@ export class QaapAgentConversationStore {
     }
 
     protected readonly conversations = new Map<string, QaapAgentConversation>();
+    /** Serializes screenshot attachment per conversation across multiple open frontend tabs. */
+    protected readonly visualVerificationInFlight = new Set<string>();
     /** Reverse index: task id → conversation turn metadata so we can route output/completion. */
     protected readonly taskToConversation = new Map<string, { conversationId: string; userMessageId: string; agentMessageId?: string; startSha?: string }>();
     /** Subtask ids whose completion was already appended to a leader conversation (passive mailbox). */
@@ -703,35 +705,54 @@ export class QaapAgentConversationStore {
         png: Buffer,
     ): Promise<QaapAgentConversation | undefined> {
         const conv = this.conversations.get(conversationId);
-        if (!conv || png.length === 0) {
+        // Reject reports from stale/older frontend tabs while the backend task is only visually
+        // settled. Finalization may still replace that message and orphan an early screenshot.
+        if (!conv || conv.status !== 'idle' || png.length === 0) {
             return undefined;
         }
         const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
         if (!lastAgent) {
             return undefined;
         }
-        if (lastAgent.content.includes(QAAP_VISUAL_VERIFICATION_MARKER)) {
+        if (lastAgent.content.includes(QAAP_VISUAL_VERIFICATION_MARKER)
+            || lastAgent.segments?.some(segment => segment.type === 'text'
+                && segment.content.includes(QAAP_VISUAL_VERIFICATION_MARKER))) {
             return conv;
         }
-        const evidenceId = randomUUID();
-        const directory = this.visualEvidenceDirectory(conversationId);
-        await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
-        await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
-        const imageUrl = `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
-            + `/visual-verifications/${encodeURIComponent(evidenceId)}`;
-        const markdown = buildQaapVisualVerificationMarkdown(imageUrl, result);
-        const next: QaapAgentConversation = {
-            ...conv,
-            updatedAt: Date.now(),
-            messages: conv.messages.map(message => message.id === lastAgent.id
-                ? { ...message, content: `${message.content.trimEnd()}\n\n---\n\n${markdown}` }
-                : message),
-        };
-        this.conversations.set(conversationId, next);
-        this.publishFinalizedAgentMessage(conversationId, next, lastAgent.id);
-        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
-        void this.persist();
-        return next;
+        if (this.visualVerificationInFlight.has(conversationId)) {
+            return conv;
+        }
+        this.visualVerificationInFlight.add(conversationId);
+        try {
+            const evidenceId = randomUUID();
+            const directory = this.visualEvidenceDirectory(conversationId);
+            await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+            await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
+            const imageUrl = `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
+                + `/visual-verifications/${encodeURIComponent(evidenceId)}`;
+            const markdown = buildQaapVisualVerificationMarkdown(imageUrl, result);
+            const evidenceBlock = `---\n\n${markdown}`;
+            const next: QaapAgentConversation = {
+                ...conv,
+                updatedAt: Date.now(),
+                messages: conv.messages.map(message => message.id === lastAgent.id
+                    ? {
+                        ...message,
+                        content: `${message.content.trimEnd()}\n\n${evidenceBlock}`,
+                        segments: message.segments?.length
+                            ? [...message.segments, { type: 'text', content: evidenceBlock }]
+                            : message.segments,
+                    }
+                    : message),
+            };
+            this.conversations.set(conversationId, next);
+            this.publishFinalizedAgentMessage(conversationId, next, lastAgent.id);
+            this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+            void this.persist();
+            return next;
+        } finally {
+            this.visualVerificationInFlight.delete(conversationId);
+        }
     }
 
     readVisualVerification(conversationId: string, evidenceId: string): Buffer | undefined {

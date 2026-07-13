@@ -18,8 +18,6 @@ const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '
 const BOOTSTRAP_PREVIEW_WAIT_MS = 180_000;
 const PROBE_POLL_ATTEMPTS = 60;
 const PROBE_POLL_INTERVAL_MS = 250;
-/** Common Vite/Next ports when the scaffold kind implies a dev server but no hint was printed yet. */
-const DEFAULT_SCAFFOLD_PROBE_PORTS = [5173, 5174, 3000, 4173, 8080];
 
 export interface EnsureTranscriptDevPreviewOptions {
     readonly portHint?: number;
@@ -28,6 +26,8 @@ export interface EnsureTranscriptDevPreviewOptions {
     readonly waitForHintOnly?: boolean;
     /** When set, probe transcript-derived ports before spawning install/dev. */
     readonly conversation?: QaapAgentConversationDTO;
+    /** Visual verification uses project bootstrap only; transcript prose may mention another app's port. */
+    readonly skipConversationPortProbe?: boolean;
 }
 
 /** Parses a proxied or direct localhost preview URL into a dev-server port. */
@@ -77,27 +77,30 @@ async function probeTranscriptConversationPorts(
     );
 }
 
-function collectBootstrapProbePorts(
-    bootstrap: QaapProjectBootstrapService,
-): readonly number[] {
-    const snapshot = bootstrap.getStateSnapshot();
+export interface QaapTrustedBootstrapPreviewState {
+    readonly previewUrl?: string;
+    readonly lastPort?: number;
+    readonly activePort?: number;
+}
+
+/** Ports tied to this workspace's own bootstrap history; framework defaults are intentionally excluded. */
+export function collectTrustedBootstrapPreviewPorts(snapshot: QaapTrustedBootstrapPreviewState): readonly number[] {
     const ports: number[] = [];
     const push = (port: number | undefined): void => {
         if (port !== undefined && !ports.includes(port)) {
             ports.push(port);
         }
     };
-    push(snapshot.existingServerPort);
+    push(extractDevPreviewPortFromUrl(snapshot.previewUrl));
     push(snapshot.lastPort);
-    push(snapshot.selectedApp?.expectedPort);
-    push(snapshot.descriptor?.expectedPort);
-    for (const app of snapshot.descriptor?.apps ?? []) {
-        push(app.expectedPort);
-    }
-    for (const port of DEFAULT_SCAFFOLD_PROBE_PORTS) {
-        push(port);
-    }
+    push(snapshot.activePort);
     return ports;
+}
+
+function collectBootstrapProbePorts(
+    bootstrap: QaapProjectBootstrapService,
+): readonly number[] {
+    return collectTrustedBootstrapPreviewPorts(bootstrap.getStateSnapshot());
 }
 
 async function probeBootstrapListeningPorts(
@@ -144,7 +147,9 @@ export async function ensureTranscriptDevPreview(
     bootstrap: QaapProjectBootstrapService,
     options: EnsureTranscriptDevPreviewOptions = {},
 ): Promise<string | undefined> {
-    const fromConversation = await probeTranscriptConversationPorts(options.conversation);
+    const fromConversation = options.skipConversationPortProbe
+        ? undefined
+        : await probeTranscriptConversationPorts(options.conversation);
     if (fromConversation) {
         return fromConversation;
     }

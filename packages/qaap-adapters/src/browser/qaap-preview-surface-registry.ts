@@ -9,10 +9,12 @@ import { PanelLayout } from '@theia/core/lib/browser/widgets/widget';
 import { MiniBrowser } from '@theia/mini-browser/lib/browser/mini-browser';
 import { QaapMiniBrowserContent } from './qaap-mini-browser-content';
 import { QaapPreviewFramePicker, QaapPreviewFramePickerFactory } from './qaap-preview-frame-picker';
+import { qaapPreviewFrameMatchesUrl } from './qaap-preview-surface-match';
 
 export interface QaapPreviewSurfaceHandle {
     readonly frame: HTMLIFrameElement;
     readonly picker: QaapPreviewFramePicker;
+    readonly kind: 'embedded' | 'mini-browser';
     isConnected(): boolean;
 }
 
@@ -26,16 +28,17 @@ export class QaapPreviewSurfaceRegistry {
 
     registerEmbedded(frame: HTMLIFrameElement, toDispose: DisposableCollection): QaapPreviewSurfaceHandle {
         const picker = this.pickerFactory.create(frame, toDispose);
-        return this.registerSurface(frame, picker, toDispose);
+        return this.registerSurface(frame, picker, 'embedded', toDispose);
     }
 
     registerMiniBrowserContent(content: QaapMiniBrowserContent, toDispose: DisposableCollection): QaapPreviewSurfaceHandle {
         const frame = content.previewFrame;
         const picker = content.getPreviewFramePicker();
-        const handle = this.registerSurface(frame, picker, toDispose);
+        const handle = this.registerSurface(frame, picker, 'mini-browser', toDispose);
         return {
             frame: handle.frame,
             picker: handle.picker,
+            kind: handle.kind,
             isConnected: () => content.node.isConnected,
         };
     }
@@ -43,11 +46,13 @@ export class QaapPreviewSurfaceRegistry {
     protected registerSurface(
         frame: HTMLIFrameElement,
         picker: QaapPreviewFramePicker,
+        kind: QaapPreviewSurfaceHandle['kind'],
         toDispose: DisposableCollection,
     ): QaapPreviewSurfaceHandle {
         const handle: QaapPreviewSurfaceHandle = {
             frame,
             picker,
+            kind,
             isConnected: () => frame.isConnected,
         };
         this.surfaces.push(handle);
@@ -60,11 +65,22 @@ export class QaapPreviewSurfaceRegistry {
     }
 
     getActiveSurface(): QaapPreviewSurfaceHandle | undefined {
-        const connected = this.surfaces.filter(surface => surface.isConnected());
+        const connected = this.getConnectedSurfaces();
         if (connected.length) {
             return connected[connected.length - 1];
         }
         return undefined;
+    }
+
+    getConnectedSurfaces(): readonly QaapPreviewSurfaceHandle[] {
+        return this.surfaces.filter(surface => surface.isConnected());
+    }
+
+    /** Returns the newest connected surface serving the requested project preview URL. */
+    getSurfaceForPreviewUrl(expectedUrl: string): QaapPreviewSurfaceHandle | undefined {
+        const matches = [...this.getConnectedSurfaces()].reverse()
+            .filter(surface => qaapPreviewFrameMatchesUrl(surface.frame, expectedUrl));
+        return matches.find(surface => surface.kind === 'mini-browser') ?? matches[0];
     }
 
     activateElementPicker(): { started: boolean; message: string } {

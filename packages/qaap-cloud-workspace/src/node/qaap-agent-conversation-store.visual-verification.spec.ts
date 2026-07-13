@@ -19,6 +19,13 @@ class VisualEvidenceStoreHarness extends QaapAgentConversationStore {
         this.conversations.set(conversation.id, conversation);
     }
 
+    setStatus(conversationId: string, status: QaapAgentConversation['status']): void {
+        const current = this.conversations.get(conversationId);
+        if (current) {
+            this.conversations.set(conversationId, { ...current, status });
+        }
+    }
+
     protected override visualEvidenceDirectory(conversationId: string): string {
         return path.join(this.evidenceRoot, conversationId);
     }
@@ -45,7 +52,16 @@ describe('QaapAgentConversationStore visual verification', () => {
             updatedAt: 2,
             messages: [
                 { id: 'user-1', role: 'user', content: 'Improve the UI', createdAt: 1 },
-                { id: 'agent-1', role: 'agent', content: 'Implemented the UI.', createdAt: 2 },
+                {
+                    id: 'agent-1',
+                    role: 'agent',
+                    content: 'Implemented the UI.',
+                    createdAt: 2,
+                    segments: [
+                        { type: 'tool', toolUseId: 'edit-1', name: 'Edit', args: '{}', finished: true },
+                        { type: 'text', content: 'Implemented the UI.' },
+                    ],
+                },
             ],
         });
     });
@@ -64,6 +80,9 @@ describe('QaapAgentConversationStore visual verification', () => {
         const content = first?.messages.at(-1)?.content ?? '';
         const evidenceId = /visual-verifications\/([a-f\d-]{36})/.exec(content)?.[1];
         expect(content).to.contain('[QAAP visual verification]');
+        const evidenceSegment = first?.messages.at(-1)?.segments?.at(-1);
+        expect(evidenceSegment?.type).to.equal('text');
+        expect(evidenceSegment?.type === 'text' ? evidenceSegment.content : '').to.contain('[QAAP visual verification]');
         expect(evidenceId).to.be.a('string');
         expect(store.readVisualVerification('conversation-1', evidenceId!)).to.deep.equal(png);
 
@@ -79,5 +98,25 @@ describe('QaapAgentConversationStore visual verification', () => {
     it('does not expose evidence across conversation ids', async () => {
         expect(store.readVisualVerification('another-conversation', '00000000-0000-0000-0000-000000000000'))
             .to.equal(undefined);
+    });
+
+    it('stores only one screenshot when multiple frontend tabs report concurrently', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 4, 5, 6]);
+        await Promise.all([
+            store.recordVisualVerification('conversation-1', { status: 'passed', summary: 'First.', issues: [] }, png),
+            store.recordVisualVerification('conversation-1', { status: 'warning', summary: 'Second.', issues: ['late'] }, png),
+        ]);
+        expect(fs.readdirSync(path.join(root, 'conversation-1'))).to.have.length(1);
+    });
+
+    it('rejects evidence before the backend task reaches idle', async () => {
+        store.setStatus('conversation-1', 'settled');
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+        expect(await store.recordVisualVerification(
+            'conversation-1',
+            { status: 'passed', summary: 'Too early.', issues: [] },
+            png,
+        )).to.equal(undefined);
+        expect(fs.existsSync(path.join(root, 'conversation-1'))).to.equal(false);
     });
 });
