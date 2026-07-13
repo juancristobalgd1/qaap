@@ -13,12 +13,33 @@ export interface QaapPreviewVisualValidationResult {
 
 const VISUAL_REQUEST_REGEX = /\b(?:ui|ux|frontend|page|screen|layout|responsive|css|style|component|landing|dashboard|interfaz|pantalla|página|diseño|visual|componente|responsive)\b/i;
 const VISUAL_FILE_REGEX = /\.(?:html?|css|scss|sass|less|tsx|jsx|vue|svelte)(?:["'\s,}]|$)/i;
+/** Explicit ask for a screenshot / visual proof of the app — triggers capture even with no edits. */
+const EXPLICIT_VISUAL_EVIDENCE_REGEX = new RegExp([
+    'evidencia\\s+visual',
+    'captura\\s+de\\s+pantalla',
+    'pantallazo',
+    'screenshot',
+    'visual\\s+(?:evidence|proof)',
+    'mu[eé]stra(?:me)?\\s+(?:la\\s+)?(?:app|aplicaci[oó]n|p[aá]gina|interfaz|c[oó]mo\\s+se\\s+ve)',
+    'ens[eé][ñn]ame\\s+(?:la\\s+)?(?:app|aplicaci[oó]n|p[aá]gina|interfaz|c[oó]mo\\s+se\\s+ve)',
+    'c[oó]mo\\s+se\\s+ve\\s+(?:la\\s+)?(?:app|aplicaci[oó]n|p[aá]gina|interfaz)',
+    'show\\s+me\\s+(?:the\\s+)?(?:app|page|ui)\\b',
+    'how\\s+(?:the\\s+)?(?:app|page|ui)\\s+looks',
+].join('|'), 'i');
+
+/** True when the user literally asked for a screenshot / visual evidence of the app. */
+export function messageRequestsVisualEvidence(text: string | undefined): boolean {
+    return !!text?.trim() && EXPLICIT_VISUAL_EVIDENCE_REGEX.test(text);
+}
 
 /**
  * True when the LAST turn actually changed something renderable: either it edited a visual
  * file, or the user asked for UI work and the reply edited any file at all. A reply that
  * only asked clarifying questions (no edits) must not trigger evidence — screenshotting an
  * unchanged app and attaching "screenshot unavailable" notes to it is pure noise.
+ *
+ * Exception: when the user LITERALLY asked for a screenshot / visual evidence, capture the
+ * current app state even though nothing was edited — that request is the whole turn.
  */
 export function conversationLikelyNeedsVisualVerification(conversation: {
     readonly messages?: readonly {
@@ -28,13 +49,16 @@ export function conversationLikelyNeedsVisualVerification(conversation: {
     }[];
 }): boolean {
     const messages = conversation.messages ?? [];
+    const lastUser = [...messages].reverse().find(message => message.role === 'user');
+    if (messageRequestsVisualEvidence(lastUser?.content)) {
+        return true;
+    }
     const lastAgent = [...messages].reverse().find(message => message.role === 'agent');
     const editSegments = (lastAgent?.segments ?? []).filter(segment =>
         segment.type === 'tool' && /write|edit|patch/i.test(segment.name ?? ''));
     if (editSegments.some(segment => VISUAL_FILE_REGEX.test(segment.args ?? ''))) {
         return true;
     }
-    const lastUser = [...messages].reverse().find(message => message.role === 'user');
     return editSegments.length > 0 && VISUAL_REQUEST_REGEX.test(lastUser?.content ?? '');
 }
 

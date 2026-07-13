@@ -112,7 +112,12 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         } catch {
             return;
         }
-        if (!await this.isConversationInCurrentWorkspace(conversation.cwd)) {
+        // Parallel-run variants execute in a temp worktree (`cwd`), but the user watches them from
+        // the base workspace — match on either. The capture then reflects the app as served from
+        // the open workspace root.
+        const workspacePathCandidates = [conversation.cwd, summary.parallelBaseCwd]
+            .filter((value): value is string => !!value);
+        if (!await this.isAnyPathInCurrentWorkspace(workspacePathCandidates)) {
             return;
         }
         const explicitlyRequestedPreview = conversationEverRequestedDevPreview(conversation);
@@ -298,15 +303,17 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         throw new Error('the preview surface did not finish loading this route');
     }
 
-    protected async isConversationInCurrentWorkspace(cwd: string): Promise<boolean> {
+    protected async isAnyPathInCurrentWorkspace(paths: readonly string[]): Promise<boolean> {
         const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/$/, '');
-        const expected = normalize(cwd);
         const roots = await this.workspaceService.roots;
         // Agents may run in a subdirectory of the opened project (monorepo app folder), so accept
         // any cwd nested under a workspace root — not only an exact root match.
-        return roots.some(root => {
-            const rootPath = normalize(root.resource.path.toString());
-            return expected === rootPath || expected.startsWith(`${rootPath}/`);
+        return paths.some(candidate => {
+            const expected = normalize(candidate);
+            return roots.some(root => {
+                const rootPath = normalize(root.resource.path.toString());
+                return expected === rootPath || expected.startsWith(`${rootPath}/`);
+            });
         });
     }
 }

@@ -70,4 +70,27 @@ describe('qaap-visual-verification', () => {
             ],
         })).to.equal(false);
     });
+
+    it('always captures when the user explicitly asks for visual evidence, even with no edits', () => {
+        for (const ask of [
+            'dame una evidencia visual de esta aplicacion',
+            'hazme una captura de pantalla de la app',
+            'muéstrame cómo se ve la página',
+            'show me the app please',
+            'give me a screenshot of the dashboard',
+        ]) {
+            expect(conversationLikelyNeedsVisualVerification({
+                messages: [
+                    { role: 'user', content: ask },
+                    { role: 'agent', content: 'Aquí tienes una descripción de la aplicación…' },
+                ],
+            }), ask).to.equal(true);
+        }
+        expect(conversationLikelyNeedsVisualVerification({
+            messages: [
+                { role: 'user', content: 'explícame la arquitectura visual del backend' },
+                { role: 'agent', content: 'La arquitectura es…' },
+            ],
+        })).to.equal(false);
+    });
 });
