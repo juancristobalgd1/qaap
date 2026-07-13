@@ -142,6 +142,8 @@ export function buildAgentDevPreviewPromptBlock(): string {
         'Never run long-lived dev commands in shell (pnpm dev, npm start, vite, next dev, astro dev, etc.) — shell tools time out after ~30s and kill the preview.',
         'Use one-shot install/build/typecheck/test commands only. When the app should be previewable, reply with the expected local port (e.g. 5173) and confirm dependencies are installed; Qaap starts the server separately.',
         'Prefer scaffolding web apps in the workspace root (package.json at root). If you must use a subfolder, name it clearly in your final message — Qaap auto-detects child projects for preview.',
+        'Visual evidence (screenshots of the running app) is captured by Qaap itself and attached below your reply after the turn settles — whenever your changes touch UI files or the user asks for a screenshot/"evidencia visual".',
+        'Never write your own capture scripts (puppeteer, playwright, canvas dumps) or claim you "generated a screenshot"; if asked for visual evidence, make sure the app can run and say Qaap will attach the capture automatically.',
     ].join('\n');
 }
 

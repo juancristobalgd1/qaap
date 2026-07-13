@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     agentModelKey,
     agentTurnHasRetryableEmptyOutput,
+    agentTurnHasRetryableModelFailure,
     agentTurnHasRetryableQuotaFailure,
     buildAgentModelFallbackChain,
     resolveNextFallbackAgentModel,
@@ -64,5 +65,22 @@ describe('qaap-agent-model-fallback', () => {
     it('does not switch models for ordinary implementation errors', () => {
         expect(agentTurnHasRetryableQuotaFailure({ content: 'TypeError: build failed' })).to.be.false;
         expect(agentTurnHasRetryableQuotaFailure(undefined)).to.be.false;
+    });
+
+    it('retries a decommissioned model even when the turn already produced work', () => {
+        // Real OpenRouter case: tencent/hy3:free was pulled mid-turn after tools had run.
+        expect(agentTurnHasRetryableModelFailure({
+            content: 'La captura funcionó.',
+            segments: [
+                { type: 'tool', content: undefined, result: 'ok' },
+                {
+                    type: 'text',
+                    content: "There's an issue with the selected model (tencent/hy3:free). "
+                        + 'It may not exist or you may not have access to it. Run --model to pick a different model.',
+                },
+            ],
+        })).to.be.true;
+        expect(agentTurnHasRetryableModelFailure({ content: 'TypeError: build failed' })).to.be.false;
+        expect(agentTurnHasRetryableModelFailure(undefined)).to.be.false;
     });
 });

@@ -112,6 +112,7 @@ import {
 import {
     agentModelKey,
     agentTurnHasRetryableEmptyOutput,
+    agentTurnHasRetryableModelFailure,
     agentTurnHasRetryableQuotaFailure,
     resolveNextFallbackAgentModel,
 } from '../common/qaap-agent-model-fallback';
@@ -1589,7 +1590,9 @@ export class QaapAgentConversationStore {
         if (task.state !== 'failed' || !agentSupportsModelPicker(conv.agentId)) {
             return false;
         }
-        if (!agentTurnHasRetryableEmptyOutput(agentMessage) && !agentTurnHasRetryableQuotaFailure(agentMessage)) {
+        if (!agentTurnHasRetryableEmptyOutput(agentMessage)
+            && !agentTurnHasRetryableQuotaFailure(agentMessage)
+            && !agentTurnHasRetryableModelFailure(agentMessage)) {
             return false;
         }
         if (!this.hasLoopSpawnBudget(userMessageId)) {

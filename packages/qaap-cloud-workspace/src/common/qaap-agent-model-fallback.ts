@@ -116,6 +116,20 @@ export function agentTurnHasRetryableEmptyOutput(
     return !agentMessage.content?.trim();
 }
 
+function collectAgentMessageDetails(agentMessage: {
+    readonly content?: string;
+    readonly segments?: readonly {
+        readonly type: string;
+        readonly content?: string;
+        readonly result?: string;
+    }[];
+}): string {
+    return [
+        agentMessage.content,
+        ...(agentMessage.segments ?? []).flatMap(segment => [segment.content, segment.result]),
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0).join('\n');
+}
+
 /**
  * True when a provider explicitly reports exhausted credits/quota. Unlike a normal model error,
  * this is safe to retry with the next curated model because repeating the same model cannot help.
@@ -133,9 +147,27 @@ export function agentTurnHasRetryableQuotaFailure(
     if (!agentMessage) {
         return false;
     }
-    const details = [
-        agentMessage.content,
-        ...(agentMessage.segments ?? []).flatMap(segment => [segment.content, segment.result]),
-    ].filter((value): value is string => typeof value === 'string' && value.length > 0).join('\n');
-    return detectAgentFailureKind(details) === 'quota';
+    return detectAgentFailureKind(collectAgentMessageDetails(agentMessage)) === 'quota';
+}
+
+/**
+ * True when the provider reports the selected model no longer exists or is inaccessible
+ * (decommissioned free-tier models are common on OpenRouter). Same reasoning as quota:
+ * repeating the SAME model cannot help — the next curated model is the only way forward,
+ * even when the turn already produced partial work.
+ */
+export function agentTurnHasRetryableModelFailure(
+    agentMessage: {
+        readonly content?: string;
+        readonly segments?: readonly {
+            readonly type: string;
+            readonly content?: string;
+            readonly result?: string;
+        }[];
+    } | undefined,
+): boolean {
+    if (!agentMessage) {
+        return false;
+    }
+    return detectAgentFailureKind(collectAgentMessageDetails(agentMessage)) === 'model_unavailable';
 }
