@@ -158,6 +158,12 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             this.handlePostVisualVerificationFailure(req, res);
         });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-evidence-images`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            void this.handlePostVisualEvidenceImage(req, res);
+        });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
@@ -501,31 +507,27 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         res.json(conv);
     }
 
-    protected async handlePostVisualVerification(req: Request, res: Response): Promise<void> {
+    /** Clamped validation shared by the single-shot header and the per-step flow payload. */
+    protected sanitizeVisualResult(parsed: Partial<QaapPreviewVisualValidationResult> | undefined): QaapPreviewVisualValidationResult | undefined {
+        if (!parsed
+            || (parsed.status !== 'passed' && parsed.status !== 'warning')
+            || typeof parsed.summary !== 'string'
+            || !Array.isArray(parsed.issues)
+            || !parsed.issues.every(issue => typeof issue === 'string')) {
+            return undefined;
+        }
+        return {
+            status: parsed.status,
+            summary: parsed.summary.slice(0, 500),
+            issues: parsed.issues.slice(0, 10).map(issue => issue.slice(0, 300)),
+        };
+    }
+
+    /** Streams and validates an image/png request body; writes the error response on failure. */
+    protected async readPngBody(req: Request, res: Response): Promise<Buffer | undefined> {
         if (req.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'image/png') {
             res.status(415).json({ error: 'Visual evidence must be an image/png body.' });
-            return;
-        }
-        const encoded = req.get('x-qaap-visual-result');
-        let result: QaapPreviewVisualValidationResult | undefined;
-        try {
-            const parsed = JSON.parse(decodeURIComponent(encoded ?? '')) as Partial<QaapPreviewVisualValidationResult>;
-            if ((parsed.status === 'passed' || parsed.status === 'warning')
-                && typeof parsed.summary === 'string'
-                && Array.isArray(parsed.issues)
-                && parsed.issues.every(issue => typeof issue === 'string')) {
-                result = {
-                    status: parsed.status,
-                    summary: parsed.summary.slice(0, 500),
-                    issues: parsed.issues.slice(0, 10).map(issue => issue.slice(0, 300)),
-                };
-            }
-        } catch {
-            /* validated below */
-        }
-        if (!result) {
-            res.status(400).json({ error: 'Missing or invalid x-qaap-visual-result metadata.' });
-            return;
+            return undefined;
         }
         const chunks: Buffer[] = [];
         let total = 0;
@@ -535,17 +537,91 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 total += chunk.length;
                 if (total > VISUAL_EVIDENCE_MAX_BYTES) {
                     res.status(413).json({ error: 'Visual evidence exceeds the 5 MB limit.' });
-                    return;
+                    return undefined;
                 }
                 chunks.push(chunk);
             }
         } catch {
             res.status(400).json({ error: 'Could not read visual evidence.' });
-            return;
+            return undefined;
         }
         const png = Buffer.concat(chunks);
         if (png.length < 8 || !png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
             res.status(400).json({ error: 'Visual evidence is not a valid PNG.' });
+            return undefined;
+        }
+        return png;
+    }
+
+    protected async handlePostVisualEvidenceImage(req: Request, res: Response): Promise<void> {
+        const png = await this.readPngBody(req, res);
+        if (!png) {
+            return;
+        }
+        try {
+            const evidenceId = await this.store.saveVisualEvidenceImage(req.params.id, png);
+            if (!evidenceId) {
+                res.status(409).json({ error: 'Evidence could not be stored (conversation missing or storage cap reached).' });
+                return;
+            }
+            res.status(201).json({ evidenceId });
+        } catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    /** JSON finalize of a walked flow: attach the already-uploaded step images in one block. */
+    protected async handlePostVisualVerificationFlow(req: Request, res: Response): Promise<void> {
+        const body = (req.body ?? {}) as { targetMessageId?: unknown; steps?: unknown };
+        const targetMessageId = typeof body.targetMessageId === 'string' ? body.targetMessageId.trim() : '';
+        const rawSteps = Array.isArray(body.steps) ? body.steps as Partial<{
+            label: unknown; evidenceId: unknown; result: unknown;
+        }>[] : [];
+        const steps: { label: string; evidenceId: string; result: QaapPreviewVisualValidationResult }[] = [];
+        for (const raw of rawSteps.slice(0, 6)) {
+            const result = this.sanitizeVisualResult(raw.result as Partial<QaapPreviewVisualValidationResult> | undefined);
+            if (typeof raw.label !== 'string' || !raw.label.trim() || typeof raw.evidenceId !== 'string' || !result) {
+                res.status(400).json({ error: 'Each step needs label, evidenceId, and a valid result.' });
+                return;
+            }
+            steps.push({ label: raw.label.trim().slice(0, 80), evidenceId: raw.evidenceId.trim(), result });
+        }
+        if (!targetMessageId || steps.length === 0) {
+            res.status(400).json({ error: 'targetMessageId and at least one step are required.' });
+            return;
+        }
+        try {
+            const conv = await this.store.recordVisualVerificationFlow(req.params.id, steps, targetMessageId);
+            if (!conv) {
+                res.status(404).json({ error: 'Conversation, agent response, or evidence not found.' });
+                return;
+            }
+            res.status(201).json(conv);
+        } catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    protected async handlePostVisualVerification(req: Request, res: Response): Promise<void> {
+        if (req.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'application/json') {
+            await this.handlePostVisualVerificationFlow(req, res);
+            return;
+        }
+        const encoded = req.get('x-qaap-visual-result');
+        let result: QaapPreviewVisualValidationResult | undefined;
+        try {
+            result = this.sanitizeVisualResult(
+                JSON.parse(decodeURIComponent(encoded ?? '')) as Partial<QaapPreviewVisualValidationResult>,
+            );
+        } catch {
+            /* validated below */
+        }
+        if (!result) {
+            res.status(400).json({ error: 'Missing or invalid x-qaap-visual-result metadata.' });
+            return;
+        }
+        const png = await this.readPngBody(req, res);
+        if (!png) {
             return;
         }
         try {

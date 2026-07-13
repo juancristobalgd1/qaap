@@ -16,9 +16,12 @@ import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap'
 import { buildTranscriptPreviewBootstrapFailureReason, toTranscriptPreviewBootstrapSnapshot } from '../common/qaap-transcript-preview-bootstrap-failure';
 import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
 import {
-    reportPreviewVisualVerification,
+    finalizeVisualFlowVerification,
     reportPreviewVisualVerificationFailure,
+    uploadVisualEvidenceImage,
+    type QaapVisualFlowStepReport,
 } from '../common/qaap-agent-conversation-client';
+import { deriveVisualFlowSteps } from '../common/qaap-visual-flow-plan';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { captureSameOriginPreview } from '@theia/qaap-adapters/lib/browser/qaap-preview-overflow-actions';
 import { validateQaapPreviewDocument } from './qaap-preview-visual-validation';
@@ -33,8 +36,10 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { shouldCaptureSettledVisualTurn } from '../common/qaap-visual-settlement';
 
 // A cold dev server can spend well over 10s compiling its first page on a loaded VPS, so give
-// the reload → readyState poll a 30s budget rather than the original 10s.
+// the first reload → readyState poll a 30s budget rather than the original 10s.
 const VISUAL_CAPTURE_ATTEMPTS = 120;
+/** Later steps hit a warm server — a shorter 15s budget keeps the whole walk bounded. */
+const VISUAL_CAPTURE_STEP_ATTEMPTS = 60;
 const VISUAL_CAPTURE_INTERVAL_MS = 250;
 /** Capture attempts per settled turn before the failure note settles the evidence slot. */
 const VISUAL_CAPTURE_TURN_BUDGET = 2;
@@ -137,7 +142,7 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             // them only for this bounded capture, then restore the normal shell policy.
             resumeQaapMiniBrowserPreview(this.shell);
             try {
-                await this.captureVisualVerification(summary.id, readyUrl, targetAgentMessageId);
+                await this.captureVisualVerification(summary.id, readyUrl, targetAgentMessageId, conversation);
             } catch (error) {
                 console.warn('[qaap-visual-verification] automatic capture failed:', error);
                 if (needsVisualVerification && outOfBudget && targetAgentMessageId) {
@@ -169,22 +174,107 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         }
     }
 
+    /**
+     * Walks the affected flow: every derived route is loaded in the same-origin preview frame,
+     * smoke-checked, screenshotted, and uploaded; the finalize attaches one evidence block with
+     * all captured steps. Steps that fail to load are reported as findings instead of aborting —
+     * only a walk with zero captured steps throws (feeding the failure-note path).
+     */
     protected async captureVisualVerification(
         conversationId: string,
         expectedPreviewUrl: string,
-        targetAgentMessageId?: string,
+        targetAgentMessageId: string | undefined,
+        conversation: { readonly messages?: readonly { readonly role?: string; readonly content?: string }[] },
     ): Promise<void> {
+        if (!targetAgentMessageId) {
+            throw new Error('The settled turn has no agent reply to attach evidence to.');
+        }
+        const steps = deriveVisualFlowSteps(conversation);
+        const captured: QaapVisualFlowStepReport[] = [];
+        const skipped: string[] = [];
+        for (const [index, step] of steps.entries()) {
+            try {
+                const { frame, doc } = await this.loadPreviewStep(expectedPreviewUrl, step, index === 0);
+                // Let the final layout/image paint settle after the load event before serializing the DOM.
+                await new Promise(resolve => setTimeout(resolve, 300));
+                const result = validateQaapPreviewDocument(doc, frame);
+                const screenshot = await captureSameOriginPreview(doc, frame, { maxWidth: 1600, maxHeight: 2400 });
+                if (!screenshot) {
+                    throw new Error('the preview canvas did not produce a PNG');
+                }
+                const evidenceId = await uploadVisualEvidenceImage(conversationId, screenshot);
+                if (!evidenceId) {
+                    throw new Error('the evidence upload was rejected');
+                }
+                captured.push({ label: step, evidenceId, result });
+            } catch (error) {
+                skipped.push(`\`${step}\`: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+        if (captured.length === 0) {
+            throw new Error(`No step of the flow could be captured — ${skipped.join('; ')}`);
+        }
+        if (skipped.length > 0) {
+            // Surface unreachable steps as findings on the walk itself instead of dropping them.
+            const first = captured[0];
+            captured[0] = {
+                ...first,
+                result: {
+                    ...first.result,
+                    status: 'warning',
+                    issues: [...first.result.issues, ...skipped.map(reason => `Could not capture ${reason}.`)],
+                },
+            };
+        }
+        await finalizeVisualFlowVerification(conversationId, captured, targetAgentMessageId);
+        // Leave the user's preview back on the root route instead of the last walked step.
+        if (steps.length > 1) {
+            try {
+                this.previewSurfaces.getSurfaceForPreviewUrl(expectedPreviewUrl)?.frame
+                    .contentWindow?.location.replace(this.buildStepUrl(expectedPreviewUrl, '/'));
+            } catch {
+                /* best effort */
+            }
+        }
+    }
+
+    /** Resolves a walked route against the (possibly proxied) preview base URL. */
+    protected buildStepUrl(previewUrl: string, step: string): string {
+        const base = new URL(previewUrl, window.location.href);
+        if (!base.pathname.endsWith('/')) {
+            base.pathname += '/';
+        }
+        return step === '/' ? base.toString() : new URL(step.replace(/^\//, ''), base).toString();
+    }
+
+    /** Navigates the preview frame to one step and waits until that document finished loading. */
+    protected async loadPreviewStep(
+        previewUrl: string,
+        step: string,
+        coldStart: boolean,
+    ): Promise<{ frame: HTMLIFrameElement; doc: Document }> {
+        const targetUrl = this.buildStepUrl(previewUrl, step);
+        const normalizePath = (value: string | undefined): string => (value ?? '').replace(/\/+$/, '') || '/';
+        const targetPath = normalizePath(new URL(targetUrl).pathname);
+        const attempts = coldStart ? VISUAL_CAPTURE_ATTEMPTS : VISUAL_CAPTURE_STEP_ATTEMPTS;
         let frame: HTMLIFrameElement | undefined;
         let doc: Document | undefined;
-        let reloadRequested = false;
-        for (let attempt = 0; attempt < VISUAL_CAPTURE_ATTEMPTS; attempt++) {
-            frame = this.previewSurfaces.getSurfaceForPreviewUrl(expectedPreviewUrl)?.frame;
-            if (frame && !reloadRequested) {
-                reloadRequested = true;
+        let navigationRequested = false;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            frame = this.previewSurfaces.getSurfaceForPreviewUrl(previewUrl)?.frame;
+            if (frame && !navigationRequested) {
+                navigationRequested = true;
                 try {
-                    frame.contentWindow?.location.reload();
+                    const win = frame.contentWindow;
+                    if (win && normalizePath(win.location.pathname) === targetPath) {
+                        win.location.reload();
+                    } else if (win) {
+                        win.location.replace(targetUrl);
+                    } else {
+                        frame.src = targetUrl;
+                    }
                 } catch {
-                    frame.src = frame.src;
+                    frame.src = targetUrl;
                 }
                 await new Promise(resolve => setTimeout(resolve, VISUAL_CAPTURE_INTERVAL_MS));
                 continue;
@@ -194,22 +284,18 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             } catch {
                 doc = undefined;
             }
-            if (frame && doc?.body && doc.readyState === 'complete') {
-                break;
+            let atTarget = false;
+            try {
+                atTarget = normalizePath(frame?.contentWindow?.location.pathname) === targetPath;
+            } catch {
+                atTarget = false;
+            }
+            if (frame && doc?.body && doc.readyState === 'complete' && atTarget) {
+                return { frame, doc };
             }
             await new Promise(resolve => setTimeout(resolve, VISUAL_CAPTURE_INTERVAL_MS));
         }
-        if (!frame || !doc?.body) {
-            throw new Error('No loaded same-origin preview surface was available for capture.');
-        }
-        // Let the final layout/image paint settle after the load event before serializing the DOM.
-        await new Promise(resolve => setTimeout(resolve, 300));
-        const result = validateQaapPreviewDocument(doc, frame);
-        const screenshot = await captureSameOriginPreview(doc, frame, { maxWidth: 1920, maxHeight: 3000 });
-        if (!screenshot) {
-            throw new Error('The preview canvas did not produce a PNG.');
-        }
-        await reportPreviewVisualVerification(conversationId, screenshot, result, targetAgentMessageId);
+        throw new Error('the preview surface did not finish loading this route');
     }
 
     protected async isConversationInCurrentWorkspace(cwd: string): Promise<boolean> {

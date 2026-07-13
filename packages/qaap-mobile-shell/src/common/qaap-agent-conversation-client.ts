@@ -621,6 +621,58 @@ export async function reportPreviewVisualVerification(
     return await response.json() as QaapAgentConversationDTO;
 }
 
+/** Uploads one walked-step screenshot; returns its evidence id for the flow finalize. */
+export async function uploadVisualEvidenceImage(
+    conversationId: string,
+    png: Blob,
+): Promise<string | undefined> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-evidence-images`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'image/png' },
+            body: png,
+        },
+    );
+    if (!response.ok) {
+        return undefined;
+    }
+    const body = await response.json() as { evidenceId?: string };
+    return typeof body.evidenceId === 'string' ? body.evidenceId : undefined;
+}
+
+/** One captured step of the walked flow, referencing an uploaded evidence image. */
+export interface QaapVisualFlowStepReport {
+    readonly label: string;
+    readonly evidenceId: string;
+    readonly result: QaapPreviewVisualValidationResult;
+}
+
+/** Attaches the walked flow (all uploaded step images) to the settled agent reply. */
+export async function finalizeVisualFlowVerification(
+    conversationId: string,
+    steps: readonly QaapVisualFlowStepReport[],
+    targetAgentMessageId: string,
+): Promise<QaapAgentConversationDTO | undefined> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-verifications`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ steps, targetMessageId: targetAgentMessageId }),
+        },
+    );
+    if (response.status === 404) {
+        return undefined;
+    }
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return await response.json() as QaapAgentConversationDTO;
+}
+
 /** Settles the turn's evidence slot with a visible "screenshot unavailable" note. */
 export async function reportPreviewVisualVerificationFailure(
     conversationId: string,

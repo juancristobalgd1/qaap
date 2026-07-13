@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import {
+    buildQaapVisualFlowMarkdown,
     buildQaapVisualVerificationMarkdown,
     conversationLikelyNeedsVisualVerification,
     QAAP_VISUAL_VERIFICATION_MARKER,
@@ -21,6 +22,19 @@ describe('qaap-visual-verification', () => {
         expect(markdown).to.contain('Review recommended');
         expect(markdown).to.contain('Missing page heading');
         expect(markdown).to.contain('![QAAP preview evidence](/evidence/1)');
+    });
+
+    it('builds one evidence block per walked route, marked once', () => {
+        const markdown = buildQaapVisualFlowMarkdown([
+            { label: '/', imageUrl: '/evidence/1', result: { status: 'passed', summary: 'Home ok.', issues: [] } },
+            { label: '/checkout', imageUrl: '/evidence/2', result: { status: 'warning', summary: '1 finding.', issues: ['overflow'] } },
+        ]);
+        expect(markdown.match(/\[QAAP visual verification\]/g)).to.have.length(1);
+        expect(markdown).to.contain('Review recommended');
+        expect(markdown).to.contain('Walked 2 pages of the app flow.');
+        expect(markdown).to.contain('![QAAP preview evidence /](/evidence/1)');
+        expect(markdown).to.contain('![QAAP preview evidence /checkout](/evidence/2)');
+        expect(markdown).to.contain('- overflow');
     });
 
     it('detects UI requests and edited visual files', () => {

@@ -128,9 +128,11 @@ import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaa
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 import {
     agentMessageHasVisualVerificationMarker,
+    buildQaapVisualFlowMarkdown,
     buildQaapVisualVerificationFailureMarkdown,
     buildQaapVisualVerificationMarkdown,
     type QaapPreviewVisualValidationResult,
+    type QaapVisualFlowStepEvidence,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 import {
     QAAP_MAX_TURN_MINUTES_ENV,
@@ -145,6 +147,8 @@ const STORE_DIR = path.join(os.homedir(), '.qaap', 'agent-conversations');
 const STREAMING_PERSIST_DEBOUNCE_MS = 500;
 const INDEX_PATH = path.join(STORE_DIR, 'index.json');
 const VISUAL_EVIDENCE_DIR = path.join(STORE_DIR, 'visual-evidence');
+/** Hard cap of stored PNGs per conversation — bounds disk use across multi-step flows and retries. */
+const VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION = 40;
 /** How often the turn watchdog scans for conversations stuck 'streaming' past the max duration. */
 const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 
@@ -780,6 +784,106 @@ export class QaapAgentConversationStore {
             return this.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationMarkdown(imageUrl, result));
         } finally {
             this.visualVerificationInFlight.delete(conversationId);
+        }
+    }
+
+    /**
+     * Stores one walked-step screenshot ahead of the flow finalize. The PNG lands on disk
+     * immediately (so a dying tab cannot hold conversation state hostage) and is referenced —
+     * or swept as an orphan — when {@link recordVisualVerificationFlow} runs.
+     */
+    async saveVisualEvidenceImage(conversationId: string, png: Buffer): Promise<string | undefined> {
+        const conv = this.conversations.get(conversationId);
+        if (!conv || png.length === 0) {
+            return undefined;
+        }
+        const directory = this.visualEvidenceDirectory(conversationId);
+        await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+        const existing = await fsp.readdir(directory).catch(() => [] as string[]);
+        if (existing.length >= VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION) {
+            return undefined;
+        }
+        const evidenceId = randomUUID();
+        await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
+        return evidenceId;
+    }
+
+    /**
+     * Attaches a walked-flow evidence block (one screenshot per route) to the settled reply.
+     * Every step must reference a PNG previously stored via {@link saveVisualEvidenceImage}.
+     */
+    async recordVisualVerificationFlow(
+        conversationId: string,
+        steps: readonly { label: string; evidenceId: string; result: QaapPreviewVisualValidationResult }[],
+        targetAgentMessageId: string,
+    ): Promise<QaapAgentConversation | undefined> {
+        const conv = this.conversations.get(conversationId);
+        if (!conv || steps.length === 0) {
+            return undefined;
+        }
+        const target = this.resolveVisualEvidenceTarget(conv, targetAgentMessageId);
+        if (!target) {
+            return undefined;
+        }
+        if (agentMessageHasVisualVerificationMarker(target)) {
+            return conv;
+        }
+        if (this.visualVerificationInFlight.has(conversationId)) {
+            return conv;
+        }
+        this.visualVerificationInFlight.add(conversationId);
+        try {
+            const directory = this.visualEvidenceDirectory(conversationId);
+            const evidenceSteps: QaapVisualFlowStepEvidence[] = [];
+            for (const step of steps) {
+                if (!/^[a-f\d-]{36}$/i.test(step.evidenceId)
+                    || !fs.existsSync(path.join(directory, `${step.evidenceId}.png`))) {
+                    return undefined;
+                }
+                evidenceSteps.push({
+                    label: step.label,
+                    imageUrl: `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
+                        + `/visual-verifications/${encodeURIComponent(step.evidenceId)}`,
+                    result: step.result,
+                });
+            }
+            const next = this.attachVisualVerificationBlock(conv, target, buildQaapVisualFlowMarkdown(evidenceSteps));
+            void this.sweepUnreferencedVisualEvidence(conversationId).catch(() => undefined);
+            return next;
+        } finally {
+            this.visualVerificationInFlight.delete(conversationId);
+        }
+    }
+
+    /**
+     * Deletes stored PNGs that no message references and that are older than an hour —
+     * leftovers of flows whose finalize never arrived (tab closed mid-walk, budget exhausted).
+     * The age guard protects a concurrent tab that is still mid-upload.
+     */
+    protected async sweepUnreferencedVisualEvidence(conversationId: string): Promise<void> {
+        const conv = this.conversations.get(conversationId);
+        if (!conv) {
+            return;
+        }
+        const referenced = new Set<string>();
+        for (const message of conv.messages) {
+            for (const match of message.content.matchAll(/visual-verifications\/([a-f\d-]{36})/gi)) {
+                referenced.add(match[1].toLowerCase());
+            }
+        }
+        const directory = this.visualEvidenceDirectory(conversationId);
+        const files = await fsp.readdir(directory).catch(() => [] as string[]);
+        const cutoff = Date.now() - 60 * 60 * 1000;
+        for (const file of files) {
+            const evidenceId = file.replace(/\.png$/i, '').toLowerCase();
+            if (referenced.has(evidenceId)) {
+                continue;
+            }
+            const filePath = path.join(directory, file);
+            const stat = await fsp.stat(filePath).catch(() => undefined);
+            if (stat && stat.mtimeMs < cutoff) {
+                await fsp.rm(filePath, { force: true }).catch(() => undefined);
+            }
         }
     }
 

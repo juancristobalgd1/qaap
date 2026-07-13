@@ -73,3 +73,30 @@ export function buildQaapVisualVerificationMarkdown(
         `![QAAP preview evidence](${imageUrl})`,
     ].join('\n');
 }
+
+/** One walked page of the verified flow: the route, its screenshot, and its DOM smoke check. */
+export interface QaapVisualFlowStepEvidence {
+    readonly label: string;
+    readonly imageUrl: string;
+    readonly result: QaapPreviewVisualValidationResult;
+}
+
+/** Multi-step twin of {@link buildQaapVisualVerificationMarkdown} — one image per walked route. */
+export function buildQaapVisualFlowMarkdown(steps: readonly QaapVisualFlowStepEvidence[]): string {
+    const failing = steps.filter(step => step.result.status !== 'passed').length;
+    const outcome = failing === 0 ? 'Passed' : 'Review recommended';
+    const blocks = steps.map(step => {
+        const issueLines = step.result.issues.length > 0
+            ? `\n${step.result.issues.map(issue => `- ${issue}`).join('\n')}`
+            : '';
+        return `**\`${step.label}\`** — ${step.result.summary}${issueLines}\n\n`
+            + `![QAAP preview evidence ${step.label}](${step.imageUrl})`;
+    });
+    return [
+        QAAP_VISUAL_VERIFICATION_MARKER,
+        `**Visual verification · ${outcome}**  `,
+        `Walked ${steps.length} page${steps.length === 1 ? '' : 's'} of the app flow.`,
+        '',
+        blocks.join('\n\n'),
+    ].join('\n');
+}

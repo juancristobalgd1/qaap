@@ -30,6 +30,10 @@ class VisualEvidenceStoreHarness extends QaapAgentConversationStore {
         return path.join(this.evidenceRoot, conversationId);
     }
 
+    sweepNow(conversationId: string): Promise<void> {
+        return this.sweepUnreferencedVisualEvidence(conversationId);
+    }
+
     protected override async persist(): Promise<void> { }
 
     protected override fire(_event: QaapAgentConversationEvent): void { }
@@ -165,5 +169,48 @@ describe('QaapAgentConversationStore visual verification', () => {
         );
         expect(afterwards?.messages.at(-1)?.content.match(/\[QAAP visual verification\]/g)).to.have.length(1);
         expect(fs.existsSync(path.join(root, 'conversation-1'))).to.equal(false);
+    });
+
+    it('attaches a walked flow with one image per captured route', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 10]);
+        const home = await store.saveVisualEvidenceImage('conversation-1', png);
+        const checkout = await store.saveVisualEvidenceImage('conversation-1', png);
+        expect(home).to.be.a('string');
+        expect(checkout).to.be.a('string');
+
+        const conv = await store.recordVisualVerificationFlow('conversation-1', [
+            { label: '/', evidenceId: home!, result: { status: 'passed', summary: 'Home ok.', issues: [] } },
+            { label: '/checkout', evidenceId: checkout!, result: { status: 'warning', summary: '1 finding.', issues: ['overflow'] } },
+        ], 'agent-1');
+        const content = conv?.messages.at(-1)?.content ?? '';
+        expect(content).to.contain('[QAAP visual verification]');
+        expect(content).to.contain('Walked 2 pages of the app flow.');
+        expect(content).to.contain(`visual-verifications/${home}`);
+        expect(content).to.contain(`visual-verifications/${checkout}`);
+        expect(content).to.contain('`/checkout`');
+        expect(store.readVisualVerification('conversation-1', home!)).to.deep.equal(png);
+    });
+
+    it('rejects a flow that references an unknown evidence image', async () => {
+        expect(await store.recordVisualVerificationFlow('conversation-1', [
+            { label: '/', evidenceId: '00000000-0000-0000-0000-000000000000', result: { status: 'passed', summary: 'x', issues: [] } },
+        ], 'agent-1')).to.equal(undefined);
+    });
+
+    it('sweeps stale unreferenced images but keeps referenced and fresh ones', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 11]);
+        const kept = await store.saveVisualEvidenceImage('conversation-1', png);
+        const staleOrphan = await store.saveVisualEvidenceImage('conversation-1', png);
+        const freshOrphan = await store.saveVisualEvidenceImage('conversation-1', png);
+        await store.recordVisualVerificationFlow('conversation-1', [
+            { label: '/', evidenceId: kept!, result: { status: 'passed', summary: 'ok', issues: [] } },
+        ], 'agent-1');
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        fs.utimesSync(path.join(root, 'conversation-1', `${staleOrphan}.png`), twoHoursAgo, twoHoursAgo);
+        await store.sweepNow('conversation-1');
+        const remaining = fs.readdirSync(path.join(root, 'conversation-1'));
+        expect(remaining).to.contain(`${kept}.png`);
+        expect(remaining).to.contain(`${freshOrphan}.png`);
+        expect(remaining).to.not.contain(`${staleOrphan}.png`);
     });
 });
