@@ -596,6 +596,15 @@ export class QaapProjectBootstrapService {
      * server that is already listening instead of asking the user to free the port first.
      */
     async openExistingPreview(): Promise<void> {
+        // User-initiated: if a ready URL was staged by the auto-open gate (agent turn was still
+        // streaming), attach reports success without navigating — honor the tap and open it now.
+        if (this._previewUrl) {
+            await this.openPreview(this._previewUrl);
+            this._error = undefined;
+            this._portConflictDetected = false;
+            this._portConflictPort = undefined;
+            return;
+        }
         const plan = this.resolveDevPlan();
         const attached = await this.tryAttachToExistingServer(this.collectProbePorts(plan));
         if (attached) {

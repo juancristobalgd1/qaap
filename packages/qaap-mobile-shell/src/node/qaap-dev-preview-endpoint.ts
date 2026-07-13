@@ -45,7 +45,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
     configure(app: Application): void {
         // Register static /api segments before the `:port` catch-all so they aren't parsed as ports.
         app.post(QAAP_DEV_PREVIEW_CLAIM_PATH, (req, res) => {
-            this.handleClaim(req, res);
+            void this.handleClaim(req, res);
         });
         app.get(`${QAAP_DEV_PREVIEW_PROBE_PATH}/:port`, (req, res) => {
             if (!this.requireHttpAuth(req, res)) {
@@ -76,7 +76,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
     }
 
     /** Records that the authenticated caller owns the workspace a dev-preview port belongs to. */
-    protected handleClaim(req: Request, res: Response): void {
+    protected async handleClaim(req: Request, res: Response): Promise<void> {
         const ctx = this.auth.authenticate(req);
         if (ctx.kind === 'unauthorized') {
             res.sendStatus(401);
@@ -94,11 +94,21 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             return;
         }
         const owner = this.auth.resolveUserLogin(ctx);
-        if (owner && !this.portRegistry.claim(port, owner)) {
-            // A different tenant holds a live claim — refuse the takeover instead of silently
-            // rebinding their running preview to this caller (keeps H1 meaningful).
-            res.status(409).type('text/plain').send('This preview port is in use by another workspace.');
-            return;
+        if (owner) {
+            // An EXPIRED claim from a different tenant only frees the port once nothing is
+            // listening on it: an idle-but-still-running server must not be silently taken over
+            // just because its owner did not touch the preview for 30 minutes.
+            const stale = this.portRegistry.staleOwnerOf(port);
+            if (stale !== undefined && stale !== owner && await this.probeLocalDevServer(port)) {
+                res.status(409).type('text/plain').send('This preview port is in use by another workspace.');
+                return;
+            }
+            if (!this.portRegistry.claim(port, owner)) {
+                // A different tenant holds a live claim — refuse the takeover instead of silently
+                // rebinding their running preview to this caller (keeps H1 meaningful).
+                res.status(409).type('text/plain').send('This preview port is in use by another workspace.');
+                return;
+            }
         }
         res.sendStatus(204);
     }

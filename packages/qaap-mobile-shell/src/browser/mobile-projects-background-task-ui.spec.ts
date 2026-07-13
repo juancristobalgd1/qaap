@@ -23,7 +23,11 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             tokens: '—',
             cost: '—',
             pinned: false,
-            isCurrent: false,
+            // This project IS the currently open workspace (the mock's
+            // projectMatchesCurrentWorkspace only returns true when isCurrent === true).
+            // ensureInlineComposerCwd must then prefer the live workspace cwd over the
+            // project's stored getProjectCwd path.
+            isCurrent: true,
         };
         const prepared = new Map<string, string>();
         const projectsService = {

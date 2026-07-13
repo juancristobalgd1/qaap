@@ -19,6 +19,13 @@ export interface ElapsedTickTarget {
 export class QaapSharedElapsedTicker {
     protected readonly targets = new Map<HTMLElement, ElapsedTickTarget>();
     protected timerId: number | undefined;
+    // The window that scheduled the interval. Captured from the element's own
+    // document rather than read off the global `window` inside the callback: in
+    // tests the global jsdom window is torn down between specs while this interval
+    // is still pending, so a global `window.clearInterval` lookup at teardown would
+    // throw `window is not defined`. Holding the scheduling view keeps the timer
+    // stoppable without touching the (possibly deleted) global.
+    protected timerView: (Window & typeof globalThis) | undefined;
 
     constructor(protected readonly intervalMs: number = 500) { }
 
@@ -26,7 +33,12 @@ export class QaapSharedElapsedTicker {
         this.targets.set(target.element, target);
         target.render(Date.now());
         if (this.timerId === undefined) {
-            this.timerId = window.setInterval(this.tick, this.intervalMs);
+            const view = (target.element.ownerDocument?.defaultView
+                ?? (typeof window !== 'undefined' ? window : undefined)) as (Window & typeof globalThis) | undefined;
+            if (view) {
+                this.timerView = view;
+                this.timerId = view.setInterval(this.tick, this.intervalMs);
+            }
         }
     }
 
@@ -63,8 +75,9 @@ export class QaapSharedElapsedTicker {
 
     protected stop(): void {
         if (this.timerId !== undefined) {
-            window.clearInterval(this.timerId);
+            this.timerView?.clearInterval(this.timerId);
             this.timerId = undefined;
+            this.timerView = undefined;
         }
     }
 }

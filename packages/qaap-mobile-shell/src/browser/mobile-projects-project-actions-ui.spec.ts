@@ -3,23 +3,17 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // ****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
-import { parseHTML } from 'linkedom';
 import type { MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
-const testDom = parseHTML('<!DOCTYPE html><html><body></body></html>');
-(testDom.document as unknown as { queryCommandSupported: () => boolean }).queryCommandSupported = () => false;
-Object.assign(globalThis, {
-    document: testDom.document,
-    window: testDom.window,
-    Element: testDom.window.Element,
-    HTMLElement: testDom.window.HTMLElement,
-    Node: testDom.window.Node,
-    Event: testDom.window.Event,
-    KeyboardEvent: testDom.window.KeyboardEvent,
-    MouseEvent: testDom.window.MouseEvent,
-});
+// Use the shared jsdom environment instead of a private linkedom DOM. Assigning
+// linkedom's DOM classes (Element/HTMLElement/Event/MouseEvent/...) onto the global
+// scope at load time leaked those classes for the rest of the mocha process, so later
+// jsdom-based specs ended up with a jsdom window/document but linkedom event classes —
+// producing "Cannot set property eventPhase", "instanceof", and "extends undefined" errors.
+enableJSDOM();
 // The action module imports Theia browser widgets, which inspect the DOM while loading.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { MobileProjectsProjectActionsUi } = require('./mobile-projects-project-actions-ui') as typeof import('./mobile-projects-project-actions-ui');

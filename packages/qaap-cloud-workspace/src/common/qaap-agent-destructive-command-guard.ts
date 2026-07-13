@@ -33,6 +33,15 @@ const GIT_HISTORY_REWRITE_RE = /\bgit\s+(?:filter-branch|filter-repo)\b/;
 /** `rm` invocations (optionally via sudo/env prefixes) — inspected further for -rf + dangerous targets. */
 const RM_COMMAND_RE = /(?:^|&&|\|\||;|\|\s*|\(\s*|\b(?:sudo|nohup|exec)\s+)\s*rm\s+([^\n|&;]*)/gi;
 
+/**
+ * Nested shell payloads (`sh -c '…'`, `bash -lc "…"`) — the quoted command is re-scanned so the
+ * guard is not bypassed by one level of indirection. This stays a DENYLIST defense-in-depth layer:
+ * a determined adversary can still evade regexes (variables, eval, encoding); the primary controls
+ * are the approval queue on the interactive path and, eventually, QAIQ-side enforcement.
+ */
+const NESTED_SHELL_RE = /\b(?:sh|bash|zsh|dash|ksh)\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*c[a-zA-Z]*\s+(?:'([^']*)'|"([^"]*)")/gi;
+const NESTED_SHELL_MAX_DEPTH = 3;
+
 /** True when the rm argument list combines recursive+force flags. */
 function rmArgsAreRecursiveForce(args: string): boolean {
     let recursive = false;
@@ -70,9 +79,29 @@ function rmTargetIsDangerous(args: string): boolean {
 
 /** True for shell commands that destroy git history/branches or delete files outside the workspace. */
 export function isDestructiveShellCommand(command: string | undefined): boolean {
+    return isDestructiveShellCommandAtDepth(command, 0);
+}
+
+function isDestructiveShellCommandAtDepth(command: string | undefined, depth: number): boolean {
     const text = command?.trim();
     if (!text) {
         return false;
+    }
+    if (depth < NESTED_SHELL_MAX_DEPTH) {
+        NESTED_SHELL_RE.lastIndex = 0;
+        // Collect payloads first: the recursion below also uses NESTED_SHELL_RE and would
+        // otherwise clobber the shared lastIndex mid-iteration.
+        const payloads: string[] = [];
+        let nested: RegExpExecArray | null;
+        while ((nested = NESTED_SHELL_RE.exec(text)) !== null) {
+            const payload = nested[1] ?? nested[2];
+            if (payload) {
+                payloads.push(payload);
+            }
+        }
+        if (payloads.some(payload => isDestructiveShellCommandAtDepth(payload, depth + 1))) {
+            return true;
+        }
     }
     if (
         GIT_FORCE_PUSH_RE.test(text)

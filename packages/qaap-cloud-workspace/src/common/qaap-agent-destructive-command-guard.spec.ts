@@ -83,6 +83,30 @@ describe('qaap-agent-destructive-command-guard', () => {
         }
     });
 
+    it('blocks destructive payloads wrapped in a nested shell (one indirection level)', () => {
+        const blocked = [
+            "sh -c 'git push --force origin main'",
+            'bash -lc "rm -rf ~/other"',
+            "zsh -c 'git reset --hard HEAD~5'",
+            'nohup sh -c "git clean -fd" &',
+            `sh -c "bash -c 'git push --force'"`,
+        ];
+        for (const command of blocked) {
+            expect(isDestructiveShellCommand(command), command).to.equal(true);
+        }
+    });
+
+    it('allows benign nested shell payloads', () => {
+        const allowed = [
+            "sh -c 'npm run build'",
+            'bash -lc "git status && npm test"',
+            "sh -c 'rm -rf node_modules && npm install'",
+        ];
+        for (const command of allowed) {
+            expect(isDestructiveShellCommand(command), command).to.equal(false);
+        }
+    });
+
     it('handles empty and undefined commands', () => {
         expect(isDestructiveShellCommand(undefined)).to.equal(false);
         expect(isDestructiveShellCommand('')).to.equal(false);

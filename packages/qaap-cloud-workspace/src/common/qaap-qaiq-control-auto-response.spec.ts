@@ -17,6 +17,22 @@ describe('qaap-qaiq-control-auto-response', () => {
         })).to.equal('queue');
     });
 
+    it('denies dev-server commands even under request-approval — approval cannot make them work', () => {
+        expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, false, {
+            requestId: 'req-ds',
+            toolName: 'Bash',
+            toolInput: { command: 'npm run dev' },
+        })).to.equal('deny');
+    });
+
+    it('queues destructive commands under request-approval — explicit human approval is the required consent', () => {
+        expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, false, {
+            requestId: 'req-dc',
+            toolName: 'Bash',
+            toolInput: { command: 'git reset --hard HEAD~1' },
+        })).to.equal('queue');
+    });
+
     it('queues WebSearch under approve-for-me allowed-tools so the user can grant it', () => {
         expect(resolveQaiqControlRequestAutoAction(approveForMeShellCommand, true, {
             requestId: 'req-1',

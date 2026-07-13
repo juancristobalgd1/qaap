@@ -46,22 +46,27 @@ function isShellTool(toolName: string): boolean {
  *
  * Tools the policy auto-allows resolve immediately; gated shell/network tools are
  * queued to the approvals UI so the user can grant them mid-turn (the runner applies
- * a grace timeout so an unattended run still finishes). Headless-blocked tools (Agent/Task/Skill/AskUserQuestion),
- * the dev-server guard, and the destructive-command guard auto-deny — those can never be approved interactively.
+ * a grace timeout so an unattended run still finishes). Headless-blocked tools (Agent/Task/Skill/AskUserQuestion)
+ * and the dev-server guard auto-deny and can never be approved. The destructive-command guard only
+ * blocks AUTO-approval: under request-approval it queues like any shell call, because an explicit
+ * human approval is precisely the consent the destructive-command policy asks for.
  */
 export function resolveQaiqControlRequestAutoAction(
     command: string,
     autoApprove: boolean | undefined,
     request: QaapQaiqPendingControlRequest,
 ): QaapQaiqControlAutoAction {
-    if (autoApprove === false) {
-        return 'queue';
-    }
+    // Dev servers break the preview even when a human approves them (shell tools time out ~30s),
+    // so this guard denies BEFORE the manual-approval queue — it can never be approved.
     if (findQaiqDevServerGuardDenial(request)) {
         return 'deny';
     }
-    // Destructive shell commands (force push, hard reset, rm -rf outside the workspace) can never
-    // be auto-approved — the agent must propose them and let the user run or approve them.
+    if (autoApprove === false) {
+        return 'queue';
+    }
+    // Destructive shell commands (force push, hard reset, rm -rf outside the workspace) are never
+    // AUTO-approved. In request-approval mode they queue above — an explicit human approval in the
+    // UI is exactly the "user explicitly asks" consent the policy requires.
     if (findQaiqDestructiveCommandGuardDenial(request)) {
         return 'deny';
     }

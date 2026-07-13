@@ -1676,14 +1676,19 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             return;
         }
         row.dataset.transcriptStallWatch = '1';
-        const timer = window.setInterval(() => {
+        // Bind to the row's own document view rather than the global `window`: the
+        // interval outlives synchronous test bodies, and the global jsdom window is
+        // torn down between specs, so a global `window.clearInterval` in the callback
+        // would throw `window is not defined` once the timer fires post-teardown.
+        const view = (row.ownerDocument?.defaultView ?? window) as Window & typeof globalThis;
+        const timer = view.setInterval(() => {
             if (!row.isConnected) {
-                window.clearInterval(timer);
+                view.clearInterval(timer);
                 row.removeAttribute('data-transcript-stall-watch');
                 return;
             }
             if (!row.classList.contains('theia-mod-streaming')) {
-                window.clearInterval(timer);
+                view.clearInterval(timer);
                 row.removeAttribute('data-transcript-stall-watch');
                 row.classList.remove('theia-mod-stream-stalled');
                 return;
@@ -2245,14 +2250,18 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             update();
             if (block.dataset.thoughtLiveTimer !== '1') {
                 block.dataset.thoughtLiveTimer = '1';
-                const timer = window.setInterval(() => {
+                // Capture the block's document view instead of the global `window` so the
+                // interval can clear itself after jsdom teardown between specs without a
+                // global `window is not defined` error (see ensureTranscriptStreamStallWatch).
+                const view = (block.ownerDocument?.defaultView ?? window) as Window & typeof globalThis;
+                const timer = view.setInterval(() => {
                     if (!title.isConnected) {
-                        window.clearInterval(timer);
+                        view.clearInterval(timer);
                         block.removeAttribute('data-thought-live-timer');
                         return;
                     }
                     if (!block.classList.contains('theia-mod-thinking-live')) {
-                        window.clearInterval(timer);
+                        view.clearInterval(timer);
                         block.removeAttribute('data-thought-live-timer');
                         this.refreshTranscriptThoughtBriefTitle(title, block, {
                             ...options,

@@ -124,6 +124,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
                 onDidChangeDetail: onDidChangeDetailEmitter.event,
                 onDidReceiveMessage: Event.None,
                 onDidReceiveParallelRun: Event.None,
+                onDidReceiveTransportActivity: Event.None,
                 onDidReconnectTransport: Event.None,
             } as MobileProjectsPanelLifecycleHost['conversations'],
         });
@@ -150,6 +151,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
                 onDidChangeDetail: onDidChangeDetailEmitter.event,
                 onDidReceiveMessage: Event.None,
                 onDidReceiveParallelRun: Event.None,
+                onDidReceiveTransportActivity: Event.None,
                 onDidReconnectTransport: Event.None,
             } as MobileProjectsPanelLifecycleHost['conversations'],
         });

@@ -129,6 +129,37 @@ describe('mobile-projects-dedup', () => {
         expect(deduped[0].id).to.equal(workspace.id);
     });
 
+    it('keeps a same-named repo from a DIFFERENT github owner next to the current workspace', () => {
+        const workspace = project({
+            id: 'ws:file:///workspace/repos/users/alice/demo',
+            name: 'demo',
+            uri: new URI('file:///workspace/repos/users/alice/demo'),
+            isCurrent: true,
+            github: {
+                owner: 'alice',
+                name: 'demo',
+                fullName: 'alice/demo',
+                htmlUrl: 'https://github.com/alice/demo',
+                private: false,
+            },
+        });
+        const foreign = project({
+            id: 'github:bob/demo',
+            name: 'demo',
+            github: {
+                owner: 'bob',
+                name: 'demo',
+                fullName: 'bob/demo',
+                htmlUrl: 'https://github.com/bob/demo',
+                private: false,
+            },
+        });
+
+        const deduped = deduplicateMobileProjectEntries([foreign, workspace], ctx);
+
+        expect(deduped.map(candidate => candidate.id).sort()).to.deep.equal([foreign.id, workspace.id].sort());
+    });
+
     it('keeps a non-current project whose name differs from the current workspace', () => {
         const workspace = project({
             id: 'ws:file:///workspace/repos/users/jcristgd/Vamello',

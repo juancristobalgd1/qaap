@@ -22,15 +22,28 @@ export function deduplicateMobileProjectEntries(
     }
     const sorted = [...entries].sort((a, b) => compareProjectEntryPrecedence(a, b, ctx));
     const kept: MobileProjectEntry[] = [];
-    const claimedKeys = new Set<string>();
+    const claimedBy = new Map<string, MobileProjectEntry>();
 
     for (const project of sorted) {
         const { claims, probes } = collectProjectDeduplicationKeys(project, ctx);
-        if (claims.some(key => claimedKeys.has(key)) || probes.some(key => claimedKeys.has(key))) {
+        const duplicateOf = (key: string): boolean => {
+            const claimant = claimedBy.get(key);
+            if (!claimant) {
+                return false;
+            }
+            // A display-name match is NOT a duplicate when both sides carry github identities
+            // with different owners — alice/demo and bob/demo are provably distinct repos.
+            if (key.startsWith('name:') && project.github && claimant.github
+                && project.github.owner.toLowerCase() !== claimant.github.owner.toLowerCase()) {
+                return false;
+            }
+            return true;
+        };
+        if (claims.some(duplicateOf) || probes.some(duplicateOf)) {
             continue;
         }
         for (const key of claims) {
-            claimedKeys.add(key);
+            claimedBy.set(key, project);
         }
         kept.push(project);
     }

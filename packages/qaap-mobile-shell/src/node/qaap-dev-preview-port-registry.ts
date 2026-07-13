@@ -53,7 +53,18 @@ export class QaapDevPreviewPortRegistry {
             return undefined;
         }
         if (Date.now() - entry.at > QaapDevPreviewPortRegistry.CLAIM_TTL_MS) {
-            this.claims.delete(port);
+            // Expiry revokes PROXYING but keeps the stale record: reassignment to a different
+            // tenant additionally requires the port to be free (see the claim endpoint), so an
+            // idle-but-still-running server cannot be silently taken over after the TTL.
+            return undefined;
+        }
+        return entry.ownerLogin;
+    }
+
+    /** The login of an EXPIRED claim, or undefined when unclaimed or the claim is still live. */
+    staleOwnerOf(port: number): string | undefined {
+        const entry = this.claims.get(port);
+        if (!entry || Date.now() - entry.at <= QaapDevPreviewPortRegistry.CLAIM_TTL_MS) {
             return undefined;
         }
         return entry.ownerLogin;
