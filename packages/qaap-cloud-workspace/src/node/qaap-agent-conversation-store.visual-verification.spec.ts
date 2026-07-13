@@ -119,4 +119,51 @@ describe('QaapAgentConversationStore visual verification', () => {
         )).to.equal(undefined);
         expect(fs.existsSync(path.join(root, 'conversation-1'))).to.equal(false);
     });
+
+    it('accepts message-targeted evidence although a newer turn is already streaming', async () => {
+        // Auto-continue or a follow-up user message flips the status back to streaming while the
+        // dev server is still booting — a targeted capture for the settled reply must still land.
+        store.setStatus('conversation-1', 'streaming');
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 7]);
+        const conv = await store.recordVisualVerification(
+            'conversation-1',
+            { status: 'passed', summary: 'Late but targeted.', issues: [] },
+            png,
+            'agent-1',
+        );
+        expect(conv?.messages.at(-1)?.content).to.contain('[QAAP visual verification]');
+    });
+
+    it('drops targeted evidence when the target is no longer the newest reply', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 8]);
+        expect(await store.recordVisualVerification(
+            'conversation-1',
+            { status: 'passed', summary: 'Stale target.', issues: [] },
+            png,
+            'agent-0',
+        )).to.equal(undefined);
+        expect(fs.existsSync(path.join(root, 'conversation-1'))).to.equal(false);
+    });
+
+    it('settles the evidence slot with a visible failure note that blocks later screenshots', async () => {
+        const failed = store.recordVisualVerificationFailure(
+            'conversation-1',
+            'Automatic capture failed: the preview canvas did not produce a PNG.',
+            'agent-1',
+        );
+        const content = failed?.messages.at(-1)?.content ?? '';
+        expect(content).to.contain('[QAAP visual verification]');
+        expect(content).to.contain('Screenshot unavailable');
+        expect(content).to.contain('did not produce a PNG');
+
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 9]);
+        const afterwards = await store.recordVisualVerification(
+            'conversation-1',
+            { status: 'passed', summary: 'Too late.', issues: [] },
+            png,
+            'agent-1',
+        );
+        expect(afterwards?.messages.at(-1)?.content.match(/\[QAAP visual verification\]/g)).to.have.length(1);
+        expect(fs.existsSync(path.join(root, 'conversation-1'))).to.equal(false);
+    });
 });

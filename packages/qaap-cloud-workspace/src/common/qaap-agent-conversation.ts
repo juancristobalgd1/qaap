@@ -5,6 +5,11 @@
 
 import { buildConversationListMetrics } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-list-metrics';
 import { resolveMessagePreviewText } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-content';
+import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
+import {
+    agentMessageHasVisualVerificationMarker,
+    conversationLikelyNeedsVisualVerification,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     estimateConversationTokensFromMessages,
@@ -207,6 +212,13 @@ export interface QaapAgentConversationSummary {
     /** Cached estimate for list rows when {@link contextUsageEstimated} is set. */
     readonly estimatedContextTokens?: number;
     readonly contextCompaction?: QaapContextCompaction;
+    /**
+     * Server-authoritative signal that the last settled turn still needs visual evidence.
+     * Lets a frontend that never witnessed the streaming→idle transition (reload, backgrounded
+     * mobile tab, dropped SSE) still run the capture. Cleared once evidence or a capture-failure
+     * note carrying the marker lands on the last agent message.
+     */
+    readonly visualVerificationPending?: boolean;
 }
 
 /** Conversations bucketed by project working directory. */
@@ -339,6 +351,23 @@ export function resolveEffectiveConversationStatus(conv: QaapAgentConversation):
     return conv.status;
 }
 
+/**
+ * Server-side twin of the autopilot trigger: the turn is settled (raw status — a historical
+ * message error keeps the *effective* status `failed` forever and must not veto evidence),
+ * the last reply carries no evidence marker yet, and the thread looks like UI work.
+ */
+export function conversationNeedsVisualVerificationEvidence(conv: QaapAgentConversation): boolean {
+    if (conv.status !== 'idle') {
+        return false;
+    }
+    const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
+    if (!lastAgent || lastAgent.error || agentMessageHasVisualVerificationMarker(lastAgent)) {
+        return false;
+    }
+    return conv.messages.some(message => message.role === 'user' && messageRequestsDevPreview(message.content))
+        || conversationLikelyNeedsVisualVerification(conv);
+}
+
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {
     const last = conv.messages[conv.messages.length - 1];
     const status = resolveEffectiveConversationStatus(conv);
@@ -384,6 +413,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.contextUsageEstimated
             ? { estimatedContextTokens: estimateConversationTokensFromMessages(conv.messages, conv.contextPreamble) }
             : {}),
+        ...(conversationNeedsVisualVerificationEvidence(conv) ? { visualVerificationPending: true } : {}),
     };
 }
 

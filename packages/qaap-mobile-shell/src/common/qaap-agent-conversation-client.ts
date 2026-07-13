@@ -90,6 +90,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly contextUsageEstimated?: boolean;
     readonly estimatedContextTokens?: number;
     readonly contextCompaction?: QaapContextCompactionDTO;
+    /** Server-authoritative: the last settled turn still needs visual evidence (see autopilot). */
+    readonly visualVerificationPending?: boolean;
 }
 
 export type QaapAgentMessageSegmentDTO =
@@ -595,6 +597,7 @@ export async function reportPreviewVisualVerification(
     conversationId: string,
     png: Blob,
     result: QaapPreviewVisualValidationResult,
+    targetAgentMessageId?: string,
 ): Promise<QaapAgentConversationDTO | undefined> {
     const response = await fetch(
         `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-verifications`,
@@ -604,8 +607,33 @@ export async function reportPreviewVisualVerification(
             headers: {
                 'Content-Type': 'image/png',
                 'X-Qaap-Visual-Result': encodeURIComponent(JSON.stringify(result)),
+                ...(targetAgentMessageId ? { 'X-Qaap-Visual-Target': targetAgentMessageId } : {}),
             },
             body: png,
+        },
+    );
+    if (response.status === 404) {
+        return undefined;
+    }
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return await response.json() as QaapAgentConversationDTO;
+}
+
+/** Settles the turn's evidence slot with a visible "screenshot unavailable" note. */
+export async function reportPreviewVisualVerificationFailure(
+    conversationId: string,
+    reason: string,
+    targetAgentMessageId: string,
+): Promise<QaapAgentConversationDTO | undefined> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-verification-failures`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason, targetMessageId: targetAgentMessageId }),
         },
     );
     if (response.status === 404) {

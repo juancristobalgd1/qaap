@@ -152,6 +152,12 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             void this.handlePostVisualVerification(req, res);
         });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verification-failures`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            this.handlePostVisualVerificationFailure(req, res);
+        });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
@@ -543,7 +549,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return;
         }
         try {
-            const conv = await this.store.recordVisualVerification(req.params.id, result, png);
+            const target = req.get('x-qaap-visual-target')?.trim() || undefined;
+            const conv = await this.store.recordVisualVerification(req.params.id, result, png, target);
             if (!conv) {
                 res.status(404).json({ error: 'Conversation or agent response not found.' });
                 return;
@@ -552,6 +559,22 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         } catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
         }
+    }
+
+    protected handlePostVisualVerificationFailure(req: Request, res: Response): void {
+        const body = (req.body ?? {}) as { reason?: unknown; targetMessageId?: unknown };
+        const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+        const targetMessageId = typeof body.targetMessageId === 'string' ? body.targetMessageId.trim() : '';
+        if (!reason || !targetMessageId) {
+            res.status(400).json({ error: 'reason and targetMessageId are required.' });
+            return;
+        }
+        const conv = this.store.recordVisualVerificationFailure(req.params.id, reason, targetMessageId);
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation or agent response not found.' });
+            return;
+        }
+        res.json(conv);
     }
 
     protected handleUpdate(req: Request, res: Response): void {

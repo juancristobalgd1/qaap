@@ -23,7 +23,8 @@ export type QaapConversationSummaryField =
     | 'activityLabel'
     | 'autoApprove'
     | 'agentModel'
-    | 'approvalPolicyId';
+    | 'approvalPolicyId'
+    | 'visualVerificationPending';
 
 export type QaapConversationChangeKind =
     | 'snapshot'
@@ -64,6 +65,7 @@ const SUMMARY_FIELD_KEYS: readonly (keyof QaapAgentConversationSummaryDTO)[] = [
     'approvalPolicyId',
     'turnProgressCurrent',
     'turnProgressTotal',
+    'visualVerificationPending',
 ];
 
 function fieldFromSummaryKey(key: keyof QaapAgentConversationSummaryDTO): QaapConversationSummaryField | undefined {

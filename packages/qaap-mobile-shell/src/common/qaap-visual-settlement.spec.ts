@@ -21,4 +21,30 @@ describe('shouldCaptureSettledVisualTurn', () => {
         expect(shouldCaptureSettledVisualTurn(pending, { id: 'turn-1', status: 'failed' })).to.equal(false);
         expect(pending.size).to.equal(0);
     });
+
+    it('captures on the server pending flag without a witnessed transition (reload / dropped SSE)', () => {
+        const pending = new Set<string>();
+        expect(shouldCaptureSettledVisualTurn(pending, {
+            id: 'turn-1', status: 'idle', visualVerificationPending: true,
+        })).to.equal(true);
+    });
+
+    it('captures on the pending flag even when a historical error reports the summary as failed', () => {
+        const pending = new Set<string>();
+        expect(shouldCaptureSettledVisualTurn(pending, {
+            id: 'turn-1', status: 'failed', visualVerificationPending: true,
+        })).to.equal(true);
+    });
+
+    it('never captures while streaming, regardless of the flag', () => {
+        const pending = new Set<string>();
+        expect(shouldCaptureSettledVisualTurn(pending, {
+            id: 'turn-1', status: 'streaming', visualVerificationPending: true,
+        })).to.equal(false);
+    });
+
+    it('stays quiet at idle when the server reports no pending evidence', () => {
+        const pending = new Set<string>();
+        expect(shouldCaptureSettledVisualTurn(pending, { id: 'turn-1', status: 'idle' })).to.equal(false);
+    });
 });

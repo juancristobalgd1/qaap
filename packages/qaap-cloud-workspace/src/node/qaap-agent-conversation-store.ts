@@ -127,8 +127,9 @@ import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 import {
+    agentMessageHasVisualVerificationMarker,
+    buildQaapVisualVerificationFailureMarkdown,
     buildQaapVisualVerificationMarkdown,
-    QAAP_VISUAL_VERIFICATION_MARKER,
     type QaapPreviewVisualValidationResult,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 import {
@@ -698,25 +699,71 @@ export class QaapAgentConversationStore {
         return path.join(VISUAL_EVIDENCE_DIR, conversationId);
     }
 
+    /**
+     * The agent message evidence may attach to. With an explicit target (the message the capturing
+     * frontend saw when the turn settled) the conversation status is irrelevant — auto-continue or
+     * a follow-up user turn may have flipped it back to `streaming` while the dev server was still
+     * booting, and rejecting on status was silently dropping every slow capture. The target must
+     * still be the newest agent reply: when a newer turn already replaced it, the stale screenshot
+     * is dropped and the newer turn's own settlement re-triggers a fresh capture.
+     */
+    protected resolveVisualEvidenceTarget(
+        conv: QaapAgentConversation,
+        targetAgentMessageId: string | undefined,
+    ): QaapAgentMessage | undefined {
+        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
+        if (!lastAgent) {
+            return undefined;
+        }
+        if (targetAgentMessageId !== undefined) {
+            return lastAgent.id === targetAgentMessageId ? lastAgent : undefined;
+        }
+        // Legacy reports (no target): only trust them while the backend turn is truly idle.
+        return conv.status === 'idle' ? lastAgent : undefined;
+    }
+
+    protected attachVisualVerificationBlock(
+        conv: QaapAgentConversation,
+        target: QaapAgentMessage,
+        markdown: string,
+    ): QaapAgentConversation {
+        const evidenceBlock = `---\n\n${markdown}`;
+        const next: QaapAgentConversation = {
+            ...conv,
+            updatedAt: Date.now(),
+            messages: conv.messages.map(message => message.id === target.id
+                ? {
+                    ...message,
+                    content: `${message.content.trimEnd()}\n\n${evidenceBlock}`,
+                    segments: message.segments?.length
+                        ? [...message.segments, { type: 'text', content: evidenceBlock }]
+                        : message.segments,
+                }
+                : message),
+        };
+        this.conversations.set(conv.id, next);
+        this.publishFinalizedAgentMessage(conv.id, next, target.id);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        void this.persist();
+        return next;
+    }
+
     /** Persist a same-origin preview screenshot and attach the authenticated image to the last reply. */
     async recordVisualVerification(
         conversationId: string,
         result: QaapPreviewVisualValidationResult,
         png: Buffer,
+        targetAgentMessageId?: string,
     ): Promise<QaapAgentConversation | undefined> {
         const conv = this.conversations.get(conversationId);
-        // Reject reports from stale/older frontend tabs while the backend task is only visually
-        // settled. Finalization may still replace that message and orphan an early screenshot.
-        if (!conv || conv.status !== 'idle' || png.length === 0) {
+        if (!conv || png.length === 0) {
             return undefined;
         }
-        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
-        if (!lastAgent) {
+        const target = this.resolveVisualEvidenceTarget(conv, targetAgentMessageId);
+        if (!target) {
             return undefined;
         }
-        if (lastAgent.content.includes(QAAP_VISUAL_VERIFICATION_MARKER)
-            || lastAgent.segments?.some(segment => segment.type === 'text'
-                && segment.content.includes(QAAP_VISUAL_VERIFICATION_MARKER))) {
+        if (agentMessageHasVisualVerificationMarker(target)) {
             return conv;
         }
         if (this.visualVerificationInFlight.has(conversationId)) {
@@ -730,29 +777,35 @@ export class QaapAgentConversationStore {
             await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
             const imageUrl = `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
                 + `/visual-verifications/${encodeURIComponent(evidenceId)}`;
-            const markdown = buildQaapVisualVerificationMarkdown(imageUrl, result);
-            const evidenceBlock = `---\n\n${markdown}`;
-            const next: QaapAgentConversation = {
-                ...conv,
-                updatedAt: Date.now(),
-                messages: conv.messages.map(message => message.id === lastAgent.id
-                    ? {
-                        ...message,
-                        content: `${message.content.trimEnd()}\n\n${evidenceBlock}`,
-                        segments: message.segments?.length
-                            ? [...message.segments, { type: 'text', content: evidenceBlock }]
-                            : message.segments,
-                    }
-                    : message),
-            };
-            this.conversations.set(conversationId, next);
-            this.publishFinalizedAgentMessage(conversationId, next, lastAgent.id);
-            this.fire({ type: 'updated', conversation: toConversationSummary(next) });
-            void this.persist();
-            return next;
+            return this.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationMarkdown(imageUrl, result));
         } finally {
             this.visualVerificationInFlight.delete(conversationId);
         }
+    }
+
+    /**
+     * Settle a turn's evidence slot when the frontend exhausted its capture attempts. The note
+     * carries the verification marker, so `visualVerificationPending` clears everywhere and the
+     * user can finally see *why* no screenshot arrived instead of an eternally silent gap.
+     */
+    recordVisualVerificationFailure(
+        conversationId: string,
+        reason: string,
+        targetAgentMessageId: string,
+    ): QaapAgentConversation | undefined {
+        const trimmed = reason.trim().slice(0, 500);
+        const conv = this.conversations.get(conversationId);
+        if (!conv || !trimmed) {
+            return undefined;
+        }
+        const target = this.resolveVisualEvidenceTarget(conv, targetAgentMessageId);
+        if (!target) {
+            return undefined;
+        }
+        if (agentMessageHasVisualVerificationMarker(target) || this.visualVerificationInFlight.has(conversationId)) {
+            return conv;
+        }
+        return this.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationFailureMarkdown(trimmed));
     }
 
     readVisualVerification(conversationId: string, evidenceId: string): Buffer | undefined {

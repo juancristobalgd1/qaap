@@ -15,7 +15,10 @@ import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
 import { buildTranscriptPreviewBootstrapFailureReason, toTranscriptPreviewBootstrapSnapshot } from '../common/qaap-transcript-preview-bootstrap-failure';
 import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
-import { reportPreviewVisualVerification } from '../common/qaap-agent-conversation-client';
+import {
+    reportPreviewVisualVerification,
+    reportPreviewVisualVerificationFailure,
+} from '../common/qaap-agent-conversation-client';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { captureSameOriginPreview } from '@theia/qaap-adapters/lib/browser/qaap-preview-overflow-actions';
 import { validateQaapPreviewDocument } from './qaap-preview-visual-validation';
@@ -29,8 +32,12 @@ import { peekPreferDesktopIde } from './mobile-projects-open';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { shouldCaptureSettledVisualTurn } from '../common/qaap-visual-settlement';
 
-const VISUAL_CAPTURE_ATTEMPTS = 40;
+// A cold dev server can spend well over 10s compiling its first page on a loaded VPS, so give
+// the reload → readyState poll a 30s budget rather than the original 10s.
+const VISUAL_CAPTURE_ATTEMPTS = 120;
 const VISUAL_CAPTURE_INTERVAL_MS = 250;
+/** Capture attempts per settled turn before the failure note settles the evidence slot. */
+const VISUAL_CAPTURE_TURN_BUDGET = 2;
 
 /**
  * When a background agent turn settles after a preview-related request, refresh project bootstrap
@@ -56,6 +63,8 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
 
     protected readonly pendingVisualTurns = new Set<string>();
     protected readonly autopilotInFlight = new Set<string>();
+    /** Capture attempts per settled turn (`conversationId:messageCount`) — bounds retry loops. */
+    protected readonly captureAttemptsByTurn = new Map<string, number>();
 
     onStart(): void {
         this.conversations.start();
@@ -64,7 +73,7 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
                 void this.scanConversationSettlements();
                 return;
             }
-            if (event.changedFields?.includes('status')) {
+            if (event.changedFields?.includes('status') || event.changedFields?.includes('visualVerificationPending')) {
                 void this.scanConversationSettlements();
             }
         });
@@ -78,16 +87,20 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             if (this.autopilotInFlight.has(summary.id)) {
                 continue;
             }
+            const turnKey = `${summary.id}:${summary.messageCount}`;
+            if ((this.captureAttemptsByTurn.get(turnKey) ?? 0) >= VISUAL_CAPTURE_TURN_BUDGET) {
+                continue;
+            }
             this.autopilotInFlight.add(summary.id);
             try {
-                await this.maybeAutopilotPreview(summary);
+                await this.maybeAutopilotPreview(summary, turnKey);
             } finally {
                 this.autopilotInFlight.delete(summary.id);
             }
         }
     }
 
-    protected async maybeAutopilotPreview(summary: QaapAgentConversationSummaryDTO): Promise<void> {
+    protected async maybeAutopilotPreview(summary: QaapAgentConversationSummaryDTO, turnKey: string): Promise<void> {
         let conversation;
         try {
             conversation = await getConversation(summary.id);
@@ -98,10 +111,21 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             return;
         }
         const explicitlyRequestedPreview = conversationEverRequestedDevPreview(conversation);
-        const needsVisualVerification = conversationLikelyNeedsVisualVerification(conversation);
+        const needsVisualVerification = summary.visualVerificationPending === true
+            || conversationLikelyNeedsVisualVerification(conversation);
         if (!explicitlyRequestedPreview && !needsVisualVerification) {
             return;
         }
+        // The evidence target is the reply the user is looking at *now*. Captures are attached
+        // by message id so a slow dev-server boot can no longer race the next turn's status.
+        const targetAgentMessageId = [...conversation.messages ?? []]
+            .reverse()
+            .find(message => message.role === 'agent')?.id;
+        const attempt = (this.captureAttemptsByTurn.get(turnKey) ?? 0) + 1;
+        if (needsVisualVerification) {
+            this.captureAttemptsByTurn.set(turnKey, attempt);
+        }
+        const outOfBudget = attempt >= VISUAL_CAPTURE_TURN_BUDGET;
         await this.bootstrap.refreshFromCurrentWorkspace();
         const readyUrl = await ensureTranscriptDevPreview(this.bootstrap, {
             conversation,
@@ -113,9 +137,17 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             // them only for this bounded capture, then restore the normal shell policy.
             resumeQaapMiniBrowserPreview(this.shell);
             try {
-                await this.captureVisualVerification(summary.id, readyUrl).catch(error => {
-                    console.warn('[qaap-visual-verification] automatic capture failed:', error);
-                });
+                await this.captureVisualVerification(summary.id, readyUrl, targetAgentMessageId);
+            } catch (error) {
+                console.warn('[qaap-visual-verification] automatic capture failed:', error);
+                if (needsVisualVerification && outOfBudget && targetAgentMessageId) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    await reportPreviewVisualVerificationFailure(
+                        summary.id,
+                        `Automatic capture failed: ${message}`,
+                        targetAgentMessageId,
+                    ).catch(() => undefined);
+                }
             } finally {
                 syncQaapMiniBrowserPreviewSuspension(this.shell, peekPreferDesktopIde());
             }
@@ -126,10 +158,22 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         );
         if (reason && explicitlyRequestedPreview) {
             await reportPreviewBootstrapFailure(summary.id, reason).catch(() => undefined);
+            return;
+        }
+        if (needsVisualVerification && outOfBudget && targetAgentMessageId) {
+            await reportPreviewVisualVerificationFailure(
+                summary.id,
+                reason ?? 'The dev preview did not become ready, so no screenshot could be captured.',
+                targetAgentMessageId,
+            ).catch(() => undefined);
         }
     }
 
-    protected async captureVisualVerification(conversationId: string, expectedPreviewUrl: string): Promise<void> {
+    protected async captureVisualVerification(
+        conversationId: string,
+        expectedPreviewUrl: string,
+        targetAgentMessageId?: string,
+    ): Promise<void> {
         let frame: HTMLIFrameElement | undefined;
         let doc: Document | undefined;
         let reloadRequested = false;
@@ -165,13 +209,18 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         if (!screenshot) {
             throw new Error('The preview canvas did not produce a PNG.');
         }
-        await reportPreviewVisualVerification(conversationId, screenshot, result);
+        await reportPreviewVisualVerification(conversationId, screenshot, result, targetAgentMessageId);
     }
 
     protected async isConversationInCurrentWorkspace(cwd: string): Promise<boolean> {
         const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/$/, '');
         const expected = normalize(cwd);
         const roots = await this.workspaceService.roots;
-        return roots.some(root => normalize(root.resource.path.toString()) === expected);
+        // Agents may run in a subdirectory of the opened project (monorepo app folder), so accept
+        // any cwd nested under a workspace root — not only an exact root match.
+        return roots.some(root => {
+            const rootPath = normalize(root.resource.path.toString());
+            return expected === rootPath || expected.startsWith(`${rootPath}/`);
+        });
     }
 }

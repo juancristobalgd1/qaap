@@ -34,6 +34,29 @@ export function conversationLikelyNeedsVisualVerification(conversation: {
     ));
 }
 
+/** True when the message already carries visual evidence (or a capture-failure note). */
+export function agentMessageHasVisualVerificationMarker(message: {
+    readonly content?: string;
+    readonly segments?: readonly { readonly type?: string; readonly content?: string }[];
+}): boolean {
+    return !!message.content?.includes(QAAP_VISUAL_VERIFICATION_MARKER)
+        || !!message.segments?.some(segment => segment.type === 'text'
+            && !!segment.content?.includes(QAAP_VISUAL_VERIFICATION_MARKER));
+}
+
+/**
+ * Note attached when every capture attempt failed. Carries the marker on purpose: it settles
+ * the turn's evidence slot (stops retries on every tab) and makes the failure visible instead
+ * of dying in a console.warn nobody reads on the VPS.
+ */
+export function buildQaapVisualVerificationFailureMarkdown(reason: string): string {
+    return [
+        QAAP_VISUAL_VERIFICATION_MARKER,
+        '**Visual verification · Screenshot unavailable**  ',
+        reason.trim(),
+    ].join('\n');
+}
+
 export function buildQaapVisualVerificationMarkdown(
     imageUrl: string,
     result: QaapPreviewVisualValidationResult,
