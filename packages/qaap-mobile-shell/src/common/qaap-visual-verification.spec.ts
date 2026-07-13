@@ -37,10 +37,19 @@ describe('qaap-visual-verification', () => {
         expect(markdown).to.contain('- overflow');
     });
 
-    it('detects UI requests and edited visual files', () => {
+    it('detects UI turns that actually edited something', () => {
+        // UI request + the reply edited a (non-visual) file.
         expect(conversationLikelyNeedsVisualVerification({
-            messages: [{ role: 'user', content: 'Rediseña la pantalla principal' }],
+            messages: [
+                { role: 'user', content: 'Rediseña la pantalla principal' },
+                {
+                    role: 'agent',
+                    content: 'hecho',
+                    segments: [{ type: 'tool', name: 'Write', args: '{"file_path":"src/theme.ts"}' }],
+                },
+            ],
         })).to.equal(true);
+        // A visual-file edit is enough on its own.
         expect(conversationLikelyNeedsVisualVerification({
             messages: [{
                 role: 'agent',
@@ -50,6 +59,15 @@ describe('qaap-visual-verification', () => {
         })).to.equal(true);
         expect(conversationLikelyNeedsVisualVerification({
             messages: [{ role: 'user', content: 'Corrige el cálculo del backend' }],
+        })).to.equal(false);
+    });
+
+    it('stays quiet when the reply only asked questions without editing anything', () => {
+        expect(conversationLikelyNeedsVisualVerification({
+            messages: [
+                { role: 'user', content: 'creme un cambio en la ui' },
+                { role: 'agent', content: '¿Dónde está el proyecto? ¿Qué debe mostrar?' },
+            ],
         })).to.equal(false);
     });
 });

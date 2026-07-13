@@ -71,7 +71,16 @@ describe('visualVerificationPending summary flag', () => {
         status: 'idle',
         messages: [
             { id: 'u1', role: 'user', content: 'Improve the dashboard page layout', createdAt: 1 },
-            { id: 'a1', role: 'agent', content: agentContent, createdAt: 2 },
+            {
+                id: 'a1',
+                role: 'agent',
+                content: agentContent,
+                createdAt: 2,
+                segments: [
+                    { type: 'tool', toolUseId: 'edit-1', name: 'Edit', args: '{"file_path":"src/App.tsx"}', finished: true },
+                    { type: 'text', content: agentContent },
+                ],
+            },
         ],
     });
 
@@ -96,12 +105,30 @@ describe('visualVerificationPending summary flag', () => {
             messages: [
                 { id: 'u0', role: 'user', content: 'try something', createdAt: 1, error: 'Agent failed (exit 1).' },
                 { id: 'u1', role: 'user', content: 'Improve the dashboard page layout', createdAt: 2 },
-                { id: 'a1', role: 'agent', content: 'Done, the layout is updated.', createdAt: 3 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: 'Done, the layout is updated.',
+                    createdAt: 3,
+                    segments: [{ type: 'tool', toolUseId: 'e1', name: 'Edit', args: '{"file_path":"src/App.css"}', finished: true }],
+                },
             ],
         });
         const summary = toConversationSummary(conv);
         expect(summary.status).to.equal('failed');
         expect(summary.visualVerificationPending).to.equal(true);
+    });
+
+    it('is not set when the reply only asked questions without editing', () => {
+        const conv = conversation({
+            status: 'idle',
+            messages: [
+                { id: 'u1', role: 'user', content: 'creme un cambio en la ui', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: '¿Dónde está el proyecto y qué debe mostrar?', createdAt: 2 },
+            ],
+        });
+        expect(conversationNeedsVisualVerificationEvidence(conv)).to.equal(false);
+        expect(toConversationSummary(conv).visualVerificationPending).to.equal(undefined);
     });
 
     it('is not set for turns without any UI signal', () => {

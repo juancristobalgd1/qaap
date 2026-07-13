@@ -14,7 +14,12 @@ export interface QaapPreviewVisualValidationResult {
 const VISUAL_REQUEST_REGEX = /\b(?:ui|ux|frontend|page|screen|layout|responsive|css|style|component|landing|dashboard|interfaz|pantalla|página|diseño|visual|componente|responsive)\b/i;
 const VISUAL_FILE_REGEX = /\.(?:html?|css|scss|sass|less|tsx|jsx|vue|svelte)(?:["'\s,}]|$)/i;
 
-/** True when the turn requested UI work or edited a file that normally changes rendered output. */
+/**
+ * True when the LAST turn actually changed something renderable: either it edited a visual
+ * file, or the user asked for UI work and the reply edited any file at all. A reply that
+ * only asked clarifying questions (no edits) must not trigger evidence — screenshotting an
+ * unchanged app and attaching "screenshot unavailable" notes to it is pure noise.
+ */
 export function conversationLikelyNeedsVisualVerification(conversation: {
     readonly messages?: readonly {
         readonly role?: string;
@@ -23,15 +28,14 @@ export function conversationLikelyNeedsVisualVerification(conversation: {
     }[];
 }): boolean {
     const messages = conversation.messages ?? [];
-    const lastUser = [...messages].reverse().find(message => message.role === 'user');
-    if (VISUAL_REQUEST_REGEX.test(lastUser?.content ?? '')) {
+    const lastAgent = [...messages].reverse().find(message => message.role === 'agent');
+    const editSegments = (lastAgent?.segments ?? []).filter(segment =>
+        segment.type === 'tool' && /write|edit|patch/i.test(segment.name ?? ''));
+    if (editSegments.some(segment => VISUAL_FILE_REGEX.test(segment.args ?? ''))) {
         return true;
     }
-    return messages.some(message => (message.segments ?? []).some(segment =>
-        segment.type === 'tool'
-        && /write|edit|patch/i.test(segment.name ?? '')
-        && VISUAL_FILE_REGEX.test(segment.args ?? '')
-    ));
+    const lastUser = [...messages].reverse().find(message => message.role === 'user');
+    return editSegments.length > 0 && VISUAL_REQUEST_REGEX.test(lastUser?.content ?? '');
 }
 
 /** True when the message already carries visual evidence (or a capture-failure note). */
