@@ -266,23 +266,38 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         let doc: Document | undefined;
         let navigationRequested = false;
         for (let attempt = 0; attempt < attempts; attempt++) {
-            frame = this.previewSurfaces.getSurfaceForPreviewUrl(previewUrl)?.frame;
-            if (frame && !navigationRequested) {
-                navigationRequested = true;
+            // The Work Hub suspension policy parks preview iframes at about:blank, which the
+            // port-based match rejects — fall back to the active surface and navigate it directly.
+            frame = this.previewSurfaces.getSurfaceForPreviewUrl(previewUrl)?.frame
+                ?? this.previewSurfaces.getActiveSurface()?.frame;
+            if (frame) {
+                let currentHref: string | undefined;
                 try {
-                    const win = frame.contentWindow;
-                    if (win && normalizePath(win.location.pathname) === targetPath) {
-                        win.location.reload();
-                    } else if (win) {
-                        win.location.replace(targetUrl);
-                    } else {
+                    currentHref = frame.contentWindow?.location.href;
+                } catch {
+                    currentHref = undefined;
+                }
+                const blanked = !currentHref || currentHref === 'about:blank';
+                // Re-request navigation when the suspension policy blanks the frame mid-capture.
+                if (!navigationRequested || (blanked && attempt % 8 === 0)) {
+                    navigationRequested = true;
+                    try {
+                        const win = frame.contentWindow;
+                        if (win && !blanked && normalizePath(win.location.pathname) === targetPath) {
+                            win.location.reload();
+                        } else if (win && !blanked) {
+                            win.location.replace(targetUrl);
+                        } else {
+                            // Suspended/blank frame: setting src revives it AND restores the
+                            // port match for subsequent polls.
+                            frame.src = targetUrl;
+                        }
+                    } catch {
                         frame.src = targetUrl;
                     }
-                } catch {
-                    frame.src = targetUrl;
+                    await new Promise(resolve => setTimeout(resolve, VISUAL_CAPTURE_INTERVAL_MS));
+                    continue;
                 }
-                await new Promise(resolve => setTimeout(resolve, VISUAL_CAPTURE_INTERVAL_MS));
-                continue;
             }
             try {
                 doc = frame?.contentDocument ?? undefined;
