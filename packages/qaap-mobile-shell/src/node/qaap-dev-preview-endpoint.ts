@@ -94,8 +94,11 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             return;
         }
         const owner = this.auth.resolveUserLogin(ctx);
-        if (owner) {
-            this.portRegistry.claim(port, owner);
+        if (owner && !this.portRegistry.claim(port, owner)) {
+            // A different tenant holds a live claim — refuse the takeover instead of silently
+            // rebinding their running preview to this caller (keeps H1 meaningful).
+            res.status(409).type('text/plain').send('This preview port is in use by another workspace.');
+            return;
         }
         res.sendStatus(204);
     }
@@ -116,7 +119,14 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             return false;
         }
         const owner = this.portRegistry.ownerOf(port);
-        return owner !== undefined && this.auth.resolveUserLogin(ctx) === owner;
+        const login = this.auth.resolveUserLogin(ctx);
+        if (owner === undefined || login === undefined || login !== owner) {
+            return false;
+        }
+        // Keep the claim alive while the owner is actively using the preview — otherwise the
+        // 30-minute TTL expires mid-session and the owner's own preview starts 403ing.
+        this.portRegistry.touch(port, login);
+        return true;
     }
 
     onStart(server: http.Server): void {

@@ -570,6 +570,9 @@ export class QaapProjectBootstrapService {
     async focusPreview(): Promise<void> {
         const rememberedPort = this._previewUrl ? this.extractPort(this._previewUrl) : this._lastPort;
         if (rememberedPort !== undefined && !isReservedIdePort(rememberedPort)) {
+            // The probe endpoint fails closed on unclaimed ports (SEC-8) — re-claim before probing
+            // so a backend restart or an expired claim does not lock the owner out of their preview.
+            await this.claimDevPreviewPort(rememberedPort);
             const probe = await probeQaapDevPreviewPort(rememberedPort);
             if (probe.ready) {
                 await this.openPreview(probe.previewUrl);
@@ -808,10 +811,31 @@ export class QaapProjectBootstrapService {
             // action instead of a generic "Run & Preview" CTA.
             this._lastPort = port;
             if (options?.alreadyReady) {
-                void claimed.then(() => this.openPreview(url, /* primary */ true));
+                void claimed.then(() => this.openPreview(url, /* primary */ true, { auto: true }));
             } else {
-                void claimed.then(() => this.openPrimaryPreviewWhenReady(port, url));
+                void claimed.then(() => this.openPrimaryPreviewWhenReady(port, url, { auto: true }));
             }
+        }
+    }
+
+    /**
+     * Transcript UI hook: while a watched agent turn is still streaming, automatic preview opens
+     * (port detected, warmup, attach) must not yank the user away from the live transcript. When
+     * the gate returns false, the ready preview is STAGED — state flips to `running` with the URL
+     * recorded, the transcript listener shows the "Preview ready · Open preview" pill — and the
+     * actual navigation happens on user tap or at turn settle. User-initiated opens ignore the gate.
+     */
+    setPreviewAutoOpenGate(gate: (() => boolean) | undefined): void {
+        this.previewAutoOpenGate = gate;
+    }
+
+    protected previewAutoOpenGate: (() => boolean) | undefined;
+
+    protected mayAutoOpenPreviewNow(): boolean {
+        try {
+            return this.previewAutoOpenGate?.() ?? true;
+        } catch {
+            return true;
         }
     }
 
@@ -847,7 +871,7 @@ export class QaapProjectBootstrapService {
      * Waits until the dev server probe succeeds, then opens preview. Falls back to opening the
      * proxy URL anyway so the holding page can auto-retry (v0-style).
      */
-    protected async openPrimaryPreviewWhenReady(port: number, url: string): Promise<void> {
+    protected async openPrimaryPreviewWhenReady(port: number, url: string, options?: { auto?: boolean }): Promise<void> {
         if (this._previewUrl) {
             return;
         }
@@ -858,7 +882,7 @@ export class QaapProjectBootstrapService {
         if (this._previewUrl) {
             return;
         }
-        await this.openPreview(ready?.previewUrl ?? url, true);
+        await this.openPreview(ready?.previewUrl ?? url, true, options);
     }
 
     /**
@@ -966,6 +990,11 @@ export class QaapProjectBootstrapService {
             if (isReservedIdePort(port)) {
                 continue;
             }
+            // Claim-then-probe: the probe fails closed on unclaimed ports, so without the claim an
+            // authenticated owner could never re-attach to their own already-running server. The
+            // claim is non-stealing (409 when a different tenant holds it), so sweeping the
+            // candidate list cannot hijack another workspace's preview.
+            await this.claimDevPreviewPort(port);
             const probe = await probeQaapDevPreviewPort(port);
             if (!probe.ready) {
                 continue;
@@ -1079,7 +1108,23 @@ export class QaapProjectBootstrapService {
         }
     }
 
-    protected async openPreview(url: string, isPrimary: boolean = true): Promise<void> {
+    protected async openPreview(url: string, isPrimary: boolean = true, options?: { auto?: boolean }): Promise<void> {
+        // Re-claim the target port right before opening: claims are TTL'd server-side and the
+        // proxy fails closed, so an open without a live claim 403s the owner's own preview.
+        const targetPortForClaim = this.extractPort(url);
+        if (targetPortForClaim !== undefined && !isReservedIdePort(targetPortForClaim)) {
+            await this.claimDevPreviewPort(targetPortForClaim);
+        }
+        if (options?.auto && !this.mayAutoOpenPreviewNow()) {
+            // Stage instead of navigating: record the ready URL and flip to `running` so the
+            // transcript listener offers the "Open preview" pill; the user (or turn settle)
+            // performs the actual navigation.
+            this._previewUrl = url;
+            this.persistPhase('running');
+            this.setPhase('running');
+            this.syncHubSession('running');
+            return;
+        }
         try {
             await this.miniBrowser.openPreview(url);
             this._previewUrl = url;

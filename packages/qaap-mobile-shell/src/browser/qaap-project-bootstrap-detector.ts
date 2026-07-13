@@ -119,6 +119,17 @@ export class QaapProjectBootstrapDetector {
         const { flavor, apps } = await this.detectMonorepo(rootUri, pkg, packageManager);
         const nodeModulesPresent = await this.resolveNodeModulesPresent(rootUri, kind, packageManager, apps);
 
+        // A package.json without any dev/start script and no runnable monorepo apps cannot serve a
+        // preview — but a plain index.html next to it can (hand-written sites whose package.json
+        // only tracks a lockfile or utilities). Fall back to the static server so "just an HTML
+        // file" still gets the one-tap preview, whatever the stack.
+        if (!devCommand && apps.length === 0) {
+            const staticSite = await this.detectStaticSite(rootUri);
+            if (staticSite) {
+                return { ...staticSite, name };
+            }
+        }
+
         return {
             rootUri,
             name,

@@ -650,6 +650,19 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         this.bootstrapPreviewListenerInitialized = true;
+        // While the watched conversation is still streaming, bootstrap-level auto-opens (port
+        // detected / warmup / attach) must stage the "Open preview" pill instead of yanking the
+        // user out of the live transcript into the mini-browser mid-turn.
+        this.host.projectBootstrap.setPreviewAutoOpenGate(() => {
+            const conv = this.host.transcriptLastConv;
+            if (!conv || this.host.transcriptOpenSummaryId !== conv.id) {
+                return true;
+            }
+            if (!conversationShouldWatchDevPreview(conv, window.location.origin)) {
+                return true;
+            }
+            return conversationMayAutoOpenTranscriptPreview(conv);
+        });
         this.host.projectBootstrap.onStateChange(state => {
             const conv = this.host.transcriptLastConv;
             if (!conv || !this.host.transcriptOpenSummaryId || this.host.transcriptOpenSummaryId !== conv.id) {

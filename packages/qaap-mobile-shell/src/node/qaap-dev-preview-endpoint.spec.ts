@@ -26,13 +26,18 @@ class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
         return this.handleProbe(req, res as never);
     }
 
+    touchedPorts: number[] = [];
+
     setFakes(ctx: QaapGithubAuthContext, claimedOwner: string | undefined): void {
         const mutable = this as unknown as { auth: QaapGithubAuthGuard; portRegistry: QaapDevPreviewPortRegistry };
         mutable.auth = {
             authenticate: () => ctx,
             resolveUserLogin: (c: QaapGithubAuthContext) => (c.kind === 'authenticated' || c.kind === 'skip' ? c.userLogin : undefined),
         } as unknown as QaapGithubAuthGuard;
-        mutable.portRegistry = { ownerOf: () => claimedOwner } as unknown as QaapDevPreviewPortRegistry;
+        mutable.portRegistry = {
+            ownerOf: () => claimedOwner,
+            touch: (port: number) => { this.touchedPorts.push(port); },
+        } as unknown as QaapDevPreviewPortRegistry;
     }
 }
 
@@ -100,6 +105,62 @@ describe('QaapDevPreviewEndpoint', () => {
             const ep = new TestQaapDevPreviewEndpoint();
             ep.setFakes(authed('bob'), 'alice');
             expect(ep.exposeMayProxyPort(req, 5173)).to.equal(false);
+        });
+
+        it('refreshes the owner claim TTL on each authorized access (no mid-session expiry)', () => {
+            const ep = new TestQaapDevPreviewEndpoint();
+            ep.setFakes(authed('alice'), 'alice');
+            expect(ep.exposeMayProxyPort(req, 5173)).to.equal(true);
+            expect(ep.touchedPorts).to.deep.equal([5173]);
+        });
+
+        it('does not touch the claim on a denied access', () => {
+            const ep = new TestQaapDevPreviewEndpoint();
+            ep.setFakes(authed('bob'), 'alice');
+            expect(ep.exposeMayProxyPort(req, 5173)).to.equal(false);
+            expect(ep.touchedPorts).to.deep.equal([]);
+        });
+    });
+
+    describe('port registry claim semantics (non-stealing)', () => {
+        it('first claim wins and the same login can refresh it', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            expect(registry.claim(5173, 'alice')).to.equal(true);
+            expect(registry.claim(5173, 'alice')).to.equal(true);
+            expect(registry.ownerOf(5173)).to.equal('alice');
+        });
+
+        it('refuses a takeover of a live claim by a different login', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            expect(registry.claim(5173, 'alice')).to.equal(true);
+            expect(registry.claim(5173, 'bob')).to.equal(false);
+            expect(registry.ownerOf(5173)).to.equal('alice');
+        });
+
+        it('allows re-claiming after the previous claim expired', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            registry.claim(5173, 'alice');
+            const claims = (registry as unknown as { claims: Map<number, { ownerLogin: string; at: number }> }).claims;
+            claims.set(5173, { ownerLogin: 'alice', at: Date.now() - 31 * 60_000 });
+            expect(registry.ownerOf(5173)).to.equal(undefined);
+            expect(registry.claim(5173, 'bob')).to.equal(true);
+        });
+
+        it('touch refreshes only the owner and never rebinds the port', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            registry.claim(5173, 'alice');
+            const claims = (registry as unknown as { claims: Map<number, { ownerLogin: string; at: number }> }).claims;
+            const staleAt = Date.now() - 20 * 60_000;
+            claims.set(5173, { ownerLogin: 'alice', at: staleAt });
+            registry.touch(5173, 'bob');
+            expect(claims.get(5173)?.at).to.equal(staleAt);
+            expect(registry.ownerOf(5173)).to.equal('alice');
+            registry.touch(5173, 'alice');
+            expect(claims.get(5173)!.at).to.be.greaterThan(staleAt);
         });
     });
 
