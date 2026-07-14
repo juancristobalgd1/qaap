@@ -78,4 +78,14 @@ describe('QaapTenantDiskFileSystemProvider', () => {
             new URI('file:///workspace/repos/users/alice/acme/demo/package.json'),
         )).to.throw();
     });
+
+    it('allows system paths outside the managed workspace tree without login', () => {
+        const provider = createProvider({});
+        expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(
+            new URI('file:///app/plugins/vscode.theme-monokai/package.json'),
+        )).to.not.throw();
+        expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(
+            new URI('file:///root/.qaap/agent-conversations/index.json'),
+        )).to.not.throw();
+    });
 });

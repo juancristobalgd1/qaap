@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import * as os from 'os';
+import * as path from 'path';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
@@ -44,11 +46,34 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
 
     protected readonly reposRoot = resolveQaapReposRoot();
 
+    /**
+     * Tenant isolation applies only to managed workspace trees (hosted repos + dev workspaces).
+     * System paths such as `/app/plugins` or `/root/.qaap` must pass through unchanged — rebinding
+     * the global DiskFileSystemProvider would otherwise break plugin loading and agent storage.
+     */
+    protected isTenantGuardedPath(fsPath: string): boolean {
+        const resolved = path.resolve(fsPath);
+        const reposRoot = path.resolve(this.reposRoot);
+        const relativeToRepos = path.relative(reposRoot, resolved);
+        if (relativeToRepos === '' || (!relativeToRepos.startsWith('..') && !path.isAbsolute(relativeToRepos))) {
+            return true;
+        }
+        const devReposRoot = path.resolve(os.homedir(), '.qaap', 'workspaces');
+        const relativeToDev = path.relative(devReposRoot, resolved);
+        if (relativeToDev === '' || (!relativeToDev.startsWith('..') && !path.isAbsolute(relativeToDev))) {
+            return true;
+        }
+        return isVpsWorkspaceInfrastructurePath(resolved) || isQaapWorkspaceContainerPath(resolved);
+    }
+
     protected assertAllowed(uri: URI): void {
         if (this.auth.isSkipAuthEnabled()) {
             return;
         }
         const fsPath = FileUri.fsPath(uri);
+        if (!this.isTenantGuardedPath(fsPath)) {
+            return;
+        }
         if (isQaapWorkspaceContainerPath(fsPath) || isVpsWorkspaceInfrastructurePath(fsPath)) {
             throw this.forbidden();
         }
