@@ -12,6 +12,7 @@ import {
     stripComposerAttachmentPreamble,
 } from './qaap-composer-attachment-prompt';
 import { parseComposerSkillDisplayMarker, type ComposerSkillDisplayMetadata } from './qaap-composer-skill-display';
+import { parseComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import { isQaiqStreamMetadataEnvelope } from './qaap-qaiq-stream';
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 
@@ -68,6 +69,7 @@ export interface TranscriptUserMessageView {
     readonly displayText: string;
     readonly imagePreviews: readonly QaapTranscriptUserImagePreview[];
     readonly skillInvocation?: ComposerSkillDisplayMetadata;
+    readonly gitActionInvocation?: ComposerGitActionDisplayMetadata;
 }
 
 function basenameFromWorkspacePath(path: string): string {
@@ -88,24 +90,26 @@ export function resolveTranscriptUserMessageView(
 ): TranscriptUserMessageView {
     const raw = resolveMessagePreviewText(message);
     if (message?.optimisticImagePreviews?.length) {
-        const display = resolveTranscriptUserSkillDisplay(stripComposerAttachmentPreamble(raw));
+        const display = resolveTranscriptUserDisplay(stripComposerAttachmentPreamble(raw));
         return {
             displayText: display.displayText,
             imagePreviews: message.optimisticImagePreviews,
             ...(display.skillInvocation ? { skillInvocation: display.skillInvocation } : {}),
+            ...(display.gitActionInvocation ? { gitActionInvocation: display.gitActionInvocation } : {}),
         };
     }
     const imagePaths = extractComposerAttachmentImagePaths(raw);
     if (imagePaths.length === 0) {
         return {
-            ...resolveTranscriptUserSkillDisplay(raw),
+            ...resolveTranscriptUserDisplay(raw),
             imagePreviews: [],
         };
     }
-    const display = resolveTranscriptUserSkillDisplay(stripComposerAttachmentPreamble(raw));
+    const display = resolveTranscriptUserDisplay(stripComposerAttachmentPreamble(raw));
     return {
         displayText: display.displayText,
         ...(display.skillInvocation ? { skillInvocation: display.skillInvocation } : {}),
+        ...(display.gitActionInvocation ? { gitActionInvocation: display.gitActionInvocation } : {}),
         imagePreviews: imagePaths.map(path => ({
             src: '',
             fileName: basenameFromWorkspacePath(path),
@@ -114,7 +118,14 @@ export function resolveTranscriptUserMessageView(
     };
 }
 
-function resolveTranscriptUserSkillDisplay(text: string): Pick<TranscriptUserMessageView, 'displayText' | 'skillInvocation'> {
+function resolveTranscriptUserDisplay(text: string): Pick<TranscriptUserMessageView, 'displayText' | 'skillInvocation' | 'gitActionInvocation'> {
+    const gitActionInvocation = parseComposerGitActionDisplayMarker(text);
+    if (gitActionInvocation) {
+        return {
+            displayText: gitActionInvocation.label,
+            gitActionInvocation,
+        };
+    }
     const skillInvocation = parseComposerSkillDisplayMarker(text);
     if (!skillInvocation) {
         return { displayText: text };

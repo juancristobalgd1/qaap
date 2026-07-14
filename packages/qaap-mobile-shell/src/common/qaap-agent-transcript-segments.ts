@@ -58,7 +58,7 @@ export function classifyTranscriptToolActivityKind(toolName: string): QaapTransc
     if (name.includes('todo')) {
         return 'todo';
     }
-    if (name.includes('write') || name.includes('edit') || name.includes('patch') || name.includes('replace')) {
+    if (name.includes('write') || name.includes('edit') || name.includes('patch') || name.includes('replace') || name.includes('update') || name.includes('modify') || name.includes('apply')) {
         return 'editing';
     }
     if (name.includes('web_search')) {

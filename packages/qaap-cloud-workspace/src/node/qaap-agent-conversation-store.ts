@@ -1004,15 +1004,43 @@ export class QaapAgentConversationStore {
     recordGitAction(
         conversationId: string,
         metadata: ComposerGitActionDisplayMetadata,
+        options: {
+            readonly messageId?: string;
+            readonly replaceMessageId?: string;
+        } = {},
     ): QaapAgentConversation | undefined {
         const conv = this.conversations.get(conversationId);
         if (!conv || !metadata.label.trim()) {
             return undefined;
         }
+        const content = createComposerGitActionDisplayMarker(metadata);
+        const replaceMessageId = options.replaceMessageId?.trim();
+        if (replaceMessageId) {
+            const replaceIndex = conv.messages.findIndex(message => message.id === replaceMessageId);
+            if (replaceIndex < 0) {
+                return undefined;
+            }
+            const replaced: QaapAgentMessage = {
+                ...conv.messages[replaceIndex],
+                content,
+                createdAt: Date.now(),
+            };
+            const messages = conv.messages.slice();
+            messages[replaceIndex] = replaced;
+            const next: QaapAgentConversation = {
+                ...conv,
+                updatedAt: Date.now(),
+                messages,
+            };
+            this.conversations.set(conversationId, next);
+            this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+            void this.persist();
+            return next;
+        }
         const userMessage: QaapAgentMessage = {
-            id: randomUUID(),
+            id: options.messageId?.trim() || randomUUID(),
             role: 'user',
-            content: createComposerGitActionDisplayMarker(metadata),
+            content,
             createdAt: Date.now(),
         };
         const next: QaapAgentConversation = {

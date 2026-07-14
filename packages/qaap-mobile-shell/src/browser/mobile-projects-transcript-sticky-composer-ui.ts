@@ -15,10 +15,13 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     conversationToSummary,
     getConversation,
+    recordConversationGitAction,
     updateConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
+    type QaapAgentMessageDTO,
 } from '../common/qaap-agent-conversation-client';
+import { createComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     QAAP_PRIMARY_AGENT_ID,
@@ -253,6 +256,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
     protected readonly composerCleanTreeByConversationId = new Set<string>();
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
+    protected pendingGitActionMessageId: string | undefined;
 
     /** Tracks whether the Agents Hub idle (pre-conversation) composer is currently mounted, to drive autofocus-on-ready. */
     protected agentsHubIdleComposerMounted = false;
@@ -504,6 +508,38 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     /**
+     * A premature empty git snapshot during streaming must not permanently latch the tree as
+     * clean — that hides the Changes / Commit row even after the agent finishes editing.
+     */
+    protected clearStaleComposerGitLatches(summaryId: string): void {
+        this.composerCleanTreeByConversationId.delete(summaryId);
+        this.composerChangesResolvedByConversationId.delete(summaryId);
+    }
+
+    protected shouldRefetchComposerGitSnapshot(
+        summaryId: string,
+        conv: QaapAgentConversationDTO | undefined,
+    ): boolean {
+        if (!this.composerActivityGitFilesByConversationId.has(summaryId)) {
+            return true;
+        }
+        const cached = this.composerActivityGitFilesByConversationId.get(summaryId);
+        if (!cached || cached.length > 0) {
+            return false;
+        }
+        // Empty snapshot: if the resolved or clean latch is set the tree was intentionally
+        // cleared by an explicit user action (Accept staged all / Discard cleaned the tree).
+        // Do NOT delete + re-fetch here — that creates a gap where the snapshot is undefined
+        // while clearStaleComposerGitLatches is still wiping the latches, which lets
+        // transcript-derived evidence resurface the Changes pill until the fetch resolves.
+        if (this.composerChangesResolvedByConversationId.has(summaryId)
+            || this.composerCleanTreeByConversationId.has(summaryId)) {
+            return false;
+        }
+        return this.hasComposerFileActivity(conv);
+    }
+
+    /**
      * True when the working tree has something to commit — the git snapshot has ≥1 changed file
      * (staged or unstaged). Falls back to the clean-tree latch while the snapshot is momentarily
      * absent so the Commit button doesn't flicker back after a Discard. Must be read AFTER
@@ -708,8 +744,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (!this.isComposerBackgroundWorkAllowed()) {
             return;
         }
-        if (this.composerActivityGitFilesByConversationId.has(summary.id)) {
+        if (!this.shouldRefetchComposerGitSnapshot(summary.id, conv)) {
             return;
+        }
+        if (this.composerActivityGitFilesByConversationId.has(summary.id)) {
+            this.composerActivityGitFilesByConversationId.delete(summary.id);
         }
         // Skip the repo-wide git snapshot until the agent has actually edited files here.
         // Tool-call evidence alone must count: some agent CLIs (e.g. opencode/QAIQ) report
@@ -733,6 +772,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
             }
             const body = await response.json() as { files?: QaapGitChangedFile[] };
             const files = (body.files ?? []).map(file => this.mapGitChangedFileToComposerView(file));
+            // While the agent is still running, an empty snapshot usually means the edit hasn't
+            // landed on disk yet — don't latch a false "clean tree" for the Changes row.
+            if (files.length === 0 && conv?.status === 'streaming') {
+                return;
+            }
             this.composerActivityGitFilesByConversationId.set(summary.id, files);
             if (this.host.transcriptComposerSummary?.id !== summary.id) {
                 return;
@@ -874,6 +918,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     return;
                 }
             }
+            const pendingGitActionId = this.appendRunningGitActionToTranscript(summary, action);
             const response = await fetch(`${QAAP_GIT_REVIEW_API_PATH}/commit-workflow`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -909,7 +954,18 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 ),
                 { kind: 'success', duration: 2400 },
             );
+            void this.recordComposerGitActionInTranscript(summary, action, {
+                branch: result.branch,
+                stat: result.stat,
+                status: 'completed',
+                replaceMessageId: pendingGitActionId,
+            });
         } catch (error) {
+            this.markPendingGitActionFailed(summary, action);
+            void this.recordComposerGitActionInTranscript(summary, action, {
+                status: 'failed',
+                replaceMessageId: this.pendingGitActionMessageId,
+            });
             MobileSnackbar.show(
                 error instanceof Error && error.message
                     ? error.message
@@ -917,8 +973,170 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 { kind: 'warning', duration: 3200 },
             );
         } finally {
+            this.pendingGitActionMessageId = undefined;
             this.composerCommitBusy = false;
             this.refreshComposerActivityStack();
+        }
+    }
+
+    protected buildGitActionMetadata(
+        action: QaapGitCommitWorkflowAction,
+        status: ComposerGitActionDisplayMetadata['status'],
+        options: {
+            readonly branch?: string;
+            readonly stat?: { files: number; insertions: number; deletions: number };
+        } = {},
+    ): ComposerGitActionDisplayMetadata {
+        return {
+            action,
+            label: this.resolveGitCommitWorkflowLabel(action),
+            status,
+            ...(options.branch ? { branch: options.branch } : {}),
+            ...(options.stat ? {
+                files: options.stat.files,
+                insertions: options.stat.insertions,
+                deletions: options.stat.deletions,
+            } : {}),
+        };
+    }
+
+    protected appendRunningGitActionToTranscript(
+        summary: QaapAgentConversationSummaryDTO,
+        action: QaapGitCommitWorkflowAction,
+    ): string | undefined {
+        const messageId = `pending-git-action-${Date.now()}`;
+        const metadata = this.buildGitActionMetadata(action, 'running');
+        const message: QaapAgentMessageDTO = {
+            id: messageId,
+            role: 'user',
+            content: createComposerGitActionDisplayMarker(metadata),
+            createdAt: Date.now(),
+        };
+        this.pendingGitActionMessageId = messageId;
+        const base = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : undefined;
+        if (!base) {
+            return messageId;
+        }
+        const next: QaapAgentConversationDTO = {
+            ...base,
+            updatedAt: Date.now(),
+            messages: [...base.messages, message],
+        };
+        this.applyGitActionTranscriptConversation(summary, next);
+        return messageId;
+    }
+
+    protected markPendingGitActionFailed(
+        summary: QaapAgentConversationSummaryDTO,
+        action: QaapGitCommitWorkflowAction,
+    ): void {
+        const pendingId = this.pendingGitActionMessageId;
+        const base = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : undefined;
+        if (!pendingId || !base) {
+            return;
+        }
+        const metadata = this.buildGitActionMetadata(action, 'failed');
+        const next: QaapAgentConversationDTO = {
+            ...base,
+            updatedAt: Date.now(),
+            messages: base.messages.map(message => message.id === pendingId
+                ? { ...message, content: createComposerGitActionDisplayMarker(metadata) }
+                : message),
+        };
+        this.applyGitActionTranscriptConversation(summary, next);
+    }
+
+    protected applyGitActionTranscriptConversation(
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO,
+    ): void {
+        if (this.host.transcriptOpenSummary?.id !== summary.id) {
+            return;
+        }
+        this.host.transcriptLastConv = conv;
+        this.host.conversations?.cacheDocument(conv);
+        const updatedSummary = conversationToSummary(conv);
+        this.host.transcriptOpenSummary = updatedSummary;
+        if (this.host.transcriptComposerSummary?.id === summary.id) {
+            this.host.transcriptComposerSummary = updatedSummary;
+        }
+        this.host.conversations?.recordSnapshot(updatedSummary);
+        const chatHost = this.host.resolveActiveTranscriptChatHost() ?? this.host.transcriptChatHost;
+        if (chatHost) {
+            this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
+        }
+    }
+
+    protected resolveGitCommitWorkflowLabel(action: QaapGitCommitWorkflowAction): string {
+        switch (action) {
+            case 'create-branch-commit':
+                return nls.localize('qaap/mobileProjects/createBranchAndCommit', 'Create Branch & Commit');
+            case 'create-branch-commit-push':
+                return nls.localize('qaap/mobileProjects/createBranchCommitPush', 'Create Branch, Commit & Push');
+            case 'commit':
+                return nls.localize('qaap/mobileProjects/commit', 'Commit');
+            case 'commit-create-pr':
+                return nls.localize('qaap/mobileProjects/commitCreatePr', 'Commit & Create PR');
+            case 'commit-push':
+            default:
+                return nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push');
+        }
+    }
+
+    protected async recordComposerGitActionInTranscript(
+        summary: QaapAgentConversationSummaryDTO,
+        action: QaapGitCommitWorkflowAction,
+        options: {
+            readonly branch?: string;
+            readonly stat?: { files: number; insertions: number; deletions: number };
+            readonly status: 'completed' | 'failed';
+            readonly replaceMessageId?: string;
+        },
+    ): Promise<void> {
+        try {
+            const updated = await recordConversationGitAction(summary.id, this.buildGitActionMetadata(action, options.status, {
+                branch: options.branch,
+                stat: options.stat,
+            }), {
+                replaceMessageId: options.replaceMessageId,
+            });
+            if (!updated || this.host.transcriptOpenSummary?.id !== summary.id) {
+                if (options.status === 'completed' && this.host.transcriptLastConv?.id === summary.id && options.replaceMessageId) {
+                    const metadata = this.buildGitActionMetadata(action, 'completed', {
+                        branch: options.branch,
+                        stat: options.stat,
+                    });
+                    const next: QaapAgentConversationDTO = {
+                        ...this.host.transcriptLastConv,
+                        updatedAt: Date.now(),
+                        messages: this.host.transcriptLastConv.messages.map(message => message.id === options.replaceMessageId
+                            ? { ...message, content: createComposerGitActionDisplayMarker(metadata) }
+                            : message),
+                    };
+                    this.applyGitActionTranscriptConversation(summary, next);
+                }
+                return;
+            }
+            this.applyGitActionTranscriptConversation(summary, updated);
+        } catch {
+            if (options.status === 'completed' && this.host.transcriptLastConv?.id === summary.id && options.replaceMessageId) {
+                const metadata = this.buildGitActionMetadata(action, 'completed', {
+                    branch: options.branch,
+                    stat: options.stat,
+                });
+                const next: QaapAgentConversationDTO = {
+                    ...this.host.transcriptLastConv,
+                    updatedAt: Date.now(),
+                    messages: this.host.transcriptLastConv.messages.map(message => message.id === options.replaceMessageId
+                        ? { ...message, content: createComposerGitActionDisplayMarker(metadata) }
+                        : message),
+                };
+                this.applyGitActionTranscriptConversation(summary, next);
+            }
         }
     }
 
@@ -1043,6 +1261,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (!summary || summary.id !== conv.id || !project || !this.host.transcriptComposerHost?.isConnected) {
             return;
         }
+        const turnSettled = conv.status !== 'streaming';
+        if (turnSettled && this.hasComposerFileActivity(conv)) {
+            if (this.shouldRefetchComposerGitSnapshot(conv.id, conv)) {
+                void this.syncComposerGitSnapshot(project, summary)
+                    .then(() => this.refreshComposerActivityStack())
+                    .catch(() => undefined);
+            }
+        }
         const activityOptions = this.buildTranscriptComposerActivityOptions(project, summary);
         const activityFiles = project
             ? this.resolveComposerActivityFilesForStack(project, summary, conv)
@@ -1062,6 +1288,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (nextPaths !== previousPaths) {
             // New file paths only — invalidate git snapshot so counts stay accurate.
             this.composerActivityGitFilesByConversationId.delete(conv.id);
+            this.clearStaleComposerGitLatches(conv.id);
         }
         this.refreshComposerActivityStack();
         this.host.transcriptComposerSendRefresh?.();
@@ -1377,6 +1604,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
         // Conversations share the project's working tree — a git snapshot cached while another
         // session was open can be stale (e.g. committed meanwhile). Refetch per (re)mount so the
         // Changes pill + commit button reflect this conversation's current pending changes.
+        // Latches (resolved/clean) are intentionally preserved across mounts: they prevent a brief
+        // flash of the Changes pill between the mount and the first fresh git fetch completing.
+        // The latches are updated naturally by selectComposerPillChanges once the fetch returns.
         this.composerActivityGitFilesByConversationId.delete(summary.id);
         this.host.stickyComposerContextUsageDispose.dispose();
         host.replaceChildren();
