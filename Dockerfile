@@ -100,6 +100,10 @@ WORKDIR /app/examples/browser
 
 COPY --from=build /app /app
 
+# Bundled slash skills (global for every tenant). User-specific skills live under
+# /root/.qaap/users/{login}/skills on the qaap-auth-data volume.
+COPY packages/qaap-product/resources/qaap-system-skills /opt/qaap/system-skills
+
 # --- Agent privilege-drop (on by default via QAAP_AGENT_UID below) -------------
 # The backend runs as root so it can spawn the agent under a non-root uid. A non-root agent cannot
 # traverse the root-owned /root/{.qaap,.theia} trees where every tenant's API keys, OAuth tokens and
@@ -138,6 +142,7 @@ ARG QAAP_BUILD_SHA=dev
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=${QAAP_IDE_PORT} \
+    QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills \
     THEIA_PLUGINS_DIR=/app/plugins \
     QAAP_AGENT_HOME=/home/qaap-agent \
     QAAP_AGENT_UID=1001 \

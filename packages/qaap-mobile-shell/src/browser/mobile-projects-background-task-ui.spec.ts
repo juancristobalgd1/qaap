@@ -49,6 +49,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             renderSubtitle: () => undefined,
             renderList: () => undefined,
             seedTranscriptOptimisticSubmit: () => undefined,
+            syncWorkHubProjectSkillRoots: () => undefined,
         });
 
         const cwd = await ui.ensureInlineComposerCwd(mockup);
@@ -73,6 +74,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             renderSubtitle: () => undefined,
             renderList: () => undefined,
             seedTranscriptOptimisticSubmit: () => undefined,
+            syncWorkHubProjectSkillRoots: () => undefined,
         });
 
         expect(ui.resolveWorktreeForSession('/repo')).to.equal(true);
@@ -103,6 +105,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             renderSubtitle: () => undefined,
             renderList: () => undefined,
             seedTranscriptOptimisticSubmit: () => undefined,
+            syncWorkHubProjectSkillRoots: () => undefined,
         });
 
         expect(ui.resolveWorktreeForSession('/repo')).to.equal(true);

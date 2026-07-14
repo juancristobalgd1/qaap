@@ -35,6 +35,7 @@ export interface MobileProjectsRepoLifecycleHost {
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     closeCardMenu(): void;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+    syncWorkHubProjectSkillRoots(): void;
 }
 
 export class MobileProjectsRepoLifecycleUi {
@@ -85,6 +86,7 @@ export class MobileProjectsRepoLifecycleUi {
             await this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries();
             this.host.render();
             this.host.delegate.onProjectsChanged?.();
+            this.host.syncWorkHubProjectSkillRoots();
         } finally {
             this.host.root.classList.remove('theia-mod-loading');
         }

@@ -105,6 +105,7 @@ export interface MobileProjectsPanelLifecycleHost {
     mergeInboxPullRequests(polled: QaapGithubPullRequestSummary[]): QaapGithubPullRequestSummary[];
     updateTasksAttentionChrome(): void;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+    syncWorkHubProjectSkillRoots(): void;
 }
 
 export class MobileProjectsPanelLifecycleUi {
@@ -177,6 +178,7 @@ export class MobileProjectsPanelLifecycleUi {
             const cachedProjects = this.host.projectsService.peekCachedProjects();
             if (cachedProjects.length > 0) {
                 this.host.projects = cachedProjects;
+                this.host.syncWorkHubProjectSkillRoots();
             }
         }
         this.host.render();
@@ -252,6 +254,7 @@ export class MobileProjectsPanelLifecycleUi {
             this.ensureVisibleAgentsHubShell();
             this.updateAccountAvatar();
             this.host.syncLandingHubListChrome();
+            this.host.syncWorkHubProjectSkillRoots();
         } catch (err) {
             console.warn('[qaap-mobile-shell] Failed to prime Work Hub data:', err);
         }

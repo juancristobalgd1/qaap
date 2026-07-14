@@ -423,7 +423,7 @@ function showContextAttachMenu(
                     empty.textContent = skills.length === 0
                         ? nls.localize(
                             'qaap/mobileProjects/stickyComposerAttachSkillsEmpty',
-                            'No skills found. Add SKILL.md folders under ~/.cursor/skills or ~/.claude/skills.',
+                            'No skills found. System skills load automatically; add custom SKILL.md folders under ~/.qaap/users/<you>/skills.',
                         )
                         : nls.localize(
                             'qaap/mobileProjects/stickyComposerAttachSkillsNoMatch',

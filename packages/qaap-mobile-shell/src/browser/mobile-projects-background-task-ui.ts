@@ -72,6 +72,7 @@ export interface MobileProjectsBackgroundTaskHost {
     ): void;
     /** Roll back the pre-create idle optimistic paint when the create is rejected (e.g. 400 needs-project). */
     rollbackTranscriptOptimisticSubmit?(): void;
+    syncWorkHubProjectSkillRoots(): void;
 }
 
 export interface QaapProjectChatSessionCreated {
@@ -147,6 +148,7 @@ export class MobileProjectsBackgroundTaskUi {
             && this.host.projectsService.projectMatchesCurrentWorkspace(project)
         ) {
             this.host.preparedCwdByProjectId.set(project.id, workspaceCwd);
+            this.host.syncWorkHubProjectSkillRoots();
             return workspaceCwd;
         }
         let cwd = this.host.projectsService.getProjectCwd(project);
@@ -192,6 +194,7 @@ export class MobileProjectsBackgroundTaskUi {
             return undefined;
         }
         this.host.preparedCwdByProjectId.set(project.id, cwd);
+        this.host.syncWorkHubProjectSkillRoots();
         return cwd;
     }
     async submitBackgroundAgentTask(

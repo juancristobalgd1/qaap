@@ -72,6 +72,8 @@ import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QaapProjectBootstrapContribution } from './qaap-project-bootstrap-contribution';
+import { QaapProjectSkillRoots } from '@theia/qaap-adapters/lib/common/qaap-project-skill-roots';
+import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { QaapWorkspacePreviewPortClaimService } from './qaap-preview-port-claim-service';
 import { MobileTouchScrollContribution } from './mobile-touch-scroll-contribution';
@@ -244,6 +246,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapProjectBootstrapContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapProjectBootstrapContribution);
+
+    bind(QaapWorkHubProjectSkillRoots).toSelf().inSingletonScope();
+    bind(QaapProjectSkillRoots).toService(QaapWorkHubProjectSkillRoots);
 
     bindToolProvider(QaapBootstrapStatusTool, bind);
     bindToolProvider(QaapBootstrapInstallTool, bind);

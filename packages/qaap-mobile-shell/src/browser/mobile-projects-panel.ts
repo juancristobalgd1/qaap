@@ -32,6 +32,7 @@ import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
 import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
 import { MobileProjectsTeamHubUi, type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import {
     type WorkHubTeamMember,
 } from '../common/qaap-work-hub-team';
@@ -361,6 +362,8 @@ export interface MobileProjectsPanelOptions {
     messageService?: MessageService;
     /** Picks compile/build/test verification commands from the conversation workspace. */
     resolveVerifyChecks?: (cwd: string) => Promise<Array<{ readonly label: string; readonly command: string }>>;
+    /** Sync Work Hub project cwds into {@link QaapProjectSkillRoots} for skill discovery without IDE workspace. */
+    workHubProjectSkillRoots?: QaapWorkHubProjectSkillRoots;
     /** Opens a workspace file when the user taps a transcript read chip. */
     openTranscriptFile?: (filePath: string) => void | Promise<void>;
     openTranscriptReviewFile?: (filePath: string) => void | Promise<void>;
@@ -721,6 +724,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
     protected readonly applyComposerAttachmentsToDraft: MobileProjectsPanelOptions['applyComposerAttachmentsToDraft'];
     protected readonly composerEditorContextService: MobileProjectsPanelOptions['composerEditorContextService'];
+    protected readonly workHubProjectSkillRoots: QaapWorkHubProjectSkillRoots | undefined;
     protected activeTasksDispose: Disposable = Disposable.NULL;
     protected conversationsDispose: Disposable = Disposable.NULL;
     protected inboxStreamDispose: Disposable = Disposable.NULL;
@@ -854,6 +858,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
         this.applyComposerAttachmentsToDraft = options.applyComposerAttachmentsToDraft;
         this.composerEditorContextService = options.composerEditorContextService;
+        this.workHubProjectSkillRoots = options.workHubProjectSkillRoots;
         this.root = document.createElement('div');
         this.root.className = this.homeMode ? 'theia-mobile-projects theia-mod-home' : 'theia-mobile-projects';
         if (!this.homeMode) {
@@ -1167,6 +1172,21 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async refreshProjects(): Promise<void> {
         await this.repoLifecycleUi.refreshProjects();
+    }
+
+    /** Publish Work Hub project roots so SkillService scans repo `.agents/skills` without opening IDE. */
+    syncWorkHubProjectSkillRoots(): void {
+        if (!this.workHubProjectSkillRoots) {
+            return;
+        }
+        const cwds: string[] = [];
+        for (const project of this.projects) {
+            const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
+            if (cwd?.trim()) {
+                cwds.push(cwd.trim());
+            }
+        }
+        this.workHubProjectSkillRoots.syncProjectCwds(cwds);
     }
 
     protected render(): void {

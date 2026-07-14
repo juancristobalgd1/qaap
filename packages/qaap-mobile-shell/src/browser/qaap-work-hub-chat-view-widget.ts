@@ -51,6 +51,7 @@ import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 
 /**
  * Product replacement for Theia's AI Chat panel body.
@@ -115,6 +116,8 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly composerPromptImprover?: QaapComposerPromptImprover;
     @inject(QaapProjectBootstrapService)
     protected readonly projectBootstrap: QaapProjectBootstrapService;
+    @inject(QaapWorkHubProjectSkillRoots)
+    protected readonly workHubProjectSkillRoots: QaapWorkHubProjectSkillRoots;
     @inject(QaapAgUiFrontendToolService) @optional()
     protected readonly agUiFrontendTools?: QaapAgUiFrontendToolService;
     @inject(QaapComposerEditorContextService)
@@ -203,6 +206,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 commitMessageAi: this.commitMessageAi,
                 composerPromptImprover: this.composerPromptImprover,
                 composerEditorContextService: this.composerEditorContextService,
+                workHubProjectSkillRoots: this.workHubProjectSkillRoots,
                 projectBootstrap: this.projectBootstrap,
                 agUiFrontendTools: this.agUiFrontendTools,
                 activeTasks: this.activeTasks,

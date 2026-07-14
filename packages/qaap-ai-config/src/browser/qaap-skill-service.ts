@@ -4,35 +4,58 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
-import * as path from 'path';
+import { injectable, inject, optional, postConstruct } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
-import { Path } from '@theia/core/lib/common/path';
 import { DefaultSkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Skill } from '@theia/ai-core/lib/common/skill';
 import { readQaapAuthUser } from '@theia/qaap-adapters/src/browser/qaap-auth-session';
-
-/** Cursor / Claude Code / Codex skill folders (same layout as SKILL.md directories). */
-const QAAP_BUILTIN_SKILL_DIRECTORY_TILDES = [
-    '~/.cursor/skills',
-    '~/.cursor/skills-cursor',
-    '~/.claude/skills',
-    '~/.codex/skills',
-    '~/.agents/skills',
-] as const;
+import {
+    QaapProjectSkillRoots,
+    qaapProjectSkillDirectoryPaths,
+} from '@theia/qaap-adapters/lib/common/qaap-project-skill-roots';
+import {
+    QAAP_SYSTEM_SKILLS_DIR_ENV,
+    qaapPerUserSkillsDirectory,
+} from '../common/qaap-system-skills';
 
 @injectable()
 export class QaapSkillService extends DefaultSkillService {
 
-    protected getQaapBuiltinSkillDirectories(homePath: string): string[] {
-        const dirs = QAAP_BUILTIN_SKILL_DIRECTORY_TILDES.map(dir => Path.untildify(dir, homePath));
-        // Add per-user skill directory so users don't share custom skills on a shared backend.
-        const user = readQaapAuthUser();
-        if (user?.login?.trim()) {
-            dirs.push(path.join(homePath, '.qaap', 'users', user.login.trim().toLowerCase(), 'skills'));
+    @inject(QaapProjectSkillRoots) @optional()
+    protected readonly projectSkillRoots?: QaapProjectSkillRoots;
+
+    @postConstruct()
+    protected initQaapProjectSkillRoots(): void {
+        this.projectSkillRoots?.onDidChange(() => this.scheduleUpdate());
+    }
+
+    protected override getWorkspaceSkillsDirectoryPaths(): string[] {
+        const paths = super.getWorkspaceSkillsDirectoryPaths();
+        if (!this.projectSkillRoots) {
+            return paths;
         }
-        return dirs;
+        const supplemental = this.projectSkillRoots.getProjectRootPaths().flatMap(root => qaapProjectSkillDirectoryPaths(root));
+        return [...new Set([...supplemental, ...paths])];
+    }
+
+    /**
+     * Qaap replaces upstream home-wide defaults (`~/.theia/skills`, `~/.agents/skills`) with:
+     * - bundled system skills (same for every user), and
+     * - per-user custom skills under `~/.qaap/users/{login}/skills`.
+     */
+    protected override async getDefaultSkillsDirectoryPaths(): Promise<string[]> {
+        const envVar = await this.envVariablesServer.getValue(QAAP_SYSTEM_SKILLS_DIR_ENV);
+        const systemDir = envVar?.value?.trim();
+        return systemDir ? [systemDir] : [];
+    }
+
+    protected async getQaapUserSkillDirectories(homePath: string): Promise<string[]> {
+        const user = readQaapAuthUser();
+        if (!user?.login?.trim()) {
+            return [];
+        }
+        return [qaapPerUserSkillsDirectory(homePath, user.login)];
     }
 
     protected override async update(): Promise<void> {
@@ -42,7 +65,7 @@ export class QaapSkillService extends DefaultSkillService {
         const homePath = new URI(homeDirUri).path.fsPath();
         let changed = false;
 
-        for (const directoryPath of this.getQaapBuiltinSkillDirectories(homePath)) {
+        for (const directoryPath of await this.getQaapUserSkillDirectories(homePath)) {
             const directoryUri = URI.fromFilePath(directoryPath).toString();
             if (this.watchedDirectories.has(directoryUri)) {
                 continue;

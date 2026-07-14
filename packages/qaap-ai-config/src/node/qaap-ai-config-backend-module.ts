@@ -9,8 +9,10 @@ import { MCPFrontendContributionManager } from '@theia/ai-mcp-server/lib/node/mc
 import { patchAnthropicModelForQaapHistory } from './qaap-anthropic-model-patch';
 import { QaapMCPFrontendContributionManager } from './qaap-mcp-frontend-contribution-manager';
 import { QaapShellExecutionServerImpl } from './qaap-shell-execution-server-impl';
+import { ensureQaapSystemSkillsDirEnv } from './qaap-system-skills-env';
 
 patchAnthropicModelForQaapHistory();
+ensureQaapSystemSkillsDirEnv();
 
 export default new ContainerModule((bind, unbind, isBound, rebind) => {
     rebind(ShellExecutionServerImpl).to(QaapShellExecutionServerImpl).inSingletonScope();

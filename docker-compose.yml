@@ -41,6 +41,8 @@ services:
       QAAP_AGENT_COMMAND: ${QAAP_AGENT_COMMAND:-}
       QAAP_AGENT_COMMANDS: ${QAAP_AGENT_COMMANDS:-}
       QAAP_DEFAULT_AGENT: ${QAAP_DEFAULT_AGENT:-qaiq}
+      # Bundled Qaap slash skills (global). Custom user skills: ~/.qaap/users/{login}/skills
+      QAAP_SYSTEM_SKILLS_DIR: ${QAAP_SYSTEM_SKILLS_DIR:-/opt/qaap/system-skills}
       # Opt-in backend self-verification: after a QAIQ task edits files, run the project's
       # typecheck/build/test scripts and, on failure, spawn up to 2 fix turns (5-min cap).
       # Default off; set QAAP_AGENT_VERIFY=1 in the VPS env to enable.

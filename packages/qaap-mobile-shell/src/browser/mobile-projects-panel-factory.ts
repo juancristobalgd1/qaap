@@ -52,6 +52,7 @@ import { resolveStickyComposerAttachmentPreview } from './qaap-sticky-composer-a
 import { resolveStickyComposerContextChip } from './qaap-sticky-composer-context-ui';
 import { resolvePinnedEditorContextVariable } from './qaap-composer-editor-context-resolver';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
+import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 
 export interface MobileProjectsPanelFactoryDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -105,6 +106,7 @@ export interface MobileProjectsPanelFactoryDeps {
     projectBootstrap: QaapProjectBootstrapService;
     agUiFrontendTools?: QaapAgUiFrontendToolService;
     composerEditorContextService: QaapComposerEditorContextService;
+    workHubProjectSkillRoots?: QaapWorkHubProjectSkillRoots;
     activeTasks: MobileProjectsActiveTasks;
     conversations: MobileProjectsConversations;
     backgroundContext: QaapBackgroundContextProvider;
@@ -271,6 +273,7 @@ export class MobileProjectsPanelFactory {
                 projectBootstrap: deps.projectBootstrap,
                 agUiFrontendTools: deps.agUiFrontendTools,
                 composerEditorContextService: deps.composerEditorContextService,
+                workHubProjectSkillRoots: deps.workHubProjectSkillRoots,
                 headerOverflowMenuGroups: this.panelOptions?.headerOverflowMenuGroups,
                 sessionsSidebarContainer: this.panelOptions?.sessionsSidebarContainer,
                 mobileIdeViewPicker: this.panelOptions?.mobileIdeViewPicker,

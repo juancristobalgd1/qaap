@@ -102,6 +102,7 @@ import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-bro
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
 import { QaapWorkbenchHistoryNavWidget, QaapWorkbenchRightControlsWidget } from './qaap-workbench-top-bar-widgets';
@@ -269,6 +270,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(QaapProjectBootstrapService)
     protected readonly projectBootstrap: QaapProjectBootstrapService;
 
+    @inject(QaapWorkHubProjectSkillRoots)
+    protected readonly workHubProjectSkillRoots: QaapWorkHubProjectSkillRoots;
+
     @inject(QaapAgUiFrontendToolService) @optional()
     protected readonly agUiFrontendTools?: QaapAgUiFrontendToolService;
 
@@ -429,6 +433,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 commitMessageAi: this.commitMessageAi,
                 composerPromptImprover: this.composerPromptImprover,
                 composerEditorContextService: this.composerEditorContextService,
+                workHubProjectSkillRoots: this.workHubProjectSkillRoots,
                 projectBootstrap: this.projectBootstrap,
                 agUiFrontendTools: this.agUiFrontendTools,
                 activeTasks: this.activeTasks,

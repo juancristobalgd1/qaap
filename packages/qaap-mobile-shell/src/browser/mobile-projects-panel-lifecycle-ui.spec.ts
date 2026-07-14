@@ -107,6 +107,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             mergeInboxPullRequests: polled => polled,
             updateTasksAttentionChrome: () => undefined,
             cardMenuUi: { closeCardMenu: () => undefined } as MobileProjectsPanelLifecycleHost['cardMenuUi'],
+            syncWorkHubProjectSkillRoots: () => undefined,
             get renderListCalls() { return renderListCalls.value; },
             get scheduleRenderListCalls() { return scheduleRenderListCalls.value; },
             get refreshChromeCalls() { return refreshChromeCalls.value; },
