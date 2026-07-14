@@ -5,6 +5,7 @@
 
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { normalizeQaiqToolName } from './qaap-qaiq-stream';
+import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
 import { segmentsToTraceEvents, type QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 
 interface OpencodeToolPart {
@@ -19,6 +20,12 @@ interface OpencodeToolPart {
         readonly error?: string;
         readonly output?: string;
         readonly stdout?: string;
+    };
+    readonly tokens?: {
+        readonly input?: number;
+        readonly output?: number;
+        readonly reasoning?: number;
+        readonly cache?: { readonly read?: number; readonly write?: number };
     };
 }
 
@@ -47,6 +54,11 @@ export class QaapOpencodeStreamAccumulator {
     protected activeSubagentToolUseId: string | undefined;
     /** True when at least one line was a valid OpenCode JSON event. */
     protected jsonEvents = 0;
+    protected turnUsage: QaapAgentContextUsage | undefined;
+
+    getTurnUsage(): QaapAgentContextUsage | undefined {
+        return this.turnUsage;
+    }
 
     push(chunk: string): readonly QaapAgentMessageSegment[] {
         if (!chunk) {
@@ -103,6 +115,7 @@ export class QaapOpencodeStreamAccumulator {
             return;
         }
         this.jsonEvents += 1;
+        this.captureUsage(envelope);
         const parentFromEvent = resolveOpencodeParentToolUseId(envelope.parent_tool_use_id ?? envelope.parentID);
         if (parentFromEvent) {
             this.activeSubagentToolUseId = parentFromEvent;
@@ -124,6 +137,28 @@ export class QaapOpencodeStreamAccumulator {
             default:
                 break;
         }
+    }
+
+    protected captureUsage(envelope: OpencodeStreamEvent): void {
+        if (envelope.type !== 'step_finish' || !envelope.part?.tokens) {
+            return;
+        }
+        const tokens = envelope.part.tokens;
+        const inputTokens = Math.max(0, tokens.input ?? 0);
+        const outputTokens = Math.max(0, tokens.output ?? 0);
+        const reasoningTokens = Math.max(0, tokens.reasoning ?? 0);
+        const cacheReadInputTokens = Math.max(0, tokens.cache?.read ?? 0);
+        const cacheCreationInputTokens = Math.max(0, tokens.cache?.write ?? 0);
+        if (inputTokens + outputTokens + reasoningTokens + cacheReadInputTokens + cacheCreationInputTokens === 0) {
+            return;
+        }
+        this.turnUsage = {
+            inputTokens,
+            outputTokens,
+            ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
+            ...(cacheReadInputTokens > 0 ? { cacheReadInputTokens } : {}),
+            ...(cacheCreationInputTokens > 0 ? { cacheCreationInputTokens } : {}),
+        };
     }
 
     protected consumeToolPart(part: OpencodeToolPart | undefined): void {
