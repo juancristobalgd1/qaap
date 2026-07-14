@@ -762,6 +762,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         const viewToggle = {
             activeId: this.composerHeaderUi.resolveActiveViewToggleId(),
             onSelect: (id: MobileViewToggleId) => {
+                if (id === 'editor') {
+                    void this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
+                    return;
+                }
                 void this.commands.executeCommand('qaap.mobile.ideHeaderView.activate', id);
             },
         };
