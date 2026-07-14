@@ -401,7 +401,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             const changed = this.verifiedComposerPreview?.projectId !== next?.projectId
                 || this.verifiedComposerPreview?.url !== next?.url;
             this.verifiedComposerPreview = next;
-            if (next) {
+            if (stillCurrent) {
                 this.scheduleComposerPreviewHealthCheck(project.id);
             } else {
                 this.clearComposerPreviewHealthTimer();
