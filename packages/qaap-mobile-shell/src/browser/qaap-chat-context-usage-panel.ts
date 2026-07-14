@@ -5,14 +5,14 @@
 
 import { ChatModel } from '@theia/ai-chat';
 import {
-    CHAT_CONTEXT_WINDOW_SIZE,
-    formatTokenCount,
     getLatestTokenUsage,
 } from '@theia/ai-chat-ui/lib/browser/chat-token-usage-indicator-util';
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
+    estimateConversationContextBreakdown,
     resolveVpsContextUsageFromSummary,
+    totalTokensFromContextUsage,
     type QaapAgentContextUsage,
 } from '../common/qaap-agent-context-usage';
 
@@ -26,15 +26,18 @@ export interface ContextUsageBreakdownCategory {
     readonly label: string;
     readonly tokens: number;
     readonly toneClass: string;
+    readonly provenance: 'reported' | 'estimated';
 }
 
 export interface ContextUsageBreakdownView {
     readonly totalTokens: number;
-    readonly contextWindowSize: number;
-    readonly percent: number;
-    readonly estimated: boolean;
+    readonly contextWindowSize?: number;
+    readonly percent?: number;
+    readonly totalProvenance: 'reported' | 'estimated';
+    readonly contextWindowProvenance: 'reported' | 'estimated' | 'unavailable';
     readonly empty: boolean;
     readonly categories: readonly ContextUsageBreakdownCategory[];
+    readonly reportAction?: { readonly label: string; readonly run: () => void };
 }
 
 const CATEGORY_TONES = {
@@ -42,6 +45,9 @@ const CATEGORY_TONES = {
     output: 'theia-mod-output',
     cacheRead: 'theia-mod-cache-read',
     cacheWrite: 'theia-mod-cache-write',
+    reasoning: 'theia-mod-reasoning',
+    promptContext: 'theia-mod-prompt-context',
+    summarized: 'theia-mod-summarized',
     estimated: 'theia-mod-estimated',
 } as const;
 
@@ -58,6 +64,7 @@ function buildUsageCategories(
                 label: nls.localizeByDefault('Input'),
                 tokens: usage.inputTokens,
                 toneClass: CATEGORY_TONES.input,
+                provenance: 'reported',
             });
         }
         if (usage.outputTokens > 0) {
@@ -66,6 +73,7 @@ function buildUsageCategories(
                 label: nls.localizeByDefault('Output'),
                 tokens: usage.outputTokens,
                 toneClass: CATEGORY_TONES.output,
+                provenance: 'reported',
             });
         }
         if (usage.cacheReadInputTokens && usage.cacheReadInputTokens > 0) {
@@ -74,6 +82,7 @@ function buildUsageCategories(
                 label: nls.localize('qaap/chat/contextUsageCategoryCacheRead', 'Cache read'),
                 tokens: usage.cacheReadInputTokens,
                 toneClass: CATEGORY_TONES.cacheRead,
+                provenance: 'reported',
             });
         }
         if (usage.cacheCreationInputTokens && usage.cacheCreationInputTokens > 0) {
@@ -82,6 +91,16 @@ function buildUsageCategories(
                 label: nls.localize('qaap/chat/contextUsageCategoryCacheWrite', 'Cache write'),
                 tokens: usage.cacheCreationInputTokens,
                 toneClass: CATEGORY_TONES.cacheWrite,
+                provenance: 'reported',
+            });
+        }
+        if (usage.reasoningTokens && usage.reasoningTokens > 0) {
+            categories.push({
+                id: 'reasoning',
+                label: nls.localize('qaap/chat/contextUsageCategoryReasoning', 'Reasoning'),
+                tokens: usage.reasoningTokens,
+                toneClass: CATEGORY_TONES.reasoning,
+                provenance: 'reported',
             });
         }
         if (categories.length > 0) {
@@ -94,14 +113,52 @@ function buildUsageCategories(
             label: nls.localize('qaap/chat/contextUsageCategoryConversation', 'Conversation (estimated)'),
             tokens: totalTokens,
             toneClass: CATEGORY_TONES.estimated,
+            provenance: 'estimated',
         }];
     }
     return [];
 }
 
+function buildEstimatedConversationCategories(full: QaapAgentConversationDTO): readonly ContextUsageBreakdownCategory[] {
+    const estimate = estimateConversationContextBreakdown(
+        full.messages,
+        full.contextPreamble,
+        full.contextCompaction,
+    );
+    const categories: ContextUsageBreakdownCategory[] = [];
+    if (estimate.promptContextTokens > 0) {
+        categories.push({
+            id: 'prompt-context',
+            label: nls.localize('qaap/chat/contextUsageCategoryPromptContext', 'Prompt context'),
+            tokens: estimate.promptContextTokens,
+            toneClass: CATEGORY_TONES.promptContext,
+            provenance: 'estimated',
+        });
+    }
+    if (estimate.summarizedConversationTokens > 0) {
+        categories.push({
+            id: 'summarized-conversation',
+            label: nls.localize('qaap/chat/contextUsageCategorySummarizedConversation', 'Summarized conversation'),
+            tokens: estimate.summarizedConversationTokens,
+            toneClass: CATEGORY_TONES.summarized,
+            provenance: 'estimated',
+        });
+    }
+    if (estimate.conversationTokens > 0) {
+        categories.push({
+            id: 'conversation',
+            label: nls.localizeByDefault('Conversation'),
+            tokens: estimate.conversationTokens,
+            toneClass: CATEGORY_TONES.estimated,
+            provenance: 'estimated',
+        });
+    }
+    return categories;
+}
+
 export function resolveChatModelContextUsageBreakdown(
     chatModel: ChatModel | undefined,
-    contextWindowSize: number = CHAT_CONTEXT_WINDOW_SIZE,
+    contextWindowSize?: number,
 ): ContextUsageBreakdownView {
     const usage = getLatestTokenUsage(chatModel);
     const qaapUsage = usage ? {
@@ -110,19 +167,17 @@ export function resolveChatModelContextUsageBreakdown(
         ...(usage.cacheReadInputTokens ? { cacheReadInputTokens: usage.cacheReadInputTokens } : {}),
         ...(usage.cacheCreationInputTokens ? { cacheCreationInputTokens: usage.cacheCreationInputTokens } : {}),
     } satisfies QaapAgentContextUsage : undefined;
-    const totalTokens = qaapUsage
-        ? qaapUsage.inputTokens
-            + qaapUsage.outputTokens
-            + (qaapUsage.cacheReadInputTokens ?? 0)
-            + (qaapUsage.cacheCreationInputTokens ?? 0)
-        : 0;
+    const totalTokens = totalTokensFromContextUsage(qaapUsage);
     const categories = buildUsageCategories(qaapUsage, false, totalTokens);
-    const percent = Math.min((totalTokens / contextWindowSize) * 100, 100);
+    const percent = contextWindowSize
+        ? Math.min((totalTokens / contextWindowSize) * 100, 100)
+        : undefined;
     return {
         totalTokens,
         contextWindowSize,
         percent,
-        estimated: false,
+        totalProvenance: 'reported',
+        contextWindowProvenance: contextWindowSize ? 'reported' : 'unavailable',
         empty: totalTokens === 0,
         categories,
     };
@@ -133,24 +188,40 @@ export function resolveVpsContextUsageBreakdown(
     full?: QaapAgentConversationDTO,
 ): ContextUsageBreakdownView {
     const snapshot = resolveVpsContextUsageFromSummary(summary, full);
-    const categories = buildUsageCategories(snapshot.usage, snapshot.estimated, snapshot.totalTokens);
+    const categories = snapshot.estimated && full
+        ? buildEstimatedConversationCategories(full)
+        : buildUsageCategories(snapshot.usage, snapshot.estimated, snapshot.totalTokens);
+    // The VPS currently persists a provisional 128k fallback, not a provider/model report.
+    // Keep it available as an explicitly estimated denominator.
     const percent = Math.min((snapshot.totalTokens / snapshot.contextWindowSize) * 100, 100);
     return {
         totalTokens: snapshot.totalTokens,
         contextWindowSize: snapshot.contextWindowSize,
         percent,
-        estimated: snapshot.estimated,
+        totalProvenance: snapshot.estimated ? 'estimated' : 'reported',
+        contextWindowProvenance: 'estimated',
         empty: snapshot.totalTokens === 0,
         categories,
     };
 }
 
-function formatPanelTokenCount(count: number, estimated: boolean): string {
-    if (count === 0) {
-        return '-';
+export function formatContextTokenCount(
+    count: number,
+    provenance: 'reported' | 'estimated',
+): string {
+    const normalized = Number.isFinite(count) ? Math.max(0, count) : 0;
+    const estimatePrefix = provenance === 'estimated' ? '~' : '';
+    if (normalized === 0) {
+        return nls.localize('qaap/chat/contextUsageZeroTokens', '0 Tokens');
     }
-    const formatted = formatTokenCount(count);
-    return estimated && formatted !== '-' ? `~${formatted}` : formatted;
+    const divisor = normalized >= 1_000_000 ? 1_000_000 : 1_000;
+    const unit = divisor === 1_000_000 ? 'M' : 'K';
+    const compact = new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+        useGrouping: false,
+    }).format(normalized / divisor);
+    return `${estimatePrefix}${compact}${unit}`;
 }
 
 function createContextUsagePanel(
@@ -185,16 +256,26 @@ function createContextUsagePanel(
     percentLabel.className = 'qaap-chat-context-usage-panel-percent';
     percentLabel.textContent = view.empty
         ? nls.localize('qaap/chat/contextUsagePanelEmpty', 'No usage yet')
-        : nls.localize('qaap/chat/contextUsagePanelPercentFull', '{0}% Full', Math.round(view.percent));
+        : nls.localize('qaap/chat/contextUsagePanelPercentFull', '{0}% Full', Math.round(view.percent ?? 0));
 
     const totalLabel = document.createElement('span');
     totalLabel.className = 'qaap-chat-context-usage-panel-total';
-    totalLabel.textContent = nls.localize(
-        'qaap/chat/contextUsagePanelTotalTokens',
-        '{0} / {1} Tokens',
-        formatPanelTokenCount(view.totalTokens, view.estimated),
-        formatTokenCount(view.contextWindowSize),
-    );
+    const formattedTotal = formatContextTokenCount(view.totalTokens, view.totalProvenance);
+    totalLabel.textContent = view.contextWindowSize == null
+        ? nls.localize(
+            'qaap/chat/contextUsagePanelTokensUnknownLimit',
+            '{0} Tokens · Limit unavailable',
+            formattedTotal,
+        )
+        : nls.localize(
+            'qaap/chat/contextUsagePanelTotalTokens',
+            '{0} / {1} Tokens',
+            formattedTotal,
+            formatContextTokenCount(
+                view.contextWindowSize,
+                view.contextWindowProvenance === 'estimated' ? 'estimated' : 'reported',
+            ),
+        );
     summary.append(percentLabel, totalLabel);
 
     const bar = document.createElement('div');
@@ -204,7 +285,9 @@ function createContextUsagePanel(
         for (const category of view.categories) {
             const segment = document.createElement('span');
             segment.className = `qaap-chat-context-usage-panel-bar-segment ${category.toneClass}`;
-            segment.style.width = `${Math.max(0, (category.tokens / view.contextWindowSize) * 100)}%`;
+            segment.style.width = view.contextWindowSize
+                ? `${Math.max(0, (category.tokens / view.contextWindowSize) * 100)}%`
+                : '0%';
             bar.append(segment);
         }
     } else {
@@ -237,17 +320,23 @@ function createContextUsagePanel(
             label.className = 'qaap-chat-context-usage-panel-label';
             label.textContent = category.label;
 
+            const provenance = document.createElement('span');
+            provenance.className = `qaap-chat-context-usage-panel-provenance theia-mod-${category.provenance}`;
+            provenance.textContent = category.provenance === 'reported'
+                ? nls.localize('qaap/chat/contextUsageReportedBadge', 'reported')
+                : nls.localize('qaap/chat/contextUsageEstimatedBadge', 'estimated');
+
             const count = document.createElement('span');
             count.className = 'qaap-chat-context-usage-panel-count';
-            count.textContent = formatPanelTokenCount(category.tokens, view.estimated && category.id === 'estimated');
+            count.textContent = formatContextTokenCount(category.tokens, category.provenance);
 
-            row.append(swatch, label, count);
+            row.append(swatch, label, provenance, count);
             list.append(row);
         }
     }
 
     body.append(summary, bar, list);
-    if (view.estimated) {
+    if (view.totalProvenance === 'estimated') {
         const note = document.createElement('p');
         note.className = 'qaap-chat-context-usage-panel-note';
         note.textContent = nls.localize(

@@ -11,7 +11,7 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
-    estimateConversationTokensFromMessages,
+    estimateConversationContextBreakdown,
     type QaapAgentContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -147,7 +147,7 @@ export interface QaapAgentConversation {
     readonly gitDiffRemoved?: number;
     /** When set, this thread is tied to a GitHub pull request (Work Hub inbox). */
     readonly linkedPullRequest?: QaapLinkedPullRequest;
-    /** Cumulative token usage when the agent CLI reports stream-json usage. */
+    /** Latest context snapshot when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
     readonly contextWindowSize?: number;
@@ -410,7 +410,13 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.contextWindowSize ? { contextWindowSize: conv.contextWindowSize } : {}),
         ...(conv.contextUsageEstimated ? { contextUsageEstimated: true } : {}),
         ...(conv.contextUsageEstimated
-            ? { estimatedContextTokens: estimateConversationTokensFromMessages(conv.messages, conv.contextPreamble) }
+            ? {
+                estimatedContextTokens: estimateConversationContextBreakdown(
+                    conv.messages,
+                    conv.contextPreamble,
+                    conv.contextCompaction,
+                ).totalTokens,
+            }
             : {}),
         ...(conversationNeedsVisualVerificationEvidence(conv) ? { visualVerificationPending: true } : {}),
     };

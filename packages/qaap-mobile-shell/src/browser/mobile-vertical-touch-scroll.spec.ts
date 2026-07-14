@@ -18,6 +18,7 @@ import {
 const OVERLAY_SCROLL_HOSTS = [
     '.theia-mobile-work-hub-sessions-sidebar-scroll',
     '.theia-mobile-sticky-composer-sheet-list',
+    '.qaap-chat-context-usage-sheet-body',
     '.theia-qaap-approval-policy-sheet-list',
     '.qaap-project-bootstrap-picker',
     // Codex-style execution event timeline: terminal output card content is a

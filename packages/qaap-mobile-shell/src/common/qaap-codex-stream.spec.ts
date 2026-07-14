@@ -32,6 +32,16 @@ describe('QaapCodexStreamAccumulator', () => {
         expect(parsed.segments).to.deep.equal([{ type: 'text', content: 'Hi' }]);
     });
 
+    it('captures real turn usage and separates cached input', () => {
+        const acc = new QaapCodexStreamAccumulator();
+        acc.push('{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":800,"output_tokens":75}}\n');
+        expect(acc.getTurnUsage()).to.deep.equal({
+            inputTokens: 400,
+            outputTokens: 75,
+            cacheReadInputTokens: 800,
+        });
+    });
+
     it('tracks nested subagent tools via collab_tool_call spawn_agent', () => {
         const acc = new QaapCodexStreamAccumulator();
         acc.push([

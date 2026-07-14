@@ -142,6 +142,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-pr-stack',
     '.theia-mobile-pr-picker',
     '.theia-mobile-sticky-composer-sheet-list',
+    '.qaap-chat-context-usage-sheet-body',
     '.theia-mobile-projects-sticky-composer-mention-popover',
     '.theia-mobile-projects-sticky-composer-plugin-picker-body',
     '.theia-mobile-mcp-attach-scroll',

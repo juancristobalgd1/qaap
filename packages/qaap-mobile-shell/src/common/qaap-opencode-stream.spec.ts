@@ -37,6 +37,18 @@ describe('QaapOpencodeStreamAccumulator', () => {
         expect(acc.getSegments()).to.deep.equal([{ type: 'thinking', content: 'plan step' }]);
     });
 
+    it('captures token metadata from step_finish when OpenCode reports it', () => {
+        const acc = new QaapOpencodeStreamAccumulator();
+        acc.push('{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":900,"output":80,"reasoning":20,"cache":{"read":300,"write":40}}}}\n');
+        expect(acc.getTurnUsage()).to.deep.equal({
+            inputTokens: 900,
+            outputTokens: 80,
+            reasoningTokens: 20,
+            cacheReadInputTokens: 300,
+            cacheCreationInputTokens: 40,
+        });
+    });
+
     it('nests child tools under an active task subagent', () => {
         const acc = new QaapOpencodeStreamAccumulator();
         acc.push([
