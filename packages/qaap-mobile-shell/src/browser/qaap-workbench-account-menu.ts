@@ -99,16 +99,6 @@ export function buildQaapAccountMenuEntries(signedIn: boolean = true): QaapAccou
             label: nls.localize('qaap/accountMenu/commandPalette', 'Command Palette…'),
             commandId: WORKBENCH_SHOW_COMMANDS,
         },
-        {
-            kind: 'action',
-            label: nls.localize('qaap/accountMenu/workHubOverview', 'Work Hub overview'),
-            commandId: QAAP_WORK_HUB_OVERVIEW_COMMAND,
-        },
-        {
-            kind: 'action',
-            label: nls.localize('qaap/accountMenu/openDesktopIde', 'Open IDE'),
-            commandId: QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-        },
         { kind: 'separator' },
         {
             kind: 'action',

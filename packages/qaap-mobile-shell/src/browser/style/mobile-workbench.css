@@ -17908,7 +17908,7 @@ body>.theia-mobile-transcript-files-menu {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: clamp(10px, 1.8vw, 14px);
   text-align: center;
   pointer-events: none;
   -webkit-user-select: none;
@@ -17938,17 +17938,6 @@ body>.theia-mobile-transcript-files-menu {
   text-wrap: balance;
 }
 
-.theia-mobile-agent-transcript-empty-subtitle {
-  margin: 0;
-  max-width: 34em;
-  color: color-mix(in srgb, var(--theia-descriptionForeground) 82%, var(--theia-foreground));
-  font-size: clamp(13px, 1.7vw, 15px);
-  font-weight: 400;
-  line-height: 1.55;
-  letter-spacing: 0.005em;
-  text-wrap: pretty;
-}
-
 .theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) .theia-mobile-agent-transcript-empty-welcome {
   margin: clamp(12px, 4vh, 32px) auto clamp(20px, 5vh, 40px);
   flex: 0 0 auto;
@@ -17966,11 +17955,6 @@ body>.theia-mobile-transcript-files-menu {
 
   .theia-mobile-agent-transcript-empty-title {
     font-size: clamp(22px, 7vw, 30px);
-  }
-
-  .theia-mobile-agent-transcript-empty-subtitle {
-    max-width: 28em;
-    font-size: 13px;
   }
 }
 

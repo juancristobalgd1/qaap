@@ -140,6 +140,73 @@ describe('MobileProjectsHubHeaderUi', () => {
         expect(sessionClosed).to.equal(true);
     });
 
+    describe('renderHeader — title visibility', () => {
+        function createRenderableHost(options?: {
+            readonly agentsHubInlineActive?: boolean;
+            readonly transcriptOpenProject?: MobileProjectEntry;
+            readonly transcriptOpenSummary?: MobileProjectsHubHeaderHost['transcriptOpenSummary'];
+            readonly transcriptTitle?: string;
+            readonly useAgentsHubLanding?: boolean;
+            readonly hubView?: MobileProjectsHubHeaderHost['hubView'];
+        }): MobileProjectsHubHeaderHost {
+            const p = options?.transcriptOpenProject;
+            const host = createHost({
+                agentsHubInlineActive: options?.agentsHubInlineActive ?? false,
+                transcriptOpenProject: p,
+            });
+            host.hubView = options?.hubView ?? 'tasks';
+            host.transcriptOpenSummary = options?.transcriptOpenSummary;
+            host.shouldUseAgentsHubLanding = () => options?.useAgentsHubLanding ?? true;
+            host.hubQueryUi = { isSidebarSecondaryHubView: () => false } as unknown as MobileProjectsHubHeaderHost['hubQueryUi'];
+            host.projectNavigationUi = { resolveSelectedProject: () => undefined } as unknown as MobileProjectsHubHeaderHost['projectNavigationUi'];
+            host.transcriptHeaderUi = {
+                resolveTranscriptHeaderTitle: () => options?.transcriptTitle ?? 'Mockup · Add tests',
+            } as unknown as MobileProjectsHubHeaderHost['transcriptHeaderUi'];
+            return host;
+        }
+
+        it('hides the transcript title visually (sr-only) when an inline agent session is open', () => {
+            const p = project('mockup', 'Mockup');
+            const summary = { id: 'test-id', title: 'Add tests' } as MobileProjectsHubHeaderHost['transcriptOpenSummary'];
+            const host = createRenderableHost({
+                agentsHubInlineActive: true,
+                transcriptOpenProject: p,
+                transcriptOpenSummary: summary,
+                transcriptTitle: 'Mockup · Add tests',
+            });
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            expect(host.titleEl.classList.contains('theia-mod-sr-only')).to.equal(true,
+                'title must carry theia-mod-sr-only when an inline session is open');
+            expect(host.titleEl.textContent).to.equal('Mockup · Add tests',
+                'textContent must be preserved for screen readers');
+        });
+
+        it('hides the Agents landing title visually while preserving accessible text', () => {
+            const host = createRenderableHost({ useAgentsHubLanding: true });
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            expect(host.titleEl.classList.contains('theia-mod-sr-only')).to.equal(true);
+            expect(host.titleEl.textContent).to.equal('Agents');
+        });
+
+        it('keeps titles visible on non-Agents surfaces', () => {
+            const tasksHost = createRenderableHost({ useAgentsHubLanding: false });
+            tasksHost.titleEl.classList.add('theia-mod-sr-only');
+            new MobileProjectsHubHeaderUi(tasksHost).renderHeader();
+            expect(tasksHost.titleEl.classList.contains('theia-mod-sr-only')).to.equal(false);
+            expect(tasksHost.titleEl.textContent).to.equal('Tasks');
+
+            const reviewHost = createRenderableHost({ hubView: 'review' });
+            reviewHost.titleEl.classList.add('theia-mod-sr-only');
+            new MobileProjectsHubHeaderUi(reviewHost).renderHeader();
+            expect(reviewHost.titleEl.classList.contains('theia-mod-sr-only')).to.equal(false);
+            expect(reviewHost.titleEl.textContent).to.equal('Review');
+        });
+    });
+
     it('shows the header overflow menu only when the chat execution surface is active', () => {
         const current = project('mockup', 'Mockup');
         const ui = new MobileProjectsHubHeaderUi(createHost({
