@@ -2596,10 +2596,12 @@ body.theia-mobile-mod-workhub-composer-header .theia-workbench-right-controls .t
 }
 
 .theia-mobile-projects.theia-mod-home.theia-mod-hub-list-chrome.theia-mod-hub-routines .theia-mobile-projects-scroll {
+  padding-inline: 0;
   padding-bottom: calc(72px + var(--theia-mobile-bottom-bar-height, 56px) + env(safe-area-inset-bottom, 0px));
 }
 
 .theia-mobile-projects.theia-mod-home.theia-mod-hub-routines .theia-mobile-projects-scroll {
+  padding-inline: 0;
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 
@@ -5215,11 +5217,16 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  padding-inline: 0;
   padding-bottom: 28px;
 }
 
 .theia-mobile-projects.theia-mod-hub-routines .theia-mobile-projects-header {
   padding-top: max(14px, env(safe-area-inset-top, 0px));
+  padding-left: max(clamp(12px, 4vw, 20px), env(safe-area-inset-left, 0px));
+  padding-right: max(clamp(12px, 4vw, 20px), env(safe-area-inset-right, 0px));
   padding-bottom: 10px;
   border-bottom: 1px solid var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 6%, transparent));
 }
@@ -5272,7 +5279,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-hub-routines {
   display: flex;
   flex-direction: column;
-  padding: 6px 0 4px;
+  width: min(100%, 720px);
+  margin-inline: auto;
+  padding: 6px
+    max(clamp(12px, 4vw, 20px), env(safe-area-inset-right, 0px))
+    4px
+    max(clamp(12px, 4vw, 20px), env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
   font-family: var(--q-font-sans, var(--theia-ui-font-family, sans-serif));
 }
 
@@ -5420,7 +5433,10 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-projects-empty.theia-mod-routines-empty,
 .theia-mobile-projects-empty.theia-mod-routines-loading {
-  margin: 20px 0 8px;
+  margin: 20px
+    max(clamp(12px, 4vw, 20px), env(safe-area-inset-right, 0px))
+    8px
+    max(clamp(12px, 4vw, 20px), env(safe-area-inset-left, 0px));
   padding: 24px 16px;
   border: 1px solid var(--q-line, var(--qaap-line, color-mix(in srgb, var(--theia-foreground) 8%, transparent)));
   border-radius: var(--q-radius-card, 14px);

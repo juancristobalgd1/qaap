@@ -388,6 +388,10 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         host.replaceChildren();
+
+        const card = document.createElement('div');
+        card.className = 'theia-mobile-transcript-plan-card';
+
         const segments = this.latestAgentSegments(conv);
         if (!segments || segments.length === 0) {
             const note = document.createElement('div');
@@ -396,7 +400,8 @@ export class MobileProjectsTranscriptSurfacesUi {
                 'qaap/mobileProjects/planEmpty',
                 'Plan appears here as soon as the agent starts thinking or using tools.',
             );
-            host.append(note);
+            card.append(note);
+            host.append(card);
             return;
         }
 
@@ -408,7 +413,8 @@ export class MobileProjectsTranscriptSurfacesUi {
                 'qaap/mobileProjects/planNoActivity',
                 'No structured activity has been reported for this turn yet.',
             );
-            host.append(note);
+            card.append(note);
+            host.append(card);
             return;
         }
 
@@ -443,10 +449,11 @@ export class MobileProjectsTranscriptSurfacesUi {
             timeline.classList.add('theia-mobile-transcript-plan-trace');
         }
 
-        host.append(head, progress);
+        card.append(head, progress);
         if (timeline) {
-            host.append(timeline);
+            card.append(timeline);
         }
+        host.append(card);
     }
 
     latestAgentSegments(conv: QaapAgentConversationDTO | undefined): QaapAgentMessageSegmentDTO[] | undefined {
