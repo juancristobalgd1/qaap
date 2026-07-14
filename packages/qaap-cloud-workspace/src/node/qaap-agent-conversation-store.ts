@@ -2416,11 +2416,10 @@ export class QaapAgentConversationStore {
             return undefined;
         }
         const link: QaapLinkedPullRequest = {
+            ...conv.linkedPullRequest,
             owner: repo.owner,
             repo: repo.name,
             branch,
-            number: conv.linkedPullRequest?.number,
-            title: conv.linkedPullRequest?.title,
         };
         if (conv.linkedPullRequest
             && conv.linkedPullRequest.owner === link.owner

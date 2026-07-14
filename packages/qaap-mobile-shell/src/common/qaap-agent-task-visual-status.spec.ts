@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveQaapAgentTaskVisualStatus } from './qaap-agent-task-visual-status';
+import { resolveQaapAgentTaskVisualStatus, resolveQaapGitPrVisualStatus } from './qaap-agent-task-visual-status';
 
 describe('resolveQaapAgentTaskVisualStatus', () => {
     it('keeps failures above every other signal', () => {
@@ -33,8 +33,56 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
     it('classifies linked pull requests as PR ready after attention states', () => {
         expect(resolveQaapAgentTaskVisualStatus(
             { state: 'completed' },
-            { status: 'idle', linkedPullRequest: { owner: 'acme', repo: 'app', number: 9 }, messageCount: 4 },
+            { status: 'idle', linkedPullRequest: { owner: 'acme', repo: 'app', number: 9, state: 'open' }, messageCount: 4 },
         ).id).to.equal('pr-ready');
+    });
+
+    it('maps every GitHub PR lifecycle state to an explicit semantic status', () => {
+        const pull = { owner: 'acme', repo: 'app', number: 9 } as const;
+        expect(resolveQaapGitPrVisualStatus({ linkedPullRequest: { ...pull, state: 'open' } })).to.include({
+            id: 'pr-ready',
+            iconClass: 'codicon-git-pull-request',
+        });
+        expect(resolveQaapGitPrVisualStatus({ linkedPullRequest: { ...pull, state: 'open', draft: true } })).to.include({
+            id: 'pr-draft',
+            iconClass: 'codicon-git-pull-request-draft',
+        });
+        expect(resolveQaapGitPrVisualStatus({ linkedPullRequest: { ...pull, state: 'merged' } })).to.include({
+            id: 'pr-merged',
+            iconClass: 'codicon-git-merge',
+        });
+        expect(resolveQaapGitPrVisualStatus({ linkedPullRequest: { ...pull, state: 'closed' } })).to.include({
+            id: 'pr-closed',
+            iconClass: 'codicon-git-pull-request-closed',
+        });
+    });
+
+    it('maps actionable open-PR conditions before generic ready', () => {
+        const pull = { owner: 'acme', repo: 'app', number: 9, state: 'open' as const };
+        expect(resolveQaapGitPrVisualStatus({ linkedPullRequest: { ...pull, mergeable: false } })?.id).to.equal('pr-conflicts');
+        expect(resolveQaapGitPrVisualStatus({ linkedPullRequest: { ...pull, tests: 'failing' } })?.id).to.equal('checks-failed');
+        expect(resolveQaapGitPrVisualStatus({ linkedPullRequest: { ...pull, tests: 'pending' } })?.id).to.equal('checks-pending');
+    });
+
+    it('uses changes for branch/git activity and no PR semantics', () => {
+        expect(resolveQaapGitPrVisualStatus({
+            linkedPullRequest: { owner: 'acme', repo: 'app', branch: 'agent/work' },
+        })?.id).to.equal('changes');
+        expect(resolveQaapGitPrVisualStatus({ hasGitOperation: true })?.id).to.equal('changes');
+        expect(resolveQaapGitPrVisualStatus({ linesAdded: 2 })?.id).to.equal('changes');
+    });
+
+    it('keeps legacy linked PRs neutral instead of guessing open or merged', () => {
+        expect(resolveQaapGitPrVisualStatus({
+            linkedPullRequest: { owner: 'acme', repo: 'app', number: 9 },
+        })).to.include({
+            id: 'pr-unknown',
+            iconClass: 'codicon-git-pull-request',
+        });
+    });
+
+    it('returns no Git/PR badge when no Git state is available', () => {
+        expect(resolveQaapGitPrVisualStatus({})).to.equal(undefined);
     });
 
     it('classifies completed work as verified', () => {

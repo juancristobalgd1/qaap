@@ -12,6 +12,14 @@ export type QaapAgentTaskVisualStatusId =
     | 'needs-you'
     | 'failed'
     | 'pr-ready'
+    | 'pr-merged'
+    | 'pr-closed'
+    | 'pr-draft'
+    | 'pr-conflicts'
+    | 'checks-failed'
+    | 'checks-pending'
+    | 'changes'
+    | 'pr-unknown'
     | 'verified'
     | 'background';
 
@@ -22,6 +30,7 @@ export interface QaapAgentTaskVisualStatus {
     readonly className: string;
     readonly iconClass?: string;
     readonly color: string;
+    readonly gitPr: boolean;
 }
 
 const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatus> = {
@@ -31,6 +40,7 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         label: 'idle',
         className: 'theia-mod-idle',
         color: 'var(--theia-descriptionForeground)',
+        gitPr: false,
     },
     'queued': {
         id: 'queued',
@@ -39,6 +49,7 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         className: 'theia-mod-queued',
         iconClass: 'codicon-clock',
         color: 'var(--theia-descriptionForeground)',
+        gitPr: false,
     },
     'running': {
         id: 'running',
@@ -46,6 +57,7 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         label: 'running',
         className: 'theia-mod-running',
         color: 'var(--theia-charts-green, #4caf7c)',
+        gitPr: false,
     },
     'needs-you': {
         id: 'needs-you',
@@ -54,6 +66,7 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         className: 'theia-mod-needs-input',
         iconClass: 'codicon-warning',
         color: 'var(--theia-notificationsWarningIcon-foreground, #cca700)',
+        gitPr: false,
     },
     'failed': {
         id: 'failed',
@@ -62,6 +75,7 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         className: 'theia-mod-failed',
         iconClass: 'codicon-error',
         color: 'var(--theia-errorForeground, #f14c4c)',
+        gitPr: false,
     },
     'pr-ready': {
         id: 'pr-ready',
@@ -69,7 +83,80 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         label: 'PR ready',
         className: 'theia-mod-pr-ready',
         iconClass: 'codicon-git-pull-request',
-        color: 'var(--theia-charts-purple, #b180d7)',
+        color: 'var(--theia-gitDecoration-addedResourceForeground, #2da44e)',
+        gitPr: true,
+    },
+    'pr-merged': {
+        id: 'pr-merged',
+        labelKey: 'qaap/mobileProjects/taskStatePrMerged',
+        label: 'PR merged',
+        className: 'theia-mod-pr-merged',
+        iconClass: 'codicon-git-merge',
+        color: 'var(--theia-charts-purple, #a371f7)',
+        gitPr: true,
+    },
+    'pr-closed': {
+        id: 'pr-closed',
+        labelKey: 'qaap/mobileProjects/taskStatePrClosed',
+        label: 'PR closed',
+        className: 'theia-mod-pr-closed',
+        iconClass: 'codicon-git-pull-request-closed',
+        color: 'var(--theia-errorForeground, #f85149)',
+        gitPr: true,
+    },
+    'pr-draft': {
+        id: 'pr-draft',
+        labelKey: 'qaap/mobileProjects/taskStatePrDraft',
+        label: 'Draft',
+        className: 'theia-mod-pr-draft',
+        iconClass: 'codicon-git-pull-request-draft',
+        color: 'var(--theia-descriptionForeground)',
+        gitPr: true,
+    },
+    'pr-conflicts': {
+        id: 'pr-conflicts',
+        labelKey: 'qaap/mobileProjects/taskStatePrConflicts',
+        label: 'Conflicts',
+        className: 'theia-mod-pr-conflicts',
+        iconClass: 'codicon-warning',
+        color: 'var(--theia-errorForeground, #f85149)',
+        gitPr: true,
+    },
+    'checks-failed': {
+        id: 'checks-failed',
+        labelKey: 'qaap/mobileProjects/taskStateChecksFailed',
+        label: 'Checks failed',
+        className: 'theia-mod-checks-failed',
+        iconClass: 'codicon-error',
+        color: 'var(--theia-errorForeground, #f85149)',
+        gitPr: true,
+    },
+    'checks-pending': {
+        id: 'checks-pending',
+        labelKey: 'qaap/mobileProjects/taskStateChecksPending',
+        label: 'Checks pending',
+        className: 'theia-mod-checks-pending',
+        iconClass: 'codicon-clock',
+        color: 'var(--theia-notificationsWarningIcon-foreground, #bf8700)',
+        gitPr: true,
+    },
+    'changes': {
+        id: 'changes',
+        labelKey: 'qaap/mobileProjects/taskStateChanges',
+        label: 'Changes',
+        className: 'theia-mod-changes',
+        iconClass: 'codicon-diff-modified',
+        color: 'var(--theia-notificationsWarningIcon-foreground, #bf8700)',
+        gitPr: true,
+    },
+    'pr-unknown': {
+        id: 'pr-unknown',
+        labelKey: 'qaap/mobileProjects/taskStatePrUnknown',
+        label: 'PR',
+        className: 'theia-mod-pr-unknown',
+        iconClass: 'codicon-git-pull-request',
+        color: 'var(--theia-descriptionForeground)',
+        gitPr: true,
     },
     'verified': {
         id: 'verified',
@@ -78,6 +165,7 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         className: 'theia-mod-verified',
         iconClass: 'codicon-pass',
         color: 'var(--theia-charts-green, #4caf7c)',
+        gitPr: false,
     },
     'background': {
         id: 'background',
@@ -86,13 +174,74 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         className: 'theia-mod-background',
         iconClass: 'codicon-sync',
         color: 'var(--theia-descriptionForeground)',
+        gitPr: false,
     },
 };
+
+export interface QaapGitPrStatusInput {
+    readonly linkedPullRequest?: QaapAgentConversationSummaryDTO['linkedPullRequest'];
+    readonly hasGitOperation?: boolean;
+    readonly linesAdded?: number;
+    readonly linesRemoved?: number;
+}
+
+/**
+ * Resolve only Git/PR state. A legacy linked PR number is intentionally neutral:
+ * linkage proves neither that the PR is still open nor that it was merged.
+ */
+export function resolveQaapGitPrVisualStatus(
+    summary: QaapGitPrStatusInput,
+): QaapAgentTaskVisualStatus | undefined {
+    const pullRequest = summary.linkedPullRequest;
+    if (pullRequest) {
+        if (pullRequest.state === 'merged') {
+            return STATUS_BY_ID['pr-merged'];
+        }
+        if (pullRequest.state === 'closed') {
+            return STATUS_BY_ID['pr-closed'];
+        }
+        if (pullRequest.draft) {
+            return STATUS_BY_ID['pr-draft'];
+        }
+        if (pullRequest.mergeable === false) {
+            return STATUS_BY_ID['pr-conflicts'];
+        }
+        if (pullRequest.tests === 'failing') {
+            return STATUS_BY_ID['checks-failed'];
+        }
+        if (pullRequest.tests === 'pending') {
+            return STATUS_BY_ID['checks-pending'];
+        }
+        if (pullRequest.state === 'open') {
+            return STATUS_BY_ID['pr-ready'];
+        }
+        if (pullRequest.number) {
+            return STATUS_BY_ID['pr-unknown'];
+        }
+    }
+    if (
+        pullRequest?.branch
+        || summary.hasGitOperation
+        || (summary.linesAdded ?? 0) > 0
+        || (summary.linesRemoved ?? 0) > 0
+    ) {
+        return STATUS_BY_ID['changes'];
+    }
+    return undefined;
+}
 
 export function resolveQaapAgentTaskVisualStatus(
     task: { readonly state: string },
     summary?: Pick<QaapAgentConversationSummaryDTO,
-        'status' | 'priority' | 'lastMessageRole' | 'messageCount' | 'linkedPullRequest' | 'lastMessagePreview'>,
+        | 'status'
+        | 'priority'
+        | 'lastMessageRole'
+        | 'messageCount'
+        | 'linkedPullRequest'
+        | 'lastMessagePreview'
+        | 'hasGitOperation'
+        | 'linesAdded'
+        | 'linesRemoved'>,
     unread = false,
 ): QaapAgentTaskVisualStatus {
     const state = task.state;
@@ -118,8 +267,11 @@ export function resolveQaapAgentTaskVisualStatus(
     ) {
         return STATUS_BY_ID['needs-you'];
     }
-    if (summary?.linkedPullRequest?.number || summary?.linkedPullRequest?.branch) {
-        return STATUS_BY_ID['pr-ready'];
+    if (summary) {
+        const gitPrStatus = resolveQaapGitPrVisualStatus(summary);
+        if (gitPrStatus) {
+            return gitPrStatus;
+        }
     }
     if (state === 'completed' || state === 'verified' || state === 'ok') {
         return STATUS_BY_ID['verified'];

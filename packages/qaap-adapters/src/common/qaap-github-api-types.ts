@@ -103,6 +103,10 @@ export interface QaapGithubPullRequestSummary {
     adds: number;
     dels: number;
     tests: 'passing' | 'failing' | 'pending' | 'unknown';
+    /** GitHub lifecycle state. Inbox polling currently returns open PRs; webhooks may also report closed/merged. */
+    state?: 'open' | 'closed' | 'merged';
+    /** Open PR is still a draft and is not ready for review. */
+    draft?: boolean;
     htmlUrl: string;
     mergeable?: boolean;
     filesPreview: QaapGithubPullRequestFile[];
@@ -138,6 +142,11 @@ export interface QaapLinkedPullRequest {
     readonly number?: number;
     readonly branch?: string;
     readonly title?: string;
+    /** Omitted for legacy/branch-only links whose current GitHub state has not been resolved. */
+    readonly state?: 'open' | 'closed' | 'merged';
+    readonly draft?: boolean;
+    readonly tests?: 'passing' | 'failing' | 'pending' | 'unknown';
+    readonly mergeable?: boolean;
 }
 
 /** SSE payload when GitHub notifies the IDE about pull-request activity. */
