@@ -12073,7 +12073,6 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
 
 .theia-mobile-projects-task-lineage.theia-mod-both .theia-mobile-projects-task-leading-glyph {
   color: var(--theia-notificationsWarningIcon-foreground, #cca700);
-.theia-mobile-projects-task-dot.theia-mod-git-pr,
 }
 
 .theia-mobile-projects-task-body {
