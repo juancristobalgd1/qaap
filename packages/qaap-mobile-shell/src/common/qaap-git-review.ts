@@ -119,6 +119,12 @@ export interface QaapGitCheckoutRequest {
     branch: string;
 }
 
+export interface QaapGitDeleteBranchRequest {
+    /** Absolute filesystem path of the repository root. */
+    root: string;
+    branch: string;
+}
+
 export type QaapGitHunkLineType = 'ctx' | 'add' | 'del';
 
 export interface QaapGitHunkLine {
