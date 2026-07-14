@@ -53,6 +53,8 @@ export class MobileProjectsHubHeaderUi {
     constructor(protected readonly host: MobileProjectsHubHeaderHost) { }
 
     renderHeader(): void {
+        // Reset title visibility at the top; the inline-session branch may re-hide it below.
+        this.host.titleEl.classList.remove('theia-mod-sr-only');
         const inProjectDetail = this.host.isProjectDetailView();
         const inProjectDiff = this.host.isProjectDiffView();
         const showSessionsMenu = this.host.homeMode
@@ -95,15 +97,22 @@ export class MobileProjectsHubHeaderUi {
             return;
         }
         if (this.host.hubView === 'tasks') {
+            const useAgentsHubLanding = this.host.shouldUseAgentsHubLanding();
             if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject && this.host.transcriptOpenSummary) {
-                this.host.titleEl.textContent = this.host.transcriptHeaderUi.resolveTranscriptHeaderTitle(
+                const transcriptTitle = this.host.transcriptHeaderUi.resolveTranscriptHeaderTitle(
                     this.host.transcriptOpenProject,
                     this.host.transcriptOpenSummary,
                 );
+                // Keep textContent for screen readers (the element is sr-only, not aria-hidden).
+                this.host.titleEl.textContent = transcriptTitle;
+                this.host.titleEl.classList.add('theia-mod-sr-only');
             } else {
-                this.host.titleEl.textContent = this.host.shouldUseAgentsHubLanding()
+                this.host.titleEl.textContent = useAgentsHubLanding
                     ? nls.localize('qaap/mobileBottomBar/hubAgents', 'Agents')
                     : nls.localize('qaap/mobileProjects/tasksHubTitle', 'Tasks');
+                if (useAgentsHubLanding) {
+                    this.host.titleEl.classList.add('theia-mod-sr-only');
+                }
             }
             this.host.updateTasksAttentionChrome();
             return;

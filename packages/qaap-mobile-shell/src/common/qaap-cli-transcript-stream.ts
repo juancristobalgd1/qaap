@@ -14,6 +14,7 @@ import {
 } from './qaap-agent-task-client';
 import { detectAgentFailureKind, localizeAgentFailureMessage } from './qaap-agent-failure-message';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
+import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
 import { QaapQaiqStreamAccumulator } from './qaap-qaiq-stream';
 import {
     mergeStreamTraceEvents,
@@ -33,6 +34,7 @@ export interface QaapAgentStreamAccumulator {
     getSegments(): readonly QaapAgentMessageSegment[];
     getDisplayText(): string;
     getTraceEvents(): readonly QaapTranscriptTraceEventDTO[];
+    getTurnUsage?(): QaapAgentContextUsage | undefined;
 }
 
 /** Live CLI stream → AG-UI trace rows with running/streaming tail states. */

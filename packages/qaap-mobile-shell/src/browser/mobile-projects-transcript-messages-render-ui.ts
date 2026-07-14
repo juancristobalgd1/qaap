@@ -26,8 +26,6 @@ import {
 } from './qaap-transcript-scroll-intent';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import { attachTranscriptInlineSearch } from './qaap-transcript-inline-search';
-import { attachTranscriptDensityToggle } from './qaap-transcript-density';
-import { attachTranscriptTurnNavigator } from './qaap-transcript-turn-navigator';
 import {
     attachTranscriptReadPositionPersistence,
     resolveStoredTranscriptReadMessageIndex,
@@ -445,14 +443,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         title.className = 'theia-mobile-agent-transcript-empty-title';
         title.textContent = nls.localize('qaap/mobileProjects/transcriptEmptyWelcomeTitle', 'Ready when you are.');
 
-        const subtitle = document.createElement('p');
-        subtitle.className = 'theia-mobile-agent-transcript-empty-subtitle';
-        subtitle.textContent = nls.localize(
-            'qaap/mobileProjects/transcriptEmptyWelcomeSubtitle',
-            'Describe the outcome. Qaaq will plan, execute, and keep every step visible.',
-        );
-
-        welcome.append(logo, title, subtitle);
+        welcome.append(logo, title);
         return welcome;
     }
 
@@ -680,8 +671,6 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             attachTranscriptUserScrollPin(messageHost),
             attachTranscriptScrollIntentObserver(messageHost),
             attachTranscriptInlineSearch(host, messageHost),
-            attachTranscriptDensityToggle(host, messageHost),
-            attachTranscriptTurnNavigator(host, messageHost),
             attachTranscriptReadPositionPersistence(messageHost, conv.id),
             attachTranscriptActivityTimelineStickySummary(messageHost),
             attachTranscriptScrollToBottomButton(host),

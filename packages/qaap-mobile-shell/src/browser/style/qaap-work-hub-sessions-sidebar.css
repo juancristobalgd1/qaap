@@ -249,13 +249,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  min-height: 36px;
-  max-width: 36px;
-  max-height: 36px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  max-width: 28px;
+  max-height: 28px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
@@ -281,10 +281,10 @@
 
 .theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-avatar .theia-workbench-account-fallback-icon {
   display: inline-block;
-  width: 20px;
-  height: 20px;
-  font-size: 20px;
-  line-height: 20px;
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+  line-height: 16px;
   color: inherit;
   opacity: 1;
 }
@@ -303,7 +303,7 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1;
   color: inherit;
@@ -457,7 +457,7 @@
   margin-top: 0;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-dot:not(.theia-mod-complete):not(.theia-mod-verified):not(.theia-mod-pr-ready):not(.theia-mod-failed):not(.theia-mod-running):not(.theia-mod-needs-input) {
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-dot:not(.theia-mod-complete):not(.theia-mod-verified):not(.theia-mod-git-pr):not(.theia-mod-failed):not(.theia-mod-running):not(.theia-mod-needs-input) {
   flex: 0 0 7px;
   width: 7px;
   height: 7px;
@@ -494,7 +494,7 @@
   color: var(--theia-list-activeSelectionForeground, var(--theia-foreground));
 }
 
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-task-dot:not(.theia-mod-complete):not(.theia-mod-verified):not(.theia-mod-pr-ready):not(.theia-mod-failed):not(.theia-mod-running):not(.theia-mod-needs-input) {
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-task-dot:not(.theia-mod-complete):not(.theia-mod-verified):not(.theia-mod-git-pr):not(.theia-mod-failed):not(.theia-mod-running):not(.theia-mod-needs-input) {
   opacity: 0.95;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 18%, transparent);
 }

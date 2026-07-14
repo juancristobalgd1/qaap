@@ -5,6 +5,7 @@
 
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { normalizeQaiqToolName } from './qaap-qaiq-stream';
+import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
 import { segmentsToTraceEvents, type QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 
 interface CodexStreamItem {
@@ -33,6 +34,11 @@ interface CodexStreamEvent {
         readonly content?: string;
     };
     readonly error?: { readonly message?: string };
+    readonly usage?: {
+        readonly input_tokens?: number;
+        readonly output_tokens?: number;
+        readonly cached_input_tokens?: number;
+    };
 }
 
 /**
@@ -46,6 +52,11 @@ export class QaapCodexStreamAccumulator {
     protected readonly toolParentById = new Map<string, string>();
     protected activeParentToolUseId: string | undefined;
     protected jsonEvents = 0;
+    protected turnUsage: QaapAgentContextUsage | undefined;
+
+    getTurnUsage(): QaapAgentContextUsage | undefined {
+        return this.turnUsage;
+    }
 
     push(chunk: string): readonly QaapAgentMessageSegment[] {
         if (!chunk) {
@@ -97,6 +108,7 @@ export class QaapCodexStreamAccumulator {
             return;
         }
         this.jsonEvents += 1;
+        this.captureUsage(envelope);
         this.captureParentContext(envelope);
         if (envelope.msg?.type === 'text' && envelope.msg.content?.trim()) {
             this.appendText(envelope.msg.content);
@@ -121,6 +133,24 @@ export class QaapCodexStreamAccumulator {
         if (eventType === 'item.completed' || eventType === 'item.updated') {
             this.consumeItemCompleted(itemId, itemType, item);
         }
+    }
+
+    protected captureUsage(envelope: CodexStreamEvent): void {
+        if (envelope.type !== 'turn.completed' || !envelope.usage) {
+            return;
+        }
+        const reportedInput = Math.max(0, envelope.usage.input_tokens ?? 0);
+        const cacheReadInputTokens = Math.min(reportedInput, Math.max(0, envelope.usage.cached_input_tokens ?? 0));
+        const inputTokens = reportedInput - cacheReadInputTokens;
+        const outputTokens = Math.max(0, envelope.usage.output_tokens ?? 0);
+        if (inputTokens + outputTokens + cacheReadInputTokens === 0) {
+            return;
+        }
+        this.turnUsage = {
+            inputTokens,
+            outputTokens,
+            ...(cacheReadInputTokens > 0 ? { cacheReadInputTokens } : {}),
+        };
     }
 
     protected captureParentContext(envelope: CodexStreamEvent, item?: CodexStreamItem): void {

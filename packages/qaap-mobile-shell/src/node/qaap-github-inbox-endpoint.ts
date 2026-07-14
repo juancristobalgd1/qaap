@@ -24,6 +24,8 @@ interface GithubWebhookPullRequest {
     html_url: string;
     updated_at: string;
     state: string;
+    draft?: boolean;
+    merged?: boolean;
     user?: { login?: string | null } | null;
     head: { ref: string };
     base: { ref: string };
@@ -109,6 +111,8 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
             adds: pull.additions ?? 0,
             dels: pull.deletions ?? 0,
             tests: 'unknown',
+            state: pull.merged === true ? 'merged' : pull.state === 'closed' ? 'closed' : 'open',
+            draft: pull.draft === true,
             htmlUrl: pull.html_url,
             mergeable: pull.mergeable ?? undefined,
             filesPreview,

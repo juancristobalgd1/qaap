@@ -12,6 +12,7 @@ import {
 } from './qaap-agent-message-content';
 import { applyResolvedAttachmentsToPrompt } from './qaap-composer-attachment-prompt';
 import { createComposerSkillDisplayMarker } from './qaap-composer-skill-display';
+import { createComposerGitActionDisplayMarker } from './qaap-composer-git-action-display';
 import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import type { ResolvedAIContextVariable } from '@theia/ai-core';
 
@@ -186,6 +187,29 @@ describe('resolveTranscriptUserMessageView', () => {
                 skillName: 'loop',
                 prefix: undefined,
                 userText: 'mejora de rendimiento',
+            },
+        });
+    });
+
+    it('renders git workflow markers as transcript git-action pills', () => {
+        const content = createComposerGitActionDisplayMarker({
+            action: 'commit-push',
+            label: 'Commit & Push',
+            branch: 'main',
+            status: 'completed',
+            insertions: 3,
+            deletions: 1,
+        });
+        expect(resolveTranscriptUserMessageView({ content })).to.deep.equal({
+            displayText: 'Commit & Push',
+            imagePreviews: [],
+            gitActionInvocation: {
+                action: 'commit-push',
+                label: 'Commit & Push',
+                branch: 'main',
+                status: 'completed',
+                insertions: 3,
+                deletions: 1,
             },
         });
     });

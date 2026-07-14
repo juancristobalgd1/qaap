@@ -49,8 +49,8 @@ export interface MobileProjectsProjectRowsHost {
     openTaskInAgent(project: MobileProjectEntry, task?: MobileProjectTaskView): Promise<void>;
 }
 
-/** Statuses that get a text chip in the compact sidebar row — the ones a user triages at a glance. */
-const SIDEBAR_STATUS_CHIP_IDS: ReadonlySet<string> = new Set(['needs-you', 'failed', 'running', 'pr-ready']);
+/** Non-Git statuses that get a text chip in compact rows; every Git/PR status always gets one. */
+const SIDEBAR_STATUS_CHIP_IDS: ReadonlySet<string> = new Set(['needs-you', 'failed', 'running']);
 
 /** Project list cards, expanded task blocks, and conversation row rendering. */
 export class MobileProjectsProjectRowsUi {
@@ -69,6 +69,8 @@ export class MobileProjectsProjectRowsUi {
         const chip = document.createElement('span');
         chip.className = `theia-mobile-projects-task-status-chip theia-mod-${visualStatus.id}`;
         chip.textContent = nls.localize(visualStatus.labelKey, visualStatus.label);
+        chip.setAttribute('aria-label', chip.textContent);
+        chip.title = chip.textContent;
         return chip;
     }
 
@@ -595,7 +597,7 @@ export class MobileProjectsProjectRowsUi {
         const visualStatus = resolveQaapAgentTaskVisualStatus(task, summary, isUnread);
         const isRunning = visualStatus.id === 'running';
         const needsInput = visualStatus.id === 'needs-you';
-        const isDone = visualStatus.id === 'verified' || visualStatus.id === 'pr-ready';
+        const isDone = visualStatus.id === 'verified' || visualStatus.id === 'pr-merged';
         const isFailed = visualStatus.id === 'failed';
         const stateColor = visualStatus.color;
         if (this.host.justAddedTaskId === task.id) {
@@ -622,20 +624,17 @@ export class MobileProjectsProjectRowsUi {
                     ? nls.localize('qaap/mobileProjects/lineageChild', 'Forked from another task')
                     : nls.localize('qaap/mobileProjects/lineageBoth', 'Forked from another task and into others');
             taskDot.title = lineageLabel;
-        } else if (visualStatus.id === 'verified') {
+        } else if (visualStatus.iconClass && !isRunning) {
             taskDot.className = `theia-mobile-projects-task-dot ${visualStatus.className}`;
-            taskDot.append(this.createTaskLeadingGlyph(visualStatus.iconClass!));
-        } else if (visualStatus.id === 'pr-ready') {
-            taskDot.className = `theia-mobile-projects-task-dot ${visualStatus.className}`;
-            taskDot.append(this.createTaskLeadingGlyph(visualStatus.iconClass!));
-        } else if (isFailed) {
-            taskDot.className = `theia-mobile-projects-task-dot ${visualStatus.className}`;
-            taskDot.append(this.createTaskLeadingGlyph(visualStatus.iconClass!));
+            if (visualStatus.gitPr) {
+                taskDot.classList.add('theia-mod-git-pr');
+            }
+            taskDot.append(this.createTaskLeadingGlyph(visualStatus.iconClass));
+            const statusLabel = nls.localize(visualStatus.labelKey, visualStatus.label);
+            taskDot.setAttribute('aria-label', statusLabel);
+            taskDot.title = statusLabel;
         } else if (isRunning) {
             this.renderConversationTurnProgress(taskDot, summary);
-        } else if (needsInput) {
-            taskDot.className = `theia-mobile-projects-task-dot ${visualStatus.className}`;
-            taskDot.append(this.createTaskLeadingGlyph(visualStatus.iconClass!));
         } else {
             taskDot.className = `theia-mobile-projects-task-dot ${visualStatus.className}`;
             taskDot.style.background = stateColor;
@@ -655,7 +654,7 @@ export class MobileProjectsProjectRowsUi {
         // Scannable status cue for the sidebar: a short text chip on the states that matter when
         // triaging N sessions at a glance (needs you / failed / running / PR ready). The dot alone
         // is not readable when scanning a dense list.
-        const statusChip = compact && SIDEBAR_STATUS_CHIP_IDS.has(visualStatus.id)
+        const statusChip = compact && (visualStatus.gitPr || SIDEBAR_STATUS_CHIP_IDS.has(visualStatus.id))
             ? this.createSidebarStatusChip(visualStatus)
             : undefined;
         if (!compact && isRunning && summary?.turnProgressTotal && summary.turnProgressCurrent !== undefined) {

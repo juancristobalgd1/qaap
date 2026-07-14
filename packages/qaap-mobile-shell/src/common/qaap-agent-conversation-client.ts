@@ -19,6 +19,7 @@ import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model'
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
 import type { QaapPreviewVisualValidationResult } from './qaap-visual-verification';
+import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -686,6 +687,33 @@ export async function reportPreviewVisualVerificationFailure(
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reason, targetMessageId: targetAgentMessageId }),
+        },
+    );
+    if (response.status === 404) {
+        return undefined;
+    }
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return await response.json() as QaapAgentConversationDTO;
+}
+
+/** Records a user-initiated git workflow in the transcript without starting a new agent turn. */
+export async function recordConversationGitAction(
+    conversationId: string,
+    metadata: ComposerGitActionDisplayMetadata,
+    options: {
+        readonly messageId?: string;
+        readonly replaceMessageId?: string;
+    } = {},
+): Promise<QaapAgentConversationDTO | undefined> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/git-actions`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...metadata, ...options }),
         },
     );
     if (response.status === 404) {

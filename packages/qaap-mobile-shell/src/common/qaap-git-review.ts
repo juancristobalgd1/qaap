@@ -10,6 +10,8 @@ export const QAAP_GIT_REVIEW_API_PATH = '/qaap/api/git-review';
 export interface QaapGitChangedFile {
     /** Repository-relative POSIX path. */
     path: string;
+    /** Previous repository-relative path for a rename/copy. */
+    oldPath?: string;
     /** Single-letter git status (M, A, D, R, U/?). */
     status: string;
     /** Added lines across the diff. */
@@ -137,7 +139,14 @@ export interface QaapGitHunk {
 export interface QaapGitFileDiffResponse {
     path: string;
     binary: boolean;
+    /** Distinguishes genuine metadata-only changes from missing/failed patch data. */
+    kind: 'text' | 'binary' | 'metadata';
     hunks: QaapGitHunk[];
+}
+
+/** Detect Git's binary patch markers without mistaking matching source-code text for metadata. */
+export function isBinaryGitPatch(patch: string): boolean {
+    return /^Binary files .+ differ$/m.test(patch) || /^GIT binary patch$/m.test(patch);
 }
 
 export interface QaapGitFileActionRequest {

@@ -1,0 +1,34 @@
+---
+description: Tras cualquier tarea de código, compilar, empaquetar y arrancar preview del browser (CRITICO)
+alwaysApply: true
+---
+
+# Flujo obligatorio al terminar una tarea de código
+
+Cuando completes **cualquier** cambio de código en este repo, ejecuta **en este orden** para que la vista previa en browser refleje el trabajo:
+
+1. **Compilar** paquetes tocados (mínimo mobile-shell y cloud-workspace si aplica):
+   ```sh
+   npx lerna run compile --scope @theia/qaap-mobile-shell --scope @theia/qaap-cloud-workspace
+   ```
+   Si solo modificaste otros `@theia/qaap-*`, añade sus `--scope` o usa `npm run compile` si el cambio es amplio.
+
+2. **Bundle frontend** (webpack; sin esto el browser no carga el JS/CSS nuevo):
+   ```sh
+   npm run build:browser
+   ```
+
+3. **Servidor de desarrollo** (proceso largo — ejecutar en segundo plano):
+   ```sh
+   npm run start:browser
+   ```
+   Por defecto escucha en **http://localhost:3000**.
+
+## Cuándo omitir
+
+- Solo preguntas, revisión sin edits, o el usuario pide explícitamente no compilar/arrancar.
+
+## Notas
+
+- No ejecutar `.ts` con `tsx`/`node` directamente: el monorepo consume salida compilada en `lib/`.
+- `npm run compile` solo es TypeScript; la UI en browser **requiere** `build:browser` antes de probar.

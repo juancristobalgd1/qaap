@@ -7,12 +7,14 @@ import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { conversationToSummary, rewindConversationToMessage, type QaapAgentConversationDTO, type QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
 import { resolveTranscriptUserMessageView } from '../common/qaap-agent-message-content';
+import { isComposerGitActionOnlyMessage } from '../common/qaap-composer-git-action-display';
 import { isSvgImagePreviewFileName, type QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { resolveTranscriptImagePreviewSrc } from './qaap-transcript-user-attachment-preview-ui';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
+import { createTranscriptGitActionCard } from './qaap-transcript-git-action-ui';
 
 export class MobileProjectsTranscriptMessagesUserUi {
     constructor(
@@ -43,6 +45,11 @@ export class MobileProjectsTranscriptMessagesUserUi {
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-user';
         const messageView = resolveTranscriptUserMessageView(msg);
         const imagePreviews = messageView.imagePreviews;
+        const gitActionOnly = !!messageView.gitActionInvocation && isComposerGitActionOnlyMessage(msg.content);
+        if (gitActionOnly) {
+            wrap.classList.add('theia-mod-git-action-record');
+            row.classList.add('theia-mod-git-action');
+        }
         if (imagePreviews.length) {
             wrap.append(this.createTranscriptUserImagePreviews(imagePreviews));
             void this.hydrateTranscriptUserImagePreviews(wrap, imagePreviews);
@@ -50,7 +57,11 @@ export class MobileProjectsTranscriptMessagesUserUi {
         const contentEl = document.createElement('div');
         contentEl.className = 'theia-mobile-agent-transcript-content';
         const displayContent = messageView.displayText;
-        if (displayContent.trim()) {
+        if (messageView.gitActionInvocation) {
+            contentEl.classList.add('theia-mod-user-git-action');
+            contentEl.append(createTranscriptGitActionCard(messageView.gitActionInvocation));
+            row.append(contentEl);
+        } else if (displayContent.trim()) {
             if (messageView.skillInvocation) {
                 this.renderTranscriptUserSkillInvocation(contentEl, messageView.skillInvocation);
             } else {
@@ -69,7 +80,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
         const plainText = this.contentUi.cleanTranscriptDisplayText(displayContent).trim();
         const summary = this.host.transcriptComposerSummary;
         const isTheiaChat = summary?.source === 'theia-chat';
-        const actionsEnabled = conv.status !== 'streaming' && !msg.id.startsWith('pending-user-');
+        const actionsEnabled = conv.status !== 'streaming' && !msg.id.startsWith('pending-user-') && !gitActionOnly;
 
         wrap.append(this.createTranscriptUserMessageActions({
             plainText,

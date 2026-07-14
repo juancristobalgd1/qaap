@@ -1043,6 +1043,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                     added: f.added,
                     removed: f.removed,
                 })),
+                () => {
+                    const project = this.host.transcriptComposerProject;
+                    const convSummary = this.host.transcriptComposerSummary;
+                    if (project && convSummary) {
+                        this.host.executionSurfaceTabsUi.selectTranscriptTab('review', project, convSummary);
+                    }
+                },
             );
             segmentsBody.append(diffSummary);
         } else {

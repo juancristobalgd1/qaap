@@ -13,6 +13,7 @@ import {
     QAAP_GIT_REVIEW_API_PATH,
     buildSingleHunkPatch,
     computePrReadiness,
+    isBinaryGitPatch,
     parseUnifiedDiff,
     type QaapGitChangedFile,
     type QaapGitChangesResponse,
@@ -28,6 +29,8 @@ import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
+/** Keep one expanded file from monopolizing the review response/browser. */
+const FILE_DIFF_RESPONSE_LIMIT = 2 * 1024 * 1024;
 
 /**
  * Flags for every git invocation whose stdout is parsed as a unified patch. A host-level
@@ -38,6 +41,12 @@ const GIT_MAX_BUFFER = 16 * 1024 * 1024;
  * host config makes `/changes` succeed while every `/diff` fails.
  */
 const PATCH_SAFETY_FLAGS = ['--no-ext-diff', '--no-color'] as const;
+
+class QaapGitDiffTooLargeError extends Error {
+    constructor(readonly size: number) {
+        super(`Text diff is too large to display (${size} bytes; limit ${FILE_DIFF_RESPONSE_LIMIT} bytes). Open the file in the editor.`);
+    }
+}
 
 /** Max characters of combined diff returned by `commit-context` (roughly 6k tokens for the LLM prompt). */
 const COMMIT_CONTEXT_DIFF_LIMIT = 24_000;
@@ -223,19 +232,29 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'Missing or invalid "file" in request body.' });
             return;
         }
-        const absolute = path.join(root, file);
         try {
-            if (fs.existsSync(absolute)) {
-                const status = await this.git(root, ['status', '--porcelain=v1', '--', file]);
-                if (status.startsWith('??')) {
-                    await fs.promises.unlink(absolute);
-                } else {
-                    await this.git(root, ['checkout', '--', file]);
-                }
-            }
+            await this.discardFile(root, file);
             res.json({ ok: true });
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
+        }
+    }
+
+    protected async discardFile(root: string, file: string): Promise<void> {
+        const status = await this.readFileStatus(root, file);
+        if (status?.indexStatus === '?') {
+            await fs.promises.rm(path.join(root, file), { recursive: true, force: true });
+        } else if (status) {
+            const paths = status.oldPath ? [file, status.oldPath] : [file];
+            try {
+                await this.git(root, ['restore', '--source=HEAD', '--staged', '--worktree', '--', ...paths]);
+            } catch {
+                // Unborn repository: a staged addition has no HEAD version to restore.
+                await this.git(root, ['rm', '--cached', '--ignore-unmatch', '--', ...paths]);
+                for (const candidate of paths) {
+                    await fs.promises.rm(path.join(root, candidate), { recursive: true, force: true });
+                }
+            }
         }
     }
 
@@ -358,16 +377,24 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         }
         try {
             const patch = await this.computeFileDiff(root, file);
+            const hunks = parseUnifiedDiff(patch);
+            const binary = isBinaryGitPatch(patch);
+            const metadataOnlyUntracked = !patch.trim() && await this.isMetadataOnlyUntrackedFile(root, file);
+            if (!binary && hunks.length === 0 && !patch.trim() && !metadataOnlyUntracked) {
+                res.status(409).json({ error: 'Git reports this file as changed, but returned no diff data. Refresh and retry.' });
+                return;
+            }
             res.json({
                 path: file,
-                binary: patch.includes('Binary files '),
-                hunks: parseUnifiedDiff(patch),
+                binary,
+                kind: binary ? 'binary' : hunks.length > 0 ? 'text' : 'metadata',
+                hunks,
             } satisfies QaapGitFileDiffResponse);
         } catch (error) {
             // Per-file diff failures are invisible in the UI accordion — leave a server-side trace
             // so a hosted deployment's journal shows which git invocation failed and why.
             console.warn('[qaap-git-review] diff failed', JSON.stringify({ root, file, error: this.errorMessage(error) }));
-            res.status(500).json({ error: this.errorMessage(error) });
+            res.status(error instanceof QaapGitDiffTooLargeError ? 413 : 500).json({ error: this.errorMessage(error) });
         }
     }
 
@@ -422,50 +449,135 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     }
 
     protected async collectChangedFiles(root: string): Promise<QaapGitChangedFile[]> {
-        const status = await this.git(root, ['status', '--porcelain=v1', '-z']);
-        const [unstaged, staged] = await Promise.all([
-            this.numstat(root, ['diff', '--numstat', '-z']),
-            this.numstat(root, ['diff', '--cached', '--numstat', '-z']),
-        ]);
+        const status = await this.git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+        const counts = await this.combinedNumstat(root);
         const files: QaapGitChangedFile[] = [];
-        for (const entry of status.split('\0')) {
+        const entries = status.split('\0');
+        for (let index = 0; index < entries.length; index++) {
+            const entry = entries[index];
             if (entry.length < 4) {
                 continue;
             }
             const indexStatus = entry[0];
             const worktreeStatus = entry[1];
             const filePath = entry.slice(3);
+            const renamed = indexStatus === 'R' || indexStatus === 'C' || worktreeStatus === 'R' || worktreeStatus === 'C';
+            const oldPath = renamed ? entries[++index] : undefined;
             const untracked = indexStatus === '?';
             const isStaged = !untracked && indexStatus !== ' ' && worktreeStatus === ' ';
-            const counts = unstaged.get(filePath) ?? staged.get(filePath);
+            const stats = counts.get(filePath);
             files.push({
                 path: filePath,
+                ...(oldPath ? { oldPath } : {}),
                 status: untracked ? 'U' : (worktreeStatus !== ' ' ? worktreeStatus : indexStatus),
-                adds: counts?.adds ?? (untracked ? await this.countLines(root, filePath) : 0),
-                dels: counts?.dels ?? 0,
+                adds: stats?.adds ?? (untracked ? await this.countLines(root, filePath) : 0),
+                dels: stats?.dels ?? 0,
                 staged: isStaged,
             });
         }
         return files;
     }
 
-    /** Resolve the most relevant diff for a file: unstaged, else staged, else untracked. */
+    /** Diff the final working-tree state against HEAD, including staged and unstaged edits together. */
     protected async computeFileDiff(root: string, file: string): Promise<string> {
-        const unstaged = await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--', file]);
-        if (unstaged.trim()) {
-            return unstaged;
-        }
-        const staged = await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--cached', '--', file]);
-        if (staged.trim()) {
-            return staged;
-        }
-        // Untracked file — diff against an empty tree so the whole file shows as added.
+        const status = await this.readFileStatus(root, file);
+        // Include both sides so Git's rename detection is not suppressed by a one-sided pathspec.
+        const pathspec = status?.oldPath ? [status.oldPath, file] : [file];
+        let trackedPatch = '';
         try {
-            return await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--no-index', '--', '/dev/null', file]);
+            trackedPatch = await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, 'HEAD', '--', ...pathspec]);
+        } catch {
+            // Unborn repository: combine index and worktree patches below.
+            const [staged, unstaged] = await Promise.all([
+                this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--cached', '--', ...pathspec]).catch(() => ''),
+                this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--', ...pathspec]).catch(() => ''),
+            ]);
+            trackedPatch = `${staged}\n${unstaged}`.trim();
+        }
+        if (trackedPatch.trim()) {
+            return this.enforceFileDiffLimit(trackedPatch);
+        }
+        if (status?.indexStatus !== '?') {
+            return trackedPatch;
+        }
+        // Untracked file — diff against /dev/null so the whole file shows as added.
+        try {
+            return this.enforceFileDiffLimit(await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, '--no-index', '--', '/dev/null', file]));
         } catch (error) {
             // `git diff --no-index` exits 1 when files differ; its stdout still holds the patch.
             const stdout = (error as { stdout?: string }).stdout;
-            return typeof stdout === 'string' ? stdout : '';
+            if (typeof stdout === 'string' && stdout.trim()) {
+                return this.enforceFileDiffLimit(stdout);
+            }
+            // Git treats a symlink-to-directory as a directory in --no-index mode and emits no
+            // patch. It is still a legitimate metadata-only untracked entry, like an empty file.
+            if (await this.isMetadataOnlyUntrackedFile(root, file)) {
+                return '';
+            }
+            throw error;
+        }
+    }
+
+    protected enforceFileDiffLimit(patch: string): string {
+        const size = Buffer.byteLength(patch, 'utf8');
+        if (size > FILE_DIFF_RESPONSE_LIMIT) {
+            throw new QaapGitDiffTooLargeError(size);
+        }
+        return patch;
+    }
+
+    /** Stats against the same final tree shown by /diff; fallback supports repositories without HEAD. */
+    protected async combinedNumstat(root: string): Promise<Map<string, { adds: number; dels: number }>> {
+        try {
+            return await this.numstat(root, ['diff', '--numstat', '-z', 'HEAD']);
+        } catch {
+            const [unstaged, staged] = await Promise.all([
+                this.numstat(root, ['diff', '--numstat', '-z']).catch(() => new Map()),
+                this.numstat(root, ['diff', '--cached', '--numstat', '-z']).catch(() => new Map()),
+            ]);
+            for (const [file, value] of staged) {
+                const current = unstaged.get(file);
+                unstaged.set(file, {
+                    adds: value.adds + (current?.adds ?? 0),
+                    dels: value.dels + (current?.dels ?? 0),
+                });
+            }
+            return unstaged;
+        }
+    }
+
+    protected async readFileStatus(root: string, file: string): Promise<{
+        indexStatus: string;
+        worktreeStatus: string;
+        oldPath?: string;
+    } | undefined> {
+        const entries = (await this.git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).split('\0');
+        for (let index = 0; index < entries.length; index++) {
+            const entry = entries[index];
+            if (entry.length < 4) {
+                continue;
+            }
+            const indexStatus = entry[0];
+            const worktreeStatus = entry[1];
+            const renamed = indexStatus === 'R' || indexStatus === 'C' || worktreeStatus === 'R' || worktreeStatus === 'C';
+            const oldPath = renamed ? entries[++index] : undefined;
+            if (entry.slice(3) === file) {
+                return { indexStatus, worktreeStatus, ...(oldPath ? { oldPath } : {}) };
+            }
+        }
+        return undefined;
+    }
+
+    protected async isMetadataOnlyUntrackedFile(root: string, file: string): Promise<boolean> {
+        const status = await this.readFileStatus(root, file);
+        if (status?.indexStatus !== '?') {
+            return false;
+        }
+        try {
+            const stat = await fs.promises.lstat(path.join(root, file));
+            return stat.isSymbolicLink() || (stat.isFile() && stat.size === 0);
+        } catch {
+            return false;
         }
     }
 
@@ -543,7 +655,9 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             }
             let filePath = match[3];
             if (!filePath && i + 1 < tokens.length) {
-                filePath = tokens[++i];
+                // Rename/copy under -z: counts, NUL, old path, NUL, new path, NUL.
+                const oldPath = tokens[++i];
+                filePath = i + 1 < tokens.length ? tokens[++i] : oldPath;
             }
             map.set(filePath, {
                 adds: match[1] === '-' ? 0 : Number(match[1]),

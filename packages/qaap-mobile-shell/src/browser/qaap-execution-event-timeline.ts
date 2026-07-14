@@ -340,11 +340,11 @@ function extractCommand(args: string | undefined): string | undefined {
         if (typeof parsed === 'object' && parsed !== null) {
             const command = parsed.command ?? parsed.cmd ?? parsed.input;
             if (typeof command === 'string') {
-                return command.length > 60 ? command.slice(0, 57) + '...' : command;
+                return command;
             }
         }
     } catch {
-        return args.length > 60 ? args.slice(0, 57) + '...' : args;
+        return args;
     }
     return undefined;
 }
@@ -1686,44 +1686,32 @@ export interface MobileDiffFileEntry {
 
 export function createMobileDiffSummaryElement(
     fileCount: number,
-    added: number,
-    modified: number,
-    deleted: number,
+    _added: number,
+    _modified: number,
+    _deleted: number,
     files?: MobileDiffFileEntry[],
+    onReview?: () => void,
 ): HTMLElement {
     const summary = document.createElement('div');
-    summary.className = 'theia-mobile-diff-summary';
+    summary.className = 'theia-mobile-diff-summary theia-mod-files';
 
     const header = document.createElement('div');
     header.className = 'theia-mobile-diff-summary-header';
 
-    const icon = document.createElement('span');
-    icon.className = 'codicon codicon-diff theia-mobile-diff-summary-icon';
-    icon.setAttribute('aria-hidden', 'true');
-
     const title = document.createElement('span');
     title.className = 'theia-mobile-diff-summary-title';
-    title.textContent = fileCount === 1 ? '1 file changed' : `${fileCount} files changed`;
+    title.textContent = fileCount === 1
+        ? nls.localize('qaap/mobileProjects/transcriptDiffSummaryOneFile', '1 File Changed')
+        : nls.localize('qaap/mobileProjects/transcriptDiffSummaryFiles', '{0} Files Changed', String(fileCount));
+    header.append(title);
 
-    header.append(icon, title);
-
-    if (added > 0) {
-        const stat = document.createElement('span');
-        stat.className = 'theia-mobile-diff-summary-stat theia-mod-added';
-        stat.textContent = `+${added}`;
-        header.append(stat);
-    }
-    if (modified > 0) {
-        const stat = document.createElement('span');
-        stat.className = 'theia-mobile-diff-summary-stat theia-mod-modified';
-        stat.textContent = `${modified} modified`;
-        header.append(stat);
-    }
-    if (deleted > 0) {
-        const stat = document.createElement('span');
-        stat.className = 'theia-mobile-diff-summary-stat theia-mod-deleted';
-        stat.textContent = `-${deleted}`;
-        header.append(stat);
+    if (onReview) {
+        const review = document.createElement('button');
+        review.type = 'button';
+        review.className = 'theia-mobile-diff-summary-review';
+        review.textContent = nls.localize('qaap/mobileProjects/transcriptChangedFilesReview', 'Review');
+        review.addEventListener('click', onReview);
+        header.append(review);
     }
 
     summary.append(header);
@@ -1742,25 +1730,39 @@ export function createMobileDiffSummaryElement(
             const name = document.createElement('span');
             name.className = 'theia-mobile-diff-summary-file-name';
             name.textContent = file.name;
+            name.title = file.name;
             main.append(fileIcon, name);
+            row.append(main);
+
+            const tail = document.createElement('span');
+            tail.className = 'theia-mobile-diff-summary-file-tail';
+            let hasStats = false;
             if (typeof file.added === 'number' && file.added > 0) {
                 const addedStat = document.createElement('span');
                 addedStat.className = 'theia-mobile-diff-summary-file-stat theia-mod-added';
                 addedStat.textContent = `+${file.added}`;
-                main.append(addedStat);
+                tail.append(addedStat);
+                hasStats = true;
             }
             if (typeof file.removed === 'number' && file.removed > 0) {
                 const removedStat = document.createElement('span');
                 removedStat.className = 'theia-mobile-diff-summary-file-stat theia-mod-deleted';
                 removedStat.textContent = `-${file.removed}`;
-                main.append(removedStat);
+                tail.append(removedStat);
+                hasStats = true;
             }
-            row.append(main);
-            if (file.type) {
+            if (!hasStats && file.type) {
                 const type = document.createElement('span');
                 type.className = `theia-mobile-diff-summary-file-type theia-mod-${file.type}`;
-                type.textContent = file.type === 'add' ? 'added' : file.type === 'delete' ? 'deleted' : 'modified';
-                row.append(type);
+                type.textContent = file.type === 'add'
+                    ? nls.localize('qaap/mobileProjects/transcriptDiffFileAdded', 'added')
+                    : file.type === 'delete'
+                        ? nls.localize('qaap/mobileProjects/transcriptDiffFileDeleted', 'deleted')
+                        : nls.localize('qaap/mobileProjects/transcriptDiffFileModified', 'modified');
+                tail.append(type);
+            }
+            if (tail.childElementCount > 0) {
+                row.append(tail);
             }
             fileList.append(row);
         }

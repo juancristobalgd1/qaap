@@ -1156,6 +1156,137 @@
   width: 100%;
 }
 
+/* ---------------------------------------------------------------------------
+ * Light theme: shimmer direction + WCAG text contrast.
+ *
+ * Root cause: --theia-foreground is near-white in dark mode (off-white #F4F1E8)
+ * so the shimmer gradient's "bright" peak brightens text — correct direction.
+ * In light mode --theia-foreground is near-black (#111111), making the bright
+ * peak darken text — visually inverted.  The overrides below restore the
+ * lightening-sweep direction by using ink-2 (#3A3A3A) as the dim base and
+ * muted (#8A8A8A) as the lighter peak, matching dark mode's gray→white→gray
+ * rhythm on a light background.
+ *
+ * Base text colours are also raised to ink-2 for WCAG AA compliance
+ * (--theia-descriptionForeground = #8A8A8A gives only ~3:1 on the Qaap
+ * cream surface #F6F5F1; ink-2 = #3A3A3A gives ~9:1).
+ * ------------------------------------------------------------------------- */
+
+/* Activity verb / label / row shimmer */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-verb.theia-mod-shimmer,
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-label.theia-mod-shimmer,
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-row.theia-mod-shimmer {
+  background: linear-gradient(90deg,
+      var(--qaap-ink-2, #3A3A3A) 0%,
+      var(--qaap-ink-2, #3A3A3A) 35%,
+      var(--qaap-muted, #8A8A8A) 50%,
+      var(--qaap-ink-2, #3A3A3A) 65%,
+      var(--qaap-ink-2, #3A3A3A) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-trace-text-shimmer 2s linear infinite;
+}
+
+/* Summary label shimmer */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-label.theia-mod-shimmer {
+  background: linear-gradient(90deg,
+      var(--qaap-ink-2, #3A3A3A) 0%,
+      var(--qaap-ink-2, #3A3A3A) 35%,
+      var(--qaap-muted, #8A8A8A) 50%,
+      var(--qaap-ink-2, #3A3A3A) 65%,
+      var(--qaap-ink-2, #3A3A3A) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-trace-text-shimmer 2s linear infinite;
+}
+
+/* Thinking live shimmer: accent-tinted base → muted peak */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-thinking.theia-mod-live .theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-verb {
+  background: linear-gradient(90deg,
+      color-mix(in srgb, var(--qaap-accent, #494949) 80%, var(--qaap-muted, #8A8A8A)) 0%,
+      color-mix(in srgb, var(--qaap-accent, #494949) 80%, var(--qaap-muted, #8A8A8A)) 35%,
+      var(--qaap-muted, #8A8A8A) 50%,
+      color-mix(in srgb, var(--qaap-accent, #494949) 80%, var(--qaap-muted, #8A8A8A)) 65%,
+      color-mix(in srgb, var(--qaap-accent, #494949) 80%, var(--qaap-muted, #8A8A8A)) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-trace-text-shimmer 2s linear infinite;
+}
+
+/* Base text: raise to ink-2 for WCAG AA on cream surface */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-verb {
+  color: var(--qaap-ink-2, #3A3A3A);
+}
+
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-copy {
+  color: var(--qaap-ink-2, #3A3A3A);
+}
+
+/* Active verb / label: full ink */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-active .theia-mobile-agent-activity-verb,
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-active .theia-mobile-agent-activity-label {
+  color: var(--qaap-ink, #111111);
+}
+
+/* Error verb / label */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-error .theia-mobile-agent-activity-verb,
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-error .theia-mobile-agent-activity-label {
+  color: var(--qaap-danger, #B23D27);
+}
+
+/* Activity icon: use surface token so the icon bg blends with the light card
+   background (dark mode uses editor-background ≈ #0E0D0B which is correct there). */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-icon {
+  background: var(--qaap-surface, #FDFBF8);
+  color: var(--qaap-ink-2, #3A3A3A);
+}
+
+/* Success icon stays green; error icon uses danger token */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-icon.theia-mod-success.codicon {
+  color: var(--qaap-success, #357A4F);
+}
+
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-icon.theia-mod-error.codicon,
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-icon.theia-mod-warning.codicon {
+  color: var(--qaap-danger, #B23D27);
+}
+
+/* Diff stats: Qaap add/del ink tokens have correct contrast on light surfaces */
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-diff-add,
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-diff-stat.theia-mod-added {
+  color: var(--qaap-add-ink, #28663F);
+}
+
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-diff-remove,
+body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-diff-stat.theia-mod-removed {
+  color: var(--qaap-del-ink, #8E2F1F);
+}
+
+/* Compaction label shimmer: ink-2 base on light surface */
+body.qaap-theme-light .theia-mobile-agent-transcript-context-compaction-label.theia-mod-shimmer {
+  color: color-mix(in srgb, var(--qaap-ink-2, #3A3A3A) 60%, transparent);
+  background: linear-gradient(90deg,
+      color-mix(in srgb, var(--qaap-ink-2, #3A3A3A) 40%, transparent) 0%,
+      color-mix(in srgb, var(--qaap-ink-2, #3A3A3A) 72%, transparent) 48%,
+      color-mix(in srgb, var(--qaap-ink-2, #3A3A3A) 40%, transparent) 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: qaap-trace-text-shimmer 2s linear infinite;
+}
+
+/* Compaction divider line: slightly darker so it's visible on cream */
+body.qaap-theme-light .theia-mobile-agent-transcript-context-compaction-line {
+  background: color-mix(in srgb, var(--qaap-ink, #111111) 12%, transparent);
+}
+
 /* Browser feedback: make the Activity workflow read as an inline trace, not a card. */
 .theia-mobile-agent-lobe-workflow.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace {
   border: 0 !important;

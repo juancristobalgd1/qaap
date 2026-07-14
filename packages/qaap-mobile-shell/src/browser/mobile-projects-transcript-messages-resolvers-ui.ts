@@ -163,7 +163,7 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         if (name.includes('write') || name.includes('create')) {
             return 'created';
         }
-        if (name.includes('edit') || name.includes('patch') || name.includes('replace')) {
+        if (name.includes('edit') || name.includes('patch') || name.includes('replace') || name.includes('update') || name.includes('modify') || name.includes('apply')) {
             return 'edited';
         }
         return undefined;
