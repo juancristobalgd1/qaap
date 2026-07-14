@@ -24624,6 +24624,88 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-sticky-com
   line-height: 1.3;
 }
 
+.theia-mobile-sticky-composer-sheet-branch-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.theia-mobile-sticky-composer-sheet-branch-row.theia-mod-selected
+  .theia-mobile-sticky-composer-sheet-option.theia-mod-branch-select {
+  background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 18%, transparent);
+  color: var(--q-accent, var(--qaap-accent, #E58E40));
+}
+
+.theia-mobile-sticky-composer-sheet-option.theia-mod-branch-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.theia-mobile-sticky-composer-sheet-branch-menu-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theia-mobile-sticky-composer-sheet-branch-menu-btn:hover,
+.theia-mobile-sticky-composer-sheet-branch-menu-btn:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-mobile-sticky-composer-sheet-branch-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  background: var(--theia-editor-background, #1e1e1e);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.theia-mobile-sticky-composer-sheet-branch-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theia-mobile-sticky-composer-sheet-branch-menu-item:hover,
+.theia-mobile-sticky-composer-sheet-branch-menu-item:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-mobile-sticky-composer-sheet-branch-menu-item.theia-mod-danger {
+  color: var(--theia-errorForeground, #f85149);
+}
+
+.qaap-sticky-composer-sheet-popover.theia-mod-branch-sheet .theia-mobile-sticky-composer-sheet-branch-row
+  .theia-mobile-sticky-composer-sheet-option.theia-mod-branch-select,
+.qaap-sticky-composer-sheet-popover.theia-mod-branch-sheet .theia-mobile-sticky-composer-sheet-branch-menu-btn {
+  min-height: 34px;
+}
+
 .qaap-sticky-composer-sheet-popover.theia-mod-project-sheet {
   width: min(360px, calc(100vw - 16px));
   max-height: min(440px, 52vh);

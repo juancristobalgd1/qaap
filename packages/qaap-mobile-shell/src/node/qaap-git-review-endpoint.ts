@@ -77,6 +77,9 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         app.post(`${QAAP_GIT_REVIEW_API_PATH}/checkout`, (req, res) => {
             void this.handleCheckout(req, res);
         });
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/delete-branch`, (req, res) => {
+            void this.handleDeleteBranch(req, res);
+        });
         app.post(`${QAAP_GIT_REVIEW_API_PATH}/stage`, (req, res) => {
             void this.handleStage(req, res);
         });
@@ -443,6 +446,29 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         try {
             await this.git(root, ['checkout', branch]);
             res.json({ ok: true, branch: await this.readCurrentBranch(root) ?? branch });
+        } catch (error) {
+            res.status(500).json({ error: this.errorMessage(error) });
+        }
+    }
+
+    protected async handleDeleteBranch(req: Request, res: Response): Promise<void> {
+        const root = await this.resolveRepositoryBody(req, res);
+        if (!root) {
+            return;
+        }
+        const branch = this.sanitizeBranchName(req.body?.branch);
+        if (!branch) {
+            res.status(400).json({ error: 'Missing or invalid "branch" in request body.' });
+            return;
+        }
+        try {
+            const current = await this.readCurrentBranch(root);
+            if (current === branch) {
+                res.status(409).json({ error: 'Cannot delete the currently checked-out branch. Switch to another branch first.' });
+                return;
+            }
+            await this.git(root, ['branch', '-D', branch]);
+            res.json({ ok: true, branch });
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
