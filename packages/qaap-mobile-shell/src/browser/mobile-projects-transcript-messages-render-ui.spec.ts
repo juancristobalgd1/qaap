@@ -183,6 +183,8 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty')).to.equal(null);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-welcome')).to.not.equal(null);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-title')?.textContent).to.equal('Ready when you are.');
+        expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-subtitle')).to.equal(null);
+        expect(messageHost.textContent).to.not.contain('Describe the outcome.');
         expect(composerHost.classList.contains('theia-mod-show-quick-actions')).to.equal(true);
     });
 
