@@ -8,7 +8,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { parseUnifiedDiff } from '../common/qaap-git-review';
+import { isBinaryGitPatch, parseUnifiedDiff, type QaapGitChangedFile } from '../common/qaap-git-review';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
 
 /** Test seam: expose the protected git helpers without spinning up express or DI. */
@@ -16,10 +16,26 @@ class TestableGitReviewEndpoint extends QaapGitReviewEndpoint {
     computeFileDiffForTest(root: string, file: string): Promise<string> {
         return this.computeFileDiff(root, file);
     }
+
+    collectChangedFilesForTest(root: string): Promise<QaapGitChangedFile[]> {
+        return this.collectChangedFiles(root);
+    }
+
+    discardFileForTest(root: string, file: string): Promise<void> {
+        return this.discardFile(root, file);
+    }
+
+    sanitizeRelativePathForTest(value: unknown): string | undefined {
+        return this.sanitizeRelativePath(value);
+    }
+
+    isMetadataOnlyUntrackedFileForTest(root: string, file: string): Promise<boolean> {
+        return this.isMetadataOnlyUntrackedFile(root, file);
+    }
 }
 
 describe('qaap-git-review-endpoint computeFileDiff', function (): void {
-    // git subprocess churn ‚Äî allow slack on slow CI runners.
+    // git subprocess churn ù allow slack on slow CI runners.
     this.timeout(20_000);
 
     let repo: string;
@@ -34,14 +50,24 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         git(['config', 'user.email', 'spec@qaap.test']);
         git(['config', 'user.name', 'qaap spec']);
         fs.writeFileSync(path.join(repo, 'index.html'), '<html>v1</html>\n');
+        fs.writeFileSync(path.join(repo, 'rename-old.ts'), 'export const renamed = true;\n');
+        fs.writeFileSync(path.join(repo, 'deleted.ts'), 'export const removed = true;\n');
+        fs.writeFileSync(path.join(repo, 'binary.bin'), Buffer.from([0, 1, 2, 3]));
+        fs.writeFileSync(path.join(repo, 'mode.sh'), '#!/bin/sh\necho qaap\n', { mode: 0o644 });
         git(['add', '.']);
         git(['commit', '-qm', 'init']);
         // Working tree shaped like the reported VPS case: one modified tracked file, one untracked.
         fs.writeFileSync(path.join(repo, 'index.html'), '<html>v2</html>\n<footer/>\n');
         fs.writeFileSync(path.join(repo, 'package-lock.json'), '{ "lockfileVersion": 3 }\n');
+        fs.writeFileSync(path.join(repo, 'empty-new.txt'), '');
+        fs.symlinkSync(os.tmpdir(), path.join(repo, 'untracked-directory-link'), 'dir');
+        git(['mv', 'rename-old.ts', 'rename-new.ts']);
+        git(['rm', '-q', 'deleted.ts']);
+        fs.writeFileSync(path.join(repo, 'binary.bin'), Buffer.from([0, 9, 8, 7]));
+        fs.chmodSync(path.join(repo, 'mode.sh'), 0o755);
         // Host-level breakage that killed per-file diffs in production: an external diff driver
         // that does not exist on the server. Plumbing (--numstat/status) ignores it, so the
-        // changes list works while every patch-producing diff dies ‚Äî unless we pass --no-ext-diff.
+        // changes list works while every patch-producing diff dies ù unless we pass --no-ext-diff.
         git(['config', 'diff.external', '/nonexistent-external-diff-tool']);
     });
 
@@ -66,6 +92,18 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         expect(hunks[0].lines.some(line => line.type === 'del')).to.equal(false);
     });
 
+    it('classifies an empty untracked file as a genuine metadata-only change', async () => {
+        const patch = await endpoint.computeFileDiffForTest(repo, 'empty-new.txt');
+        expect(patch).to.contain('new file mode');
+        expect(parseUnifiedDiff(patch)).to.deep.equal([]);
+        expect(await endpoint.isMetadataOnlyUntrackedFileForTest(repo, 'empty-new.txt')).to.equal(true);
+    });
+
+    it('classifies an untracked symlink-to-directory as metadata instead of a missing diff', async () => {
+        expect(await endpoint.computeFileDiffForTest(repo, 'untracked-directory-link')).to.equal('');
+        expect(await endpoint.isMetadataOnlyUntrackedFileForTest(repo, 'untracked-directory-link')).to.equal(true);
+    });
+
     it('emits no ANSI color codes even when color.ui is forced on', async () => {
         git(['config', 'color.ui', 'always']);
         try {
@@ -74,5 +112,61 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         } finally {
             git(['config', '--unset', 'color.ui']);
         }
+    });
+
+    it('returns staged deleted and renamed patches against HEAD', async () => {
+        const deleted = await endpoint.computeFileDiffForTest(repo, 'deleted.ts');
+        expect(deleted).to.contain('deleted file mode');
+        expect(parseUnifiedDiff(deleted).some(hunk => hunk.lines.some(line => line.type === 'del'))).to.equal(true);
+
+        const renamed = await endpoint.computeFileDiffForTest(repo, 'rename-new.ts');
+        expect(renamed).to.contain('rename from rename-old.ts');
+        expect(renamed).to.contain('rename to rename-new.ts');
+    });
+
+    it('distinguishes binary and metadata-only patches from missing textual data', async () => {
+        const binary = await endpoint.computeFileDiffForTest(repo, 'binary.bin');
+        expect(binary).to.contain('Binary files');
+        expect(isBinaryGitPatch(binary)).to.equal(true);
+        expect(parseUnifiedDiff(binary)).to.deep.equal([]);
+
+        const modeOnly = await endpoint.computeFileDiffForTest(repo, 'mode.sh');
+        expect(modeOnly).to.contain('old mode 100644');
+        expect(modeOnly).to.contain('new mode 100755');
+        expect(isBinaryGitPatch(modeOnly)).to.equal(false);
+        expect(parseUnifiedDiff(modeOnly)).to.deep.equal([]);
+    });
+
+    it('does not treat source code mentioning Git binary markers as a binary patch', () => {
+        const textual = [
+            'diff --git a/source.ts b/source.ts',
+            '@@ -1 +1 @@',
+            "-const marker = 'Binary files ';",
+            "+const marker = 'GIT binary patch';",
+        ].join('\n');
+        expect(isBinaryGitPatch(textual)).to.equal(false);
+    });
+
+    it('parses rename records without creating a phantom old-path file', async () => {
+        const files = await endpoint.collectChangedFilesForTest(repo);
+        const renamed = files.find(file => file.path === 'rename-new.ts');
+        expect(renamed?.status).to.equal('R');
+        expect(renamed?.oldPath).to.equal('rename-old.ts');
+        expect(files.some(file => file.path === 'rename-old.ts')).to.equal(false);
+    });
+
+    it('discards both sides of a staged rename and refreshes to a clean state', async () => {
+        await endpoint.discardFileForTest(repo, 'rename-new.ts');
+        expect(fs.existsSync(path.join(repo, 'rename-new.ts'))).to.equal(false);
+        expect(fs.existsSync(path.join(repo, 'rename-old.ts'))).to.equal(true);
+        const files = await endpoint.collectChangedFilesForTest(repo);
+        expect(files.some(file => file.path === 'rename-new.ts' || file.path === 'rename-old.ts')).to.equal(false);
+    });
+
+    it('rejects absolute paths and parent traversal', () => {
+        expect(endpoint.sanitizeRelativePathForTest('../outside.ts')).to.equal(undefined);
+        expect(endpoint.sanitizeRelativePathForTest('/tmp/outside.ts')).to.equal(undefined);
+        expect(endpoint.sanitizeRelativePathForTest('src/../../outside.ts')).to.equal(undefined);
+        expect(endpoint.sanitizeRelativePathForTest('src/inside.ts')).to.equal('src/inside.ts');
     });
 });
