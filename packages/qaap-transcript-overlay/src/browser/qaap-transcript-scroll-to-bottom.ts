@@ -20,7 +20,6 @@ import { resolveScrollBehavior, scrollElementToEnd } from '../common/qaap-prefer
 import { clearTranscriptUserScrollIntent } from './qaap-transcript-scroll-intent';
 
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_BUTTON_CLASS = 'theia-mobile-agent-transcript-scroll-to-bottom';
-export const TRANSCRIPT_SCROLL_TO_BOTTOM_STATUS_CLASS = 'theia-mobile-agent-transcript-out-of-view-status';
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_ACTIVE_STEP_CLASS = 'theia-mod-active-step';
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_MOUNT_CLASS = 'theia-mod-transcript-scroll-to-bottom-mount';
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_VISIBLE_CLASS = 'theia-mod-visible';
@@ -128,14 +127,7 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     badge.hidden = true;
     button.append(badge);
 
-    const statusButton = document.createElement('button');
-    statusButton.type = 'button';
-    statusButton.className = TRANSCRIPT_SCROLL_TO_BOTTOM_STATUS_CLASS;
-    statusButton.hidden = true;
-    statusButton.setAttribute('aria-hidden', 'true');
-    statusButton.setAttribute('aria-live', 'polite');
-    statusButton.title = label;
-    mountHost.append(statusButton, button);
+    mountHost.append(button);
 
     // New-message badge: while the user is scrolled away, count freshly appended
     // message rows (dedupe by message id — virtual-list remounts reuse ids).
@@ -150,17 +142,6 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
             ? nls.localize('qaap/mobileProjects/transcriptJumpToNew', 'Jump to {0} new messages', String(unseenCount))
             : baseLabel;
         button.setAttribute('aria-label', nextLabel);
-        statusButton.setAttribute('aria-label', nextLabel);
-        statusButton.title = nextLabel;
-        if (fabMode === 'active-step') {
-            statusButton.textContent = activeStepLabel;
-        } else if (unseenCount > 0) {
-            statusButton.textContent = nls.localize('qaap/mobileProjects/transcriptNewMessagesStatus', '{0} new messages', String(unseenCount));
-        } else if (boundScroller && findTranscriptStreamingAgentRow(boundScroller)) {
-            statusButton.textContent = nls.localize('qaap/mobileProjects/transcriptStillRespondingStatus', 'Still responding');
-        } else {
-            statusButton.textContent = nls.localize('qaap/mobileProjects/transcriptJumpLatestStatus', 'Jump to latest');
-        }
     };
 
     const resetBadge = (): void => {
@@ -222,16 +203,11 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         showButton = visible;
         fabMode = mode;
         button.hidden = !visible;
-        statusButton.hidden = !visible;
         button.classList.toggle(TRANSCRIPT_SCROLL_TO_BOTTOM_VISIBLE_CLASS, visible);
-        statusButton.classList.toggle(TRANSCRIPT_SCROLL_TO_BOTTOM_VISIBLE_CLASS, visible);
         button.classList.toggle(TRANSCRIPT_SCROLL_TO_BOTTOM_ACTIVE_STEP_CLASS, visible && mode === 'active-step');
-        statusButton.classList.toggle(TRANSCRIPT_SCROLL_TO_BOTTOM_ACTIVE_STEP_CLASS, visible && mode === 'active-step');
         button.setAttribute('aria-hidden', visible ? 'false' : 'true');
-        statusButton.setAttribute('aria-hidden', visible ? 'false' : 'true');
         const baseLabel = mode === 'active-step' ? activeStepLabel : label;
         button.title = baseLabel;
-        statusButton.title = baseLabel;
         if (visible) {
             snapshotSeenMessages(boundScroller);
         } else {
@@ -390,12 +366,6 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         window.setTimeout(resync, 480);
     });
 
-    statusButton.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        button.click();
-    });
-
     const mutationObserver = new MutationObserver(resolveAndBindScroller);
     mutationObserver.observe(mountHost, { childList: true, subtree: false });
 
@@ -410,7 +380,6 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         }
         mutationObserver.disconnect();
         unbindScroller();
-        statusButton.remove();
         button.remove();
         mountHost.classList.remove(TRANSCRIPT_SCROLL_TO_BOTTOM_MOUNT_CLASS);
     });

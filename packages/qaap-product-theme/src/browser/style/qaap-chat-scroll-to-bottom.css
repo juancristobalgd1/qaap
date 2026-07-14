@@ -55,60 +55,11 @@
   visibility: visible !important;
 }
 
-.theia-mobile-agent-transcript-out-of-view-status {
-  position: absolute;
-  left: 50%;
-  right: auto;
-  bottom: calc(58px + var(--theia-mobile-projects-fab-lift, 0px));
-  z-index: 6;
-  transform: translateX(-50%);
-  display: none !important;
-  pointer-events: none !important;
-  visibility: hidden !important;
-  max-width: min(82vw, 320px);
-  min-height: 30px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
-  background: color-mix(in srgb, var(--theia-editor-background) 72%, transparent);
-  color: var(--theia-foreground);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.18),
-    inset 0 1px 0 color-mix(in srgb, var(--theia-foreground) 9%, transparent);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.theia-mobile-agent-transcript-out-of-view-status.theia-mod-visible {
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
-  pointer-events: auto !important;
-  visibility: visible !important;
-}
-
-.theia-mobile-agent-transcript-out-of-view-status:hover,
-.theia-mobile-agent-transcript-out-of-view-status:focus-visible {
-  outline: none;
-  border-color: color-mix(in srgb, var(--theia-foreground) 28%, transparent);
-  background: color-mix(in srgb, var(--theia-editor-background) 82%, transparent);
-}
-
 /* Never show jump-to-end on idle / quick-action shells (no conversation rows). */
 .theia-mod-transcript-scroll-to-bottom-mount:has(.theia-mobile-agent-transcript.theia-mod-empty-chat)
   .theia-mobile-agent-transcript-scroll-to-bottom,
-.theia-mod-transcript-scroll-to-bottom-mount:has(.theia-mobile-agent-transcript.theia-mod-empty-chat)
-  .theia-mobile-agent-transcript-out-of-view-status,
 .theia-mod-transcript-scroll-to-bottom-mount:has(.theia-mobile-agent-transcript-empty)
-  .theia-mobile-agent-transcript-scroll-to-bottom,
-.theia-mod-transcript-scroll-to-bottom-mount:has(.theia-mobile-agent-transcript-empty)
-  .theia-mobile-agent-transcript-out-of-view-status {
+  .theia-mobile-agent-transcript-scroll-to-bottom {
   display: none !important;
   pointer-events: none !important;
   visibility: hidden !important;
@@ -121,11 +72,6 @@
     background: color-mix(in srgb, var(--theia-editor-background) 48%, transparent);
   }
 
-  .theia-mobile-agent-transcript-out-of-view-status {
-    -webkit-backdrop-filter: blur(14px) saturate(150%);
-    backdrop-filter: blur(14px) saturate(150%);
-    background: color-mix(in srgb, var(--theia-editor-background) 60%, transparent);
-  }
 }
 
 .theia-mobile-agent-transcript-scroll-to-bottom:hover,
@@ -231,7 +177,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .theia-mobile-agent-transcript-scroll-to-bottom,
-  .theia-mobile-agent-transcript-out-of-view-status,
   .theia-ChatTree-ScrollToBottom {
     transition: none;
   }
