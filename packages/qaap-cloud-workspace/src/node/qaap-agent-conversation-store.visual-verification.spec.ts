@@ -197,6 +197,28 @@ describe('QaapAgentConversationStore visual verification', () => {
         ], 'agent-1')).to.equal(undefined);
     });
 
+    it('stores a recorded tour and attaches the video block', async () => {
+        const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-video-src-'));
+        const sourcePath = path.join(sourceDir, 'tour.webm');
+        fs.writeFileSync(sourcePath, Buffer.from('webm-bytes'));
+        const evidenceId = await store.saveVisualEvidenceVideo('conversation-1', sourcePath);
+        expect(evidenceId).to.be.a('string');
+        expect(fs.existsSync(sourcePath)).to.equal(false);
+
+        const resolved = store.resolveVisualVerificationFile('conversation-1', `${evidenceId}.webm`);
+        expect(resolved?.contentType).to.equal('video/webm');
+        expect(store.resolveVisualVerificationFile('conversation-1', `${evidenceId}/../escape.webm`)).to.equal(undefined);
+
+        const conv = store.recordVisualVerificationVideo('conversation-1', evidenceId!, [
+            { label: '/', result: { status: 'passed', summary: 'ok', issues: [] } },
+        ], 'agent-1');
+        const content = conv?.messages.at(-1)?.content ?? '';
+        expect(content).to.contain('[QAAP visual verification]');
+        expect(content).to.contain('Recorded a video tour of 1 page.');
+        expect(content).to.contain(`visual-verifications/${evidenceId}.webm`);
+        fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
     it('sweeps stale unreferenced images but keeps referenced and fresh ones', async () => {
         const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 11]);
         const kept = await store.saveVisualEvidenceImage('conversation-1', png);

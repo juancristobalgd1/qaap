@@ -7,9 +7,11 @@ import { inject, injectable, postConstruct } from '@theia/core/shared/inversify'
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as http from 'http';
+import * as os from 'os';
 import * as path from 'path';
 import {
     agentMessageHasVisualVerificationMarker,
+    parseQaapCaptureDirective,
     type QaapPreviewVisualValidationResult,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 import { deriveVisualFlowSteps } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-flow-plan';
@@ -316,7 +318,11 @@ export class QaapHeadlessVisualCaptureService {
                     port = started.port;
                 }
             }
-            await this.captureFlow(conversationId, conv, target.id, port);
+            if (parseQaapCaptureDirective(target).mode === 'video') {
+                await this.recordFlowVideo(conversationId, conv, target.id, port);
+            } else {
+                await this.captureFlow(conversationId, conv, target.id, port);
+            }
         } finally {
             staticServer?.close();
         }
@@ -459,6 +465,98 @@ export class QaapHeadlessVisualCaptureService {
             await this.store.recordVisualVerificationFlow(conversationId, captured, targetAgentMessageId);
         } finally {
             await browser.close().catch(() => undefined);
+        }
+    }
+
+    /**
+     * `[QAAP record]`: one continuous webm of the walked routes — each page is loaded, settled,
+     * and smoothly scrolled top-to-bottom, so motion, transitions, and below-the-fold content
+     * show up where a static screenshot cannot.
+     */
+    protected async recordFlowVideo(
+        conversationId: string,
+        conv: QaapAgentConversation,
+        targetAgentMessageId: string,
+        port: number,
+    ): Promise<void> {
+        const { chromium } = loadPlaywrightCore();
+        const videoDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'qaap-visual-video-'));
+        const browser = await chromium.launch({
+            executablePath: resolveHeadlessChromiumExecutable(),
+            headless: true,
+            args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        });
+        let videoPath: string | undefined;
+        const stepResults: { label: string; result: QaapPreviewVisualValidationResult }[] = [];
+        const skipped: string[] = [];
+        try {
+            const context = await browser.newContext({
+                viewport: { ...CAPTURE_VIEWPORT },
+                recordVideo: { dir: videoDir, size: { ...CAPTURE_VIEWPORT } },
+            });
+            const page = await context.newPage();
+            const video = page.video();
+            for (const step of deriveVisualFlowSteps(conv)) {
+                try {
+                    await page.goto(`http://127.0.0.1:${port}${step}`, { waitUntil: 'load', timeout: PAGE_LOAD_TIMEOUT_MS });
+                    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
+                    await page.waitForTimeout(PAGE_SETTLE_MS);
+                    const result = await page.evaluate(PAGE_SMOKE_CHECK) as QaapPreviewVisualValidationResult;
+                    stepResults.push({ label: step, result });
+                    // Scroll tour: reveal the page gradually so the recording shows all content.
+                    await page.evaluate(`new Promise(resolve => {
+                        const total = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+                        if (total === 0) { resolve(undefined); return; }
+                        let y = 0;
+                        const tick = () => {
+                            y = Math.min(total, y + Math.max(12, total / 90));
+                            window.scrollTo(0, y);
+                            if (y >= total) { resolve(undefined); } else { requestAnimationFrame(tick); }
+                        };
+                        requestAnimationFrame(tick);
+                    })`);
+                    await page.waitForTimeout(800);
+                } catch (error) {
+                    skipped.push(`\`${step}\`: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+            await context.close();
+            videoPath = video ? await video.path() : undefined;
+        } finally {
+            await browser.close().catch(() => undefined);
+        }
+        try {
+            if (stepResults.length === 0 || !videoPath) {
+                this.store.recordVisualVerificationFailure(
+                    conversationId,
+                    `Headless recording reached the dev server but produced no video — ${skipped.join('; ') || 'no route loaded'}`,
+                    targetAgentMessageId,
+                );
+                return;
+            }
+            if (skipped.length > 0) {
+                const first = stepResults[0];
+                stepResults[0] = {
+                    ...first,
+                    result: {
+                        ...first.result,
+                        status: 'warning',
+                        issues: [...first.result.issues, ...skipped.map(reason => `Could not record ${reason}.`)],
+                    },
+                };
+            }
+            const evidenceId = await this.store.saveVisualEvidenceVideo(conversationId, videoPath);
+            if (!evidenceId) {
+                this.store.recordVisualVerificationFailure(
+                    conversationId,
+                    'The recorded video could not be stored (size cap or storage limit reached).',
+                    targetAgentMessageId,
+                );
+                return;
+            }
+            this.store.recordVisualVerificationVideo(conversationId, evidenceId, stepResults, targetAgentMessageId);
+        } finally {
+            await fsp.rm(videoDir, { recursive: true, force: true }).catch(() => undefined);
         }
     }
 }

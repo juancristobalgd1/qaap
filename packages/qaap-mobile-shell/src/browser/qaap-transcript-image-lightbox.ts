@@ -88,11 +88,47 @@ export function handleTranscriptImageClick(doc: Document, event: MouseEvent): bo
     return true;
 }
 
+/**
+ * Markdown has no video syntax, so video evidence arrives as a link to
+ * `/visual-verifications/<id>.webm`. Swap those links for an inline chat-style player —
+ * native controls include fullscreen, which covers the "see it big" case for motion.
+ * Exported for tests. Returns how many links were enhanced.
+ */
+export function enhanceTranscriptVideoLinks(root: ParentNode, doc: Document): number {
+    const anchors = root.querySelectorAll<HTMLAnchorElement>(
+        '.theia-mobile-agent-transcript-content a[href*="/visual-verifications/"][href$=".webm"]');
+    let enhanced = 0;
+    for (const anchor of Array.from(anchors)) {
+        const video = doc.createElement('video');
+        video.className = 'qaap-transcript-video-evidence';
+        video.controls = true;
+        video.preload = 'metadata';
+        video.src = anchor.getAttribute('href') ?? '';
+        video.setAttribute('playsinline', '');
+        anchor.replaceWith(video);
+        enhanced++;
+    }
+    return enhanced;
+}
+
 @injectable()
 export class QaapTranscriptImageLightboxContribution implements FrontendApplicationContribution {
     onStart(): void {
         document.addEventListener('click', event => {
             handleTranscriptImageClick(document, event);
         }, true);
+        enhanceTranscriptVideoLinks(document, document);
+        // Transcript rows render and patch continuously (markdown, streaming, deferred rows) —
+        // enhance video links as they appear instead of hooking every render path.
+        const observer = new MutationObserver(mutations => {
+            for (const mutation of mutations) {
+                for (const node of Array.from(mutation.addedNodes)) {
+                    if (node instanceof Element) {
+                        enhanceTranscriptVideoLinks(node, document);
+                    }
+                }
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
     }
 }

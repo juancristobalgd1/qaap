@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     buildQaapVisualFlowMarkdown,
     buildQaapVisualVerificationMarkdown,
+    buildQaapVisualVideoMarkdown,
     conversationLikelyNeedsVisualVerification,
     parseQaapCaptureDirective,
     QAAP_VISUAL_VERIFICATION_MARKER,
@@ -88,10 +89,29 @@ describe('qaap-visual-verification', () => {
 
     it('parses directive routes with validation and cap', () => {
         expect(parseQaapCaptureDirective({ content: 'Listo.\n[QAAP capture]' }))
-            .to.deep.equal({ requested: true, routes: [] });
+            .to.deep.equal({ requested: true, mode: 'image', routes: [] });
         expect(parseQaapCaptureDirective({ content: '[qaap capture: / /Pricing /a/b bad-route /c /d]' }))
-            .to.deep.equal({ requested: true, routes: ['/', '/pricing', '/a/b'] });
+            .to.deep.equal({ requested: true, mode: 'image', routes: ['/', '/pricing', '/a/b'] });
         expect(parseQaapCaptureDirective({ content: 'sin directiva' }))
-            .to.deep.equal({ requested: false, routes: [] });
+            .to.deep.equal({ requested: false, mode: 'image', routes: [] });
+    });
+
+    it('parses the video-record directive', () => {
+        expect(parseQaapCaptureDirective({ content: 'Grabado.\n[QAAP record]' }))
+            .to.deep.equal({ requested: true, mode: 'video', routes: [] });
+        expect(parseQaapCaptureDirective({ content: '[QAAP record: / /checkout]' }))
+            .to.deep.equal({ requested: true, mode: 'video', routes: ['/', '/checkout'] });
+    });
+
+    it('builds a video evidence block with per-route findings', () => {
+        const markdown = buildQaapVisualVideoMarkdown('/evidence/v.webm', [
+            { label: '/', result: { status: 'passed', summary: 'ok', issues: [] } },
+            { label: '/checkout', result: { status: 'warning', summary: '1 finding', issues: ['overflow'] } },
+        ]);
+        expect(markdown.match(/\[QAAP visual verification\]/g)).to.have.length(1);
+        expect(markdown).to.contain('Review recommended');
+        expect(markdown).to.contain('Recorded a video tour of 2 pages.');
+        expect(markdown).to.contain('- `/checkout`: overflow');
+        expect(markdown).to.contain('[QAAP preview video](/evidence/v.webm)');
     });
 });

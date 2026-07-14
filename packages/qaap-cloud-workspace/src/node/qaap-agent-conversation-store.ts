@@ -31,8 +31,6 @@ import {
 } from '../common/qaap-agent-conversation';
 import {
     agentSupportsModelPicker,
-    isClaudeCodeAgent,
-    isQaiqAgent,
     resolveQaapAgentMentionToken,
     usesAgUiCliTranscriptStream,
     usesStructuredAgentTranscript,
@@ -40,7 +38,6 @@ import {
 import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     estimateConversationTokensFromMessages,
-    mergeQaapAgentContextUsage,
     totalTokensFromContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
 import { resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
@@ -50,7 +47,6 @@ import {
     resolveAgentLogDisplayText,
     type QaapAgentStreamAccumulator,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
-import { QaapQaiqStreamAccumulator } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-stream';
 import {
     createAgUiCliStreamEmitter,
     type QaapCliAgUiStreamEmitter,
@@ -132,9 +128,14 @@ import {
     buildQaapVisualFlowMarkdown,
     buildQaapVisualVerificationFailureMarkdown,
     buildQaapVisualVerificationMarkdown,
+    buildQaapVisualVideoMarkdown,
     type QaapPreviewVisualValidationResult,
     type QaapVisualFlowStepEvidence,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+import {
+    createComposerGitActionDisplayMarker,
+    type ComposerGitActionDisplayMetadata,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display';
 import {
     QAAP_MAX_TURN_MINUTES_ENV,
     buildQaapTurnWatchdogMessage,
@@ -150,6 +151,8 @@ const INDEX_PATH = path.join(STORE_DIR, 'index.json');
 const VISUAL_EVIDENCE_DIR = path.join(STORE_DIR, 'visual-evidence');
 /** Hard cap of stored PNGs per conversation — bounds disk use across multi-step flows and retries. */
 const VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION = 40;
+/** Recorded tours are short (seconds), but webm still dwarfs PNGs — cap them separately. */
+const VISUAL_EVIDENCE_MAX_VIDEO_BYTES = 25 * 1024 * 1024;
 /** How often the turn watchdog scans for conversations stuck 'streaming' past the max duration. */
 const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 
@@ -810,6 +813,87 @@ export class QaapAgentConversationStore {
     }
 
     /**
+     * Moves a recorded tour (Playwright writes the webm to a temp path) into the evidence dir.
+     * Videos are capped separately from screenshots — a few seconds of webm dwarfs any PNG.
+     */
+    async saveVisualEvidenceVideo(conversationId: string, sourcePath: string): Promise<string | undefined> {
+        const conv = this.conversations.get(conversationId);
+        const stat = await fsp.stat(sourcePath).catch(() => undefined);
+        if (!conv || !stat || stat.size === 0 || stat.size > VISUAL_EVIDENCE_MAX_VIDEO_BYTES) {
+            return undefined;
+        }
+        const directory = this.visualEvidenceDirectory(conversationId);
+        await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+        const existing = await fsp.readdir(directory).catch(() => [] as string[]);
+        if (existing.length >= VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION) {
+            return undefined;
+        }
+        const evidenceId = randomUUID();
+        const targetPath = path.join(directory, `${evidenceId}.webm`);
+        try {
+            await fsp.rename(sourcePath, targetPath);
+        } catch {
+            await fsp.copyFile(sourcePath, targetPath);
+            await fsp.rm(sourcePath, { force: true }).catch(() => undefined);
+        }
+        await fsp.chmod(targetPath, 0o600).catch(() => undefined);
+        return evidenceId;
+    }
+
+    /** Attaches a recorded-tour evidence block referencing a stored webm. */
+    recordVisualVerificationVideo(
+        conversationId: string,
+        videoEvidenceId: string,
+        steps: readonly { label: string; result: QaapPreviewVisualValidationResult }[],
+        targetAgentMessageId: string,
+    ): QaapAgentConversation | undefined {
+        const conv = this.conversations.get(conversationId);
+        if (!conv || !/^[a-f\d-]{36}$/i.test(videoEvidenceId)) {
+            return undefined;
+        }
+        if (!fs.existsSync(path.join(this.visualEvidenceDirectory(conversationId), `${videoEvidenceId}.webm`))) {
+            return undefined;
+        }
+        const target = this.resolveVisualEvidenceTarget(conv, targetAgentMessageId);
+        if (!target) {
+            return undefined;
+        }
+        if (agentMessageHasVisualVerificationMarker(target) || this.visualVerificationInFlight.has(conversationId)) {
+            return conv;
+        }
+        this.visualVerificationInFlight.add(conversationId);
+        try {
+            const videoUrl = `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
+                + `/visual-verifications/${encodeURIComponent(videoEvidenceId)}.webm`;
+            const next = this.attachVisualVerificationBlock(conv, target, buildQaapVisualVideoMarkdown(videoUrl, steps));
+            void this.sweepUnreferencedVisualEvidence(conversationId).catch(() => undefined);
+            return next;
+        } finally {
+            this.visualVerificationInFlight.delete(conversationId);
+        }
+    }
+
+    /**
+     * Resolves a served evidence file (`<uuid>` PNG or `<uuid>.webm` video) to its on-disk path.
+     * The strict ref validation keeps the route traversal-proof.
+     */
+    resolveVisualVerificationFile(conversationId: string, evidenceRef: string): { path: string; contentType: string } | undefined {
+        if (!this.conversations.has(conversationId)) {
+            return undefined;
+        }
+        const match = /^([a-f\d-]{36})(\.webm)?$/i.exec(evidenceRef);
+        if (!match) {
+            return undefined;
+        }
+        const fileName = match[2] ? `${match[1]}.webm` : `${match[1]}.png`;
+        const filePath = path.join(this.visualEvidenceDirectory(conversationId), fileName);
+        if (!fs.existsSync(filePath)) {
+            return undefined;
+        }
+        return { path: filePath, contentType: match[2] ? 'video/webm' : 'image/png' };
+    }
+
+    /**
      * Attaches a walked-flow evidence block (one screenshot per route) to the settled reply.
      * Every step must reference a PNG previously stored via {@link saveVisualEvidenceImage}.
      */
@@ -876,7 +960,7 @@ export class QaapAgentConversationStore {
         const files = await fsp.readdir(directory).catch(() => [] as string[]);
         const cutoff = Date.now() - 60 * 60 * 1000;
         for (const file of files) {
-            const evidenceId = file.replace(/\.png$/i, '').toLowerCase();
+            const evidenceId = file.replace(/\.(?:png|webm)$/i, '').toLowerCase();
             if (referenced.has(evidenceId)) {
                 continue;
             }
@@ -911,6 +995,36 @@ export class QaapAgentConversationStore {
             return conv;
         }
         return this.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationFailureMarkdown(trimmed));
+    }
+
+    /**
+     * Append a display-only user row for a git workflow (Commit & Push, etc.) without spawning
+     * another agent turn. The marker is rendered as the amber git-action pill in the transcript.
+     */
+    recordGitAction(
+        conversationId: string,
+        metadata: ComposerGitActionDisplayMetadata,
+    ): QaapAgentConversation | undefined {
+        const conv = this.conversations.get(conversationId);
+        if (!conv || !metadata.label.trim()) {
+            return undefined;
+        }
+        const userMessage: QaapAgentMessage = {
+            id: randomUUID(),
+            role: 'user',
+            content: createComposerGitActionDisplayMarker(metadata),
+            createdAt: Date.now(),
+        };
+        const next: QaapAgentConversation = {
+            ...conv,
+            updatedAt: Date.now(),
+            messages: [...conv.messages, userMessage],
+        };
+        this.conversations.set(conversationId, next);
+        this.fire({ type: 'message', conversationId, cwd: next.cwd, message: userMessage });
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        void this.persist();
+        return next;
     }
 
     readVisualVerification(conversationId: string, evidenceId: string): Buffer | undefined {
@@ -1222,16 +1336,16 @@ export class QaapAgentConversationStore {
 
     protected finalizeTurnContextUsage(conv: QaapAgentConversation, taskId: string, agentId: string): QaapAgentConversation {
         let next = conv;
-        if (isQaiqAgent(agentId) || isClaudeCodeAgent(agentId)) {
-            const stream = this.agentStreamByTaskId.get(taskId);
-            const turnUsage = stream instanceof QaapQaiqStreamAccumulator ? stream.getTurnUsage() : undefined;
-            if (turnUsage) {
-                next = {
-                    ...next,
-                    contextUsage: mergeQaapAgentContextUsage(next.contextUsage, turnUsage),
-                    contextUsageEstimated: undefined,
-                };
-            }
+        const stream = this.agentStreamByTaskId.get(taskId);
+        const turnUsage = stream?.getTurnUsage?.();
+        if (turnUsage) {
+            next = {
+                ...next,
+                // Provider turn usage is the latest context snapshot, not a billing accumulator.
+                // Summing snapshots across turns overstates context fullness.
+                contextUsage: turnUsage,
+                contextUsageEstimated: undefined,
+            };
         }
         if (totalTokensFromContextUsage(next.contextUsage) === 0) {
             const estimated = estimateConversationTokensFromMessages(next.messages, next.contextPreamble);

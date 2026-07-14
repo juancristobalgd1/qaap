@@ -149,11 +149,12 @@ export function buildAgentDevPreviewPromptBlock(): string {
 export function buildAgentVisualEvidencePromptBlock(): string {
     return [
         VISUAL_EVIDENCE_MARKER,
-        'You have a screenshot tool. Invoke it by ending your final message with a line that contains exactly: [QAAP capture]',
-        'You MUST invoke it when the user asks to SEE the app, page, or result — any phrasing, any language ("muéstramela", "enséñame cómo quedó", "quiero verla", "show me", "captura", "screenshot", "evidencia visual") — and after any change that alters what the app renders.',
-        'Optionally name the routes to walk: [QAAP capture: / /pricing] (max 3).',
-        'Qaap runs a headless browser server-side and attaches the screenshots below your reply after the turn settles. This is the ONLY way screenshots happen: describing the page in text does NOT satisfy a request to see it.',
-        'Never write your own capture scripts (puppeteer, playwright, canvas dumps) and never claim you took a screenshot yourself. If the app cannot run yet, fix that first, then still invoke [QAAP capture].',
+        'You have two visual evidence tools, invoked by ending your final message with a directive line:',
+        '- [QAAP capture] — screenshots of the app. Invoke it when the user asks to SEE the app, page, or result — any phrasing, any language ("muéstramela", "enséñame cómo quedó", "quiero verla", "show me", "captura", "screenshot", "evidencia visual") — and after any change that alters what the app renders.',
+        '- [QAAP record] — a scrolling VIDEO tour of the app. Invoke it instead of capture when motion matters: animations, transitions, carousels, hover/scroll effects, multi-page flows, or when the user asks for a video ("vídeo", "grábame", "demo en movimiento", "record").',
+        'Both accept optional routes: [QAAP capture: / /pricing] or [QAAP record: / /checkout] (max 3).',
+        'Qaap runs a headless browser server-side and attaches the screenshots or the video below your reply after the turn settles. This is the ONLY way visual evidence happens: describing the page in text does NOT satisfy a request to see it.',
+        'Never write your own capture or recording scripts (puppeteer, playwright, ffmpeg, canvas dumps) and never claim you produced a screenshot or video yourself. If the app cannot run yet, fix that first, then still invoke the directive.',
     ].join('\n');
 }
 

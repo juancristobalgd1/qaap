@@ -109,17 +109,23 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            const png = this.store.readVisualVerification(req.params.id, req.params.evidenceId);
-            if (!png) {
+            const file = this.store.resolveVisualVerificationFile(req.params.id, req.params.evidenceId);
+            if (!file) {
                 res.sendStatus(404);
                 return;
             }
-            res.status(200).set({
-                'Content-Type': 'image/png',
-                'Content-Length': String(png.length),
+            // Evidence files are immutable per id; res.sendFile handles Range requests, which
+            // Safari requires before it will play <video> sources at all.
+            res.set({
                 'Cache-Control': 'private, max-age=31536000, immutable',
                 'X-Content-Type-Options': 'nosniff',
-            }).send(png);
+                'Content-Type': file.contentType,
+            });
+            res.sendFile(file.path, { acceptRanges: true }, error => {
+                if (error && !res.headersSent) {
+                    res.sendStatus(404);
+                }
+            });
         });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             const conv = this.getConversationIfOwned(req, res, req.params.id);
@@ -157,6 +163,12 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 return;
             }
             this.handlePostVisualVerificationFailure(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/git-actions`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            this.handlePostGitAction(req, res);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-evidence-images`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
@@ -651,6 +663,52 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return;
         }
         res.json(conv);
+    }
+
+    protected handlePostGitAction(req: Request, res: Response): void {
+        const metadata = this.sanitizeGitActionMetadata(req.body);
+        if (!metadata) {
+            res.status(400).json({ error: 'action and label are required.' });
+            return;
+        }
+        const conv = this.store.recordGitAction(req.params.id, metadata);
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation not found.' });
+            return;
+        }
+        res.status(201).json(conv);
+    }
+
+    protected sanitizeGitActionMetadata(body: unknown): import('@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display').ComposerGitActionDisplayMetadata | undefined {
+        const value = (body ?? {}) as Partial<import('@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display').ComposerGitActionDisplayMetadata>;
+        const action = typeof value.action === 'string' ? value.action.trim() : '';
+        const label = typeof value.label === 'string' ? value.label.trim().slice(0, 120) : '';
+        if (!action || !label) {
+            return undefined;
+        }
+        const allowed = new Set([
+            'create-branch-commit',
+            'create-branch-commit-push',
+            'commit-push',
+            'commit',
+            'commit-create-pr',
+        ]);
+        if (!allowed.has(action)) {
+            return undefined;
+        }
+        return {
+            action: action as import('@theia/qaap-mobile-shell/lib/common/qaap-git-review').QaapGitCommitWorkflowAction,
+            label,
+            status: value.status === 'failed'
+                ? 'failed'
+                : value.status === 'running'
+                    ? 'running'
+                    : 'completed',
+            ...(typeof value.branch === 'string' && value.branch.trim() ? { branch: value.branch.trim().slice(0, 120) } : {}),
+            ...(typeof value.files === 'number' && value.files >= 0 ? { files: value.files } : {}),
+            ...(typeof value.insertions === 'number' && value.insertions >= 0 ? { insertions: value.insertions } : {}),
+            ...(typeof value.deletions === 'number' && value.deletions >= 0 ? { deletions: value.deletions } : {}),
+        };
     }
 
     protected handleUpdate(req: Request, res: Response): void {

@@ -5,7 +5,7 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
-import { handleTranscriptImageClick, openQaapImageLightbox } from './qaap-transcript-image-lightbox';
+import { enhanceTranscriptVideoLinks, handleTranscriptImageClick, openQaapImageLightbox } from './qaap-transcript-image-lightbox';
 
 describe('qaap-transcript-image-lightbox', () => {
     let disableJSDOM: () => void;
@@ -40,6 +40,21 @@ describe('qaap-transcript-image-lightbox', () => {
         third.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         expect(document.querySelector('.qaap-transcript-image-lightbox')).to.equal(null);
         expect(second.isConnected).to.equal(false);
+    });
+
+    it('swaps webm evidence links for inline players, leaving other links alone', () => {
+        document.body.innerHTML = `
+            <div class="theia-mobile-agent-transcript-content">
+                <p><a href="/qaap/api/agent-conversations/c1/visual-verifications/11111111-2222-3333-4444-555555555555.webm">QAAP preview video</a></p>
+                <p><a id="doc" href="https://example.test/readme.md">docs</a></p>
+            </div>`;
+        expect(enhanceTranscriptVideoLinks(document, document)).to.equal(1);
+        const video = document.querySelector<HTMLVideoElement>('video.qaap-transcript-video-evidence');
+        expect(video).to.not.equal(null);
+        expect(video!.getAttribute('src')).to.contain('.webm');
+        expect(video!.controls).to.equal(true);
+        expect(document.querySelector('#doc')).to.not.equal(null);
+        expect(enhanceTranscriptVideoLinks(document, document)).to.equal(0);
     });
 
     it('delegates only clicks on images inside transcript content', () => {

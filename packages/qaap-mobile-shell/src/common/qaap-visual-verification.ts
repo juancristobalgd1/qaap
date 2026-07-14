@@ -14,22 +14,26 @@ export interface QaapPreviewVisualValidationResult {
 const VISUAL_FILE_REGEX = /\.(?:html?|css|scss|sass|less|tsx|jsx|vue|svelte)(?:["'\s,}]|$)/i;
 
 /**
- * Text-protocol capture tool. The AGENT (any CLI, any language) decides when visual evidence
- * is wanted — user intent is interpreted by the LLM, not by keyword regexes — and invokes the
- * capture by ending its reply with `[QAAP capture]`, optionally with routes:
- * `[QAAP capture: / /pricing]`. The contract is stated in the shared agent prompt preamble.
+ * Text-protocol visual-evidence tools. The AGENT (any CLI, any language) decides when evidence
+ * is wanted — user intent is interpreted by the LLM, not by keyword regexes — and invokes a
+ * tool by ending its reply with a directive line:
+ * - `[QAAP capture]` — screenshots of the walked routes; optionally `[QAAP capture: / /pricing]`.
+ * - `[QAAP record]` — a video tour (scrolling walkthrough) when motion matters; same route syntax.
+ * The contract is stated in the shared agent prompt preamble.
  */
-const QAAP_CAPTURE_DIRECTIVE_REGEX = /\[qaap\s*capture(?::([^\]]*))?\]/i;
+const QAAP_CAPTURE_DIRECTIVE_REGEX = /\[qaap\s*(capture|record)(?::([^\]]*))?\]/i;
 const DIRECTIVE_ROUTE_REGEX = /^\/[\w\-/]*$/;
 const MAX_DIRECTIVE_ROUTES = 3;
 
 export interface QaapCaptureDirective {
     readonly requested: boolean;
+    /** `video` when the agent invoked `[QAAP record]`; screenshots otherwise. */
+    readonly mode: 'image' | 'video';
     /** Routes the agent asked to walk (validated, ≤3); empty means "derive them". */
     readonly routes: readonly string[];
 }
 
-/** Parses the agent's `[QAAP capture]` invocation out of a settled reply. */
+/** Parses the agent's `[QAAP capture]` / `[QAAP record]` invocation out of a settled reply. */
 export function parseQaapCaptureDirective(message: {
     readonly content?: string;
     readonly segments?: readonly { readonly type?: string; readonly content?: string }[];
@@ -43,15 +47,15 @@ export function parseQaapCaptureDirective(message: {
     for (const text of texts) {
         const match = QAAP_CAPTURE_DIRECTIVE_REGEX.exec(text);
         if (match) {
-            const routes = (match[1] ?? '')
+            const routes = (match[2] ?? '')
                 .split(/[\s,]+/)
                 .map(route => route.trim().toLowerCase())
                 .filter(route => DIRECTIVE_ROUTE_REGEX.test(route))
                 .slice(0, MAX_DIRECTIVE_ROUTES);
-            return { requested: true, routes };
+            return { requested: true, mode: match[1].toLowerCase() === 'record' ? 'video' : 'image', routes };
         }
     }
-    return { requested: false, routes: [] };
+    return { requested: false, mode: 'image', routes: [] };
 }
 
 /**
@@ -127,6 +131,28 @@ export interface QaapVisualFlowStepEvidence {
     readonly label: string;
     readonly imageUrl: string;
     readonly result: QaapPreviewVisualValidationResult;
+}
+
+/**
+ * Video-evidence block: one recorded tour of the walked routes plus the per-route smoke
+ * findings. The link is rendered as an inline player by the transcript frontend (it targets
+ * `/visual-verifications/<id>.webm` URLs) — markdown itself has no video syntax.
+ */
+export function buildQaapVisualVideoMarkdown(
+    videoUrl: string,
+    steps: readonly { readonly label: string; readonly result: QaapPreviewVisualValidationResult }[],
+): string {
+    const failing = steps.filter(step => step.result.status !== 'passed').length;
+    const outcome = failing === 0 ? 'Passed' : 'Review recommended';
+    const findings = steps.flatMap(step => step.result.issues.map(issue => `- \`${step.label}\`: ${issue}`));
+    return [
+        QAAP_VISUAL_VERIFICATION_MARKER,
+        `**Visual verification · ${outcome}**  `,
+        `Recorded a video tour of ${steps.length} page${steps.length === 1 ? '' : 's'}.`,
+        ...(findings.length > 0 ? ['', ...findings] : []),
+        '',
+        `[QAAP preview video](${videoUrl})`,
+    ].join('\n');
 }
 
 /** Multi-step twin of {@link buildQaapVisualVerificationMarkdown} — one image per walked route. */
