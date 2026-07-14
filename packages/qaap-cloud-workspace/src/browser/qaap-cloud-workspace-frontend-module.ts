@@ -24,6 +24,11 @@ import { QaapWebPushContribution } from './qaap-web-push-contribution';
 import { QaapHubActionsContribution } from './qaap-hub-actions-contribution';
 import { QaapHubChatSyncContribution } from './qaap-hub-chat-sync-contribution';
 import { QaapMissionUndoContribution } from './qaap-mission-undo-contribution';
+import { QaapWorkspaceIsolationContribution } from './qaap-workspace-isolation-contribution';
+import {
+    WorkspaceHandlingContribution,
+    WorkspaceOpenHandlerContribution,
+} from '@theia/workspace/lib/browser';
 
 export default new ContainerModule(bind => {
     bind(QaapCloudBootstrapUiContribution).toSelf().inSingletonScope();
@@ -67,4 +72,9 @@ export default new ContainerModule(bind => {
 
     bindToolProvider(QaapDeployVercelTool, bind);
     bindToolProvider(QaapDeployCloudflareTool, bind);
+
+    bind(QaapWorkspaceIsolationContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapWorkspaceIsolationContribution);
+    bind(WorkspaceOpenHandlerContribution).toService(QaapWorkspaceIsolationContribution);
+    bind(WorkspaceHandlingContribution).toService(QaapWorkspaceIsolationContribution);
 });

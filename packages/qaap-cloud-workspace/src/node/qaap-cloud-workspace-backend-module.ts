@@ -5,7 +5,12 @@
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { MessagingListenerContribution } from '@theia/core/lib/node/messaging/messaging-listeners';
+import { FileSystemProvider } from '@theia/filesystem/lib/common/files';
+import { DiskFileSystemProvider } from '@theia/filesystem/lib/node/disk-file-system-provider';
 import { NodeFileUploadService } from '@theia/filesystem/lib/node/upload/node-file-upload-service';
+import { WorkspaceServer } from '@theia/workspace/lib/common';
+import { DefaultWorkspaceServer } from '@theia/workspace/lib/node/default-workspace-server';
 import { IShellTerminalServer, IShellTerminalServerOptions } from '@theia/terminal/lib/common/shell-terminal-protocol';
 import { ShellProcess, getRootPath } from '@theia/terminal/lib/node/shell-process';
 import { parseArgs } from '@theia/process/lib/node/utils';
@@ -37,12 +42,28 @@ import { QaapWorkHubRoutineEndpoint } from './qaap-work-hub-routine-endpoint';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineScheduler } from './qaap-work-hub-routine-scheduler';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
+import { QaapHostedWorkspaceServer } from './qaap-hosted-workspace-server';
+import { QaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
+import { QaapWebsocketAuthListener } from './qaap-websocket-auth-listener';
+import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
+import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contribution';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
     // Confine HTTP file uploads to the caller's workspace (auth + ownership); the upstream
     // NodeFileUploadService is unauthenticated and lets absolute paths through its traversal check.
     bind(QaapNodeFileUploadService).toSelf().inSingletonScope();
     rebind(NodeFileUploadService).toService(QaapNodeFileUploadService);
+    bind(QaapWebsocketAuthRegistry).toSelf().inSingletonScope();
+    bind(QaapWebsocketAuthListener).toSelf().inSingletonScope();
+    bind(MessagingListenerContribution).toService(QaapWebsocketAuthListener);
+    bind(QaapMessagingAuthContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapMessagingAuthContribution);
+    bind(QaapTenantDiskFileSystemProvider).toSelf().inSingletonScope();
+    rebind(DiskFileSystemProvider).toService(QaapTenantDiskFileSystemProvider);
+    rebind(FileSystemProvider).toService(QaapTenantDiskFileSystemProvider);
+    bind(QaapHostedWorkspaceServer).toSelf().inSingletonScope();
+    rebind(DefaultWorkspaceServer).toService(QaapHostedWorkspaceServer);
+    rebind(WorkspaceServer).toService(QaapHostedWorkspaceServer);
     bind(QaapCloudWorkspaceStore).toSelf().inSingletonScope();
     bind(QaapDockerOrchestrator).toSelf().inSingletonScope();
     bind(QaapCloudOrchestrator).toSelf().inSingletonScope();

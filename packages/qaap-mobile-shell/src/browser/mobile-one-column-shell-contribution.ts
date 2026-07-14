@@ -70,6 +70,7 @@ import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/mark
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
 import { MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import { MobileSnackbar } from './mobile-snackbar';
@@ -1361,7 +1362,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             id: QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
             label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
         }, {
-            execute: () => this.openDesktopIde(),
+            execute: () => { void this.openDesktopIde(); },
             isEnabled: () => this.workspaceService.opened
                 && this.shouldActivateMobileLayout()
                 && !peekPreferDesktopIde(),
@@ -1384,8 +1385,36 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         });
     }
 
-    protected openDesktopIde(): void {
+    protected async openDesktopIde(): Promise<void> {
+        const opened = await this.ensureRepositoryWorkspaceBeforeIde();
+        if (!opened) {
+            return;
+        }
         this.ideFallback.openDesktopIde();
+    }
+
+    /**
+     * The classic IDE must never surface a hosted workspace container in the Explorer.
+     * Re-root to the active project before switching surfaces when needed.
+     */
+    protected async ensureRepositoryWorkspaceBeforeIde(): Promise<boolean> {
+        const cwd = this.projectsService.getCurrentWorkspaceCwd();
+        if (!cwd || !isQaapWorkspaceContainerPath(cwd)) {
+            return true;
+        }
+        const projects = await this.projectsService.loadProjects();
+        const target = this.projectsService.resolveCurrentWorkspaceProject(projects)
+            ?? projects.find(project => !!this.projectsService.getProjectCwd(project));
+        if (!target) {
+            MobileSnackbar.show(
+                nls.localize('qaap/mobile/openDesktopIdeNeedsProject', 'Open a project from Work Hub before opening the IDE.'),
+                { kind: 'warning' },
+            );
+            return false;
+        }
+        markPreferDesktopIde();
+        await this.projectsService.openInCurrentWindowAsync(target);
+        return false;
     }
 
     /** Top-bar «Back to Work Hub» from mobile desktop-IDE mode — restore the Agents execution shell. */
@@ -1530,11 +1559,22 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     /** Sessions sidebar "Open in IDE" — leave Agents and surface the editor stack. */
     protected async onProjectsPanelOpenInIde(project: MobileProjectEntry): Promise<void> {
         try {
-            this.openDesktopIde();
             if (project.isCurrent) {
+                const cwd = this.projectsService.getCurrentWorkspaceCwd();
+                if (cwd && isQaapWorkspaceContainerPath(cwd)) {
+                    markPreferDesktopIde();
+                    await this.projectsService.openInCurrentWindowAsync(project);
+                    return;
+                }
+                const opened = await this.ensureRepositoryWorkspaceBeforeIde();
+                if (!opened) {
+                    return;
+                }
+                this.ideFallback.openDesktopIde();
                 await this.onCurrentProjectActivated();
                 return;
             }
+            markPreferDesktopIde();
             await this.projectsService.openInCurrentWindowAsync(project);
         } finally {
             if (!peekPreferDesktopIde()) {
