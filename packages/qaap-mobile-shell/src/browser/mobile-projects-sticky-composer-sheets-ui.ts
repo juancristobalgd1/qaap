@@ -861,11 +861,11 @@ export class MobileProjectsStickyComposerSheetsUi {
             if (!pickerModels) {
                 renderAgentPickerSkeleton(chrome.list, 5);
                 pickerModels = await this.resolveModelsForAgentPicker(modelAgentId);
-                chrome.modelsByAgent.set(modelAgentId, pickerModels);
             }
             if (chrome.sheet.dataset.agentPickerRenderGeneration !== String(renderGeneration)) {
                 return;
             }
+            chrome.modelsByAgent.set(modelAgentId, pickerModels);
             const storedModel = readStoredAgentModel(options.cwd, modelAgentId);
             chrome.header.classList.add('theia-mod-drilldown');
             chrome.backBtn.hidden = false;
@@ -924,6 +924,8 @@ export class MobileProjectsStickyComposerSheetsUi {
                 models = agentSupportsModelPicker(entry.id)
                     ? await this.resolveModelsForAgentPicker(entry.id)
                     : [];
+            }
+            if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
                 chrome.modelsByAgent.set(entry.id, models);
             }
             (entry as { models: readonly QaapQaiqModelOption[] }).models = models;
