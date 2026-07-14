@@ -24,6 +24,7 @@ const DESTRUCTIVE_COMMANDS_MARKER = '[QAAP destructive commands]';
 const REPO_MEMORY_MARKER = '[QAAP repo memory]';
 
 const WEB_GENERATION_MARKER = '[QAAP web generation quality]';
+const VISUAL_EVIDENCE_MARKER = '[QAAP visual evidence]';
 
 export function buildAgentPlanningPromptBlock(): string {
     return [
@@ -142,9 +143,17 @@ export function buildAgentDevPreviewPromptBlock(): string {
         'Never run long-lived dev commands in shell (pnpm dev, npm start, vite, next dev, astro dev, etc.) — shell tools time out after ~30s and kill the preview.',
         'Use one-shot install/build/typecheck/test commands only. When the app should be previewable, reply with the expected local port (e.g. 5173) and confirm dependencies are installed; Qaap starts the server separately.',
         'Prefer scaffolding web apps in the workspace root (package.json at root). If you must use a subfolder, name it clearly in your final message — Qaap auto-detects child projects for preview.',
-        'Visual evidence tool: to attach screenshots of the running app below your reply, end your final message with the line [QAAP capture] — or [QAAP capture: / /pricing] to walk specific routes (max 3). Qaap runs a headless browser server-side and attaches the images after your turn settles.',
-        'Invoke [QAAP capture] whenever the user asks to see the app / a screenshot / visual evidence (any language, any phrasing), and after changes that alter what the app renders. It is the ONLY way screenshots happen.',
-        'Never write your own capture scripts (puppeteer, playwright, canvas dumps) and never claim you "generated a screenshot" yourself; if the app cannot run yet, fix that first — the capture needs a servable app.',
+    ].join('\n');
+}
+
+export function buildAgentVisualEvidencePromptBlock(): string {
+    return [
+        VISUAL_EVIDENCE_MARKER,
+        'You have a screenshot tool. Invoke it by ending your final message with a line that contains exactly: [QAAP capture]',
+        'You MUST invoke it when the user asks to SEE the app, page, or result — any phrasing, any language ("muéstramela", "enséñame cómo quedó", "quiero verla", "show me", "captura", "screenshot", "evidencia visual") — and after any change that alters what the app renders.',
+        'Optionally name the routes to walk: [QAAP capture: / /pricing] (max 3).',
+        'Qaap runs a headless browser server-side and attaches the screenshots below your reply after the turn settles. This is the ONLY way screenshots happen: describing the page in text does NOT satisfy a request to see it.',
+        'Never write your own capture scripts (puppeteer, playwright, canvas dumps) and never claim you took a screenshot yourself. If the app cannot run yet, fix that first, then still invoke [QAAP capture].',
     ].join('\n');
 }
 
@@ -197,6 +206,9 @@ export function appendAgentDefaultWorkflowToPrompt(
     }
     if (!prompt.includes(DEV_PREVIEW_MARKER)) {
         blocks.push(buildAgentDevPreviewPromptBlock());
+    }
+    if (!prompt.includes(VISUAL_EVIDENCE_MARKER)) {
+        blocks.push(buildAgentVisualEvidencePromptBlock());
     }
     if (!prompt.includes(DEV_SERVER_VERIFICATION_MARKER)) {
         blocks.push(buildAgentDevServerVerificationPromptBlock());
