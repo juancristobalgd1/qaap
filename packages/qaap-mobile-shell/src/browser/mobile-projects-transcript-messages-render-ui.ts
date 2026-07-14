@@ -26,8 +26,6 @@ import {
 } from './qaap-transcript-scroll-intent';
 import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
 import { attachTranscriptInlineSearch } from './qaap-transcript-inline-search';
-import { attachTranscriptDensityToggle } from './qaap-transcript-density';
-import { attachTranscriptTurnNavigator } from './qaap-transcript-turn-navigator';
 import {
     attachTranscriptReadPositionPersistence,
     resolveStoredTranscriptReadMessageIndex,
@@ -673,8 +671,6 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             attachTranscriptUserScrollPin(messageHost),
             attachTranscriptScrollIntentObserver(messageHost),
             attachTranscriptInlineSearch(host, messageHost),
-            attachTranscriptDensityToggle(host, messageHost),
-            attachTranscriptTurnNavigator(host, messageHost),
             attachTranscriptReadPositionPersistence(messageHost, conv.id),
             attachTranscriptActivityTimelineStickySummary(messageHost),
             attachTranscriptScrollToBottomButton(host),
