@@ -9644,6 +9644,108 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-plugin-picker-icon.t
   color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.65));
 }
 
+.theia-qaap-agent-sheet-default-hint {
+  flex: 0 0 auto;
+}
+
+.theia-qaap-agent-sheet-search {
+  flex: 0 0 auto;
+  padding: 8px 12px 6px;
+}
+
+.theia-qaap-agent-sheet-search-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--theia-input-border, var(--theia-panel-border));
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--theia-input-background);
+  color: var(--theia-input-foreground);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.theia-qaap-agent-sheet-search-input:focus {
+  border-color: var(--theia-focusBorder);
+  box-shadow: 0 0 0 1px var(--theia-focusBorder);
+}
+
+.theia-qaap-agent-sheet-search-input::placeholder {
+  color: var(--theia-input-placeholderForeground);
+}
+
+.theia-qaap-agent-sheet-no-results {
+  text-align: center;
+}
+
+.theia-qaap-agent-sheet-inline-model-group {
+  margin: 8px 0 4px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+}
+
+.theia-qaap-agent-sheet-inline-model-group-heading {
+  display: flex;
+  margin: 0 8px 3px;
+  padding: 4px 2px;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.theia-qaap-agent-sheet-inline-model {
+  padding-block: 7px;
+}
+
+.theia-qaap-agent-sheet-inline-model-text {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.theia-qaap-agent-sheet-inline-model-label,
+.theia-qaap-agent-sheet-inline-model-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-qaap-agent-sheet-inline-model-id,
+.theia-qaap-agent-sheet-inline-model-provider {
+  color: var(--theia-descriptionForeground);
+  font-size: 10px;
+}
+
+.theia-qaap-agent-sheet-inline-model-provider {
+  flex: 0 0 auto;
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-qaap-agent-sheet-model-subavatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+}
+
+.theia-qaap-agent-sheet-model-subavatar .theia-qaap-llm-provider-icon.theia-mod-sm {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
 .theia-qaap-agent-sheet-provider {
   margin-bottom: 8px;
 }
@@ -27619,4 +27721,64 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 .theia-mobile-diff-summary-file-type.theia-mod-delete {
   color: var(--theia-errorForeground);
+}
+
+/* 
+/* ---- Transcript images: chat-style thumbnails + full-page lightbox ---------------------- */
+
+/* Images inside transcript messages (visual evidence, pasted screenshots) render as bounded
+   thumbnails like any chat app; tapping opens the lightbox below. */
+.theia-mobile-agent-transcript-content img {
+  display: block;
+  max-width: min(300px, 100%);
+  max-height: 220px;
+  width: auto;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid var(--theia-widget-border);
+  cursor: zoom-in;
+  margin: 6px 0;
+}
+
+.qaap-transcript-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.qaap-transcript-image-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+  cursor: default;
+}
+
+.qaap-transcript-image-lightbox-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+}
+
+.qaap-transcript-image-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.qaap-transcript-image-lightbox-close .codicon {
+  font-size: 20px;
 }
