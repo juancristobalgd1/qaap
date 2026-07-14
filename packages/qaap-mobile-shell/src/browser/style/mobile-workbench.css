@@ -11864,7 +11864,7 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
 /* Status badges — muted fill + light glyph (reference mock). */
 .theia-mobile-projects-task-dot.theia-mod-complete,
 .theia-mobile-projects-task-dot.theia-mod-verified,
-.theia-mobile-projects-task-dot.theia-mod-pr-ready,
+.theia-mobile-projects-task-dot.theia-mod-git-pr,
 .theia-mobile-projects-task-dot.theia-mod-failed,
 .theia-mobile-projects-task-dot.theia-mod-running,
 .theia-mobile-projects-task-dot.theia-mod-needs-input {
@@ -11896,7 +11896,27 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
 
 .theia-mobile-projects-task-dot.theia-mod-pr-ready {
   background: transparent !important;
-  color: var(--theia-charts-purple, #b180d7);
+  color: var(--theia-gitDecoration-addedResourceForeground, #2da44e);
+}
+
+.theia-mobile-projects-task-dot.theia-mod-pr-merged {
+  color: var(--theia-charts-purple, #a371f7);
+}
+
+.theia-mobile-projects-task-dot.theia-mod-pr-closed,
+.theia-mobile-projects-task-dot.theia-mod-pr-conflicts,
+.theia-mobile-projects-task-dot.theia-mod-checks-failed {
+  color: var(--theia-errorForeground, #f85149);
+}
+
+.theia-mobile-projects-task-dot.theia-mod-checks-pending,
+.theia-mobile-projects-task-dot.theia-mod-changes {
+  color: var(--theia-notificationsWarningIcon-foreground, #bf8700);
+}
+
+.theia-mobile-projects-task-dot.theia-mod-pr-draft,
+.theia-mobile-projects-task-dot.theia-mod-pr-unknown {
+  color: var(--theia-descriptionForeground);
 }
 
 /* Bare ring glyphs to match the "Done" badge: no filled bubble, colored icon. */
@@ -12133,8 +12153,32 @@ body.theia-mobile-mod-landing .theia-mobile-projects.theia-mod-home.theia-mod-ag
 }
 
 .theia-mobile-projects-task-status-chip.theia-mod-pr-ready {
-  color: var(--theia-charts-purple, #b180d7);
-  background: color-mix(in srgb, var(--theia-charts-purple, #b180d7) 18%, transparent);
+  color: var(--theia-gitDecoration-addedResourceForeground, #2da44e);
+  background: color-mix(in srgb, var(--theia-gitDecoration-addedResourceForeground, #2da44e) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-pr-merged {
+  color: var(--theia-charts-purple, #a371f7);
+  background: color-mix(in srgb, var(--theia-charts-purple, #a371f7) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-pr-closed,
+.theia-mobile-projects-task-status-chip.theia-mod-pr-conflicts,
+.theia-mobile-projects-task-status-chip.theia-mod-checks-failed {
+  color: var(--theia-errorForeground, #f85149);
+  background: color-mix(in srgb, var(--theia-errorForeground, #f85149) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-checks-pending,
+.theia-mobile-projects-task-status-chip.theia-mod-changes {
+  color: var(--theia-notificationsWarningIcon-foreground, #bf8700);
+  background: color-mix(in srgb, var(--theia-notificationsWarningIcon-foreground, #bf8700) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-pr-draft,
+.theia-mobile-projects-task-status-chip.theia-mod-pr-unknown {
+  color: var(--theia-descriptionForeground);
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
 }
 
 @keyframes qaap-sidebar-status-pulse {

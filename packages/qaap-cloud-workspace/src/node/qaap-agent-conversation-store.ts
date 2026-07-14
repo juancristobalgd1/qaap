@@ -2447,8 +2447,6 @@ export class QaapAgentConversationStore {
             owner: repo.owner,
             repo: repo.name,
             branch,
-            number: conv.linkedPullRequest?.number,
-            title: conv.linkedPullRequest?.title,
         };
         if (conv.linkedPullRequest
             && conv.linkedPullRequest.owner === link.owner

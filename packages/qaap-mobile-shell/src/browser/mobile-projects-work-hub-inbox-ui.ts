@@ -7,6 +7,7 @@ import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-a
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { resolveQaapGitPrVisualStatus } from '../common/qaap-agent-task-visual-status';
 import {
     buildReviewHubPullRequestItems,
     buildWorkHubInboxItems,
@@ -393,10 +394,25 @@ export class MobileProjectsWorkHubInboxUi {
         item.type = 'button';
         item.className = 'theia-mobile-projects-task-item theia-mobile-projects-inbox-pr-item';
 
+        const visualStatus = resolveQaapGitPrVisualStatus({
+            linkedPullRequest: {
+                owner: pullRequest.owner,
+                repo: pullRequest.repo,
+                number: pullRequest.number,
+                branch: pullRequest.branch,
+                title: pullRequest.title,
+                state: pullRequest.state,
+                draft: pullRequest.draft,
+                tests: pullRequest.tests,
+                mergeable: pullRequest.mergeable,
+            },
+        })!;
+        const statusLabel = nls.localize(visualStatus.labelKey, visualStatus.label);
         const icon = document.createElement('span');
-        icon.className = 'theia-mobile-projects-task-dot theia-mod-pr';
-        icon.append(this.host.projectRowsUi.createTaskLeadingGlyph('codicon-git-pull-request'));
-        icon.setAttribute('aria-hidden', 'true');
+        icon.className = `theia-mobile-projects-task-dot theia-mod-git-pr ${visualStatus.className}`;
+        icon.append(this.host.projectRowsUi.createTaskLeadingGlyph(visualStatus.iconClass!));
+        icon.setAttribute('aria-label', statusLabel);
+        icon.title = statusLabel;
 
         const body = document.createElement('div');
         body.className = 'theia-mobile-projects-task-body';
@@ -409,7 +425,12 @@ export class MobileProjectsWorkHubInboxUi {
         const since = document.createElement('span');
         since.className = 'theia-mobile-projects-task-since';
         since.textContent = this.formatInboxPullRequestSince(pullRequest);
-        titleRow.append(title, since);
+        const statusChip = document.createElement('span');
+        statusChip.className = `theia-mobile-projects-task-status-chip theia-mod-${visualStatus.id}`;
+        statusChip.textContent = statusLabel;
+        statusChip.setAttribute('aria-label', statusLabel);
+        statusChip.title = statusLabel;
+        titleRow.append(title, statusChip, since);
         body.append(titleRow);
 
         const foot = document.createElement('div');

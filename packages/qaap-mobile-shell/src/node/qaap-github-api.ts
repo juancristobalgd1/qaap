@@ -53,6 +53,9 @@ interface GithubPullResponse {
     additions: number;
     deletions: number;
     mergeable?: boolean | null;
+    state: 'open' | 'closed';
+    draft?: boolean;
+    merged_at?: string | null;
 }
 
 interface GithubPullFileResponse {
@@ -235,6 +238,8 @@ export async function fetchGithubPullRequests(
                 adds: pull.additions,
                 dels: pull.deletions,
                 tests: 'unknown',
+                state: pull.merged_at ? 'merged' : pull.state,
+                draft: pull.draft === true,
                 htmlUrl: pull.html_url,
                 mergeable: pull.mergeable ?? undefined,
                 filesPreview,
