@@ -11,6 +11,7 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
+import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
@@ -24,8 +25,7 @@ import {
     QaapProjectDescriptor,
     QaapProjectKind,
 } from './qaap-project-bootstrap-types';
-import { getQaapPublicOrigin, probeQaapDevPreviewPort, toDevPreviewUrl, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
-import { QAAP_DEV_PREVIEW_CLAIM_PATH } from '../common/qaap-dev-preview';
+import { probeQaapDevPreviewPort, toDevPreviewUrl, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import {
     getImplicitDevPort,
     getQaapIdeListenPort,
@@ -168,6 +168,9 @@ export class QaapProjectBootstrapService {
 
     @inject(ApplicationShell)
     protected readonly shell: ApplicationShell;
+
+    @inject(QaapPreviewPortClaimService)
+    protected readonly previewPortClaimService: QaapPreviewPortClaimService;
 
     protected readonly toDispose = new DisposableCollection();
     protected readonly stateEmitter = new Emitter<QaapBootstrapStateChange>();
@@ -891,24 +894,7 @@ export class QaapProjectBootstrapService {
      * the preview attempt (and be denied) rather than hang. Same-origin fetch carries the cookie.
      */
     protected async claimDevPreviewPort(port: number): Promise<void> {
-        const origin = getQaapPublicOrigin();
-        if (!origin) {
-            return;
-        }
-        try {
-            const roots = await this.workspaceService.roots;
-            const root = roots[0]?.resource?.toString();
-            if (!root) {
-                return;
-            }
-            await fetch(`${origin}${QAAP_DEV_PREVIEW_CLAIM_PATH}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ port, root }),
-            });
-        } catch {
-            /* best-effort claim; the proxy still requires a signed-in session */
-        }
+        await this.previewPortClaimService.claim(port);
     }
 
     /**

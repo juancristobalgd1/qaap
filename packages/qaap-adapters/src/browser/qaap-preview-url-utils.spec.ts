@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     buildSameOriginDevPreviewUrl,
     canonicalPreviewHistoryKey,
+    getSameOriginPreviewProxyPort,
     normalizePreviewUrlForSameOrigin,
     toPreviewHistoryDisplayUrl,
 } from './qaap-preview-url-utils';
@@ -30,6 +31,13 @@ describe('qaap-preview-url-utils', () => {
     it('leaves already-proxied URLs unchanged', () => {
         const proxied = 'http://localhost:3000/qaap-dev/5173/';
         expect(normalizePreviewUrlForSameOrigin(proxied, 'http://localhost:3000')).to.equal(proxied);
+    });
+
+    it('recognizes only proxy paths on the IDE origin as claim targets', () => {
+        const origin = 'http://localhost:3000';
+        expect(getSameOriginPreviewProxyPort(`${origin}/qaap-dev/5173/`, origin)).to.equal(5173);
+        expect(getSameOriginPreviewProxyPort('https://example.com/qaap-dev/5173/', origin)).to.equal(undefined);
+        expect(getSameOriginPreviewProxyPort(`${origin}/`, origin)).to.equal(undefined);
     });
 
     it('buildSameOriginDevPreviewUrl uses the proxy path', () => {

@@ -33,6 +33,23 @@ function ideOrigin(): string | undefined {
     return window.location.origin.replace(/\/+$/, '');
 }
 
+/** Returns the port only when the URL targets `/qaap-dev/:port` on the IDE origin. */
+export function getSameOriginPreviewProxyPort(url: string, publicOrigin?: string): number | undefined {
+    const origin = (publicOrigin ?? ideOrigin())?.replace(/\/+$/, '');
+    if (!origin) {
+        return undefined;
+    }
+    try {
+        const parsed = new URL(url, origin);
+        if (parsed.origin !== new URL(origin).origin) {
+            return undefined;
+        }
+        return parsePreviewProxyPath(parsed.pathname)?.port;
+    } catch {
+        return undefined;
+    }
+}
+
 /**
  * Rewrites direct `http://localhost:5173/...` dev-server URLs to the same-origin
  * `/qaap-dev/:port/...` proxy so the element picker and inspector can access the iframe DOM.
