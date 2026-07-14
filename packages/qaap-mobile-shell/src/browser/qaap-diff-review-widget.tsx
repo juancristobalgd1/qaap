@@ -460,6 +460,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
         const requestSerial = ++this.selectRequestSerial;
         this.selectedPath = path;
         this.diff = undefined;
+        this.loadingDiff = false;
         if (!path || !this.rootFsPath) {
             this.update();
             return;
