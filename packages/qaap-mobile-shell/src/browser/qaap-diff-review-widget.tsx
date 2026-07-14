@@ -22,6 +22,7 @@ import {
     type QaapGitPrReadiness,
 } from '../common/qaap-git-review';
 import { middleTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
+import { isCurrentAgentDiffRequest } from './qaap-diff-review-request-state';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 
 /** Git extension commands used by the bulk review actions. */
@@ -127,7 +128,12 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected readonly agentFileDiffs = new Map<string, QaapGitFileDiffResponse>();
     /** Per-file /diff failure detail (server error body or transport error), keyed by path. */
     protected readonly agentFileDiffErrors = new Map<string, string>();
-    protected loadingAgentDiffs = false;
+    protected readonly loadingAgentDiffPaths = new Set<string>();
+    protected agentDiffGeneration = 0;
+    protected agentDiffRequestSerial = 0;
+    protected readonly latestAgentDiffRequest = new Map<string, number>();
+    protected refreshRequestSerial = 0;
+    protected selectRequestSerial = 0;
     /** Agent Changes tab: per-file diff sections expanded in the accordion. */
     protected readonly expandedAgentFiles = new Set<string>();
     protected readonly expandedContextBlocks = new Set<string>();
@@ -155,6 +161,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.transcriptExternalChrome = options?.externalChrome ?? false;
         this.agentFileDiffs.clear();
         this.agentFileDiffErrors.clear();
+        this.loadingAgentDiffPaths.clear();
+        this.latestAgentDiffRequest.clear();
+        this.agentDiffGeneration++;
         this.expandedAgentFiles.clear();
         this.expandedContextBlocks.clear();
         this.branchName = undefined;
@@ -212,10 +221,18 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     protected trackRepository(): void {
         this.toDisposeOnRepository.dispose();
+        this.refreshRequestSerial++;
+        this.selectRequestSerial++;
+        this.invalidateAgentDiffs();
         if (this.repositoryContext) {
             this.rootUri = this.repositoryContext.rootUri;
             this.rootFsPath = this.repositoryContext.rootFsPath;
             this.bulkActionsEnabled = this.repositoryContext.isActiveWorkspace;
+            const repository = this.scmService.repositories.find(candidate =>
+                candidate.provider.rootUri === this.repositoryContext?.rootUri);
+            if (repository) {
+                this.toDisposeOnRepository.push(repository.provider.onDidChange(() => this.scheduleRefresh()));
+            }
             void this.refresh();
             return;
         }
@@ -260,10 +277,15 @@ export class QaapDiffReviewWidget extends ReactWidget {
     }
 
     protected async refresh(): Promise<void> {
+        const requestSerial = ++this.refreshRequestSerial;
         if (!this.repositoryContext) {
             this.rootFsPath = this.rootUri ? await this.fileService.fsPath(new URI(this.rootUri)) : undefined;
         }
-        if (!this.rootFsPath) {
+        const requestRoot = this.rootFsPath;
+        if (requestSerial !== this.refreshRequestSerial) {
+            return;
+        }
+        if (!requestRoot) {
             this.files = [];
             this.selectedPath = undefined;
             this.diff = undefined;
@@ -273,20 +295,26 @@ export class QaapDiffReviewWidget extends ReactWidget {
         }
         try {
             const response = await fetch(
-                `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(this.rootFsPath)}`,
+                `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(requestRoot)}`,
                 { credentials: 'include' },
             );
             if (!response.ok) {
                 throw new Error(`changes request failed (${response.status})`);
             }
             const body = await response.json() as { files?: QaapGitChangedFile[]; branch?: string; prReadiness?: QaapGitPrReadiness };
+            if (requestSerial !== this.refreshRequestSerial || requestRoot !== this.rootFsPath) {
+                return;
+            }
             this.files = body.files ?? [];
             this.branchName = body.branch;
             this.prReadiness = body.prReadiness;
             this.error = undefined;
             this.notifyReviewStats();
             if (this.transcriptEmbed && this.transcriptExternalChrome) {
-                await this.loadAllAgentDiffs();
+                this.invalidateAgentDiffs();
+                this.seedAgentFileAccordionDefaults();
+                this.update();
+                await Promise.all([...this.expandedAgentFiles].map(path => this.loadAgentFileDiff(path)));
                 return;
             }
             const stillThere = this.files.some(file => file.path === this.selectedPath);
@@ -296,9 +324,13 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 return;
             }
         } catch (error) {
-            this.error = error instanceof Error ? error.message : String(error);
+            if (requestSerial === this.refreshRequestSerial && requestRoot === this.rootFsPath) {
+                this.error = error instanceof Error ? error.message : String(error);
+            }
         }
-        this.update();
+        if (requestSerial === this.refreshRequestSerial && requestRoot === this.rootFsPath) {
+            this.update();
+        }
     }
 
     protected async fetchFileDiff(path: string): Promise<QaapGitFileDiffResponse | undefined> {
@@ -325,49 +357,61 @@ export class QaapDiffReviewWidget extends ReactWidget {
         return await response.json() as QaapGitFileDiffResponse;
     }
 
-    protected async loadAllAgentDiffs(): Promise<void> {
+    protected invalidateAgentDiffs(): void {
+        this.agentDiffGeneration++;
         this.agentFileDiffs.clear();
         this.agentFileDiffErrors.clear();
-        if (this.files.length === 0 || !this.rootFsPath) {
-            this.seedAgentFileAccordionDefaults();
-            this.update();
-            return;
-        }
-        this.loadingAgentDiffs = true;
-        this.update();
-        try {
-            await Promise.all(this.files.map(file => this.loadAgentFileDiff(file.path)));
-        } finally {
-            this.loadingAgentDiffs = false;
-            this.seedAgentFileAccordionDefaults();
-            this.update();
-        }
+        this.loadingAgentDiffPaths.clear();
+        this.latestAgentDiffRequest.clear();
     }
 
     /** Fetch one file's diff for the agent accordion, recording the failure detail on error. */
     protected async loadAgentFileDiff(path: string): Promise<void> {
+        const root = this.rootFsPath;
+        if (!root || !this.files.some(file => file.path === path)) {
+            return;
+        }
+        const generation = this.agentDiffGeneration;
+        const serial = ++this.agentDiffRequestSerial;
+        this.latestAgentDiffRequest.set(path, serial);
+        this.loadingAgentDiffPaths.add(path);
+        this.agentFileDiffErrors.delete(path);
+        this.update();
         try {
             const diff = await this.fetchFileDiff(path);
-            if (diff) {
+            if (diff && this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
                 this.agentFileDiffs.set(path, diff);
                 this.agentFileDiffErrors.delete(path);
             }
         } catch (error) {
-            this.agentFileDiffErrors.set(path, error instanceof Error ? error.message : String(error));
+            if (this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
+                this.agentFileDiffErrors.set(path, error instanceof Error ? error.message : String(error));
+            }
+        } finally {
+            if (this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
+                this.loadingAgentDiffPaths.delete(path);
+                this.update();
+            }
         }
+    }
+
+    protected isCurrentAgentDiffRequest(path: string, root: string, generation: number, serial: number): boolean {
+        return isCurrentAgentDiffRequest({
+            disposed: this.isDisposed,
+            requestPath: path,
+            requestRoot: root,
+            requestGeneration: generation,
+            requestSerial: serial,
+            currentRoot: this.rootFsPath,
+            currentGeneration: this.agentDiffGeneration,
+            latestSerial: this.latestAgentDiffRequest.get(path),
+            currentPaths: this.files.map(file => file.path),
+        });
     }
 
     /** Retry a single failed file diff from the accordion error note. */
     protected async retryAgentFileDiff(path: string): Promise<void> {
-        this.agentFileDiffErrors.delete(path);
-        this.loadingAgentDiffs = true;
-        this.update();
-        try {
-            await this.loadAgentFileDiff(path);
-        } finally {
-            this.loadingAgentDiffs = false;
-            this.update();
-        }
+        await this.loadAgentFileDiff(path);
     }
 
     protected seedAgentFileAccordionDefaults(): void {
@@ -401,6 +445,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
         }
         this.expandedAgentFiles.add(match.path);
         this.update();
+        if (!this.agentFileDiffs.has(match.path) && !this.loadingAgentDiffPaths.has(match.path)) {
+            void this.loadAgentFileDiff(match.path);
+        }
         const path = match.path;
         window.requestAnimationFrame(() => {
             const section = this.node.querySelector<HTMLElement>(`[data-qaap-review-path="${CSS.escape(path)}"]`);
@@ -410,6 +457,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
     }
 
     protected async selectFile(path: string | undefined): Promise<void> {
+        const requestSerial = ++this.selectRequestSerial;
         this.selectedPath = path;
         this.diff = undefined;
         if (!path || !this.rootFsPath) {
@@ -419,12 +467,19 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.loadingDiff = true;
         this.update();
         try {
-            this.diff = await this.fetchFileDiff(path);
+            const diff = await this.fetchFileDiff(path);
+            if (requestSerial === this.selectRequestSerial && path === this.selectedPath) {
+                this.diff = diff;
+            }
         } catch (error) {
-            this.error = error instanceof Error ? error.message : String(error);
+            if (requestSerial === this.selectRequestSerial && path === this.selectedPath) {
+                this.error = error instanceof Error ? error.message : String(error);
+            }
         } finally {
-            this.loadingDiff = false;
-            this.update();
+            if (requestSerial === this.selectRequestSerial && path === this.selectedPath) {
+                this.loadingDiff = false;
+                this.update();
+            }
         }
     }
 
@@ -495,7 +550,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             <div className='qaap-agent-changes'>
                 {this.renderAgentToolbar(totals, count)}
                 <div className='qaap-agent-changes-scroll'>
-                    {this.loadingAgentDiffs && this.agentFileDiffs.size === 0 && (
+                    {this.loadingAgentDiffPaths.size > 0 && this.agentFileDiffs.size === 0 && (
                         <div className='qaap-agent-changes-loading' aria-busy='true'>
                             <div className='qaap-agent-changes-loading-bar' />
                             <div className='qaap-agent-changes-loading-bar qaap-mod-short' />
@@ -876,7 +931,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     /** Loading note, or the recorded per-file failure with its server detail and a retry action. */
     protected renderAgentFileDiffFallback(path: string): React.ReactNode {
-        if (this.loadingAgentDiffs) {
+        if (this.loadingAgentDiffPaths.has(path)) {
             return (
                 <div className='qaap-diff-review-note qaap-mod-compact'>
                     {nls.localize('qaap/diff/loading', 'Loading diff…')}
@@ -1314,6 +1369,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
             this.expandedAgentFiles.delete(path);
         } else {
             this.expandedAgentFiles.add(path);
+            if (!this.agentFileDiffs.has(path) && !this.loadingAgentDiffPaths.has(path)) {
+                void this.loadAgentFileDiff(path);
+            }
         }
         this.update();
     };
