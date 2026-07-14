@@ -20,6 +20,9 @@ import { nls } from '@theia/core/lib/common/nls';
 /** Applied to `document.body` while the OS virtual keyboard occludes the viewport. */
 export const QAAP_MOBILE_KEYBOARD_OPEN_BODY_CLASS = 'theia-mobile-mod-keyboard-open';
 
+/** Fired on `window` after `--theia-mobile-keyboard-inset` and keyboard chrome state settle. */
+export const QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT = 'qaap-mobile-viewport-inset-change';
+
 /**
  * Mobile virtual-keyboard support for the narrow-viewport workbench.
  *
@@ -219,6 +222,7 @@ export class MobileKeyboardHelper implements Disposable {
         if (inset === this.lastInsetPx) {
             this.updateAccessoryPosition();
             this.updateTerminalScrollPadding();
+            this.dispatchViewportInsetChange(inset);
             return;
         }
         this.lastInsetPx = inset;
@@ -235,6 +239,16 @@ export class MobileKeyboardHelper implements Disposable {
         }
         this.updateAccessoryVisibility();
         this.updateTerminalScrollPadding();
+        this.dispatchViewportInsetChange(inset);
+    }
+
+    protected dispatchViewportInsetChange(inset: number): void {
+        if (typeof window === 'undefined' || typeof window.CustomEvent === 'undefined') {
+            return;
+        }
+        window.dispatchEvent(new window.CustomEvent(QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT, {
+            detail: { inset },
+        }));
     }
 
     protected setKeyboardOpenChrome(open: boolean): void {

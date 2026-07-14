@@ -32,6 +32,7 @@ import {
 } from './qaap-mobile-mcp-attach-menu';
 import { resolveComposerProjectFileAttachment } from '../common/qaap-mobile-composer-project-file-attach';
 import { QAAP_EDITOR_CONTEXT_VARIABLE_NAME } from '../common/qaap-composer-editor-context-bridge-core';
+import { wireStickyComposerPopoverPosition } from './qaap-sticky-composer-popover';
 
 const QUERY_CONTEXT = { type: 'context-variable-picker' };
 
@@ -70,24 +71,6 @@ function canAttachProjectFile(attachServices?: MobileContextAttachServices): boo
         return false;
     }
     return attachServices.workspaceService.opened && attachServices.workspaceService.tryGetRoots().length > 0;
-}
-
-function positionAttachMenu(menu: HTMLElement, anchor: HTMLElement): void {
-    const margin = 8;
-    const gap = 6;
-    const anchorRect = anchor.getBoundingClientRect();
-    const menuWidth = Math.max(menu.offsetWidth, 200);
-    const menuHeight = menu.offsetHeight;
-    let top = anchorRect.bottom + gap;
-    const maxBottom = window.innerHeight - margin;
-    if (top + menuHeight > maxBottom) {
-        const aboveTop = anchorRect.top - gap - menuHeight;
-        top = aboveTop >= margin ? aboveTop : Math.max(margin, maxBottom - menuHeight);
-    }
-    let left = anchorRect.left;
-    left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
-    menu.style.top = `${top}px`;
-    menu.style.left = `${left}px`;
 }
 
 function createAttachMenuItem(options: {
@@ -255,10 +238,12 @@ function showDeviceUploadKindMenu(anchor: HTMLElement): Promise<MobileDeviceUplo
                 anchor.focus();
             }
         };
+        let stopPositioning = (): void => undefined;
 
         const dismiss = (): void => {
             document.removeEventListener('pointerdown', onPointerDown, true);
             document.removeEventListener('keydown', onKeyDown, true);
+            stopPositioning();
             menu.remove();
             if (activeMenu === menu) {
                 activeMenu = undefined;
@@ -274,11 +259,13 @@ function showDeviceUploadKindMenu(anchor: HTMLElement): Promise<MobileDeviceUplo
         };
 
         activeDismiss = dismiss;
-
-        requestAnimationFrame(() => {
-            positionAttachMenu(menu, anchor);
-            document.addEventListener('pointerdown', onPointerDown, true);
-            document.addEventListener('keydown', onKeyDown, true);
+        stopPositioning = wireStickyComposerPopoverPosition(menu, anchor, {
+            minimumWidth: 200,
+            onAnchorUnavailable: () => finish(undefined),
+        });
+        document.addEventListener('pointerdown', onPointerDown, true);
+        document.addEventListener('keydown', onKeyDown, true);
+        window.requestAnimationFrame(() => {
             menu.focus();
         });
     });
@@ -500,10 +487,12 @@ function showContextAttachMenu(
                 anchor.focus();
             }
         };
+        let stopPositioning = (): void => undefined;
 
         const dismiss = (): void => {
             document.removeEventListener('pointerdown', onPointerDown, true);
             document.removeEventListener('keydown', onKeyDown, true);
+            stopPositioning();
             menu.remove();
             if (activeMenu === menu) {
                 activeMenu = undefined;
@@ -519,13 +508,13 @@ function showContextAttachMenu(
         };
 
         activeDismiss = dismiss;
-
-        requestAnimationFrame(() => {
-            renderMainView();
-            positionAttachMenu(menu, anchor);
-            document.addEventListener('pointerdown', onPointerDown, true);
-            document.addEventListener('keydown', onKeyDown, true);
+        renderMainView();
+        stopPositioning = wireStickyComposerPopoverPosition(menu, anchor, {
+            minimumWidth: 200,
+            onAnchorUnavailable: () => finish(undefined),
         });
+        document.addEventListener('pointerdown', onPointerDown, true);
+        document.addEventListener('keydown', onKeyDown, true);
     });
 }
 

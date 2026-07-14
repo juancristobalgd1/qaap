@@ -4,31 +4,62 @@
 // *****************************************************************************
 
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import {
+    QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT,
+} from './mobile-keyboard-helper';
 
 export type StickyComposerPopoverAlign = 'start' | 'end';
 
+interface StickyComposerViewportBounds {
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+    readonly left: number;
+}
+
+export interface StickyComposerPopoverPositionOptions {
+    readonly align?: StickyComposerPopoverAlign;
+    readonly minimumWidth?: number;
+    readonly onAnchorUnavailable?: () => void;
+}
+
 export function shouldUseStickyComposerDesktopPopover(anchor?: HTMLElement): anchor is HTMLElement {
     return !matchesMobileNarrowViewport() && anchor instanceof HTMLElement;
+}
+
+function getStickyComposerViewportBounds(): StickyComposerViewportBounds {
+    const viewport = window.visualViewport;
+    const top = viewport?.offsetTop ?? 0;
+    const left = viewport?.offsetLeft ?? 0;
+    return {
+        top,
+        left,
+        right: left + (viewport?.width ?? window.innerWidth),
+        bottom: top + (viewport?.height ?? window.innerHeight),
+    };
 }
 
 export function positionStickyComposerPopover(
     popover: HTMLElement,
     anchor: HTMLElement,
     align: StickyComposerPopoverAlign = 'start',
+    minimumWidth = 280,
 ): void {
     const margin = 8;
     const gap = 6;
     const anchorRect = anchor.getBoundingClientRect();
-    const popoverWidth = Math.max(popover.offsetWidth, 280);
+    const viewport = getStickyComposerViewportBounds();
+    const popoverWidth = Math.max(popover.offsetWidth, minimumWidth);
     const popoverHeight = popover.offsetHeight;
     let top = anchorRect.bottom + gap;
-    const maxBottom = window.innerHeight - margin;
+    const minTop = viewport.top + margin;
+    const maxBottom = viewport.bottom - margin;
     if (top + popoverHeight > maxBottom) {
         const aboveTop = anchorRect.top - gap - popoverHeight;
-        top = aboveTop >= margin ? aboveTop : Math.max(margin, maxBottom - popoverHeight);
+        top = aboveTop >= minTop ? aboveTop : Math.max(minTop, maxBottom - popoverHeight);
     }
     let left = align === 'end' ? anchorRect.right - popoverWidth : anchorRect.left;
-    left = Math.max(margin, Math.min(left, window.innerWidth - popoverWidth - margin));
+    left = Math.max(viewport.left + margin, Math.min(left, viewport.right - popoverWidth - margin));
     popover.style.top = `${top}px`;
     popover.style.left = `${left}px`;
 }
@@ -41,6 +72,109 @@ export function scheduleStickyComposerPopoverPosition(
     window.requestAnimationFrame(() => positionStickyComposerPopover(popover, anchor, align));
 }
 
+function resolveStickyComposerPopoverLayoutHost(anchor: HTMLElement): HTMLElement | undefined {
+    const host = anchor.closest('.theia-mobile-projects')
+        ?? anchor.closest('.theia-mobile-agent-transcript-root')
+        ?? anchor.closest('#theia-app-shell');
+    return host instanceof HTMLElement ? host : undefined;
+}
+
+export function wireStickyComposerPopoverPosition(
+    popover: HTMLElement,
+    anchor: HTMLElement,
+    options: StickyComposerPopoverPositionOptions = {},
+): () => void {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const align = options.align ?? 'start';
+    const minimumWidth = options.minimumWidth ?? 280;
+    let animationFrame = 0;
+    let followupFrame = 0;
+    let resizeObserver: ResizeObserver | undefined;
+    let layoutObserver: MutationObserver | undefined;
+
+    const position = (): void => {
+        const anchorRect = anchor.getBoundingClientRect();
+        if (!anchor.isConnected || anchorRect.width <= 0 || anchorRect.height <= 0) {
+            options.onAnchorUnavailable?.();
+            return;
+        }
+        positionStickyComposerPopover(popover, anchor, align, minimumWidth);
+    };
+    const schedulePosition = (): void => {
+        if (animationFrame) {
+            return;
+        }
+        animationFrame = window.requestAnimationFrame(() => {
+            animationFrame = 0;
+            followupFrame = window.requestAnimationFrame(() => {
+                followupFrame = 0;
+                position();
+            });
+        });
+    };
+
+    window.addEventListener('resize', schedulePosition, { signal });
+    window.addEventListener('orientationchange', schedulePosition, { signal });
+    window.addEventListener('scroll', schedulePosition, { capture: true, signal });
+    window.addEventListener(QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT, schedulePosition, { signal });
+    const visualViewport = window.visualViewport;
+    visualViewport?.addEventListener('resize', schedulePosition, { signal });
+    visualViewport?.addEventListener('scroll', schedulePosition, { signal });
+    const virtualKeyboard = (navigator as Navigator & {
+        readonly virtualKeyboard?: EventTarget;
+    }).virtualKeyboard;
+    virtualKeyboard?.addEventListener('geometrychange', schedulePosition, { signal });
+
+    if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(schedulePosition);
+        resizeObserver.observe(anchor);
+        resizeObserver.observe(popover);
+        const composer = anchor.closest('.theia-mobile-projects-sticky-composer');
+        if (composer) {
+            resizeObserver.observe(composer);
+        }
+        const layoutHost = resolveStickyComposerPopoverLayoutHost(anchor);
+        if (layoutHost) {
+            resizeObserver.observe(layoutHost);
+        }
+    }
+
+    if (typeof MutationObserver !== 'undefined') {
+        layoutObserver = new MutationObserver(schedulePosition);
+        layoutObserver.observe(document.body, {
+            attributes: true,
+            attributeFilter: ['class'],
+        });
+        const layoutHost = resolveStickyComposerPopoverLayoutHost(anchor);
+        if (layoutHost) {
+            layoutObserver.observe(layoutHost, {
+                attributes: true,
+                attributeFilter: ['class', 'style'],
+            });
+        }
+        if (document.documentElement !== layoutHost) {
+            layoutObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['class', 'style'],
+            });
+        }
+    }
+
+    schedulePosition();
+    return () => {
+        controller.abort();
+        resizeObserver?.disconnect();
+        layoutObserver?.disconnect();
+        if (animationFrame) {
+            window.cancelAnimationFrame(animationFrame);
+        }
+        if (followupFrame) {
+            window.cancelAnimationFrame(followupFrame);
+        }
+    };
+}
+
 export function wireStickyComposerPopoverDismiss(
     popover: HTMLElement,
     anchor: HTMLElement,
@@ -49,9 +183,6 @@ export function wireStickyComposerPopoverDismiss(
 ): () => void {
     const controller = new AbortController();
     const { signal } = controller;
-    const reposition = (): void => {
-        positionStickyComposerPopover(popover, anchor, align);
-    };
     const onPointerDown = (event: PointerEvent): void => {
         const target = event.target as Node | null;
         if (target && (popover.contains(target) || anchor.contains(target))) {
@@ -66,14 +197,16 @@ export function wireStickyComposerPopoverDismiss(
             anchor.focus();
         }
     };
-    window.requestAnimationFrame(() => {
-        reposition();
-        document.addEventListener('pointerdown', onPointerDown, { capture: true, signal });
-        document.addEventListener('keydown', onKeyDown, { capture: true, signal });
-        window.addEventListener('resize', reposition, { signal });
-        window.addEventListener('scroll', reposition, { capture: true, signal });
+    document.addEventListener('pointerdown', onPointerDown, { capture: true, signal });
+    document.addEventListener('keydown', onKeyDown, { capture: true, signal });
+    const stopPositioning = wireStickyComposerPopoverPosition(popover, anchor, {
+        align,
+        onAnchorUnavailable: onClose,
     });
-    return () => controller.abort();
+    return () => {
+        controller.abort();
+        stopPositioning();
+    };
 }
 
 export function markStickyComposerPopoverAnchor(anchor: HTMLElement, open: boolean): void {
