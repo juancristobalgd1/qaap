@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import { Disposable } from '@theia/core/lib/common/disposable';
-import { nls } from '@theia/core/lib/common/nls';
 import { ChatAgent } from '@theia/ai-chat';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import {
@@ -25,6 +24,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
+import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from './qaap-agent-picker-loading';
 
 export interface MobileProjectsStickyComposerAgentsHost {
     stickyComposerPinnedAgentId: string | undefined;
@@ -104,7 +104,7 @@ export class MobileProjectsStickyComposerAgentsUi {
     ): QaapAgentTaskAgentOption[] {
         return filterQaapComposerAgents(agents);
     }
-    async refreshStickyComposerAgents(project: MobileProjectEntry): Promise<void> {
+    async refreshStickyComposerAgents(project: MobileProjectEntry): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
         try {
@@ -129,19 +129,21 @@ export class MobileProjectsStickyComposerAgentsUi {
                 this.host.stickyComposerPinnedAgentId = resolved;
                 this.host.stickyComposerRenderUi.renderStickyComposer();
             }
+            return true;
         } catch {
             await this.waitForSelectableActiveTaskAgents(1500);
             this.host.stickyComposerBackendAgents = this.filterSelectableComposerAgents(this.host.activeTasks?.getAgents() ?? []);
             this.host.stickyComposerQaiqModels = [];
+            return this.host.stickyComposerBackendAgents.length > 0;
         }
     }
 
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {
-        chrome.list.replaceChildren();
-        const loading = document.createElement('p');
-        loading.className = 'theia-mobile-sticky-composer-sheet-loading';
-        loading.textContent = nls.localize('qaap/mobileProjects/stickyComposerLoadingAgents', 'Loading agents…');
-        chrome.list.append(loading);
+        renderAgentPickerSkeleton(chrome.list);
+    }
+
+    showComposerAgentPickerError(chrome: ComposerAgentPickerChrome, onRetry: () => void): void {
+        renderAgentPickerLoadError(chrome.list, onRetry);
     }
 
     async ensureStickyComposerAgentsLoaded(
@@ -149,7 +151,10 @@ export class MobileProjectsStickyComposerAgentsUi {
         options?: { force?: boolean },
     ): Promise<readonly QaapAgentTaskAgentOption[]> {
         if (options?.force || this.host.stickyComposerBackendAgents.length === 0) {
-            await this.refreshStickyComposerAgents(project);
+            const loaded = await this.refreshStickyComposerAgents(project);
+            if (!loaded) {
+                throw new Error('Agent catalog unavailable');
+            }
         }
         return this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents);
     }

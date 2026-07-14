@@ -34,6 +34,7 @@ import {
     type QaapAgentToolApprovalRules,
 } from '../common/qaap-agent-tool-approval-rules';
 import {
+    createAgentBrandChip,
     createAgentSheetOptionButton,
     createApprovalPolicySheetOptionButton,
     createPickerSheetOptionButton,
@@ -73,6 +74,14 @@ import {
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
+import {
+    activateAgentPickerEntry,
+    buildAgentPickerSearchResults,
+    createAgentPickerInlineModelButton,
+    modelMatchesAgentPickerQuery,
+    type QaapAgentPickerSearchEntry,
+} from './qaap-agent-picker-search';
+import { renderAgentPickerSkeleton, replaceAgentPickerLoading } from './qaap-agent-picker-loading';
 
 export type ComposerAgentPickerView = 'agents' | 'models';
 
@@ -81,7 +90,11 @@ export interface ComposerAgentPickerChrome {
     readonly header: HTMLElement;
     readonly title: HTMLElement;
     readonly backBtn: HTMLButtonElement;
+    readonly intro: HTMLElement;
+    readonly searchInput: HTMLInputElement;
     readonly list: HTMLElement;
+    readonly modelsByAgent: Map<string, readonly QaapQaiqModelOption[]>;
+    readonly onClose: () => void;
     readonly popoverCleanup?: () => void;
 }
 
@@ -263,13 +276,14 @@ export class MobileProjectsStickyComposerSheetsUi {
             this.assignAgentPickerPopover(anchor, chrome.popoverCleanup);
             scheduleStickyComposerPopoverPosition(chrome.sheet, anchor, this.agentPopoverAlign);
         }
-        this.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
-        this.syncAgentPickerPopoverPosition(chrome.sheet);
-        void this.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }).then(agents => {
-            if (this.host.stickyComposerAgentSheet !== chrome.sheet) {
-                return;
-            }
-            void this.renderComposerAgentPicker(chrome, {
+        const loadAgentCatalog = (): void => {
+            this.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
+            this.syncAgentPickerPopoverPosition(chrome.sheet);
+            void this.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }).then(agents => {
+                if (this.host.stickyComposerAgentSheet !== chrome.sheet) {
+                    return;
+                }
+                void this.renderComposerAgentPicker(chrome, {
                 view: 'agents',
                 cwd,
                 agents,
@@ -291,8 +305,14 @@ export class MobileProjectsStickyComposerSheetsUi {
                     this.closeAllComposerSheets();
                     this.host.stickyComposerRenderUi.renderStickyComposer();
                 },
+                });
+            }).catch(() => {
+                if (this.host.stickyComposerAgentSheet === chrome.sheet) {
+                    this.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog);
+                }
             });
-        });
+        };
+        loadAgentCatalog();
     }
     teardownModeSheetPopover(): void {
         this.modePopoverCleanup?.();
@@ -733,10 +753,27 @@ export class MobileProjectsStickyComposerSheetsUi {
 
         header.append(backBtn, title, close);
 
+        const intro = document.createElement('p');
+        intro.className = 'theia-qaap-agent-sheet-default-hint';
+
+        const search = document.createElement('div');
+        search.className = 'theia-qaap-agent-sheet-search';
+        const searchInput = document.createElement('input');
+        searchInput.className = 'theia-qaap-agent-sheet-search-input';
+        searchInput.type = 'search';
+        searchInput.autocomplete = 'off';
+        searchInput.spellcheck = false;
+        searchInput.placeholder = nls.localize(
+            'qaap/mobileProjects/stickyComposerSearchAgentsModels',
+            'Search agents and models',
+        );
+        searchInput.setAttribute('aria-label', searchInput.placeholder);
+        search.append(searchInput);
+
         const list = document.createElement('div');
         list.className = 'theia-mobile-sticky-composer-sheet-list';
 
-        panel.append(header, list);
+        panel.append(header, intro, search, list);
 
         if (this.shouldUseAgentPickerPopover(options.anchor)) {
             const mounted = mountStickyComposerSheetPopover(panel, {
@@ -751,7 +788,11 @@ export class MobileProjectsStickyComposerSheetsUi {
                 header,
                 title,
                 backBtn,
+                intro,
+                searchInput,
                 list,
+                modelsByAgent: new Map(),
+                onClose: options.onClose,
                 popoverCleanup: mounted.cleanup,
             };
         }
@@ -763,7 +804,17 @@ export class MobileProjectsStickyComposerSheetsUi {
             onClose: options.onClose,
         });
 
-        return { sheet, header, title, backBtn, list };
+        return {
+            sheet,
+            header,
+            title,
+            backBtn,
+            intro,
+            searchInput,
+            list,
+            modelsByAgent: new Map(),
+            onClose: options.onClose,
+        };
     }
     async renderComposerAgentPicker(
         chrome: ComposerAgentPickerChrome,
@@ -777,20 +828,69 @@ export class MobileProjectsStickyComposerSheetsUi {
             readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
         },
     ): Promise<void> {
-        chrome.list.replaceChildren();
+        const renderGeneration = Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1;
+        chrome.sheet.dataset.agentPickerRenderGeneration = String(renderGeneration);
+        const rerender = (): void => {
+            void this.renderComposerAgentPicker(chrome, options);
+        };
+        const wireSearchKeyboard = (onlyResult?: HTMLElement): void => {
+            chrome.searchInput.oninput = rerender;
+            chrome.searchInput.onkeydown = event => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (chrome.searchInput.value) {
+                        chrome.searchInput.value = '';
+                        rerender();
+                    } else {
+                        chrome.onClose();
+                    }
+                } else if (event.key === 'Enter' && onlyResult) {
+                    event.preventDefault();
+                    onlyResult.click();
+                }
+            };
+        };
+        if (chrome.searchInput.dataset.initialFocusApplied !== 'true') {
+            chrome.searchInput.dataset.initialFocusApplied = 'true';
+            window.requestAnimationFrame(() => chrome.searchInput.focus({ preventScroll: true }));
+        }
         if (options.view === 'models' && options.modelPickerAgentId) {
             const modelAgentId = options.modelPickerAgentId;
-            const pickerModels = await this.resolveModelsForAgentPicker(modelAgentId);
+            let pickerModels = chrome.modelsByAgent.get(modelAgentId);
+            if (!pickerModels) {
+                renderAgentPickerSkeleton(chrome.list, 5);
+                pickerModels = await this.resolveModelsForAgentPicker(modelAgentId);
+                chrome.modelsByAgent.set(modelAgentId, pickerModels);
+            }
+            if (chrome.sheet.dataset.agentPickerRenderGeneration !== String(renderGeneration)) {
+                return;
+            }
             const storedModel = readStoredAgentModel(options.cwd, modelAgentId);
             chrome.header.classList.add('theia-mod-drilldown');
             chrome.backBtn.hidden = false;
-            chrome.title.textContent = nls.localize('qaap/mobileProjects/stickyComposerPickModel', 'Choose model');
+            chrome.intro.hidden = true;
+            const modelAgentLabel = options.agents.find(agent => agent.id === modelAgentId)?.label ?? modelAgentId;
+            chrome.title.textContent = nls.localize(
+                'qaap/mobileProjects/stickyComposerPickModelForAgent',
+                'Choose model for {0}',
+                modelAgentLabel,
+            );
             chrome.backBtn.onclick = () => {
                 void this.renderComposerAgentPicker(chrome, { ...options, view: 'agents', modelPickerAgentId: undefined });
             };
-            this.appendAgentModelPickerList(chrome.list, modelAgentId, pickerModels, storedModel, model => {
+            const filteredModels = pickerModels.filter(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value));
+            const modelContent = document.createElement('div');
+            this.appendAgentModelPickerList(modelContent, modelAgentId, filteredModels, storedModel, model => {
                 options.onSelectAgent(modelAgentId, model);
             });
+            if (pickerModels.length > 0 && filteredModels.length === 0) {
+                replaceAgentPickerLoading(chrome.list, this.createAgentPickerNoResultsHint());
+            } else {
+                replaceAgentPickerLoading(chrome.list, ...Array.from(modelContent.childNodes));
+            }
+            const modelButtons = chrome.list.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option');
+            wireSearchKeyboard(modelButtons.length === 1 ? modelButtons[0] : undefined);
             window.requestAnimationFrame(() => this.syncAgentPickerPopoverPosition(chrome.sheet));
             return;
         }
@@ -798,17 +898,44 @@ export class MobileProjectsStickyComposerSheetsUi {
         chrome.header.classList.remove('theia-mod-drilldown');
         chrome.backBtn.hidden = true;
         chrome.backBtn.onclick = null;
+        chrome.intro.hidden = false;
         chrome.title.textContent = nls.localize('qaap/mobileProjects/stickyComposerPickAgent', 'Choose agent');
-
-        const defaultHint = document.createElement('p');
-        defaultHint.className = 'theia-qaap-agent-sheet-default-hint';
-        defaultHint.textContent = nls.localize(
+        chrome.intro.textContent = nls.localize(
             'qaap/mobileProjects/stickyComposerAgentDefaultHint',
             'QAIQ is the default Qaap agent. Codex, Claude Code, and others are optional alternatives.',
         );
-        chrome.list.append(defaultHint);
 
-        const appendAgent = (agentId: string, label: string): void => {
+        const agentEntries: QaapAgentPickerSearchEntry[] = [];
+        if (options.includeCoder) {
+            const coder = this.host.stickyComposerAgentsUi.getOfferableCoderAgent();
+            if (coder) {
+                agentEntries.push({ id: THEIA_CODER_AGENT_ID, label: coder.name, models: [] });
+            }
+        }
+        for (const agent of options.agents) {
+            agentEntries.push({ id: agent.id, label: agent.label, models: [] });
+        }
+        if (agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id))) {
+            renderAgentPickerSkeleton(chrome.list);
+        }
+        await Promise.all(agentEntries.map(async entry => {
+            let models = chrome.modelsByAgent.get(entry.id);
+            if (!models) {
+                models = agentSupportsModelPicker(entry.id)
+                    ? await this.resolveModelsForAgentPicker(entry.id)
+                    : [];
+                chrome.modelsByAgent.set(entry.id, models);
+            }
+            (entry as { models: readonly QaapQaiqModelOption[] }).models = models;
+        }));
+        if (chrome.sheet.dataset.agentPickerRenderGeneration !== String(renderGeneration)) {
+            return;
+        }
+
+        const searchResults = buildAgentPickerSearchResults(agentEntries, chrome.searchInput.value);
+        const content = document.createDocumentFragment();
+        const appendAgent = (entry: QaapAgentPickerSearchEntry): void => {
+            const { id: agentId, label } = entry;
             const hasModels = agentSupportsModelPicker(agentId);
             const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
             const storedModel = readStoredAgentModel(options.cwd, agentId);
@@ -816,36 +943,73 @@ export class MobileProjectsStickyComposerSheetsUi {
             if (storedModel?.modelId && agentSelected) {
                 displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;
             }
-            chrome.list.append(createAgentSheetOptionButton({
+            content.append(createAgentSheetOptionButton({
                 agentId,
                 label: displayLabel,
                 selected: agentSelected,
                 submenuChevron: hasModels ? 'forward' : undefined,
-                onSelect: async () => {
-                    const models = await this.resolveModelsForAgentPicker(agentId);
-                    if (models.length > 0) {
-                        void this.renderComposerAgentPicker(chrome, {
-                            ...options,
-                            view: 'models',
-                            modelPickerAgentId: agentId,
-                        });
-                        return;
-                    }
-                    options.onSelectAgent(agentId);
+                onSelect: () => {
+                    void activateAgentPickerEntry({
+                        agentId,
+                        supportsModels: hasModels,
+                        cachedModels: chrome.modelsByAgent.get(agentId),
+                        loadModels: () => this.resolveModelsForAgentPicker(agentId),
+                        onLoading: () => renderAgentPickerSkeleton(chrome.list, 5),
+                        onModelsResolved: models => chrome.modelsByAgent.set(agentId, models),
+                        onShowModels: () => {
+                            if (chrome.searchInput.value
+                                && !(chrome.modelsByAgent.get(agentId) ?? [])
+                                    .some(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value))) {
+                                chrome.searchInput.value = '';
+                            }
+                            void this.renderComposerAgentPicker(chrome, {
+                                ...options,
+                                view: 'models',
+                                modelPickerAgentId: agentId,
+                            });
+                        },
+                        onSelectDirect: () => options.onSelectAgent(agentId),
+                    });
                 },
             }));
         };
 
-        if (options.includeCoder) {
-            const coder = this.host.stickyComposerAgentsUi.getOfferableCoderAgent();
-            if (coder) {
-                appendAgent(THEIA_CODER_AGENT_ID, coder.name);
+        for (const entry of searchResults.directAgents) {
+            appendAgent(entry);
+        }
+        for (const [groupIndex, group] of searchResults.modelGroups.entries()) {
+            const section = document.createElement('section');
+            section.className = 'theia-qaap-agent-sheet-inline-model-group';
+            section.dataset.agentId = group.agent.id;
+            const heading = createAgentBrandChip({
+                agentId: group.agent.id,
+                label: group.agent.label,
+            });
+            heading.classList.add('theia-qaap-agent-sheet-inline-model-group-heading');
+            heading.id = `qaap-agent-model-group-${renderGeneration}-${groupIndex}`;
+            section.setAttribute('aria-labelledby', heading.id);
+            section.append(heading);
+            const storedModel = readStoredAgentModel(options.cwd, group.agent.id);
+            const agentSelected = isStickyComposerAgentSelected(
+                group.agent.id,
+                options.selectedAgentId,
+                options.cwd,
+            );
+            for (const model of group.models) {
+                section.append(createAgentPickerInlineModelButton({
+                    agentId: group.agent.id,
+                    model,
+                    selected: agentSelected && isSameAgentModel(storedModel, model),
+                    onSelect: options.onSelectAgent,
+                }));
             }
+            content.append(section);
         }
-        for (const agent of options.agents) {
-            appendAgent(agent.id, agent.label);
-        }
-        if (chrome.list.childElementCount === 0) {
+        const resultCount = searchResults.directAgents.length
+            + searchResults.modelGroups.reduce((count, group) => count + group.models.length, 0);
+        if (agentEntries.length > 0 && resultCount === 0) {
+            content.append(this.createAgentPickerNoResultsHint());
+        } else if (agentEntries.length === 0) {
             const hint = document.createElement('p');
             hint.className = 'theia-qaap-agent-sheet-empty-models';
             const agentConfigured = this.host.activeTasks?.isAgentConfigured() ?? false;
@@ -858,9 +1022,25 @@ export class MobileProjectsStickyComposerSheetsUi {
                     'qaap/mobileProjects/stickyComposerNoAgents',
                     'No agents are available. Install a VPS agent CLI on PATH (qaiq, codex, claude) or set QAAP_AGENT_COMMAND, then restart the backend.',
                 );
-            chrome.list.append(hint);
+            content.append(hint);
         }
+        replaceAgentPickerLoading(chrome.list, content);
+        const resultButtons = chrome.list.querySelectorAll<HTMLElement>(
+            '.theia-qaap-agent-sheet-option, .theia-qaap-agent-sheet-inline-model',
+        );
+        wireSearchKeyboard(resultButtons.length === 1 ? resultButtons[0] : undefined);
         window.requestAnimationFrame(() => this.syncAgentPickerPopoverPosition(chrome.sheet));
+    }
+    protected createAgentPickerNoResultsHint(): HTMLElement {
+        const hint = document.createElement('p');
+        hint.className = 'theia-qaap-agent-sheet-empty-models theia-qaap-agent-sheet-no-results';
+        hint.setAttribute('role', 'status');
+        hint.setAttribute('aria-live', 'polite');
+        hint.textContent = nls.localize(
+            'qaap/mobileProjects/stickyComposerNoAgentsModelsFound',
+            'No agents or models found',
+        );
+        return hint;
     }
     appendAgentModelPickerList(
         list: HTMLElement,
