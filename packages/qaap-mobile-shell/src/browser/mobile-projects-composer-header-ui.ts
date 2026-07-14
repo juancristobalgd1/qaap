@@ -5,7 +5,6 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { type MobileViewToggleId } from './qaap-workbench-account-menu';
-import { setMobileWorkHubComposerHeaderChrome } from './mobile-projects-open';
 import { writeStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { QAAP_PRIMARY_AGENT_ID, writeStoredAgent } from '../common/qaap-agent-task-client';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
@@ -68,7 +67,6 @@ export class MobileProjectsComposerHeaderUi {
     }
 
     syncHeaderComposerSurfacePicker(): void {
-        setMobileWorkHubComposerHeaderChrome(false);
         this.host.headerSurfacePickerHost.hidden = true;
         this.host.headerSurfacePickerHost.replaceChildren();
         this.host.headerSurfacePicker = undefined;

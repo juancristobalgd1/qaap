@@ -298,10 +298,8 @@ export class MobileWorkHubSessionsSidebar {
         this.delegate.onClose();
     }
 
+    /** Close the sessions sidebar after navigation (overlay on mobile, collapse on desktop). */
     hideForMobileOverlay(): void {
-        if (isDesktopSessionsSidebarLayout()) {
-            return;
-        }
         this.hide();
     }
 

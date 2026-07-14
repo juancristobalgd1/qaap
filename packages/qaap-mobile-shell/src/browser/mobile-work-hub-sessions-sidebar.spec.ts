@@ -228,4 +228,38 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(renderCalls).to.equal(1);
         expect(patchCalls).to.equal(2);
     });
+
+    it('hideForMobileOverlay collapses the sidebar on desktop layout too', () => {
+        const matchMedia = (query: string): MediaQueryList => ({
+            matches: query.includes('min-width: 768px'),
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        });
+        (global as { window?: Window }).window = {
+            ...(global as { window?: Window }).window,
+            matchMedia,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => { host.append(document.createElement('div')); },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.show();
+        expect(sidebar.isVisible()).to.equal(true);
+
+        sidebar.hideForMobileOverlay();
+
+        expect(sidebar.isVisible()).to.equal(false);
+        expect(sidebar.node.classList.contains('theia-mod-visible')).to.equal(false);
+    });
 });
