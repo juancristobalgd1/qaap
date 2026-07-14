@@ -256,7 +256,9 @@ function createContextUsagePanel(
     percentLabel.className = 'qaap-chat-context-usage-panel-percent';
     percentLabel.textContent = view.empty
         ? nls.localize('qaap/chat/contextUsagePanelEmpty', 'No usage yet')
-        : nls.localize('qaap/chat/contextUsagePanelPercentFull', '{0}% Full', Math.round(view.percent ?? 0));
+        : view.percent === undefined
+            ? nls.localize('qaap/chat/contextUsagePanelFullnessUnavailable', 'Fullness unavailable')
+            : nls.localize('qaap/chat/contextUsagePanelPercentFull', '{0}% Full', Math.round(view.percent));
 
     const totalLabel = document.createElement('span');
     totalLabel.className = 'qaap-chat-context-usage-panel-total';

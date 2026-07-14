@@ -137,6 +137,8 @@ describe('qaap-chat-context-usage-panel', () => {
             expect(sheet.querySelectorAll('.qaap-chat-context-usage-panel-row')).to.have.lengthOf(1);
             expect(sheet.querySelector('.qaap-chat-context-usage-panel-provenance')?.textContent).to.equal('reported');
             expect(sheet.querySelector('.qaap-chat-context-usage-panel-total')?.textContent).to.contain('Limit unavailable');
+            expect(sheet.querySelector('.qaap-chat-context-usage-panel-percent')?.textContent)
+                .to.equal('Fullness unavailable');
             expect(sheet.querySelector('.qaap-chat-context-usage-report')).to.equal(null);
         });
 
