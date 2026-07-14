@@ -36,4 +36,18 @@ describe('qaap-composer-git-action-display', () => {
         expect(parseComposerGitActionDisplayMarker('Commit & Push')).to.equal(undefined);
         expect(parseComposerGitActionDisplayMarker('<!-- qaap-composer-git-action broken -->')).to.equal(undefined);
     });
+
+    it('treats branched git-action markers as display-only', () => {
+        const metadata = {
+            action: 'commit-push' as const,
+            label: 'Commit & Push',
+            branch: 'main',
+            status: 'completed' as const,
+        };
+        const marker = createComposerGitActionDisplayMarker(metadata);
+        expect(isComposerGitActionOnlyMessage(marker)).to.equal(true);
+        const parsed = parseComposerGitActionDisplayMarker(marker);
+        expect(parsed).to.not.equal(undefined);
+        expect(isComposerGitActionOnlyMessage(createComposerGitActionDisplayMarker(parsed!))).to.equal(true);
+    });
 });

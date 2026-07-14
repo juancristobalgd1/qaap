@@ -1101,7 +1101,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
             const updated = await recordConversationGitAction(summary.id, this.buildGitActionMetadata(action, options.status, {
                 branch: options.branch,
                 stat: options.stat,
-            }));
+            }), {
+                replaceMessageId: options.replaceMessageId,
+            });
             if (!updated || this.host.transcriptOpenSummary?.id !== summary.id) {
                 if (options.status === 'completed' && this.host.transcriptLastConv?.id === summary.id && options.replaceMessageId) {
                     const metadata = this.buildGitActionMetadata(action, 'completed', {
@@ -1286,6 +1288,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (nextPaths !== previousPaths) {
             // New file paths only — invalidate git snapshot so counts stay accurate.
             this.composerActivityGitFilesByConversationId.delete(conv.id);
+            this.clearStaleComposerGitLatches(conv.id);
         }
         this.refreshComposerActivityStack();
         this.host.transcriptComposerSendRefresh?.();

@@ -666,12 +666,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     }
 
     protected handlePostGitAction(req: Request, res: Response): void {
-        const metadata = this.sanitizeGitActionMetadata(req.body);
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const metadata = this.sanitizeGitActionMetadata(body);
         if (!metadata) {
             res.status(400).json({ error: 'action and label are required.' });
             return;
         }
-        const conv = this.store.recordGitAction(req.params.id, metadata);
+        const messageId = typeof body.messageId === 'string' ? body.messageId.trim() : undefined;
+        const replaceMessageId = typeof body.replaceMessageId === 'string' ? body.replaceMessageId.trim() : undefined;
+        const conv = this.store.recordGitAction(req.params.id, metadata, { messageId, replaceMessageId });
         if (!conv) {
             res.status(404).json({ error: 'Conversation not found.' });
             return;

@@ -66,5 +66,7 @@ export function isComposerGitActionOnlyMessage(text: string): boolean {
         return false;
     }
     const marker = parseComposerGitActionDisplayMarker(trimmed);
-    return !!marker && trimmed === createComposerGitActionDisplayMarker(marker);
+    const markerEnd = trimmed.indexOf(COMPOSER_GIT_ACTION_DISPLAY_MARKER_SUFFIX);
+    return !!marker
+        && markerEnd + COMPOSER_GIT_ACTION_DISPLAY_MARKER_SUFFIX.length === trimmed.length;
 }

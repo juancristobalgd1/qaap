@@ -702,6 +702,10 @@ export async function reportPreviewVisualVerificationFailure(
 export async function recordConversationGitAction(
     conversationId: string,
     metadata: ComposerGitActionDisplayMetadata,
+    options: {
+        readonly messageId?: string;
+        readonly replaceMessageId?: string;
+    } = {},
 ): Promise<QaapAgentConversationDTO | undefined> {
     const response = await fetch(
         `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/git-actions`,
@@ -709,7 +713,7 @@ export async function recordConversationGitAction(
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(metadata),
+            body: JSON.stringify({ ...metadata, ...options }),
         },
     );
     if (response.status === 404) {
