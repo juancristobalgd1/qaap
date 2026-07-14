@@ -15,6 +15,7 @@ import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { MiniBrowserContent } from '@theia/mini-browser/lib/browser/mini-browser-content';
 import { MiniBrowserContentStyle } from '@theia/mini-browser/lib/browser/mini-browser-content-style';
+import { normalizeMiniBrowserOpenUrl } from '@theia/mini-browser/lib/browser/mini-browser-url-utils';
 import { QaapMiniBrowserContentStyle } from './qaap-mini-browser-content-style';
 import { isMiniBrowserPreviewPlaceholderUrl, QAAP_DEFAULT_PREVIEW_INPUT_URL } from './qaap-mini-browser-defaults';
 import {
@@ -33,7 +34,11 @@ import {
     setPreviewInspectorPosition,
     wirePreviewInspectorResize,
 } from './qaap-preview-inline-inspector';
-import { normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
+import {
+    navigateExplicitPreviewUrl,
+    QaapPreviewPortClaimService,
+} from './qaap-preview-port-claim-service';
+import { getSameOriginPreviewProxyPort, normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 /**
  * Qaap mini-browser preview: element inspector, workbench toolbar, read-only URL editing.
@@ -59,9 +64,15 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
     @inject(CommandRegistry)
     protected readonly commandRegistry: CommandRegistry;
 
+    @inject(QaapPreviewPortClaimService)
+    protected readonly previewPortClaimService: QaapPreviewPortClaimService;
+
     protected previewChrome: QaapAgentPreviewChromeController | undefined;
 
     protected surfaceHandle: QaapPreviewSurfaceHandle | undefined;
+
+    /** Prevents a slower claim from an older URL-bar submission from navigating afterwards. */
+    protected explicitNavigationSequence = 0;
 
     protected framePicker: QaapPreviewFramePicker | undefined;
 
@@ -277,6 +288,47 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
             field.appendChild(goButton);
         }
         return input;
+    }
+
+    protected override navigateFromUrlBar(raw?: string): void {
+        void this.navigateExplicitlyFromUrlBar(raw);
+    }
+
+    protected async navigateExplicitlyFromUrlBar(raw?: string): Promise<void> {
+        const sequence = ++this.explicitNavigationSequence;
+        const location = normalizeMiniBrowserOpenUrl(raw ?? this.input.value);
+        if (!location) {
+            this.onUrlBarNavigateFailed(nls.localize('theia/mini-browser/emptyUrl', 'Please enter a URL.'));
+            return;
+        }
+        if (location !== this.input.value) {
+            this.setInput(location);
+        }
+        const normalized = normalizePreviewUrlForSameOrigin(location);
+        const port = getSameOriginPreviewProxyPort(normalized);
+        const result = await navigateExplicitPreviewUrl(
+            normalized,
+            this.previewPortClaimService,
+            target => sequence === this.explicitNavigationSequence
+                ? this.go(target, { preserveFocus: false })
+                : undefined,
+        );
+        if (sequence !== this.explicitNavigationSequence) {
+            return;
+        }
+        if (result.kind === 'conflict') {
+            this.onUrlBarNavigateFailed(nls.localize(
+                'qaap/preview/portClaimConflict',
+                'Port :{0} is used by another workspace. Stop its dev server or choose another port.',
+                String(port),
+            ));
+        } else if (result.kind === 'error') {
+            this.onUrlBarNavigateFailed(nls.localize(
+                'qaap/preview/portClaimFailed',
+                'Could not claim preview port :{0}. Navigation was blocked to protect workspace isolation. Try again or choose another port.',
+                String(port),
+            ));
+        }
     }
 
     protected override onUrlBarNavigateFailed(message: string): void {

@@ -30,6 +30,10 @@ import { QaapElementPickerService } from './qaap-element-picker-service';
 import { QaapPickElementTool } from './qaap-element-picker-tool-provider';
 import { QaapPreviewFramePickerFactory } from './qaap-preview-frame-picker';
 import { QaapPreviewSurfaceRegistry } from './qaap-preview-surface-registry';
+import {
+    QaapPreviewPortClaimService,
+    UnavailableQaapPreviewPortClaimService,
+} from './qaap-preview-port-claim-service';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(DefaultQaapMiniBrowserLifecycle).toSelf().inSingletonScope();
@@ -62,6 +66,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
 
     bind(QaapPreviewFramePickerFactory).toSelf().inSingletonScope();
     bind(QaapPreviewSurfaceRegistry).toSelf().inSingletonScope();
+    bind(QaapPreviewPortClaimService).to(UnavailableQaapPreviewPortClaimService).inSingletonScope();
     bind(QaapElementPickerService).toSelf().inSingletonScope();
     bind(QaapElementPickerCommandContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapElementPickerCommandContribution);
