@@ -664,6 +664,9 @@ export class MobileProjectsTranscriptLiveUi {
             return conversationMayAutoOpenTranscriptPreview(conv);
         });
         this.host.projectBootstrap.onStateChange(state => {
+            // Composer preview visibility follows the live bootstrap phase/dependency snapshot,
+            // even when the active conversation is not currently watching for preview offers.
+            this.host.transcriptStickyComposerUi.refreshComposerActivityStack();
             const conv = this.host.transcriptLastConv;
             if (!conv || !this.host.transcriptOpenSummaryId || this.host.transcriptOpenSummaryId !== conv.id) {
                 return;

@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
@@ -102,6 +103,17 @@ import {
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
+import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
+import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
+import {
+    openCurrentComposerPreview,
+    resolveComposerPreviewCandidate,
+    resolveVerifiedComposerPreviewUrl,
+    type ComposerPreviewRuntime,
+} from './qaap-composer-preview-action';
+
+const COMPOSER_PREVIEW_HEALTH_INTERVAL_MS = 5_000;
 
 export interface TranscriptStickyComposerColumnOptions {
     project: MobileProjectEntry;
@@ -180,6 +192,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptComposerPrefsPersistTimer: number | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     transcriptLastStreamProgressAt: number | undefined;
+    transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptComposerBackendAgents: QaapAgentTaskAgentOption[];
@@ -188,6 +201,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptFollowUpQueue: TranscriptFollowUpQueue;
     transcriptTheiaSessionByConversationId: ReadonlyMap<string, string>;
     projectsService: MobileProjectsService;
+    projectBootstrap?: QaapProjectBootstrapService;
     chatAgentService?: ChatAgentService;
     chatService?: import('@theia/ai-chat').ChatService;
     messageService?: MessageService;
@@ -253,6 +267,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
     protected readonly composerCleanTreeByConversationId = new Set<string>();
     protected composerChangedFilesBulkBusy = false;
     protected composerCommitBusy = false;
+    protected verifiedComposerPreview: { readonly projectId: string; readonly url: string } | undefined;
+    protected composerPreviewProbeInFlight: Promise<void> | undefined;
+    protected composerPreviewLastCheckedAt = 0;
+    protected composerPreviewHealthTimer: number | undefined;
 
     /** Tracks whether the Agents Hub idle (pre-conversation) composer is currently mounted, to drive autofocus-on-ready. */
     protected agentsHubIdleComposerMounted = false;
@@ -314,6 +332,105 @@ export class MobileProjectsTranscriptStickyComposerUi {
 
     protected isComposerBackgroundWorkAllowed(): boolean {
         return isTranscriptDocumentVisible();
+    }
+
+    protected resolveComposerPreviewRuntime(project: MobileProjectEntry): ComposerPreviewRuntime {
+        const bootstrap = this.host.projectBootstrap;
+        const descriptor = bootstrap?.descriptor;
+        return {
+            projectId: project.id,
+            projectCwd: this.host.projectsService.getProjectCwd(project),
+            bootstrapRoot: descriptor ? FileUri.fsPath(descriptor.rootUri) : undefined,
+            dependenciesInstalled: descriptor?.nodeModulesPresent === true,
+            phase: bootstrap?.phase ?? 'idle',
+            previewUrl: bootstrap?.previewUrl,
+        };
+    }
+
+    protected clearComposerPreviewHealthTimer(): void {
+        if (this.composerPreviewHealthTimer !== undefined) {
+            window.clearTimeout(this.composerPreviewHealthTimer);
+            this.composerPreviewHealthTimer = undefined;
+        }
+    }
+
+    protected scheduleComposerPreviewHealthCheck(projectId: string): void {
+        this.clearComposerPreviewHealthTimer();
+        this.composerPreviewHealthTimer = window.setTimeout(() => {
+            this.composerPreviewHealthTimer = undefined;
+            if (this.host.transcriptComposerProject?.id !== projectId
+                || !this.host.transcriptComposerHost?.isConnected) {
+                return;
+            }
+            this.composerPreviewLastCheckedAt = 0;
+            this.refreshComposerActivityStack();
+        }, COMPOSER_PREVIEW_HEALTH_INTERVAL_MS);
+    }
+
+    protected syncComposerPreviewAvailability(project: MobileProjectEntry, candidate: string | undefined): void {
+        if (!candidate) {
+            this.clearComposerPreviewHealthTimer();
+            if (this.verifiedComposerPreview?.projectId === project.id) {
+                this.verifiedComposerPreview = undefined;
+            }
+            return;
+        }
+        const runtime = this.resolveComposerPreviewRuntime(project);
+        const verified = this.verifiedComposerPreview?.projectId === project.id
+            ? resolveVerifiedComposerPreviewUrl(runtime, this.verifiedComposerPreview.url)
+            : undefined;
+        if (verified && Date.now() - this.composerPreviewLastCheckedAt < COMPOSER_PREVIEW_HEALTH_INTERVAL_MS) {
+            this.scheduleComposerPreviewHealthCheck(project.id);
+            return;
+        }
+        if (this.composerPreviewProbeInFlight) {
+            return;
+        }
+        const port = extractDevPreviewPortFromUrl(candidate);
+        if (port === undefined) {
+            return;
+        }
+        this.composerPreviewProbeInFlight = probeQaapDevPreviewPort(port).then(probe => {
+            this.composerPreviewLastCheckedAt = Date.now();
+            const currentProject = this.host.transcriptComposerProject;
+            const stillCurrent = currentProject?.id === project.id
+                && resolveComposerPreviewCandidate(this.resolveComposerPreviewRuntime(currentProject));
+            const next = probe.ready && stillCurrent
+                ? { projectId: project.id, url: probe.previewUrl }
+                : undefined;
+            const changed = this.verifiedComposerPreview?.projectId !== next?.projectId
+                || this.verifiedComposerPreview?.url !== next?.url;
+            this.verifiedComposerPreview = next;
+            if (next) {
+                this.scheduleComposerPreviewHealthCheck(project.id);
+            } else {
+                this.clearComposerPreviewHealthTimer();
+            }
+            if (changed) {
+                this.refreshComposerActivityStack();
+            }
+        }).finally(() => {
+            this.composerPreviewProbeInFlight = undefined;
+        });
+    }
+
+    protected async openComposerPreview(projectId: string): Promise<void> {
+        const opened = await openCurrentComposerPreview(
+            projectId,
+            () => {
+                const current = this.host.transcriptComposerProject;
+                return current ? this.resolveComposerPreviewRuntime(current) : undefined;
+            },
+            probeQaapDevPreviewPort,
+            url => this.host.transcriptOpenProject?.id === projectId
+                ? this.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(url)
+                : Promise.resolve(false),
+        );
+        if (!opened) {
+            this.verifiedComposerPreview = undefined;
+            this.composerPreviewLastCheckedAt = 0;
+            this.refreshComposerActivityStack();
+        }
     }
 
     protected peekTranscriptComposerChangedFilesExpanded(summaryId: string): boolean {
@@ -759,6 +876,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
         // A fresh/idle conversation has no activity and no git snapshot, so the whole row stays gone.
         const hasFileActivity = this.hasComposerFileActivity(conv);
         const hasCommittableChanges = hasFileActivity && this.hasComposerCommittableChangesFromGit(summary);
+        const previewRuntime = this.resolveComposerPreviewRuntime(project);
+        const previewCandidate = resolveComposerPreviewCandidate(previewRuntime);
+        this.syncComposerPreviewAvailability(project, previewCandidate);
+        const verifiedPreviewUrl = this.verifiedComposerPreview?.projectId === project.id
+            ? resolveVerifiedComposerPreviewUrl(previewRuntime, this.verifiedComposerPreview.url)
+            : undefined;
         return {
             queueEntries: this.host.transcriptFollowUpQueue.peek(summary.id),
             queueExpanded: this.host.transcriptComposerQueueExpanded,
@@ -790,8 +913,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
             onRunApp: () => {
                 void this.submitRunGeneratedAppFollowUp(project, summary);
             },
-            onOpenPreview: project.previewUrl
-                ? () => { void this.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(project.previewUrl!); }
+            onOpenPreview: verifiedPreviewUrl
+                ? () => { void this.openComposerPreview(project.id); }
                 : undefined,
             onKeepAll: () => { void this.keepAllComposerChangedFiles(project, summary); },
             onUndoAll: () => { void this.undoAllComposerChangedFiles(project, summary); },
