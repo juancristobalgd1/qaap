@@ -14965,6 +14965,12 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host {
   pointer-events: none !important;
 }
 
+/* Desktop IDE hides the activity bar but keeps the status strip — reserve only that height
+   so bootstrap banners and snackbars sit just above the status bar. */
+body.theia-mobile-mod-desktop-ide {
+  --theia-mobile-bottom-chrome-reserved: var(--theia-mobile-status-chrome-height, 34px);
+}
+
 body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar {
   display: none !important;
   pointer-events: none !important;

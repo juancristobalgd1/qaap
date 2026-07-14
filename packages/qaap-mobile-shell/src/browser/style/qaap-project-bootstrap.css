@@ -14,10 +14,9 @@
     left: 50%;
     transform: translateX(-50%);
     bottom: calc(
-        var(--theia-mobile-bottom-bar-height, 64px)
-        + var(--theia-mobile-status-chrome-height, 22px)
+        var(--theia-mobile-bottom-chrome-reserved, 0px)
         + var(--theia-mobile-keyboard-inset, 0px)
-        + 16px
+        + 8px
     );
     min-width: 320px;
     max-width: min(560px, calc(100vw - 32px));
@@ -41,7 +40,11 @@
         left: auto;
         right: 24px;
         transform: none;
-        bottom: 24px;
+        bottom: calc(
+            var(--theia-mobile-bottom-chrome-reserved, var(--theia-mobile-status-chrome-height, 34px))
+            + var(--theia-mobile-keyboard-inset, 0px)
+            + 8px
+        );
     }
 }
 
