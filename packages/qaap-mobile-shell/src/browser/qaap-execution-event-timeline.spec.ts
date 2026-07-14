@@ -256,6 +256,21 @@ describe('qaap-execution-event-timeline', () => {
             expect(terminal?.querySelector('.theia-mobile-terminal-output-detail .theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('npm');
         });
 
+        it('terminal detail renders full command text without truncation (no ellipsis)', () => {
+            const longCommand = 'ls -F openwiki/projects/some/very/deeply/nested/directory/structure/that/is/quite/long';
+            const el = createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: longCommand }), true, false, 'done\n'),
+            ]);
+
+            const detail = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-detail');
+            expect(detail).to.not.equal(null);
+            // Full text must be present in the DOM — no truncation at the data level
+            expect(detail?.textContent).to.equal(longCommand);
+            // The summary must exist and contain the detail as a child
+            const summary = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-summary');
+            expect(summary?.contains(detail!)).to.equal(true);
+        });
+
         it('marks active tool group header text for shimmer while running', () => {
             const el = createMobileExecutionEventTimeline([
                 toolSegment('Read', 'tool-1', JSON.stringify({ path: 'src/store.tsx' }), false),
@@ -433,17 +448,69 @@ describe('qaap-execution-event-timeline', () => {
 
     describe('createMobileDiffSummaryElement', () => {
 
-        it('renders file count and stats', () => {
+        it('renders the localized plural header without aggregate stats', () => {
             const el = createMobileDiffSummaryElement(3, 1, 1, 1, [
-                { name: 'a.ts', type: 'add' },
-                { name: 'b.ts', type: 'modify' },
-                { name: 'c.ts', type: 'delete' },
+                { name: 'a.ts', type: 'add', added: 10 },
+                { name: 'b.ts', type: 'modify', added: 4, removed: 2 },
+                { name: 'c.ts', type: 'delete', removed: 8 },
             ]);
 
             expect(el.classList.contains('theia-mobile-diff-summary')).to.equal(true);
-            expect(el.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('3 files changed');
-            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-added')?.textContent).to.equal('+1');
+            expect(el.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('3 Files Changed');
+            expect(el.querySelector('.theia-mobile-diff-summary-header .theia-mobile-diff-summary-stat')).to.equal(null);
             expect(el.querySelectorAll('.theia-mobile-diff-summary-file').length).to.equal(3);
+        });
+
+        it('renders the localized singular header', () => {
+            const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
+                { name: 'only.ts', type: 'modify' },
+            ]);
+            expect(el.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('1 File Changed');
+        });
+
+        it('renders an actionable localized Review control when provided', () => {
+            let reviewed = false;
+            const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
+                { name: 'only.ts', type: 'modify' },
+            ], () => reviewed = true);
+
+            const review = el.querySelector<HTMLButtonElement>('.theia-mobile-diff-summary-review');
+            expect(review?.textContent).to.equal('Review');
+            expect(review?.type).to.equal('button');
+            review?.click();
+            expect(reviewed).to.equal(true);
+        });
+
+        it('aligns real per-file stats in the tail and omits redundant status', () => {
+            const el = createMobileDiffSummaryElement(2, 1, 1, 0, [
+                { name: 'added.ts', type: 'add', added: 67, removed: 0 },
+                { name: 'edited.ts', type: 'modify', added: 130, removed: 21 },
+            ]);
+            const tails = el.querySelectorAll('.theia-mobile-diff-summary-file-tail');
+
+            expect(tails[0]?.textContent).to.equal('+67');
+            expect(tails[1]?.textContent).to.equal('+130-21');
+            expect(el.querySelector('.theia-mobile-diff-summary-file-type')).to.equal(null);
+        });
+
+        it('uses a discreet file status only when stats are unavailable', () => {
+            const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
+                { name: 'unknown.ts', type: 'modify' },
+            ]);
+
+            expect(el.querySelector('.theia-mobile-diff-summary-file-stat')).to.equal(null);
+            expect(el.querySelector('.theia-mobile-diff-summary-file-type')?.textContent).to.equal('modified');
+        });
+
+        it('preserves a long filename for tooltip while allowing CSS ellipsis', () => {
+            const longName = 'an-extremely-long-filename-that-must-not-expand-the-summary-card.ts';
+            const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
+                { name: longName, type: 'modify', added: 2 },
+            ]);
+            const name = el.querySelector<HTMLElement>('.theia-mobile-diff-summary-file-name');
+
+            expect(name?.textContent).to.equal(longName);
+            expect(name?.title).to.equal(longName);
         });
 
         it('limits file list to 6 entries with a more indicator', () => {

@@ -1092,7 +1092,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
         artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
         const diffSummary = streamingRow.querySelector('.theia-mobile-diff-summary');
         expect(diffSummary).to.not.equal(null);
-        expect(diffSummary?.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('1 file changed');
+        expect(diffSummary?.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('1 File Changed');
     });
 
     it('renders a thought brief during the thinking phase when no tools are present', () => {
