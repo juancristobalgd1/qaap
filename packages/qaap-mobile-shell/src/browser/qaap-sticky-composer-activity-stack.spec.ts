@@ -75,6 +75,46 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(sel.clean).to.equal(false);
             expect(sel.files).to.deep.equal([unstaged]);
         });
+
+        // Regression: pill must not reappear after Accept/Discard when the snapshot is
+        // momentarily absent (e.g. refreshComposerActivityGitFilesIfNeeded deleted it
+        // before the re-fetch resolves).  Both latches were intentionally set by the
+        // action and must survive the gap.
+        it('Accept scenario: resolved+dirty latch hides pill even while snapshot is absent', () => {
+            // All files staged (Accept all) → resolved=true, clean=false.
+            const afterAccept = selectComposerPillChanges([staged], false, false);
+            expect(afterAccept.hidden).to.equal(true);
+            expect(afterAccept.resolved).to.equal(true);
+            expect(afterAccept.clean).to.equal(false);
+
+            // Snapshot temporarily absent — pill must stay hidden via the resolved latch.
+            const gap = selectComposerPillChanges(undefined, afterAccept.resolved, afterAccept.clean);
+            expect(gap.hidden).to.equal(true);
+            expect(gap.resolved).to.equal(true);
+            expect(gap.clean).to.equal(false);
+        });
+
+        it('Discard scenario: resolved+clean latch hides pill even while snapshot is absent', () => {
+            // Tree cleaned (Discard all) → resolved=true, clean=true.
+            const afterDiscard = selectComposerPillChanges([], false, false);
+            expect(afterDiscard.hidden).to.equal(true);
+            expect(afterDiscard.resolved).to.equal(true);
+            expect(afterDiscard.clean).to.equal(true);
+
+            // Snapshot temporarily absent — pill must stay hidden, Commit also gone.
+            const gap = selectComposerPillChanges(undefined, afterDiscard.resolved, afterDiscard.clean);
+            expect(gap.hidden).to.equal(true);
+            expect(gap.resolved).to.equal(true);
+            expect(gap.clean).to.equal(true);
+        });
+
+        it('new agent edits reset both latches once a real unstaged file appears (pill resurfaces)', () => {
+            // Simulate: user Accept/Discarded, then agent writes new files.
+            const afterNewEdit = selectComposerPillChanges([unstaged], true, true);
+            expect(afterNewEdit.hidden).to.equal(false);
+            expect(afterNewEdit.resolved).to.equal(false);
+            expect(afterNewEdit.clean).to.equal(false);
+        });
     });
 
     describe('renderStickyComposerChangesPill', () => {
@@ -336,6 +376,57 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(nextActions.map(a => a.textContent)).to.deep.equal(['Open preview']);
         });
 
+        // Regression tests for the Accept/Discard pill-resurrection bug:
+        // After the action the git snapshot is empty (or all-staged). The Changes group
+        // (changesGroup) must disappear immediately; the rendering layer must not fall back
+        // to transcript-derived stats while the snapshot is briefly absent.
+        it('hides Changes group after Accept (all staged) even when stats were previously shown', () => {
+            // Before Accept: pill shows with stats
+            const before = renderStickyComposerChangesPill({
+                changedFiles: [{ path: 'a.ts', kind: 'edited', added: 3, removed: 1 }],
+                diffStats: { added: 3, removed: 1 },
+                onReview: () => undefined,
+                onKeepAll: () => undefined,
+                onUndoAll: () => undefined,
+                onCommitAction: () => undefined,
+                hasCommittableChanges: true,
+                hasFileActivity: true,
+            });
+            expect(before!.querySelector('.theia-mobile-sticky-composer-changes-group')).to.exist;
+
+            // After Accept: changedFiles=[] (snapshot has staged files, but no unresolved ones),
+            // hasCommittableChanges=true (staged files remain). Changes group must be gone.
+            const after = renderStickyComposerChangesPill({
+                changedFiles: [],
+                diffStats: undefined,
+                onReview: () => undefined,
+                onKeepAll: () => undefined,
+                onUndoAll: () => undefined,
+                onCommitAction: () => undefined,
+                hasCommittableChanges: true,
+                hasFileActivity: true,
+            });
+            expect(after).to.exist; // pill host stays (Commit button remains)
+            document.body.append(after!);
+            expect(after!.querySelector('.theia-mobile-sticky-composer-changes-group')).to.equal(null,
+                'Changes group must not render when there are no unresolved changes (Accept resolved them)');
+            expect(after!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.exist;
+        });
+
+        it('hides the whole Changes pill host after Discard (clean tree, no preview)', () => {
+            // After Discard: changedFiles=[], hasCommittableChanges=false, no preview.
+            const after = renderStickyComposerChangesPill({
+                changedFiles: [],
+                diffStats: undefined,
+                onReview: () => undefined,
+                onCommitAction: () => undefined,
+                hasCommittableChanges: false,
+                hasFileActivity: true,
+            });
+            expect(after).to.equal(undefined,
+                'Pill host must be removed entirely after Discard leaves a clean tree with nothing to commit');
+        });
+
         it('hides the whole row when the agent has no file activity, no changes, nothing to commit', () => {
             const host = renderStickyComposerChangesPill({
                 onReview: () => undefined,
@@ -343,6 +434,37 @@ describe('qaap-sticky-composer-activity-stack', () => {
                 onRunApp: () => undefined,
             });
             expect(host).to.equal(undefined);
+        });
+
+        it('hides the whole row after commit (clean tree, hasFileActivity, no preview or run)', () => {
+            // After Commit & Push the git snapshot is [], hasCommittableChanges=false.
+            // The row must vanish entirely — not linger as an empty pill host.
+            const host = renderStickyComposerChangesPill({
+                hasFileActivity: true,
+                hasCommittableChanges: false,
+                onReview: () => undefined,
+                onCommitAction: () => undefined,
+                // no onOpenPreview, no onRunApp
+            });
+            expect(host).to.equal(undefined);
+        });
+
+        it('keeps Open preview after commit when the project has a live preview URL', () => {
+            const host = renderStickyComposerChangesPill({
+                hasFileActivity: true,
+                hasCommittableChanges: false,
+                onReview: () => undefined,
+                onCommitAction: () => undefined,
+                onOpenPreview: () => undefined,
+            });
+            expect(host).to.exist;
+            document.body.append(host!);
+            // Changes group and Commit button must be gone…
+            expect(host!.querySelector('.theia-mobile-sticky-composer-changes-group')).to.equal(null);
+            expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
+            // …but Open preview remains.
+            const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
+            expect(nextActions.map(a => a.textContent)).to.deep.equal(['Open preview']);
         });
 
         it('drops the Commit button once the tree is clean (Discard), keeping the preview', () => {

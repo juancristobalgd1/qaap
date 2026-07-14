@@ -205,13 +205,24 @@ function stickyComposerHasChangesToReview(options: StickyComposerActivityStackOp
 }
 
 /**
- * True when the activity row should render at all. Gated on the agent having edited files in this
- * conversation (`hasFileActivity`) or there being changes to review — a fresh/idle conversation has
- * neither, so the whole row (Commit, preview, Changes) stays hidden. `hasCommittableChanges` is a
- * subset of `hasFileActivity`, so it needn't be checked here.
+ * True when the activity row should render at all.
+ *
+ * The row is shown when one of the following is true:
+ * - There are unresolved changes to review (`stickyComposerHasChangesToReview`).
+ * - There is something to commit (`hasCommittableChanges`) — e.g. staged files after Accept.
+ * - The agent edited files (`hasFileActivity`) AND the project has a live preview or run action,
+ *   so the preview/run button stays accessible even after the review is resolved and the tree
+ *   is committed clean.
+ *
+ * Note: bare `hasFileActivity` with a clean tree and no next actions must NOT keep the row
+ * visible — that would leave an empty pill host after a commit (BUG). Fresh agent edits cause
+ * the git snapshot to become non-empty, which then satisfies `stickyComposerHasChangesToReview`
+ * and naturally shows the row again.
  */
 function stickyComposerHasActivityRow(options: StickyComposerActivityStackOptions): boolean {
-    return stickyComposerHasChangesToReview(options) || !!options.hasFileActivity;
+    return stickyComposerHasChangesToReview(options)
+        || !!options.hasCommittableChanges
+        || !!(options.hasFileActivity && (!!options.onRunApp || !!options.onOpenPreview));
 }
 
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
