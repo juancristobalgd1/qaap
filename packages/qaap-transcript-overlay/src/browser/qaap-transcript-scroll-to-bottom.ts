@@ -127,7 +127,12 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     badge.hidden = true;
     button.append(badge);
 
-    mountHost.append(button);
+    const liveRegion = document.createElement('span');
+    liveRegion.className = 'theia-mobile-agent-transcript-scroll-live-region';
+    liveRegion.setAttribute('aria-live', 'polite');
+    liveRegion.setAttribute('aria-atomic', 'true');
+
+    mountHost.append(button, liveRegion);
 
     // New-message badge: while the user is scrolled away, count freshly appended
     // message rows (dedupe by message id — virtual-list remounts reuse ids).
@@ -142,6 +147,7 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
             ? nls.localize('qaap/mobileProjects/transcriptJumpToNew', 'Jump to {0} new messages', String(unseenCount))
             : baseLabel;
         button.setAttribute('aria-label', nextLabel);
+        liveRegion.textContent = unseenCount > 0 && fabMode !== 'active-step' ? nextLabel : '';
     };
 
     const resetBadge = (): void => {
