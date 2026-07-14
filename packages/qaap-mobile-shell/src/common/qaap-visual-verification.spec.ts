@@ -75,6 +75,7 @@ describe('qaap-visual-verification', () => {
         for (const ask of [
             'dame una evidencia visual de esta aplicacion',
             'hazme una captura de pantalla de la app',
+            'levanta la app y muestra una captura de la primera pantalla',
             'muéstrame cómo se ve la página',
             'show me the app please',
             'give me a screenshot of the dashboard',

@@ -16,7 +16,9 @@ const VISUAL_FILE_REGEX = /\.(?:html?|css|scss|sass|less|tsx|jsx|vue|svelte)(?:[
 /** Explicit ask for a screenshot / visual proof of the app — triggers capture even with no edits. */
 const EXPLICIT_VISUAL_EVIDENCE_REGEX = new RegExp([
     'evidencia\\s+visual',
-    'captura\\s+de\\s+pantalla',
+    'captura\\s+de\\s+(?:la\\s+)?(?:\\w+\\s+)?pantalla',
+    'mu[eé]stra(?:me)?\\s+(?:una\\s+|la\\s+)?captura',
+    'adjunta(?:me)?\\s+(?:una\\s+|la\\s+)?captura',
     'pantallazo',
     'screenshot',
     'visual\\s+(?:evidence|proof)',

@@ -34,6 +34,17 @@ describe('resolveHeadlessCaptureAppTarget', () => {
         expect(target).to.deep.equal({ root, kind: 'script', expectedPort: 5173 });
     });
 
+    it('parses a port pinned in the dev script itself (static wrapper scripts)', () => {
+        writeJson(path.join(root, 'package.json'), {
+            scripts: { dev: 'http-server -p 8080 .' },
+        });
+        expect(resolveHeadlessCaptureAppTarget(root)?.expectedPort).to.equal(8080);
+        writeJson(path.join(root, 'package.json'), {
+            scripts: { dev: 'python3 -m http.server 5173' },
+        });
+        expect(resolveHeadlessCaptureAppTarget(root)?.expectedPort).to.equal(5173);
+    });
+
     it('honors an explicit vite.config server.port', () => {
         writeJson(path.join(root, 'package.json'), {
             scripts: { dev: 'vite' },

@@ -71,6 +71,14 @@ function readPackageJson(dir: string): { scripts?: Record<string, string>; depen
 }
 
 function expectedPortForProject(dir: string, pkg: NonNullable<ReturnType<typeof readPackageJson>>): number {
+    // A port pinned in the dev/start script itself wins over everything —
+    // "http-server -p 8080", "python3 -m http.server 5173", "vite --port 4444".
+    for (const script of [pkg.scripts?.['dev'], pkg.scripts?.['start']]) {
+        const pinned = /\b(\d{4,5})\b/.exec(script ?? '');
+        if (pinned) {
+            return Number(pinned[1]);
+        }
+    }
     // An explicit Vite server.port wins over framework defaults.
     for (const name of ['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs']) {
         try {
@@ -92,6 +100,12 @@ function expectedPortForProject(dir: string, pkg: NonNullable<ReturnType<typeof 
     }
     // next / react-scripts / nuxt / generic node servers default to 3000 and honor $PORT.
     return 3000;
+}
+
+/** The IDE's own listen port must never be probed or captured as "the app". */
+export function qaapIdeListenPort(): number {
+    const fromEnv = Number(process.env.PORT);
+    return Number.isInteger(fromEnv) && fromEnv > 0 ? fromEnv : 3000;
 }
 
 function scriptProjectAt(dir: string): QaapHeadlessCaptureAppTarget | undefined {
@@ -282,15 +296,25 @@ export class QaapHeadlessVisualCaptureService {
                 port = started.port;
             } else {
                 const ready = await this.ensureScriptServer(app);
-                if (!ready.ok) {
-                    this.store.recordVisualVerificationFailure(
-                        conversationId,
-                        `The dev server did not become ready for the capture: ${ready.reason}`,
-                        target.id,
-                    );
-                    return;
+                if (ready.ok) {
+                    port = ready.port;
+                } else {
+                    // The dev script did not yield a reachable port, but the app may still be a
+                    // plain static site behind a wrapper script — serve it in-process instead of
+                    // giving up (a landing page's `dev: http-server` counts on exactly this).
+                    const staticRoot = [app.root, conv.cwd].find(dir => fs.existsSync(path.join(dir, 'index.html')));
+                    if (!staticRoot) {
+                        this.store.recordVisualVerificationFailure(
+                            conversationId,
+                            `The dev server did not become ready for the capture: ${ready.reason}`,
+                            target.id,
+                        );
+                        return;
+                    }
+                    const started = await this.startStaticServer(staticRoot);
+                    staticServer = started.server;
+                    port = started.port;
                 }
-                port = ready.port;
             }
             await this.captureFlow(conversationId, conv, target.id, port);
         } finally {
@@ -300,23 +324,26 @@ export class QaapHeadlessVisualCaptureService {
 
     /** Reuses an already-listening expected port, otherwise starts the app via the supervisor. */
     protected async ensureScriptServer(app: QaapHeadlessCaptureAppTarget): Promise<{ ok: true; port: number } | { ok: false; reason: string }> {
-        if (await this.probePort(app.expectedPort)) {
-            return { ok: true, port: app.expectedPort };
+        // Probing the IDE's own listen port would "find" Qaap itself and screenshot the wrong
+        // thing — shift to an alternate port instead ($PORT-honoring dev servers follow along).
+        const port = app.expectedPort === qaapIdeListenPort() ? app.expectedPort + 7 : app.expectedPort;
+        if (await this.probePort(port)) {
+            return { ok: true, port };
         }
-        this.supervisor.start(app.root, app.expectedPort);
+        this.supervisor.start(app.root, port);
         const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
         while (Date.now() < deadline) {
-            if (await this.probePort(app.expectedPort)) {
-                return { ok: true, port: app.expectedPort };
+            if (await this.probePort(port)) {
+                return { ok: true, port };
             }
-            const snapshot = this.supervisor.describe(app.expectedPort);
+            const snapshot = this.supervisor.describe(port);
             if (snapshot?.status === 'exited') {
                 const tail = snapshot.stderrTail?.slice(-3).join(' ').trim();
                 return { ok: false, reason: tail || `the dev process exited (code ${snapshot.exitCode ?? '?'})` };
             }
             await new Promise(resolve => setTimeout(resolve, SERVER_PROBE_INTERVAL_MS));
         }
-        return { ok: false, reason: `nothing answered on port ${app.expectedPort} within ${SERVER_READY_TIMEOUT_MS / 1000}s` };
+        return { ok: false, reason: `nothing answered on port ${port} within ${SERVER_READY_TIMEOUT_MS / 1000}s` };
     }
 
     protected probePort(port: number): Promise<boolean> {
