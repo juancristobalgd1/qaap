@@ -6,11 +6,13 @@
 /**
  * Derives which app routes the visual verification should walk after a UI turn.
  *
- * The agent does not declare an explicit test plan, so the plan is inferred from the
- * evidence the turn left behind: route files edited by write/edit/patch tools (mapped
- * through the common framework conventions) and route-like paths mentioned in the last
- * user/agent messages. The root route is always walked first.
+ * Routes the agent declared in its `[QAAP capture: …]` directive come first — the LLM knows
+ * which flow it changed. Otherwise the plan falls back to mechanics: route files edited by
+ * write/edit/patch tools, mapped through the common framework conventions. The root route is
+ * always walked first.
  */
+
+import { parseQaapCaptureDirective } from './qaap-visual-verification';
 
 export const MAX_VISUAL_FLOW_STEPS = 3;
 
@@ -27,13 +29,6 @@ interface FlowConversation {
 const EDIT_TOOL_RE = /write|edit|patch/i;
 /** Candidate route-file paths inside tool args (JSON-escaped or plain). */
 const FILE_PATH_RE = /[\w./\\-]+\.(?:tsx|jsx|ts|js|vue|svelte|astro|html?)\b/g;
-/** Route-like tokens in prose: absolute, short, no extension. */
-const TEXT_ROUTE_RE = /(?:^|[\s(`"'])(\/[a-z0-9][a-z0-9\-_/]*)/gi;
-/** Filesystem-ish or backend prefixes that are never app routes. */
-const NON_ROUTE_PREFIXES = [
-    '/api', '/src', '/app', '/pages', '/public', '/assets', '/node_modules', '/dist', '/build',
-    '/home', '/usr', '/workspace', '/tmp', '/var', '/etc', '/opt', '/users', '/qaap',
-];
 
 function isNavigableSegment(segment: string): boolean {
     return !!segment
@@ -114,30 +109,6 @@ export function routeFromEditedFile(filePath: string): string | undefined {
     return undefined;
 }
 
-/** Route-like paths mentioned in prose, filtered down to plausible app routes. */
-export function routesMentionedInText(text: string | undefined): string[] {
-    if (!text?.trim()) {
-        return [];
-    }
-    const routes: string[] = [];
-    for (const match of text.matchAll(TEXT_ROUTE_RE)) {
-        const raw = match[1].replace(/\/+$/, '');
-        if (!raw || raw === '/' || raw.length > 40) {
-            continue;
-        }
-        const segments = raw.split('/').filter(Boolean);
-        if (segments.length > 3 || !segments.every(isNavigableSegment)) {
-            continue;
-        }
-        const lower = raw.toLowerCase();
-        if (NON_ROUTE_PREFIXES.some(prefix => lower === prefix || lower.startsWith(`${prefix}/`))) {
-            continue;
-        }
-        routes.push(lower);
-    }
-    return routes;
-}
-
 /** Routes for the files the turn edited, in edit order. */
 function routesFromEditedFiles(conversation: FlowConversation): string[] {
     const routes: string[] = [];
@@ -158,18 +129,16 @@ function routesFromEditedFiles(conversation: FlowConversation): string[] {
 }
 
 /**
- * The walk plan for a settled turn: always the root, then routes derived from edited
- * route files, then routes mentioned in the last user/agent messages — deduped and
- * capped at {@link MAX_VISUAL_FLOW_STEPS}.
+ * The walk plan for a settled turn: always the root, then the routes the agent declared in
+ * its `[QAAP capture: …]` directive, then routes derived from edited route files — deduped
+ * and capped at {@link MAX_VISUAL_FLOW_STEPS}.
  */
 export function deriveVisualFlowSteps(conversation: FlowConversation): string[] {
     const messages = conversation.messages ?? [];
-    const lastUser = [...messages].reverse().find(message => message.role === 'user');
     const lastAgent = [...messages].reverse().find(message => message.role === 'agent');
     const candidates = [
+        ...parseQaapCaptureDirective(lastAgent).routes,
         ...routesFromEditedFiles(conversation),
-        ...routesMentionedInText(lastUser?.content),
-        ...routesMentionedInText(lastAgent?.content),
     ];
     const steps = ['/'];
     for (const route of candidates) {

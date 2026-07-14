@@ -5,7 +5,6 @@
 
 import { buildConversationListMetrics } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-list-metrics';
 import { resolveMessagePreviewText } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-content';
-import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
 import {
     agentMessageHasVisualVerificationMarker,
     conversationLikelyNeedsVisualVerification,
@@ -354,7 +353,8 @@ export function resolveEffectiveConversationStatus(conv: QaapAgentConversation):
 /**
  * Server-side twin of the autopilot trigger: the turn is settled (raw status — a historical
  * message error keeps the *effective* status `failed` forever and must not veto evidence),
- * the last reply carries no evidence marker yet, and the thread looks like UI work.
+ * the last reply carries no evidence marker yet, and the agent invoked the capture (or the
+ * turn mechanically edited renderable files). No natural-language guessing here.
  */
 export function conversationNeedsVisualVerificationEvidence(conv: QaapAgentConversation): boolean {
     if (conv.status !== 'idle') {
@@ -364,8 +364,7 @@ export function conversationNeedsVisualVerificationEvidence(conv: QaapAgentConve
     if (!lastAgent || lastAgent.error || agentMessageHasVisualVerificationMarker(lastAgent)) {
         return false;
     }
-    return conv.messages.some(message => message.role === 'user' && messageRequestsDevPreview(message.content))
-        || conversationLikelyNeedsVisualVerification(conv);
+    return conversationLikelyNeedsVisualVerification(conv);
 }
 
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {

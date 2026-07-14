@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { deriveVisualFlowSteps, routeFromEditedFile, routesMentionedInText } from './qaap-visual-flow-plan';
+import { deriveVisualFlowSteps, routeFromEditedFile } from './qaap-visual-flow-plan';
 
 describe('routeFromEditedFile', () => {
     it('maps the common framework route-file conventions', () => {
@@ -29,34 +29,37 @@ describe('routeFromEditedFile', () => {
     });
 });
 
-describe('routesMentionedInText', () => {
-    it('extracts short absolute routes from prose', () => {
-        expect(routesMentionedInText('I updated the styles on /checkout and the `/pricing` page.'))
-            .to.deep.equal(['/checkout', '/pricing']);
-    });
-
-    it('ignores filesystem paths, API routes, and deep paths', () => {
-        expect(routesMentionedInText('Edited /src/pages/checkout.tsx, called /api/users, saved to /workspace/repos/users/x'))
-            .to.deep.equal([]);
-        expect(routesMentionedInText('see /a/b/c/d')).to.deep.equal([]);
-    });
-});
-
 describe('deriveVisualFlowSteps', () => {
     it('always starts at the root and dedupes', () => {
         expect(deriveVisualFlowSteps({ messages: [] })).to.deep.equal(['/']);
         expect(deriveVisualFlowSteps({
             messages: [
                 { role: 'user', content: 'Fix the home page /' },
-                { role: 'agent', content: 'Done — check / again.' },
+                { role: 'agent', content: 'Done — check / again.\n[QAAP capture: /]' },
             ],
         })).to.deep.equal(['/']);
     });
 
-    it('walks routes from edited route files before routes mentioned in prose', () => {
+    it('walks the routes the agent declared in its capture directive first', () => {
         const steps = deriveVisualFlowSteps({
             messages: [
-                { role: 'user', content: 'Restyle /pricing and the checkout flow' },
+                { role: 'user', content: 'Restyle the pricing page' },
+                {
+                    role: 'agent',
+                    content: 'Updated pricing.\n\n[QAAP capture: /pricing /checkout]',
+                    segments: [
+                        { type: 'tool', name: 'Edit', args: '{"file_path":"/repo/src/pages/about.tsx"}' },
+                    ],
+                },
+            ],
+        });
+        expect(steps).to.deep.equal(['/', '/pricing', '/checkout']);
+    });
+
+    it('falls back to routes from edited route files without a directive', () => {
+        const steps = deriveVisualFlowSteps({
+            messages: [
+                { role: 'user', content: 'Restyle the checkout flow' },
                 {
                     role: 'agent',
                     content: 'Updated the checkout page.',
@@ -67,17 +70,6 @@ describe('deriveVisualFlowSteps', () => {
                 },
             ],
         });
-        expect(steps).to.deep.equal(['/', '/checkout', '/pricing']);
-    });
-
-    it('caps the walk at three steps', () => {
-        const steps = deriveVisualFlowSteps({
-            messages: [
-                { role: 'user', content: 'Polish /a and /b and /c please' },
-                { role: 'agent', content: 'Done.' },
-            ],
-        });
-        expect(steps).to.have.length(3);
-        expect(steps[0]).to.equal('/');
+        expect(steps).to.deep.equal(['/', '/checkout']);
     });
 });

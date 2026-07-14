@@ -8,6 +8,7 @@ import {
     buildQaapVisualFlowMarkdown,
     buildQaapVisualVerificationMarkdown,
     conversationLikelyNeedsVisualVerification,
+    parseQaapCaptureDirective,
     QAAP_VISUAL_VERIFICATION_MARKER,
 } from './qaap-visual-verification';
 
@@ -37,19 +38,24 @@ describe('qaap-visual-verification', () => {
         expect(markdown).to.contain('- overflow');
     });
 
-    it('detects UI turns that actually edited something', () => {
-        // UI request + the reply edited a (non-visual) file.
+    it('captures when the agent invokes the [QAAP capture] directive', () => {
         expect(conversationLikelyNeedsVisualVerification({
             messages: [
-                { role: 'user', content: 'Rediseña la pantalla principal' },
-                {
-                    role: 'agent',
-                    content: 'hecho',
-                    segments: [{ type: 'tool', name: 'Write', args: '{"file_path":"src/theme.ts"}' }],
-                },
+                { role: 'user', content: 'levanta la app y muestra una captura de la primera pantalla' },
+                { role: 'agent', content: 'La app está lista en el 8080.\n\n[QAAP capture]' },
             ],
         })).to.equal(true);
-        // A visual-file edit is enough on its own.
+        // Directive inside a text segment counts too.
+        expect(conversationLikelyNeedsVisualVerification({
+            messages: [{
+                role: 'agent',
+                content: 'done',
+                segments: [{ type: 'text', content: 'Listo.\n[QAAP capture: / /pricing]' }],
+            }],
+        })).to.equal(true);
+    });
+
+    it('captures mechanically when the turn edited a renderable file', () => {
         expect(conversationLikelyNeedsVisualVerification({
             messages: [{
                 role: 'agent',
@@ -57,41 +63,35 @@ describe('qaap-visual-verification', () => {
                 segments: [{ type: 'tool', name: 'Edit', args: '{"file_path":"src/App.tsx"}' }],
             }],
         })).to.equal(true);
-        expect(conversationLikelyNeedsVisualVerification({
-            messages: [{ role: 'user', content: 'Corrige el cálculo del backend' }],
-        })).to.equal(false);
     });
 
-    it('stays quiet when the reply only asked questions without editing anything', () => {
+    it('stays quiet without a directive or renderable edits — no natural-language guessing', () => {
+        // Ask-only reply, nothing edited.
         expect(conversationLikelyNeedsVisualVerification({
             messages: [
                 { role: 'user', content: 'creme un cambio en la ui' },
                 { role: 'agent', content: '¿Dónde está el proyecto? ¿Qué debe mostrar?' },
             ],
         })).to.equal(false);
-    });
-
-    it('always captures when the user explicitly asks for visual evidence, even with no edits', () => {
-        for (const ask of [
-            'dame una evidencia visual de esta aplicacion',
-            'hazme una captura de pantalla de la app',
-            'levanta la app y muestra una captura de la primera pantalla',
-            'muéstrame cómo se ve la página',
-            'show me the app please',
-            'give me a screenshot of the dashboard',
-        ]) {
-            expect(conversationLikelyNeedsVisualVerification({
-                messages: [
-                    { role: 'user', content: ask },
-                    { role: 'agent', content: 'Aquí tienes una descripción de la aplicación…' },
-                ],
-            }), ask).to.equal(true);
-        }
+        // Non-visual edit and no directive: the agent decides, not a keyword list.
         expect(conversationLikelyNeedsVisualVerification({
             messages: [
-                { role: 'user', content: 'explícame la arquitectura visual del backend' },
-                { role: 'agent', content: 'La arquitectura es…' },
+                { role: 'user', content: 'dame una evidencia visual de esta aplicacion' },
+                {
+                    role: 'agent',
+                    content: 'Aquí tienes una descripción de la app…',
+                    segments: [{ type: 'tool', name: 'Write', args: '{"file_path":"notes.md"}' }],
+                },
             ],
         })).to.equal(false);
+    });
+
+    it('parses directive routes with validation and cap', () => {
+        expect(parseQaapCaptureDirective({ content: 'Listo.\n[QAAP capture]' }))
+            .to.deep.equal({ requested: true, routes: [] });
+        expect(parseQaapCaptureDirective({ content: '[qaap capture: / /Pricing /a/b bad-route /c /d]' }))
+            .to.deep.equal({ requested: true, routes: ['/', '/pricing', '/a/b'] });
+        expect(parseQaapCaptureDirective({ content: 'sin directiva' }))
+            .to.deep.equal({ requested: false, routes: [] });
     });
 });
