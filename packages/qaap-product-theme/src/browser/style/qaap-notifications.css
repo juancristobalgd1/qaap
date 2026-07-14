@@ -163,3 +163,89 @@
     }
   }
 }
+
+/*-----------------------------------------------------------------------------
+|| IDE classic / keyboard-open overrides (narrow/touch viewport)
+||
+|| The base mobile block above uses --theia-mobile-bottom-bar-height (nav bar,
+|| 64 px) for Work Hub. In the classic IDE that bar is absent, so toasts must
+|| sit just above the status bar. When the virtual keyboard is raised the
+|| entire bottom chrome is hidden and we anchor above the keyboard only.
+||
+|| body.theia-mobile-mod-desktop-ide — narrow/touch IDE-classic surface.
+|| body.theia-mobile-mod-keyboard-open — virtual keyboard raised (bottom
+||   chrome display:none; --theia-mobile-keyboard-inset set by
+||   MobileKeyboardHelper).
+||-----------------------------------------------------------------------------*/
+@media (max-width: 767px), (pointer: coarse) {
+  /*
+   * Cap toast-stack height and enable touch scroll so a long list stays
+   * accessible without leaving the viewport. column-reverse layout means the
+   * stack grows upward from the bottom anchor; overflow scrolls to older items.
+   */
+  .theia-notifications-container.theia-notification-toasts {
+    max-height: calc(
+      100dvh
+        - var(--theia-mobile-bottom-bar-height, 56px)
+        - var(--theia-statusBar-height, 34px)
+        - env(safe-area-inset-bottom, 0px)
+        - env(safe-area-inset-top, 0px)
+        - 24px
+    );
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
+  }
+
+  /* IDE classic: no navigation bar — anchor just above the status bar. */
+  body.theia-mobile-mod-desktop-ide
+    .theia-notifications-container.theia-notification-toasts,
+  body.theia-mobile-mod-desktop-ide
+    .theia-notifications-container.theia-notification-center {
+    bottom: calc(
+      var(--theia-statusBar-height, 34px)
+        + env(safe-area-inset-bottom, 0px)
+        + 6px
+        + var(--theia-mobile-keyboard-inset, 0px)
+    );
+  }
+
+  body.theia-mobile-mod-desktop-ide
+    .theia-notifications-container.theia-notification-toasts {
+    max-height: calc(
+      100dvh
+        - var(--theia-statusBar-height, 34px)
+        - env(safe-area-inset-bottom, 0px)
+        - env(safe-area-inset-top, 0px)
+        - 24px
+    );
+  }
+
+  /*
+   * Virtual keyboard raised: bottom chrome hidden; anchor above keyboard only.
+   * These rules follow the IDE-classic block so equal-specificity cascade wins
+   * when both body classes are present simultaneously.
+   */
+  body.theia-mobile-mod-keyboard-open
+    .theia-notifications-container.theia-notification-toasts,
+  body.theia-mobile-mod-keyboard-open
+    .theia-notifications-container.theia-notification-center {
+    bottom: calc(
+      env(safe-area-inset-bottom, 0px)
+        + 6px
+        + var(--theia-mobile-keyboard-inset, 0px)
+    );
+  }
+
+  body.theia-mobile-mod-keyboard-open
+    .theia-notifications-container.theia-notification-toasts {
+    max-height: calc(
+      100dvh
+        - env(safe-area-inset-top, 0px)
+        - env(safe-area-inset-bottom, 0px)
+        - var(--theia-mobile-keyboard-inset, 0px)
+        - 24px
+    );
+  }
+}
