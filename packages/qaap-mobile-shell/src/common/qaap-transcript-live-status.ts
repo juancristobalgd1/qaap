@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens } from './qaap-transcript-stream-status';
+import { QAAP_BRAND_LOGO_INDICATOR_CLASS, syncShimmerTextElement } from './qaap-agent-setup-phrases';
 
 /** Footer row shown while a turn streams; hidden once the diff summary mounts. */
 export const TRANSCRIPT_LIVE_STATUS_ATTR = 'data-transcript-live-status';
@@ -26,37 +27,53 @@ export function createTranscriptLiveStatusElement(): HTMLElement {
     root.setAttribute('aria-busy', 'true');
 
     const logo = document.createElement('span');
-    logo.className = 'qaap-transcript-live-status-logo';
+    logo.className = `${QAAP_BRAND_LOGO_INDICATOR_CLASS} qaap-transcript-live-status-logo`;
     logo.setAttribute('aria-hidden', 'true');
 
-    const text = document.createElement('span');
-    text.className = 'qaap-transcript-live-status-text';
+    const activity = document.createElement('span');
+    activity.className = 'qaap-agent-setup-text qaap-transcript-live-status-activity';
 
-    root.append(logo, text);
+    const meta = document.createElement('span');
+    meta.className = 'qaap-transcript-live-status-meta';
+
+    root.classList.add('theia-mod-real-status');
+    root.append(logo, activity, meta);
     return root;
 }
 
-export function formatTranscriptLiveStatusText(snapshot: TranscriptLiveStatusSnapshot): string {
+export function formatTranscriptLiveStatusMeta(snapshot: TranscriptLiveStatusSnapshot): string {
     const parts: string[] = [formatTranscriptStreamElapsed(snapshot.elapsedMs)];
     const tokens = formatTranscriptStreamTokens(snapshot.streamChars);
     if (tokens) {
         parts.push(tokens);
     }
-    const label = snapshot.activityTitle.replace(/…+$/u, '').trim();
-    parts.push(label ? `${label}…` : '…');
     return parts.join(' · ');
+}
+
+export function formatTranscriptLiveStatusActivity(snapshot: TranscriptLiveStatusSnapshot): string {
+    const label = snapshot.activityTitle.replace(/…+$/u, '').trim();
+    return label ? `${label}…` : '…';
+}
+
+export function formatTranscriptLiveStatusText(snapshot: TranscriptLiveStatusSnapshot): string {
+    const activity = formatTranscriptLiveStatusActivity(snapshot);
+    const meta = formatTranscriptLiveStatusMeta(snapshot);
+    return meta ? `${activity} · ${meta}` : activity;
 }
 
 export function syncTranscriptLiveStatusElement(
     element: HTMLElement,
     snapshot: TranscriptLiveStatusSnapshot,
 ): void {
-    const text = element.querySelector('.qaap-transcript-live-status-text');
-    if (text) {
-        const next = formatTranscriptLiveStatusText(snapshot);
-        if (text.textContent !== next) {
-            text.textContent = next;
-        }
+    const meta = element.querySelector('.qaap-transcript-live-status-meta');
+    const activity = element.querySelector<HTMLElement>('.qaap-transcript-live-status-activity');
+    const nextMeta = formatTranscriptLiveStatusMeta(snapshot);
+    const nextActivity = formatTranscriptLiveStatusActivity(snapshot);
+    if (meta && meta.textContent !== nextMeta) {
+        meta.textContent = nextMeta;
+    }
+    if (activity) {
+        syncShimmerTextElement(activity, nextActivity);
     }
     element.classList.toggle('theia-mod-stalled', !!snapshot.stalled || !!snapshot.timedOut);
 }

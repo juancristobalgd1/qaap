@@ -74,6 +74,7 @@ export interface MobileShellBottomBarHost {
     relayoutMainPreviewWidgets(): void;
     conversationsStart(): void;
     inboxStreamStart(): void;
+    syncOverlayEdgeSwipeZones(): void;
 }
 
 export interface MobileShellBottomBarControllerOptions {
@@ -1074,6 +1075,7 @@ export class MobileShellBottomBarController {
             this.host.settleMobileSidePanelsCollapsed();
             this.host.relayoutMainPreviewWidgets();
             this.host.scheduleSnapAndUiRefresh();
+            this.host.syncOverlayEdgeSwipeZones();
             return;
         }
         if (def.id === 'pr') {

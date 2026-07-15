@@ -107,6 +107,7 @@ describe('mobile-shell-bottom-bar-controller', () => {
             relayoutMainPreviewWidgets: () => undefined,
             conversationsStart: () => undefined,
             inboxStreamStart: () => undefined,
+            syncOverlayEdgeSwipeZones: () => undefined,
             ...options.host,
         };
 

@@ -16,6 +16,7 @@ import {
     type TranscriptToolUiQuestionFlowPayload,
 } from '../common/qaap-transcript-tool-ui-payloads';
 import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
+import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 
 export const TRANSCRIPT_CODE_BLOCK_CARD_CLASS = 'theia-mobile-agent-code-block-card';
 export const TRANSCRIPT_LINK_PREVIEW_CARD_CLASS = 'theia-mobile-agent-link-preview-card';
@@ -440,4 +441,5 @@ export function enhanceTranscriptMarkdownRichContent(host: HTMLElement): void {
             node.replaceWith(buildTranscriptLinkPreviewCard(payload));
         }
     });
+    enhanceTranscriptCaptureDirectives(host);
 }

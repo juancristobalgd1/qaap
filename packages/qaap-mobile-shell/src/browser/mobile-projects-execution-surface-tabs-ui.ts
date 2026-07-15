@@ -171,9 +171,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         const title = document.createElement('h2');
         title.textContent = titleText;
         const back = this.host.appendTranscriptHeaderActions(header, title);
-        const subtitle = this.host.transcriptHeaderUi.createExecutionHeaderSubtitle(project, summary);
-        header.querySelector('.theia-mobile-agent-log-title-wrap')?.append(subtitle);
-        this.host.transcriptHeaderSubtitle = subtitle;
+        this.host.transcriptHeaderSubtitle = undefined;
         this.setExecutionSurfaceTab(project, 'messages');
         this.host.transcriptSurfacesUi.updateTranscriptHeader(project, summary);
         const activeTab = this.executionSurfaceTabForProject(project);

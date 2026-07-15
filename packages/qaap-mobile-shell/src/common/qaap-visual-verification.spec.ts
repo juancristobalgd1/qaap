@@ -9,8 +9,10 @@ import {
     buildQaapVisualVerificationMarkdown,
     buildQaapVisualVideoMarkdown,
     conversationLikelyNeedsVisualVerification,
+    findQaapCaptureDirectivesInText,
     parseQaapCaptureDirective,
     QAAP_VISUAL_VERIFICATION_MARKER,
+    textContainsQaapCaptureDirective,
 } from './qaap-visual-verification';
 
 describe('qaap-visual-verification', () => {
@@ -101,6 +103,15 @@ describe('qaap-visual-verification', () => {
             .to.deep.equal({ requested: true, mode: 'video', routes: [] });
         expect(parseQaapCaptureDirective({ content: '[QAAP record: / /checkout]' }))
             .to.deep.equal({ requested: true, mode: 'video', routes: ['/', '/checkout'] });
+    });
+
+    it('finds every capture directive in a text block', () => {
+        expect(findQaapCaptureDirectivesInText('Listo.\n[QAAP capture: /]\n[QAAP record: /pricing]'))
+            .to.deep.equal([
+                { requested: true, mode: 'image', routes: ['/'], match: '[QAAP capture: /]' },
+                { requested: true, mode: 'video', routes: ['/pricing'], match: '[QAAP record: /pricing]' },
+            ]);
+        expect(textContainsQaapCaptureDirective('sin directiva')).to.equal(false);
     });
 
     it('builds a video evidence block with per-route findings', () => {

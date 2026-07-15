@@ -131,11 +131,9 @@ export class MobileProjectsSubtitleUi {
         if (this.host.homeMode && this.host.hubView === 'tasks') {
             this.host.subtitleEl.className = 'theia-mobile-projects-subtitle';
             if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject) {
-                this.host.transcriptHeaderUi.renderActiveChatHeaderSubtitle(
-                    this.host.subtitleEl,
-                    this.host.transcriptOpenProject,
-                    this.host.transcriptOpenSummary,
-                );
+                this.host.subtitleEl.hidden = true;
+                this.host.subtitleEl.replaceChildren();
+                this.host.subtitleEl.textContent = '';
                 return;
             }
             if (this.host.shouldUseAgentsHubLanding()) {

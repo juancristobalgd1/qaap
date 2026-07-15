@@ -51,6 +51,7 @@ describe('mobile-shell-overlay-host', () => {
             calls,
             isMobileActive: () => true,
             isWorkspaceOpened: () => true,
+            shouldMountEdgeSwipeZones: () => true,
             toggleProjectsPanel: async () => { calls.push('toggleProjectsPanel'); },
             isAnyMobileSideSheetVisible: () => false,
             requestSheetRelayout: () => { calls.push('requestSheetRelayout'); },
@@ -82,6 +83,32 @@ describe('mobile-shell-overlay-host', () => {
         controller.ensureMounted();
         expect(document.querySelector('.theia-mobile-edgeSwipeZone-left')).to.not.equal(null);
         expect(document.querySelector('.theia-mobile-edgeSwipeZone-right')).to.not.equal(null);
+    });
+
+    it('ensureMounted skips edge swipe zones on Work Hub surfaces', () => {
+        const { controller } = createController({
+            host: {
+                shouldMountEdgeSwipeZones: () => false,
+            },
+        });
+        controller.ensureMounted();
+        expect(document.querySelector('.theia-mobile-edgeSwipeZone-left')).to.equal(null);
+        expect(document.querySelector('.theia-mobile-edgeSwipeZone-right')).to.equal(null);
+    });
+
+    it('syncEdgeSwipeZones removes zones when leaving classic IDE', () => {
+        let mountZones = true;
+        const { controller } = createController({
+            host: {
+                shouldMountEdgeSwipeZones: () => mountZones,
+            },
+        });
+        controller.ensureMounted();
+        expect(document.querySelector('.theia-mobile-edgeSwipeZone-left')).to.not.equal(null);
+        mountZones = false;
+        controller.syncEdgeSwipeZones();
+        expect(document.querySelector('.theia-mobile-edgeSwipeZone-left')).to.equal(null);
+        expect(document.querySelector('.theia-mobile-edgeSwipeZone-right')).to.equal(null);
     });
 
     it('teardown removes edge swipe zones', () => {

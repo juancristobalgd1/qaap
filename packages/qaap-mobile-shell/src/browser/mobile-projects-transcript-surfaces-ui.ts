@@ -493,8 +493,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         titleEl.textContent = summary
             ? this.host.transcriptHeaderUi.resolveTranscriptHeaderTitle(project, summary)
             : project.name;
-        subtitle.hidden = false;
-        this.host.transcriptHeaderUi.renderActiveChatHeaderSubtitle(subtitle, project, summary);
+        subtitle.hidden = true;
+        subtitle.className = 'theia-mobile-projects-subtitle';
+        subtitle.replaceChildren();
     }
 
     async mountTranscriptReviewWidget(

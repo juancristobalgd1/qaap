@@ -32,6 +32,7 @@ export interface MobileShellHubNavigationHost {
     dismissSheetsAsync(): Promise<void>;
     collapseMobileSidePanels(): Promise<void>;
     showMobileProjectsHome(view: MobileProjectsHubView): Promise<void>;
+    syncOverlayEdgeSwipeZones(): void;
 }
 
 export interface MobileShellHubNavigationOptions {
@@ -156,5 +157,6 @@ export class MobileShellHubNavigationController {
         this.host.refreshBottomBar();
         this.host.refreshWorkbenchTopBar();
         this.host.ensureDesktopWorkHubSessionsSidebarOpen();
+        this.host.syncOverlayEdgeSwipeZones();
     }
 }

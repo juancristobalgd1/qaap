@@ -25,6 +25,8 @@ import {
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
+import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
+import { textContainsQaapCaptureDirective } from '../common/qaap-visual-verification';
 
 /** Monospace plain-text preview while worker markdown is in flight (short streams stay here). */
 export const TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS = 'theia-mod-streaming-plain-text';
@@ -305,7 +307,20 @@ export class MobileProjectsTranscriptMessagesContentUi {
         if (!transcriptContentNeedsStreamingMarkdown(clean)) {
             host.classList.remove('theia-mod-markdown', TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS);
             host.classList.add(TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS);
-            host.textContent = clean;
+            if (textContainsQaapCaptureDirective(clean)) {
+                let body = host.querySelector<HTMLElement>('.theia-mobile-agent-transcript-stream-plain-body');
+                if (!body) {
+                    host.replaceChildren();
+                    body = document.createElement('div');
+                    body.className = 'theia-mobile-agent-transcript-stream-plain-body';
+                    host.append(body);
+                }
+                body.textContent = clean;
+                enhanceTranscriptCaptureDirectives(host);
+            } else {
+                host.replaceChildren();
+                host.textContent = clean;
+            }
             transcriptStreamSourceCache.set(host, clean);
             delete host.dataset[STREAM_STABLE_LENGTH_DATA];
             delete host.dataset[STREAM_TOTAL_LENGTH_DATA];

@@ -34,6 +34,7 @@ export interface MobileShellIdeFallbackHost {
     scheduleSnapAndUiRefresh(): void;
     ensureDesktopSidePanelSizes(): Promise<void>;
     requestFullShellRelayout(): void;
+    syncOverlayEdgeSwipeZones(): void;
 }
 
 export interface MobileShellIdeFallbackOptions {
@@ -88,6 +89,7 @@ export class MobileShellIdeFallbackController {
         } else {
             this.host.leaveMobileLayout();
         }
+        this.host.syncOverlayEdgeSwipeZones();
         this.host.onMediaChange();
         window.requestAnimationFrame(() => {
             if (!this.host.shouldActivateMobileLayout()) {
@@ -113,5 +115,6 @@ export class MobileShellIdeFallbackController {
         }
         this.host.refreshBottomBar();
         this.host.refreshWorkbenchTopBar();
+        this.host.syncOverlayEdgeSwipeZones();
     }
 }

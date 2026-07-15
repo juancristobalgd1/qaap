@@ -8,9 +8,9 @@
 
    Provides:
    - SETUP_PHRASES: whimsical stand-in phrases shown while the agent prepares.
-   - SPINNERS: unicode spinner frame sets (braille, dots, arrows, etc.).
+   - createBrandLogoIndicator(): animated Qaap brand logo (CSS background).
    - createAgentSetupElement(): creates a self-updating DOM element with
-     spinner + per-letter shimmer text that rotates phrases and surfaces
+     brand logo + per-letter shimmer text that rotates phrases and surfaces
      real informative status messages with a dwell timer.
    - syncAgentSetupElement(): updates the element with a new real status or
      streaming state. */
@@ -47,13 +47,7 @@ const INFORMATIVE_PATTERNS = [
     /starting.*server/i,
 ];
 
-/* Unicode spinner frame sets — snake braille spinner from the
-   `unicode-animations` / `cli-loaders` packages, hardcoded to avoid
-   a runtime dependency. The snake animation traces a serpentine path
-   through a 4×4 braille grid with a 4-dot trailing tail. */
-export const SPINNERS: ReadonlyArray<{ readonly frames: readonly string[]; readonly interval: number }> = [
-    { frames: ['⣁⡀', '⣉⠀', '⡉⠁', '⠉⠉', '⠈⠙', '⠀⠛', '⠐⠚', '⠒⠒', '⠖⠂', '⠶⠀', '⠦⠄', '⠤⠤', '⠠⢤', '⠀⣤', '⢀⣠', '⣀⣀'], interval: 80 },
-];
+export const QAAP_BRAND_LOGO_INDICATOR_CLASS = 'qaap-brand-logo-indicator';
 
 const PHRASE_MIN_MS = 7000;
 const PHRASE_MAX_MS = 8500;
@@ -89,51 +83,74 @@ export function resolveInformativeSetupMessage(rawStatus: string | null | undefi
     return null;
 }
 
-interface AgentSetupState {
-    readonly spinnerIndex: number;
-    phraseIndex: number;
-    frame: number;
-    shownStatus: string | null;
-    statusShownAt: number;
+interface ShimmerTextRenderState {
     epoch: number;
     delays: number[];
     prevCount: number;
+    lastText?: string;
+}
+
+interface AgentSetupState extends ShimmerTextRenderState {
+    phraseIndex: number;
+    shownStatus: string | null;
+    statusShownAt: number;
     phraseTimer: ReturnType<typeof setTimeout> | undefined;
-    spinnerTimer: ReturnType<typeof setInterval> | undefined;
     statusTimer: ReturnType<typeof setTimeout> | undefined;
 }
+
+const shimmerTextStates = new WeakMap<HTMLElement, ShimmerTextRenderState>();
 
 const setupStates = new WeakMap<HTMLElement, AgentSetupState>();
 
 function initState(): AgentSetupState {
     return {
-        spinnerIndex: Math.floor(Math.random() * SPINNERS.length),
         phraseIndex: Math.floor(Math.random() * SETUP_PHRASES.length),
-        frame: 0,
         shownStatus: null,
         statusShownAt: 0,
         epoch: 0,
         delays: [],
         prevCount: 0,
         phraseTimer: undefined,
-        spinnerTimer: undefined,
         statusTimer: undefined,
     };
 }
 
-function renderSpinner(element: HTMLElement, state: AgentSetupState): void {
-    const spinner = element.querySelector('.qaap-agent-setup-spinner');
-    if (!spinner) {
+/**
+ * Renders per-letter shimmer text into a container, reusing the same animation
+ * as the first-prompt setup phase. Safe to call repeatedly; skips work when
+ * the text is unchanged.
+ */
+export function syncShimmerTextElement(container: HTMLElement, text: string): void {
+    let state = shimmerTextStates.get(container);
+    if (!state) {
+        state = { epoch: 0, delays: [], prevCount: 0 };
+        shimmerTextStates.set(container, state);
+    }
+    const textChanged = state.lastText !== text;
+    if (!textChanged && container.childElementCount > 0) {
         return;
     }
-    const spinnerDef = SPINNERS[state.spinnerIndex]!;
-    spinner.textContent = spinnerDef.frames[state.frame % spinnerDef.frames.length]!;
+    if (textChanged) {
+        state.prevCount = 0;
+        state.delays = [];
+        state.epoch = 0;
+        state.lastText = text;
+    }
+    renderShimmerText(container, text, state, textChanged || container.childElementCount === 0);
+}
+
+/** Animated Qaap app logo — same asset as splash / empty workbench via CSS var. */
+export function createBrandLogoIndicator(): HTMLElement {
+    const logo = document.createElement('span');
+    logo.className = QAAP_BRAND_LOGO_INDICATOR_CLASS;
+    logo.setAttribute('aria-hidden', 'true');
+    return logo;
 }
 
 function renderShimmerText(
     textContainer: HTMLElement,
     text: string,
-    state: AgentSetupState,
+    state: ShimmerTextRenderState,
     mounted: boolean,
 ): void {
     const letters = Array.from(text);
@@ -198,22 +215,6 @@ function startPhraseRotation(
     scheduleNext();
 }
 
-function startSpinner(element: HTMLElement, state: AgentSetupState): void {
-    if (state.spinnerTimer !== undefined) {
-        clearInterval(state.spinnerTimer);
-    }
-    const spinnerDef = SPINNERS[state.spinnerIndex]!;
-    state.spinnerTimer = setInterval(() => {
-        if (!element.isConnected) {
-            clearInterval(state.spinnerTimer!);
-            state.spinnerTimer = undefined;
-            return;
-        }
-        state.frame += 1;
-        renderSpinner(element, state);
-    }, spinnerDef.interval);
-}
-
 /**
  * Creates a self-contained agent setup animation element.
  * The element updates itself via internal timers — call
@@ -224,14 +225,13 @@ export function createAgentSetupElement(initialStatus?: string | null): HTMLElem
     const element = document.createElement('div');
     element.className = 'qaap-agent-setup';
 
-    const spinner = document.createElement('span');
-    spinner.className = 'qaap-agent-setup-spinner';
-    spinner.setAttribute('aria-hidden', 'true');
+    const logo = createBrandLogoIndicator();
+    logo.classList.add('qaap-agent-setup-logo');
 
     const textContainer = document.createElement('span');
     textContainer.className = 'qaap-agent-setup-text';
 
-    element.append(spinner, textContainer);
+    element.append(logo, textContainer);
 
     const state = initState();
     setupStates.set(element, state);
@@ -243,7 +243,6 @@ export function createAgentSetupElement(initialStatus?: string | null): HTMLElem
         element.classList.add('theia-mod-real-status');
     }
 
-    renderSpinner(element, state);
     renderShimmerText(textContainer, realStatus ?? SETUP_PHRASES[state.phraseIndex]!, state, false);
 
     requestAnimationFrame(() => {
@@ -251,7 +250,6 @@ export function createAgentSetupElement(initialStatus?: string | null): HTMLElem
             return;
         }
         renderShimmerText(textContainer, realStatus ?? SETUP_PHRASES[state.phraseIndex]!, state, true);
-        startSpinner(element, state);
         if (realStatus === null) {
             startPhraseRotation(element, textContainer, state);
         }
@@ -334,54 +332,8 @@ export function destroyAgentSetupElement(element: HTMLElement): void {
     if (state.phraseTimer !== undefined) {
         clearTimeout(state.phraseTimer);
     }
-    if (state.spinnerTimer !== undefined) {
-        clearInterval(state.spinnerTimer);
-    }
     if (state.statusTimer !== undefined) {
         clearTimeout(state.statusTimer);
     }
     setupStates.delete(element);
-}
-
-const spinnerStates = new WeakMap<HTMLElement, { readonly spinnerIndex: number; frame: number; timer: ReturnType<typeof setInterval> | undefined }>();
-
-/**
- * Creates a standalone unicode spinner element that cycles frames on its own.
- * Use {@link destroyUnicodeSpinner} to clean up the timer when the element is removed.
- */
-export function createUnicodeSpinner(): HTMLElement {
-    const spinnerIndex = Math.floor(Math.random() * SPINNERS.length);
-    const spinnerDef = SPINNERS[spinnerIndex]!;
-    const el = document.createElement('span');
-    el.className = 'qaap-unicode-spinner';
-    el.setAttribute('aria-hidden', 'true');
-    el.textContent = spinnerDef.frames[0]!;
-    const state = {
-        spinnerIndex,
-        frame: 0,
-        timer: undefined as ReturnType<typeof setInterval> | undefined,
-    };
-    spinnerStates.set(el, state);
-    state.timer = setInterval(() => {
-        if (!el.isConnected) {
-            clearInterval(state.timer!);
-            state.timer = undefined;
-            return;
-        }
-        state.frame += 1;
-        el.textContent = spinnerDef.frames[state.frame % spinnerDef.frames.length]!;
-    }, spinnerDef.interval);
-    return el;
-}
-
-/** Cleans up the timer for a standalone unicode spinner. */
-export function destroyUnicodeSpinner(el: HTMLElement): void {
-    const state = spinnerStates.get(el);
-    if (!state) {
-        return;
-    }
-    if (state.timer !== undefined) {
-        clearInterval(state.timer);
-    }
-    spinnerStates.delete(el);
 }

@@ -70,6 +70,7 @@ describe('mobile-shell-hub-navigation-controller', () => {
             dismissSheetsAsync: async () => { calls.push('dismissSheetsAsync'); },
             collapseMobileSidePanels: async () => { calls.push('collapseMobileSidePanels'); },
             showMobileProjectsHome: async () => { calls.push('showMobileProjectsHome'); },
+            syncOverlayEdgeSwipeZones: () => { calls.push('syncOverlayEdgeSwipeZones'); },
             ...overrides?.host,
         } as MobileShellHubNavigationHost & { calls: string[] };
         const shell = {

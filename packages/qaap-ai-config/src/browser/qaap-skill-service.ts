@@ -8,7 +8,9 @@ import { injectable, inject, optional, postConstruct } from '@theia/core/shared/
 import URI from '@theia/core/lib/common/uri';
 import { DefaultSkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
-import { Skill } from '@theia/ai-core/lib/common/skill';
+import { Skill, SKILL_FILE_NAME } from '@theia/ai-core/lib/common/skill';
+import { PREFERENCE_NAME_SKILL_DIRECTORIES } from '@theia/ai-core/lib/common/ai-core-preferences';
+import { FileChangesEvent, FileChangeType } from '@theia/filesystem/lib/common/files';
 import { readQaapAuthUser } from '@theia/qaap-adapters/src/browser/qaap-auth-session';
 import {
     QaapProjectSkillRoots,
@@ -28,12 +30,69 @@ export class QaapSkillService extends DefaultSkillService {
     /**
      * Do not block {@link SkillService.ready} on the first full directory scan — hosted scans can
      * take 20–30s while SkillPromptCoordinator (and the whole onStart chain) waits on `ready`.
-     * Inversify allows only one @postConstruct per class.
+     * Override upstream {@link DefaultSkillService.init} so this class keeps a single
+     * {@link postConstruct} hook (Inversify rejects a second decorator on subclasses).
      */
     @postConstruct()
-    protected initQaapSkillService(): void {
+    protected override init(): void {
+        this.fileService.onDidFilesChange(async (event: FileChangesEvent) => {
+            for (const change of event.changes) {
+                if (change.type === FileChangeType.ADDED) {
+                    const changeUri = change.resource.toString();
+                    for (const [, skillsPath] of this.parentWatchers) {
+                        const expectedSkillsUri = URI.fromFilePath(skillsPath).toString();
+                        if (changeUri === expectedSkillsUri) {
+                            this.scheduleUpdate();
+                            return;
+                        }
+                    }
+                }
+                if (change.type === FileChangeType.DELETED) {
+                    const changeUri = change.resource.toString();
+                    if (this.watchedDirectories.has(changeUri)) {
+                        this.scheduleUpdate();
+                        return;
+                    }
+                }
+            }
+
+            const isRelevantChange = event.changes.some(change => {
+                const changeUri = change.resource.toString();
+                const isInWatchedDir = Array.from(this.watchedDirectories).some(dirUri =>
+                    changeUri.startsWith(dirUri)
+                );
+                if (!isInWatchedDir) {
+                    return false;
+                }
+                const isSkillFile = change.resource.path.base === SKILL_FILE_NAME;
+                const isDirectoryChange = change.type === FileChangeType.ADDED || change.type === FileChangeType.DELETED;
+                return isSkillFile || isDirectoryChange;
+            });
+            if (isRelevantChange) {
+                this.scheduleUpdate();
+            }
+        });
+
         void this.workspaceService.ready.then(() => {
             this._ready.resolve();
+            this.lastSkillDirectoriesValue = JSON.stringify(this.preferences[PREFERENCE_NAME_SKILL_DIRECTORIES]);
+
+            this.preferences.onPreferenceChanged(event => {
+                if (event.preferenceName === PREFERENCE_NAME_SKILL_DIRECTORIES) {
+                    const currentValue = JSON.stringify(this.preferences[PREFERENCE_NAME_SKILL_DIRECTORIES]);
+                    if (currentValue === this.lastSkillDirectoriesValue) {
+                        return;
+                    }
+                    this.lastSkillDirectoriesValue = currentValue;
+                    this.scheduleUpdate();
+                }
+            });
+
+            this.workspaceService.onWorkspaceChanged(() => {
+                this.scheduleUpdate();
+            });
+
+            void this.update();
         });
         this.projectSkillRoots?.onDidChange(() => this.scheduleUpdate());
     }

@@ -5,267 +5,26 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
-import { resolveTranscriptStreamHealth } from '../common/qaap-transcript-stream-health';
-import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     type MobileProjectEntry,
-    MOBILE_PROJECT_STATUS_COLORS,
 } from './mobile-projects-types';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 
-/** Panel surface for active-chat header subtitle chips and live chrome refresh. */
+/** Panel surface for active-chat header chrome refresh. */
 export interface MobileProjectsTranscriptHeaderHost {
-    transcriptOpenSummaryId: string | undefined;
-    transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
-    transcriptLastConv: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
-    transcriptLastStreamProgressAt: number | undefined;
-    transcriptLastTransportEventAt: number | undefined;
-    transcriptOpenProject: MobileProjectEntry | undefined;
-    agentsHubInlineActive: boolean;
-    visible: boolean;
     transcriptComposerSendRefresh: (() => void) | undefined;
 
 }
 
-/** Status / activity chips in the transcript execution header. */
+/** Transcript execution header helpers (title + composer sync). */
 export class MobileProjectsTranscriptHeaderUi {
-
-    protected lastExecutionChromeKey = '';
 
     constructor(
         protected readonly host: MobileProjectsTranscriptHeaderHost,
-        protected readonly workHub: WorkHubTranscriptBridge,
     ) { }
 
-    createExecutionHeaderSubtitle(
-        project: MobileProjectEntry,
-        summary?: QaapAgentConversationSummaryDTO,
-    ): HTMLDivElement {
-        const subtitle = document.createElement('div');
-        subtitle.className = 'theia-mobile-projects-subtitle';
-        this.renderActiveChatHeaderSubtitle(subtitle, project, summary);
-        return subtitle;
-    }
-
-    renderActiveChatHeaderSubtitle(
-        host: HTMLElement,
-        project: MobileProjectEntry,
-        summary?: QaapAgentConversationSummaryDTO,
-    ): void {
-        if (this.patchActiveChatHeaderSubtitle(host, project, summary)) {
-            return;
-        }
-        host.className = 'theia-mobile-projects-subtitle theia-mod-active-chat-context';
-        host.hidden = false;
-        host.replaceChildren();
-        host.append(
-            this.createActiveChatContextChip(
-                this.activeChatStatusIcon(summary),
-                this.activeChatStatusLabel(project, summary),
-                nls.localize('qaap/mobileProjects/statusChipAria', 'Status'),
-                this.activeChatStatusClass(project, summary),
-            ),
-            this.createActiveChatContextChip(
-                'codicon-clock',
-                this.activeChatActivityLabel(project, summary),
-                nls.localize('qaap/mobileProjects/activityChipAria', 'Last activity'),
-            ),
-        );
-    }
-
-    /** Patch status/activity chips in place — avoids replaceChildren flicker during SSE. */
-    patchActiveChatHeaderSubtitle(
-        host: HTMLElement,
-        project: MobileProjectEntry,
-        summary?: QaapAgentConversationSummaryDTO,
-    ): boolean {
-        const chips = host.querySelectorAll<HTMLElement>('.theia-mobile-projects-active-chat-chip');
-        if (chips.length < 2) {
-            return false;
-        }
-        const statusChip = chips[0];
-        const activityChip = chips[1];
-        const statusIcon = statusChip.querySelector<HTMLElement>('.codicon');
-        const statusText = statusChip.querySelector<HTMLElement>('.theia-mobile-projects-active-chat-chip-text');
-        const activityText = activityChip.querySelector<HTMLElement>('.theia-mobile-projects-active-chat-chip-text');
-        if (!statusIcon || !statusText || !activityText) {
-            return false;
-        }
-        const statusLabel = this.activeChatStatusLabel(project, summary);
-        const activityLabel = this.activeChatActivityLabel(project, summary);
-        const statusModifier = this.activeChatStatusClass(project, summary);
-        statusChip.className = statusModifier
-            ? `theia-mobile-projects-active-chat-chip ${statusModifier}`
-            : 'theia-mobile-projects-active-chat-chip';
-        statusChip.title = `${nls.localize('qaap/mobileProjects/statusChipAria', 'Status')}: ${statusLabel}`;
-        statusIcon.className = `codicon ${this.activeChatStatusIcon(summary)}`;
-        statusText.textContent = statusLabel;
-        activityChip.title = `${nls.localize('qaap/mobileProjects/activityChipAria', 'Last activity')}: ${activityLabel}`;
-        activityText.textContent = activityLabel;
-        host.className = 'theia-mobile-projects-subtitle theia-mod-active-chat-context';
-        host.hidden = false;
-        return true;
-    }
-
-    createActiveChatContextChip(
-        iconClass: string,
-        label: string,
-        ariaLabel: string,
-        modifier?: string,
-    ): HTMLElement {
-        const chip = document.createElement('span');
-        chip.className = `theia-mobile-projects-active-chat-chip${modifier ? ` ${modifier}` : ''}`;
-        chip.title = `${ariaLabel}: ${label}`;
-        const icon = document.createElement('span');
-        icon.className = `codicon ${iconClass}`;
-        icon.setAttribute('aria-hidden', 'true');
-        const text = document.createElement('span');
-        text.className = 'theia-mobile-projects-active-chat-chip-text';
-        text.textContent = label;
-        chip.append(icon, text);
-        return chip;
-    }
-
-    activeChatStatusLabel(
-        project: MobileProjectEntry,
-        summary?: QaapAgentConversationSummaryDTO,
-    ): string {
-        const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
-        if (summary?.status === 'failed' || effectiveStatus === 'failed') {
-            return nls.localize('qaap/mobileProjects/chatStatusFailed', 'Failed');
-        }
-        if (effectiveStatus === 'streaming') {
-            if (this.resolveTranscriptStreamTimedOut(summary)) {
-                return nls.localize('qaap/mobileProjects/chatStatusTimedOut', 'Sin respuesta');
-            }
-            return summary?.activityLabel?.trim()
-                || nls.localize('qaap/mobileProjects/chatStatusStreaming', 'Working');
-        }
-        if (effectiveStatus === 'settled') {
-            return nls.localize('qaap/mobileProjects/chatStatusFinalizing', 'Finalizing');
-        }
-        if (summary?.priority) {
-            return nls.localize('qaap/mobileProjects/chatStatusNeedsYou', 'Needs you');
-        }
-        if (summary && this.host.transcriptOpenSummaryId === summary.id && effectiveStatus === 'idle') {
-            return nls.localize('qaap/mobileProjects/chatStatusReady', 'Ready');
-        }
-        const status = MOBILE_PROJECT_STATUS_COLORS[project.status];
-        return nls.localize(status.labelKey, status.defaultLabel);
-    }
-
-    resolveActiveChatEffectiveStatus(
-        summary?: QaapAgentConversationSummaryDTO,
-    ): QaapAgentConversationSummaryDTO['status'] | undefined {
-        const summaryId = summary?.id ?? this.host.transcriptOpenSummaryId;
-        const conv = this.host.transcriptLastConv;
-        if (conv && summaryId && conv.id === summaryId) {
-            return resolveTranscriptEffectiveStatus(conv);
-        }
-        return summary?.status;
-    }
-
-    protected resolveTranscriptStreamTimedOut(summary?: QaapAgentConversationSummaryDTO): boolean {
-        const summaryId = summary?.id ?? this.host.transcriptOpenSummaryId;
-        const conv = this.host.transcriptLastConv;
-        if (!conv || !summaryId || conv.id !== summaryId || resolveTranscriptEffectiveStatus(conv) !== 'streaming') {
-            return false;
-        }
-        return resolveTranscriptStreamHealth({
-            streaming: true,
-            lastProgressAtMs: this.host.transcriptLastStreamProgressAt,
-            lastTransportEventAtMs: this.host.transcriptLastTransportEventAt,
-            segments: resolveTranscriptStreamingAgentSegments(conv),
-        }).timedOut;
-    }
-
-    /** Keep header status chips and composer send/stop controls in sync during live SSE. */
+    /** Keep composer send/stop controls in sync during live SSE. */
     refreshTranscriptExecutionChrome(): void {
-        const project = this.host.transcriptOpenProject;
-        const summary = this.host.transcriptOpenSummary;
-        if (this.host.agentsHubInlineActive && project && this.host.visible && summary) {
-            const status = this.resolveActiveChatEffectiveStatus(summary) ?? summary.status;
-            const streamTimedOut = this.resolveTranscriptStreamTimedOut(summary);
-            const chromeKey = [
-                project.status,
-                summary.id,
-                status,
-                streamTimedOut ? '1' : '0',
-                summary.priority ? '1' : '0',
-                summary.status ?? '',
-                summary.activityLabel?.trim() ?? '',
-            ].join('|');
-            if (chromeKey !== this.lastExecutionChromeKey) {
-                this.lastExecutionChromeKey = chromeKey;
-                this.workHub.refreshHubSubtitle();
-            }
-        }
         this.host.transcriptComposerSendRefresh?.();
-    }
-
-    activeChatStatusIcon(summary?: QaapAgentConversationSummaryDTO): string {
-        const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
-        if (summary?.status === 'failed' || effectiveStatus === 'failed') {
-            return 'codicon-error';
-        }
-        if (effectiveStatus === 'streaming') {
-            if (this.resolveTranscriptStreamTimedOut(summary)) {
-                return 'codicon-warning';
-            }
-            return 'codicon-loading';
-        }
-        if (summary?.priority) {
-            return 'codicon-warning';
-        }
-        return 'codicon-circle-filled';
-    }
-
-    activeChatStatusClass(
-        project: MobileProjectEntry,
-        summary?: QaapAgentConversationSummaryDTO,
-    ): string {
-        const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
-        if (summary?.status === 'failed' || effectiveStatus === 'failed') {
-            return 'theia-mod-failed';
-        }
-        if (effectiveStatus === 'streaming') {
-            if (this.resolveTranscriptStreamTimedOut(summary)) {
-                return 'theia-mod-needs-input';
-            }
-            return 'theia-mod-running';
-        }
-        if (summary?.priority || project.status === 'review') {
-            return 'theia-mod-needs-input';
-        }
-        if (project.status === 'working') {
-            return 'theia-mod-running';
-        }
-        return 'theia-mod-idle';
-    }
-
-    activeChatActivityLabel(
-        project: MobileProjectEntry,
-        summary?: QaapAgentConversationSummaryDTO,
-    ): string {
-        const effectiveStatus = this.resolveActiveChatEffectiveStatus(summary);
-        const failed = summary?.status === 'failed' || effectiveStatus === 'failed';
-        const timestamp = summary?.updatedAt ?? (project.lastActiveAt ? Date.parse(project.lastActiveAt) : undefined);
-        if (timestamp && Number.isFinite(timestamp)) {
-            const since = this.formatActiveChatSince(timestamp);
-            if (failed) {
-                return nls.localize('qaap/mobileProjects/chatFailedActivity', 'Failed {0}', since);
-            }
-            return nls.localize(
-                'qaap/mobileProjects/chatLastActivity',
-                'Active {0}',
-                since,
-            );
-        }
-        if (project.lastActive && project.lastActive !== '—') {
-            return nls.localize('qaap/mobileProjects/chatLastActivity', 'Active {0}', project.lastActive);
-        }
-        return nls.localize('qaap/mobileProjects/chatLastActivityUnknown', 'No recent activity');
     }
 
     isPendingNewChatSummary(summary: QaapAgentConversationSummaryDTO): boolean {
@@ -283,20 +42,4 @@ export class MobileProjectsTranscriptHeaderUi {
         return nls.localize('qaap/mobileProjects/chatHeaderProjectTitle', '{0} · {1}', project.name, title);
     }
 
-    formatActiveChatSince(timestamp: number): string {
-        const diff = Math.max(0, Date.now() - timestamp);
-        const minute = 60 * 1000;
-        const hour = 60 * minute;
-        const day = 24 * hour;
-        if (diff < 45 * 1000) {
-            return nls.localize('qaap/mobileProjects/activityJustNow', 'now');
-        }
-        if (diff < hour) {
-            return nls.localize('qaap/mobileProjects/activityMinutesAgo', '{0} min ago', String(Math.max(1, Math.round(diff / minute))));
-        }
-        if (diff < day) {
-            return nls.localize('qaap/mobileProjects/activityHoursAgo', '{0} h ago', String(Math.round(diff / hour)));
-        }
-        return nls.localize('qaap/mobileProjects/activityDaysAgo', '{0} d ago', String(Math.round(diff / day)));
-    }
 }

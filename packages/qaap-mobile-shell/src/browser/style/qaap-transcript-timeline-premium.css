@@ -789,30 +789,15 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-family: var(--theia-editor-font-family, 'Menlo', 'Monaco', monospace);
-  font-size: 16px;
-  line-height: 1;
-  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 82%, var(--theia-foreground));
-  -webkit-user-select: none;
-  user-select: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background-size: 14px 14px;
 }
 
-.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-stalled .theia-mobile-agent-activity-timeline-summary-spinner {
-  color: color-mix(in srgb, var(--q-accent, #E58E40) 88%, var(--theia-foreground));
-}
-
-/* Snake spinner inside activity item icons (active steps during streaming) */
+/* Brand logo inside activity item icons (active steps during streaming) */
 .theia-mobile-agent-activity-icon .theia-mobile-agent-activity-icon-spinner {
-  font-family: var(--theia-editor-font-family, 'Menlo', 'Monaco', monospace);
-  font-size: 14px;
-  line-height: 1;
-  color: color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 82%, var(--theia-foreground));
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace.theia-mod-stalled .theia-mobile-agent-activity-icon .theia-mobile-agent-activity-icon-spinner {
-  color: color-mix(in srgb, var(--q-accent, #E58E40) 88%, var(--theia-foreground));
+  flex: none;
 }
 
 /* Snake spinner inside the thought brief icon (during streaming) */

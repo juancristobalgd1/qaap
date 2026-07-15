@@ -531,6 +531,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             dismissSheetsAsync: () => this.sideSheetController.dismissSheetsAsync(),
             collapseMobileSidePanels: () => this.sideSheetController.collapseMobileSidePanels(),
             showMobileProjectsHome: view => this.workHubBootstrap.showMobileProjectsHome(view),
+            syncOverlayEdgeSwipeZones: () => this.syncOverlayEdgeSwipeZones(),
         };
         this.hubNavigation = new MobileShellHubNavigationController({
             host: this.hubNavigationHost,
@@ -575,6 +576,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.overlayHost = {
             isMobileActive: () => this.mobileActive,
             isWorkspaceOpened: () => this.workspaceService.opened,
+            shouldMountEdgeSwipeZones: () => peekPreferDesktopIde(),
             toggleProjectsPanel: () => this.toggleProjectsPanel(),
             isAnyMobileSideSheetVisible: () => this.sideSheetController.isAnyMobileSideSheetVisible(),
             requestSheetRelayout: () => this.sideSheetController.requestSheetRelayout(),
@@ -584,6 +586,13 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             host: this.overlayHost,
             shell: this.shell,
         });
+    }
+
+    protected syncOverlayEdgeSwipeZones(): void {
+        if (!this.mobileActive) {
+            return;
+        }
+        this.overlayController.syncEdgeSwipeZones();
     }
 
     protected initIdeFallbackController(): void {
@@ -605,6 +614,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             scheduleSnapAndUiRefresh: () => this.scheduleSnapAndUiRefresh(),
             ensureDesktopSidePanelSizes: () => this.ensureDesktopSidePanelSizes(),
             requestFullShellRelayout: () => this.requestFullShellRelayout(),
+            syncOverlayEdgeSwipeZones: () => this.syncOverlayEdgeSwipeZones(),
         };
         this.ideFallback = new MobileShellIdeFallbackController({
             host: this.ideFallbackHost,
@@ -680,6 +690,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             relayoutMainPreviewWidgets: () => this.relayoutMainPreviewWidgets(),
             conversationsStart: () => this.conversations.start(),
             inboxStreamStart: () => this.inboxStream.start(),
+            syncOverlayEdgeSwipeZones: () => this.syncOverlayEdgeSwipeZones(),
         };
         this.bottomBarController = new MobileShellBottomBarController({
             host: this.bottomBarHost,

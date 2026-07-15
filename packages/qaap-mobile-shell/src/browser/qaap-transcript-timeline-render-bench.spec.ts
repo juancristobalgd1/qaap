@@ -1092,6 +1092,12 @@ describe('qaap-transcript-timeline-render-bench', () => {
         const streamingRow = createStreamingRow(artifactsUi, segments);
         expect(streamingRow.querySelector('.theia-mobile-diff-summary')).to.equal(null);
         expect(streamingRow.querySelector('.theia-mobile-agent-live-status')).to.not.equal(null);
+        const liveFooter = streamingRow.querySelector('.theia-mobile-agent-live-status');
+        expect(liveFooter).to.not.equal(null);
+        const metaText = liveFooter?.querySelector('.qaap-transcript-live-status-meta')?.textContent ?? '';
+        expect(metaText).to.match(/\d+s/);
+        const activityLabel = liveFooter?.querySelector('.qaap-transcript-live-status-activity')?.getAttribute('aria-label') ?? '';
+        expect(activityLabel).to.equal('Planning next moves…');
         // Finalize — live footer hides and the diff summary closes the story
         artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
         expect(streamingRow.querySelector('.theia-mobile-agent-live-status')).to.equal(null);

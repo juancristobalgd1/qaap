@@ -10,6 +10,8 @@ import { MobileKeyboardHelper } from './mobile-keyboard-helper';
 export interface MobileShellOverlayHost {
     isMobileActive(): boolean;
     isWorkspaceOpened(): boolean;
+    /** Edge swipe targets are for classic IDE side panels only — not Work Hub / Agents. */
+    shouldMountEdgeSwipeZones(): boolean;
     toggleProjectsPanel(): Promise<void>;
     isAnyMobileSideSheetVisible(): boolean;
     requestSheetRelayout(): void;
@@ -38,8 +40,36 @@ export class MobileShellOverlayHostController {
         this.shell = options.shell;
     }
 
-    /** Mount edge swipe zones and keyboard inset tracking when mobile layout is active. */
+    /** Mount keyboard inset tracking and sync edge swipe zones when mobile layout is active. */
     ensureMounted(): void {
+        this.ensureKeyboardHelper();
+        this.syncEdgeSwipeZones();
+    }
+
+    /** Mount or unmount edge swipe zones based on the active mobile work surface. */
+    syncEdgeSwipeZones(): void {
+        if (this.host.shouldMountEdgeSwipeZones()) {
+            this.mountEdgeSwipeZones();
+            return;
+        }
+        this.teardownEdgeSwipeZones();
+    }
+
+    teardown(): void {
+        this.teardownEdgeSwipeZones();
+        this.keyboardHelper?.dispose();
+        this.keyboardHelper = undefined;
+    }
+
+    protected ensureKeyboardHelper(): void {
+        if (this.keyboardHelper) {
+            return;
+        }
+        this.keyboardHelper = new MobileKeyboardHelper(this.shell.node);
+        this.keyboardHelper.install();
+    }
+
+    protected mountEdgeSwipeZones(): void {
         if (!this.leftEdge) {
             this.leftEdge = document.createElement('div');
             this.leftEdge.className = 'theia-mobile-edgeSwipeZone theia-mobile-edgeSwipeZone-left';
@@ -54,13 +84,9 @@ export class MobileShellOverlayHostController {
             this.rightEdge.addEventListener('touchend', this.onRightEdgeTouchEnd, { passive: true });
             document.body.appendChild(this.rightEdge);
         }
-        if (!this.keyboardHelper) {
-            this.keyboardHelper = new MobileKeyboardHelper(this.shell.node);
-            this.keyboardHelper.install();
-        }
     }
 
-    teardown(): void {
+    protected teardownEdgeSwipeZones(): void {
         if (this.leftEdge?.parentElement) {
             this.leftEdge.removeEventListener('touchstart', this.onLeftEdgeTouchStart);
             this.leftEdge.removeEventListener('touchend', this.onLeftEdgeTouchEnd);
@@ -73,8 +99,6 @@ export class MobileShellOverlayHostController {
             this.rightEdge.parentElement.removeChild(this.rightEdge);
         }
         this.rightEdge = undefined;
-        this.keyboardHelper?.dispose();
-        this.keyboardHelper = undefined;
     }
 
     removeBackdrop(): void {

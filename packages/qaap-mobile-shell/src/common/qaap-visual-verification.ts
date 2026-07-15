@@ -21,9 +21,27 @@ const VISUAL_FILE_REGEX = /\.(?:html?|css|scss|sass|less|tsx|jsx|vue|svelte)(?:[
  * - `[QAAP record]` — a video tour (scrolling walkthrough) when motion matters; same route syntax.
  * The contract is stated in the shared agent prompt preamble.
  */
-const QAAP_CAPTURE_DIRECTIVE_REGEX = /\[qaap\s*(capture|record)(?::([^\]]*))?\]/i;
+export const QAAP_CAPTURE_DIRECTIVE_PATTERN = String.raw`\[qaap\s*(capture|record)(?::([^\]]*))?\]`;
+const QAAP_CAPTURE_DIRECTIVE_REGEX = new RegExp(QAAP_CAPTURE_DIRECTIVE_PATTERN, 'i');
 const DIRECTIVE_ROUTE_REGEX = /^\/[\w\-/]*$/;
 const MAX_DIRECTIVE_ROUTES = 3;
+
+function parseQaapCaptureDirectiveRoutes(rawRoutes: string | undefined): readonly string[] {
+    return (rawRoutes ?? '')
+        .split(/[\s,]+/)
+        .map(route => route.trim().toLowerCase())
+        .filter(route => DIRECTIVE_ROUTE_REGEX.test(route))
+        .slice(0, MAX_DIRECTIVE_ROUTES);
+}
+
+function parseQaapCaptureDirectiveMatch(match: RegExpExecArray): QaapCaptureDirective & { readonly match: string } {
+    return {
+        requested: true,
+        mode: match[1].toLowerCase() === 'record' ? 'video' : 'image',
+        routes: parseQaapCaptureDirectiveRoutes(match[2]),
+        match: match[0],
+    };
+}
 
 export interface QaapCaptureDirective {
     readonly requested: boolean;
@@ -47,15 +65,25 @@ export function parseQaapCaptureDirective(message: {
     for (const text of texts) {
         const match = QAAP_CAPTURE_DIRECTIVE_REGEX.exec(text);
         if (match) {
-            const routes = (match[2] ?? '')
-                .split(/[\s,]+/)
-                .map(route => route.trim().toLowerCase())
-                .filter(route => DIRECTIVE_ROUTE_REGEX.test(route))
-                .slice(0, MAX_DIRECTIVE_ROUTES);
-            return { requested: true, mode: match[1].toLowerCase() === 'record' ? 'video' : 'image', routes };
+            const parsed = parseQaapCaptureDirectiveMatch(match);
+            return { requested: parsed.requested, mode: parsed.mode, routes: parsed.routes };
         }
     }
     return { requested: false, mode: 'image', routes: [] };
+}
+
+/** Every capture/record directive in a transcript text block (for pending UI placement). */
+export function findQaapCaptureDirectivesInText(text: string): readonly (QaapCaptureDirective & { readonly match: string })[] {
+    const directives: Array<QaapCaptureDirective & { readonly match: string }> = [];
+    const regex = new RegExp(QAAP_CAPTURE_DIRECTIVE_PATTERN, 'gi');
+    for (let match = regex.exec(text); match; match = regex.exec(text)) {
+        directives.push(parseQaapCaptureDirectiveMatch(match));
+    }
+    return directives;
+}
+
+export function textContainsQaapCaptureDirective(text: string): boolean {
+    return new RegExp(QAAP_CAPTURE_DIRECTIVE_PATTERN, 'i').test(text);
 }
 
 /**

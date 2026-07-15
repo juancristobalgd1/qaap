@@ -41,7 +41,7 @@ export class TranscriptOverlayController {
         this.historyUi = new MobileProjectsTranscriptHistoryUi(overlayHost);
         this.composerUi = new MobileProjectsTranscriptComposerUi(overlayHost);
         this.stickyComposerUi = new MobileProjectsTranscriptStickyComposerUi(overlayHost, workHub);
-        this.headerUi = new MobileProjectsTranscriptHeaderUi(overlayHost, workHub);
+        this.headerUi = new MobileProjectsTranscriptHeaderUi(overlayHost);
         this.messagesUi = new MobileProjectsTranscriptMessagesUi(overlayHost, workHub);
         this.liveUi = new MobileProjectsTranscriptLiveUi(overlayHost);
         this.submitUi = new MobileProjectsTranscriptSubmitUi(overlayHost);
