@@ -101,12 +101,15 @@ describe('qaap-transcript-timeline-render-bench', () => {
             agentId: 'codex',
             status: 'streaming',
             updatedAt: Date.now(),
-            messages: [{
-                id: 'agent-1',
-                role: 'agent',
-                content: '',
-                segments,
-            }],
+            messages: [
+                { id: 'user-1', role: 'user', content: 'Bench prompt', createdAt: Date.now() - 5000 },
+                {
+                    id: 'agent-1',
+                    role: 'agent',
+                    content: '',
+                    segments,
+                },
+            ],
         } as QaapAgentConversationDTO;
         return artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, conv, { streaming: true });
     }
@@ -1085,11 +1088,13 @@ describe('qaap-transcript-timeline-render-bench', () => {
             },
         ];
         const conv = createCompletedConv(segments);
-        // Streaming row — no diff summary while streaming
+        // Streaming row — no diff summary while streaming; live footer is visible instead
         const streamingRow = createStreamingRow(artifactsUi, segments);
         expect(streamingRow.querySelector('.theia-mobile-diff-summary')).to.equal(null);
-        // Finalize — the diff summary should now appear as the closing of the story
+        expect(streamingRow.querySelector('.theia-mobile-agent-live-status')).to.not.equal(null);
+        // Finalize — live footer hides and the diff summary closes the story
         artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
+        expect(streamingRow.querySelector('.theia-mobile-agent-live-status')).to.equal(null);
         const diffSummary = streamingRow.querySelector('.theia-mobile-diff-summary');
         expect(diffSummary).to.not.equal(null);
         expect(diffSummary?.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('1 File Changed');

@@ -13,7 +13,7 @@ import {
     resolveAgentTurnFailureTechnicalContent,
 } from '../common/qaap-agent-failure-message';
 import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
-import { classifyTranscriptToolActivityKind, excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
+import { excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
@@ -111,11 +111,19 @@ import {
 } from './qaap-execution-event-timeline';
 import { ensureSlowTurnHint } from './qaap-slow-turn-hint';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
+import {
+    createTranscriptLiveStatusElement,
+    removeTranscriptLiveStatusElement,
+    resolveTranscriptSegmentsFooterAnchor,
+    syncTranscriptLiveStatusElement,
+    TRANSCRIPT_LIVE_STATUS_CLASS,
+} from '../common/qaap-transcript-live-status';
 
 const TRANSCRIPT_TRACE_STATUS_ATTR = 'data-transcript-trace-status';
 const TRANSCRIPT_CHECKPOINT_RESTORE_ATTR = 'data-transcript-checkpoint-id';
 
 const transcriptActivityTimelineResync = new WeakMap<HTMLElement, () => void>();
+const transcriptLiveStatusTickerBound = new WeakSet<HTMLElement>();
 const transcriptToolGroupItems = new WeakMap<HTMLElement, Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>[]>();
 const transcriptToolGroupUmbrella = new WeakMap<HTMLElement, ToolUmbrella>();
 const transcriptSummarySpinners = new WeakMap<HTMLElement, HTMLElement>();
@@ -421,11 +429,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 body.append(thoughtBrief);
             }
             if (streaming) {
-                const status = document.createElement('div');
-                status.className = 'theia-mobile-agent-trace-status';
-                status.setAttribute(TRANSCRIPT_TRACE_STATUS_ATTR, 'true');
-                status.hidden = true;
-                body.append(status);
+                this.ensureAndSyncTranscriptLiveStatusFooter(body, segments, conv, { streaming: true });
             }
             for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
                 const segment = segments[segmentIndex];
@@ -516,11 +520,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         body.append(accordion);
         ensureSlowTurnHint(accordion, { isWorking, turnStartMs, onStopTurn: () => this.host.cancelOpenTranscriptStream?.() });
         if (streaming) {
-            const status = document.createElement('div');
-            status.className = 'theia-mobile-agent-trace-status';
-            status.setAttribute(TRANSCRIPT_TRACE_STATUS_ATTR, 'true');
-            status.hidden = true;
-            body.append(status);
+            this.ensureAndSyncTranscriptLiveStatusFooter(body, segments, conv, { streaming: true });
         }
         // Render closing narrative text segments (text after the last tool)
         // as rich content blocks — these are the agent's final answer, not
@@ -905,8 +905,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             `[${TRANSCRIPT_THOUGHT_BRIEF_ATTR}], [${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}], ` +
             `.theia-mobile-agent-transcript-artifacts, [${TRANSCRIPT_SEGMENT_INDEX_ATTR}]`,
         ).forEach(el => el.remove());
-        // Remove any leftover trace status (will be re-added by the helper if streaming)
+        // Remove any leftover trace status / live footer (re-added by the helper if streaming)
         segmentsBody.querySelector('.theia-mobile-agent-trace-status')?.remove();
+        removeTranscriptLiveStatusElement(segmentsBody);
         // Render the Codex-style timeline + closing narrative + diff summary.
         // Neither `error` nor the specific message are part of `options` here
         // (callers only have `conv`) — resolve the message `row` represents
@@ -1027,8 +1028,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segmentsBody: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],
     ): void {
-        // Remove any existing diff summary so re-calling this is idempotent.
+        // Remove any existing diff summary or live footer so re-calling this is idempotent.
         segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
+        removeTranscriptLiveStatusElement(segmentsBody);
         const mutableSegments = [...segments];
         const changedFiles = this.resolversUi.resolveTranscriptChangedFiles(mutableSegments);
         if (changedFiles.length > 0) {
@@ -2021,6 +2023,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             // the live label would keep the verb captured before the tool
             // began (usually none, i.e. plain 'Processing…').
             this.syncRowProcessAccordion(row, refreshSegments, conv, true);
+            if (conv) {
+                const stalled = this.resolveTranscriptStreamStalled(conv);
+                const timedOut = this.resolveTranscriptStreamTimedOut(conv);
+                this.ensureAndSyncTranscriptLiveStatusFooter(segmentsBody, refreshSegments, conv, {
+                    streaming: true,
+                    stalled,
+                    timedOut,
+                });
+            }
             return true;
         }
 
@@ -2617,6 +2628,76 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         target.closest('.theia-mod-history-gap')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     }
 
+    protected ensureAndSyncTranscriptLiveStatusFooter(
+        segmentsBody: HTMLElement,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        conv: QaapAgentConversationDTO | undefined,
+        options?: { readonly streaming?: boolean; readonly stalled?: boolean; readonly timedOut?: boolean },
+    ): void {
+        if (!options?.streaming || !conv) {
+            removeTranscriptLiveStatusElement(segmentsBody);
+            return;
+        }
+        const turnStart = resolveTranscriptTurnStartMs(conv.messages);
+        if (turnStart === undefined) {
+            return;
+        }
+        let footer = segmentsBody.querySelector<HTMLElement>(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`);
+        if (!footer) {
+            footer = createTranscriptLiveStatusElement();
+            segmentsBody.append(footer);
+        }
+        const renderFooter = (): void => {
+            if (!footer.isConnected) {
+                return;
+            }
+            const latestConv = this.host.transcriptLastConv?.id === conv.id ? this.host.transcriptLastConv : conv;
+            const ownerRow = footer.closest<HTMLElement>('.theia-mobile-agent-transcript-msg');
+            const latestSegments = ownerRow
+                ? this.resolveTranscriptRowSegments(latestConv, ownerRow)
+                : [...resolveTranscriptStreamingAgentSegments(latestConv)];
+            const stalled = options?.stalled ?? this.resolveTranscriptStreamStalled(latestConv);
+            const timedOut = options?.timedOut ?? this.resolveTranscriptStreamTimedOut(latestConv);
+            const activity = resolveTranscriptStreamingActivityFromSegments(
+                latestSegments as QaapAgentMessageSegmentDTO[],
+                { stalled, timedOut },
+            );
+            syncTranscriptLiveStatusElement(footer, {
+                elapsedMs: Date.now() - turnStart,
+                streamChars: resolveTranscriptTurnStreamChars(latestConv.messages),
+                activityTitle: activity.title,
+                stalled,
+                timedOut,
+            });
+        };
+        renderFooter();
+        if (transcriptLiveStatusTickerBound.has(footer)) {
+            return;
+        }
+        transcriptLiveStatusTickerBound.add(footer);
+        sharedSecondTicker.register({
+            element: footer,
+            render: () => {
+                if (!footer.isConnected) {
+                    sharedSecondTicker.unregister(footer);
+                    transcriptLiveStatusTickerBound.delete(footer);
+                    return;
+                }
+                const ownerRow = footer.closest<HTMLElement>('.theia-mobile-agent-transcript-msg');
+                if (ownerRow && !ownerRow.classList.contains('theia-mod-streaming')) {
+                    sharedSecondTicker.unregister(footer);
+                    transcriptLiveStatusTickerBound.delete(footer);
+                    footer.remove();
+                    return;
+                }
+                if (!isTranscriptDocumentVisible()) {
+                    return;
+                }
+                renderFooter();
+            },
+        });
+    }
+
     protected syncTranscriptTraceStatus(
         row: HTMLElement | null,
         segments: readonly QaapAgentMessageSegmentDTO[],
@@ -2625,52 +2706,24 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!row) {
             return;
         }
-        const status = row.querySelector<HTMLElement>(`[${TRANSCRIPT_TRACE_STATUS_ATTR}]`);
-        if (!status) {
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        if (!(segmentsBody instanceof HTMLElement)) {
             return;
         }
         if (!options?.streaming) {
-            status.hidden = true;
-            status.textContent = '';
-            return;
-        }
-        const activeTool = [...segments].reverse().find((segment): segment is Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> =>
-            segment.type === 'tool' && !segment.finished);
-        if (activeTool && classifyTranscriptToolActivityKind(activeTool.name) === 'terminal') {
-            const messageId = row.getAttribute(TRANSCRIPT_MESSAGE_ID_ATTR);
-            const segmentIndex = segments.findIndex(segment =>
-                segment.type === 'tool' && segment.toolUseId === activeTool.toolUseId);
-            const durationMs = messageId && segmentIndex >= 0
-                ? this.activityTiming.resolveDurationMs(messageId, segmentIndex, activeTool)
-                : undefined;
-            const elapsedSec = durationMs !== undefined
-                ? Math.max(1, Math.round(durationMs / 1000))
-                : 1;
-            const shellText = nls.localize(
-                'qaap/mobileProjects/transcriptWaitingForShell',
-                'Waiting {0}s for shell',
-                String(elapsedSec),
-            );
-            if (status.textContent !== shellText) {
-                status.textContent = shellText;
+            removeTranscriptLiveStatusElement(segmentsBody);
+            const status = row.querySelector<HTMLElement>(`[${TRANSCRIPT_TRACE_STATUS_ATTR}]`);
+            if (status) {
+                status.hidden = true;
+                status.textContent = '';
             }
-            status.hidden = false;
-            status.classList.add('theia-mod-live');
             return;
         }
-        const activity = resolveTranscriptStreamingActivityFromSegments(segments, { stalled: options?.stalled });
-        if (activity.kind === 'planning' || activity.kind === 'thinking' || activity.kind === 'stall') {
-            if (status.textContent !== activity.title) {
-                status.textContent = activity.title;
-            }
-            status.hidden = false;
-            status.classList.toggle('theia-mod-live', activity.kind !== 'stall');
-            return;
-        }
-        status.hidden = true;
-        if (status.textContent !== '') {
-            status.textContent = '';
-        }
+        this.ensureAndSyncTranscriptLiveStatusFooter(segmentsBody, segments, options.conv, {
+            streaming: true,
+            stalled: options?.stalled,
+        });
+        row.querySelector<HTMLElement>(`[${TRANSCRIPT_TRACE_STATUS_ATTR}]`)?.remove();
     }
 
     protected syncTranscriptActivityHistoryGap(
@@ -2791,9 +2844,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                         this.toolUi.renderTranscriptRichContent(el, segment.content ?? '', { streaming });
                     }
                     // Insert after the timeline but before any diff summary.
-                    const diffSummary = segmentsBody.querySelector('.theia-mobile-diff-summary');
-                    if (diffSummary) {
-                        segmentsBody.insertBefore(el, diffSummary);
+                    const footerAnchor = resolveTranscriptSegmentsFooterAnchor(segmentsBody);
+                    if (footerAnchor) {
+                        segmentsBody.insertBefore(el, footerAnchor);
                     } else {
                         segmentsBody.append(el);
                     }

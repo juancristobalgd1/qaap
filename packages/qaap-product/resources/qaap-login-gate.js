@@ -75,6 +75,8 @@
             // Safety net: never leave the shell hidden if the hub fails to mount for any reason.
             window.setTimeout(function () {
                 document.documentElement.classList.remove('theia-mobile-workhub-boot');
+                document.body.classList.remove('theia-mobile-mod-workhub-composer-header');
+                document.body.classList.remove('theia-mobile-mod-workhub-hide-ide-side-panels');
             }, 8000);
         } catch (e) { /* ignore */ }
     })();

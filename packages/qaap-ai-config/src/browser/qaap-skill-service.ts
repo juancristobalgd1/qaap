@@ -60,7 +60,14 @@ export class QaapSkillService extends DefaultSkillService {
 
     protected override async update(): Promise<void> {
         await super.update();
+        // Per-user skill roots run after bundled system skills. Do not await them here:
+        // SkillPromptCoordinator blocks startup on skillService.ready, which resolves only
+        // when this update() promise settles — hanging on env/home RPC or file watchers
+        // leaves the UI on the splash/logo indefinitely.
+        void this.refreshQaapUserSkillDirectories();
+    }
 
+    protected async refreshQaapUserSkillDirectories(): Promise<void> {
         const homeDirUri = await this.envVariablesServer.getHomeDirUri();
         const homePath = new URI(homeDirUri).path.fsPath();
         let changed = false;
