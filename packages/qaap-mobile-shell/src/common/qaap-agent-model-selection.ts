@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { isExcludedOpenRouterModelSlug } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
-import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from './qaap-builtin-agents';
+import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS, NATIVE_MODEL_PICKER_AGENT_IDS } from './qaap-builtin-agents';
 import {
     hashString,
     isQaiqAgent,
@@ -37,7 +37,7 @@ export function agentUsesNativeModelCatalog(agentId: string | undefined): boolea
     if (NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
         return false;
     }
-    return !agentUsesSettingsModelCatalog(normalized);
+    return !agentUsesSettingsModelCatalog(normalized) && NATIVE_MODEL_PICKER_AGENT_IDS.has(normalized);
 }
 
 /** Agent exposes a model submenu (Settings catalog for QAIQ, native catalog for other VPS agents). */

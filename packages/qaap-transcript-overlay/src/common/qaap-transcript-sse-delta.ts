@@ -23,7 +23,19 @@ export function canApplySseMessageDelta(
     conversationId: string,
     message: QaapAgentMessageDTO,
 ): conv is QaapAgentConversationDTO {
-    if (!conv || conv.id !== conversationId || conv.status !== 'streaming') {
+    if (!conv || conv.id !== conversationId) {
+        return false;
+    }
+    const existingIndex = conv.messages.findIndex(entry => entry.id === message.id);
+    if (existingIndex >= 0) {
+        // Post-settlement patches (visual evidence, failure notes) reuse the settled
+        // agent row id — merge them in place instead of forcing a refetch race.
+        if (message.role === 'agent') {
+            return !!message.segments?.length || !!message.traceEvents?.length || !!message.content?.trim();
+        }
+        return !!message.content?.trim();
+    }
+    if (conv.status !== 'streaming') {
         return false;
     }
     if (message.role === 'agent') {

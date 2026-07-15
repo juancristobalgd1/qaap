@@ -127,6 +127,33 @@ describe('qaap-thread-store', () => {
         expect(store.getDocument('conv-1')?.messages.map(message => message.content)).to.deep.equal(['hello', 'world']);
     });
 
+    it('replaces an existing cached message when the same id arrives again', () => {
+        const store = new QaapThreadStore();
+        store.setDocument({
+            id: 'conv-1',
+            cwd: '/workspace/demo',
+            agentId: 'qaiq',
+            title: 'Demo',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 1,
+            messages: [{
+                id: 'agent-1',
+                role: 'agent',
+                content: 'Done.\n[QAAP record: /]',
+                createdAt: 1,
+            }],
+        });
+        store.appendLiveMessage('conv-1', {
+            id: 'agent-1',
+            role: 'agent',
+            content: 'Done.\n[QAAP record: /]\n\n---\n\n[QAAP visual verification]',
+            createdAt: 2,
+        });
+        expect(store.getDocument('conv-1')?.messages).to.have.length(1);
+        expect(store.getDocument('conv-1')?.messages[0]?.content).to.contain('[QAAP visual verification]');
+    });
+
     it('listStreamingSummaries returns only active threads', () => {
         const store = new QaapThreadStore();
         store.applySummarySnapshot([{

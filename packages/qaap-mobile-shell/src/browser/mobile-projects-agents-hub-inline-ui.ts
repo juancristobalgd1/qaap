@@ -225,8 +225,28 @@ export class MobileProjectsAgentsHubInlineUi {
         if (active) {
             return active;
         }
-        const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id) ?? project.name;
-        return buildAgentsHubIdleConversationSummary(cwd);
+        const cwd = this.resolveAgentsHubShellCwd(project);
+        return buildAgentsHubIdleConversationSummary(cwd ?? '');
+    }
+
+    /** Filesystem cwd for the Agents hub idle shell — never a display name such as "Mockup". */
+    protected resolveAgentsHubShellCwd(project: MobileProjectEntry): string | undefined {
+        const fromProject = this.host.projectsService.getProjectCwd(project)
+            ?? this.host.preparedCwdByProjectId.get(project.id);
+        if (fromProject) {
+            return fromProject;
+        }
+        const workspaceCwd = this.host.projectsService.getCurrentWorkspaceCwd();
+        if (
+            workspaceCwd
+            && !isQaapWorkspaceContainerPath(workspaceCwd)
+            && this.host.projectsService.projectMatchesCurrentWorkspace(project)
+        ) {
+            return workspaceCwd;
+        }
+        return this.host.conversations?.findConversationsForProject(project)
+            .map(summary => summary.cwd)
+            .find(known => !!known && !isQaapWorkspaceContainerPath(known));
     }
 
     renderAgentsHubExecutionShell(): void {

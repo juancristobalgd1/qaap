@@ -144,12 +144,13 @@ export class QaapThreadStore {
         if (!document) {
             return;
         }
-        if (document.messages.some(existing => existing.id === message.id)) {
-            return;
-        }
+        const existingIndex = document.messages.findIndex(existing => existing.id === message.id);
+        const messages = existingIndex >= 0
+            ? document.messages.map((existing, index) => index === existingIndex ? message : existing)
+            : [...document.messages, message];
         this.documents.set(conversationId, {
             ...document,
-            messages: [...document.messages, message],
+            messages,
             updatedAt: Math.max(document.updatedAt, message.createdAt ?? Date.now()),
         });
         this.notifyThread(conversationId);

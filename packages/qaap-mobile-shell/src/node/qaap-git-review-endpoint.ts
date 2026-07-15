@@ -467,11 +467,51 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 res.status(409).json({ error: 'Cannot delete the currently checked-out branch. Switch to another branch first.' });
                 return;
             }
-            await this.git(root, ['branch', '-D', branch]);
+            await this.deleteLocalBranch(root, branch);
             res.json({ ok: true, branch });
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
+    }
+
+    /** Remove any linked worktrees checked out on `branch`, then force-delete the local branch ref. */
+    protected async deleteLocalBranch(root: string, branch: string): Promise<void> {
+        for (const worktreePath of await this.listWorktreePathsForBranch(root, branch)) {
+            await this.git(root, ['worktree', 'remove', '--force', worktreePath]);
+        }
+        await this.git(root, ['branch', '-D', branch]);
+    }
+
+    protected async listWorktreePathsForBranch(root: string, branch: string): Promise<string[]> {
+        try {
+            const out = await this.git(root, ['worktree', 'list', '--porcelain']);
+            return this.parseWorktreePathsForBranch(out, branch);
+        } catch {
+            return [];
+        }
+    }
+
+    protected parseWorktreePathsForBranch(porcelain: string, branch: string): string[] {
+        const matches: string[] = [];
+        for (const block of porcelain.split('\n\n')) {
+            const trimmed = block.trim();
+            if (!trimmed) {
+                continue;
+            }
+            let worktreePath: string | undefined;
+            let worktreeBranch: string | undefined;
+            for (const line of trimmed.split('\n')) {
+                if (line.startsWith('worktree ')) {
+                    worktreePath = line.slice('worktree '.length);
+                } else if (line.startsWith('branch refs/heads/')) {
+                    worktreeBranch = line.slice('branch refs/heads/'.length);
+                }
+            }
+            if (worktreePath && worktreeBranch === branch) {
+                matches.push(worktreePath);
+            }
+        }
+        return matches;
     }
 
     protected async collectChangedFiles(root: string): Promise<QaapGitChangedFile[]> {
@@ -704,9 +744,9 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
 
     protected git(root: string, args: string[]): Promise<string> {
         return new Promise((resolve, reject) => {
-            execFile('git', args, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout) => {
+            execFile('git', args, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout, stderr) => {
                 if (error) {
-                    reject(Object.assign(error, { stdout }));
+                    reject(Object.assign(error, { stdout, stderr }));
                 } else {
                     resolve(stdout);
                 }
@@ -797,6 +837,12 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     }
 
     protected errorMessage(error: unknown): string {
+        if (error && typeof error === 'object') {
+            const stderr = (error as { stderr?: string }).stderr;
+            if (typeof stderr === 'string' && stderr.trim()) {
+                return stderr.trim().split('\n').find(line => line.trim())?.trim() ?? stderr.trim();
+            }
+        }
         return error instanceof Error ? error.message : String(error);
     }
 }

@@ -5,12 +5,26 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 
+export const COMPOSER_BRANCH_SHEET_ROW_SELECTOR = '.theia-mobile-sticky-composer-sheet-branch-row';
+
 export interface ComposerBranchSheetRowOptions {
     readonly branch: string;
     readonly selected: boolean;
+    /** When true, the delete action is omitted (e.g. currently checked-out branch). */
+    readonly deleteDisabled?: boolean;
     readonly onSelect: () => void;
     readonly onCopy: () => void | Promise<void>;
     readonly onDelete: () => void | Promise<void>;
+}
+
+export function findComposerBranchSheetRow(list: HTMLElement, branch: string): HTMLElement | undefined {
+    return [...list.querySelectorAll<HTMLElement>(COMPOSER_BRANCH_SHEET_ROW_SELECTOR)]
+        .find(row => row.dataset.branchName === branch);
+}
+
+export function indexComposerBranchSheetRow(list: HTMLElement, branch: string): number {
+    return [...list.querySelectorAll<HTMLElement>(COMPOSER_BRANCH_SHEET_ROW_SELECTOR)]
+        .findIndex(row => row.dataset.branchName === branch);
 }
 
 let openBranchMenu: {
@@ -139,6 +153,7 @@ export async function copyComposerBranchName(branch: string): Promise<boolean> {
 export function createComposerBranchSheetRow(options: ComposerBranchSheetRowOptions): HTMLElement {
     const row = document.createElement('div');
     row.className = 'theia-mobile-sticky-composer-sheet-branch-row';
+    row.dataset.branchName = options.branch;
     if (options.selected) {
         row.classList.add('theia-mod-selected');
     }
@@ -184,12 +199,14 @@ export function createComposerBranchSheetRow(options: ComposerBranchSheetRowOpti
         iconClass: 'codicon-copy',
         onSelect: options.onCopy,
     });
-    appendComposerBranchSheetMenuItem(menu, {
-        label: nls.localize('qaap/composerWorkspace/branchDelete', 'Delete branch'),
-        iconClass: 'codicon-trash',
-        danger: true,
-        onSelect: options.onDelete,
-    });
+    if (!options.deleteDisabled) {
+        appendComposerBranchSheetMenuItem(menu, {
+            label: nls.localize('qaap/composerWorkspace/branchDelete', 'Delete branch'),
+            iconClass: 'codicon-trash',
+            danger: true,
+            onSelect: options.onDelete,
+        });
+    }
 
     menuBtn.addEventListener('click', event => {
         event.stopPropagation();

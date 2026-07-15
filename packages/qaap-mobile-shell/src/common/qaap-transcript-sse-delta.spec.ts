@@ -49,7 +49,7 @@ describe('canApplySseMessageDelta', () => {
         })).to.equal(false);
     });
 
-    it('rejects stale deltas after the turn has settled', () => {
+    it('rejects brand-new agent rows after the turn has settled', () => {
         const idle = { ...baseConv(), status: 'idle' as const };
         expect(canApplySseMessageDelta(idle, 'conv-1', {
             id: 'agent-1',
@@ -57,6 +57,28 @@ describe('canApplySseMessageDelta', () => {
             content: 'late chunk',
             createdAt: 30,
         })).to.equal(false);
+    });
+
+    it('accepts in-place agent updates after settle (visual evidence attachment)', () => {
+        const idle = {
+            ...baseConv(),
+            status: 'idle' as const,
+            messages: [
+                ...baseConv().messages,
+                {
+                    id: 'agent-1',
+                    role: 'agent' as const,
+                    content: 'Done.\n[QAAP record: /]',
+                    createdAt: 20,
+                },
+            ],
+        };
+        expect(canApplySseMessageDelta(idle, 'conv-1', {
+            id: 'agent-1',
+            role: 'agent',
+            content: 'Done.\n[QAAP record: /]\n\n---\n\n[QAAP visual verification]\nRecorded a video tour of 1 page.',
+            createdAt: 21,
+        })).to.equal(true);
     });
 
     it('accepts codex stdout agent chunks with plain content', () => {

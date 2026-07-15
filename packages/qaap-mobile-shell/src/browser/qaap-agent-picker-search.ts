@@ -158,18 +158,20 @@ export async function activateAgentPickerEntry(options: {
     readonly onShowModels: () => void;
     readonly onSelectDirect: () => void;
 }): Promise<'models' | 'direct'> {
+    if (!options.supportsModels) {
+        options.onSelectDirect();
+        return 'direct';
+    }
     let models = options.cachedModels;
-    if (options.supportsModels && (!models || models.length === 0)) {
+    if (!models || models.length === 0) {
         options.onLoading();
         models = await options.loadModels();
         options.onModelsResolved(models);
     }
-    if (options.supportsModels && models && models.length > 0) {
-        options.onShowModels();
-        return 'models';
-    }
-    options.onSelectDirect();
-    return 'direct';
+    // Model-capable agents always drill into the model submenu; an empty catalog is
+    // shown there instead of treating the tap as a final agent selection (which closes the sheet).
+    options.onShowModels();
+    return 'models';
 }
 
 export function handleAgentPickerSearchKeydown(

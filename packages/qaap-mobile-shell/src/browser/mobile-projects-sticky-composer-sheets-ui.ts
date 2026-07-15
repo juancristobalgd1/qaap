@@ -94,6 +94,7 @@ export interface ComposerAgentPickerChrome {
     readonly searchInput: HTMLInputElement;
     readonly list: HTMLElement;
     readonly modelsByAgent: Map<string, readonly QaapQaiqModelOption[]>;
+    readonly modelLoadFailedByAgent: Map<string, boolean>;
     readonly onClose: () => void;
     readonly popoverCleanup?: () => void;
 }
@@ -719,7 +720,17 @@ export class MobileProjectsStickyComposerSheetsUi {
         try {
             return await fetchAgentModelsForAgent(agentId);
         } catch {
-            return [];
+            throw new Error('agent-model-catalog-fetch-failed');
+        }
+    }
+    protected async resolveModelsForAgentPickerSafe(
+        agentId: string,
+    ): Promise<{ readonly models: QaapQaiqModelOption[]; readonly loadFailed: boolean }> {
+        try {
+            const models = await this.resolveModelsForAgentPicker(agentId);
+            return { models, loadFailed: false };
+        } catch {
+            return { models: [], loadFailed: true };
         }
     }
     createComposerAgentPickerChrome(options: {
@@ -792,6 +803,7 @@ export class MobileProjectsStickyComposerSheetsUi {
                 searchInput,
                 list,
                 modelsByAgent: new Map(),
+                modelLoadFailedByAgent: new Map(),
                 onClose: options.onClose,
                 popoverCleanup: mounted.cleanup,
             };
@@ -813,6 +825,7 @@ export class MobileProjectsStickyComposerSheetsUi {
             searchInput,
             list,
             modelsByAgent: new Map(),
+            modelLoadFailedByAgent: new Map(),
             onClose: options.onClose,
         };
     }
@@ -858,14 +871,24 @@ export class MobileProjectsStickyComposerSheetsUi {
         if (options.view === 'models' && options.modelPickerAgentId) {
             const modelAgentId = options.modelPickerAgentId;
             let pickerModels = chrome.modelsByAgent.get(modelAgentId);
-            if (!pickerModels) {
+            const loadFailed = chrome.modelLoadFailedByAgent.get(modelAgentId) === true;
+            if (pickerModels === undefined || (pickerModels.length === 0 && loadFailed)) {
                 renderAgentPickerSkeleton(chrome.list, 5);
-                pickerModels = await this.resolveModelsForAgentPicker(modelAgentId);
+                const resolved = await this.resolveModelsForAgentPickerSafe(modelAgentId);
+                if (chrome.sheet.dataset.agentPickerRenderGeneration !== String(renderGeneration)) {
+                    return;
+                }
+                pickerModels = resolved.models;
+                chrome.modelsByAgent.set(modelAgentId, pickerModels);
+                if (resolved.loadFailed) {
+                    chrome.modelLoadFailedByAgent.set(modelAgentId, true);
+                } else {
+                    chrome.modelLoadFailedByAgent.delete(modelAgentId);
+                }
             }
             if (chrome.sheet.dataset.agentPickerRenderGeneration !== String(renderGeneration)) {
                 return;
             }
-            chrome.modelsByAgent.set(modelAgentId, pickerModels);
             const storedModel = readStoredAgentModel(options.cwd, modelAgentId);
             chrome.header.classList.add('theia-mod-drilldown');
             chrome.backBtn.hidden = false;
@@ -879,12 +902,22 @@ export class MobileProjectsStickyComposerSheetsUi {
             chrome.backBtn.onclick = () => {
                 void this.renderComposerAgentPicker(chrome, { ...options, view: 'agents', modelPickerAgentId: undefined });
             };
-            const filteredModels = pickerModels.filter(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value));
+            const filteredModels = (pickerModels ?? []).filter(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value));
             const modelContent = document.createElement('div');
-            this.appendAgentModelPickerList(modelContent, modelAgentId, filteredModels, storedModel, model => {
-                options.onSelectAgent(modelAgentId, model);
-            });
-            if (pickerModels.length > 0 && filteredModels.length === 0) {
+            this.appendAgentModelPickerList(
+                modelContent,
+                modelAgentId,
+                filteredModels,
+                storedModel,
+                model => options.onSelectAgent(modelAgentId, model),
+                chrome.modelLoadFailedByAgent.get(modelAgentId) === true,
+                () => {
+                    chrome.modelsByAgent.delete(modelAgentId);
+                    chrome.modelLoadFailedByAgent.delete(modelAgentId);
+                    rerender();
+                },
+            );
+            if ((pickerModels?.length ?? 0) > 0 && filteredModels.length === 0) {
                 replaceAgentPickerLoading(chrome.list, this.createAgentPickerNoResultsHint());
             } else {
                 replaceAgentPickerLoading(chrome.list, ...Array.from(modelContent.childNodes));
@@ -920,10 +953,20 @@ export class MobileProjectsStickyComposerSheetsUi {
         }
         await Promise.all(agentEntries.map(async entry => {
             let models = chrome.modelsByAgent.get(entry.id);
-            if (!models) {
-                models = agentSupportsModelPicker(entry.id)
-                    ? await this.resolveModelsForAgentPicker(entry.id)
-                    : [];
+            if (models === undefined) {
+                if (agentSupportsModelPicker(entry.id)) {
+                    const resolved = await this.resolveModelsForAgentPickerSafe(entry.id);
+                    models = resolved.models;
+                    if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
+                        if (resolved.loadFailed) {
+                            chrome.modelLoadFailedByAgent.set(entry.id, true);
+                        } else {
+                            chrome.modelLoadFailedByAgent.delete(entry.id);
+                        }
+                    }
+                } else {
+                    models = [];
+                }
             }
             if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
                 chrome.modelsByAgent.set(entry.id, models);
@@ -955,8 +998,23 @@ export class MobileProjectsStickyComposerSheetsUi {
                         agentId,
                         supportsModels: hasModels,
                         cachedModels: chrome.modelsByAgent.get(agentId),
-                        loadModels: () => this.resolveModelsForAgentPicker(agentId),
-                        onLoading: () => renderAgentPickerSkeleton(chrome.list, 5),
+                        loadModels: async () => {
+                            const resolved = await this.resolveModelsForAgentPickerSafe(agentId);
+                            if (resolved.loadFailed) {
+                                chrome.modelLoadFailedByAgent.set(agentId, true);
+                            } else {
+                                chrome.modelLoadFailedByAgent.delete(agentId);
+                            }
+                            return resolved.models;
+                        },
+                        onLoading: () => {
+                            // Invalidate any in-flight agents-list render so it cannot replace
+                            // this activation skeleton and race the drill-down navigation.
+                            chrome.sheet.dataset.agentPickerRenderGeneration = String(
+                                Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1,
+                            );
+                            renderAgentPickerSkeleton(chrome.list, 5);
+                        },
                         onModelsResolved: models => chrome.modelsByAgent.set(agentId, models),
                         onShowModels: () => {
                             if (chrome.searchInput.value
@@ -1050,7 +1108,31 @@ export class MobileProjectsStickyComposerSheetsUi {
         models: readonly QaapQaiqModelOption[],
         storedModel: ReturnType<typeof readStoredAgentModel>,
         onSelect: (model: QaapQaiqModelOption) => void,
+        loadFailed = false,
+        onRetry?: () => void,
     ): void {
+        if (loadFailed) {
+            const error = document.createElement('div');
+            error.className = 'theia-qaap-agent-sheet-load-error';
+            error.setAttribute('role', 'alert');
+            const message = document.createElement('p');
+            message.className = 'theia-qaap-agent-sheet-empty-models';
+            message.textContent = nls.localize(
+                'qaap/mobileProjects/stickyComposerAgentModelsLoadFailed',
+                'Could not load models from the workspace. Check your connection and try again.',
+            );
+            error.append(message);
+            if (onRetry) {
+                const retry = document.createElement('button');
+                retry.type = 'button';
+                retry.className = 'theia-qaap-agent-sheet-retry';
+                retry.textContent = nls.localize('qaap/mobileProjects/retry', 'Retry');
+                retry.addEventListener('click', onRetry);
+                error.append(retry);
+            }
+            list.append(error);
+            return;
+        }
         if (models.length === 0) {
             const hint = document.createElement('p');
             hint.className = 'theia-qaap-agent-sheet-empty-models';

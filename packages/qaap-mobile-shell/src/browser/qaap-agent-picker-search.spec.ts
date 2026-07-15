@@ -154,11 +154,29 @@ describe('qaap-agent-picker-search', () => {
         expect(showedModels).to.equal(true);
     });
 
-    it('selects an agent directly when its refreshed catalog is empty', async () => {
+    it('opens the model submenu even when the refreshed catalog is empty', async () => {
         let selectedDirectly = false;
+        let showedModels = false;
         const result = await activateAgentPickerEntry({
             agentId: 'copilot',
             supportsModels: true,
+            cachedModels: [],
+            loadModels: async () => [],
+            onLoading: () => undefined,
+            onModelsResolved: () => undefined,
+            onShowModels: () => showedModels = true,
+            onSelectDirect: () => selectedDirectly = true,
+        });
+        expect(result).to.equal('models');
+        expect(showedModels).to.equal(true);
+        expect(selectedDirectly).to.equal(false);
+    });
+
+    it('selects an agent directly when it does not support models', async () => {
+        let selectedDirectly = false;
+        const result = await activateAgentPickerEntry({
+            agentId: 'shell',
+            supportsModels: false,
             cachedModels: [],
             loadModels: async () => [],
             onLoading: () => undefined,

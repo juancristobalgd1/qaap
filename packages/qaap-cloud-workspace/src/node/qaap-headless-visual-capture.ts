@@ -255,10 +255,33 @@ export class QaapHeadlessVisualCaptureService {
             .then(() => this.captureConversation(conversationId))
             .catch(error => {
                 console.warn('[qaap-headless-visual-capture] capture failed:', error);
+                this.recordHeadlessCaptureFailure(conversationId, error);
             })
             .finally(() => {
                 this.inFlight.delete(conversationId);
             });
+    }
+
+    /**
+     * Uncaught capture failures (Playwright launch, temp-dir IO, etc.) used to leave
+     * `[QAAP record]` turns spinning forever — attemptedTurns blocks retry, so settle the
+     * evidence slot with a visible note instead.
+     */
+    protected recordHeadlessCaptureFailure(conversationId: string, error: unknown): void {
+        const conv = this.store.get(conversationId);
+        if (!conv || !conversationNeedsVisualVerificationEvidence(conv)) {
+            return;
+        }
+        const target = [...conv.messages].reverse().find(message => message.role === 'agent');
+        if (!target || agentMessageHasVisualVerificationMarker(target)) {
+            return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        this.store.recordVisualVerificationFailure(
+            conversationId,
+            `Headless capture failed: ${message}`,
+            target.id,
+        );
     }
 
     protected async captureConversation(conversationId: string): Promise<void> {

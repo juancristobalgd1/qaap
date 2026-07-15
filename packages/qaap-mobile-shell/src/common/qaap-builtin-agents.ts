@@ -43,6 +43,21 @@ export const UI_HIDDEN_VPS_AGENT_IDS = new Set([CURSOR_AGENT_ID]);
 /** VPS agents whose CLI model list is not API-selectable in headless runs (no `{model_flags}`). */
 export const NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS = new Set([CURSOR_AGENT_ID]);
 
+/**
+ * VPS agents that expose a selectable model catalog in the composer picker.
+ * Keep in sync with {@link listStaticNativeAgentModels} plus OpenCode CLI discovery.
+ */
+export const NATIVE_MODEL_PICKER_AGENT_IDS = new Set([
+    'codex',
+    'claude',
+    'aider',
+    'opencode',
+    'qwen',
+    'copilot',
+    'antigravity',
+    'gemini',
+]);
+
 export function isUiHiddenVpsAgent(agentId: string | undefined): boolean {
     const normalized = agentId?.trim().toLowerCase();
     return !!normalized && UI_HIDDEN_VPS_AGENT_IDS.has(normalized);

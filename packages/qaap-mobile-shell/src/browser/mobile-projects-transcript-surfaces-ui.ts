@@ -22,7 +22,8 @@ import {
 } from '../common/qaap-agent-conversation-client';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import { resolveTranscriptWorkspaceCwd } from '../common/qaap-transcript-workspace-cwd';
+import { resolveTranscriptWorkspaceCwd, isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
 import {
     conversationMayAutoOpenTranscriptPreview,
@@ -1269,11 +1270,31 @@ export class MobileProjectsTranscriptSurfacesUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): string | undefined {
-        return resolveTranscriptWorkspaceCwd({
+        const resolved = resolveTranscriptWorkspaceCwd({
             summary,
             projectCwd: this.host.projectsService.getProjectCwd(project),
             preparedCwd: this.host.preparedCwdByProjectId.get(project.id),
         });
+        if (resolved) {
+            return resolved;
+        }
+        const workspaceCwd = this.host.projectsService.getCurrentWorkspaceCwd();
+        if (
+            workspaceCwd
+            && !isQaapWorkspaceContainerPath(workspaceCwd)
+            && this.host.projectsService.projectMatchesCurrentWorkspace(project)
+        ) {
+            return workspaceCwd;
+        }
+        const fromOpenSummary = this.host.transcriptOpenSummary?.cwd;
+        if (
+            fromOpenSummary
+            && isTranscriptWorkspaceFilesystemPath(fromOpenSummary)
+            && !isQaapWorkspaceContainerPath(fromOpenSummary)
+        ) {
+            return fromOpenSummary;
+        }
+        return undefined;
     }
 
     resolveTranscriptWorkspaceKey(
@@ -1304,6 +1325,18 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         const workspaceKey = this.resolveTranscriptWorkspaceKey(project, summary);
+        if (!workspaceKey) {
+            const workspaceCwd = this.host.projectsService.getCurrentWorkspaceCwd();
+            if (
+                workspaceCwd
+                && !isQaapWorkspaceContainerPath(workspaceCwd)
+                && this.host.projectsService.projectMatchesCurrentWorkspace(project)
+            ) {
+                this.host.preparedCwdByProjectId.set(project.id, workspaceCwd);
+                this.ensureTranscriptFilesTab(project, summary);
+                return;
+            }
+        }
         if (!workspaceKey && project.github && this.host.projectsService) {
             void this.host.projectsService.prepareProjectCwd(project).then(prepared => {
                 if (!prepared || !this.executionFilesHost()?.isConnected || this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'files') {
@@ -1320,7 +1353,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             note.className = 'theia-mobile-transcript-files-note';
             note.textContent = nls.localize(
                 'qaap/mobileProjects/filesUnavailable',
-                'Files are unavailable for this conversation (no workspace path).',
+                'Open or clone this project to browse its files.',
             );
             host.append(note);
             return;

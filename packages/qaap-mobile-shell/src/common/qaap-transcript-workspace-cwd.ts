@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
 import { isVpsTaskSummary } from './qaap-work-hub-surfaces';
 
@@ -23,6 +24,36 @@ export interface ResolveTranscriptWorkspaceCwdInput {
     readonly preparedCwd?: string;
 }
 
+/** True when `path` looks like a real filesystem root (not a display name such as "Mockup"). */
+export function isTranscriptWorkspaceFilesystemPath(path: string | undefined): boolean {
+    const trimmed = path?.trim();
+    if (!trimmed) {
+        return false;
+    }
+    if (/^file:/i.test(trimmed)) {
+        return true;
+    }
+    if (trimmed.startsWith('/')) {
+        return true;
+    }
+    return /^[A-Za-z]:[\\/]/.test(trimmed);
+}
+
+function pickUsableTranscriptWorkspacePath(...candidates: (string | undefined)[]): string | undefined {
+    for (const candidate of candidates) {
+        const trimmed = candidate?.trim();
+        if (!trimmed || !isTranscriptWorkspaceFilesystemPath(trimmed)) {
+            continue;
+        }
+        const normalized = normalizeTranscriptWorkspacePath(trimmed);
+        if (isQaapWorkspaceContainerPath(normalized)) {
+            continue;
+        }
+        return normalized;
+    }
+    return undefined;
+}
+
 /**
  * Filesystem cwd for transcript Files/Terminal.
  *
@@ -36,9 +67,8 @@ export function resolveTranscriptWorkspaceCwd(input: ResolveTranscriptWorkspaceC
     const fromPrepared = input.preparedCwd?.trim();
 
     if (isVpsTaskSummary(input.summary) && fromSummary) {
-        return normalizeTranscriptWorkspacePath(fromSummary);
+        return pickUsableTranscriptWorkspacePath(fromSummary);
     }
 
-    const chosen = fromProject ?? fromPrepared ?? fromSummary;
-    return chosen ? normalizeTranscriptWorkspacePath(chosen) : undefined;
+    return pickUsableTranscriptWorkspacePath(fromProject, fromPrepared, fromSummary);
 }

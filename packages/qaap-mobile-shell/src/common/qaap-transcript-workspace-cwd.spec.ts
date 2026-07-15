@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import {
+    isTranscriptWorkspaceFilesystemPath,
     normalizeTranscriptWorkspacePath,
     resolveTranscriptWorkspaceCwd,
 } from './qaap-transcript-workspace-cwd';
@@ -42,5 +43,19 @@ describe('qaap-transcript-workspace-cwd', () => {
             preparedCwd: '/home/qaap/clones/my-app',
         });
         expect(cwd).to.equal('/home/qaap/clones/my-app');
+    });
+
+    it('rejects display names masquerading as cwd', () => {
+        expect(isTranscriptWorkspaceFilesystemPath('Mockup')).to.be.false;
+        expect(resolveTranscriptWorkspaceCwd({
+            summary: { source: 'theia-chat', cwd: 'Mockup' },
+        })).to.be.undefined;
+    });
+
+    it('rejects multi-repo container paths', () => {
+        expect(resolveTranscriptWorkspaceCwd({
+            summary: { source: 'theia-chat', cwd: '/workspace' },
+            projectCwd: '/workspace',
+        })).to.be.undefined;
     });
 });

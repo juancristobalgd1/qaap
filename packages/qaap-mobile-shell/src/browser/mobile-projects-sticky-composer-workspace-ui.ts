@@ -23,8 +23,11 @@ import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects
 import { MobileSnackbar } from './mobile-snackbar';
 import {
     closeComposerBranchSheetMenu,
+    COMPOSER_BRANCH_SHEET_ROW_SELECTOR,
     copyComposerBranchName,
     createComposerBranchSheetRow,
+    findComposerBranchSheetRow,
+    indexComposerBranchSheetRow,
 } from './qaap-composer-branch-sheet-row';
 
 export interface MobileProjectsStickyComposerWorkspaceHost {
@@ -66,6 +69,10 @@ export class MobileProjectsStickyComposerWorkspaceUi {
     private workspacePopoverAlign: StickyComposerPopoverAlign = 'start';
     /** Session-only "Run in" choice per project — resets to Local on reload. */
     private readonly workspaceDestinationByProjectId = new Map<string, QaapComposerWorkspaceDestination>();
+    /** Prevents duplicate delete requests while an optimistic removal is in flight. */
+    private readonly deletingComposerWorkspaceBranches = new Set<string>();
+    /** Branches removed in this tab session — filtered out of subsequent sheet loads. */
+    private readonly deletedComposerWorkspaceBranchesByProjectId = new Map<string, Set<string>>();
 
     constructor(protected readonly host: MobileProjectsStickyComposerWorkspaceHost) { }
 
@@ -514,6 +521,100 @@ export class MobileProjectsStickyComposerWorkspaceUi {
     protected finishComposerWorkspaceBranchSheetList(list: HTMLElement): void {
         window.requestAnimationFrame(() => this.syncWorkspacePopoverPosition());
     }
+
+    protected composerWorkspaceBranchDeleteKey(projectId: string, branch: string): string {
+        return `${projectId}::${branch}`;
+    }
+
+    protected markComposerWorkspaceBranchDeleted(projectId: string, branch: string): void {
+        let deleted = this.deletedComposerWorkspaceBranchesByProjectId.get(projectId);
+        if (!deleted) {
+            deleted = new Set();
+            this.deletedComposerWorkspaceBranchesByProjectId.set(projectId, deleted);
+        }
+        deleted.add(branch);
+    }
+
+    protected filterComposerWorkspaceBranchList(projectId: string, branches: readonly string[]): string[] {
+        const deleted = this.deletedComposerWorkspaceBranchesByProjectId.get(projectId);
+        if (!deleted?.size) {
+            return [...branches];
+        }
+        return branches.filter(branch => !deleted.has(branch));
+    }
+
+    protected createComposerWorkspaceBranchRow(
+        project: MobileProjectEntry,
+        list: HTMLElement,
+        branch: string,
+        current: string | undefined,
+    ): HTMLElement {
+        return createComposerBranchSheetRow({
+            branch,
+            selected: branch === current,
+            deleteDisabled: branch === current,
+            onSelect: () => {
+                void this.checkoutComposerWorkspaceBranch(project, branch);
+            },
+            onCopy: async () => {
+                const copied = await copyComposerBranchName(branch);
+                if (copied) {
+                    MobileSnackbar.show(
+                        nls.localize('qaap/composerWorkspace/branchCopied', 'Copied {0}', branch),
+                        { kind: 'success', duration: 1400 },
+                    );
+                } else {
+                    MobileSnackbar.show(
+                        nls.localize('qaap/composerWorkspace/branchCopyFailed', 'Could not copy branch name'),
+                        { kind: 'warning', duration: 2200 },
+                    );
+                }
+            },
+            onDelete: () => {
+                void this.deleteComposerWorkspaceBranch(project, branch, list, current);
+            },
+        });
+    }
+
+    protected appendComposerWorkspaceBranchRow(
+        project: MobileProjectEntry,
+        list: HTMLElement,
+        branch: string,
+        current: string | undefined,
+    ): void {
+        list.append(this.createComposerWorkspaceBranchRow(project, list, branch, current));
+    }
+
+    protected insertComposerWorkspaceBranchRowAt(
+        project: MobileProjectEntry,
+        list: HTMLElement,
+        branch: string,
+        current: string | undefined,
+        index: number,
+    ): void {
+        const row = this.createComposerWorkspaceBranchRow(project, list, branch, current);
+        const rows = list.querySelectorAll(COMPOSER_BRANCH_SHEET_ROW_SELECTOR);
+        if (index >= 0 && index < rows.length) {
+            list.insertBefore(row, rows[index]);
+        } else {
+            list.append(row);
+        }
+    }
+
+    protected clearComposerWorkspaceBranchEmptyState(list: HTMLElement): void {
+        list.querySelector('p.theia-mobile-sticky-composer-sheet-loading')?.remove();
+    }
+
+    protected showComposerWorkspaceBranchEmptyState(list: HTMLElement): void {
+        if (list.querySelector(COMPOSER_BRANCH_SHEET_ROW_SELECTOR)) {
+            return;
+        }
+        list.replaceChildren();
+        const empty = document.createElement('p');
+        empty.className = 'theia-mobile-sticky-composer-sheet-loading';
+        empty.textContent = nls.localize('qaap/composerWorkspace/branchEmpty', 'No local branches found.');
+        list.append(empty);
+    }
     async loadComposerWorkspaceBranchSheet(
         project: MobileProjectEntry,
         list: HTMLElement,
@@ -554,31 +655,8 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 this.finishComposerWorkspaceBranchSheetList(list);
                 return;
             }
-            for (const branch of payload.branches) {
-                list.append(createComposerBranchSheetRow({
-                    branch,
-                    selected: branch === current,
-                    onSelect: () => {
-                        void this.checkoutComposerWorkspaceBranch(project, branch);
-                    },
-                    onCopy: async () => {
-                        const copied = await copyComposerBranchName(branch);
-                        if (copied) {
-                            MobileSnackbar.show(
-                                nls.localize('qaap/composerWorkspace/branchCopied', 'Copied {0}', branch),
-                                { kind: 'success', duration: 1400 },
-                            );
-                        } else {
-                            MobileSnackbar.show(
-                                nls.localize('qaap/composerWorkspace/branchCopyFailed', 'Could not copy branch name'),
-                                { kind: 'warning', duration: 2200 },
-                            );
-                        }
-                    },
-                    onDelete: () => {
-                        void this.deleteComposerWorkspaceBranch(project, branch, list);
-                    },
-                }));
+            for (const branch of this.filterComposerWorkspaceBranchList(project.id, payload.branches)) {
+                this.appendComposerWorkspaceBranchRow(project, list, branch, current);
             }
             this.finishComposerWorkspaceBranchSheetList(list);
         } catch (error) {
@@ -630,9 +708,53 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         project: MobileProjectEntry,
         branch: string,
         list: HTMLElement,
+        currentBranch?: string,
     ): Promise<void> {
+        const deleteKey = this.composerWorkspaceBranchDeleteKey(project.id, branch);
+        if (this.deletingComposerWorkspaceBranches.has(deleteKey)) {
+            return;
+        }
+        const current = currentBranch ?? this.resolveComposerWorkspaceBranch(project);
+        if (branch === current) {
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/composerWorkspace/branchDeleteCurrent',
+                    'Switch to another branch before deleting {0}',
+                    branch,
+                ),
+                { kind: 'warning', duration: 2800 },
+            );
+            return;
+        }
+        const row = findComposerBranchSheetRow(list, branch);
+        if (!row) {
+            return;
+        }
+        const rowIndex = indexComposerBranchSheetRow(list, branch);
+        this.deletingComposerWorkspaceBranches.add(deleteKey);
+        closeComposerBranchSheetMenu();
+        row.remove();
+        this.clearComposerWorkspaceBranchEmptyState(list);
+        this.showComposerWorkspaceBranchEmptyState(list);
+        this.finishComposerWorkspaceBranchSheetList(list);
+
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
         if (!cwd) {
+            this.deletingComposerWorkspaceBranches.delete(deleteKey);
+            this.insertComposerWorkspaceBranchRowAt(project, list, branch, current, rowIndex);
+            this.clearComposerWorkspaceBranchEmptyState(list);
+            this.finishComposerWorkspaceBranchSheetList(list);
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/composerWorkspace/branchDeleteFailed',
+                    'Could not delete branch: {0}',
+                    nls.localize(
+                        'qaap/composerWorkspace/branchUnavailable',
+                        'Open this project in the workspace to switch branches.',
+                    ),
+                ),
+                { kind: 'warning', duration: 2800 },
+            );
             return;
         }
         try {
@@ -649,20 +771,25 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             if (this.host.composerWorkspaceBranchByProjectId.get(project.id) === branch) {
                 this.host.composerWorkspaceBranchByProjectId.delete(project.id);
             }
+            this.markComposerWorkspaceBranchDeleted(project.id, branch);
             MobileSnackbar.show(
                 nls.localize('qaap/composerWorkspace/branchDeleted', 'Deleted {0}', branch),
                 { kind: 'success', duration: 1600 },
             );
-            if (this.host.stickyComposerWorkspaceSheet && list.isConnected) {
-                await this.loadComposerWorkspaceBranchSheet(project, list);
-            }
-            this.remountComposerWithWorkspaceBar(project);
+            this.finishComposerWorkspaceBranchSheetList(list);
         } catch (error) {
+            if (list.isConnected) {
+                this.clearComposerWorkspaceBranchEmptyState(list);
+                this.insertComposerWorkspaceBranchRowAt(project, list, branch, current, rowIndex);
+                this.finishComposerWorkspaceBranchSheetList(list);
+            }
             const detail = error instanceof Error ? error.message : String(error);
             MobileSnackbar.show(
                 nls.localize('qaap/composerWorkspace/branchDeleteFailed', 'Could not delete branch: {0}', detail),
                 { kind: 'warning', duration: 2800 },
             );
+        } finally {
+            this.deletingComposerWorkspaceBranches.delete(deleteKey);
         }
     }
 }

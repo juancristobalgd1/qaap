@@ -3,7 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
+import {
+    NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS,
+    NATIVE_MODEL_PICKER_AGENT_IDS,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 
 /** Keep in sync with {@link SETTINGS_MODEL_CATALOG_AGENT_IDS} in qaap-agent-model-selection. */
@@ -22,7 +25,7 @@ export function agentUsesNativeModelCatalog(agentId: string | undefined): boolea
     if (NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
         return false;
     }
-    return true;
+    return NATIVE_MODEL_PICKER_AGENT_IDS.has(normalized);
 }
 
 function nativeOption(

@@ -96,7 +96,20 @@ export function wireStickyComposerPopoverPosition(
     const position = (): void => {
         const anchorRect = anchor.getBoundingClientRect();
         if (!anchor.isConnected || anchorRect.width <= 0 || anchorRect.height <= 0) {
-            options.onAnchorUnavailable?.();
+            // Popover content height changes (e.g. agent-picker skeleton) can briefly report a
+            // zero-size anchor rect; retry once before dismissing.
+            window.requestAnimationFrame(() => {
+                if (!anchor.isConnected) {
+                    options.onAnchorUnavailable?.();
+                    return;
+                }
+                const retryRect = anchor.getBoundingClientRect();
+                if (retryRect.width <= 0 || retryRect.height <= 0) {
+                    options.onAnchorUnavailable?.();
+                    return;
+                }
+                positionStickyComposerPopover(popover, anchor, align, minimumWidth);
+            });
             return;
         }
         positionStickyComposerPopover(popover, anchor, align, minimumWidth);

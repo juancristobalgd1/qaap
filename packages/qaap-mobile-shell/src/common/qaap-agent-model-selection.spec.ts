@@ -44,9 +44,12 @@ describe('qaap-agent-model-selection', () => {
         expect(agentUsesSettingsModelCatalog('opencode')).to.be.false;
         expect(agentUsesNativeModelCatalog('qwen')).to.be.true;
         expect(agentUsesNativeModelCatalog('opencode')).to.be.true;
+        expect(agentUsesNativeModelCatalog('goose')).to.be.false;
+        expect(agentUsesNativeModelCatalog('hermes')).to.be.false;
         expect(agentUsesNativeModelCatalog(QAIQ_AGENT_ID)).to.be.false;
         expect(agentUsesNativeModelCatalog('cursor')).to.be.false;
         expect(agentSupportsModelPicker('cursor')).to.be.false;
+        expect(agentSupportsModelPicker('goose')).to.be.false;
     });
 
     it('rejects excluded OpenRouter slugs and clears stale localStorage', () => {

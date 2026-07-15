@@ -32,6 +32,14 @@ class TestableGitReviewEndpoint extends QaapGitReviewEndpoint {
     isMetadataOnlyUntrackedFileForTest(root: string, file: string): Promise<boolean> {
         return this.isMetadataOnlyUntrackedFile(root, file);
     }
+
+    deleteLocalBranchForTest(root: string, branch: string): Promise<void> {
+        return this.deleteLocalBranch(root, branch);
+    }
+
+    parseWorktreePathsForBranchForTest(porcelain: string, branch: string): string[] {
+        return this.parseWorktreePathsForBranch(porcelain, branch);
+    }
 }
 
 describe('qaap-git-review-endpoint computeFileDiff', function (): void {
@@ -168,5 +176,57 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         expect(endpoint.sanitizeRelativePathForTest('/tmp/outside.ts')).to.equal(undefined);
         expect(endpoint.sanitizeRelativePathForTest('src/../../outside.ts')).to.equal(undefined);
         expect(endpoint.sanitizeRelativePathForTest('src/inside.ts')).to.equal('src/inside.ts');
+    });
+});
+
+describe('qaap-git-review-endpoint deleteLocalBranch', function (): void {
+    this.timeout(20_000);
+
+    let repo: string;
+    const endpoint = new TestableGitReviewEndpoint();
+
+    const git = (args: string[], cwd: string = repo): string =>
+        execFileSync('git', args, { cwd, encoding: 'utf8' });
+
+    beforeEach(() => {
+        repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-git-delete-branch-'));
+        git(['init', '-q'], repo);
+        git(['config', 'user.email', 'spec@qaap.test'], repo);
+        git(['config', 'user.name', 'qaap spec'], repo);
+        git(['commit', '--allow-empty', '-qm', 'init'], repo);
+    });
+
+    afterEach(() => {
+        fs.rmSync(repo, { recursive: true, force: true });
+    });
+
+    it('parses worktree porcelain blocks for a nested branch name', () => {
+        const porcelain = [
+            'worktree /tmp/main',
+            'HEAD abc',
+            'branch refs/heads/main',
+            '',
+            'worktree /tmp/parallel/claude',
+            'HEAD def',
+            'branch refs/heads/qaap/parallel/08343a1f/claude',
+        ].join('\n');
+        expect(endpoint.parseWorktreePathsForBranchForTest(porcelain, 'qaap/parallel/08343a1f/claude'))
+            .to.deep.equal(['/tmp/parallel/claude']);
+    });
+
+    it('deletes a branch that is checked out in a linked worktree', async () => {
+        const branch = 'qaap/parallel/08343a1f/claude';
+        git(['branch', branch], repo);
+        const worktreePath = path.join(repo, 'linked-wt');
+        git(['worktree', 'add', worktreePath, branch], repo);
+        await endpoint.deleteLocalBranchForTest(repo, branch);
+        expect(git(['branch', '--list', branch], repo).trim()).to.equal('');
+        expect(fs.existsSync(worktreePath)).to.equal(false);
+    });
+
+    it('deletes a plain local branch without a linked worktree', async () => {
+        git(['branch', 'feature/plain'], repo);
+        await endpoint.deleteLocalBranchForTest(repo, 'feature/plain');
+        expect(git(['branch', '--list', 'feature/plain'], repo).trim()).to.equal('');
     });
 });

@@ -14,6 +14,7 @@ import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-pr
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
+import { isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
 import {
     type TranscriptFileTreeEntry,
     type TranscriptFilesViewServices,
@@ -62,7 +63,7 @@ function toTranscriptAbsoluteFilePath(path: string): string | undefined {
 
 export function resolveTranscriptWorkspaceRootUri(cwd: string, workspaceService: WorkspaceService): URI | undefined {
     const trimmed = cwd.trim();
-    if (!trimmed) {
+    if (!trimmed || !isTranscriptWorkspaceFilesystemPath(trimmed)) {
         return undefined;
     }
     if (/^file:/i.test(trimmed)) {

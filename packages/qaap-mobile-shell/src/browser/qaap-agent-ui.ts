@@ -108,7 +108,10 @@ export function createAgentSheetOptionButton(options: {
         content.append(chevron);
     }
     btn.append(content);
-    btn.addEventListener('click', options.onSelect);
+    btn.addEventListener('click', event => {
+        event.stopPropagation();
+        options.onSelect();
+    });
     return btn;
 }
 

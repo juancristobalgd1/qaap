@@ -219,7 +219,7 @@ export function mountTranscriptFilesView(
         note.className = 'theia-mobile-transcript-files-note';
         note.textContent = services.localize(
             'qaap/mobileProjects/filesUnavailable',
-            'Files are unavailable for this conversation (no workspace path).',
+            'Open or clone this project to browse its files.',
         );
         root.append(note);
         return { root, dispose: disposables };
@@ -234,6 +234,7 @@ export function mountTranscriptFilesView(
         filter: '',
         childrenByPath: new Map<string, readonly TranscriptFileTreeEntry[]>(),
         loadingPaths: new Set<string>(),
+        failedPaths: new Set<string>(),
         previewRequestId: 0,
         treePosition: resolveTranscriptFilesTreePosition(),
         treeVisible: resolveTranscriptFilesTreeVisible(),
@@ -936,9 +937,11 @@ export function mountTranscriptFilesView(
                     relativePath: services.relativePathForResource(child.resourcePath, state.rootUri),
                 }));
             state.childrenByPath.set(resourcePath, sorted);
+            state.failedPaths.delete(resourcePath);
             return sorted;
         } catch {
             state.childrenByPath.set(resourcePath, []);
+            state.failedPaths.add(resourcePath);
             return [];
         } finally {
             state.loadingPaths.delete(resourcePath);
@@ -1059,7 +1062,12 @@ export function mountTranscriptFilesView(
                 empty.className = 'theia-mobile-transcript-files-tree-empty';
                 empty.textContent = state.filter.trim()
                     ? services.localize('qaap/mobileProjects/filesNoMatches', 'No matching files.')
-                    : services.localize('qaap/mobileProjects/filesEmptyTree', 'This workspace folder is empty.');
+                    : state.failedPaths.has(state.rootUri)
+                        ? services.localize(
+                            'qaap/mobileProjects/filesLoadFailed',
+                            'Could not load files for this workspace. Open the project folder or check that it exists on this machine.',
+                        )
+                        : services.localize('qaap/mobileProjects/filesEmptyTree', 'This workspace folder is empty.');
                 treeScroll.append(empty);
                 return;
             }
@@ -1301,6 +1309,7 @@ export function mountTranscriptFilesView(
     if (services.watchFileTreeChanges) {
         disposables.push(services.watchFileTreeChanges(() => {
             state.childrenByPath.clear();
+            state.failedPaths.clear();
             void renderTree();
         }));
     }

@@ -153,6 +153,9 @@ const TRANSCRIPT_SSE_COALESCE_RAF = true;
 const TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS = 450;
 const TRANSCRIPT_PREVIEW_POLL_BASE_MS = 900;
 const TRANSCRIPT_PREVIEW_POLL_MAX_MS = 5_000;
+/** While server-side capture runs, poll the open transcript until evidence lands. */
+const TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS = 3_000;
+const TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS = 120_000;
 
 /** SSE-first live transcript watch, debounced refetch, and inline approval bar. */
 export class MobileProjectsTranscriptLiveUi {
@@ -175,6 +178,8 @@ export class MobileProjectsTranscriptLiveUi {
     protected transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
     protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
     protected transcriptPreviewPollMisses = 0;
+    protected transcriptVisualVerificationPollTimer: number | undefined;
+    protected transcriptVisualVerificationPollUntil: number | undefined;
     protected refreshInFlight: Promise<void> | undefined;
     protected refreshInFlightConversationId: string | undefined;
     protected readonly transcriptPreviewFailureReportedFor = new Set<string>();
@@ -892,6 +897,7 @@ export class MobileProjectsTranscriptLiveUi {
         this.lastInlineApprovalSyncKey = undefined;
         this.transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
         this.transcriptPreviewPollMisses = 0;
+        this.stopTranscriptVisualVerificationPoll();
         this.stopTranscriptComposerActivityRefresh();
         this.transcriptLiveController?.stopWatch();
         this.host.transcriptScheduleRefresh = undefined;
@@ -1226,7 +1232,13 @@ export class MobileProjectsTranscriptLiveUi {
     ensureTranscriptConversationRefresh(): void {
         const context = this.resolveTranscriptRefreshContext();
         if (!context || !this.isWatchingOpenTranscript(context.summary.id)) {
+            this.stopTranscriptVisualVerificationPoll();
             return;
+        }
+        if (context.summary.visualVerificationPending) {
+            this.scheduleTranscriptVisualVerificationPoll(context.summary.id);
+        } else {
+            this.stopTranscriptVisualVerificationPoll();
         }
         if (!this.host.transcriptScheduleRefresh) {
             this.scheduleTranscriptConversationRefresh(context.project, context.summary, context.chatHost);
@@ -1239,6 +1251,40 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         this.host.transcriptScheduleRefresh();
+    }
+
+    protected scheduleTranscriptVisualVerificationPoll(conversationId: string): void {
+        if (this.transcriptVisualVerificationPollTimer !== undefined) {
+            return;
+        }
+        this.transcriptVisualVerificationPollUntil = Date.now() + TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS;
+        const tick = (): void => {
+            this.transcriptVisualVerificationPollTimer = undefined;
+            if (!this.isWatchingOpenTranscript(conversationId)) {
+                this.stopTranscriptVisualVerificationPoll();
+                return;
+            }
+            const summary = this.host.transcriptOpenSummary;
+            if (!summary || summary.id !== conversationId || !summary.visualVerificationPending) {
+                this.stopTranscriptVisualVerificationPoll();
+                return;
+            }
+            if ((this.transcriptVisualVerificationPollUntil ?? 0) <= Date.now()) {
+                this.stopTranscriptVisualVerificationPoll();
+                return;
+            }
+            void this.refreshOpenTranscriptConversation({ forcePoll: true });
+            this.transcriptVisualVerificationPollTimer = window.setTimeout(tick, TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS);
+        };
+        this.transcriptVisualVerificationPollTimer = window.setTimeout(tick, TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS);
+    }
+
+    protected stopTranscriptVisualVerificationPoll(): void {
+        if (this.transcriptVisualVerificationPollTimer !== undefined) {
+            window.clearTimeout(this.transcriptVisualVerificationPollTimer);
+            this.transcriptVisualVerificationPollTimer = undefined;
+        }
+        this.transcriptVisualVerificationPollUntil = undefined;
     }
 
     scheduleTranscriptConversationRefresh(

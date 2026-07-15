@@ -27,6 +27,8 @@ describe('qaap-agent-native-model-catalog', () => {
         expect(agentUsesNativeModelCatalog('qaiq')).to.equal(false);
         expect(agentUsesNativeModelCatalog('shell')).to.equal(false);
         expect(agentUsesNativeModelCatalog('cursor')).to.equal(false);
+        expect(agentUsesNativeModelCatalog('goose')).to.equal(false);
+        expect(agentUsesNativeModelCatalog('hermes')).to.equal(false);
     });
 
     it('parses CLI model lines', () => {
