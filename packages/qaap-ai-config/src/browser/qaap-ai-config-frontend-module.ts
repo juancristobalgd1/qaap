@@ -24,6 +24,8 @@ import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
 import { DefaultSkillService, SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { QaapSkillService } from './qaap-skill-service';
+import { SkillPromptCoordinator } from '@theia/ai-core/lib/browser/skill-prompt-coordinator';
+import { QaapSkillPromptCoordinator } from './qaap-skill-prompt-coordinator';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapCoderPromptContribution).toSelf().inSingletonScope();
@@ -47,6 +49,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapSkillService).toSelf().inSingletonScope();
     rebind(DefaultSkillService).toService(QaapSkillService);
     rebind(SkillService).toService(QaapSkillService);
+
+    bind(QaapSkillPromptCoordinator).toSelf().inSingletonScope();
+    rebind(SkillPromptCoordinator).toService(QaapSkillPromptCoordinator);
 
     bind(QaapLaunchListProvider).toSelf().inSingletonScope();
     rebind(LaunchListProvider).toService(QaapLaunchListProvider);

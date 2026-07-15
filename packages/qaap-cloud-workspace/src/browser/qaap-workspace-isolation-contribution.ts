@@ -42,9 +42,8 @@ export class QaapWorkspaceIsolationContribution implements
 
     protected redirectScheduled = false;
 
-    async onStart(): Promise<void> {
-        await this.workspace.ready;
-        await this.redirectContainerWorkspaceIfNeeded('startup');
+    onStart(): void {
+        void this.workspace.ready.then(() => this.redirectContainerWorkspaceIfNeeded('startup'));
     }
 
     async canHandle(uri: URI): Promise<boolean> {

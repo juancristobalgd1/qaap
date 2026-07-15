@@ -25,6 +25,17 @@ export class QaapSkillService extends DefaultSkillService {
     @inject(QaapProjectSkillRoots) @optional()
     protected readonly projectSkillRoots?: QaapProjectSkillRoots;
 
+    /**
+     * Do not block {@link SkillService.ready} on the first full directory scan — hosted scans can
+     * take 20–30s while SkillPromptCoordinator (and the whole onStart chain) waits on `ready`.
+     */
+    @postConstruct()
+    protected initQaapNonBlockingReady(): void {
+        void this.workspaceService.ready.then(() => {
+            this._ready.resolve();
+        });
+    }
+
     @postConstruct()
     protected initQaapProjectSkillRoots(): void {
         this.projectSkillRoots?.onDidChange(() => this.scheduleUpdate());
