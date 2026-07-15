@@ -1153,7 +1153,8 @@ export class MobileProjectsStickyComposerSheetsUi {
             section.className = 'theia-qaap-agent-sheet-provider';
             const label = document.createElement('div');
             label.className = 'theia-qaap-agent-sheet-provider-label';
-            appendLlmProviderIcon(label, vendor, providerModels[0]?.modelId, 'sm');
+            // Section header: BYOK/gateway brand only (model rows use slug-aware icons).
+            appendLlmProviderIcon(label, vendor, undefined, 'sm');
             const labelText = document.createElement('span');
             labelText.textContent = formatQaiqModelProviderLabel(vendor);
             label.append(labelText);

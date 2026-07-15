@@ -171,27 +171,23 @@ function brandKeyFromModelSlug(modelId: string): string | undefined {
     return undefined;
 }
 
-/** Resolve a stable brand id for LLM picker icons (vendor + optional OpenRouter-style slug). */
+/**
+ * Resolve a stable brand id for LLM picker icons.
+ * Prefer the model/org brand from the slug (e.g. HF `meta-llama/…` → Meta) and fall back to the BYOK vendor.
+ */
 export function resolveLlmProviderBrandKey(vendor: string | undefined, modelId?: string): string | undefined {
-    const normalizedVendor = normalizeToken(vendor);
-
-    if (normalizedVendor === 'openrouter' || normalizedVendor === 'unknown' || !normalizedVendor) {
-        const fromSlug = modelId ? brandKeyFromModelSlug(modelId) : undefined;
-        if (fromSlug) {
-            return fromSlug;
-        }
-        return normalizedVendor === 'openrouter' ? 'openrouter' : undefined;
-    }
-
-    if (VENDOR_BRAND_KEYS[normalizedVendor]) {
-        return VENDOR_BRAND_KEYS[normalizedVendor];
-    }
-
     const fromSlug = modelId ? brandKeyFromModelSlug(modelId) : undefined;
     if (fromSlug) {
         return fromSlug;
     }
 
+    const normalizedVendor = normalizeToken(vendor);
+    if (VENDOR_BRAND_KEYS[normalizedVendor]) {
+        return VENDOR_BRAND_KEYS[normalizedVendor];
+    }
+    if (normalizedVendor === 'unknown') {
+        return undefined;
+    }
     return normalizedVendor || undefined;
 }
 

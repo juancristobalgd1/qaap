@@ -6,18 +6,21 @@ import {
 
 describe('qaap-llm-provider-branding', () => {
 
-    it('maps BYOK vendors to brand keys', () => {
+    it('falls back to BYOK vendor when the model slug has no known brand', () => {
         expect(resolveLlmProviderBrandKey('openai', 'gpt-5.5')).to.equal('openai');
         expect(resolveLlmProviderBrandKey('openrouter')).to.equal('openrouter');
-        expect(resolveLlmProviderBrandKey('nvidia', 'meta/llama-3.3-70b-instruct')).to.equal('nvidia');
         expect(resolveLlmProviderBrandKey('gemini', 'gemini-2.5-flash')).to.equal('gemini');
     });
 
-    it('infers upstream provider from OpenRouter slugs', () => {
+    it('prefers the model/org brand over the BYOK provider when the slug is known', () => {
+        expect(resolveLlmProviderBrandKey('huggingface', 'meta-llama/Llama-3.2-3B-Instruct')).to.equal('meta');
+        expect(resolveLlmProviderBrandKey('nvidia', 'meta/llama-3.3-70b-instruct')).to.equal('meta');
+        expect(resolveLlmProviderBrandKey('nvidia', 'nvidia/llama-3.3-nemotron-70b-instruct')).to.equal('nvidia');
         expect(resolveLlmProviderBrandKey('openrouter', 'deepseek/deepseek-v3')).to.equal('deepseek');
         expect(resolveLlmProviderBrandKey('openrouter', 'qwen/qwen-2.5-coder')).to.equal('qwen');
         expect(resolveLlmProviderBrandKey('openrouter', 'google/gemma-3-27b-it')).to.equal('google');
         expect(resolveLlmProviderBrandKey('openrouter', 'anthropic/claude-sonnet-4-6')).to.equal('anthropic');
+        expect(resolveLlmProviderBrandKey('openrouter', 'cohere/north-mini-code:free')).to.equal('cohere');
     });
 
     it('returns svg brands for known providers', () => {
