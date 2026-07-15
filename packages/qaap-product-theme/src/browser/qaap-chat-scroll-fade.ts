@@ -45,14 +45,26 @@ export function resolveChatScrollFadeState(
 }
 
 export function resolveChatScrollFadeHosts(scroller: HTMLElement): ChatScrollFadeHosts {
+    const workHubChat = scroller.closest<HTMLElement>('.qaap-work-hub-chat-view-widget');
+    const transcriptList = scroller.classList.contains('theia-mobile-agent-transcript')
+        ? scroller
+        : scroller.closest<HTMLElement>('.theia-mobile-agent-transcript');
+    if (workHubChat && transcriptList) {
+        const realChatHost = transcriptList.parentElement?.classList.contains('theia-mobile-agent-transcript-real-chat')
+            ? transcriptList.parentElement
+            : transcriptList.closest<HTMLElement>('.theia-mobile-agent-transcript-real-chat');
+        const inlineTranscript = realChatHost?.closest<HTMLElement>('.theia-mobile-agents-hub-inline-transcript');
+        return {
+            top: inlineTranscript ?? workHubChat,
+            bottom: realChatHost ?? transcriptList,
+        };
+    }
+
     const chatView = scroller.closest<HTMLElement>('.chat-view-widget');
     if (chatView) {
         return { top: chatView, bottom: chatView };
     }
 
-    const transcriptList = scroller.classList.contains('theia-mobile-agent-transcript')
-        ? scroller
-        : scroller.closest<HTMLElement>('.theia-mobile-agent-transcript');
     if (transcriptList) {
         const realChatHost = transcriptList.parentElement?.classList.contains('theia-mobile-agent-transcript-real-chat')
             ? transcriptList.parentElement

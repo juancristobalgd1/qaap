@@ -81,6 +81,21 @@
   opacity: 1;
 }
 
+/*
+ * Work Hub in the IDE right chat slot: the outer `.chat-view-widget` spans header +
+ * transcript + sticky composer. Bottom fade must live on `.theia-mobile-agent-transcript-real-chat`
+ * (above the composer) — see `resolveChatScrollFadeHosts` in qaap-chat-scroll-fade.ts.
+ */
+.qaap-work-hub-chat-view-widget.chat-view-widget::before,
+.qaap-work-hub-chat-view-widget.chat-view-widget::after {
+  display: none !important;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-sticky-composer {
+  position: relative;
+  z-index: 13;
+}
+
 /* Top edge — short glass lip under the header; content stays close to chrome. */
 .chat-view-widget::before,
 .theia-mobile-agents-hub-inline-transcript::before,

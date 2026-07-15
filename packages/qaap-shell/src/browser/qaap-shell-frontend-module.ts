@@ -21,8 +21,12 @@ import { QaapDockPanelRenderer } from './qaap-dock-panel-renderer';
 import { QaapSidePanelHandler } from './qaap-side-panel-handler';
 import { QaapStatusBarImpl } from './qaap-status-bar';
 import { QaapShellCommandContribution } from './qaap-shell-command-contribution';
+import { TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
+import { QaapTabBarToolbarRegistry } from './qaap-tab-bar-toolbar-registry';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
+    bind(QaapTabBarToolbarRegistry).toSelf().inSingletonScope();
+    rebind(TabBarToolbarRegistry).toService(QaapTabBarToolbarRegistry);
     bind(QaapShellCommandContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapShellCommandContribution);
     bind(QaapApplicationShellWithToolbar).toSelf().inSingletonScope();
