@@ -73,10 +73,10 @@
             }
             document.documentElement.classList.add('theia-mobile-workhub-boot');
             // Safety net: never leave the shell hidden if the hub fails to mount for any reason.
+            // Only lift the html boot guard — body classes are owned by @theia/qaap-mobile-shell and
+            // must stay active while Work Hub is the surface (stripping them leaks Explorer).
             window.setTimeout(function () {
                 document.documentElement.classList.remove('theia-mobile-workhub-boot');
-                document.body.classList.remove('theia-mobile-mod-workhub-composer-header');
-                document.body.classList.remove('theia-mobile-mod-workhub-hide-ide-side-panels');
             }, 8000);
         } catch (e) { /* ignore */ }
     })();

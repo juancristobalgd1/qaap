@@ -173,6 +173,9 @@ export function installMobileWorkHubBootGuard(): void {
     // Work Hub is the default surface on every viewport. The guard is lifted once the
     // Work Hub/Agents shell has mounted; the classic IDE skips it via `preferDesktopIde`.
     document.documentElement.classList.add(QAAP_MOBILE_WORK_HUB_BOOT_CLASS);
+    // Keep restored Explorer/side panels hidden from the first bundle tick — qaap-login-gate.js
+    // pre-hides via inline CSS, but this invariant must survive after the boot guard lifts.
+    recomputeMobileWorkHubHideIdeSidePanels();
 }
 
 export function clearMobileWorkHubBootGuard(): void {

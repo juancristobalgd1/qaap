@@ -3348,6 +3348,10 @@ html.theia-mobile-workhub-boot body {
 
 html.theia-mobile-workhub-boot #theia-app-shell,
 html.theia-mobile-workhub-boot #theia-top-panel,
+html.theia-mobile-workhub-boot #theia-left-content-panel,
+html.theia-mobile-workhub-boot #theia-right-content-panel,
+html.theia-mobile-workhub-boot #theia-bottom-content-panel,
+html.theia-mobile-workhub-boot #theia-bottom-split-panel,
 html.theia-mobile-workhub-boot .theia-mobile-workbench-top-bar,
 html.theia-mobile-workhub-boot .theia-mobile-bottom-chrome-host,
 html.theia-mobile-workhub-boot #theia-statusBar,

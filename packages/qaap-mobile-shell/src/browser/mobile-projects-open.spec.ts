@@ -91,6 +91,7 @@ describe('mobile-projects-open work hub bootstrap', () => {
     it('installs the Work Hub boot guard on desktop viewports by default', () => {
         installMobileWorkHubBootGuard();
         expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(true);
+        expect(document.body.classList.contains('theia-mobile-mod-workhub-hide-ide-side-panels')).to.equal(true);
     });
 
     it('does not install the Work Hub boot guard when desktop IDE is active', () => {
