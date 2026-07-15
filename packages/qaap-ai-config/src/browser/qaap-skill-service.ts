@@ -28,16 +28,13 @@ export class QaapSkillService extends DefaultSkillService {
     /**
      * Do not block {@link SkillService.ready} on the first full directory scan — hosted scans can
      * take 20–30s while SkillPromptCoordinator (and the whole onStart chain) waits on `ready`.
+     * Inversify allows only one @postConstruct per class.
      */
     @postConstruct()
-    protected initQaapNonBlockingReady(): void {
+    protected initQaapSkillService(): void {
         void this.workspaceService.ready.then(() => {
             this._ready.resolve();
         });
-    }
-
-    @postConstruct()
-    protected initQaapProjectSkillRoots(): void {
         this.projectSkillRoots?.onDidChange(() => this.scheduleUpdate());
     }
 
