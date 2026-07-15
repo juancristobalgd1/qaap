@@ -270,8 +270,18 @@ export class QaapHeadlessVisualCaptureService {
         if (!target || agentMessageHasVisualVerificationMarker(target)) {
             return;
         }
+        const captureDirective = parseQaapCaptureDirective(target);
         const chromium = resolveHeadlessChromiumExecutable();
         if (!chromium) {
+            if (captureDirective.mode === 'video') {
+                this.store.recordVisualVerificationFailure(
+                    conversationId,
+                    'Video recording requires a server-side Chromium binary (set QAAP_HEADLESS_CHROMIUM '
+                    + 'or install playwright browsers). Screenshots cannot substitute for [QAAP record].',
+                    target.id,
+                );
+                return;
+            }
             if (!this.chromiumMissingLogged) {
                 this.chromiumMissingLogged = true;
                 console.info('[qaap-headless-visual-capture] no Chromium binary found '
@@ -318,7 +328,7 @@ export class QaapHeadlessVisualCaptureService {
                     port = started.port;
                 }
             }
-            if (parseQaapCaptureDirective(target).mode === 'video') {
+            if (captureDirective.mode === 'video') {
                 await this.recordFlowVideo(conversationId, conv, target.id, port);
             } else {
                 await this.captureFlow(conversationId, conv, target.id, port);

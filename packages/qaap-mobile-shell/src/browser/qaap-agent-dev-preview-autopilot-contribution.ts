@@ -25,7 +25,7 @@ import { deriveVisualFlowSteps } from '../common/qaap-visual-flow-plan';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { captureSameOriginPreview } from '@theia/qaap-adapters/lib/browser/qaap-preview-overflow-actions';
 import { validateQaapPreviewDocument } from './qaap-preview-visual-validation';
-import { conversationLikelyNeedsVisualVerification } from '../common/qaap-visual-verification';
+import { conversationLikelyNeedsVisualVerification, parseQaapCaptureDirective } from '../common/qaap-visual-verification';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import {
     resumeQaapMiniBrowserPreview,
@@ -126,11 +126,17 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         if (!explicitlyRequestedPreview && !needsVisualVerification) {
             return;
         }
+        const lastAgentMessage = [...conversation.messages ?? []]
+            .reverse()
+            .find(message => message.role === 'agent');
+        // `[QAAP record]` is headless-only (Playwright webm). Screenshotting here would silently
+        // downgrade a video request into the image flow ("Walked N pages" + PNG).
+        if (needsVisualVerification && parseQaapCaptureDirective(lastAgentMessage).mode === 'video') {
+            return;
+        }
         // The evidence target is the reply the user is looking at *now*. Captures are attached
         // by message id so a slow dev-server boot can no longer race the next turn's status.
-        const targetAgentMessageId = [...conversation.messages ?? []]
-            .reverse()
-            .find(message => message.role === 'agent')?.id;
+        const targetAgentMessageId = lastAgentMessage?.id;
         const attempt = (this.captureAttemptsByTurn.get(turnKey) ?? 0) + 1;
         if (needsVisualVerification) {
             this.captureAttemptsByTurn.set(turnKey, attempt);

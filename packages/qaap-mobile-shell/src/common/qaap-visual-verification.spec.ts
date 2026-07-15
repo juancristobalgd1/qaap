@@ -103,6 +103,9 @@ describe('qaap-visual-verification', () => {
             .to.deep.equal({ requested: true, mode: 'video', routes: [] });
         expect(parseQaapCaptureDirective({ content: '[QAAP record: / /checkout]' }))
             .to.deep.equal({ requested: true, mode: 'video', routes: ['/', '/checkout'] });
+        // Trailing markdown (e.g. `---` before the evidence block) must not break parsing.
+        expect(parseQaapCaptureDirective({ content: 'Listo.\n[QAAP record: /]---' }))
+            .to.deep.equal({ requested: true, mode: 'video', routes: ['/'] });
     });
 
     it('finds every capture directive in a text block', () => {
