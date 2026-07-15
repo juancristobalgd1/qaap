@@ -12,20 +12,29 @@ describe('qaap-llm-provider-branding', () => {
         expect(resolveLlmProviderBrandKey('gemini', 'gemini-2.5-flash')).to.equal('gemini');
     });
 
-    it('maps Codex / Antigravity section headers and GPT model rows', () => {
+    it('maps Codex / Antigravity / Copilot section headers and GPT model rows', () => {
         expect(resolveLlmProviderBrandKey('codex')).to.equal('codex');
         expect(resolveLlmProviderBrandKey('antigravity')).to.equal('antigravity');
+        expect(resolveLlmProviderBrandKey('copilot')).to.equal('copilot');
+        expect(resolveLlmProviderBrandKey('github-copilot')).to.equal('copilot');
         // GPT rows under a Codex section must use OpenAI, not the Codex monogram.
         expect(resolveLlmProviderBrandKey('codex', 'gpt-5.6-sol')).to.equal('openai');
         expect(resolveLlmProviderBrandKey('codex', 'gpt-5.6-terra')).to.equal('openai');
         expect(resolveLlmProviderBrandKey('codex', 'gpt-5.6-luna')).to.equal('openai');
         expect(resolveLlmProviderBrandKey('codex', 'gpt-5.5')).to.equal('openai');
         expect(resolveLlmProviderBrandKey('codex', 'openai/gpt-4.1')).to.equal('openai');
+        // GPT rows under a Copilot section must use OpenAI, not the Copilot mark.
+        expect(resolveLlmProviderBrandKey('copilot', 'gpt-5.6')).to.equal('openai');
+        expect(resolveLlmProviderBrandKey('copilot', 'gpt-4o')).to.equal('openai');
     });
 
     it('brands OpenCode model rows from the identity after stripping opencode/', () => {
-        // Section header (vendor only) keeps the OpenCode monogram.
+        // Section header (vendor only) uses the OpenCode mark.
         expect(resolveLlmProviderBrandKey('opencode')).to.equal('opencode');
+        expect(resolveLlmProviderBrand('opencode')?.id).to.equal('opencode');
+        expect(resolveLlmProviderBrand('opencode')?.tone).to.equal('light');
+        expect(resolveLlmProviderBrand('opencode')?.svg).to.include('fill="currentColor"');
+        expect(resolveLlmProviderBrand('opencode')?.svg).to.include('M16 6H8v12h8V6zm4 16H4V2h16v20z');
         expect(resolveLlmProviderBrandKey('opencode', 'opencode/claude-sonnet-5')).to.equal('claude');
         expect(resolveLlmProviderBrandKey('opencode', 'opencode/deepseek-v4-flash')).to.equal('deepseek');
         expect(resolveLlmProviderBrandKey('opencode', 'opencode/gemini-3-flash')).to.equal('gemini');
@@ -37,6 +46,10 @@ describe('qaap-llm-provider-branding', () => {
         expect(resolveLlmProviderBrand('opencode', 'opencode/claude-sonnet-5')?.svg).to.include('#D97757');
         expect(resolveLlmProviderBrand('opencode', 'opencode/deepseek-v4-flash')?.svg).to.include('#4D6BFE');
         expect(resolveLlmProviderBrand('opencode', 'opencode/glm-4.7')?.svg).to.include('#2D2D2D');
+        // Unknown OpenCode model falls back to the OpenCode mark (not a monogram).
+        expect(resolveLlmProviderBrandKey('opencode', 'opencode/big-pickle')).to.equal('opencode');
+        expect(resolveLlmProviderBrand('opencode', 'opencode/big-pickle')?.svg)
+            .to.include('M16 6H8v12h8V6zm4 16H4V2h16v20z');
     });
 
     it('prefers the model/org brand over the BYOK provider when the slug is known', () => {
@@ -90,6 +103,11 @@ describe('qaap-llm-provider-branding', () => {
         expect(resolveLlmProviderBrand('codex')?.svg).to.include('codex__grad');
         expect(resolveLlmProviderBrand('codex', 'gpt-5.6-sol')?.id).to.equal('openai');
         expect(resolveLlmProviderBrand('codex', 'gpt-5.6-sol')?.svg).to.include('fill="currentColor"');
+        expect(resolveLlmProviderBrand('copilot')?.id).to.equal('copilot');
+        expect(resolveLlmProviderBrand('copilot')?.tone).to.equal('light');
+        expect(resolveLlmProviderBrand('copilot')?.svg).to.include('fill="currentColor"');
+        expect(resolveLlmProviderBrand('copilot')?.svg).to.include('M19.245 5.364');
+        expect(resolveLlmProviderBrand('copilot', 'gpt-4o')?.id).to.equal('openai');
         expect(resolveLlmProviderBrand('openrouter')?.svgLight).to.include('#111111');
         expect(resolveLlmProviderBrand('openrouter')?.svgDark).to.include('#C8FF00');
     });
