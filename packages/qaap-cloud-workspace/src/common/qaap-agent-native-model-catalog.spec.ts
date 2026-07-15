@@ -43,18 +43,33 @@ describe('qaap-agent-native-model-catalog', () => {
         expect(listStaticNativeAgentModels('unknown-agent')).to.deep.equal([]);
     });
 
-    it('lists frontier Claude Code and Codex models', () => {
+    it('lists frontier Claude Code, Codex, and Copilot models', () => {
         const claude = listStaticNativeAgentModels('claude').map(m => m.modelId);
         expect(claude).to.deep.equal([
+            'claude-fable-5',
             'claude-opus-4-8',
-            'claude-sonnet-4-6',
+            'claude-sonnet-5',
             'claude-haiku-4-5',
+            'claude-sonnet-4-6',
             'claude-opus-4-7',
-            'claude-opus-4-6',
         ]);
 
         const codex = listStaticNativeAgentModels('codex').map(m => m.modelId);
-        expect(codex).to.deep.equal(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini']);
+        expect(codex).to.deep.equal([
+            'gpt-5.6-sol',
+            'gpt-5.6-terra',
+            'gpt-5.6-luna',
+            'gpt-5.5',
+        ]);
+
+        const copilot = listStaticNativeAgentModels('copilot').map(m => m.modelId);
+        expect(copilot).to.deep.equal([
+            'gpt-5.6-sol',
+            'gpt-5.6-terra',
+            'gpt-5.6-luna',
+            'claude-sonnet-5',
+            'claude-opus-4.8',
+        ]);
     });
 
     it('lists Antigravity API models from the CLI /model menu', () => {

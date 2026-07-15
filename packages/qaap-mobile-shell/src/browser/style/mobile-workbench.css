@@ -24693,8 +24693,12 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   box-sizing: border-box;
 }
 
+/* Extra lip separation only while the tray is visible (inside the tray).
+ * Do NOT bump stage padding-bottom here: `:has(> .theia-mod-workspace-context-tray)`
+ * stays true when the tray is collapsed under `theia-mod-input-expanded`, and that
+ * selector out-specificity `padding-bottom: 0`, so the composer would not lower. */
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .qaap-codex-context-tray.theia-mod-workspace-context-tray .theia-mobile-projects-sticky-composer-context-fields {
-  padding-top: 4px;
+  padding-top: 8px;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .qaap-codex-context-tray.theia-mod-workspace-context-tray .theia-mobile-projects-sticky-composer-context-field.theia-mod-project {

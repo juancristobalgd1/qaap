@@ -45,6 +45,8 @@ function nativeOption(
 /**
  * Models exposed by the Antigravity CLI `/model` menu (Google API labels).
  * Keep in sync with the TUI strings — agy stores and resolves them verbatim in settings.
+ * As of mid-July 2026 (agy 1.1.x): Gemini 3.5 Flash is the default frontier Flash;
+ * Claude rows remain Sonnet/Opus 4.6 in the official picker (not Sonnet 5 / Opus 4.8 yet).
  */
 export const ANTIGRAVITY_API_MODELS: readonly {
     readonly label: string;
@@ -76,27 +78,31 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 nativeOption(id, 'qwen3.5-plus', 'Qwen3.5 Plus'),
             ];
         case 'codex':
-            // Keep in sync with the Codex CLI /model menu (ChatGPT sign-in).
+            // Keep in sync with the Codex CLI /model menu (GPT-5.6 GA, July 2026).
             return [
-                nativeOption(id, 'gpt-5.5', 'GPT-5.5'),
-                nativeOption(id, 'gpt-5.4', 'GPT-5.4'),
-                nativeOption(id, 'gpt-5.4-mini', 'GPT-5.4-Mini'),
+                nativeOption(id, 'gpt-5.6-sol', 'GPT-5.6 Sol'),
+                nativeOption(id, 'gpt-5.6-terra', 'GPT-5.6 Terra'),
+                nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6 Luna'),
+                nativeOption(id, 'gpt-5.5', 'GPT-5.5 Legado'),
             ];
         case 'claude':
-            // Keep in sync with the Claude Code CLI /model menu.
+            // Keep in sync with the Claude Code CLI /model menu (mid-July 2026).
             return [
+                nativeOption(id, 'claude-fable-5', 'Fable 5', 'anthropic'),
                 nativeOption(id, 'claude-opus-4-8', 'Opus 4.8', 'anthropic'),
-                nativeOption(id, 'claude-sonnet-4-6', 'Sonnet 4.6', 'anthropic'),
+                nativeOption(id, 'claude-sonnet-5', 'Sonnet 5', 'anthropic'),
                 nativeOption(id, 'claude-haiku-4-5', 'Haiku 4.5', 'anthropic'),
+                nativeOption(id, 'claude-sonnet-4-6', 'Sonnet 4.6 Legado', 'anthropic'),
                 nativeOption(id, 'claude-opus-4-7', 'Opus 4.7 Legado', 'anthropic'),
-                nativeOption(id, 'claude-opus-4-6', 'Opus 4.6 Legado', 'anthropic'),
             ];
         case 'copilot':
+            // Keep in sync with Copilot CLI model IDs (v1.0.70+ GPT-5.6; Sonnet 5 / Opus 4.8).
             return [
-                nativeOption(id, 'gpt-5.2', 'GPT-5.2'),
-                nativeOption(id, 'gpt-5.1', 'GPT-5.1'),
-                nativeOption(id, 'claude-sonnet-4.5', 'Claude Sonnet 4.5', 'anthropic'),
-                nativeOption(id, 'claude-haiku-4.5', 'Claude Haiku 4.5', 'anthropic'),
+                nativeOption(id, 'gpt-5.6-sol', 'GPT-5.6 Sol'),
+                nativeOption(id, 'gpt-5.6-terra', 'GPT-5.6 Terra'),
+                nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6 Luna'),
+                nativeOption(id, 'claude-sonnet-5', 'Claude Sonnet 5', 'anthropic'),
+                nativeOption(id, 'claude-opus-4.8', 'Claude Opus 4.8', 'anthropic'),
             ];
         case 'antigravity':
         case 'gemini':
