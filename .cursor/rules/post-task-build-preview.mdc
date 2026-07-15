@@ -5,24 +5,27 @@ alwaysApply: true
 
 # Flujo obligatorio al terminar una tarea de código
 
-Cuando completes **cualquier** cambio de código en este repo, ejecuta **en este orden** para que la vista previa en browser refleje el trabajo:
+Cuando completes **cualquier** cambio de código en este repo, ejecuta **siempre** estos tres pasos **en orden** para que la vista previa refleje el trabajo:
 
-1. **Compilar** paquetes tocados (mínimo mobile-shell y cloud-workspace si aplica):
+1. **Compilar** (mínimo mobile-shell + cloud-workspace; añade `--scope` si tocaste otros `@theia/qaap-*`):
    ```sh
    npx lerna run compile --scope @theia/qaap-mobile-shell --scope @theia/qaap-cloud-workspace
    ```
-   Si solo modificaste otros `@theia/qaap-*`, añade sus `--scope` o usa `npm run compile` si el cambio es amplio.
 
-2. **Bundle frontend** (webpack; sin esto el browser no carga el JS/CSS nuevo):
+2. **Bundle frontend** (webpack; sin esto el browser no carga JS/CSS nuevo):
    ```sh
    npm run build:browser
    ```
 
-3. **Servidor de desarrollo** (proceso largo — ejecutar en segundo plano):
+3. **Servidor de desarrollo** — reiniciar si ya estaba corriendo:
+   - Si `npm run start:browser` ya está activo (terminal del agente, o proceso escuchando en el puerto de preview), **mata el proceso anterior** antes de arrancar de nuevo (`lsof -i :3000 -sTCP:LISTEN` o el PID del terminal).
+   - Luego ejecuta en **segundo plano**:
    ```sh
    npm run start:browser
    ```
-   Por defecto escucha en **http://localhost:3000**.
+   Puerto por defecto: **3000** → URL **http://localhost:3000** (indica otro host/puerto si el log muestra distinto).
+
+4. **Respuesta final al usuario:** incluye siempre la **URL de preview** y confirma que el servidor escucha (p. ej. curl al puerto o mensaje de arranque en log).
 
 ## Cuándo omitir
 

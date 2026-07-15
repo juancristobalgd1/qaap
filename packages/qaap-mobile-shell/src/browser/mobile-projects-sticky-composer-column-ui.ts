@@ -16,6 +16,7 @@ import {
     resolveAgentApprovalPolicyOption,
     type QaapAgentApprovalPolicyId,
 } from '../common/qaap-sticky-composer-approval-policy';
+import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
 import {
     populateAgentToolbarButton,
     populateApprovalPolicyToolbarButton,
@@ -70,7 +71,7 @@ export class MobileProjectsStickyComposerColumnUi {
         setDraft: (value: string) => void;
         resolveAgentLabel: () => string;
         resolveAgentId: () => string;
-        resolveModelLabel?: () => string | undefined;
+        resolveAgentModel?: () => { readonly vendor: string; readonly modelId: string } | undefined;
         composerCwd?: string;
         modes?: readonly ChatMode[];
         resolveModeLabel?: () => string;
@@ -172,12 +173,13 @@ export class MobileProjectsStickyComposerColumnUi {
         agentBtn.className = 'theia-mobile-projects-sticky-composer-agent';
         const agentLabel = options.resolveAgentLabel();
         const agentId = options.resolveAgentId();
-        const modelLabel = options.resolveModelLabel?.()
-            ?? this.host.stickyComposerAgentsUi.resolveStickyComposerModelLabel(
+        const agentModel = options.resolveAgentModel?.()
+            ?? this.host.stickyComposerAgentsUi.resolveStickyComposerAgentModel(
                 agentId,
                 options.project,
                 options.composerCwd,
             );
+        const modelLabel = agentModel ? formatQaiqModelSelectionLabel(agentModel) : undefined;
         agentBtn.title = modelLabel
             ? nls.localize('qaap/mobileProjects/stickyComposerAgentWithModel', 'Agent: {0}, model: {1}', agentLabel, modelLabel)
             : nls.localize('qaap/mobileProjects/stickyComposerAgent', 'Agent: {0}', agentLabel);
@@ -185,7 +187,7 @@ export class MobileProjectsStickyComposerColumnUi {
         populateAgentToolbarButton(agentBtn, {
             agentId,
             label: agentLabel,
-            modelLabel,
+            agentModel,
         });
         if (options.agentLocked) {
             agentBtn.classList.add('theia-mod-locked');

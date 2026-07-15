@@ -148,10 +148,10 @@ export class MobileProjectsTranscriptComposerUi {
         return this.host.projectRowsUi.resolveConversationAgentLabel(this.host.transcriptComposerSummary);
     }
 
-    resolveTranscriptComposerModelLabel(
+    resolveTranscriptComposerAgentModel(
         agentId: string,
         cwd: string | undefined,
-    ): string | undefined {
+    ): QaapCreateAgentTaskQaiqModel | undefined {
         if (!agentSupportsModelPicker(agentId)) {
             return undefined;
         }
@@ -159,10 +159,17 @@ export class MobileProjectsTranscriptComposerUi {
         if (summaryId && this.host.transcriptComposerPrefsConvId === summaryId) {
             const fromMemory = this.host.transcriptComposerAgentModel;
             if (fromMemory?.modelId) {
-                return formatQaiqModelSelectionLabel(fromMemory);
+                return fromMemory;
             }
         }
-        const model = readStoredAgentModel(cwd, agentId);
+        return readStoredAgentModel(cwd, agentId);
+    }
+
+    resolveTranscriptComposerModelLabel(
+        agentId: string,
+        cwd: string | undefined,
+    ): string | undefined {
+        const model = this.resolveTranscriptComposerAgentModel(agentId, cwd);
         return model ? formatQaiqModelSelectionLabel(model) : undefined;
     }
 

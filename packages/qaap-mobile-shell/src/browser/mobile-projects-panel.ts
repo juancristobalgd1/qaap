@@ -49,9 +49,12 @@ import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
 import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-probe';
 import { QaapBoundedLruMap } from './qaap-bounded-lru-map';
 import {
+    getConversation,
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
+import { formatConversationForClipboard } from '../common/qaap-conversation-clipboard-text';
+import { MobileSnackbar } from './mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
     type QaapAgentTaskAgentOption,
@@ -1875,6 +1878,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             'codicon-history',
             () => this.openWorkHubSessionsSidebar(),
         );
+        appendItem(
+            nls.localize('qaap/workHubToolbar/copyConversation', 'Copy full conversation'),
+            'codicon-copy',
+            () => this.copyActiveConversationToClipboard(),
+            this.isCopyConversationEnabled(),
+        );
         if (this.openAiConfigurationSheet) {
             this.appendHeaderOverflowSeparator(menu);
             appendItem(
@@ -1936,6 +1945,73 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         separator.className = 'qaap-work-hub-toolbar-menu-separator';
         separator.setAttribute('role', 'separator');
         menu.append(separator);
+    }
+
+    protected isCopyConversationEnabled(): boolean {
+        const state = this.transcriptController.state;
+        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
+        if (!summary) {
+            return false;
+        }
+        if (state.transcriptLastConv?.id === summary.id && state.transcriptLastConv.messages.length > 0) {
+            return true;
+        }
+        const cached = this.transcriptConversationCache.get(summary.id);
+        if ((cached?.messages.length ?? 0) > 0) {
+            return true;
+        }
+        return (summary.messageCount ?? 0) > 0;
+    }
+
+    protected async resolveActiveConversationForCopy(): Promise<QaapAgentConversationDTO | undefined> {
+        const state = this.transcriptController.state;
+        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
+        if (!summary) {
+            return undefined;
+        }
+        if (state.transcriptLastConv?.id === summary.id) {
+            return state.transcriptLastConv;
+        }
+        const cached = this.transcriptConversationCache.get(summary.id);
+        if (cached) {
+            return cached;
+        }
+        if (summary.source === 'theia-chat') {
+            return this.conversations?.getTheiaConversation(summary.id);
+        }
+        try {
+            return await getConversation(summary.id);
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected async copyActiveConversationToClipboard(): Promise<void> {
+        const conv = await this.resolveActiveConversationForCopy();
+        const text = conv ? formatConversationForClipboard(conv) : '';
+        if (!text.trim()) {
+            MobileSnackbar.show(
+                nls.localize('qaap/workHubToolbar/copyConversationEmpty', 'No messages to copy'),
+                { kind: 'warning', duration: 1800 },
+            );
+            return;
+        }
+        try {
+            if (this.previewClipboard) {
+                await this.previewClipboard.writeText(text);
+            } else {
+                await navigator.clipboard.writeText(text);
+            }
+            MobileSnackbar.show(
+                nls.localize('qaap/workHubToolbar/copyConversationCopied', 'Conversation copied'),
+                { kind: 'success', duration: 1800 },
+            );
+        } catch {
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/transcriptShellCopyFailed', 'Could not copy'),
+                { kind: 'warning' },
+            );
+        }
     }
 
     async openHeaderNewChat(): Promise<void> {

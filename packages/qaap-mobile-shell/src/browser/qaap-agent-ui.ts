@@ -251,22 +251,39 @@ export function createPickerSheetOptionButton(options: {
     return btn;
 }
 
-/** Sticky composer toolbar agent button — brand icon + optional model id (agent name is aria/title only). */
+/** Sticky composer toolbar agent button — brand icon + provider badge + model id (agent name is aria/title only). */
 export function populateAgentToolbarButton(
     button: HTMLButtonElement,
-    options: { readonly agentId: string; readonly label: string; readonly modelLabel?: string },
+    options: {
+        readonly agentId: string;
+        readonly label: string;
+        readonly agentModel?: { readonly vendor: string; readonly modelId: string };
+    },
 ): void {
     button.replaceChildren();
     const chevron = document.createElement('span');
     chevron.className = 'codicon codicon-chevron-down';
     chevron.setAttribute('aria-hidden', 'true');
-    const model = options.modelLabel?.trim();
-    if (model) {
-        appendAgentBrandIcon(button, options.agentId, 'sm');
+    const modelId = options.agentModel?.modelId?.trim();
+    if (modelId) {
+        const identity = document.createElement('span');
+        identity.className = 'theia-mobile-projects-sticky-composer-agent-identity';
+
+        const avatar = document.createElement('span');
+        avatar.className = 'theia-mobile-projects-sticky-composer-agent-avatar';
+        appendAgentBrandIcon(avatar, options.agentId, 'sm');
+        const badge = document.createElement('span');
+        badge.className = 'theia-mobile-projects-sticky-composer-agent-provider-badge';
+        if (appendLlmProviderIcon(badge, options.agentModel!.vendor, options.agentModel!.modelId, 'sm')) {
+            avatar.append(badge);
+        }
+        identity.append(avatar);
+
         const labelEl = document.createElement('span');
         labelEl.className = 'theia-mobile-projects-sticky-composer-agent-label';
-        labelEl.textContent = model;
-        button.append(labelEl, chevron);
+        labelEl.textContent = modelId;
+        identity.append(labelEl, chevron);
+        button.append(identity);
         button.classList.remove('theia-mod-logo-only');
     } else {
         appendAgentBrandIcon(button, options.agentId, 'sm');

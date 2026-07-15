@@ -17,6 +17,7 @@ import {
     THEIA_CODER_AGENT_ID,
     type QaapAgentTaskAgentOption,
     type QaapAgentTaskListSnapshot,
+    type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
 import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
@@ -71,18 +72,25 @@ export class MobileProjectsStickyComposerAgentsUi {
         }
         return this.host.projectRowsUi.resolveConversationAgentLabel(undefined);
     }
-    resolveStickyComposerModelLabel(
+    resolveStickyComposerAgentModel(
         agentId: string,
         project?: MobileProjectEntry,
         composerCwd?: string,
-    ): string | undefined {
+    ): QaapCreateAgentTaskQaiqModel | undefined {
         if (!agentSupportsModelPicker(agentId)) {
             return undefined;
         }
         const cwd = composerCwd ?? (project
             ? (this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id))
             : undefined);
-        const model = readStoredAgentModel(cwd, agentId);
+        return readStoredAgentModel(cwd, agentId);
+    }
+    resolveStickyComposerModelLabel(
+        agentId: string,
+        project?: MobileProjectEntry,
+        composerCwd?: string,
+    ): string | undefined {
+        const model = this.resolveStickyComposerAgentModel(agentId, project, composerCwd);
         return model ? formatQaiqModelSelectionLabel(model) : undefined;
     }
     reconcileStickyComposerPinnedAgent(

@@ -21,6 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. `npm run compile` — TypeScript errors
 2. `node scripts/qaap-drift-check.js` — drift policy
 3. `npm run build:browser` — only if UI changes need testing in browser
+4. Tras cambios de UI/producto: reiniciar preview y devolver URL al usuario — ver `.cursor/rules/post-task-build-preview.mdc`.
 
 **Critical Qaap product contract:** Work Hub is the default surface after every browser reload. The classic IDE may open only after an explicit in-runtime "Open IDE" action, and that choice must never survive reload/F5. Do not persist desktop-IDE preference in `sessionStorage`, `localStorage`, URL state, or restored layout. See `.cursor/rules/work-hub-reload-default.mdc`.
 

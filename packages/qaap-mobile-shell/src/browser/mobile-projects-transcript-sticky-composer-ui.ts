@@ -1796,7 +1796,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             },
             resolveAgentLabel: () => this.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(),
             resolveAgentId: () => this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
-            resolveModelLabel: () => this.host.transcriptComposerUi.resolveTranscriptComposerModelLabel(
+            resolveAgentModel: () => this.host.transcriptComposerUi.resolveTranscriptComposerAgentModel(
                 this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
                 cwd,
             ),
