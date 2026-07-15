@@ -7,6 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { appendAgentBrandIcon, createAgentBrandIcon, resolveAgentBrand } from '../common/qaap-agent-branding';
 import type { MobileProjectTaskVerification } from './mobile-projects-active-tasks';
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
+import { formatQaiqModelIdShortLabel } from '../common/qaap-qaiq-model-catalog';
 import type { QaapAgentApprovalPolicyOption } from '../common/qaap-sticky-composer-approval-policy';
 
 export type QaapAgentUiSize = 'sm' | 'md';
@@ -254,7 +255,7 @@ export function createPickerSheetOptionButton(options: {
     return btn;
 }
 
-/** Sticky composer toolbar agent button — brand icon + provider badge + model id (agent name is aria/title only). */
+/** Sticky composer toolbar agent button — brand icon + provider badge + short model name (agent name is aria/title only). */
 export function populateAgentToolbarButton(
     button: HTMLButtonElement,
     options: {
@@ -284,7 +285,7 @@ export function populateAgentToolbarButton(
 
         const labelEl = document.createElement('span');
         labelEl.className = 'theia-mobile-projects-sticky-composer-agent-label';
-        labelEl.textContent = modelId;
+        labelEl.textContent = formatQaiqModelIdShortLabel(modelId);
         identity.append(labelEl, chevron);
         button.append(identity);
         button.classList.remove('theia-mod-logo-only');

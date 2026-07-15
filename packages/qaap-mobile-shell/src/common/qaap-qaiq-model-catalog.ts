@@ -149,3 +149,19 @@ export function formatQaiqModelSelectionLabel(model: { readonly vendor: string; 
     }
     return `${formatQaiqModelProviderLabel(vendor)} · ${model.modelId}`;
 }
+
+/**
+ * Compact model-id label for tight UI (sticky composer toolbar): drops a leading
+ * `org/` segment (OpenRouter-style `nvidia/llama-…` → `llama-…`). Keeps ids without `/` as-is.
+ */
+export function formatQaiqModelIdShortLabel(modelId: string): string {
+    const trimmed = modelId.trim();
+    if (!trimmed) {
+        return trimmed;
+    }
+    const slash = trimmed.indexOf('/');
+    if (slash <= 0 || slash >= trimmed.length - 1) {
+        return trimmed;
+    }
+    return trimmed.slice(slash + 1);
+}

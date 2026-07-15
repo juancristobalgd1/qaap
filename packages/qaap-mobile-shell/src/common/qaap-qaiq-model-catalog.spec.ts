@@ -6,12 +6,26 @@ import {
 } from './qaap-qaiq-byok-provider-registry';
 import {
     filterQaiqModelsWithConfiguredCredentials,
+    formatQaiqModelIdShortLabel,
     groupQaiqModelsByProvider,
     isQaiqByokLanguageModelId,
     listQaiqModelsFromPreferences,
     listQaiqModelsFromRegisteredLanguageModels,
     mergeQaiqModelOptions,
 } from './qaap-qaiq-model-catalog';
+
+describe('formatQaiqModelIdShortLabel', () => {
+    it('strips a leading org/ segment from OpenRouter-style ids', () => {
+        expect(formatQaiqModelIdShortLabel('nvidia/llama-nemotron-rerank-vl-1b-v2:free'))
+            .to.equal('llama-nemotron-rerank-vl-1b-v2:free');
+        expect(formatQaiqModelIdShortLabel('tencent/hy3:free')).to.equal('hy3:free');
+    });
+
+    it('keeps ids without a path segment as-is', () => {
+        expect(formatQaiqModelIdShortLabel('claude-sonnet-4')).to.equal('claude-sonnet-4');
+        expect(formatQaiqModelIdShortLabel('gpt-4o')).to.equal('gpt-4o');
+    });
+});
 
 describe('QAAP_QAIQ_BYOK_PROVIDERS', () => {
     it('defines credential and model prefs for every provider', () => {
