@@ -14,8 +14,9 @@ function record(overrides: Partial<ResearchExperimentRecord> & { round: number }
         goalId: 'g1',
         startedAt: 0,
         hypothesis: 'h',
-        config: {},
-        configFingerprint: 'fp',
+        declaredConfig: {},
+        declaredConfigFingerprint: 'fp',
+        realChangeFingerprint: 'rfp',
         phase: 'done',
         metrics: [],
         ...overrides,
@@ -58,9 +59,9 @@ describe('qaap-research-prompt', () => {
 
     it('lists tried configs with regressions first', () => {
         const records = [
-            record({ round: 1, lever: 'lr', hypothesis: 'raise lr', configFingerprint: 'fp1', verdict: 'neutral' }),
-            record({ round: 2, lever: 'batch', hypothesis: 'shrink batch', configFingerprint: 'fp2', verdict: 'regressed' }),
-            record({ round: 3, lever: 'dropout', hypothesis: 'raise dropout', configFingerprint: 'fp3', verdict: 'improved' }),
+            record({ round: 1, lever: 'lr', hypothesis: 'raise lr', declaredConfigFingerprint: 'fp1', verdict: 'neutral' }),
+            record({ round: 2, lever: 'batch', hypothesis: 'shrink batch', declaredConfigFingerprint: 'fp2', verdict: 'regressed' }),
+            record({ round: 3, lever: 'dropout', hypothesis: 'raise dropout', declaredConfigFingerprint: 'fp3', verdict: 'improved' }),
         ];
         const prompt = buildResearchRoundPrompt(goal, records);
         const regressedIndex = prompt.indexOf('fp2');

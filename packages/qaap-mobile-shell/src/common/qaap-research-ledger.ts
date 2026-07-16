@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { MetricDirection, ResearchGoal, ResearchMetricSpec, TerminationReason } from './qaap-research-goal';
+import { fnv1aHex } from './qaap-research-hash';
 
 export type { TerminationReason } from './qaap-research-goal';
 
@@ -26,9 +27,17 @@ export type ExperimentPhase = 'propose' | 'run' | 'measure' | 'done';
 export type ExperimentVerdict = 'improved' | 'regressed' | 'neutral' | 'failed' | 'noop';
 
 /**
- * One row of the experiment ledger. `symptom` / `hypothesis` / `lever` / `config` come from the
- * AGENT's proposal (see {@link parseExperimentProposal}); everything else is filled in by the
+ * One row of the experiment ledger. `symptom` / `hypothesis` / `lever` / `declaredConfig` come from
+ * the AGENT's proposal (see {@link parseExperimentProposal}); everything else is filled in by the
  * runner as the round progresses through its phases.
+ *
+ * **Trust boundary:** `declaredConfig` / `declaredConfigFingerprint` are the agent's self-report —
+ * unverified, and observed in practice to be wrong or inconsistently formatted (see
+ * `realChangeFingerprint` in `qaap-research-realchange.ts` for a real example). They are kept
+ * because they are still useful to show a human or the next round's prompt ("here's what the agent
+ * SAID it changed"), but nothing that needs a guarantee — like "don't repeat a config already
+ * tried" — may be built on them. `realChangeFingerprint` is the runner's own, verified observation
+ * of what changed on disk and is the only one of the three safe to use as a guard.
  */
 export interface ResearchExperimentRecord {
     readonly id: string;
@@ -39,8 +48,14 @@ export interface ResearchExperimentRecord {
     readonly symptom?: string;
     readonly hypothesis: string;
     readonly lever?: string;
-    readonly config: Record<string, unknown>;
-    readonly configFingerprint: string;
+    /** The agent's self-reported `config` from its `[QAAP experiment]` block. UNVERIFIED — see the
+     *  trust-boundary note above. Never use this (or its fingerprint) to guard against repeats. */
+    readonly declaredConfig: Record<string, unknown>;
+    /** `configFingerprint(declaredConfig)` — informational only, same trust boundary as the field above. */
+    readonly declaredConfigFingerprint: string;
+    /** `realChangeFingerprint` of the round's actual file changes, as observed by the runner via
+     *  git — not reported by the agent. THIS is what the repeat-config guard compares. */
+    readonly realChangeFingerprint: string;
     readonly sha?: string;
     readonly baselineSha?: string;
     readonly phase: ExperimentPhase;
@@ -113,17 +128,14 @@ function canonicalJson(value: unknown): string {
     return `{${entries.join(',')}}`;
 }
 
-/** Deterministic FNV-1a (32-bit) hash, hex-encoded. Pure JS on purpose: this is common/, no node crypto. */
-function fnv1aHex(input: string): string {
-    let hash = 0x811c9dc5;
-    for (let index = 0; index < input.length; index++) {
-        hash ^= input.charCodeAt(index);
-        hash = Math.imul(hash, 0x01000193);
-    }
-    return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
-/** Stable fingerprint for a config object: same content, in any key order, hashes identically. */
+/**
+ * Stable fingerprint for a DECLARED config object: same content, in any key order, hashes
+ * identically. This hashes what the agent *reported*, not what actually changed on disk — it is
+ * informational (shown in the ledger/prompt) and, since the trust hole this module used to have,
+ * is NOT the basis for the runner's repeat-config guard. See {@link ../qaap-research-realchange}'s
+ * `realChangeFingerprint` for the guard's actual, runner-verified basis, and
+ * {@link ResearchExperimentRecord.declaredConfig} for why the field is named the way it is.
+ */
 export function configFingerprint(config: Record<string, unknown>): string {
     return fnv1aHex(canonicalJson(config));
 }

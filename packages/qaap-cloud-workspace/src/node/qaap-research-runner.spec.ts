@@ -13,7 +13,6 @@ import {
     type ResearchMetricSpec,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
 import {
-    configFingerprint,
     QAAP_EXPERIMENT_MARKER,
     type ResearchExperimentRecord,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
@@ -300,7 +299,8 @@ describe('QaapResearchRunner state machine', () => {
         store.seedGoal(goal);
         // Seed a prior, better round so the new measurement counts as a regression.
         store.upsertRecord(goal.cwd, {
-            id: 'prior', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', config: {}, configFingerprint: 'fp-prior',
+            id: 'prior', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', declaredConfig: {}, declaredConfigFingerprint: 'fp-prior',
+            realChangeFingerprint: 'rfp-prior',
             phase: 'done', metrics: [{ name: 'accuracy', value: 0.9, direction: 'max' }], verdict: 'improved',
         });
         taskRunner.genericCommandResults = [
@@ -330,8 +330,15 @@ describe('QaapResearchRunner state machine', () => {
         taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.4', stderr: '', timedOut: false }];
 
         const runner = makeRunner(store, taskRunner);
-        Object.assign(runner, { runGit: (_cwd: string, args: readonly string[]) =>
-            args[0] === 'diff' ? { stdout: ' src/train.py | 4 +-', ok: true } : { stdout: 'sha-x', ok: true } });
+        Object.assign(runner, { runGit: (_cwd: string, args: readonly string[]) => {
+            if (args[0] === 'diff') {
+                return { stdout: ' src/train.py | 4 +-', ok: true };
+            }
+            if (args[0] === 'status') {
+                return { stdout: '', ok: true };
+            }
+            return { stdout: 'sha-x', ok: true };
+        } });
         const promise = runner.callStartNewRound(goal, 1);
         taskRunner.setLog(taskRunner.createdTasks[0].id, 'The agent forgot the marker entirely.');
         taskRunner.finishTask(taskRunner.createdTasks[0].id);
@@ -340,42 +347,163 @@ describe('QaapResearchRunner state machine', () => {
         const [record] = store.readLedgerForGoal(goal);
         expect(record.phase).to.equal('done'); // the round completed despite the format miss
         expect(record.hypothesis).to.equal('(not declared)');
-        expect(record.config).to.deep.equal({ fallbackDiffStat: ' src/train.py | 4 +-' });
+        expect(record.declaredConfig).to.deep.equal({ fallbackDiffStat: ' src/train.py | 4 +-' });
         expect(record.notes).to.contain('did not include a parseable');
     });
 
-    it('fingerprint guard: re-prompts once on a repeated config, then accepts and moves on', async () => {
-        const store = new FakeResearchStore();
-        const taskRunner = new FakeTaskRunner();
-        const goal = makeGoal({ metrics: [METRIC] });
-        store.seedGoal(goal);
-        // Round 1 already tried this exact config.
-        store.upsertRecord(goal.cwd, {
-            id: 'prior', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', config: { learning_rate: 0.01 },
-            configFingerprint: configFingerprint({ learning_rate: 0.01 }),
-            phase: 'done', metrics: [{ name: 'accuracy', value: 0.5, direction: 'max' }], verdict: 'improved',
+    describe('repeat-config guard: fingerprints the REAL file change, not the agent\'s declared config', () => {
+
+        /** `status` always reports the same file changed, simulating the runner observing the
+         *  identical real edit round after round — independent of anything a test declares as the
+         *  agent's `config`. `/repo` is not a real directory, so `fs.readFileSync` inside
+         *  `collectRealFileChanges` always fails the same way for the same path, which is exactly
+         *  what makes the resulting fingerprint stable and comparable across rounds here. */
+        function stubGitSameRealChange(): { runGit: (cwd: string, args: readonly string[]) => { stdout: string; ok: boolean } } {
+            let shaCounter = 0;
+            return {
+                runGit: (_cwd: string, args: readonly string[]) => {
+                    if (args[0] === 'rev-parse') {
+                        shaCounter++;
+                        return { stdout: `sha-${shaCounter}`, ok: true };
+                    }
+                    if (args[0] === 'status') {
+                        return { stdout: ' M train.py\n', ok: true };
+                    }
+                    if (args[0] === 'diff') {
+                        // Keeps this round out of the no-op guard's territory (empty diffStat) —
+                        // consistent with `status` reporting the same file as really changed.
+                        return { stdout: ' train.py | 2 +-', ok: true };
+                    }
+                    return { stdout: '', ok: true };
+                },
+            };
+        }
+
+        it('detects a collision when the real file change repeats, even though the agent declares a different config each time', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC] });
+            store.seedGoal(goal);
+            taskRunner.genericCommandResults = [
+                { exitCode: 0, stdout: '0.5', stderr: '', timedOut: false }, // round 1 measure
+                { exitCode: 0, stdout: '0.55', stderr: '', timedOut: false }, // round 2 measure (once accepted)
+            ];
+
+            const runner = makeRunner(store, taskRunner);
+            Object.assign(runner, stubGitSameRealChange());
+
+            // Round 1 establishes the "already tried" real change.
+            const round1 = runner.callStartNewRound(goal, 1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+            taskRunner.finishTask(taskRunner.createdTasks[0].id);
+            await round1;
+            expect(taskRunner.createdTasks).to.have.lengthOf(1);
+
+            // Round 2: the agent declares GARBAGE, unrelated to round 1's declared config — but the
+            // real file change (per the `status` stub) is identical. The guard must still catch it.
+            const round2 = runner.callStartNewRound(goal, 2);
+            taskRunner.setLog(taskRunner.createdTasks[1].id, proposalBlock({ x: 'increased value' }));
+            taskRunner.finishTask(taskRunner.createdTasks[1].id);
+            // Flush the whole microtask queue (setImmediate runs after it drains) rather than
+            // guessing a tick count.
+            await new Promise(resolve => setImmediate(resolve));
+            expect(taskRunner.createdTasks).to.have.lengthOf(3);
+            expect((taskRunner.createdTasks[2].request as { prompt: string }).prompt).to.contain('fingerprint collision');
+            // Second attempt still collides — the guard must accept it rather than loop forever.
+            taskRunner.setLog(taskRunner.createdTasks[2].id, proposalBlock({ x: 'increased again' }));
+            taskRunner.finishTask(taskRunner.createdTasks[2].id);
+            await round2;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(3); // never re-prompted a third time
+            const [record] = store.readLedgerForGoal(goal).filter(r => r.round === 2);
+            expect(record.phase).to.equal('done');
+            expect(record.declaredConfig).to.deep.equal({ x: 'increased again' });
+            expect(record.realChangeFingerprint).to.equal(
+                store.readLedgerForGoal(goal).find(r => r.round === 1)!.realChangeFingerprint,
+            );
         });
-        taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.55', stderr: '', timedOut: false }];
 
-        const runner = makeRunner(store, taskRunner);
-        const promise = runner.callStartNewRound(goal, 2);
-        // First propose attempt: repeats round 1's exact config.
-        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
-        taskRunner.finishTask(taskRunner.createdTasks[0].id);
-        // Runner should have re-prompted with a reminder instead of stalling. Flush the whole
-        // microtask queue (setImmediate runs after it drains) rather than guessing a tick count.
-        await new Promise(resolve => setImmediate(resolve));
-        expect(taskRunner.createdTasks).to.have.lengthOf(2);
-        expect((taskRunner.createdTasks[1].request as { prompt: string }).prompt).to.contain('fingerprint collision');
-        // Second attempt still collides — the guard must accept it rather than loop forever.
-        taskRunner.setLog(taskRunner.createdTasks[1].id, proposalBlock({ learning_rate: 0.01 }));
-        taskRunner.finishTask(taskRunner.createdTasks[1].id);
-        await promise;
+        it('does NOT flag a false collision when the real file change differs, even though the agent declares the identical config text', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC] });
+            store.seedGoal(goal);
+            taskRunner.genericCommandResults = [
+                { exitCode: 0, stdout: '0.5', stderr: '', timedOut: false }, // round 1 measure
+                { exitCode: 0, stdout: '0.6', stderr: '', timedOut: false }, // round 2 measure
+            ];
 
-        expect(taskRunner.createdTasks).to.have.lengthOf(2); // never re-prompted a third time
-        const [record] = store.readLedgerForGoal(goal).filter(r => r.round === 2);
-        expect(record.phase).to.equal('done');
-        expect(record.config).to.deep.equal({ learning_rate: 0.01 });
+            let statusCallCount = 0;
+            let shaCounter = 0;
+            const runner = makeRunner(store, taskRunner);
+            Object.assign(runner, {
+                runGit: (_cwd: string, args: readonly string[]) => {
+                    if (args[0] === 'rev-parse') {
+                        shaCounter++;
+                        return { stdout: `sha-${shaCounter}`, ok: true };
+                    }
+                    if (args[0] === 'status') {
+                        statusCallCount++;
+                        // A DIFFERENT path changes each round — the real edit is genuinely different.
+                        return { stdout: statusCallCount === 1 ? ' M train.py\n' : ' M eval.py\n', ok: true };
+                    }
+                    return { stdout: '', ok: true };
+                },
+            });
+
+            const round1 = runner.callStartNewRound(goal, 1);
+            // Both rounds declare the EXACT same config text.
+            taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+            taskRunner.finishTask(taskRunner.createdTasks[0].id);
+            await round1;
+
+            const round2 = runner.callStartNewRound(goal, 2);
+            taskRunner.setLog(taskRunner.createdTasks[1].id, proposalBlock({ learning_rate: 0.01 }));
+            taskRunner.finishTask(taskRunner.createdTasks[1].id);
+            await round2;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(2); // no re-prompt: never a real collision
+            const [record] = store.readLedgerForGoal(goal).filter(r => r.round === 2);
+            expect(record.phase).to.equal('done');
+            expect(record.declaredConfig).to.deep.equal({ learning_rate: 0.01 });
+        });
+
+        it('still detects a collision via real file state when the agent declares no parseable config at all', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC] });
+            store.seedGoal(goal);
+            taskRunner.genericCommandResults = [
+                { exitCode: 0, stdout: '0.5', stderr: '', timedOut: false }, // round 1 measure
+                { exitCode: 0, stdout: '0.55', stderr: '', timedOut: false }, // round 2 measure (once accepted)
+            ];
+
+            const runner = makeRunner(store, taskRunner);
+            Object.assign(runner, stubGitSameRealChange());
+
+            const round1 = runner.callStartNewRound(goal, 1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+            taskRunner.finishTask(taskRunner.createdTasks[0].id);
+            await round1;
+
+            // Round 2: the agent proposes nothing parseable at all — the anti-stall fallback
+            // synthesizes a declaredConfig from the diffStat text, but the repeat-guard must still
+            // catch the collision from the REAL (status-based) file change, independent of that.
+            const round2 = runner.callStartNewRound(goal, 2);
+            taskRunner.setLog(taskRunner.createdTasks[1].id, 'The agent rambled with no marker and no JSON block at all.');
+            taskRunner.finishTask(taskRunner.createdTasks[1].id);
+            await new Promise(resolve => setImmediate(resolve));
+            expect(taskRunner.createdTasks).to.have.lengthOf(3);
+            expect((taskRunner.createdTasks[2].request as { prompt: string }).prompt).to.contain('fingerprint collision');
+            taskRunner.setLog(taskRunner.createdTasks[2].id, 'Still nothing parseable the second time either.');
+            taskRunner.finishTask(taskRunner.createdTasks[2].id);
+            await round2;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(3);
+            const [record] = store.readLedgerForGoal(goal).filter(r => r.round === 2);
+            expect(record.phase).to.equal('done');
+            expect(record.hypothesis).to.equal('(not declared)');
+        });
     });
 
     it('terminates the loop and records the reason once resolveTerminationReason fires (reached-target)', async () => {
@@ -434,7 +562,7 @@ describe('QaapResearchRunner state machine', () => {
             const goal = makeGoal({ metrics: [METRIC] });
             store.seedGoal(goal);
             const dangling: ResearchExperimentRecord = {
-                id: 'r1', goalId: goal.id, round: 1, startedAt: 0, hypothesis: '', config: {}, configFingerprint: '',
+                id: 'r1', goalId: goal.id, round: 1, startedAt: 0, hypothesis: '', declaredConfig: {}, declaredConfigFingerprint: '', realChangeFingerprint: '',
                 phase: 'propose', metrics: [],
             };
             taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.5', stderr: '', timedOut: false }];
@@ -457,8 +585,8 @@ describe('QaapResearchRunner state machine', () => {
             const goal = makeGoal({ metrics: [METRIC], runCommand: 'python train.py' });
             store.seedGoal(goal);
             const committed: ResearchExperimentRecord = {
-                id: 'r1', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', lever: 'lr', config: { lr: 1 },
-                configFingerprint: 'fp', sha: 'sha-1', baselineSha: 'sha-0', phase: 'run', metrics: [],
+                id: 'r1', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', lever: 'lr', declaredConfig: { lr: 1 },
+                declaredConfigFingerprint: 'fp', realChangeFingerprint: 'rfp', sha: 'sha-1', baselineSha: 'sha-0', phase: 'run', metrics: [],
             };
             taskRunner.genericCommandResults = [
                 { exitCode: 0, stdout: '', stderr: '', timedOut: false }, // run
@@ -481,7 +609,7 @@ describe('QaapResearchRunner state machine', () => {
             const goal = makeGoal({ metrics: [METRIC], runCommand: 'python train.py' });
             store.seedGoal(goal);
             const exhausted: ResearchExperimentRecord = {
-                id: 'r1', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', config: {}, configFingerprint: 'fp',
+                id: 'r1', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', declaredConfig: {}, declaredConfigFingerprint: 'fp', realChangeFingerprint: 'rfp',
                 sha: 'sha-1', phase: 'run', metrics: [], runAttempts: 2, // already resumed twice (MAX_RUN_RESUME_ATTEMPTS)
             };
 
@@ -500,7 +628,7 @@ describe('QaapResearchRunner state machine', () => {
             const goal = makeGoal({ metrics: [METRIC], runCommand: 'python train.py' });
             store.seedGoal(goal);
             const ranAlready: ResearchExperimentRecord = {
-                id: 'r1', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', config: {}, configFingerprint: 'fp',
+                id: 'r1', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', declaredConfig: {}, declaredConfigFingerprint: 'fp', realChangeFingerprint: 'rfp',
                 sha: 'sha-1', phase: 'measure', metrics: [], runAttempts: 0,
             };
             taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.7', stderr: '', timedOut: false }];
@@ -604,7 +732,7 @@ describe('QaapResearchRunner state machine', () => {
             expect(taskRunner.createdTasks).to.have.lengthOf(1); // no no-op re-prompt
             const [record] = store.readLedgerForGoal(goal);
             expect(record.phase).to.equal('done');
-            expect(record.config).to.deep.equal({ learning_rate: 0.02 });
+            expect(record.declaredConfig).to.deep.equal({ learning_rate: 0.02 });
         });
     });
 

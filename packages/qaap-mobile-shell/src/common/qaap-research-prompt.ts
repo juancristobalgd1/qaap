@@ -61,7 +61,7 @@ function renderTriedConfigsSection(records: readonly ResearchExperimentRecord[])
     });
     const lines = ordered.map(record =>
         `- [${record.verdict ?? 'pending'}] round ${record.round} — lever: ${record.lever ?? '—'} — `
-        + `hypothesis: ${record.hypothesis} — fingerprint \`${record.configFingerprint}\``);
+        + `hypothesis: ${record.hypothesis} — fingerprint \`${record.declaredConfigFingerprint}\``);
     return ['## Configs already tried — do not repeat', '', ...lines].join('\n');
 }
 

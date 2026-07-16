@@ -6,6 +6,8 @@
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
     DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
     type ResearchGoal,
@@ -21,6 +23,7 @@ import {
     type ResearchExperimentRecord,
     type ResearchMetricValue,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
+import { realChangeFingerprint, type RealFileChange } from '@theia/qaap-mobile-shell/lib/common/qaap-research-realchange';
 import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
 import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
 import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
@@ -34,10 +37,13 @@ const GIT_COMMAND_TIMEOUT_MS = 15_000;
  *  command failure. After this many, treat it as an infra failure rather than retry forever. */
 const MAX_RUN_RESUME_ATTEMPTS = 2;
 
-/** Runner-owned state, never product of an experiment: excluded from every round's diff AND from
- *  the round's commit, so it never contaminates `git diff --stat` (the anti-stall fallback reads
- *  it) or shows up on the `qaap/research/<goalId>` branch. See {@link roundDiffStat}. */
-const LEDGER_PATHSPEC_EXCLUDE = ':(exclude).qaap/experiments.jsonl';
+/** Path (relative to `goal.cwd`) of the runner-owned ledger file — never product of an experiment.
+ *  Excluded from every round's diff AND from the round's commit, so it never contaminates
+ *  `git diff --stat` (the anti-stall fallback reads it), `git status` (the repeat-config guard
+ *  reads it, see {@link collectRealFileChanges}), or shows up on the `qaap/research/<goalId>`
+ *  branch. See {@link roundDiffStat}. */
+const LEDGER_RELATIVE_PATH = '.qaap/experiments.jsonl';
+const LEDGER_PATHSPEC_EXCLUDE = `:(exclude)${LEDGER_RELATIVE_PATH}`;
 
 const REMINDER_MISSING_BLOCK =
     'Your previous reply did not include a parseable [QAAP experiment] JSON block, so the runner '
@@ -51,8 +57,9 @@ const REMINDER_NOOP_ROUND =
     + 'only reasoning this round, still end your reply with the marker and the fenced JSON block.';
 
 function reminderRepeatedFingerprint(round: number): string {
-    return `Your proposed config matches round ${round}'s config exactly (fingerprint collision). `
-        + 'Change a DIFFERENT lever this time — repeating a config you already tried wastes a full round.';
+    return `The actual file changes you made this turn are identical to round ${round}'s (the runner compared `
+        + 'the resulting file contents on disk, not the config text you declared — fingerprint collision). '
+        + 'Change a DIFFERENT lever this time — repeating a change you already made wastes a full round.';
 }
 
 /**
@@ -173,8 +180,9 @@ export class QaapResearchRunner {
             round,
             startedAt: Date.now(),
             hypothesis: '',
-            config: {},
-            configFingerprint: '',
+            declaredConfig: {},
+            declaredConfigFingerprint: '',
+            realChangeFingerprint: '',
             phase: 'propose',
             metrics: [],
         };
@@ -259,16 +267,33 @@ export class QaapResearchRunner {
         // record from whatever the agent actually changed and keep the loop moving.
         const resolved = proposal ?? this.synthesizeFallbackProposal(diffStat);
         const notes = proposal ? record.notes : this.appendNote(record.notes, REMINDER_MISSING_BLOCK);
-        const fingerprint = configFingerprint(resolved.config);
-        const collidingRound = priorRecords.find(existing => existing.configFingerprint === fingerprint)?.round;
+        // `declaredConfig`/`declaredConfigFingerprint`: the agent's own self-report. Kept for the
+        // ledger/prompt ("what did the agent SAY it changed"), but UNVERIFIED — never the basis for
+        // the repeat-config guard below. See the trust-boundary note on `ResearchExperimentRecord`.
+        const declaredConfigFingerprint = configFingerprint(resolved.config);
+
+        // The repeat-config guard must rest on what the runner can actually observe changed in the
+        // repo, not on the agent's report of it — the same "the runner measures, the agent doesn't
+        // self-report" principle already applied to the metric. See `qaap-research-realchange.ts`
+        // for the real failure this fixes (declared configs that don't match reality, or the same
+        // logical value serialized two different ways across rounds).
+        const realChanges = this.collectRealFileChanges(goal.cwd);
+        const roundRealChangeFingerprint = realChangeFingerprint(realChanges);
+        // Gate on there being any real change at all: an empty real-change set is the no-op guard's
+        // territory (below), not "the same experiment repeated" — two reasoning-only rounds with no
+        // file changes are not a collision.
+        const collidingRound = realChanges.length > 0
+            ? priorRecords.find(existing => existing.realChangeFingerprint === roundRealChangeFingerprint)?.round
+            : undefined;
 
         const proposed: ResearchExperimentRecord = {
             ...record,
             hypothesis: resolved.hypothesis,
             symptom: resolved.symptom,
             lever: resolved.lever,
-            config: resolved.config,
-            configFingerprint: fingerprint,
+            declaredConfig: resolved.config,
+            declaredConfigFingerprint,
+            realChangeFingerprint: roundRealChangeFingerprint,
             notes,
         };
         this.store.upsertRecord(goal.cwd, proposed);
@@ -322,6 +347,73 @@ export class QaapResearchRunner {
         return this.runGit(cwd, ['diff', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
             || this.runGit(cwd, ['diff', '--cached', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
             || '';
+    }
+
+    /**
+     * The runner's own view of what changed on disk this round, via `git status` — never the
+     * agent's self-report. This is the source data for `realChangeFingerprint`, the repeat-config
+     * guard's actual basis (see the trust-boundary note in `qaap-research-runner.ts`#runPropose and
+     * on `ResearchExperimentRecord`). Reads each changed path's CURRENT content straight off disk
+     * (not through git, so it reflects the working tree exactly as the next `git add -A` would
+     * commit it); a path that git reports deleted is recorded with `content: undefined` instead of
+     * being read. The ledger file itself is always excluded — it is runner state, not experiment
+     * content (see {@link LEDGER_RELATIVE_PATH}).
+     */
+    protected collectRealFileChanges(cwd: string): RealFileChange[] {
+        const status = this.runGit(cwd, ['status', '--porcelain', '--untracked-files=all']).stdout;
+        if (!status) {
+            return [];
+        }
+        const changes: RealFileChange[] = [];
+        for (const rawLine of status.split('\n')) {
+            const line = rawLine.replace(/\r$/, '');
+            if (!line.trim()) {
+                continue;
+            }
+            // Porcelain v1: `XY PATH`, or `XY ORIG_PATH -> PATH` for a rename/copy. Treat a rename
+            // as a delete of the old path plus a change at the new one, so the resulting-state
+            // fingerprint reflects reality regardless of which git chose to call it.
+            const codes = line.slice(0, 2);
+            const rest = line.slice(3);
+            const arrowIndex = rest.indexOf(' -> ');
+            if (arrowIndex >= 0) {
+                this.pushRealFileChange(changes, cwd, rest.slice(0, arrowIndex), true);
+                this.pushRealFileChange(changes, cwd, rest.slice(arrowIndex + 4), false);
+                continue;
+            }
+            this.pushRealFileChange(changes, cwd, rest, codes.includes('D'));
+        }
+        return changes;
+    }
+
+    protected pushRealFileChange(changes: RealFileChange[], cwd: string, rawPath: string, deleted: boolean): void {
+        const relativePath = this.unquoteGitPath(rawPath);
+        if (!relativePath || relativePath === LEDGER_RELATIVE_PATH) {
+            return;
+        }
+        if (deleted) {
+            changes.push({ path: relativePath, content: undefined });
+            return;
+        }
+        try {
+            changes.push({ path: relativePath, content: fs.readFileSync(path.join(cwd, relativePath), 'utf8') });
+        } catch {
+            // Binary content, a symlink, or a race with a concurrent delete: still record the path
+            // under a stable marker rather than silently dropping it from the fingerprint — a
+            // binary-only round must still be able to collide-detect.
+            changes.push({ path: relativePath, content: '(unreadable: binary content or a race with a concurrent change)' });
+        }
+    }
+
+    /** Strips the double-quoting `git status` applies to paths containing spaces or special
+     *  characters. Not a full unescape of git's octal escapes — good enough for the ASCII repo
+     *  paths this runner deals with; anything fancier just ends up as a (still-stable) literal. */
+    protected unquoteGitPath(rawPath: string): string {
+        const trimmed = rawPath.trim();
+        if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+            return trimmed.slice(1, -1);
+        }
+        return trimmed;
     }
 
     /** A round where the agent made no repo changes and proposed nothing parseable, even after one
