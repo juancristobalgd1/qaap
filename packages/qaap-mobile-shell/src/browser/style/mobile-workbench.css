@@ -28681,3 +28681,351 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
     background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
   }
 }
+
+/* ─── Premium Web Search card (transcript) ─────────────────────────────────── */
+
+.theia-mobile-agent-web-search {
+  --qaap-ws-text: var(--theia-foreground);
+  --qaap-ws-muted: var(--theia-descriptionForeground);
+  --qaap-ws-subtle: color-mix(in srgb, var(--theia-descriptionForeground) 78%, transparent);
+  --qaap-ws-border: color-mix(in srgb, var(--theia-widget-border, var(--theia-border-color, #e6e8ec)) 88%, transparent);
+  --qaap-ws-success: #15a06a;
+  --qaap-ws-success-soft: rgba(21, 160, 106, 0.16);
+  --qaap-ws-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--qaap-ws-text);
+}
+
+body.theia-dark .theia-mobile-agent-web-search,
+.theia-dark .theia-mobile-agent-web-search {
+  --qaap-ws-success: #34d399;
+  --qaap-ws-success-soft: rgba(52, 211, 153, 0.16);
+}
+
+.theia-mobile-tool-group.theia-mod-web-search {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 4px 0 8px;
+}
+
+.theia-mobile-tool-group.theia-mod-web-search:hover {
+  background: transparent;
+}
+
+.theia-mobile-tool-group.theia-mod-web-search > .theia-mobile-tool-group-summary.theia-mod-web-search-hidden {
+  display: none !important;
+}
+
+.theia-mobile-tool-group.theia-mod-web-search > .theia-mobile-tool-group-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  border: none;
+}
+
+.theia-mobile-tool-group-details > .theia-mobile-agent-web-search {
+  margin: 0;
+  padding: 0;
+}
+
+.theia-mobile-agent-web-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  min-width: 0;
+}
+
+.theia-mobile-agent-web-search-row > svg {
+  flex: none;
+  color: var(--qaap-ws-muted);
+  margin-left: -1px;
+}
+
+.theia-mobile-agent-web-search-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 550;
+  color: var(--qaap-ws-text);
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.theia-mobile-agent-web-search-quote {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theia-mobile-agent-web-search-shimmer {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--qaap-ws-text) 45%, transparent) 0%,
+    var(--qaap-ws-text) 44%,
+    color-mix(in srgb, var(--qaap-ws-text) 45%, transparent) 80%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: theia-mobile-agent-web-search-shimmer 2.7s linear infinite;
+}
+
+.theia-mobile-agent-web-search-shimmer.theia-mod-done {
+  animation: none;
+  background: none;
+  -webkit-text-fill-color: var(--qaap-ws-text);
+  color: var(--qaap-ws-text);
+}
+
+.theia-mobile-agent-web-search-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: none;
+  padding: 0;
+  background: none;
+  color: var(--qaap-ws-subtle);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.16s var(--qaap-ws-ease), transform 0.28s var(--qaap-ws-ease);
+}
+
+.theia-mobile-agent-web-search-chevron:hover {
+  color: var(--qaap-ws-muted);
+}
+
+.theia-mobile-agent-web-search-chevron[aria-expanded="false"] {
+  transform: rotate(180deg);
+}
+
+.theia-mobile-agent-web-search-collapsible {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 0.32s var(--qaap-ws-ease), opacity 0.22s var(--qaap-ws-ease);
+}
+
+.theia-mobile-agent-web-search-collapsible.theia-mod-collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.theia-mobile-agent-web-search-collapsible-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.theia-mobile-agent-web-search-results {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.theia-mobile-agent-web-search-rail {
+  flex: none;
+  width: 1px;
+  align-self: stretch;
+  border-left: 1px solid var(--qaap-ws-border);
+  margin-left: 5.5px;
+}
+
+.theia-mobile-agent-web-search-list {
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 2px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.theia-mobile-agent-web-search-site {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--qaap-ws-muted);
+  min-width: 0;
+  opacity: 0;
+  transform: translateY(4px);
+  animation: theia-mobile-agent-web-search-enter 0.34s var(--qaap-ws-ease) forwards;
+}
+
+.theia-mobile-agent-web-search-site[data-state="done"] {
+  cursor: pointer;
+}
+
+.theia-mobile-agent-web-search-bullet {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theia-mobile-agent-web-search-dots,
+.theia-mobile-agent-web-search-globe,
+.theia-mobile-agent-web-search-check {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.theia-mobile-agent-web-search-dots {
+  color: var(--qaap-ws-subtle);
+  opacity: 1;
+  transition: opacity 0.32s var(--qaap-ws-ease);
+}
+
+.theia-mobile-agent-web-search-site[data-state="loading"] .theia-mobile-agent-web-search-dots,
+.theia-mobile-agent-web-search-site[data-state="done"] .theia-mobile-agent-web-search-dots {
+  opacity: 0;
+}
+
+.theia-mobile-agent-web-search-globe {
+  color: var(--qaap-ws-subtle);
+  opacity: 0;
+  transform: scale(0.88);
+  transition: opacity 0.32s var(--qaap-ws-ease), transform 0.36s var(--qaap-ws-ease);
+}
+
+.theia-mobile-agent-web-search-globe svg {
+  overflow: visible;
+  display: block;
+}
+
+.theia-mobile-agent-web-search-site[data-state="loading"] .theia-mobile-agent-web-search-globe {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.theia-mobile-agent-web-search-site[data-state="done"] .theia-mobile-agent-web-search-globe {
+  opacity: 0;
+  transform: scale(0.775);
+  transition: opacity 0.22s var(--qaap-ws-ease), transform 0.26s var(--qaap-ws-ease);
+}
+
+.theia-mobile-agent-web-search-check {
+  color: var(--qaap-ws-success);
+  opacity: 0;
+  transform: scale(1.175);
+  transition: opacity 0.24s var(--qaap-ws-ease) 0.06s, transform 0.28s var(--qaap-ws-ease) 0.06s;
+}
+
+.theia-mobile-agent-web-search-site[data-state="done"] .theia-mobile-agent-web-search-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.theia-mobile-agent-web-search-title {
+  color: var(--qaap-ws-text);
+  font-weight: 450;
+  white-space: nowrap;
+  flex: none;
+}
+
+.theia-mobile-agent-web-search-site[data-state="pending"] .theia-mobile-agent-web-search-title {
+  color: var(--qaap-ws-muted);
+}
+
+.theia-mobile-agent-web-search-site[data-state="loading"] .theia-mobile-agent-web-search-title {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--qaap-ws-text) 50%, transparent) 0%,
+    var(--qaap-ws-text) 44%,
+    color-mix(in srgb, var(--qaap-ws-text) 50%, transparent) 80%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: theia-mobile-agent-web-search-shimmer 2.7s linear infinite;
+}
+
+.theia-mobile-agent-web-search-sep {
+  color: var(--qaap-ws-subtle);
+  flex: none;
+}
+
+.theia-mobile-agent-web-search-url {
+  color: var(--qaap-ws-muted);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.16s var(--qaap-ws-ease);
+}
+
+.theia-mobile-agent-web-search-arrow {
+  display: inline-flex;
+  flex: none;
+  color: var(--qaap-ws-subtle);
+  margin-left: -2px;
+  opacity: 0;
+  transform: rotate(45deg) translate(0, 2px);
+  transition: opacity 0.16s var(--qaap-ws-ease), transform 0.22s var(--qaap-ws-ease);
+}
+
+.theia-mobile-agent-web-search-site[data-state="done"]:hover .theia-mobile-agent-web-search-arrow {
+  opacity: 1;
+  transform: rotate(45deg) translate(0, 0);
+}
+
+.theia-mobile-agent-web-search-site[data-state="done"]:hover .theia-mobile-agent-web-search-url {
+  color: var(--qaap-ws-text);
+}
+
+@keyframes theia-mobile-agent-web-search-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes theia-mobile-agent-web-search-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-agent-web-search-shimmer,
+  .theia-mobile-agent-web-search-site[data-state="loading"] .theia-mobile-agent-web-search-title {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: var(--qaap-ws-text);
+    color: var(--qaap-ws-text);
+  }
+
+  .theia-mobile-agent-web-search-site {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

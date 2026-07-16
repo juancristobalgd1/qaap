@@ -32,6 +32,16 @@ import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../commo
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
 import { createTranscriptCodeView, patchTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from './qaap-transcript-code-view';
+import {
+    isTranscriptWebSearchTool,
+    parseTranscriptWebSearchQuery,
+    resolveTranscriptWebSearchPayload,
+} from '../common/qaap-transcript-web-search-core';
+import {
+    createTranscriptWebSearchCard,
+    patchTranscriptWebSearchCard,
+    TRANSCRIPT_WEB_SEARCH_CARD_CLASS,
+} from './qaap-transcript-web-search-ui';
 
 /** Data attribute: stable id of the execution event a `section` element renders. */
 const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
@@ -274,6 +284,14 @@ function describeMobileTool(segment: Extract<QaapAgentMessageSegmentDTO, { type:
     const name = segment.name.toLowerCase();
     const activityKind = classifyTranscriptToolActivityKind(segment.name);
 
+    if (isTranscriptWebSearchTool(segment.name)) {
+        return {
+            kind: 'explore',
+            icon: 'codicon-globe',
+            verb: segment.finished ? 'Searched' : 'Searching',
+            narrative: "I'm searching the web.",
+        };
+    }
     if (isVerificationTool(segment, name)) {
         return { kind: 'verification', icon: 'codicon-checklist', verb: 'Verification', narrative: "I'm validating the implementation." };
     }
@@ -321,6 +339,9 @@ function matchesName(name: string, tokens: string[]): boolean {
 }
 
 function extractToolDetail(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>, kind: MobileEventKind): string {
+    if (isTranscriptWebSearchTool(segment.name)) {
+        return parseTranscriptWebSearchQuery(segment.args) || segment.name;
+    }
     if (kind === 'run' || kind === 'verification') {
         return extractCommand(segment.args) ?? segment.name;
     }
@@ -1169,6 +1190,17 @@ function patchMobileToolDetail(
         return;
     }
 
+    if (el.classList.contains(TRANSCRIPT_WEB_SEARCH_CARD_CLASS)
+        || isTranscriptWebSearchTool(nextTool.segment.name)) {
+        const payload = resolveTranscriptWebSearchPayload(nextTool.segment);
+        if (el.classList.contains(TRANSCRIPT_WEB_SEARCH_CARD_CLASS)
+            && patchTranscriptWebSearchCard(el, payload)) {
+            return;
+        }
+        el.replaceWith(createMobileToolDetailElement(event, nextTool, index));
+        return;
+    }
+
     // Structural transitions (error flip adds an error icon, a kind flip
     // changes icon/link semantics) are rare one-shot changes and plain rows
     // carry no animations, so a targeted row replace is safe there.
@@ -1395,13 +1427,23 @@ function createMobileExecutionEventElement(
 function createMobileToolGroupElement(
     event: MobileExecutionEvent,
 ): HTMLElement {
+    const webSearchOnly = event.tools.length > 0
+        && event.tools.every(tool => isTranscriptWebSearchTool(tool.segment.name));
     const details = document.createElement('details');
     details.className = `theia-mobile-tool-group ${event.hasError ? 'failed' : ''} ${event.hasPending ? 'running' : 'finished'}`;
+    if (webSearchOnly) {
+        details.classList.add('theia-mod-web-search');
+        // AIcss-style cards are the primary chrome — keep the group open.
+        details.open = true;
+    }
     // Collapsed by default — Codex never auto-expands tool groups.
 
     // Summary line: icon + verb + count + state + chevron
     const summary = document.createElement('summary');
     summary.className = 'theia-mobile-tool-group-summary';
+    if (webSearchOnly) {
+        summary.classList.add('theia-mod-web-search-hidden');
+    }
 
     const icon = document.createElement('span');
     icon.className = `codicon ${event.icon} theia-mobile-tool-group-icon`;
@@ -1444,10 +1486,17 @@ function createMobileToolGroupElement(
     // recording every subsequent toggle so later rematerializations stay in
     // sync.
     const groupStateKey = timelineGroupOpenStateKey(resolveTimelineGroupCreationKey(event, detailsContainer));
-    if (timelineDetailsOpenState.get(groupStateKey)) {
+    if (webSearchOnly) {
+        details.open = true;
+    } else if (timelineDetailsOpenState.get(groupStateKey)) {
         details.open = true;
     }
     details.addEventListener('toggle', () => {
+        if (webSearchOnly) {
+            // Premium WebSearch cards own expand/collapse; keep the group shell open.
+            details.open = true;
+            return;
+        }
         recordTimelineDetailsOpenState(groupStateKey, details.open);
     });
 
@@ -1462,6 +1511,15 @@ function createMobileToolDetailElement(
     // Terminal tools get a collapsible output card
     if (tool.isTerminal) {
         return createMobileTerminalOutputElement(event, tool, index);
+    }
+
+    if (isTranscriptWebSearchTool(tool.segment.name)) {
+        const payload = resolveTranscriptWebSearchPayload(tool.segment);
+        const card = createTranscriptWebSearchCard(payload, {
+            open: !tool.isFinished || payload.sites.length > 0,
+        });
+        card.setAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR, tool.segment.toolUseId);
+        return card;
     }
 
     // File-related tools (read/write/edit/delete) get a file-type icon before

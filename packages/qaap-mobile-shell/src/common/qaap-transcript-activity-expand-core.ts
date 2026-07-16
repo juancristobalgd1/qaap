@@ -18,6 +18,11 @@ import {
     tryParseAskUserQuestionArgs,
     type TranscriptToolUiQuestionFlowPayload,
 } from './qaap-transcript-tool-ui-payloads';
+import {
+    isTranscriptWebSearchTool,
+    resolveTranscriptWebSearchPayload,
+    type TranscriptWebSearchPayload,
+} from './qaap-transcript-web-search-core';
 
 export interface TranscriptActivityExpandDeps {
     extractToolPath(argsJson: string): string | undefined;
@@ -47,6 +52,7 @@ export interface TranscriptActivityEditExpandEntry {
 export type TranscriptActivityExpandContent =
     | { readonly kind: 'text'; readonly text: string }
     | { readonly kind: 'search-matches'; readonly matches: readonly TranscriptSearchMatch[] }
+    | { readonly kind: 'web-search'; readonly payload: TranscriptWebSearchPayload }
     | { readonly kind: 'read'; readonly entry: TranscriptActivityReadExpandEntry }
     | { readonly kind: 'read-group'; readonly entries: readonly TranscriptActivityReadExpandEntry[] }
     | { readonly kind: 'edit'; readonly entry: TranscriptActivityEditExpandEntry }
@@ -175,6 +181,9 @@ export function resolveTranscriptActivityExpandContent(
         return undefined;
     }
     const kind = item.toolKind ?? classifyTranscriptToolActivityKind(segment.name);
+    if (isTranscriptWebSearchTool(segment.name)) {
+        return { kind: 'web-search', payload: resolveTranscriptWebSearchPayload(segment) };
+    }
     if (kind === 'todo' || isTranscriptTodoTool(segment.name)) {
         const items = parseTranscriptTodoChecklist(segment.args);
         return items?.length ? { kind: 'todo', items } : undefined;
@@ -240,6 +249,18 @@ export function resolveTranscriptActivityExpandBody(
     if (content.kind === 'search-matches') {
         return content.matches.map(match => `${match.file}:${match.line}: ${match.snippet}`).join('\n');
     }
+    if (content.kind === 'web-search') {
+        const header = content.payload.query
+            ? `Searched "${content.payload.query}"`
+            : 'Searched the web';
+        if (!content.payload.sites.length) {
+            return header;
+        }
+        return [
+            header,
+            ...content.payload.sites.map(site => `${site.title}: ${site.href ?? site.url}`),
+        ].join('\n');
+    }
     if (content.kind === 'read') {
         return content.entry.text;
     }
@@ -261,9 +282,12 @@ export function resolveTranscriptActivityExpandBody(
     if (content.kind === 'question_flow') {
         return content.payload.questions.map(question => question.question).join('\n');
     }
-    return content.entries
-        .map((entry: TranscriptActivityTerminalExpandEntry) => [entry.command, entry.output].filter(Boolean).join('\n'))
-        .join('\n\n');
+    if (content.kind === 'terminal-group') {
+        return content.entries
+            .map((entry: TranscriptActivityTerminalExpandEntry) => [entry.command, entry.output].filter(Boolean).join('\n'))
+            .join('\n\n');
+    }
+    return undefined;
 }
 
 export function shouldShowTranscriptActivityExpandContent(
@@ -278,6 +302,9 @@ export function shouldShowTranscriptActivityExpandContent(
     }
     if (content.kind === 'search-matches') {
         return content.matches.length >= 1;
+    }
+    if (content.kind === 'web-search') {
+        return true;
     }
     if (content.kind === 'todo') {
         return content.items.length >= 1;

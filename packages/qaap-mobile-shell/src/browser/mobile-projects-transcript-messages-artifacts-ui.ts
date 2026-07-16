@@ -86,6 +86,7 @@ import {
     type TranscriptActivityExpandDeps,
     type TranscriptActivityTerminalExpandEntry,
 } from '../common/qaap-transcript-activity-expand-core';
+import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
 import { canRestoreConversationCheckpoint, annotateTranscriptActivityCheckpointIds } from '../common/qaap-transcript-checkpoint-restore';
 import { createAgentSetupElement, syncAgentSetupElement, destroyAgentSetupElement, createBrandLogoIndicator } from '../common/qaap-agent-setup-phrases';
 import {
@@ -4116,7 +4117,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         item: TranscriptActivityTimelineItem,
         options?: TranscriptActivityTimelineOptions,
     ): TranscriptActivityExpandContent {
-        if (content.kind === 'text' || content.kind === 'todo' || content.kind === 'search-matches' || content.kind === 'question_flow') {
+        if (content.kind === 'text' || content.kind === 'todo' || content.kind === 'search-matches'
+            || content.kind === 'web-search' || content.kind === 'question_flow') {
             return content;
         }
         if (content.kind === 'read') {
@@ -4297,6 +4299,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         if (content.kind === 'search-matches') {
             body.append(this.toolUi.createTranscriptActivitySearchMatchesPanel(content.matches));
+            return;
+        }
+        if (content.kind === 'web-search') {
+            body.append(createTranscriptWebSearchCard(content.payload, { open: true }));
             return;
         }
         if (content.kind === 'read') {

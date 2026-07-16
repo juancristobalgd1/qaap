@@ -30,6 +30,11 @@ import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-tra
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { tryBuildTranscriptRichToolBody } from './qaap-transcript-rich-content-ui';
 import {
+    isTranscriptWebSearchTool,
+    resolveTranscriptWebSearchPayload,
+} from '../common/qaap-transcript-web-search-core';
+import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
+import {
     createLobeToolTitle,
     createLobeTraceStatusIndicator,
     parseLobeToolTitleParamSummary,
@@ -307,6 +312,12 @@ export class MobileProjectsTranscriptMessagesToolUi {
             if (this.resolversUi.isTranscriptShellTool(segment.name)) {
                 return this.createTranscriptShellDetails(segment);
             }
+            if (isTranscriptWebSearchTool(segment.name)) {
+                const payload = resolveTranscriptWebSearchPayload(segment);
+                return createTranscriptWebSearchCard(payload, {
+                    open: !segment.finished || payload.sites.length > 0,
+                });
+            }
             return this.createTranscriptToolWindow(segment, options);
         }
         const block = document.createElement('div');
@@ -455,6 +466,12 @@ export class MobileProjectsTranscriptMessagesToolUi {
         kind: string,
         options?: { readonly streaming?: boolean },
     ): HTMLElement {
+        if (isTranscriptWebSearchTool(segment.name)) {
+            const payload = resolveTranscriptWebSearchPayload(segment);
+            return createTranscriptWebSearchCard(payload, {
+                open: !segment.finished || payload.sites.length > 0,
+            });
+        }
         if (isTranscriptTodoTool(segment.name)) {
             const checklist = this.createTranscriptTodoChecklist(segment);
             if (checklist) {

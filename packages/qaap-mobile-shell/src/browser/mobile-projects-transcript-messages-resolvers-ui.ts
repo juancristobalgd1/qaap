@@ -12,6 +12,7 @@ import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversati
 import { isAgentToolResultFailure } from '../common/qaap-transcript-content-display';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
+import { isTranscriptWebSearchTool } from '../common/qaap-transcript-web-search-core';
 
 export class MobileProjectsTranscriptMessagesResolversUi {
     constructor(
@@ -306,6 +307,9 @@ export class MobileProjectsTranscriptMessagesResolversUi {
 
 
     resolveTranscriptToolKind(toolName: string | undefined): string {
+        if (isTranscriptWebSearchTool(toolName)) {
+            return 'tool';
+        }
         const name = (toolName ?? 'tool').toLowerCase();
         if (name.includes('mcp') || name === 'callmcptool' || name.startsWith('mcp_')) {
             return 'mcp';
