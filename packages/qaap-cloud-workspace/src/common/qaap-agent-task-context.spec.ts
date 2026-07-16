@@ -92,6 +92,14 @@ describe('prependAgentTaskContextToPrompt', () => {
         expect(result).to.contain('always run npm run compile first');
     });
 
+    it('prepends the auto-researcher heads-up under a heading when a research ledger is active', () => {
+        const result = prependAgentTaskContextToPrompt('Do it', undefined, undefined, {
+            researchLedger: 'An auto-researcher loop is active in this repository (3 experiment rounds recorded so far).',
+        });
+        expect(result).to.contain('# Auto-researcher');
+        expect(result).to.contain('3 experiment rounds recorded so far');
+    });
+
     it('orders memory before repo map before git status before the task', () => {
         const result = prependAgentTaskContextToPrompt('THE-TASK', undefined, undefined, {
             repoMemory: 'MEMORY',

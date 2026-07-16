@@ -57,6 +57,8 @@ export interface QaapAgentRepoContext {
     readonly gitStatus?: string;
     /** Durable repo memory (`.qaap/memory.md`) appended by previous agent turns. */
     readonly repoMemory?: string;
+    /** Heads-up when an auto-researcher loop owns this repo's experiment ledger (see qaap-research-runner). */
+    readonly researchLedger?: string;
 }
 
 /**
@@ -106,6 +108,10 @@ export function prependAgentTaskContextToPrompt(
     const repoMemory = repoContext?.repoMemory?.trim();
     if (repoMemory) {
         workspaceParts.push(`# Repository memory (.qaap/memory.md)\n\n${repoMemory}`);
+    }
+    const researchLedger = repoContext?.researchLedger?.trim();
+    if (researchLedger) {
+        workspaceParts.push(`# Auto-researcher\n\n${researchLedger}`);
     }
     const repoMap = repoContext?.repoMap?.trim();
     if (repoMap) {

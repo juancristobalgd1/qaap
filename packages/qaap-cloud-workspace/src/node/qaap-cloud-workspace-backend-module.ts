@@ -34,6 +34,9 @@ import { QaapParallelRunStore } from './qaap-parallel-run-store';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
 import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
+import { QaapResearchEndpoint } from './qaap-research-endpoint';
+import { QaapResearchRunner } from './qaap-research-runner';
+import { QaapResearchStore } from './qaap-research-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
@@ -102,6 +105,14 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapWorkHubRoutineScheduler).toSelf().inSingletonScope();
     bind(QaapWorkHubRoutineEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorkHubRoutineEndpoint);
+    bind(QaapResearchStore).toSelf().inSingletonScope();
+    bind(QaapResearchRunner).toSelf().inSingletonScope();
+    // Eagerly instantiated (via the BackendApplicationContribution provider) so its @postConstruct
+    // reconciliation resumes any goal left `running` on disk BEFORE the first HTTP request —
+    // mirrors QaapHeadlessVisualCaptureService, the other postConstruct-only eager singleton here.
+    bind(BackendApplicationContribution).toService(QaapResearchRunner);
+    bind(QaapResearchEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapResearchEndpoint);
     // Inject the `qaap-task` helper env (PATH prefix, token, API URL) into every interactive
     // shell so users can call `qaap-task` from the Terminal tab — not just background-task
     // subprocesses, which already get it via QaapAgentTaskRunner.buildChildEnv.

@@ -131,7 +131,9 @@ const QAAP_AGENT_VERIFY_WALL_CLOCK_MS = 5 * 60 * 1000;
 const QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS = 12_000;
 const QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS = 4_000;
 
-interface QaapGenericCommandResult {
+/** Exported so other node/ services that reuse {@link QaapAgentTaskRunner.runGenericCommand} — the
+ *  auto-researcher runner's `run`/`measure` phases — can type its result. */
+export interface QaapGenericCommandResult {
     readonly exitCode: number;
     readonly stdout: string;
     readonly stderr: string;
@@ -1079,6 +1081,7 @@ export class QaapAgentTaskRunner {
                 relevantFiles: this.readRelevantFiles(resolvedCwd, userQuery),
                 gitStatus: this.readGitStatusSnapshot(resolvedCwd),
                 repoMemory: this.readRepoMemory(resolvedCwd),
+                researchLedger: this.readResearchLedger(resolvedCwd),
             }
             : undefined;
         const agentPrompt = prependAgentTaskContextToPrompt(
@@ -1388,6 +1391,28 @@ export class QaapAgentTaskRunner {
         try {
             const text = fs.readFileSync(path.join(cwd, '.qaap', 'memory.md'), 'utf8').trim();
             return text ? truncateProjectInfo(text, REPO_MEMORY_MAX_CHARS) : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Heads-up shown to EVERY agent turn in a repo that has an active auto-researcher ledger
+     * (`.qaap/experiments.jsonl`) — not just the researcher's own propose-phase turns, which build
+     * their full round prompt separately via `buildResearchRoundPrompt`. A manual chat or another
+     * background task running in the same repo needs to know an autonomous loop owns this
+     * repository's experiment history so it does not hand-edit the ledger or fight the researcher's
+     * commits. Never cached: the runner rewrites the ledger after every phase.
+     */
+    protected readResearchLedger(cwd: string): string | undefined {
+        try {
+            const raw = fs.readFileSync(path.join(cwd, '.qaap', 'experiments.jsonl'), 'utf8');
+            const rounds = raw.split('\n').map(line => line.trim()).filter(line => line.length > 0).length;
+            if (rounds === 0) {
+                return undefined;
+            }
+            return `An auto-researcher loop is active in this repository (${rounds} experiment round${rounds === 1 ? '' : 's'} `
+                + 'recorded so far). Do not edit `.qaap/experiments.jsonl` — it is written by the research runner, not agents.';
         } catch {
             return undefined;
         }
@@ -2232,7 +2257,13 @@ export class QaapAgentTaskRunner {
         ].join('\n');
     }
 
-    protected runGenericCommand(
+    /**
+     * Public (was `protected`) so the auto-researcher runner ({@link ../node/qaap-research-runner})
+     * can reuse the exact same spawn/timeout/kill-tree/tenant-isolation machinery for its `run` and
+     * `measure` phases — those need a hard multi-hour timeout with no idle-based kill, unlike
+     * {@link create} which is tuned for interactive-ish agent turns (see `IDLE_TASK_TIMEOUT_MS`).
+     */
+    runGenericCommand(
         command: string,
         cwd: string,
         env: NodeJS.ProcessEnv,
