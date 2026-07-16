@@ -56,7 +56,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     python3 \
-    pipx \
     build-essential \
     ripgrep \
     # Headless Chromium for server-side visual evidence (QaapHeadlessVisualCaptureService).
@@ -79,8 +78,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && copilot --version \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
     && antigravity --version \
-    && pipx install aider-chat \
-    && /root/.local/bin/aider --version
+    && curl -fsSL https://x.ai/cli/install.sh | bash \
+    && /root/.grok/bin/grok version
 
 # QAIQ builds in its OWN layer so a deploy can pull a fresh `main` (or a pinned ref) without
 # rebuilding the whole toolchain above, and so it is never silently frozen at the first build's
@@ -93,7 +92,7 @@ RUN git clone --depth 1 --branch "${QAIQ_REF}" "${QAIQ_REPO}" /opt/qaiq \
     && ln -sf /opt/qaiq/bin/qaiq /usr/local/bin/qaiq \
     && qaiq --version
 
-ENV PATH="/root/.local/bin:${PATH}" \
+ENV PATH="/root/.grok/bin:/root/.local/bin:${PATH}" \
     QAAP_DEFAULT_AGENT=qaiq
 
 WORKDIR /app/examples/browser

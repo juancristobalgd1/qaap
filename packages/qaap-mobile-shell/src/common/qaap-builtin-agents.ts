@@ -21,7 +21,7 @@ export interface QaapBuiltinAgentDefinition {
 export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
     { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex exec --json {model_flags} {prompt}' },
     { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {model_flags} -p {prompt}' },
-    { id: 'aider', label: 'Aider', bin: 'aider', template: 'aider --yes-always {model_flags} --message {prompt}' },
+    { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
     { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --dangerously-skip-permissions {model_flags} {prompt}' },
     { id: 'goose', label: 'Goose', bin: 'goose', template: 'goose run --no-session -t {prompt}' },
     { id: 'hermes', label: 'Hermes', bin: 'hermes', template: 'hermes chat -q {prompt}' },
@@ -50,7 +50,7 @@ export const NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS = new Set([CURSOR_AGENT_ID]
 export const NATIVE_MODEL_PICKER_AGENT_IDS = new Set([
     'codex',
     'claude',
-    'aider',
+    'grok',
     'opencode',
     'qwen',
     'copilot',
@@ -88,6 +88,9 @@ export function resolveQaapBuiltinAgentMentionId(token: string): string | undefi
     }
     if (normalized === 'gemini') {
         return 'antigravity';
+    }
+    if (normalized === 'grok-build' || normalized === 'grok-cli') {
+        return 'grok';
     }
     return QAAP_BUILTIN_AGENT_IDS.has(normalized) ? normalized : undefined;
 }

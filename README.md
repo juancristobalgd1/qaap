@@ -29,7 +29,7 @@ QAAP can detect and run several CLI agents on the backend:
 - `qaiq`
 - `codex`
 - `claude`
-- `aider`
+- `grok`
 - `opencode`
 - `goose`
 - `hermes`

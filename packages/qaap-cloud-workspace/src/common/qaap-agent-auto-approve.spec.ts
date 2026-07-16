@@ -64,9 +64,13 @@ describe('qaap-agent-auto-approve', () => {
         expect(commandHasAutoApproveFlags(already)).to.equal(true);
     });
 
-    it('applyAutoApproveToCommand leaves aider unchanged', () => {
-        const cmd = "aider --yes-always --message 'hi'";
-        expect(applyAutoApproveToCommand(cmd, 'aider')).to.equal(cmd);
+    it('applyAutoApproveToCommand leaves grok --always-approve unchanged', () => {
+        const cmd = "grok --always-approve -p 'hi'";
+        expect(applyAutoApproveToCommand(cmd, 'grok')).to.equal(cmd);
+    });
+
+    it('applyAutoApproveToCommand injects --always-approve for grok when missing', () => {
+        expect(applyAutoApproveToCommand("grok -p 'hi'", 'grok')).to.equal("grok --always-approve -p 'hi'");
     });
 
     it('applyAutoApproveToCommand adds opencode, cursor, antigravity, and copilot flags', () => {

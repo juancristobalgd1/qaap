@@ -113,10 +113,9 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 nativeOption(id, 'opencode/gpt-5.2-codex', 'GPT-5.2 Codex'),
                 nativeOption(id, 'opencode/gemini-3.1-pro', 'Gemini 3.1 Pro', 'gemini'),
             ];
-        case 'aider':
+        case 'grok':
             return [
-                nativeOption(id, 'sonnet', 'Sonnet', 'anthropic'),
-                nativeOption(id, 'gpt-4o', 'GPT-4o'),
+                nativeOption(id, 'grok-4.5', 'Grok 4.5'),
             ];
         default:
             return [];

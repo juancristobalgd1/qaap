@@ -50,7 +50,9 @@ export function commandHasAutoApproveFlags(command: string): boolean {
         || /--auto-edit\b/.test(command)
         || /--dangerously-auto-approve-everything\b/.test(command)
         || /--yes-always\b/.test(command)
+        || /--always-approve\b/.test(command)
         || /\b--force\b/.test(command)
+        || /\b--yolo\b/.test(command)
         || /\b-yolo\b/.test(command)
         || /--approval-mode(?:=|\s+)yolo\b/.test(command)
         || /--allow-all\b/.test(command)
@@ -60,6 +62,11 @@ export function commandHasAutoApproveFlags(command: string): boolean {
 /**
  * Inject CLI flags so a background agent run does not block on permission prompts.
  * No-op when the command already carries an auto-approve flag.
+ *
+ * Dispatch is by {@code agentId} whenever it is known. The regex chain below is only a fallback for
+ * legacy callers that don't pass {@code agentId} — it is anchored to the start of the (trimmed) command,
+ * since the executable is always the first token, so it cannot be fooled by another agent's name showing
+ * up later in a quoted prompt argument.
  */
 export function applyAutoApproveToCommand(command: string, agentId: string | undefined): string {
     if (commandHasAutoApproveFlags(command)) {
@@ -75,8 +82,8 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
     if (id === QAAP_QAIQ_AGENT_ID) {
         return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, '--dangerously-skip-permissions');
     }
-    if (id === 'aider') {
-        return command;
+    if (id === 'grok') {
+        return injectAfterExecutable(command, 'grok', '--always-approve');
     }
     if (id === 'opencode') {
         return injectAfterPattern(command, /\bopencode(?:\s+run)?\b/, '--dangerously-skip-permissions');
@@ -99,32 +106,36 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
         }
         return injectAfterExecutable(command, 'qwen', '-p --approval-mode yolo');
     }
-    if (/\bclaude\b/.test(command)) {
+    const leading = command.trimStart();
+    if (/^claude\b/.test(leading)) {
         return injectAfterExecutable(command, 'claude', '--dangerously-skip-permissions');
     }
-    if (/\bcodex\b/.test(command)) {
+    if (/^codex\b/.test(leading)) {
         return injectAfterExecutable(command, 'codex', '--full-auto');
     }
-    if (/\b(qaiq|openclaude)\b/.test(command)) {
+    if (/^(?:qaiq|openclaude)\b/.test(leading)) {
         return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, '--dangerously-skip-permissions');
     }
-    if (/\bopencode(?:\s+run)?\b/.test(command)) {
+    if (/^opencode(?:\s+run)?\b/.test(leading)) {
         return injectAfterPattern(command, /\bopencode(?:\s+run)?\b/, '--dangerously-skip-permissions');
     }
-    if (/\bcursor-agent\b/.test(command)) {
+    if (/^cursor-agent\b/.test(leading)) {
         return injectAfterExecutable(command, 'cursor-agent', '-p --force');
     }
-    if (resolveAntigravityCliKind(command) && !commandHasAutoApproveFlags(command)) {
+    if (/^(?:agy|antigravity|gemini)\b/.test(leading) && !commandHasAutoApproveFlags(command)) {
         return applyAntigravityAutoApprove(command);
     }
-    if (/\bcopilot\b/.test(command) && !commandHasAutoApproveFlags(command)) {
+    if (/^copilot\b/.test(leading) && !commandHasAutoApproveFlags(command)) {
         return injectAfterExecutable(command, 'copilot', '--autopilot --yolo --max-autopilot-continues 20');
     }
-    if (/\bqwen\b/.test(command) && !commandHasAutoApproveFlags(command)) {
+    if (/^qwen\b/.test(leading) && !commandHasAutoApproveFlags(command)) {
         if (hasHeadlessPromptFlag(command)) {
             return injectAfterHeadlessPromptFlag(command, '--approval-mode yolo');
         }
         return injectAfterExecutable(command, 'qwen', '-p --approval-mode yolo');
+    }
+    if (/^grok\b/.test(leading) && !commandHasAutoApproveFlags(command)) {
+        return injectAfterExecutable(command, 'grok', '--always-approve');
     }
     return command;
 }

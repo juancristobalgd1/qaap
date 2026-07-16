@@ -10,6 +10,7 @@ import {
     SHELL_AGENT_ID,
     THEIA_CODER_AGENT_ID,
 } from './qaap-agent-task-client';
+import { GROK_BRAND_SVG_DARK, GROK_BRAND_SVG_LIGHT } from './qaap-grok-brand-mark';
 
 export type QaapAgentBrandTone = 'dark' | 'light' | 'brand';
 
@@ -18,6 +19,9 @@ export interface QaapAgentBrand {
     readonly label: string;
     readonly tone: QaapAgentBrandTone;
     readonly svg: string;
+    /** Optional light/dark pair for monochrome marks that invert with the theme. */
+    readonly svgLight?: string;
+    readonly svgDark?: string;
 }
 
 let svgInstanceCounter = 0;
@@ -41,6 +45,9 @@ export function normalizeAgentBrandId(agentId: string | undefined): string | und
     }
     if (lower === 'gemini') {
         return 'antigravity';
+    }
+    if (lower === 'grok-build' || lower === 'grok-cli') {
+        return 'grok';
     }
     return lower;
 }
@@ -66,7 +73,18 @@ export function createAgentBrandIcon(agentId: string | undefined, size: 'sm' | '
     const host = document.createElement('span');
     host.className = `theia-qaap-agent-brand-icon theia-mod-${size} theia-mod-tone-${brand.tone}`;
     host.setAttribute('aria-hidden', 'true');
-    host.innerHTML = brand.svg;
+    if (brand.svgLight && brand.svgDark) {
+        host.classList.add('theia-mod-theme-adaptive');
+        const lightHost = document.createElement('span');
+        lightHost.className = 'theia-mod-agent-icon-for-light';
+        lightHost.innerHTML = brand.svgLight;
+        const darkHost = document.createElement('span');
+        darkHost.className = 'theia-mod-agent-icon-for-dark';
+        darkHost.innerHTML = brand.svgDark;
+        host.append(lightHost, darkHost);
+    } else {
+        host.innerHTML = brand.svg;
+    }
     return host;
 }
 
@@ -116,11 +134,22 @@ const SVG_CODER = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" r
 
 const SVG_KIMI = `<svg viewBox="0 0 512 512" fill-rule="evenodd" clip-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true"><path d="M503 114.333v280c0 60.711-49.29 110-110 110H113c-60.711 0-110-49.289-110-110v-280c0-60.71 49.289-110 110-110h280c60.71 0 110 49.29 110 110z"/><path d="M342.065 189.759c1.886-2.42 3.541-4.63 5.289-6.77.81-1.007.74-1.771-.046-2.824-7.58-9.965-8.298-21.028-3.935-32.254 3.275-8.448 10.52-12.406 19.373-13.25 5.52-.521 10.936.046 15.959 2.73 6.596 3.53 10.438 8.912 11.688 16.341.995 5.926.81 11.712-.868 17.452-2.974 10.161-10.277 15.427-20.287 16.758-8.31 1.11-16.734 1.25-25.113 1.817-.648.046-1.308 0-2.06 0z" fill="#027aff"/><path d="M321.512 144.254h-50.064l-39.637 90.384h-56.036v-89.99H131v232.868h44.787v-98.103h78.973c13.598 0 26.015-7.927 31.744-20.252v118.355h44.787v-98.103c0-23.342-18.239-42.97-41.523-44.671v-.116h-24.593a45.577 45.577 0 0026.884-24.534l29.453-65.838z" fill="#fff"/></svg>`;
 
+/** Official Grok Build mark — see {@link GROK_BRAND_SVG_LIGHT}. */
+const SVG_GROK_LIGHT = GROK_BRAND_SVG_LIGHT;
+const SVG_GROK_DARK = GROK_BRAND_SVG_DARK;
+
 const AGENT_BRAND_FACTORIES: Record<string, () => QaapAgentBrand> = {
     [QAIQ_AGENT_ID]: () => monogramBrand(QAIQ_AGENT_ID, 'QAIQ', 'Q', '#E58E40', '#1a1310'),
     codex: () => ({ id: 'codex', label: 'Codex', tone: 'dark', svg: SVG_CODEX }),
     claude: () => ({ id: 'claude', label: 'Claude Code', tone: 'light', svg: SVG_CLAUDE }),
-    aider: () => monogramBrand('aider', 'Aider', 'A', '#7C3AED'),
+    grok: () => ({
+        id: 'grok',
+        label: 'Grok Build',
+        tone: 'light',
+        svg: SVG_GROK_LIGHT,
+        svgLight: SVG_GROK_LIGHT,
+        svgDark: SVG_GROK_DARK,
+    }),
     opencode: () => ({ id: 'opencode', label: 'OpenCode', tone: 'brand', svg: SVG_OPENCODE }),
     goose: () => monogramBrand('goose', 'Goose', 'G', '#111827'),
     hermes: () => monogramBrand('hermes', 'Hermes', 'H', '#0F766E'),

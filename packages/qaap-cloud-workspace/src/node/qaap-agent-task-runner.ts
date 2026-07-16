@@ -115,7 +115,7 @@ const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIO
  * Optional JSON env var for server-side agent backends beyond the built-ins. Example:
  *
  * QAAP_AGENT_COMMANDS='[
- *   {"id":"aider-gemini","label":"Aider Gemini","bin":"aider","template":"aider --yes-always --model gemini/gemini-2.5-flash --message {prompt}"},
+ *   {"id":"grok-fast","label":"Grok Build (fast)","bin":"grok","template":"grok --always-approve -m grok-4.5 -p {prompt}"},
  *   {"id":"qaiq-gemini","label":"QAIQ Gemini","bin":"qaiq","template":"qaiq --print --dangerously-skip-permissions --provider gemini --model gemini-2.5-flash {prompt}"}
  * ]'
  *
@@ -173,7 +173,7 @@ const REPO_MAP_EXCLUDED_DIRS = new Set<string>([
 const REPO_MAP_SOURCE_DIRS = new Set<string>(['src', 'app', 'components', 'pages', 'packages', 'server', 'api']);
 
 /** When several CLIs are on PATH, prefer BYOK/free-tier runners over subscription CLIs. */
-const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'aider', 'codex', 'claude'];
+const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'grok', 'codex', 'claude'];
 
 const AGENT_ENV_PREFS: readonly { readonly env: string; readonly pref: string }[] = [
     { env: 'OPENAI_API_KEY', pref: 'ai-features.openAiOfficial.openAiApiKey' },
@@ -1036,7 +1036,7 @@ export class QaapAgentTaskRunner {
      * Turn a natural-language prompt into the command that runs the coding agent.
      *
      * Resolution order, given the requested {@link agentId}:
-     *   1. A detected built-in agent (`claude`, `codex`, `qaiq`, `aider`) → use its template.
+     *   1. A detected built-in agent (`claude`, `codex`, `qaiq`, `grok`) → use its template.
      *   2. `'env'` or any unknown id, when `QAAP_AGENT_COMMAND` is set → use that template.
      *   3. `'shell'`, or no agent available → run the prompt verbatim as a shell command.
      *

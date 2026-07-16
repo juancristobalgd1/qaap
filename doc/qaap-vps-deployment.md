@@ -133,13 +133,13 @@ The runtime stage of `Dockerfile` installs:
 - **Antigravity CLI** → `antigravity` (installed from `@sanchaymittal/antigravity-cli` with `antigravity` alias)
 - **OpenCode** → `opencode` (`opencode-ai`)
 - **GitHub Copilot CLI** → `copilot` (`@github/copilot`)
-- **Aider** → `~/.local/bin/aider`
+- **Grok Build** → `/root/.grok/bin/grok` (`curl -fsSL https://x.ai/cli/install.sh | bash`)
 - `git`, `curl`, `bun`, `pnpm`, `yarn`, `build-essential`, `ripgrep` for agent shell work
 
 At container start, the backend logs detected agents, for example:
 
 ```text
-[qaap-agent-tasks] detected agents: qaiq, aider
+[qaap-agent-tasks] detected agents: qaiq, grok
 [qaap-agent-tasks] qaiq: 0.15.0-qaap.1 (QAIQ)
 ```
 
@@ -204,7 +204,8 @@ docker compose exec theia claude --version
 docker compose exec theia antigravity --version
 docker compose exec theia opencode --version
 docker compose exec theia copilot --version
-docker compose exec theia which qaiq aider codex claude antigravity opencode copilot
+docker compose exec theia which qaiq grok codex claude antigravity opencode copilot
+docker compose exec theia grok version
 docker compose logs theia 2>&1 | grep 'qaap-agent-tasks'
 ```
 

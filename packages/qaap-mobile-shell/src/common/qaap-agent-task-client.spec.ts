@@ -265,8 +265,8 @@ describe('qaap-agent-task-client', () => {
                 qaiqModel: model,
             });
             expect(resolveStoredAgentModelForSubmit('codex', cwd)).to.be.undefined;
-            writeStoredAgentModel(cwd, 'aider', model);
-            expect(resolveStoredAgentModelForSubmit('aider', cwd)).to.deep.equal(model);
+            writeStoredAgentModel(cwd, 'grok', model);
+            expect(resolveStoredAgentModelForSubmit('grok', cwd)).to.deep.equal(model);
             expect(readStoredQaiqModel(cwd)).to.deep.equal(model);
         });
     });
@@ -284,13 +284,13 @@ describe('qaap-agent-task-client', () => {
         expect(isOpencodeAgent('OpenCode')).to.be.true;
         expect(isOpencodeAgent('codex')).to.be.false;
         expect(isOpencodeAgent('claude')).to.be.false;
-        expect(isOpencodeAgent('aider')).to.be.false;
+        expect(isOpencodeAgent('grok')).to.be.false;
         expect(usesStructuredAgentTranscript('opencode')).to.be.true;
         expect(usesStructuredAgentTranscript('qaiq')).to.be.true;
         expect(usesStructuredAgentTranscript('codex')).to.be.true;
         expect(usesStructuredAgentTranscript('claude')).to.be.true;
         expect(usesStructuredAgentTranscript('antigravity')).to.be.true;
-        expect(usesStructuredAgentTranscript('aider')).to.be.false;
+        expect(usesStructuredAgentTranscript('grok')).to.be.false;
     });
 
     it('isTheiaCoderMention detects @coder prefix in message text', () => {

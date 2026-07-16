@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentBrandTone } from './qaap-agent-branding';
+import { GROK_BRAND_SVG_DARK, GROK_BRAND_SVG_LIGHT } from './qaap-grok-brand-mark';
 import { LLM_PROVIDER_ICON_DATA_URLS } from './qaap-llm-provider-icon-assets';
 
 export interface QaapLlmProviderBrand {
@@ -144,6 +145,9 @@ const MODEL_PREFIX_BRAND_KEYS: Readonly<Record<string, string>> = {
     google: 'google',
     gemini: 'gemini',
     gemma: 'gemma',
+    grok: 'grok',
+    xai: 'grok',
+    'x-ai': 'grok',
     alibaba: 'alibaba',
     alibabacloud: 'alibaba',
     tongyi: 'alibaba',
@@ -197,6 +201,9 @@ const VENDOR_BRAND_KEYS: Readonly<Record<string, string>> = {
     minimax: 'minimax',
     meta: 'meta',
     kimi: 'kimi',
+    grok: 'grok',
+    xai: 'grok',
+    'x-ai': 'grok',
     antigravity: 'antigravity',
     codex: 'codex',
     claude: 'claude',
@@ -229,6 +236,14 @@ const LLM_PROVIDER_BRAND_FACTORIES: Record<string, () => QaapLlmProviderBrand> =
     gemma: () => ({ id: 'gemma', label: 'Gemma', tone: 'brand', svg: uniquifySvgIds(SVG_GEMMA) }),
     microsoft: () => ({ id: 'microsoft', label: 'Microsoft', tone: 'brand', svg: SVG_MICROSOFT }),
     kimi: () => pngBrand('kimi', 'Kimi', 'light', 'moonshot'),
+    grok: () => ({
+        id: 'grok',
+        label: 'Grok',
+        tone: 'light',
+        svg: GROK_BRAND_SVG_LIGHT,
+        svgLight: GROK_BRAND_SVG_LIGHT,
+        svgDark: GROK_BRAND_SVG_DARK,
+    }),
     cohere: () => ({ id: 'cohere', label: 'Cohere', tone: 'brand', svg: SVG_COHERE }),
     unsloth: () => pngBrand('unsloth', 'Unsloth', 'brand'),
     'z-ai': () => ({ id: 'z-ai', label: 'Z.ai', tone: 'brand', svg: SVG_ZAI }),
@@ -258,6 +273,9 @@ function brandKeyFromModelSlug(modelId: string): string | undefined {
     }
     if (lowerId.includes('claude')) {
         return 'claude';
+    }
+    if (lowerId.includes('grok') || normalized === 'xai' || normalized === 'x-ai') {
+        return 'grok';
     }
     // Bare GPT / ChatGPT / o-series ids (often under Codex sections) → OpenAI.
     if (lowerId.includes('gpt') || normalized === 'chatgpt' || /^o[1-9]([_-]|$)/.test(normalized)) {

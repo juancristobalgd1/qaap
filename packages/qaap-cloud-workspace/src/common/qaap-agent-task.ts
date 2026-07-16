@@ -95,7 +95,7 @@ export interface QaapCreateAgentTaskRequest {
      */
     readonly prompt?: string;
     /**
-     * Id of an agent returned by the list endpoint, e.g. `'claude'`, `'codex'`, `'aider'`,
+     * Id of an agent returned by the list endpoint, e.g. `'claude'`, `'codex'`, `'grok'`,
      * `'opencode'`, `'goose'`, `'hermes'`, `'openclaw'`, `'cursor'`, `'gemini'`, `'copilot'`, `'qwen'`, `'kimi'`,
      * or a custom id configured through `QAAP_AGENT_COMMANDS`. Use the special value `'shell'`
      * to bypass any agent and run the prompt verbatim as a command.

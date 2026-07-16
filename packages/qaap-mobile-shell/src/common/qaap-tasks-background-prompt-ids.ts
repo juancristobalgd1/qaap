@@ -5,7 +5,7 @@
 
 /**
  * Built-in, user-editable prompt fragment holding the GLOBAL context/rules that are
- * prepended to every Qaap cloud background-agent prompt (QAIQ, Aider, Codex, …).
+ * prepended to every Qaap cloud background-agent prompt (QAIQ, Grok Build, Codex, …).
  *
  * Backend agents are CLIs spawned in the workspace `cwd`; they never read Theia's
  * PromptService. The QAIQ bridge therefore resolves this fragment (plus the per-project

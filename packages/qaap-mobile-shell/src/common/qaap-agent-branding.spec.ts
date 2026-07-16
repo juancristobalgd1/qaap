@@ -18,6 +18,7 @@ describe('qaap-agent-branding', () => {
         expect(normalizeAgentBrandId(THEIA_CODER_AGENT_ID)).to.equal('coder');
         expect(normalizeAgentBrandId('  Antigravity  ')).to.equal('antigravity');
         expect(normalizeAgentBrandId('  Gemini  ')).to.equal('antigravity');
+        expect(normalizeAgentBrandId('grok-build')).to.equal('grok');
     });
 
     it('resolveAgentBrand returns svg brands for built-in agents', () => {
@@ -26,6 +27,15 @@ describe('qaap-agent-branding', () => {
         expect(resolveAgentBrand('antigravity')?.tone).to.equal('light');
         expect(resolveAgentBrand('codex')?.tone).to.equal('dark');
         expect(resolveAgentBrand('qwen')?.label).to.equal('Qwen Code');
+    });
+
+    it('resolveAgentBrand uses light/dark Grok Build mark variants', () => {
+        const brand = resolveAgentBrand('grok');
+        expect(brand?.label).to.equal('Grok Build');
+        expect(brand?.tone).to.equal('light');
+        expect(brand?.svgLight).to.include('data:image/png;base64,');
+        expect(brand?.svgDark).to.include('data:image/png;base64,');
+        expect(brand?.svgLight).to.not.equal(brand?.svgDark);
     });
 
     it('resolveAgentBrand uniquifies antigravity mask ids across calls', () => {

@@ -9,7 +9,8 @@ browser tab is closed. The server auto-detects these CLIs on `PATH`:
 - `qaiq` -> `qaiq --bare --print --output-format stream-json --verbose --include-partial-messages --dangerously-skip-permissions {qaiq_flags} {prompt}`
   (stream-json is parsed live in chat/transcript UIs: thinking blocks, tool calls, and assistant text)
   (`{qaiq_flags}` is filled from your Settings API keys: Gemini, OpenRouter, Ollama, …)
-- `aider` -> `aider --yes-always --message {prompt}`
+- `grok` -> `grok --always-approve {model_flags} -p {prompt}`
+  (Grok Build CLI from https://x.ai/cli; auth via `grok login` or `XAI_API_KEY`)
 - `opencode` -> `opencode run --format json --dangerously-skip-permissions {prompt}`
   (JSON events are parsed live like QAIQ: tool calls in the activity timeline, assistant text as the main answer; older formatted logs are still parsed on replay)
 - `goose` -> `goose run --no-session -t {prompt}`
@@ -22,14 +23,14 @@ browser tab is closed. The server auto-detects these CLIs on `PATH`:
 - `kimi` -> `kimi -p {prompt}` (prompt mode auto-approves tool calls)
 
 The Docker runtime image builds and installs **[QAIQ](https://github.com/juancristobalgd1/qaiq)**
-(QAAP's fork of the OpenClaude coding-agent CLI), Codex CLI, and Aider. Codex still needs
+(QAAP's fork of the OpenClaude coding-agent CLI), Codex CLI, and Grok Build. Codex still needs
 auth/API-key setup if you want to use `@codex`; Claude Code still needs its own CLI/auth setup.
 
 QAIQ is the generic BYOK/free-tier path: it can run non-interactively in the server with
 providers such as `openai`, `gemini`, `ollama`, and other OpenAI-compatible routes. Select it
 with `@qaiq` or make it the default with `QAAP_DEFAULT_AGENT=qaiq`. The Work Hub composer also defaults to **QAIQ** when no per-project agent is stored.
 
-When several CLIs are installed, QAAP prefers **QAIQ**, then Aider, before Codex or Claude Code
+When several CLIs are installed, QAAP prefers **QAIQ**, then Grok Build, before Codex or Claude Code
 — so background jobs do not silently burn Codex subscription quota unless you pick `@codex` or
 set `QAAP_DEFAULT_AGENT=codex`.
 
@@ -61,16 +62,10 @@ It is a JSON array:
 ```bash
 QAAP_AGENT_COMMANDS='[
   {
-    "id": "aider-gemini",
-    "label": "Aider Gemini",
-    "bin": "aider",
-    "template": "aider --yes-always --model gemini/gemini-2.5-flash --message {prompt}"
-  },
-  {
-    "id": "aider-openrouter",
-    "label": "Aider OpenRouter",
-    "bin": "aider",
-    "template": "aider --yes-always --model openrouter/deepseek/deepseek-chat --message {prompt}"
+    "id": "grok-fast",
+    "label": "Grok Build (fast)",
+    "bin": "grok",
+    "template": "grok --always-approve -m grok-4.5 -p {prompt}"
   },
   {
     "id": "qaiq-gemini",
@@ -110,7 +105,7 @@ QAAP_AGENT_COMMANDS='[
 ]'
 ```
 
-Set `QAAP_DEFAULT_AGENT=aider-gemini` to make one custom agent the default.
+Set `QAAP_DEFAULT_AGENT=grok-fast` to make one custom agent the default.
 
 `QAAP_AGENT_COMMAND` remains supported for a single legacy custom command. Prefer
 `QAAP_AGENT_COMMANDS` when you want several choices in the UI.

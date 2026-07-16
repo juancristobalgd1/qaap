@@ -261,8 +261,8 @@ function inferAgentIdFromCommand(command: string): string {
     if (/\bclaude\b/.test(command)) {
         return 'claude';
     }
-    if (/\baider\b/.test(command)) {
-        return 'aider';
+    if (/\bgrok\b/.test(command)) {
+        return 'grok';
     }
     if (/\bopencode\b/.test(command)) {
         return 'opencode';

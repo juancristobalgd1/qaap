@@ -151,7 +151,7 @@ export class QaapAgentTasksWidget extends ReactWidget {
                             )
                             : nls.localize(
                                 'qaap/agentTasks/noAgent',
-                                'No server-side coding agent detected. Install qaiq, claude, codex, opencode, goose, hermes, openclaw, cursor-agent, or aider; or configure QAAP_AGENT_COMMANDS / QAAP_AGENT_COMMAND.',
+                                'No server-side coding agent detected. Install qaiq, claude, codex, opencode, goose, hermes, openclaw, cursor-agent, or grok; or configure QAAP_AGENT_COMMANDS / QAAP_AGENT_COMMAND.',
                             )}
                     </div>
                 )}

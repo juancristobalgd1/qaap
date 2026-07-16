@@ -8,7 +8,7 @@ import { BasePromptFragment } from '@theia/ai-core/lib/common';
 import { QAAP_TASKS_BACKGROUND_CONTEXT_PROMPT_ID } from '@theia/qaap-mobile-shell/lib/common/qaap-tasks-background-prompt-ids';
 
 /**
- * GLOBAL context prepended to every Qaap cloud background-agent prompt (QAIQ, Aider, Codex, …).
+ * GLOBAL context prepended to every Qaap cloud background-agent prompt (QAIQ, Grok Build, Codex, …).
  *
  * Keep this short and cross-project: it carries facts true for ALL Qaap workspaces. Per-project
  * details come from the workspace `project-info` artifact, which the QAIQ bridge appends right

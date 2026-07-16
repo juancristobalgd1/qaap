@@ -9182,6 +9182,39 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-plugin-picker-icon.t
   background: transparent;
 }
 
+.theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-light,
+.theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-dark {
+  width: 100%;
+  height: 100%;
+}
+
+.theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-light svg,
+.theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-dark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-dark {
+  display: none;
+}
+
+.theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-light {
+  display: block;
+}
+
+body[data-theia-theme-mode="dark"] .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-light,
+body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-light,
+.theia-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-light {
+  display: none;
+}
+
+body[data-theia-theme-mode="dark"] .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-dark,
+body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-dark,
+.theia-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .theia-mod-agent-icon-for-dark {
+  display: block;
+}
+
 .theia-qaap-agent-chip {
   display: inline-flex;
   align-items: center;

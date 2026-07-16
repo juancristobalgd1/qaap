@@ -33,7 +33,7 @@ describe('qaap-agent-model-selection', () => {
     });
 
     it('agentSupportsModelPicker excludes shell and local Coder', () => {
-        expect(agentSupportsModelPicker('aider')).to.be.true;
+        expect(agentSupportsModelPicker('grok')).to.be.true;
         expect(agentSupportsModelPicker(SHELL_AGENT_ID)).to.be.false;
         expect(agentSupportsModelPicker(THEIA_CODER_AGENT_ID)).to.be.false;
     });
@@ -63,11 +63,11 @@ describe('qaap-agent-model-selection', () => {
     it('stores models per agent within the same cwd', () => {
         const cwd = '/repo/a';
         const qaiqModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'a/b' };
-        const aiderModel = { provider: 'openai' as const, vendor: 'nvidia', modelId: 'meta/llama' };
+        const grokModel = { provider: 'openai' as const, vendor: 'nvidia', modelId: 'meta/llama' };
         writeStoredAgentModel(cwd, QAIQ_AGENT_ID, qaiqModel);
-        writeStoredAgentModel(cwd, 'aider', aiderModel);
+        writeStoredAgentModel(cwd, 'grok', grokModel);
         expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)).to.deep.equal(qaiqModel);
-        expect(readStoredAgentModel(cwd, 'aider')).to.deep.equal(aiderModel);
+        expect(readStoredAgentModel(cwd, 'grok')).to.deep.equal(grokModel);
     });
 
     it('resolveAgentModelForSubmit prefers explicit runtime model over stored default', () => {

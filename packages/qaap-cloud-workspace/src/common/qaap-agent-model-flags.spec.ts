@@ -5,38 +5,20 @@
 
 import { expect } from 'chai';
 import { bindingFromQaiqModelSelection } from './qaap-qaiq-model-binding';
-import { formatAiderModelArg, formatModelFlagsForAgent } from './qaap-agent-model-flags';
-
-describe('formatAiderModelArg', () => {
-    it('prefixes openrouter and nvidia model ids', () => {
-        const openrouter = bindingFromQaiqModelSelection({
-            provider: 'openai',
-            vendor: 'openrouter',
-            modelId: 'anthropic/claude-3.5-sonnet',
-        });
-        expect(formatAiderModelArg(openrouter)).to.equal('openrouter/anthropic/claude-3.5-sonnet');
-
-        const nvidia = bindingFromQaiqModelSelection({
-            provider: 'openai',
-            vendor: 'nvidia',
-            modelId: 'meta/llama-3.3-70b-instruct',
-        });
-        expect(formatAiderModelArg(nvidia)).to.equal('openai/meta/llama-3.3-70b-instruct');
-    });
-});
+import { formatModelFlagsForAgent } from './qaap-agent-model-flags';
 
 describe('formatModelFlagsForAgent', () => {
-    it('formats qaiq and aider flags differently', () => {
+    it('formats qaiq and grok flags differently', () => {
         const binding = bindingFromQaiqModelSelection({
             provider: 'openai',
             vendor: 'openrouter',
             modelId: 'deepseek/deepseek-chat:free',
         });
         expect(formatModelFlagsForAgent('qaiq', binding)).to.equal('--provider openai --model deepseek/deepseek-chat:free');
-        expect(formatModelFlagsForAgent('aider', binding)).to.equal('--model openrouter/deepseek/deepseek-chat:free');
+        expect(formatModelFlagsForAgent('grok', binding)).to.equal('-m deepseek/deepseek-chat:free');
     });
 
-    it('uses codex -m and native model id for other CLIs', () => {
+    it('uses -m for codex and --model for other CLIs', () => {
         const binding = bindingFromQaiqModelSelection({
             provider: 'openai',
             vendor: 'codex',

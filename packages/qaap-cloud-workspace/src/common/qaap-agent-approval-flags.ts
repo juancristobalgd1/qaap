@@ -62,11 +62,40 @@ export function shouldUseQaiqStdioApprovals(options: QaapAgentApprovalFlagOption
 }
 
 /**
+ * Infer the agent id from the command's leading executable. Anchored to the start of the (trimmed)
+ * command — the executable is always the first token in every built-in template — so a quoted prompt
+ * argument that happens to mention another agent's name (e.g. workflow instructions describing
+ * subagent types) can never be mistaken for the invoked CLI. Only used as a fallback when
+ * {@link QaapAgentApprovalFlagOptions.agentId} is not supplied, e.g. legacy persisted tasks.
+ */
+function inferAgentIdFromCommand(command: string): string | undefined {
+    const trimmed = command.trimStart();
+    if (/^(?:qaiq|openclaude)\b/.test(trimmed)) {
+        return 'qaiq';
+    }
+    if (/^claude\b/.test(trimmed)) {
+        return 'claude';
+    }
+    if (/^codex\b/.test(trimmed)) {
+        return 'codex';
+    }
+    if (/^opencode(?:\s+run)?\b/.test(trimmed)) {
+        return 'opencode';
+    }
+    return undefined;
+}
+
+/**
  * Apply composer approval presets to an agent command. Replaces the old binary auto-approve injection
  * so {@code approve-for-me} can auto-approve edits while still prompting for shell/network when configured.
  *
  * QAIQ headless runs use {@code --dangerously-skip-permissions} (OpenCode-style) plus
  * {@link QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS} — Qaap only launches, enriches the prompt, and paints stream-json.
+ *
+ * Dispatch is by {@code options.agentId} whenever it is known — never by scanning the command text, which
+ * also contains the (quoted) prompt and can otherwise mention another agent's name and misroute the whole
+ * command to the wrong CLI's flags. Command-text sniffing via {@link inferAgentIdFromCommand} is only a
+ * fallback for legacy persisted tasks that predate {@code agentId} being recorded.
  */
 export function applyAgentApprovalPolicyToCommand(
     command: string,
@@ -81,16 +110,17 @@ export function applyAgentApprovalPolicyToCommand(
     const agentId = options.agentId?.trim().toLowerCase();
     const policyId = options.approvalPolicyId ?? 'approve-for-me';
     const rules = resolveEffectiveToolApprovalRules(policyId, options.toolApprovalRules);
-    if (agentId === 'qaiq' || /\b(qaiq|openclaude)\b/.test(command)) {
+    const effectiveId = agentId || inferAgentIdFromCommand(command);
+    if (effectiveId === 'qaiq') {
         return applyQaiqApprovalFlags(command, options, policyId, rules);
     }
-    if (agentId === 'claude' || /\bclaude\b/.test(command)) {
+    if (effectiveId === 'claude') {
         return applyClaudeApprovalFlags(command, policyId, rules);
     }
-    if (agentId === 'codex' || /\bcodex\b/.test(command)) {
+    if (effectiveId === 'codex') {
         return applyCodexApprovalFlags(command, policyId, rules);
     }
-    if (agentId === 'opencode' || /\bopencode(?:\s+run)?\b/.test(command)) {
+    if (effectiveId === 'opencode') {
         return applyOpencodeApprovalFlags(command, policyId, rules);
     }
     if (policyId === 'full-access' || rules?.network) {
@@ -212,8 +242,8 @@ function applyOpencodeApprovalFlags(
 }
 
 function stripNonInteractiveApprovalFlags(command: string, agentId: string | undefined): string {
-    const id = agentId?.trim().toLowerCase();
-    if (id === 'qaiq' || /\b(qaiq|openclaude)\b/.test(command)) {
+    const effectiveId = agentId?.trim().toLowerCase() || inferAgentIdFromCommand(command);
+    if (effectiveId === 'qaiq') {
         if (qaiqCommandUsesInteractionFlags(command)) {
             return injectAfterPattern(
                 stripFlagToken(command, '--dangerously-skip-permissions'),
@@ -221,11 +251,12 @@ function stripNonInteractiveApprovalFlags(command: string, agentId: string | und
                 '--permission-mode default',
             );
         }
+        return command;
     }
-    if (id === 'claude' || /\bclaude\b/.test(command)) {
+    if (effectiveId === 'claude') {
         return injectAfterExecutable(stripClaudeApprovalFlags(command), 'claude', '--permission-mode default');
     }
-    if (id === 'codex' || /\bcodex\b/.test(command)) {
+    if (effectiveId === 'codex') {
         return stripCodexApprovalFlags(command);
     }
     return command;

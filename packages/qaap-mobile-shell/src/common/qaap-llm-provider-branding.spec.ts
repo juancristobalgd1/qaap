@@ -110,6 +110,10 @@ describe('qaap-llm-provider-branding', () => {
         expect(resolveLlmProviderBrand('copilot', 'gpt-4o')?.id).to.equal('openai');
         expect(resolveLlmProviderBrand('openrouter')?.svgLight).to.include('#111111');
         expect(resolveLlmProviderBrand('openrouter')?.svgDark).to.include('#C8FF00');
+        expect(resolveLlmProviderBrand('grok')?.id).to.equal('grok');
+        expect(resolveLlmProviderBrand('grok', 'grok-4.5')?.svgLight).to.include('data:image/png;base64,');
+        expect(resolveLlmProviderBrand('grok', 'grok-4.5')?.svgDark).to.include('data:image/png;base64,');
+        expect(resolveLlmProviderBrandKey('grok', 'grok-4.5')).to.equal('grok');
     });
 
     it('returns svg brands for known providers', () => {

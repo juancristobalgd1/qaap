@@ -2197,7 +2197,7 @@ export class QaapAgentConversationStore {
 
     /**
      * Build the agent prompt for the upcoming turn. The chosen format is a plain transcript with
-     * role-tagged blocks: every coding-agent CLI we support (`claude -p`, `codex exec`, `aider`)
+     * role-tagged blocks: every coding-agent CLI we support (`claude -p`, `codex exec`, `grok -p`)
      * accepts free-form text as a single shell-quoted argument, so an explicit transcript is the
      * most robust way to carry multi-turn context without depending on agent-specific resume APIs.
      */

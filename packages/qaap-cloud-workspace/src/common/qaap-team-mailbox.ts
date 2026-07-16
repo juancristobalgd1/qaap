@@ -34,8 +34,8 @@ export function inferAgentIdFromTaskCommand(command: string): string {
     if (/\bclaude\b/.test(command)) {
         return 'claude';
     }
-    if (/\baider\b/.test(command)) {
-        return 'aider';
+    if (/\bgrok\b/.test(command)) {
+        return 'grok';
     }
     return 'shell';
 }
