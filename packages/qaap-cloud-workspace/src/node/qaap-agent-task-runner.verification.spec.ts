@@ -11,7 +11,7 @@ type ScriptRun = { command: string; result: { exitCode: number; stdout: string; 
 
 class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     public runVerify(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {
-        return this.verifySuccessfulQaiqTask(task);
+        return this.verifySuccessfulAgentTask(task);
     }
 }
 
@@ -22,11 +22,12 @@ const TASK: QaapAgentTask = {
     cwd: '/repo',
     state: 'running',
     createdAt: 0,
+    agentId: 'qaiq',
 };
 
 /**
- * Build a runner whose environment/edit/script probes all succeed, so `verifySuccessfulQaiqTask`
- * exercises its real loop. `runVerificationScripts` and `runQaiqVerificationFixTurn` are the seams
+ * Build a runner whose environment/edit/script probes all succeed, so `verifySuccessfulAgentTask`
+ * exercises its real loop. `runVerificationScripts` and `runAgentVerificationFixTurn` are the seams
  * each test drives; `fixTurns` counts how many agent fix turns the loop spawned.
  */
 function makeRunner(overrides: Partial<Record<string, unknown>> = {}): { runner: TestableQaapAgentTaskRunner; fixTurns: () => number } {
@@ -40,7 +41,7 @@ function makeRunner(overrides: Partial<Record<string, unknown>> = {}): { runner:
         isTaskStillRunning: () => true,
         summarizeVerificationFailure: (command: string) => `summary for ${command}`,
         runVerificationScripts: async (): Promise<ScriptRun> => undefined,
-        runQaiqVerificationFixTurn: async () => {
+        runAgentVerificationFixTurn: async () => {
             fixTurns++;
             return { exitCode: 0, stdout: '', stderr: '', timedOut: false };
         },
@@ -88,9 +89,24 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         expect(result && 'summary' in result ? result.summary : '').to.contain('summary for');
     });
 
-    it('skips (returns undefined) when the task is not a QAIQ run', async () => {
-        const { runner } = makeRunner({ isQaiqRunner: () => false });
-        expect(await runner.runVerify(TASK)).to.equal(undefined);
+    it('verifies non-QAIQ agent tasks too (generalized gate, not QAIQ-only)', async () => {
+        const { runner, fixTurns } = makeRunner();
+        const claudeTask: QaapAgentTask = { ...TASK, command: 'claude --dangerously-skip-permissions "do work"', agentId: 'claude' };
+        const result = await runner.runVerify(claudeTask);
+        expect(result).to.deep.include({ status: 'passed', attempts: 0 });
+        expect(fixTurns()).to.equal(0);
+    });
+
+    it('breaks the retry loop when the fix turn has no agent to run (graceful skip, not a crash)', async () => {
+        const { runner } = makeRunner({
+            runVerificationScripts: async (): Promise<ScriptRun> => failure(),
+            runAgentVerificationFixTurn: async () => undefined,
+        });
+        const result = await runner.runVerify(TASK);
+        expect(result?.status).to.equal('failed');
+        // One attempt is made, the fix turn reports "no agent available", and the loop bails
+        // instead of burning the remaining QAAP_AGENT_VERIFY_MAX_ATTEMPTS retrying an unfixed failure.
+        expect(result && 'attempts' in result ? result.attempts : -1).to.equal(1);
     });
 
     it('skips when no files were edited', async () => {

@@ -93,7 +93,7 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
             activeVerificationPasses: 1,               // already at cap
             maxConcurrentVerificationPasses: () => 1,
             tasks: new Map([['t', { id: 't', state: 'running' }]]),
-            verifySuccessfulQaiqTask: async () => { verifyCalls++; return undefined; },
+            verifySuccessfulAgentTask: async () => { verifyCalls++; return undefined; },
             finishTask: (_id: string, state: string) => { finishState = state; },
         });
 
@@ -111,7 +111,7 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
             activeVerificationPasses: 0,
             maxConcurrentVerificationPasses: () => 2,
             tasks: new Map([['t', { id: 't', state: 'running' }]]),
-            verifySuccessfulQaiqTask: async () => { verifyCalls++; return undefined; },
+            verifySuccessfulAgentTask: async () => { verifyCalls++; return undefined; },
             finishTask: () => undefined,
         });
 

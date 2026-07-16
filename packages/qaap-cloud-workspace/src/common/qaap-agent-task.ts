@@ -29,6 +29,12 @@ export interface QaapAgentTask {
     readonly command: string;
     /** Absolute working directory the command runs in. */
     readonly cwd: string;
+    /**
+     * Id of the coding agent the runner resolved for this task (e.g. `'qaiq'`, `'claude'`, `'codex'`,
+     * `'shell'`). Absent on tasks persisted before this field existed — use
+     * {@code resolveTaskAgentId} in the runner to infer it from {@link command} for those.
+     */
+    readonly agentId?: string;
     readonly state: QaapAgentTaskState;
     readonly exitCode?: number;
     /** Epoch milliseconds. */

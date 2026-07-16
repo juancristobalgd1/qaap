@@ -583,6 +583,21 @@ export class QaapAgentTaskRunner {
         return /\b(qaiq|openclaude)\b/.test(command);
     }
 
+    /**
+     * Id of the coding agent that ran (or will run) {@link task}. Tasks created after {@link
+     * QaapAgentTask.agentId} was introduced always carry it, resolved once in {@link
+     * buildAgentCommand}. Tasks persisted before that field existed fall back to the same
+     * command-sniffing heuristic {@link isQaiqRunner} always used — {@code 'qaiq'} when the command
+     * looks like a QAIQ/OpenClaude invocation, else {@code 'shell'} (no coding agent to re-invoke
+     * for a fix turn).
+     */
+    protected resolveTaskAgentId(task: QaapAgentTask): string {
+        if (task.agentId) {
+            return task.agentId;
+        }
+        return this.isQaiqRunner(undefined, task.command) ? QAIQ_AGENT_ID : SHELL_AGENT_ID;
+    }
+
     protected readCustomAgents(): AgentCandidate[] {
         const raw = process.env[CUSTOM_AGENTS_ENV]?.trim();
         if (!raw) {
@@ -1042,11 +1057,11 @@ export class QaapAgentTaskRunner {
         approvalPolicyId?: string,
         toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'],
         userQuery?: string,
-    ): { command: string; stdinPrompt?: string } {
+    ): { command: string; stdinPrompt?: string; agentId: string } {
         const id = this.resolveAgentId(prompt, agentId);
         const runnerPrompt = this.stripLeadingAgentMention(prompt);
         if (id === SHELL_AGENT_ID) {
-            return { command: runnerPrompt };
+            return { command: runnerPrompt, agentId: id };
         }
         const workflowPrompt = appendAgentDefaultWorkflowToPrompt(
             runnerPrompt,
@@ -1107,9 +1122,9 @@ export class QaapAgentTaskRunner {
         }
         command = applyAgentApprovalPolicyToCommand(command, approvalOptions);
         if (useStdioApprovals) {
-            return { command: `${command} ${QAIQ_STDIO_APPROVAL_FLAGS}`, stdinPrompt: agentPrompt };
+            return { command: `${command} ${QAIQ_STDIO_APPROVAL_FLAGS}`, stdinPrompt: agentPrompt, agentId: id };
         }
-        return { command };
+        return { command, agentId: id };
     }
 
     /** Best-effort read of the workspace per-project info artifact (`.prompts/project-info.prompttemplate`). */
@@ -1779,7 +1794,7 @@ export class QaapAgentTaskRunner {
                 this.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
                 const agentModel = this.resolveAgentModelForRequest(request, prompt);
-                const { command, stdinPrompt } = this.buildAgentCommand(
+                const { command, stdinPrompt, agentId } = this.buildAgentCommand(
                     prompt,
                     request.agent,
                     autoApprove,
@@ -1799,6 +1814,7 @@ export class QaapAgentTaskRunner {
                 const next: QaapAgentTask = {
                     ...markedTask,
                     command,
+                    agentId,
                     ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
                 };
                 this.tasks.set(task.id, next);
@@ -2018,7 +2034,7 @@ export class QaapAgentTaskRunner {
         try {
             let verification: QaapAgentTaskVerification | undefined;
             try {
-                verification = await this.verifySuccessfulQaiqTask(task);
+                verification = await this.verifySuccessfulAgentTask(task);
             } catch (error) {
                 verification = {
                     status: 'failed',
@@ -2042,10 +2058,12 @@ export class QaapAgentTaskRunner {
         }
     }
 
-    protected async verifySuccessfulQaiqTask(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {
-        if (!this.isQaiqRunner(undefined, task.command)) {
-            return undefined;
-        }
+    /**
+     * Self-verification gate for ANY agent, not just QAIQ: any task that edited files and whose
+     * cwd exposes verification scripts (typecheck/build/test/lint) gets verified, and — on failure
+     * — a fix-turn re-invokes whichever agent ran the original task (see {@link resolveTaskAgentId}).
+     */
+    protected async verifySuccessfulAgentTask(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {
         const env = this.buildChildEnv(task);
         const startedAt = Date.now();
         if (!await this.hasEditedFilesForVerification(task, env)) {
@@ -2069,7 +2087,12 @@ export class QaapAgentTaskRunner {
                 break;
             }
             attempts++;
-            await this.runQaiqVerificationFixTurn(task, env, failed.command, failed.result, attempts, startedAt);
+            const fixed = await this.runAgentVerificationFixTurn(task, env, failed.command, failed.result, attempts, startedAt);
+            if (fixed === undefined) {
+                // No agent was available to attempt a fix — retrying the same failing scripts again
+                // would just burn the remaining attempts for nothing, so stop here.
+                break;
+            }
         }
         if (!lastFailure) {
             return {
@@ -2136,14 +2159,21 @@ export class QaapAgentTaskRunner {
         return undefined;
     }
 
-    protected async runQaiqVerificationFixTurn(
+    /**
+     * Re-invokes whichever agent ran {@link task} (see {@link resolveTaskAgentId}) with a prompt
+     * describing the failed verification command. Returns {@code undefined} — instead of throwing —
+     * when there is no usable agent to run the fix with (e.g. a raw shell task, or an agent id that
+     * is no longer detected/configured on this server), so the caller can stop retrying gracefully
+     * without failing the whole task.
+     */
+    protected async runAgentVerificationFixTurn(
         task: QaapAgentTask,
         env: NodeJS.ProcessEnv,
         failedCommand: string,
         failure: QaapGenericCommandResult,
         attempt: number,
         startedAt: number,
-    ): Promise<QaapGenericCommandResult> {
+    ): Promise<QaapGenericCommandResult | undefined> {
         // Close the cancel race: if the task was cancelled between the failed verification and here,
         // do not spawn a full (token-costing) agent fix turn.
         if (!this.isTaskStillRunning(task.id)) {
@@ -2153,24 +2183,38 @@ export class QaapAgentTaskRunner {
         if (remaining <= 0) {
             return { exitCode: 1, stdout: '', stderr: 'Verification timed out before fix turn.', timedOut: true };
         }
-        const prompt = this.buildQaiqVerificationFixPrompt(failedCommand, failure, attempt);
-        const { command } = this.buildAgentCommand(
-            prompt,
-            QAIQ_AGENT_ID,
-            true,
-            resolveTaskAgentModel(task),
-            task.cwd,
-            undefined,
-            undefined,
-            'full-access',
-        );
+        const agentId = this.resolveTaskAgentId(task);
+        if (agentId === SHELL_AGENT_ID) {
+            // A raw shell task (or one whose original agent could not be inferred) has no coding
+            // agent to re-invoke — running the fix prompt as a literal shell command would be wrong.
+            this.appendAndFireOutput(task.id, '\n[qaap] Skipping self-verification fix turn: no coding agent to invoke.\n');
+            return undefined;
+        }
+        const prompt = this.buildAgentVerificationFixPrompt(failedCommand, failure, attempt);
+        let command: string;
+        try {
+            ({ command } = this.buildAgentCommand(
+                prompt,
+                agentId,
+                true,
+                resolveTaskAgentModel(task),
+                task.cwd,
+                undefined,
+                undefined,
+                'full-access',
+            ));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.appendAndFireOutput(task.id, `\n[qaap] Skipping self-verification fix turn: ${message}\n`);
+            return undefined;
+        }
         return this.runGenericCommand(command, task.cwd, env, task.id, remaining, {
-            header: `\n[qaap] Verification failed. Starting QAIQ fix attempt ${attempt}/${QAAP_AGENT_VERIFY_MAX_ATTEMPTS}.\n`,
+            header: `\n[qaap] Verification failed. Starting ${agentId} fix attempt ${attempt}/${QAAP_AGENT_VERIFY_MAX_ATTEMPTS}.\n`,
             streamOutput: true,
         });
     }
 
-    protected buildQaiqVerificationFixPrompt(
+    protected buildAgentVerificationFixPrompt(
         failedCommand: string,
         failure: QaapGenericCommandResult,
         attempt: number,
