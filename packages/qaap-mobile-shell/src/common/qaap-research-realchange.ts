@@ -15,11 +15,45 @@ export interface RealFileChange {
     readonly content: string | undefined;
 }
 
-/** Canonical, sortable line for one change: quoted path, then quoted content or a DELETED marker
- *  a real file could never produce verbatim (so a file literally containing the word can't collide
- *  with an actual deletion). */
+/**
+ * Normalizes a file's content before it is hashed, so a pure formatting change — line-ending
+ * style, trailing whitespace, indentation width, or a trailing blank line — doesn't shift the
+ * fingerprint and let an agent "evade" the repeat-guard by re-submitting an already-tried config
+ * reformatted. Concretely: unifies `\r\n` to `\n`, collapses runs of spaces/tabs to a single
+ * space, drops any space adjacent to non-word punctuation (`{`, `}`, `:`, `,`, `=`, quotes, ...),
+ * and finally drops trailing blank lines. Removing whitespace next to punctuation is safe because
+ * the punctuation itself already terminates the token on that side — it can never fuse two
+ * identifiers the way deleting a space between two word characters would (`not x` must stay
+ * distinct from `notx`). That's what lets this fold `{"x": 3}`, `{"x":3}`, and `{ "x" : 3 }`
+ * together: every one of those spaces sits next to `{`, `}`, `"`, or `:`.
+ *
+ * Deliberately conservative, and asymmetrically so: this is generic textual normalization, not a
+ * per-language parse (no JSON/YAML-aware canonicalization of key order, numeric formatting, etc).
+ * - False negative (acceptable): a semantically-identical edit whose formatting differs in a way
+ *   this doesn't collapse (e.g. reordered JSON keys) can still get a different fingerprint. Worst
+ *   case, the guard is fooled once and a round is spent re-running a config already tried.
+ * - False positive (never acceptable): two genuinely different changes must never collapse to the
+ *   same fingerprint, or the guard would silently discard a new experiment. Every transform here
+ *   only removes whitespace that carries no information (never whitespace between two word
+ *   characters, which is the only place a space can be semantically load-bearing), so it cannot
+ *   fold two different edits into one.
+ */
+function normalizeForFingerprint(content: string): string {
+    const lines = content
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map(line => line.replace(/[ \t]+/g, ' ').trim().replace(/(?<=\W) | (?=\W)/g, ''));
+    while (lines.length > 0 && lines[lines.length - 1] === '') {
+        lines.pop();
+    }
+    return lines.join('\n');
+}
+
+/** Canonical, sortable line for one change: quoted path, then quoted (normalized) content or a
+ *  DELETED marker a real file could never produce verbatim (so a file literally containing the
+ *  word can't collide with an actual deletion). */
 function canonicalChangeLine(change: RealFileChange): string {
-    const content = change.content === undefined ? ' DELETED ' : JSON.stringify(change.content);
+    const content = change.content === undefined ? ' DELETED ' : JSON.stringify(normalizeForFingerprint(change.content));
     return `${JSON.stringify(change.path)}:${content}`;
 }
 
@@ -39,7 +73,9 @@ function canonicalChangeLine(change: RealFileChange): string {
  * the identical logical change made from two different starting commits would fingerprint
  * differently and defeat exactly the repeat-detection this exists for. Resulting state has no such
  * dependency — the same end state always hashes the same, no matter how it was reached. Path order
- * in the input never matters: entries are sorted by path before hashing.
+ * in the input never matters: entries are sorted by path before hashing. Content is run through
+ * `normalizeForFingerprint` first — see that function's doc for the false-negative/false-positive
+ * trade-off of normalizing formatting away before hashing.
  */
 export function realChangeFingerprint(changes: readonly RealFileChange[]): string {
     const sorted = [...changes].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));

@@ -63,5 +63,39 @@ describe('qaap-research-realchange', () => {
             const round2: RealFileChange[] = [{ path: 'train.py', content: 'learning_rate = 0.02\n' }];
             expect(realChangeFingerprint(round1)).to.not.equal(realChangeFingerprint(round2));
         });
+
+        it('collides for the same content reindented — a pure indentation/spacing change cannot evade the repeat-guard', () => {
+            const twoSpaces = realChangeFingerprint([{ path: 'config.json', content: '{\n  "x": 3,\n  "y": 4\n}\n' }]);
+            const fourSpaces = realChangeFingerprint([{ path: 'config.json', content: '{\n    "x": 3,\n    "y": 4\n}\n' }]);
+            expect(twoSpaces).to.equal(fourSpaces);
+        });
+
+        it('collides for differently-spaced JSON that is the same logical config', () => {
+            const compact = realChangeFingerprint([{ path: 'config.json', content: '{"x":3}' }]);
+            const spaced = realChangeFingerprint([{ path: 'config.json', content: '{"x": 3}' }]);
+            const padded = realChangeFingerprint([{ path: 'config.json', content: '{ "x" : 3 }' }]);
+            expect(compact).to.equal(spaced);
+            expect(spaced).to.equal(padded);
+        });
+
+        it('still differs when the actual value changes, not just its formatting', () => {
+            const a = realChangeFingerprint([{ path: 'config.json', content: '{"x": 3}' }]);
+            const b = realChangeFingerprint([{ path: 'config.json', content: '{"x": 4}' }]);
+            expect(a).to.not.equal(b);
+        });
+
+        it('collides for CRLF vs LF line endings of the same content', () => {
+            const lf = realChangeFingerprint([{ path: 'train.py', content: 'x = 2\ny = 3\n' }]);
+            const crlf = realChangeFingerprint([{ path: 'train.py', content: 'x = 2\r\ny = 3\r\n' }]);
+            expect(lf).to.equal(crlf);
+        });
+
+        it('collides regardless of trailing whitespace or trailing blank lines', () => {
+            const clean = realChangeFingerprint([{ path: 'train.py', content: 'x = 2\n' }]);
+            const trailingWhitespace = realChangeFingerprint([{ path: 'train.py', content: 'x = 2   \n' }]);
+            const trailingBlankLines = realChangeFingerprint([{ path: 'train.py', content: 'x = 2\n\n\n' }]);
+            expect(clean).to.equal(trailingWhitespace);
+            expect(clean).to.equal(trailingBlankLines);
+        });
     });
 });
