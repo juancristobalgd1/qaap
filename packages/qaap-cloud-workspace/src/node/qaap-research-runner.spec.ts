@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import { QaapResearchRunner } from './qaap-research-runner';
 import {
     normalizeResearchGoal,
@@ -215,6 +217,15 @@ function proposalBlock(config: Record<string, unknown>, extra: Partial<{ hypothe
 }
 
 const METRIC: ResearchMetricSpec = { name: 'accuracy', direction: 'max', metricCommand: 'python measure.py', primary: true, target: 0.9 };
+
+/** Real QAIQ/Claude Code stream-json log captured from a smoke test where the propose turn's CLI
+ *  process exited 0 having authenticated nothing: `{"type":"result","is_error":true,"result":
+ *  "Failed to authenticate: OAuth session expired and could not be refreshed"}`. Before the BUG 1
+ *  fix the runner could not tell this apart from a no-op turn and burned the whole round budget
+ *  re-prompting an agent that could never respond. */
+function loadAuthFailureFixture(): string {
+    return fs.readFileSync(path.resolve(__dirname, '../../test-resources/qaap-research-agent-turn-auth-failure.jsonl'), 'utf8');
+}
 
 // ---- tests --------------------------------------------------------------------
 
@@ -566,7 +577,9 @@ describe('QaapResearchRunner state machine', () => {
             expect(taskRunner.genericCommandCalls).to.have.lengthOf(0); // runCommand/measure never ran
             const [record] = store.readLedgerForGoal(goal);
             expect(record.phase).to.equal('done');
-            expect(record.verdict).to.equal(undefined);
+            // Explicit 'noop' verdict (not undefined) — BUG 2: a no-op must count toward
+            // stagnation, or an inert agent silently exhausts the whole round budget instead.
+            expect(record.verdict).to.equal('noop');
             expect(record.sha).to.equal(undefined); // no-op round was never committed
             expect(record.notes).to.contain('No-op round');
         });
@@ -592,6 +605,82 @@ describe('QaapResearchRunner state machine', () => {
             const [record] = store.readLedgerForGoal(goal);
             expect(record.phase).to.equal('done');
             expect(record.config).to.deep.equal({ learning_rate: 0.02 });
+        });
+    });
+
+    describe('agent turn failure (BUG 1: never mistaken for a no-op)', () => {
+
+        it('REGRESSION: a real auth-failure log (CLI exits 0 with is_error:true) is recorded as failed, not a no-op, and skips run/measure', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC], runCommand: 'python train.py' });
+            store.seedGoal(goal);
+
+            const runner = makeRunner(store, taskRunner);
+            const promise = runner.callStartNewRound(goal, 1);
+            expect(taskRunner.createdTasks).to.have.lengthOf(1);
+            // The real CLI process exits 0 here — the failure is only visible inside the log's
+            // final `result` event, never in the task's exit code.
+            taskRunner.setLog(taskRunner.createdTasks[0].id, loadAuthFailureFixture());
+            taskRunner.finishTask(taskRunner.createdTasks[0].id, 'completed');
+            await promise;
+
+            // Never re-prompted as a no-op, never ran runCommand/measure.
+            expect(taskRunner.createdTasks).to.have.lengthOf(1);
+            expect(taskRunner.genericCommandCalls).to.have.lengthOf(0);
+            const [record] = store.readLedgerForGoal(goal);
+            expect(record.phase).to.equal('done');
+            expect(record.verdict).to.equal('failed');
+            expect(record.notes).to.contain('agent turn failed');
+            expect(record.notes).to.contain('Failed to authenticate: OAuth session expired and could not be refreshed');
+            expect(record.sha).to.equal(undefined); // never committed
+        });
+
+        it('also treats a task that finished in the "failed" state as a turn failure, even with no parseable error in the log', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC] });
+            store.seedGoal(goal);
+
+            const runner = makeRunner(store, taskRunner);
+            const promise = runner.callStartNewRound(goal, 1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, 'process crashed before printing anything structured');
+            taskRunner.finishTask(taskRunner.createdTasks[0].id, 'failed');
+            await promise;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(1); // no no-op re-prompt either
+            expect(taskRunner.genericCommandCalls).to.have.lengthOf(0);
+            const [record] = store.readLedgerForGoal(goal);
+            expect(record.phase).to.equal('done');
+            expect(record.verdict).to.equal('failed');
+            expect(record.notes).to.contain('agent turn failed');
+        });
+
+        it('consecutive agent-turn failures count toward infraFailureLimit and terminate as infra-broken, not budget-exhausted', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC], stagnationRounds: 100, infraFailureLimit: 2 });
+            store.seedGoal(goal);
+
+            const runner = makeRunner(store, taskRunner);
+            const promise = runner.callRunLoop(goal.id);
+
+            // Round 1: auth failure.
+            await new Promise(resolve => setImmediate(resolve));
+            taskRunner.setLog(taskRunner.createdTasks[0].id, loadAuthFailureFixture());
+            taskRunner.finishTask(taskRunner.createdTasks[0].id, 'completed');
+
+            // Round 2: same failure again — trips infraFailureLimit (2).
+            await new Promise(resolve => setImmediate(resolve));
+            expect(taskRunner.createdTasks).to.have.lengthOf(2);
+            taskRunner.setLog(taskRunner.createdTasks[1].id, loadAuthFailureFixture());
+            taskRunner.finishTask(taskRunner.createdTasks[1].id, 'completed');
+            await promise;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(2); // loop stopped, did not run 5 rounds
+            const finalGoal = store.get(goal.id)!;
+            expect(finalGoal.status).to.equal('failed');
+            expect(finalGoal.terminationReason).to.equal('infra-broken');
         });
     });
 });

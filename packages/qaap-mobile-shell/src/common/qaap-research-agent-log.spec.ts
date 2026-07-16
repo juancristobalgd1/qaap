@@ -6,7 +6,7 @@
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
-import { extractAgentTextFromLog } from './qaap-research-agent-log';
+import { extractAgentTextFromLog, extractAgentTurnError } from './qaap-research-agent-log';
 import { parseExperimentProposal } from './qaap-research-ledger';
 
 /** Real QAIQ/Claude Code stream-json log captured from a smoke test of the auto-researcher
@@ -104,5 +104,50 @@ describe('extractAgentTextFromLog', () => {
         const log = '{not valid json at all';
         expect(() => extractAgentTextFromLog(log)).to.not.throw();
         expect(extractAgentTextFromLog(log)).to.equal(log);
+    });
+});
+
+describe('extractAgentTurnError', () => {
+
+    /** The real 8-line stream-json log from an auth-expired smoke test (agent-task id
+     *  405e956e-13c7-4e28-87cc-d833f49b002b): the CLI exits having authenticated nothing, and the
+     *  only signal is the final `result` event's `is_error: true`. */
+    function authFailureLog(): string {
+        return [
+            '{"type":"system","subtype":"init","session_id":"s1"}',
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"Failed to authenticate: OAuth session expired and could not be refreshed"}]},"error":"authentication_failed"}',
+            '{"type":"result","subtype":"success","is_error":true,"num_turns":1,"result":"Failed to authenticate: OAuth session expired and could not be refreshed","terminal_reason":"api_error"}',
+        ].join('\n');
+    }
+
+    it('REGRESSION: extracts the real auth-expiry error message from a stream-json log', () => {
+        expect(extractAgentTurnError(authFailureLog())).to.equal(
+            'Failed to authenticate: OAuth session expired and could not be refreshed',
+        );
+    });
+
+    it('returns undefined when the result event succeeded (is_error false/absent)', () => {
+        const log = '{"type":"result","subtype":"success","is_error":false,"result":"all good"}';
+        expect(extractAgentTurnError(log)).to.be.undefined;
+    });
+
+    it('returns undefined for a plain-text agent log with no stream-json result event at all', () => {
+        expect(extractAgentTurnError('just some prose, no envelopes here')).to.be.undefined;
+    });
+
+    it('falls back to a generic message when is_error is true but result is empty', () => {
+        const log = '{"type":"result","is_error":true,"result":""}';
+        expect(extractAgentTurnError(log)).to.equal('agent turn failed (no error message provided)');
+    });
+
+    it('ignores non-result envelopes even when they carry is_error (e.g. a tool_result)', () => {
+        const log = '{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"ENOENT"}]}}';
+        expect(extractAgentTurnError(log)).to.be.undefined;
+    });
+
+    it('never throws on malformed JSON lines and simply skips them', () => {
+        const log = '{not valid json\n{"type":"result","is_error":true,"result":"boom"}';
+        expect(() => extractAgentTurnError(log)).to.not.throw();
+        expect(extractAgentTurnError(log)).to.equal('boom');
     });
 });

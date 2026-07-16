@@ -15,7 +15,15 @@ export interface ResearchMetricValue {
 
 export type ExperimentPhase = 'propose' | 'run' | 'measure' | 'done';
 
-export type ExperimentVerdict = 'improved' | 'regressed' | 'neutral' | 'failed';
+/**
+ * `noop` is distinct from `neutral`: `neutral` means the round ran to completion and measured a
+ * result that tied the best-so-far; `noop` means the agent's turn produced nothing to run or
+ * measure at all (no repo changes, no parseable proposal — see `finishAsNoop` in
+ * `qaap-research-runner.ts`). Both count toward stagnation (see {@link trailingStagnationCount}) —
+ * a stalled agent is exactly as much "no progress" as one proposing bad hypotheses — but they are
+ * kept as separate verdicts so the ledger UI/prompt can tell an operator which one happened.
+ */
+export type ExperimentVerdict = 'improved' | 'regressed' | 'neutral' | 'failed' | 'noop';
 
 /**
  * One row of the experiment ledger. `symptom` / `hypothesis` / `lever` / `config` come from the

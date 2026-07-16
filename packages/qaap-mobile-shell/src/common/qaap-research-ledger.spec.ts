@@ -271,6 +271,17 @@ describe('qaap-research-ledger', () => {
             expect(resolveTerminationReason(stagnationGoal, records, 0)).to.equal('stagnated');
         });
 
+        it('BUG 2: a "noop" verdict counts toward stagnation — an inert agent must not exhaust the whole budget', () => {
+            const stagnationGoal: ResearchGoal = { ...goal, maxRounds: 100, stagnationRounds: 3, infraFailureLimit: 100 };
+            const records = [
+                record({ round: 1, verdict: 'improved', metrics: [{ name: 'loss', value: 0.5, direction: 'min' }] }),
+                record({ round: 2, verdict: 'noop' }),
+                record({ round: 3, verdict: 'noop' }),
+                record({ round: 4, verdict: 'noop' }),
+            ];
+            expect(resolveTerminationReason(stagnationGoal, records, 0)).to.equal('stagnated');
+        });
+
         it('CRITICAL: does not collapse failed and regressed — infra failures never count toward stagnation', () => {
             // 3 consecutive infra failures (e.g. CUDA OOM) must read as infra-broken, not as
             // "3 bad hypotheses in a row". With a high stagnationRounds, only the infra counter can trip.

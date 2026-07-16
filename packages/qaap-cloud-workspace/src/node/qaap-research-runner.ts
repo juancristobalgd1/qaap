@@ -21,7 +21,7 @@ import {
     type ResearchExperimentRecord,
     type ResearchMetricValue,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
-import { extractAgentTextFromLog } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
+import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
 import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
 import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
@@ -232,6 +232,22 @@ export class QaapResearchRunner {
 
         const detail = await this.taskRunner.detail(finished.id);
         const stdout = detail?.log ?? '';
+
+        // THIRD outcome, distinct from both "infra broke" (non-zero exit) and "no-op" (the agent
+        // ran but changed nothing): the agent CLI itself reported a terminal failure — e.g. an
+        // expired OAuth session — often while still exiting 0. Left undetected, this masquerades
+        // as a no-op round ("(no file changes detected)") and burns the whole round budget on an
+        // error that will never resolve itself. Check BOTH signals: the task's own terminal state
+        // (mirrors how qaap-agent-task-runner.ts marks a spawn/process failure) and the stream-json
+        // `result` event's `is_error` flag (catches a CLI that exits 0 having done nothing).
+        const turnError = extractAgentTurnError(stdout);
+        if (finished.state === 'failed' || turnError) {
+            const reason = turnError
+                ?? `agent task exited with a non-zero status${finished.exitCode !== undefined ? ` (exit code ${finished.exitCode})` : ''}.`;
+            this.finishAsInfraFailure(goal, record, `agent turn failed: ${reason}`, record.runAttempts);
+            return;
+        }
+
         // The log is stream-json for QAIQ/Claude Code agents: the agent's actual prose — and with
         // it the [QAAP experiment] block — is JSON-escaped inside `stream_event` envelopes, never
         // present as a literal fence in the raw log. Scrape it out first so the marker regex below
@@ -315,6 +331,11 @@ export class QaapResearchRunner {
         const finished: ResearchExperimentRecord = {
             ...record,
             phase: 'done',
+            // Explicit 'noop' verdict (not left `undefined`) so this round counts toward
+            // stagnation — a stuck agent that never proposes anything usable IS a lack of
+            // progress, and must not let an inert agent quietly exhaust the whole round budget
+            // instead of tripping `stagnationRounds`. See {@link resolveTerminationReason}.
+            verdict: 'noop',
             notes: this.appendNote(
                 record.notes,
                 'No-op round: no repo file changes and no parseable [QAAP experiment] block, even after a '

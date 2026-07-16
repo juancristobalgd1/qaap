@@ -89,6 +89,49 @@ export function extractAgentTextFromLog(log: string): string {
     return result;
 }
 
+interface ResultEnvelope {
+    readonly type?: string;
+    readonly is_error?: boolean;
+    readonly result?: string;
+}
+
+/**
+ * Extracts the agent CLI's own terminal error message from a stream-json log — e.g. an
+ * authentication failure that makes the CLI print `{"type":"result","is_error":true,"result":
+ * "Failed to authenticate: ..."}` and exit 0, having done nothing. This is a THIRD round outcome
+ * the runner must not confuse with either an infra failure (non-zero exit) or a no-op (the agent
+ * ran but changed nothing): see `qaap-research-runner.ts`'s BUG 1 fix, which routes this straight
+ * to an infra-failure verdict instead of letting it masquerade as "(no file changes detected)".
+ *
+ * Scans every line for a `result`-type envelope with `is_error: true` and returns its `result`
+ * text (or a generic fallback when that field is empty); returns `undefined` when the turn
+ * actually succeeded, or for plain-text agent logs that never emit stream-json at all. Never
+ * throws: malformed JSON lines are simply skipped.
+ */
+export function extractAgentTurnError(log: string): string | undefined {
+    let lastError: string | undefined;
+    for (const line of log.split('\n')) {
+        if (!line.trim()) {
+            continue;
+        }
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(line.trim());
+        } catch {
+            continue;
+        }
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            continue;
+        }
+        const envelope = parsed as ResultEnvelope;
+        if (envelope.type !== 'result' || !envelope.is_error) {
+            continue;
+        }
+        lastError = envelope.result && envelope.result.trim() ? envelope.result.trim() : 'agent turn failed (no error message provided)';
+    }
+    return lastError;
+}
+
 function appendStructuredEnvelopeText(
     envelope: StreamEnvelope,
     appendDirect: (text: string) => void,
