@@ -21,6 +21,7 @@ import {
     type ResearchExperimentRecord,
     type ResearchMetricValue,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
+import { extractAgentTextFromLog } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
 import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
 import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
@@ -33,10 +34,21 @@ const GIT_COMMAND_TIMEOUT_MS = 15_000;
  *  command failure. After this many, treat it as an infra failure rather than retry forever. */
 const MAX_RUN_RESUME_ATTEMPTS = 2;
 
+/** Runner-owned state, never product of an experiment: excluded from every round's diff AND from
+ *  the round's commit, so it never contaminates `git diff --stat` (the anti-stall fallback reads
+ *  it) or shows up on the `qaap/research/<goalId>` branch. See {@link roundDiffStat}. */
+const LEDGER_PATHSPEC_EXCLUDE = ':(exclude).qaap/experiments.jsonl';
+
 const REMINDER_MISSING_BLOCK =
     'Your previous reply did not include a parseable [QAAP experiment] JSON block, so the runner '
     + 'synthesized one from your file changes instead. End your NEXT reply with the marker and the '
     + 'fenced JSON block exactly as specified below — a missing block costs a whole round.';
+
+const REMINDER_NOOP_ROUND =
+    'Your previous reply made no repo file changes (the ledger file does not count — the runner owns '
+    + 'it, not you) and included no parseable [QAAP experiment] block either, so the runner has nothing '
+    + 'to run or measure. Either actually change a file for the lever you are testing, or if you are '
+    + 'only reasoning this round, still end your reply with the marker and the fenced JSON block.';
 
 function reminderRepeatedFingerprint(round: number): string {
     return `Your proposed config matches round ${round}'s config exactly (fingerprint collision). `
@@ -195,7 +207,7 @@ export class QaapResearchRunner {
     protected async runPropose(
         goal: ResearchGoal,
         record: ResearchExperimentRecord,
-        options: { readonly reminder?: string; readonly fingerprintRetried?: boolean },
+        options: { readonly reminder?: string; readonly fingerprintRetried?: boolean; readonly noopRetried?: boolean },
     ): Promise<void> {
         const priorRecords = this.store.readLedgerForGoal(goal).filter(existing => existing.id !== record.id);
         let prompt = buildResearchRoundPrompt(goal, priorRecords);
@@ -220,10 +232,16 @@ export class QaapResearchRunner {
 
         const detail = await this.taskRunner.detail(finished.id);
         const stdout = detail?.log ?? '';
-        const proposal = parseExperimentProposal(stdout);
+        // The log is stream-json for QAIQ/Claude Code agents: the agent's actual prose — and with
+        // it the [QAAP experiment] block — is JSON-escaped inside `stream_event` envelopes, never
+        // present as a literal fence in the raw log. Scrape it out first so the marker regex below
+        // can actually match. Plain-text agent logs pass through this unchanged.
+        const agentText = extractAgentTextFromLog(stdout);
+        const proposal = parseExperimentProposal(agentText);
+        const diffStat = this.roundDiffStat(goal.cwd);
         // Anti-stall fallback: a format miss must never cost a night of compute. Synthesize a
         // record from whatever the agent actually changed and keep the loop moving.
-        const resolved = proposal ?? this.synthesizeFallbackProposal(goal);
+        const resolved = proposal ?? this.synthesizeFallbackProposal(diffStat);
         const notes = proposal ? record.notes : this.appendNote(record.notes, REMINDER_MISSING_BLOCK);
         const fingerprint = configFingerprint(resolved.config);
         const collidingRound = priorRecords.find(existing => existing.configFingerprint === fingerprint)?.round;
@@ -239,29 +257,72 @@ export class QaapResearchRunner {
         };
         this.store.upsertRecord(goal.cwd, proposed);
 
+        // No-op guard: no repo changes (ledger excluded) AND no parseable proposal means the agent
+        // did literally nothing this turn. Never spend an actual runCommand (hours) measuring
+        // nothing — re-prompt once, exactly like the fingerprint guard below, then give up on the
+        // round as a no-op rather than loop forever on a stubborn agent.
+        const isNoop = !proposal && diffStat.trim().length === 0;
+        if (isNoop && !options.noopRetried) {
+            await this.runPropose(goal, proposed, {
+                reminder: REMINDER_NOOP_ROUND,
+                fingerprintRetried: options.fingerprintRetried,
+                noopRetried: true,
+            });
+            return;
+        }
+
         if (collidingRound !== undefined && !options.fingerprintRetried) {
             // The prompt is persuasion; the fingerprint is the guarantee — re-prompt exactly once,
             // then accept whatever comes back rather than loop forever on a stubborn agent.
             await this.runPropose(goal, proposed, {
                 reminder: reminderRepeatedFingerprint(collidingRound),
                 fingerprintRetried: true,
+                noopRetried: options.noopRetried,
             });
+            return;
+        }
+
+        if (isNoop) {
+            this.finishAsNoop(goal, proposed);
             return;
         }
         await this.commitRound(goal, proposed);
     }
 
-    protected synthesizeFallbackProposal(goal: ResearchGoal):
+    protected synthesizeFallbackProposal(diffStat: string):
         { readonly hypothesis: string; readonly symptom?: string; readonly lever?: string; readonly config: Record<string, unknown> } {
-        const diffStat = this.runGit(goal.cwd, ['diff', '--stat']).stdout
-            || this.runGit(goal.cwd, ['diff', '--cached', '--stat']).stdout
-            || '(no file changes detected)';
         return {
             hypothesis: '(not declared)',
             // The diff itself — not an empty object — so two different fallback rounds fingerprint
             // differently instead of colliding with each other on `{}` every time.
-            config: { fallbackDiffStat: diffStat },
+            config: { fallbackDiffStat: diffStat || '(no file changes detected)' },
         };
+    }
+
+    /** `git diff --stat`, EXCLUDING the runner's own ledger file — `.qaap/experiments.jsonl` is
+     *  written by this runner on every phase transition, not by the agent, so it must never look
+     *  like an experiment change (anti-stall fallback config) or a no-op round's only "change". */
+    protected roundDiffStat(cwd: string): string {
+        return this.runGit(cwd, ['diff', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
+            || this.runGit(cwd, ['diff', '--cached', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
+            || '';
+    }
+
+    /** A round where the agent made no repo changes and proposed nothing parseable, even after one
+     *  re-prompt: record it as done without ever touching runCommand/measure, so a format miss can
+     *  never cost a real (hours-long) run on top of the round it already wasted. */
+    protected finishAsNoop(goal: ResearchGoal, record: ResearchExperimentRecord): void {
+        const finished: ResearchExperimentRecord = {
+            ...record,
+            phase: 'done',
+            notes: this.appendNote(
+                record.notes,
+                'No-op round: no repo file changes and no parseable [QAAP experiment] block, even after a '
+                + 'reminder. Skipped runCommand/measure entirely rather than burn a run on nothing.',
+            ),
+            finishedAt: Date.now(),
+        };
+        this.store.upsertRecord(goal.cwd, finished);
     }
 
     // ---- phase: commit (round → branch) --------------------------------------
@@ -272,7 +333,9 @@ export class QaapResearchRunner {
         const branch = `qaap/research/${goal.id}`;
         const baselineSha = this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined;
         this.runGit(goal.cwd, ['checkout', '-B', branch]);
-        this.runGit(goal.cwd, ['add', '-A']);
+        // Exclude the ledger: it is runner state, not experiment content, and must never end up in
+        // a round's commit on the research branch (see LEDGER_PATHSPEC_EXCLUDE).
+        this.runGit(goal.cwd, ['add', '-A', '--', '.', LEDGER_PATHSPEC_EXCLUDE]);
         const message = `research(round ${record.round}): ${(record.lever ?? record.hypothesis).slice(0, 160)}`;
         // --allow-empty: a round whose proposal made no file changes must still get a placeholder
         // commit so `sha`/`baselineSha` stay a consistent per-round chain for revert to walk.

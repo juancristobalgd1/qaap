@@ -504,4 +504,94 @@ describe('QaapResearchRunner state machine', () => {
             expect(record).to.deep.include({ phase: 'done', verdict: 'improved' });
         });
     });
+
+    describe('ledger self-contamination (bug fixes)', () => {
+
+        it('BUG 2: excludes .qaap/experiments.jsonl from both the round diff and the commit\'s `git add`', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC] });
+            store.seedGoal(goal);
+            taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.75', stderr: '', timedOut: false }];
+
+            const gitCalls: Array<readonly string[]> = [];
+            const runner = makeRunner(store, taskRunner);
+            Object.assign(runner, {
+                runGit: (_cwd: string, args: readonly string[]) => {
+                    gitCalls.push([...args]);
+                    return args[0] === 'rev-parse' ? { stdout: `sha-${gitCalls.length}`, ok: true } : { stdout: '', ok: true };
+                },
+            });
+            const promise = runner.callStartNewRound(goal, 1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+            taskRunner.finishTask(taskRunner.createdTasks[0].id);
+            await promise;
+
+            const diffCall = gitCalls.find(call => call[0] === 'diff');
+            expect(diffCall, 'expected a `git diff --stat` call').to.not.equal(undefined);
+            expect(diffCall).to.contain(':(exclude).qaap/experiments.jsonl');
+            const addCall = gitCalls.find(call => call[0] === 'add');
+            expect(addCall, 'expected a `git add -A` call').to.not.equal(undefined);
+            expect(addCall).to.contain(':(exclude).qaap/experiments.jsonl');
+        });
+
+        it('BUG 3: a no-op round (empty diff, no parseable proposal) re-prompts once, then finishes without ever running runCommand', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC], runCommand: 'python train.py' });
+            store.seedGoal(goal);
+
+            const runner = makeRunner(store, taskRunner);
+            Object.assign(runner, {
+                // Every diff reports no changes outside the (excluded) ledger — the agent's turn
+                // only touched .qaap/experiments.jsonl indirectly via the runner's own writes.
+                runGit: (_cwd: string, args: readonly string[]) =>
+                    args[0] === 'rev-parse' ? { stdout: 'sha-x', ok: true } : { stdout: '', ok: true },
+            });
+
+            const promise = runner.callStartNewRound(goal, 1);
+            expect(taskRunner.createdTasks).to.have.lengthOf(1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, 'The agent just thought out loud and changed nothing.');
+            taskRunner.finishTask(taskRunner.createdTasks[0].id);
+
+            // The no-op guard re-prompts exactly once, mirroring the fingerprint guard, before giving up.
+            await new Promise(resolve => setImmediate(resolve));
+            expect(taskRunner.createdTasks).to.have.lengthOf(2);
+            expect((taskRunner.createdTasks[1].request as { prompt: string }).prompt).to.contain('no repo file changes');
+            taskRunner.setLog(taskRunner.createdTasks[1].id, 'Still nothing — the agent never touched a file.');
+            taskRunner.finishTask(taskRunner.createdTasks[1].id);
+            await promise;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(2); // never re-prompted a third time
+            expect(taskRunner.genericCommandCalls).to.have.lengthOf(0); // runCommand/measure never ran
+            const [record] = store.readLedgerForGoal(goal);
+            expect(record.phase).to.equal('done');
+            expect(record.verdict).to.equal(undefined);
+            expect(record.sha).to.equal(undefined); // no-op round was never committed
+            expect(record.notes).to.contain('No-op round');
+        });
+
+        it('a round with a parseable proposal is never treated as a no-op, even with an empty diff (e.g. reasoning-only rounds)', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC] });
+            store.seedGoal(goal);
+            taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.5', stderr: '', timedOut: false }];
+
+            const runner = makeRunner(store, taskRunner);
+            Object.assign(runner, {
+                runGit: (_cwd: string, args: readonly string[]) =>
+                    args[0] === 'rev-parse' ? { stdout: 'sha-x', ok: true } : { stdout: '', ok: true },
+            });
+            const promise = runner.callStartNewRound(goal, 1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.02 }));
+            taskRunner.finishTask(taskRunner.createdTasks[0].id);
+            await promise;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(1); // no no-op re-prompt
+            const [record] = store.readLedgerForGoal(goal);
+            expect(record.phase).to.equal('done');
+            expect(record.config).to.deep.equal({ learning_rate: 0.02 });
+        });
+    });
 });
