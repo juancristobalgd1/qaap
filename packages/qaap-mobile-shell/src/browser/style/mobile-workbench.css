@@ -9707,6 +9707,15 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  box-sizing: border-box;
+}
+
+/*
+ * When JS pins the sheet to visualViewport (Android resize / iOS overlay keyboard),
+ * drop the CSS inset shorthand so inline top/left/width/height win cleanly.
+ */
+.theia-mobile-sticky-composer-sheet.theia-mod-visual-viewport {
+  inset: auto;
 }
 
 .theia-mobile-sticky-composer-sheet-backdrop {
@@ -9718,8 +9727,9 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
 .theia-mobile-sticky-composer-sheet-panel {
   position: relative;
   z-index: 1;
-  max-height: min(72vh, 520px);
-  margin: 0 8px calc(8px + var(--theia-mobile-keyboard-lift, env(safe-area-inset-bottom, 0px)));
+  /* Sheet host already tracks visualViewport — only safe-area, not keyboard-inset. */
+  max-height: min(72dvh, 72vh, 520px);
+  margin: 0 8px calc(8px + env(safe-area-inset-bottom, 0px));
   border-radius: 16px;
   background: var(--theia-editor-background);
   border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.25));
@@ -9728,6 +9738,10 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
   min-height: 0;
   overflow: hidden;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+}
+
+body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
+  max-height: min(520px, calc(100% - 16px));
 }
 
 .theia-mobile-sticky-composer-sheet-header {
@@ -9872,6 +9886,12 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
 .theia-mobile-sticky-composer-sheet.theia-mod-agent .theia-mobile-sticky-composer-sheet-list,
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker .theia-mobile-sticky-composer-sheet-list {
   min-height: min(276px, 48vh);
+}
+
+/* Keyboard open: allow the agent list to shrink so header + search stay usable. */
+body.theia-mobile-mod-keyboard-open .theia-qaap-agent-sheet-skeleton,
+body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet.theia-mod-agent .theia-mobile-sticky-composer-sheet-list {
+  min-height: 0;
 }
 
 .theia-qaap-agent-sheet-skeleton-row {

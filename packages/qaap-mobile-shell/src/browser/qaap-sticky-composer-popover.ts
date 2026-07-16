@@ -253,6 +253,84 @@ export function mountStickyComposerSheetPopover(
     return { root: popover, cleanup };
 }
 
+/**
+ * Pin a bottom sheet to the visual viewport so Android “resize” keyboards and
+ * iOS overlay keyboards do not double-count `--theia-mobile-keyboard-inset`
+ * against an already-shrunk layout viewport.
+ */
+export function positionStickyComposerBottomSheet(sheet: HTMLElement): void {
+    const viewport = window.visualViewport;
+    if (!viewport) {
+        clearStickyComposerBottomSheetViewportStyles(sheet);
+        return;
+    }
+    sheet.classList.add('theia-mod-visual-viewport');
+    sheet.style.top = `${viewport.offsetTop}px`;
+    sheet.style.left = `${viewport.offsetLeft}px`;
+    sheet.style.width = `${viewport.width}px`;
+    sheet.style.height = `${viewport.height}px`;
+    sheet.style.right = 'auto';
+    sheet.style.bottom = 'auto';
+}
+
+function clearStickyComposerBottomSheetViewportStyles(sheet: HTMLElement): void {
+    sheet.classList.remove('theia-mod-visual-viewport');
+    sheet.style.removeProperty('top');
+    sheet.style.removeProperty('left');
+    sheet.style.removeProperty('width');
+    sheet.style.removeProperty('height');
+    sheet.style.removeProperty('right');
+    sheet.style.removeProperty('bottom');
+}
+
+export function wireStickyComposerBottomSheetViewport(sheet: HTMLElement): () => void {
+    const controller = new AbortController();
+    const { signal } = controller;
+    let animationFrame = 0;
+    let followupFrame = 0;
+
+    const position = (): void => {
+        positionStickyComposerBottomSheet(sheet);
+    };
+    const schedulePosition = (): void => {
+        if (animationFrame) {
+            return;
+        }
+        animationFrame = window.requestAnimationFrame(() => {
+            animationFrame = 0;
+            followupFrame = window.requestAnimationFrame(() => {
+                followupFrame = 0;
+                position();
+            });
+        });
+    };
+
+    window.addEventListener('resize', schedulePosition, { signal });
+    window.addEventListener('orientationchange', schedulePosition, { signal });
+    window.addEventListener(QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT, schedulePosition, { signal });
+    const visualViewport = window.visualViewport;
+    visualViewport?.addEventListener('resize', schedulePosition, { signal });
+    visualViewport?.addEventListener('scroll', schedulePosition, { signal });
+    const virtualKeyboard = (navigator as Navigator & {
+        readonly virtualKeyboard?: EventTarget;
+    }).virtualKeyboard;
+    virtualKeyboard?.addEventListener('geometrychange', schedulePosition, { signal });
+
+    schedulePosition();
+    return () => {
+        controller.abort();
+        if (animationFrame) {
+            window.cancelAnimationFrame(animationFrame);
+            animationFrame = 0;
+        }
+        if (followupFrame) {
+            window.cancelAnimationFrame(followupFrame);
+            followupFrame = 0;
+        }
+        clearStickyComposerBottomSheetViewportStyles(sheet);
+    };
+}
+
 export function mountStickyComposerBottomSheet(
     panel: HTMLElement,
     options: {
@@ -268,5 +346,11 @@ export function mountStickyComposerBottomSheet(
     backdrop.className = 'theia-mobile-sticky-composer-sheet-backdrop';
     backdrop.addEventListener('click', options.onClose);
     sheet.append(backdrop, panel);
+    const stopViewport = wireStickyComposerBottomSheetViewport(sheet);
+    const removeSheet = sheet.remove.bind(sheet);
+    sheet.remove = (): void => {
+        stopViewport();
+        removeSheet();
+    };
     return sheet;
 }

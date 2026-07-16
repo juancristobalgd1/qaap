@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT } from './mobile-keyboard-helper';
 import {
+    mountStickyComposerBottomSheet,
     positionStickyComposerPopover,
     wireStickyComposerPopoverPosition,
 } from './qaap-sticky-composer-popover';
@@ -263,5 +264,60 @@ describe('qaap-sticky-composer-popover', () => {
         globalThis.ResizeObserver = originalResizeObserver;
         layoutHost.remove();
         popover.remove();
+    });
+
+    it('pins bottom sheets to the visual viewport and clears styles on remove', () => {
+        const visualViewport = Object.assign(new window.EventTarget(), {
+            offsetTop: 48,
+            offsetLeft: 0,
+            width: 390,
+            height: 420,
+        });
+        Object.defineProperty(window, 'visualViewport', {
+            configurable: true,
+            value: visualViewport,
+        });
+        const pendingFrames = new Map<number, FrameRequestCallback>();
+        let nextFrame = 1;
+        window.requestAnimationFrame = callback => {
+            const handle = nextFrame++;
+            pendingFrames.set(handle, callback);
+            return handle;
+        };
+        window.cancelAnimationFrame = handle => {
+            pendingFrames.delete(handle);
+        };
+        const flushScheduledPosition = (): void => {
+            for (let pass = 0; pass < 2; pass++) {
+                const frames = [...pendingFrames.values()];
+                pendingFrames.clear();
+                for (const frame of frames) {
+                    frame(0);
+                }
+            }
+        };
+
+        const panel = document.createElement('section');
+        const sheet = mountStickyComposerBottomSheet(panel, {
+            sheetClassName: 'theia-mobile-sticky-composer-sheet theia-mod-agent',
+            onClose: () => undefined,
+        });
+        document.body.append(sheet);
+        flushScheduledPosition();
+
+        expect(sheet.classList.contains('theia-mod-visual-viewport')).to.equal(true);
+        expect(sheet.style.top).to.equal('48px');
+        expect(sheet.style.height).to.equal('420px');
+        expect(sheet.style.width).to.equal('390px');
+
+        (visualViewport as { height: number }).height = 360;
+        visualViewport.dispatchEvent(new window.Event('resize'));
+        flushScheduledPosition();
+        expect(sheet.style.height).to.equal('360px');
+
+        sheet.remove();
+        expect(sheet.classList.contains('theia-mod-visual-viewport')).to.equal(false);
+        expect(sheet.style.top).to.equal('');
+        expect(sheet.isConnected).to.equal(false);
     });
 });
