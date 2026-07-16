@@ -81,6 +81,30 @@ describe('qaap-research-goal', () => {
         expect(goal.status).to.equal('completed');
     });
 
+    it('passes through an explicit agentModel unchanged', () => {
+        const goal = normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
+            agentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4-5' },
+        });
+        expect(goal.agentModel).to.deep.equal({ provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4-5' });
+    });
+
+    it('leaves agentModel undefined when the caller omits it', () => {
+        const goal = normalizeResearchGoal({ id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric] });
+        expect(goal.agentModel).to.equal(undefined);
+    });
+
+    it('rejects an agentModel with an empty provider or modelId', () => {
+        expect(() => normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
+            agentModel: { provider: '', modelId: 'claude-sonnet-4-5' },
+        })).to.throw(/agentModel/);
+        expect(() => normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
+            agentModel: { provider: 'anthropic', modelId: '' },
+        })).to.throw(/agentModel/);
+    });
+
     it('keeps runCommand separate from metricCommand — never merges them', () => {
         const goal = normalizeResearchGoal({
             id: 'g1', cwd: '/tmp', description: 'd',

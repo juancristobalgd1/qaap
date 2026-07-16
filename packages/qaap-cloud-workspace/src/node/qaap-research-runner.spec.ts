@@ -251,6 +251,43 @@ describe('QaapResearchRunner state machine', () => {
         expect(records[0].sha).to.equal('sha-2'); // baseline (sha-1) captured, then the round's commit (sha-2)
     });
 
+    it('passes the goal\'s explicit agentModel to the propose task, so it wins over Settings-alias routing', async () => {
+        const store = new FakeResearchStore();
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({
+            metrics: [METRIC],
+            agentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4-5' },
+        });
+        store.seedGoal(goal);
+        taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.75', stderr: '', timedOut: false }];
+
+        const runner = makeRunner(store, taskRunner);
+        const promise = runner.callStartNewRound(goal, 1);
+        expect(taskRunner.createdTasks).to.have.lengthOf(1);
+        expect((taskRunner.createdTasks[0].request as { agentModel?: unknown }).agentModel).to.deep.equal({
+            provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4-5',
+        });
+        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+        taskRunner.finishTask(taskRunner.createdTasks[0].id);
+        await promise;
+    });
+
+    it('omits agentModel from the propose task when the goal does not declare one (today\'s alias-routing behaviour)', async () => {
+        const store = new FakeResearchStore();
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({ metrics: [METRIC] });
+        store.seedGoal(goal);
+        taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.75', stderr: '', timedOut: false }];
+
+        const runner = makeRunner(store, taskRunner);
+        const promise = runner.callStartNewRound(goal, 1);
+        expect(taskRunner.createdTasks).to.have.lengthOf(1);
+        expect((taskRunner.createdTasks[0].request as { agentModel?: unknown }).agentModel).to.equal(undefined);
+        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+        taskRunner.finishTask(taskRunner.createdTasks[0].id);
+        await promise;
+    });
+
     it('runs the runCommand phase before measuring when the goal declares one', async () => {
         const store = new FakeResearchStore();
         const taskRunner = new FakeTaskRunner();

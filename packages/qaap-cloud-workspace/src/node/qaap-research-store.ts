@@ -77,6 +77,7 @@ export class QaapResearchStore {
             cwd: body.cwd.trim(),
             agentId: body.agentId?.trim() || undefined,
             description: body.description.trim(),
+            agentModel: body.agentModel,
             runCommand: body.runCommand?.trim() || undefined,
             runTimeoutMs: body.runTimeoutMs,
             metrics: body.metrics,

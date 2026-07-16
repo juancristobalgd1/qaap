@@ -44,12 +44,28 @@ export type TerminationReason = 'reached-target' | 'budget-exhausted' | 'stagnat
 
 export type ResearchGoalStatus = 'running' | 'completed' | 'cancelled' | 'failed';
 
+/**
+ * Explicit model binding for a goal's propose turns. When set, this WINS over whatever the task
+ * runner would otherwise route to from the caller's Settings model aliases (see
+ * `resolveEffectiveRequestAgentModel` in `qaap-cloud-workspace`'s `qaap-agent-task-model-routing.ts`)
+ * — the exact bypass the auto-researcher needs, since alias routing picks per-task-kind models
+ * (e.g. NVIDIA/meta-llama) that a `claude` CLI agent can never spawn with.
+ */
+export interface ResearchAgentModel {
+    readonly provider: string;
+    readonly vendor?: string;
+    readonly modelId: string;
+}
+
 export interface ResearchGoal {
     readonly id: string;
     readonly cwd: string;
     readonly agentId?: string;
     /** The goal in words, shown to the agent verbatim in every round prompt. */
     readonly description: string;
+    /** Explicit model for propose turns; see {@link ResearchAgentModel}. Optional — omit to keep
+     *  today's Settings-alias routing behaviour. */
+    readonly agentModel?: ResearchAgentModel;
     /** The long-running work (can take hours), e.g. a training run. Optional: some goals only measure. */
     readonly runCommand?: string;
     /** Timeout for `runCommand`. Defaults to a generous multi-hour budget. */
@@ -92,6 +108,9 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
     if (!input.metrics || input.metrics.length === 0) {
         throw new Error('ResearchGoal requires at least one metric.');
     }
+    if (input.agentModel && (!input.agentModel.provider?.trim() || !input.agentModel.modelId?.trim())) {
+        throw new Error('ResearchGoal.agentModel requires a non-empty provider and modelId.');
+    }
 
     const primaryCount = input.metrics.filter(metric => metric.primary).length;
     if (primaryCount > 1) {
@@ -108,6 +127,7 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
         cwd: input.cwd,
         agentId: input.agentId,
         description: input.description,
+        agentModel: input.agentModel,
         runCommand: input.runCommand,
         runTimeoutMs: input.runTimeoutMs ?? DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
         metrics,

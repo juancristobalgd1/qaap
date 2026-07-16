@@ -91,6 +91,7 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
                 cwd: body.cwd,
                 description: body.description,
                 agentId: body.agentId,
+                agentModel: body.agentModel,
                 runCommand: body.runCommand,
                 runTimeoutMs: body.runTimeoutMs,
                 metrics: body.metrics,

@@ -10,10 +10,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
+    type ResearchAgentModel,
     type ResearchGoal,
     type ResearchGoalStatus,
     type TerminationReason,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
+import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import {
     configFingerprint,
     evaluateVerdict,
@@ -60,6 +62,25 @@ function reminderRepeatedFingerprint(round: number): string {
     return `The actual file changes you made this turn are identical to round ${round}'s (the runner compared `
         + 'the resulting file contents on disk, not the config text you declared — fingerprint collision). '
         + 'Change a DIFFERENT lever this time — repeating a change you already made wastes a full round.';
+}
+
+/**
+ * Maps the goal's explicit {@link ResearchAgentModel} (if any) onto the task runner's request
+ * shape. Passing this as `agentModel` on `create()` makes it win over Settings-alias routing (see
+ * `resolveRequestAgentModel` in `qaap-agent-task.ts`) — the fix for propose turns getting routed
+ * to a task-kind alias (e.g. NVIDIA/meta-llama) that the goal's `claude` CLI agent cannot spawn.
+ * `provider` is validated non-empty by `normalizeResearchGoal` but not against the task runner's
+ * narrower provider union, so the cast trusts that validation rather than re-checking it here.
+ */
+function toAgentTaskModel(agentModel: ResearchAgentModel | undefined): QaapCreateAgentTaskQaiqModel | undefined {
+    if (!agentModel) {
+        return undefined;
+    }
+    return {
+        provider: agentModel.provider as QaapCreateAgentTaskQaiqModel['provider'],
+        vendor: agentModel.vendor ?? 'unknown',
+        modelId: agentModel.modelId,
+    };
 }
 
 /**
@@ -230,6 +251,7 @@ export class QaapResearchRunner {
             agent: goal.agentId ?? this.taskRunner.defaultAgent(),
             title: `Research round ${record.round}: ${goal.description}`,
             autoApprove: true,
+            agentModel: toAgentTaskModel(goal.agentModel),
         });
         this.activeExecutionId.set(goal.id, task.id);
         const finished = await this.waitForTaskFinish(task.id);

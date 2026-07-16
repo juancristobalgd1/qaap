@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { Emitter } from '@theia/core/lib/common/event';
 import { QaapResearchStore } from './qaap-research-store';
 import type { ResearchGoal, ResearchMetricSpec } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
 import type { ResearchExperimentRecord } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
@@ -15,6 +16,19 @@ import type { ResearchExperimentRecord } from '@theia/qaap-mobile-shell/lib/comm
  *  same trick `qaap-agent-task-runner.verification.spec.ts` uses for the sibling task runner. */
 function makeStore(): QaapResearchStore {
     return Object.create(QaapResearchStore.prototype) as QaapResearchStore;
+}
+
+/** {@link makeStore} plus the goal-metadata fields the bypassed constructor never initialized, and
+ *  a stubbed-out `persistGoals` — needed for tests that call `store.create()`, which otherwise
+ *  writes to the developer's real `~/.qaap/research-goals.json` (a fixed path, not `tmpDir`). */
+function makeStoreForGoalCreation(): QaapResearchStore {
+    const store = makeStore();
+    return Object.assign(store, {
+        goals: new Map<string, ResearchGoal>(),
+        ownerByGoalId: new Map<string, string>(),
+        onDidChangeEmitter: new Emitter<void>(),
+        persistGoals: () => { /* no-op: never touch the real goal store file in tests */ },
+    });
 }
 
 function record(overrides: Partial<ResearchExperimentRecord> = {}): ResearchExperimentRecord {
@@ -115,5 +129,22 @@ describe('QaapResearchStore ledger', () => {
         store.upsertRecord(tmpDir, record({ id: 'r1', goalId: 'g1', metrics: [] }));
         const goal = { id: 'g1', cwd: tmpDir } as ResearchGoal;
         expect(store.bestSoFar(goal, METRIC)).to.equal(undefined);
+    });
+
+    it('round-trips an explicit agentModel from the create() body onto the resulting goal', () => {
+        const store = makeStoreForGoalCreation();
+        const goal = store.create({
+            cwd: tmpDir,
+            description: 'Improve accuracy',
+            metrics: [METRIC],
+            agentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4-5' },
+        });
+        expect(goal.agentModel).to.deep.equal({ provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4-5' });
+    });
+
+    it('leaves agentModel undefined when the create() body omits it (today\'s alias-routing behaviour)', () => {
+        const store = makeStoreForGoalCreation();
+        const goal = store.create({ cwd: tmpDir, description: 'Improve accuracy', metrics: [METRIC] });
+        expect(goal.agentModel).to.equal(undefined);
     });
 });
