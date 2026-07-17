@@ -17,6 +17,7 @@ import {
 } from '../common/qaap-agent-task-client';
 import { resolveStoredAgentModelForSubmit } from '../common/qaap-agent-model-selection';
 import type {
+    QaapAttachComposerContextArgs,
     QaapWorkHubPickAgentAndSubmitPromptOptions,
     QaapWorkHubSubmitComposerPromptOptions,
 } from '../common/qaap-work-hub-composer-prompt';
@@ -98,6 +99,29 @@ export class QaapWorkHubComposerPromptService {
             'qaap/workHub/parallelRunsUnavailable',
             'Open Work Hub with a workspace project before running variants.',
         ));
+    }
+
+    /**
+     * Attach a removable context chip to the active Work Hub composer.
+     * When {@link QaapAttachComposerContextArgs.submit} is true, also sends a message
+     * that includes the context to the current chat.
+     */
+    async attachComposerContext(args: QaapAttachComposerContextArgs): Promise<boolean> {
+        const ordered = [...this.panels].sort((left, right) => Number(right.isVisible()) - Number(left.isVisible()));
+        for (const panel of ordered) {
+            if (args.submit) {
+                if (await panel.sendExternalComposerContext(args)) {
+                    return true;
+                }
+            } else if (panel.attachExternalComposerContext(args)) {
+                return true;
+            }
+        }
+        this.messages.warn(nls.localize(
+            'qaap/workHub/attachComposerUnavailable',
+            'Open Work Hub before attaching preview feedback to the composer.',
+        ));
+        return false;
     }
 
     protected async submitViaHttp(

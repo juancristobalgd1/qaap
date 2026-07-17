@@ -458,6 +458,11 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         this.ensureFramePicker().startElementPicker();
     }
 
+    /** Starts annotate mode (comment markers) without reloading the preview iframe. */
+    startAnnotateMode(): void {
+        this.ensureFramePicker().startAnnotateMode();
+    }
+
     openElementInspector(): Promise<void> {
         return this.ensureFramePicker().openElementInspector();
     }
@@ -486,9 +491,14 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
     protected createInspectButton(parent: HTMLElement): HTMLElement {
         const button = createPreviewEditButton({
             onSelectSelection: () => this.startElementPicker(),
+            onSelectAnnotate: () => this.startAnnotateMode(),
             toDispose: this.toDispose,
         });
         parent.appendChild(button);
+        const frameSlot = this.frame.parentElement;
+        if (frameSlot) {
+            this.ensureFramePicker().ensureAnnotationController(frameSlot, parent);
+        }
         return button;
     }
 

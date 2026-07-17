@@ -14,13 +14,17 @@ import {
     ELEMENT_PICKER_CANCEL_TYPE,
     ELEMENT_PICKER_MESSAGE_TYPE,
     ELEMENT_REFRESH_RESPONSE_TYPE,
+    ELEMENT_SET_MODE_TYPE,
     PickedElement,
+    type PreviewInteractionMode,
 } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
 import { buildElementBridgeScript, buildElementPickerScript } from '@theia/qaap-element-inspector/lib/browser/element-picker-script';
 import {
     ELEMENT_INSPECTOR_REVEAL_COMMAND_ID,
 } from '@theia/qaap-element-inspector/lib/browser/element-inspector-contribution';
 import type { QaapPreviewInlineInspector } from './qaap-preview-inline-inspector';
+import { QaapPreviewAnnotationController } from './qaap-preview-annotation-controller';
+import type { PreviewAnnotationScope } from './qaap-preview-annotation-types';
 
 /** DOM picker + inspector bridge for a single preview iframe (mini-browser or embedded). */
 @injectable()
@@ -54,6 +58,9 @@ export class QaapPreviewFramePicker {
 
     protected pickerListenerInstalled = false;
     protected inlineInspector: QaapPreviewInlineInspector | undefined;
+    protected annotationController: QaapPreviewAnnotationController | undefined;
+    protected annotationScopeProvider: (() => PreviewAnnotationScope | undefined) | undefined;
+    protected notifyHandler: ((message: string, kind?: 'info' | 'warn') => void) | undefined;
 
     constructor(
         protected readonly frame: HTMLIFrameElement,
@@ -65,11 +72,72 @@ export class QaapPreviewFramePicker {
     ) {
         toDispose.push(Disposable.create(() => {
             this.pickerListenerInstalled = false;
+            this.annotationController = undefined;
         }));
     }
 
     connectInlineInspector(inspector: QaapPreviewInlineInspector): void {
         this.inlineInspector = inspector;
+    }
+
+    setAnnotationScopeProvider(provider: () => PreviewAnnotationScope | undefined): void {
+        this.annotationScopeProvider = provider;
+    }
+
+    /** Work Hub–visible toast hook (MobileSnackbar); forwarded to the annotation controller. */
+    setNotify(notify: ((message: string, kind?: 'info' | 'warn') => void) | undefined): void {
+        this.notifyHandler = notify;
+        this.annotationController?.setNotify(notify);
+    }
+
+    /**
+     * Lazily mounts annotate markers/toolbar over the preview frame slot.
+     * Safe to call multiple times; later calls can supply a toolbar host if the first
+     * construction happened before the workbench was parented under chrome.
+     */
+    ensureAnnotationController(frameSlot: HTMLElement, toolbarHost?: HTMLElement): QaapPreviewAnnotationController {
+        if (this.annotationController) {
+            if (toolbarHost) {
+                this.annotationController.setToolbarHost(toolbarHost);
+            }
+            this.annotationController.setNotify(this.notifyHandler);
+            return this.annotationController;
+        }
+        this.annotationController = new QaapPreviewAnnotationController({
+            frame: this.frame,
+            frameSlot,
+            toolbarHost,
+            commands: this.commands,
+            messageService: this.messageService,
+            notify: (message, kind) => this.notifyHandler?.(message, kind),
+            getScope: () => this.annotationScopeProvider?.() ?? this.defaultAnnotationScope(),
+            startSelectPicker: () => this.startElementPicker(),
+            injectBridge: () => this.injectInspectorBridge(),
+            toDispose: this.toDispose,
+        });
+        return this.annotationController;
+    }
+
+    startAnnotateMode(): void {
+        const slot = this.frame.parentElement;
+        if (!slot) {
+            this.messageService.warn(nls.localize(
+                'qaap/preview/annotateUnavailable',
+                'Annotate mode needs a same-origin preview frame.',
+            ));
+            return;
+        }
+        const toolbar = this.frame.closest('.theia-mini-browser, .qaap-agent-preview-embedded')
+            ?.querySelector<HTMLElement>('.theia-mini-browser-workbench-controls');
+        const controller = this.ensureAnnotationController(slot, toolbar ?? undefined);
+        if (toolbar) {
+            controller.setToolbarHost(toolbar);
+        }
+        controller.startAnnotateMode();
+    }
+
+    getInteractionMode(): PreviewInteractionMode {
+        return this.annotationController?.getInteractionMode() ?? 'browse';
     }
 
     bindInspectorWindow(): void {
@@ -101,6 +169,7 @@ export class QaapPreviewFramePicker {
     onFrameLoad(): void {
         this.injectInspectorBridge();
         this.bindInspectorWindow();
+        this.annotationController?.onFrameLoad();
     }
 
     startElementPicker(): void {
@@ -113,6 +182,13 @@ export class QaapPreviewFramePicker {
                 return;
             }
             this.injectInspectorBridge();
+            // Keep Select as the one-shot picker; only notify the resident bridge of the mode.
+            try {
+                win.postMessage({ type: ELEMENT_SET_MODE_TYPE, mode: 'select' }, '*');
+            } catch {
+                /* ignore */
+            }
+            this.annotationController?.noteSelectModeActivated();
             const script = doc.createElement('script');
             script.textContent = buildElementPickerScript();
             doc.documentElement.appendChild(script);
@@ -231,5 +307,29 @@ export class QaapPreviewFramePicker {
             lines.push('Text: ' + element.textPreview);
         }
         return lines.join('\n');
+    }
+
+    protected defaultAnnotationScope(): PreviewAnnotationScope | undefined {
+        const previewUrl = this.frame.src || '';
+        if (!previewUrl) {
+            return undefined;
+        }
+        let route = '/';
+        try {
+            route = new URL(previewUrl, window.location.href).pathname || '/';
+        } catch {
+            route = '/';
+        }
+        const narrow = typeof matchMedia === 'function'
+            && matchMedia('(max-width: 767px), (pointer: coarse)').matches;
+        return {
+            workspaceId: 'workspace',
+            threadId: 'default',
+            previewUrl,
+            route,
+            viewportMode: narrow ? 'mobile' : 'desktop',
+            viewportWidth: this.frame.clientWidth || window.innerWidth,
+            viewportHeight: this.frame.clientHeight || window.innerHeight,
+        };
     }
 }

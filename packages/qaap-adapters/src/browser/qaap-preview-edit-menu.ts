@@ -17,15 +17,15 @@ export interface MountPreviewEditMenuOptions {
     readonly onClose: () => void;
 }
 
-/** Small anchored dropdown for preview Edit actions (annotate stub + element selection). */
+/** Small anchored dropdown for preview Edit actions (annotate + element selection). */
 export function mountPreviewEditMenu(options: MountPreviewEditMenuOptions): { menu: HTMLElement; dispose: () => void } {
     const menu = document.createElement('div');
     menu.className = 'qaap-preview-edit-menu';
     menu.setAttribute('role', 'menu');
 
     const items: Array<{ id: PreviewEditMenuAction; label: string; icon: string }> = [
-        { id: 'annotate', label: nls.localize('qaap/preview/editAnnotate', 'Anotar'), icon: 'edit' },
-        { id: 'selection', label: nls.localize('qaap/preview/editSelection', 'Selección'), icon: 'inspect' },
+        { id: 'annotate', label: nls.localize('qaap/preview/editAnnotate', 'Annotate'), icon: 'comment' },
+        { id: 'selection', label: nls.localize('qaap/preview/editSelection', 'Selection'), icon: 'inspect' },
     ];
 
     for (const item of items) {
@@ -137,7 +137,7 @@ export interface CreatePreviewEditButtonOptions {
     readonly toDispose: DisposableCollection;
 }
 
-/** Workbench Edit control: opens anchored menu with Anotar (stub) and Selección (element picker). */
+/** Workbench Edit control: opens anchored menu with Annotate and Selection (element picker). */
 export function createPreviewEditButton(options: CreatePreviewEditButtonOptions): HTMLButtonElement {
     const editLabel = nls.localize('qaap/preview/edit', 'Edit');
 
@@ -169,10 +169,7 @@ export function createPreviewEditButton(options: CreatePreviewEditButtonOptions)
         }
         const mounted = mountPreviewEditMenu({
             anchor: button,
-            onSelectAnnotate: () => {
-                // TODO: annotate drawing on preview surface
-                options.onSelectAnnotate?.();
-            },
+            onSelectAnnotate: () => options.onSelectAnnotate?.(),
             onSelectSelection: () => options.onSelectSelection(),
             onClose: closeMenu,
         });

@@ -6,6 +6,7 @@
 
 import '../../src/browser/style/qaap-mini-browser-content.css';
 import '../../src/browser/style/qaap-agent-preview-chrome.css';
+import '../../src/browser/style/qaap-preview-annotations.css';
 import { bindToolProvider } from '@theia/ai-core/lib/common';
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { CommandContribution } from '@theia/core/lib/common/command';

@@ -53,6 +53,7 @@ import { resolveStickyComposerContextChip } from './qaap-sticky-composer-context
 import { resolvePinnedEditorContextVariable } from './qaap-composer-editor-context-resolver';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
+import { resolvePreviewFeedbackVariable } from '../common/qaap-preview-feedback-context';
 
 export interface MobileProjectsPanelFactoryDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -226,11 +227,17 @@ export class MobileProjectsPanelFactory {
                     deps.variableService,
                     undefined,
                     {
-                        resolvePinnedRequest: request => resolvePinnedEditorContextVariable(
-                            request,
-                            deps.workspaceService,
-                            deps.fileService,
-                        ),
+                        resolvePinnedRequest: async request => {
+                            const preview = resolvePreviewFeedbackVariable(request);
+                            if (preview) {
+                                return preview;
+                            }
+                            return resolvePinnedEditorContextVariable(
+                                request,
+                                deps.workspaceService,
+                                deps.fileService,
+                            );
+                        },
                     },
                 ),
                 createDiffReviewWidget: () => deps.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID),

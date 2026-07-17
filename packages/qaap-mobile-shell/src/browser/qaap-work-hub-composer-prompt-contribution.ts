@@ -6,12 +6,15 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { CommandContribution, CommandRegistry, nls } from '@theia/core';
 import {
+    QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
     QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND,
     QAAP_WORK_HUB_PICK_AGENT_AND_SUBMIT_PROMPT_COMMAND,
     QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND,
+    type QaapAttachComposerContextArgs,
     type QaapWorkHubPickAgentAndSubmitPromptOptions,
     type QaapWorkHubSubmitComposerPromptOptions,
 } from '../common/qaap-work-hub-composer-prompt';
+import { isQaapAttachComposerContextArgs } from '../common/qaap-preview-feedback-context';
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 
 @injectable()
@@ -46,6 +49,18 @@ export class QaapWorkHubComposerPromptContribution implements CommandContributio
             category: 'Qaap',
         }, {
             execute: (prompt: string) => this.composerPrompts.openParallelRunsSheet(prompt),
+        });
+        registry.registerCommand({
+            id: QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
+            label: nls.localize('qaap/workHub/attachComposerContext', 'Attach context to Work Hub composer'),
+            category: 'Qaap',
+        }, {
+            execute: (args: QaapAttachComposerContextArgs) => {
+                if (!isQaapAttachComposerContextArgs(args)) {
+                    return false;
+                }
+                return this.composerPrompts.attachComposerContext(args);
+            },
         });
     }
 }

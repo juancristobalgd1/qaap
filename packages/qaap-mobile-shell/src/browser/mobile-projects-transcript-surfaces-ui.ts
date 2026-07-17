@@ -685,6 +685,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 return;
             }
             this.host.transcriptEmbeddedPreview.setUrl(normalized);
+            this.wireTranscriptPreviewAnnotationScope(project, normalized);
             this.setMountedPreviewUrl(project.id, normalized);
             if (!host.contains(root)) {
                 host.append(root);
@@ -703,8 +704,49 @@ export class MobileProjectsTranscriptSurfacesUi {
             openExternal: target => {
                 window.open(target, '_blank', 'noopener,noreferrer');
             },
+            getAnnotationScope: () => this.resolvePreviewAnnotationScope(project, normalized),
         });
+        this.wireTranscriptPreviewAnnotationScope(project, normalized);
         this.setMountedPreviewUrl(project.id, normalized);
+    }
+
+    protected wireTranscriptPreviewAnnotationScope(project: MobileProjectEntry, previewUrl: string): void {
+        const frame = this.host.transcriptEmbeddedPreview?.frame;
+        const surface = this.host.previewSurfaceRegistry?.getSurfaceForFrame(frame);
+        surface?.picker.setAnnotationScopeProvider(() => this.resolvePreviewAnnotationScope(project, previewUrl));
+    }
+
+    protected resolvePreviewAnnotationScope(project: MobileProjectEntry, previewUrl: string): {
+        workspaceId: string;
+        threadId: string;
+        previewUrl: string;
+        route: string;
+        viewportMode: 'desktop' | 'mobile';
+        viewportWidth: number;
+        viewportHeight: number;
+    } {
+        const live = this.getTranscriptEmbeddedPreviewUrl() || previewUrl;
+        let stablePreviewUrl = previewUrl;
+        let route = '/';
+        try {
+            const parsed = new URL(live, window.location.href);
+            stablePreviewUrl = parsed.origin;
+            route = `${parsed.pathname || '/'}${parsed.search || ''}${parsed.hash || ''}`;
+        } catch {
+            route = '/';
+        }
+        const narrow = typeof matchMedia === 'function'
+            && matchMedia('(max-width: 767px), (pointer: coarse)').matches;
+        const frame = this.host.transcriptEmbeddedPreview?.frame;
+        return {
+            workspaceId: project.id,
+            threadId: this.host.transcriptLastConv?.id ?? 'default',
+            previewUrl: stablePreviewUrl,
+            route,
+            viewportMode: narrow ? 'mobile' : 'desktop',
+            viewportWidth: frame?.clientWidth || window.innerWidth,
+            viewportHeight: frame?.clientHeight || window.innerHeight,
+        };
     }
 
     protected async tryMountVerifiedTranscriptPreview(

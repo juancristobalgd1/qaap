@@ -1,0 +1,469 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+.qaap-preview-frame-slot {
+  position: relative;
+}
+
+.qaap-preview-annotation-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  overflow: hidden;
+}
+
+.qaap-preview-annotation-marker {
+  position: absolute;
+  pointer-events: auto;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #2f8fff;
+  color: #fff;
+  font: 600 11px/1 system-ui, sans-serif;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.qaap-preview-annotation-marker--draft {
+  background: #f0a202;
+}
+
+.qaap-preview-annotation-marker--unresolved {
+  outline: 2px dashed rgba(255, 255, 255, 0.7);
+  opacity: 0.85;
+}
+
+/* Floating Cursor-style comment input anchored near the marker. */
+.qaap-preview-annotation-popover {
+  --qaap-annotation-chip: #7eb6ff;
+  position: fixed;
+  z-index: 2147483026;
+  box-sizing: border-box;
+  width: min(340px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: #1e1e22;
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.42),
+    0 2px 6px rgba(0, 0, 0, 0.28);
+}
+
+.qaap-preview-annotation-popover--expanded {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 10px 8px 12px;
+  border-radius: 18px;
+}
+
+.qaap-preview-annotation-popover-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.qaap-preview-annotation-popover-body {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-body {
+  align-items: flex-start;
+  width: 100%;
+}
+
+.qaap-preview-annotation-popover-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  max-width: 7.5em;
+  color: var(--qaap-annotation-chip);
+  font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  user-select: none;
+  pointer-events: none;
+}
+
+.qaap-preview-annotation-popover-chip-icon {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.95;
+}
+
+.qaap-preview-annotation-popover-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qaap-preview-annotation-popover-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  min-height: 22px;
+  height: 22px;
+  max-height: 140px;
+  resize: none;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #f5f5f7;
+  padding: 2px 0;
+  margin: 0;
+  font: 13px/1.4 system-ui, -apple-system, sans-serif;
+  outline: none;
+  box-shadow: none;
+  overflow-y: hidden;
+  field-sizing: content;
+}
+
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-input {
+  width: 100%;
+  min-height: 44px;
+}
+
+.qaap-preview-annotation-popover-input::placeholder {
+  color: rgba(232, 232, 234, 0.48);
+}
+
+.qaap-preview-annotation-popover-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.qaap-preview-annotation-popover-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-actions {
+  width: 100%;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.qaap-preview-annotation-popover-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(232, 232, 234, 0.78);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.qaap-preview-annotation-popover-icon-btn .codicon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.qaap-preview-annotation-popover-icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f2f4;
+}
+
+.qaap-preview-annotation-popover-icon-btn:focus-visible {
+  outline: 2px solid rgba(47, 143, 255, 0.85);
+  outline-offset: 1px;
+}
+
+.qaap-preview-annotation-popover-icon-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* Compact empty pill: circular white mic; hide cancel/confirm until expanded. */
+.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-cancel,
+.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-confirm,
+.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-delete {
+  display: none;
+}
+
+.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-mic {
+  background: #f4f4f5;
+  color: #1c1c1e;
+}
+
+.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-mic:hover:not(:disabled) {
+  background: #fff;
+  color: #111;
+}
+
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-cancel {
+  margin-right: auto;
+}
+
+.qaap-preview-annotation-popover-confirm {
+  background: rgba(255, 255, 255, 0.94);
+  color: #1c1c1e;
+}
+
+.qaap-preview-annotation-popover-confirm:hover:not(:disabled) {
+  background: #fff;
+  color: #111;
+}
+
+.qaap-preview-annotation-popover-mic--listening {
+  background: rgba(240, 162, 2, 0.22) !important;
+  color: #f0a202 !important;
+}
+
+.qaap-preview-annotation-popover-mic--listening:hover:not(:disabled) {
+  background: rgba(240, 162, 2, 0.3) !important;
+  color: #ffb020 !important;
+}
+
+.qaap-preview-annotation-popover-delete {
+  color: rgba(255, 140, 140, 0.9);
+}
+
+/* ChatGPT-style annotate action bar — replaces the URL field while annotate is active. */
+.theia-mini-browser-url-field.qaap-mod-annotate-hidden {
+  display: none !important;
+}
+
+/* Annotate replaces the entire chrome row: URL, refresh/Go, Open, Edit, history, overflow. */
+.theia-mini-browser-toolbar.qaap-mod-annotate-active > :not(.qaap-preview-annotate-toolbar),
+.theia-mini-browser-toolbar-read-only.qaap-mod-annotate-active > :not(.qaap-preview-annotate-toolbar),
+.qaap-agent-preview-embedded-toolbar.qaap-mod-annotate-active > :not(.qaap-preview-annotate-toolbar) {
+  display: none !important;
+}
+
+.qaap-preview-annotate-toolbar {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  box-sizing: border-box;
+  height: calc(var(--theia-private-mini-browser-height, 22px) + 8px);
+  min-height: 34px;
+  max-height: 40px;
+  padding: 3px 6px 3px 4px;
+  border-radius: 10px;
+  background: #2a2a2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  color: #e8e8ea;
+}
+
+.qaap-preview-annotate-toolbar.qaap-mod-visible {
+  display: flex;
+}
+
+.qaap-preview-annotate-toolbar.qaap-mod-comparing-original {
+  opacity: 0.72;
+}
+
+.qaap-preview-annotation-popover.qaap-mod-compare-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.qaap-preview-annotate-toolbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(232, 232, 234, 0.82);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  font-size: 14px;
+  line-height: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-preview-annotate-toolbar-icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f2f4;
+}
+
+.qaap-preview-annotate-toolbar-icon-btn.qaap-mod-pressed,
+.qaap-preview-annotate-toolbar-icon-btn:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.qaap-preview-annotate-toolbar-icon-btn:focus-visible {
+  outline: 2px solid rgba(47, 143, 255, 0.85);
+  outline-offset: 1px;
+}
+
+.qaap-preview-annotate-toolbar-icon-btn:disabled,
+.qaap-preview-annotate-toolbar-icon-btn.qaap-mod-disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.qaap-preview-annotate-toolbar-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-inline: 6px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 13px/1.2 system-ui, -apple-system, sans-serif;
+  color: rgba(232, 232, 234, 0.55);
+  pointer-events: none;
+  user-select: none;
+}
+
+.qaap-preview-annotate-toolbar-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px 0 12px;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  background: #2f8fff;
+  color: #0b1a2a;
+  font: 600 12px/1 system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-preview-annotate-toolbar-send:hover:not(:disabled) {
+  background: #4a9fff;
+}
+
+.qaap-preview-annotate-toolbar-send:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 1px;
+}
+
+.qaap-preview-annotate-toolbar-send:disabled,
+.qaap-preview-annotate-toolbar-send.qaap-mod-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.qaap-preview-annotate-toolbar-send-label {
+  white-space: nowrap;
+}
+
+.qaap-preview-annotate-toolbar-send-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(11, 26, 42, 0.88);
+  color: #fff;
+  font: 700 11px/1 system-ui, -apple-system, sans-serif;
+}
+
+.qaap-preview-annotate-toolbar-send-badge[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .qaap-preview-annotation-popover {
+    width: min(340px, calc(100vw - 20px));
+    padding: 7px 7px 7px 12px;
+  }
+
+  .qaap-preview-annotation-popover--expanded {
+    padding: 12px 10px 8px 12px;
+  }
+
+  .qaap-preview-annotation-popover-icon-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .qaap-preview-annotation-popover-input {
+    min-height: 24px;
+    height: 24px;
+  }
+
+  .qaap-preview-annotate-toolbar {
+    min-height: 34px;
+    max-height: 40px;
+    padding: 2px 4px 2px 2px;
+  }
+
+  .qaap-preview-annotate-toolbar-icon-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .qaap-preview-annotate-toolbar-send {
+    min-height: 30px;
+    padding: 0 12px 0 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qaap-preview-annotation-popover,
+  .qaap-preview-annotation-marker {
+    transition: none !important;
+  }
+}

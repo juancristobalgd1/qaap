@@ -11,6 +11,11 @@ import {
     ELEMENT_UPDATE_TEXT_TYPE,
     ELEMENT_REFRESH_REQUEST_TYPE,
     ELEMENT_REFRESH_RESPONSE_TYPE,
+    ELEMENT_SET_MODE_TYPE,
+    ELEMENT_ANNOTATION_POINT_TYPE,
+    ELEMENT_ANNOTATION_CANCEL_TYPE,
+    ELEMENT_ANNOTATION_REANCHOR_TYPE,
+    ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE,
     PICKED_ATTRIBUTE
 } from './element-inspector-types';
 
@@ -24,17 +29,25 @@ const TOOLBAR_ID = 'theia-mini-browser-picker-toolbar';
 /**
  * Resident bridge injected once per loaded page. It tracks picked nodes by id
  * and responds to style / text mutations and refresh requests coming from the parent.
+ * Also hosts annotate-mode click capture and marker re-anchoring (Select picker stays separate).
  *
- * Idempotent: re-injecting the script is safe; the second call is a no-op.
+ * Idempotent: re-injecting is a no-op once annotate-ready; an older bridge is upgraded in place.
  */
 export function buildElementBridgeScript(): string {
     return `(() => {
-    if (window.${BRIDGE_GLOBAL}) return;
+    const existing = window.${BRIDGE_GLOBAL};
+    if (existing && existing.annotateReady) return;
+
     const PICKED_ATTR = ${JSON.stringify(PICKED_ATTRIBUTE)};
     const UPDATE_STYLE = ${JSON.stringify(ELEMENT_UPDATE_STYLE_TYPE)};
     const UPDATE_TEXT = ${JSON.stringify(ELEMENT_UPDATE_TEXT_TYPE)};
     const REFRESH_REQ = ${JSON.stringify(ELEMENT_REFRESH_REQUEST_TYPE)};
     const REFRESH_RES = ${JSON.stringify(ELEMENT_REFRESH_RESPONSE_TYPE)};
+    const SET_MODE = ${JSON.stringify(ELEMENT_SET_MODE_TYPE)};
+    const ANNOTATION_POINT = ${JSON.stringify(ELEMENT_ANNOTATION_POINT_TYPE)};
+    const ANNOTATION_CANCEL = ${JSON.stringify(ELEMENT_ANNOTATION_CANCEL_TYPE)};
+    const REANCHOR = ${JSON.stringify(ELEMENT_ANNOTATION_REANCHOR_TYPE)};
+    const REANCHOR_RES = ${JSON.stringify(ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE)};
 
     const truncate = (s, max) => s.length > max ? s.slice(0, max - 1) + '\u2026' : s;
 
@@ -62,6 +75,31 @@ export function buildElementBridgeScript(): string {
             node = node.parentElement;
         }
         return 'html > ' + parts.join(' > ');
+    };
+
+    const buildStableSelector = (el) => {
+        const tag = (el.tagName || '').toLowerCase();
+        if (el.id) return tag + '#' + el.id;
+        const classes = Array.from(el.classList || []).slice(0, 4);
+        if (classes.length) return tag + '.' + classes.join('.');
+        return computeDomPath(el);
+    };
+
+    const documentRatios = (clientX, clientY) => {
+        const doc = document.documentElement;
+        const body = document.body;
+        const scrollX = window.scrollX || doc.scrollLeft || 0;
+        const scrollY = window.scrollY || doc.scrollTop || 0;
+        const width = Math.max(doc.scrollWidth || 0, body ? body.scrollWidth : 0, 1);
+        const height = Math.max(doc.scrollHeight || 0, body ? body.scrollHeight : 0, 1);
+        return {
+            documentXRatio: Math.min(1, Math.max(0, (scrollX + clientX) / width)),
+            documentYRatio: Math.min(1, Math.max(0, (scrollY + clientY) / height)),
+            scrollX,
+            scrollY,
+            width,
+            height
+        };
     };
 
     const serialize = (el, pickedId) => {
@@ -103,7 +141,7 @@ export function buildElementBridgeScript(): string {
         return () => 'tmb-' + Date.now().toString(36) + '-' + (++counter).toString(36);
     })();
 
-    const bridge = {
+    const bridge = existing && existing.nodes ? existing : {
         nodes: new Map(),
         register(el) {
             let id = el.getAttribute(PICKED_ATTR);
@@ -145,30 +183,177 @@ export function buildElementBridgeScript(): string {
         serialize
     };
 
+    // Preserve Select helpers on upgrade; attach annotate mode API.
+    bridge.serialize = serialize;
+    bridge.mode = bridge.mode || 'browse';
+    bridge.annotateReady = true;
+
+    const buildAnnotationPayload = (clientX, clientY, el) => {
+        const ratios = documentRatios(clientX, clientY);
+        const route = (location.pathname || '/') + (location.search || '') + (location.hash || '');
+        let element;
+        if (el && el.nodeType === 1) {
+            const rect = el.getBoundingClientRect();
+            const w = Math.max(rect.width, 1);
+            const h = Math.max(rect.height, 1);
+            const xRatio = Math.min(1, Math.max(0, (clientX - rect.left) / w));
+            const yRatio = Math.min(1, Math.max(0, (clientY - rect.top) / h));
+            const pickedId = bridge.register(el);
+            const aria = el.getAttribute && (el.getAttribute('aria-label') || undefined);
+            element = {
+                selector: buildStableSelector(el),
+                tagName: (el.tagName || '').toLowerCase(),
+                text: truncate((el.textContent || '').replace(/\\s+/g, ' ').trim(), 120) || undefined,
+                ariaLabel: aria || undefined,
+                rect: {
+                    top: Math.round(rect.top),
+                    left: Math.round(rect.left),
+                    width: Math.round(rect.width),
+                    height: Math.round(rect.height)
+                },
+                xRatio,
+                yRatio,
+                documentXRatio: ratios.documentXRatio,
+                documentYRatio: ratios.documentYRatio,
+                pickedId,
+                domPath: computeDomPath(el),
+                attributes: Array.from(el.attributes || []).slice(0, 24).map(attr => ({ name: attr.name, value: attr.value }))
+            };
+        }
+        return {
+            version: 1,
+            clientX,
+            clientY,
+            route,
+            pageUrl: location.href,
+            element,
+            documentXRatio: ratios.documentXRatio,
+            documentYRatio: ratios.documentYRatio,
+            viewportWidth: window.innerWidth || document.documentElement.clientWidth || 0,
+            viewportHeight: window.innerHeight || document.documentElement.clientHeight || 0,
+            scrollX: ratios.scrollX,
+            scrollY: ratios.scrollY
+        };
+    };
+
+    const resolveReanchorItem = (item) => {
+        const doc = document.documentElement;
+        const body = document.body;
+        const width = Math.max(doc.scrollWidth || 0, body ? body.scrollWidth : 0, 1);
+        const height = Math.max(doc.scrollHeight || 0, body ? body.scrollHeight : 0, 1);
+        const scrollX = window.scrollX || doc.scrollLeft || 0;
+        const scrollY = window.scrollY || doc.scrollTop || 0;
+        if (item.selector) {
+            try {
+                const el = document.querySelector(item.selector);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    const xRatio = typeof item.xRatio === 'number' ? item.xRatio : 0.5;
+                    const yRatio = typeof item.yRatio === 'number' ? item.yRatio : 0.5;
+                    return {
+                        id: item.id,
+                        clientX: rect.left + rect.width * xRatio,
+                        clientY: rect.top + rect.height * yRatio,
+                        unresolved: false
+                    };
+                }
+            } catch (e) { /* invalid selector */ }
+        }
+        return {
+            id: item.id,
+            clientX: item.documentXRatio * width - scrollX,
+            clientY: item.documentYRatio * height - scrollY,
+            unresolved: true
+        };
+    };
+
+    let annotateClickHandler = null;
+    let annotateKeyHandler = null;
+
+    const deactivateAnnotateListeners = () => {
+        if (annotateClickHandler) {
+            document.removeEventListener('click', annotateClickHandler, true);
+            annotateClickHandler = null;
+        }
+        if (annotateKeyHandler) {
+            document.removeEventListener('keydown', annotateKeyHandler, true);
+            annotateKeyHandler = null;
+        }
+    };
+
+    const activateAnnotateListeners = () => {
+        if (annotateClickHandler) return;
+        annotateClickHandler = (e) => {
+            if (bridge.mode !== 'annotate') return;
+            // Allow modifier-free primary click only; scrolling uses touch/wheel (not prevented).
+            if (e.button != null && e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const clientX = e.clientX;
+            const clientY = e.clientY;
+            const el = document.elementFromPoint(clientX, clientY);
+            const payload = buildAnnotationPayload(clientX, clientY, el);
+            window.parent.postMessage({ type: ANNOTATION_POINT, payload }, '*');
+        };
+        annotateKeyHandler = (e) => {
+            if (bridge.mode !== 'annotate') return;
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                bridge.setMode('browse');
+                window.parent.postMessage({ type: ANNOTATION_CANCEL }, '*');
+            }
+        };
+        document.addEventListener('click', annotateClickHandler, true);
+        document.addEventListener('keydown', annotateKeyHandler, true);
+    };
+
+    bridge.setMode = (mode) => {
+        const next = mode === 'annotate' || mode === 'select' || mode === 'browse' ? mode : 'browse';
+        bridge.mode = next;
+        if (next === 'annotate') {
+            activateAnnotateListeners();
+        } else {
+            deactivateAnnotateListeners();
+        }
+        return bridge.mode;
+    };
+
     window.${BRIDGE_GLOBAL} = bridge;
 
-    window.addEventListener('message', (event) => {
-        const data = event.data;
-        if (!data || typeof data !== 'object') return;
-        if (data.type === UPDATE_STYLE && typeof data.id === 'string' && typeof data.prop === 'string') {
-            const ok = bridge.applyStyle(data.id, data.prop, String(data.value ?? ''), !!data.important);
-            const fresh = ok ? bridge.refresh(data.id) : undefined;
-            if (fresh && event.source) {
-                event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
+    if (!bridge.__qaapMessageBound) {
+        bridge.__qaapMessageBound = true;
+        window.addEventListener('message', (event) => {
+            const data = event.data;
+            if (!data || typeof data !== 'object') return;
+            if (data.type === UPDATE_STYLE && typeof data.id === 'string' && typeof data.prop === 'string') {
+                const ok = bridge.applyStyle(data.id, data.prop, String(data.value ?? ''), !!data.important);
+                const fresh = ok ? bridge.refresh(data.id) : undefined;
+                if (fresh && event.source) {
+                    event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
+                }
+            } else if (data.type === UPDATE_TEXT && typeof data.id === 'string') {
+                bridge.applyText(data.id, String(data.text ?? ''));
+                const fresh = bridge.refresh(data.id);
+                if (fresh && event.source) {
+                    event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
+                }
+            } else if (data.type === REFRESH_REQ && typeof data.id === 'string') {
+                const fresh = bridge.refresh(data.id);
+                if (fresh && event.source) {
+                    event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
+                }
+            } else if (data.type === SET_MODE) {
+                const mode = data.mode || (data.payload && data.payload.mode);
+                bridge.setMode(mode);
+            } else if (data.type === REANCHOR) {
+                const items = (data.payload && data.payload.items) || data.items || [];
+                const results = Array.isArray(items) ? items.map(resolveReanchorItem) : [];
+                if (event.source) {
+                    event.source.postMessage({ type: REANCHOR_RES, payload: { items: results } }, '*');
+                }
             }
-        } else if (data.type === UPDATE_TEXT && typeof data.id === 'string') {
-            bridge.applyText(data.id, String(data.text ?? ''));
-            const fresh = bridge.refresh(data.id);
-            if (fresh && event.source) {
-                event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
-            }
-        } else if (data.type === REFRESH_REQ && typeof data.id === 'string') {
-            const fresh = bridge.refresh(data.id);
-            if (fresh && event.source) {
-                event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
-            }
-        }
-    });
+        });
+    }
 })();`;
 }
 

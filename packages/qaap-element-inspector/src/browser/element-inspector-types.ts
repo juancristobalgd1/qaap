@@ -38,6 +38,70 @@ export const ELEMENT_REFRESH_REQUEST_TYPE = 'theia-mini-browser:element-refresh-
 /** Iframe → parent: fresh snapshot after a refresh request or after a mutation. */
 export const ELEMENT_REFRESH_RESPONSE_TYPE = 'theia-mini-browser:element-refresh-response';
 
+/**
+ * Preview interaction mode for the resident bridge.
+ * `select` remains driven by the one-shot picker script; `annotate` is a persistent bridge mode.
+ */
+export type PreviewInteractionMode = 'browse' | 'select' | 'annotate';
+
+/** Parent → iframe: set interaction mode without reloading the preview. */
+export const ELEMENT_SET_MODE_TYPE = 'theia-mini-browser:set-mode';
+/** Iframe → parent: user tapped a point while annotate mode is active. */
+export const ELEMENT_ANNOTATION_POINT_TYPE = 'theia-mini-browser:annotation-point';
+/** Iframe → parent: Escape cancelled annotate mode inside the preview. */
+export const ELEMENT_ANNOTATION_CANCEL_TYPE = 'theia-mini-browser:annotation-cancel';
+/** Parent → iframe: request re-anchored marker positions. */
+export const ELEMENT_ANNOTATION_REANCHOR_TYPE = 'theia-mini-browser:annotation-reanchor';
+/** Iframe → parent: re-anchored marker positions. */
+export const ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE = 'theia-mini-browser:annotation-reanchor-result';
+
+export interface AnnotationElementReference {
+    readonly selector: string;
+    readonly tagName: string;
+    readonly text?: string;
+    readonly ariaLabel?: string;
+    readonly rect: { top: number; left: number; width: number; height: number };
+    /** Click position within the element (0..1). */
+    readonly xRatio: number;
+    readonly yRatio: number;
+    readonly documentXRatio: number;
+    readonly documentYRatio: number;
+    readonly pickedId?: string;
+    readonly domPath?: string;
+    readonly attributes?: ReadonlyArray<{ name: string; value: string }>;
+}
+
+export interface AnnotationPointPayload {
+    readonly version: 1;
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly route: string;
+    readonly pageUrl: string;
+    readonly element?: AnnotationElementReference;
+    readonly documentXRatio: number;
+    readonly documentYRatio: number;
+    readonly viewportWidth: number;
+    readonly viewportHeight: number;
+    readonly scrollX: number;
+    readonly scrollY: number;
+}
+
+export interface AnnotationReanchorItem {
+    readonly id: string;
+    readonly selector?: string;
+    readonly documentXRatio: number;
+    readonly documentYRatio: number;
+    readonly xRatio?: number;
+    readonly yRatio?: number;
+}
+
+export interface AnnotationReanchorResultItem {
+    readonly id: string;
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly unresolved?: boolean;
+}
+
 /** Stamp set on every DOM node we hand back to the parent so we can locate it again later. */
 export const PICKED_ATTRIBUTE = 'data-theia-mini-browser-picked';
 

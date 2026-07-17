@@ -71,9 +71,14 @@ import {
     type StickyComposerContextChipView,
 } from './qaap-sticky-composer-context-ui';
 import {
+    createComposerContextEntry,
     revokeComposerContextPreview,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
+import {
+    buildPreviewFeedbackAttachmentRequest,
+    findPreviewFeedbackEntryIndex,
+} from '../common/qaap-preview-feedback-context';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import {
@@ -2106,6 +2111,121 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         } = {},
     ): Promise<void> {
         await this.backgroundTaskUi.submitBackgroundAgentTask(project, draft, options);
+    }
+
+    /**
+     * Attach a context chip to the active composer (transcript if open, else sticky) without sending.
+     */
+    attachExternalComposerContext(args: {
+        readonly chipTitle: string;
+        readonly contextBody: string;
+        readonly dedupeKey: string;
+    }): boolean {
+        const project = this.resolveExternalComposerProject();
+        if (!project) {
+            return false;
+        }
+        const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
+        const entries = useTranscript
+            ? this.transcriptController.state.transcriptComposerContext
+            : this.stickyComposerContext;
+        const request = buildPreviewFeedbackAttachmentRequest(args);
+        const existingIndex = findPreviewFeedbackEntryIndex(entries, args.dedupeKey);
+        if (existingIndex >= 0) {
+            entries[existingIndex]!.request = request;
+            entries[existingIndex]!.displayName = args.chipTitle;
+        } else {
+            const entry = createComposerContextEntry(request);
+            entry.displayName = args.chipTitle;
+            entries.push(entry);
+        }
+        if (useTranscript) {
+            this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+        } else {
+            this.stickyComposerRenderUi.renderStickyComposer();
+        }
+        const input = this.root.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input-editor');
+        input?.focus();
+        return true;
+    }
+
+    /**
+     * Attach preview feedback to the current composer, then submit a message that includes
+     * that context to the active chat. Leaves unrelated composer draft text intact.
+     * On success, removes only the matching preview-feedback chip (dedupe).
+     */
+    async sendExternalComposerContext(args: {
+        readonly chipTitle: string;
+        readonly contextBody: string;
+        readonly dedupeKey: string;
+    }): Promise<boolean> {
+        if (!this.attachExternalComposerContext(args)) {
+            return false;
+        }
+        const project = this.resolveExternalComposerProject();
+        if (!project) {
+            return false;
+        }
+        const request = buildPreviewFeedbackAttachmentRequest(args);
+        const prompt = nls.localize(
+            'qaap/workHub/previewFeedbackSubmitPrompt',
+            'Please address the attached preview feedback.',
+        );
+        const summary = this.transcriptController.state.transcriptOpenSummary
+            ?? this.transcriptController.state.transcriptComposerSummary;
+        try {
+            if (summary && !isAgentsHubIdleConversationSummary(summary)) {
+                const selectedAgentId = this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
+                    project,
+                    summary,
+                );
+                const agentModel = this.transcriptComposerUi.resolveTranscriptComposerAgentModel(
+                    selectedAgentId,
+                    summary.cwd,
+                );
+                await this.submitTranscriptViaBackendConversation(project, summary, prompt, {
+                    selectedAgentId,
+                    variables: [request],
+                    ...(agentModel ? { agentModel } : {}),
+                });
+            } else {
+                const selectedAgentId = this.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project);
+                const agentModel = this.stickyComposerAgentsUi.resolveStickyComposerAgentModel(
+                    selectedAgentId,
+                    project,
+                );
+                await this.submitBackgroundAgentTask(project, prompt, {
+                    forceVps: true,
+                    openConversation: true,
+                    selectedAgentId,
+                    variables: [request],
+                    ...(agentModel ? { agentModel } : {}),
+                });
+            }
+        } catch {
+            // Keep the chip so the user can retry from the composer.
+            return false;
+        }
+        this.removeExternalPreviewFeedbackChip(args.dedupeKey);
+        return true;
+    }
+
+    protected removeExternalPreviewFeedbackChip(dedupeKey: string): void {
+        const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
+        const entries = useTranscript
+            ? this.transcriptController.state.transcriptComposerContext
+            : this.stickyComposerContext;
+        const existingIndex = findPreviewFeedbackEntryIndex(entries, dedupeKey);
+        if (existingIndex < 0) {
+            return;
+        }
+        const [removed] = entries.splice(existingIndex, 1);
+        revokeComposerContextPreview(removed);
+        if (useTranscript) {
+            this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+        } else {
+            this.stickyComposerRenderUi.renderStickyComposer();
+        }
     }
 
     /**

@@ -508,6 +508,8 @@ export interface EmbeddedAgentPreviewChromeOptions extends QaapAgentPreviewChrom
     readonly inspectorDeps?: QaapPreviewInspectorDeps;
     readonly onPickElement?: () => void;
     readonly onToggleInspector?: () => void;
+    readonly onAnnotate?: () => void;
+    readonly getAnnotationScope?: () => import('./qaap-preview-annotation-types').PreviewAnnotationScope | undefined;
 }
 
 export interface EmbeddedAgentPreviewChrome extends Disposable {
@@ -616,15 +618,32 @@ export function mountEmbeddedAgentPreviewChrome(
         surfaceHandle?.picker.connectInlineInspector(inlineInspector);
     }
 
+    const annotateHandler = (): void => {
+        if (surfaceHandle) {
+            surfaceHandle.picker.startAnnotateMode();
+            return;
+        }
+        options.onAnnotate?.();
+    };
     const editBtn = createPreviewEditButton({
         onSelectSelection: pickHandler,
+        onSelectAnnotate: annotateHandler,
         toDispose: disposables,
     });
     workbench.append(editBtn);
 
+    // Parent workbench under chrome before mounting annotate toolbar — otherwise
+    // ensureAnnotateToolbar cannot resolve `.qaap-agent-preview-embedded-toolbar`.
     toolbar.append(urlField, workbench);
-
     root.append(toolbar, body);
+
+    if (surfaceHandle) {
+        surfaceHandle.picker.setNotify(options.notify);
+        surfaceHandle.picker.ensureAnnotationController(frameSlot, workbench);
+        if (options.getAnnotationScope) {
+            surfaceHandle.picker.setAnnotationScopeProvider(options.getAnnotationScope);
+        }
+    }
 
     let currentUrl = normalizePreviewNavigateUrl(options.url);
     let previewController: QaapAgentPreviewChromeController | undefined;

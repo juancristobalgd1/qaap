@@ -4,6 +4,10 @@
 // *****************************************************************************
 
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
+export {
+    QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
+    type QaapAttachComposerContextArgs,
+} from './qaap-preview-feedback-context';
 
 /** Submit a prompt to the sticky-composer / Work Hub agent (not Theia Chat @coder). */
 export const QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND = 'qaap.workHub.submitComposerPrompt';

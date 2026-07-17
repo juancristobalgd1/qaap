@@ -83,6 +83,13 @@ export class QaapPreviewSurfaceRegistry {
         return matches.find(surface => surface.kind === 'mini-browser') ?? matches[0];
     }
 
+    getSurfaceForFrame(frame: HTMLIFrameElement | undefined): QaapPreviewSurfaceHandle | undefined {
+        if (!frame) {
+            return undefined;
+        }
+        return [...this.getConnectedSurfaces()].reverse().find(surface => surface.frame === frame);
+    }
+
     activateElementPicker(): { started: boolean; message: string } {
         const surface = this.getActiveSurface();
         if (!surface) {

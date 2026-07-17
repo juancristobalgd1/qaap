@@ -14,6 +14,10 @@ import {
     isPendingComposerContextArg,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
+import {
+    isPreviewFeedbackRequest,
+    QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
+} from '../common/qaap-preview-feedback-context';
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 
@@ -121,6 +125,14 @@ export function resolveStickyComposerContextChip(
     }
     if (request.variable.name === FILE_VARIABLE_NAME) {
         return resolveFileContextChip(request, labelProvider);
+    }
+    if (isPreviewFeedbackRequest(request)) {
+        return {
+            title: nls.localize('qaap/preview/feedbackChipFallback', 'Preview feedback'),
+            iconClasses: 'codicon codicon-comment',
+            kind: QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
+            attachmentKind: 'context',
+        };
     }
     const variable = request.variable;
     const title = (labelProvider?.getName(request) ?? variable.label ?? variable.name ?? '').trim();
