@@ -175,6 +175,11 @@ const QAAP_AGENT_AUTO_CONTINUE_ENABLED = !/^(0|false|off)$/i.test(process.env.QA
  */
 const MAX_LOOP_SPAWNS_PER_USER_MESSAGE = 4;
 
+interface PostUserMessageInternalOptions {
+    /** Keeps every backend-generated continuation charged to the original human turn. */
+    readonly autoContinueRootMessageId?: string;
+}
+
 /**
  * Persistent multi-turn conversations with the coding agent. Each user message spawns a one-shot
  * task on {@link QaapAgentTaskRunner} with the full transcript embedded in the prompt; when the
@@ -216,8 +221,6 @@ export class QaapAgentConversationStore {
     protected readonly teamSynthesisTriggeredForLeader = new Set<string>();
     /** Leader turns waiting for the in-flight agent reply before auto-synthesis can run. */
     protected readonly pendingTeamSynthesisForLeader = new Set<string>();
-    /** Per user turn: how many auto-continue nudges were sent after a thinking-only stop. */
-    protected readonly autoContinueCountByUserMessage = new Map<string, number>();
     /** Per user turn: model keys already attempted before a fallback retry. */
     protected readonly modelFallbackTriedByUserMessage = new Map<string, Set<string>>();
     /**
@@ -389,6 +392,7 @@ export class QaapAgentConversationStore {
         approvalPolicyId?: string,
         toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'],
         latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
+        internal?: PostUserMessageInternalOptions,
     ): QaapAgentConversation {
         let conv = this.conversations.get(id);
         if (!conv) {
@@ -412,6 +416,9 @@ export class QaapAgentConversationStore {
             role: 'user',
             content,
             createdAt: Date.now(),
+            ...(internal?.autoContinueRootMessageId
+                ? { autoContinueRootMessageId: internal.autoContinueRootMessageId }
+                : {}),
         };
         const messages = [...conv.messages, userMessage];
         let next: QaapAgentConversation = {
@@ -1724,7 +1731,7 @@ export class QaapAgentConversationStore {
             this.lastWireMessageById.delete(agentMessage.id);
             this.clearAgUiReducer(agentMessage.id);
         }
-        this.modelFallbackTriedByUserMessage.delete(userMessageId);
+        this.modelFallbackTriedByUserMessage.delete(this.resolveLoopBudgetKey(withReply, userMessageId));
         this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, withReply);
         if (blockedNeed !== undefined) {
             // The agent explicitly asked for the user — reclassify the task and never auto-continue
@@ -1754,6 +1761,19 @@ export class QaapAgentConversationStore {
         this.loopSpawnCountByUserMessage.set(userMessageId, (this.loopSpawnCountByUserMessage.get(userMessageId) ?? 0) + 1);
     }
 
+    /** Resolve every generated continuation in a chain back to the human-authored root turn. */
+    protected resolveLoopBudgetKey(conv: QaapAgentConversation, userMessageId: string): string {
+        const userMessage = conv.messages.find(message => message.id === userMessageId && message.role === 'user');
+        return userMessage?.autoContinueRootMessageId ?? userMessageId;
+    }
+
+    /** Persisted count so a backend restart cannot reset the per-chain auto-continue ceiling. */
+    protected countAutoContinueAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
+        return conv.messages.filter(message =>
+            message.role === 'user' && message.autoContinueRootMessageId === rootUserMessageId
+        ).length;
+    }
+
     protected maybeRetryTurnWithFallbackModel(
         conversationId: string,
         userMessageId: string,
@@ -1771,21 +1791,22 @@ export class QaapAgentConversationStore {
             && !agentTurnHasRetryableModelFailure(agentMessage)) {
             return false;
         }
-        if (!this.hasLoopSpawnBudget(userMessageId)) {
-            this.modelFallbackTriedByUserMessage.delete(userMessageId);
+        const loopBudgetKey = this.resolveLoopBudgetKey(conv, userMessageId);
+        if (!this.hasLoopSpawnBudget(loopBudgetKey)) {
+            this.modelFallbackTriedByUserMessage.delete(loopBudgetKey);
             return false;
         }
         const currentModel = conv.agentModel
             ?? conv.qaiqModel
             ?? resolveTaskAgentModel(task);
-        const tried = this.modelFallbackTriedByUserMessage.get(userMessageId) ?? new Set<string>();
+        const tried = this.modelFallbackTriedByUserMessage.get(loopBudgetKey) ?? new Set<string>();
         const currentKey = agentModelKey(currentModel);
         if (currentKey) {
             tried.add(currentKey);
         }
         const nextModel = resolveNextFallbackAgentModel(conv.agentId, currentModel, tried);
         if (!nextModel) {
-            this.modelFallbackTriedByUserMessage.delete(userMessageId);
+            this.modelFallbackTriedByUserMessage.delete(loopBudgetKey);
             return false;
         }
         const messages = conv.messages
@@ -1807,12 +1828,12 @@ export class QaapAgentConversationStore {
         } catch {
             return false;
         }
-        this.recordLoopSpawn(userMessageId);
+        this.recordLoopSpawn(loopBudgetKey);
         const nextKey = agentModelKey(nextModel);
         if (nextKey) {
             tried.add(nextKey);
         }
-        this.modelFallbackTriedByUserMessage.set(userMessageId, tried);
+        this.modelFallbackTriedByUserMessage.set(loopBudgetKey, tried);
         const messagesWithTask = retryConv.messages.map(message => message.id === userMessageId
             ? { ...message, taskId: spawned.id }
             : message);
@@ -1826,6 +1847,26 @@ export class QaapAgentConversationStore {
         });
         void this.persist();
         return true;
+    }
+
+    protected postAutoContinueMessage(
+        conversationId: string,
+        content: string,
+        conv: QaapAgentConversation,
+        rootUserMessageId: string,
+    ): QaapAgentConversation {
+        return this.postUserMessage(
+            conversationId,
+            content,
+            conv.agentId,
+            conv.agentModel ?? conv.qaiqModel,
+            conv.autoApprove,
+            conv.interactionModeId,
+            conv.approvalPolicyId,
+            conv.toolApprovalRules,
+            undefined,
+            { autoContinueRootMessageId: rootUserMessageId },
+        );
     }
 
     protected maybeAutoContinueIncompleteTurn(
@@ -1850,25 +1891,22 @@ export class QaapAgentConversationStore {
         if (!isIncompleteAgentTurn(userMessage.content, agentMessage)) {
             return;
         }
-        const attempts = this.autoContinueCountByUserMessage.get(userMessageId) ?? 0;
-        if (attempts >= 2 || !this.hasLoopSpawnBudget(userMessageId)) {
-            if (attempts >= 2 && messageRequestsDevPreview(userMessage.content)) {
+        const rootUserMessageId = this.resolveLoopBudgetKey(conv, userMessageId);
+        const rootUserMessage = conv.messages.find(message => message.id === rootUserMessageId && message.role === 'user') ?? userMessage;
+        const attempts = this.countAutoContinueAttempts(conv, rootUserMessageId);
+        if (attempts >= 2 || !this.hasLoopSpawnBudget(rootUserMessageId)) {
+            if (attempts >= 2 && messageRequestsDevPreview(rootUserMessage.content)) {
                 this.reportPreviewBootstrapFailure(conversationId, buildDevPreviewAutoContinueExhaustedReason());
             }
             return;
         }
-        this.autoContinueCountByUserMessage.set(userMessageId, attempts + 1);
-        this.recordLoopSpawn(userMessageId);
+        this.recordLoopSpawn(rootUserMessageId);
         try {
-            this.postUserMessage(
+            this.postAutoContinueMessage(
                 conversationId,
-                buildAgentAutoContinuePrompt(userMessage.content),
-                conv.agentId,
-                conv.agentModel ?? conv.qaiqModel,
-                conv.autoApprove,
-                conv.interactionModeId,
-                conv.approvalPolicyId,
-                conv.toolApprovalRules,
+                buildAgentAutoContinuePrompt(rootUserMessage.content),
+                conv,
+                rootUserMessageId,
             );
         } catch {
             /* turn already replaced or cancelled */

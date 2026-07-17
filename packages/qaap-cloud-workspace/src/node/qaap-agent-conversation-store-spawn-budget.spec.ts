@@ -4,13 +4,53 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { QaapAgentConversation, QaapAgentMessage } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 
 /** Exposes the shared loop-spawn budget helpers (no disk / DI needed for these). */
 class TestConversationStore extends QaapAgentConversationStore {
+    protected autoMessageSequence = 0;
+
     protected override async persist(): Promise<void> { /* no-op */ }
     protected override async restoreFromDisk(): Promise<void> { /* no-op */ }
     protected override startTurnWatchdog(): void { /* no-op */ }
+
+    protected override postAutoContinueMessage(
+        conversationId: string,
+        content: string,
+        conv: QaapAgentConversation,
+        rootUserMessageId: string,
+    ): QaapAgentConversation {
+        this.autoMessageSequence += 1;
+        const userMessage: QaapAgentMessage = {
+            id: `auto-user-${this.autoMessageSequence}`,
+            role: 'user',
+            content,
+            createdAt: this.autoMessageSequence * 2,
+            autoContinueRootMessageId: rootUserMessageId,
+        };
+        const agentMessage: QaapAgentMessage = {
+            id: `auto-agent-${this.autoMessageSequence}`,
+            role: 'agent',
+            content: 'Created the Vite project.',
+            createdAt: this.autoMessageSequence * 2 + 1,
+            segments: [{
+                type: 'tool',
+                toolUseId: `tool-${this.autoMessageSequence}`,
+                name: 'Bash',
+                args: JSON.stringify({ command: 'npm create vite@latest app -- --template react-ts' }),
+                finished: true,
+            }],
+        };
+        const next = {
+            ...conv,
+            status: 'idle' as const,
+            updatedAt: agentMessage.createdAt,
+            messages: [...conv.messages, userMessage, agentMessage],
+        };
+        this.conversations.set(conversationId, next);
+        return next;
+    }
 
     hasBudget(id: string): boolean {
         return (this as unknown as { hasLoopSpawnBudget(id: string): boolean }).hasLoopSpawnBudget(id);
@@ -18,6 +58,17 @@ class TestConversationStore extends QaapAgentConversationStore {
 
     record(id: string): void {
         (this as unknown as { recordLoopSpawn(id: string): void }).recordLoopSpawn(id);
+    }
+
+    seed(conversation: QaapAgentConversation): void {
+        this.conversations.set(conversation.id, conversation);
+    }
+
+    continueLatestTurn(conversationId: string): QaapAgentConversation {
+        const conversation = this.conversations.get(conversationId)!;
+        const userMessage = [...conversation.messages].reverse().find(message => message.role === 'user')!;
+        this.maybeAutoContinueIncompleteTurn(conversationId, conversation, userMessage.id);
+        return this.conversations.get(conversationId)!;
     }
 }
 
@@ -46,5 +97,48 @@ describe('QaapAgentConversationStore shared loop-spawn budget (#12)', () => {
         }
         expect(store.hasBudget('user-msg-a')).to.equal(false);
         expect(store.hasBudget('user-msg-b')).to.equal(true);
+    });
+
+    it('keeps generated continuations on one persisted root budget and preserves the original topic', () => {
+        const store = new TestConversationStore();
+        const prompt = 'Crea una landing page moderna para vinos Rioja, responsive, con hero, productos destacados, '
+            + 'sección de historia, formulario de contacto y diseño premium.';
+        const conversation: QaapAgentConversation = {
+            id: 'conversation-1',
+            cwd: '/tmp/rioja',
+            agentId: 'qaiq',
+            title: 'Rioja landing page',
+            status: 'idle',
+            createdAt: 0,
+            updatedAt: 1,
+            messages: [
+                { id: 'root-user', role: 'user', content: prompt, createdAt: 0 },
+                {
+                    id: 'root-agent',
+                    role: 'agent',
+                    content: 'Created the Vite project.',
+                    createdAt: 1,
+                    segments: [{
+                        type: 'tool',
+                        toolUseId: 'root-tool',
+                        name: 'Bash',
+                        args: JSON.stringify({ command: 'npm create vite@latest app -- --template react-ts' }),
+                        finished: true,
+                    }],
+                },
+            ],
+        };
+        store.seed(conversation);
+
+        store.continueLatestTurn(conversation.id);
+        store.continueLatestTurn(conversation.id);
+        const settled = store.continueLatestTurn(conversation.id);
+
+        const generated = settled.messages.filter(message => message.role === 'user' && message.autoContinueRootMessageId);
+        expect(generated).to.have.length(2);
+        expect(generated.map(message => message.autoContinueRootMessageId)).to.deep.equal(['root-user', 'root-user']);
+        expect(generated[1].content).to.equal(generated[0].content);
+        expect(generated.every(message => /hero/i.test(message.content))).to.equal(true);
+        expect(generated.some(message => /Topic:\s*continue/i.test(message.content))).to.equal(false);
     });
 });

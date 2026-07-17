@@ -67,6 +67,8 @@ export interface QaapAgentMessage {
     readonly createdAt: number;
     /** When set on a user message, points at the agent-task spawned for that turn. */
     readonly taskId?: string;
+    /** Original user turn that owns this backend-generated auto-continuation chain. */
+    readonly autoContinueRootMessageId?: string;
     /** When the user message's task ended unsuccessfully — short reason for the UI. */
     readonly error?: string;
 }
