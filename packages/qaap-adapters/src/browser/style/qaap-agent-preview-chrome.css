@@ -254,6 +254,51 @@ body.qaap-mod-history-resizing * {
   pointer-events: none;
 }
 
+.qaap-preview-edit-menu {
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--theia-menu-background, #252526);
+  border: 1px solid var(--theia-menu-border, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.qaap-preview-edit-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-menu-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-preview-edit-item-icon {
+  flex: 0 0 auto;
+  opacity: 0.9;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.qaap-preview-edit-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.qaap-preview-edit-item:hover {
+  background: var(--theia-menu-selectionBackground);
+}
+
 .qaap-agent-preview-overflow-menu {
   pointer-events: auto;
   touch-action: manipulation;

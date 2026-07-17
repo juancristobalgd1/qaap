@@ -27,7 +27,6 @@ export const ElementInspectorPanel: React.FC<ElementInspectorPanelProps> = ({ se
     return (
         <div className='theia-mini-browser-inspector__root'>
             <InspectorActions onCopySelector={onCopySelector} onAskAgent={onAskAgent} onGenerateVariant={onGenerateVariant} />
-            <ComponentsTree picked={picked} />
             <div className='theia-mini-browser-inspector__tabs' role='tablist'>
                 {(['design', 'css', 'html'] as const).map(id => (
                     <button
@@ -77,70 +76,6 @@ const InspectorEmpty: React.FC = () => (
         )}</p>
     </div>
 );
-
-const ComponentsTree: React.FC<{ picked: PickedElement }> = ({ picked }) => {
-    const chain = React.useMemo(() => [
-        ...[...picked.ancestors].reverse(),
-        { tagName: picked.tagName, id: picked.id, classes: picked.classes }
-    ], [picked]);
-    const [fullPath, setFullPath] = React.useState(false);
-    const collapsed = !fullPath && chain.length > 5;
-    const rows = React.useMemo(() => {
-        if (!collapsed) {
-            return chain.map((node, index) => ({ node, index, key: `${index}:${formatSelector(node)}`, omit: false }));
-        }
-        const head = chain[0];
-        const tail = chain.slice(-2);
-        const out: Array<{ node: typeof head; index: number; key: string; omit: boolean }> = [
-            { node: head, index: 0, key: `0:${formatSelector(head)}`, omit: false },
-            { node: head, index: -1, key: 'ellipsis', omit: true },
-            ...tail.map((node, i) => {
-                const realIdx = chain.length - 2 + i;
-                return { node, index: realIdx, key: `${realIdx}:${formatSelector(node)}`, omit: false };
-            })
-        ];
-        return out;
-    }, [chain, collapsed]);
-    return (
-        <div className='theia-mini-browser-inspector__section'>
-            <div className='theia-mini-browser-inspector__section-head'>
-                <div className='theia-mini-browser-inspector__section-title'>Components</div>
-                {chain.length > 5 ? (
-                    <button
-                        type='button'
-                        className='theia-mini-browser-inspector__path-toggle'
-                        onClick={() => setFullPath(f => !f)}
-                    >{fullPath ? 'Compact path' : 'Full path'}</button>
-                ) : undefined}
-            </div>
-            <ul className='theia-mini-browser-inspector__tree'>
-                {rows.map(({ node, index, key, omit }) => {
-                    if (omit) {
-                        return (
-                            <li key={key} className='theia-mini-browser-inspector__tree-item theia-mini-browser-inspector__tree-item--omit' aria-hidden>
-                                <span className='theia-mini-browser-inspector__tree-omit'>…</span>
-                            </li>
-                        );
-                    }
-                    const isLast = index === chain.length - 1;
-                    const label = formatSelector(node);
-                    const chevron = isLast ? codicon('chevron-down') : codicon('chevron-right');
-                    return (
-                        <li
-                            key={key}
-                            className={'theia-mini-browser-inspector__tree-item' + (isLast ? ' theia-mini-browser-inspector__tree-item--current' : '')}
-                            style={{ paddingLeft: `${10 + index * 14}px` }}
-                            title={label}
-                        >
-                            <span className={chevron + ' theia-mini-browser-inspector__tree-chevron'} />
-                            <span className='theia-mini-browser-inspector__tree-label'>{label}</span>
-                        </li>
-                    );
-                })}
-            </ul>
-        </div>
-    );
-};
 
 // ----- Design tab --------------------------------------------------------------------------
 

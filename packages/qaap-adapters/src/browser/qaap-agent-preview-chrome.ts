@@ -36,6 +36,7 @@ import {
     clampPreviewHistoryPanelWidth,
     type QaapPreviewHistoryEntry,
 } from './qaap-preview-browsing-history';
+import { createPreviewEditButton } from './qaap-preview-edit-menu';
 import {
     mountPreviewOverflowMenu,
     previewNotify,
@@ -619,16 +620,11 @@ export function mountEmbeddedAgentPreviewChrome(
         surfaceHandle?.picker.connectInlineInspector(inlineInspector);
     }
 
-    const pickBtn = document.createElement('button');
-    pickBtn.type = 'button';
-    pickBtn.title = nls.localize('theia/mini-browser/pickElement', 'Pick an element to send to chat');
-    pickBtn.classList.add('theia-mini-browser-workbench-button', ...codiconArray('inspect'));
-    disposables.push(addEventListener(pickBtn, 'click', (e: MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        pickHandler();
-    }));
-    workbench.append(pickBtn);
+    const editBtn = createPreviewEditButton({
+        onSelectSelection: pickHandler,
+        toDispose: disposables,
+    });
+    workbench.append(editBtn);
 
     const inspectorBtn = document.createElement('button');
     inspectorBtn.type = 'button';

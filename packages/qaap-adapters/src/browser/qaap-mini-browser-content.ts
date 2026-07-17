@@ -34,6 +34,7 @@ import {
     setPreviewInspectorPosition,
     wirePreviewInspectorResize,
 } from './qaap-preview-inline-inspector';
+import { createPreviewEditButton } from './qaap-preview-edit-menu';
 import {
     navigateExplicitPreviewUrl,
     QaapPreviewPortClaimService,
@@ -497,16 +498,11 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
     }
 
     protected createInspectButton(parent: HTMLElement): HTMLElement {
-        const button = this.createWorkbenchButton(
-            parent,
-            nls.localize('theia/mini-browser/pickElement', 'Pick an element to send to chat'),
-            'inspect'
-        );
-        this.toDispose.push(addEventListener(button, 'click', (e: MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.startElementPicker();
-        }));
+        const button = createPreviewEditButton({
+            onSelectSelection: () => this.startElementPicker(),
+            toDispose: this.toDispose,
+        });
+        parent.appendChild(button);
         return button;
     }
 
