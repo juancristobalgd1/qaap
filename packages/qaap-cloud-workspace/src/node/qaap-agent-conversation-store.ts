@@ -116,6 +116,7 @@ import {
     appendTraceCheckpointEvent,
     appendTracePreviewFailureEvent,
     appendTraceRunCancelledEvent,
+    appendTraceVerificationWarningEvent,
     agentMessageHasStructuredTrace,
     syncSettledTraceEventsOnMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
@@ -1592,7 +1593,9 @@ export class QaapAgentConversationStore {
                 || (streamingAgent?.traceEvents?.length ?? 0) > 0
             ));
         const structuredParsed = log && !skipLogReparse ? this.parseStructuredLog(conv.agentId, log) : undefined;
-        if (task.state !== 'completed') {
+        // 'completed_with_warnings' (clean exit, verification still red) is a delivered turn:
+        // it takes the success path below — with a warning trace instead of the failure flow.
+        if (task.state !== 'completed' && task.state !== 'completed_with_warnings') {
             let convForFailure = withUsageBaseline;
             let agentMessageForFailure = streamingAgent;
             if (agentMessageId && log && streamingAgent?.role === 'agent' && !agentMessageHasStructuredTrace(streamingAgent)) {
@@ -1695,6 +1698,9 @@ export class QaapAgentConversationStore {
             withReply = { ...withReply, checkpoints: [...(withReply.checkpoints ?? []), checkpoint] };
             withReply = this.appendCheckpointTrace(withReply, agentMessageId, checkpoint);
         }
+        if (task.state === 'completed_with_warnings') {
+            withReply = this.appendVerificationWarningTrace(withReply, agentMessageId, task);
+        }
         this.conversations.set(conversationId, withReply);
         const agentMessage = withReply.messages[withReply.messages.length - 1];
         if (agentMessage) {
@@ -1704,6 +1710,12 @@ export class QaapAgentConversationStore {
         }
         this.modelFallbackTriedByUserMessage.delete(userMessageId);
         this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, withReply);
+        if (task.state === 'completed_with_warnings') {
+            // The backend verification loop already spent its fix-turn budget on this turn; the
+            // text-heuristic auto-continue is blind to that verdict and would just re-prompt
+            // "keep going" on top of a known-red build. Leave the decision to the user.
+            return;
+        }
         this.maybeAutoContinueIncompleteTurn(conversationId, withReply, userMessageId);
     }
 
@@ -1996,6 +2008,36 @@ export class QaapAgentConversationStore {
             ...conv,
             messages: conv.messages.map(message => message.id === agentMessageId && message.role === 'agent'
                 ? appendTraceRunCancelledEvent(message, { reason })
+                : message),
+        };
+    }
+
+    /**
+     * Timeline note for a turn delivered with the backend verification still red
+     * ({@code task.state === 'completed_with_warnings'}). Falls back to the last message when the
+     * streaming agent message id is gone (e.g. the turn was backfilled from the log).
+     */
+    protected appendVerificationWarningTrace(
+        conv: QaapAgentConversation,
+        agentMessageId: string | undefined,
+        task: QaapAgentTask,
+    ): QaapAgentConversation {
+        const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
+        if (!targetId) {
+            return conv;
+        }
+        const verification = task.verification;
+        const summary = verification?.status === 'failed' ? verification.summary.trim() : '';
+        const attempts = verification?.status === 'failed' ? verification.attempts : 0;
+        const headline = attempts > 0
+            ? `Verification checks are still failing after ${attempts} fix ${attempts === 1 ? 'attempt' : 'attempts'}.`
+            : 'Verification checks are failing.';
+        const detail = summary.length > 600 ? `${summary.slice(0, 600)}…` : summary;
+        const reason = detail ? `${headline}\n${detail}` : headline;
+        return {
+            ...conv,
+            messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
+                ? appendTraceVerificationWarningEvent(message, reason)
                 : message),
         };
     }

@@ -2077,7 +2077,10 @@ export class QaapAgentTaskRunner {
                     this.tasks.set(task.id, { ...current, verification });
                 }
             }
-            this.finishTask(task.id, 'completed', exitCode);
+            // Blocking gate: a clean exit does not earn 'completed' while the repo's own
+            // checks are red — surface it as a distinct terminal state instead of a badge-only
+            // metadata so the conversation store and the UI can react to it.
+            this.finishTask(task.id, verification?.status === 'failed' ? 'completed_with_warnings' : 'completed', exitCode);
         } finally {
             this.activeVerificationPasses--;
         }
@@ -2682,6 +2685,19 @@ export class QaapAgentTaskRunner {
 
     /** Push the result to the user's devices — works with every tab closed. */
     protected async notifyCompletion(task: QaapAgentTask): Promise<void> {
+        if (task.state === 'completed_with_warnings') {
+            try {
+                await this.webPush.notify({
+                    title: 'Task finished — checks failing',
+                    body: `${task.title} completed, but verification checks are still failing.`,
+                    tag: `qaap-agent-task-${task.id}`,
+                    route: 'diff-review',
+                });
+            } catch {
+                /* push failure must not crash the runner */
+            }
+            return;
+        }
         const ok = task.state === 'completed';
         try {
             await this.webPush.notify({

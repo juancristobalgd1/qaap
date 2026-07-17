@@ -53,6 +53,29 @@ export function appendTracePreviewFailureEvent(
     };
 }
 
+/**
+ * Timeline note for a turn that finished but whose backend self-verification stayed red.
+ * Unlike {@link appendTracePreviewFailureEvent} it does NOT set {@code message.error}: the
+ * turn itself succeeded, so the transcript must not render it as a failed run.
+ */
+export function appendTraceVerificationWarningEvent(
+    message: QaapAgentMessageDTO,
+    reason: string,
+    options: { readonly at?: number } = {},
+): QaapAgentMessageDTO {
+    const at = options.at ?? Date.now();
+    const event: QaapTranscriptTraceEventDTO = {
+        type: 'error',
+        id: `verification-warning-${at}`,
+        message: reason,
+        startedAt: at,
+    };
+    return {
+        ...message,
+        traceEvents: [...(message.traceEvents ?? []), event],
+    };
+}
+
 export function appendTraceCheckpointEvent(
     message: QaapAgentMessageDTO,
     checkpoint: QaapConversationCheckpointDTO,

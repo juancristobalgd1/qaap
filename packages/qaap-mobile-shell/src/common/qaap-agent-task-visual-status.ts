@@ -21,6 +21,7 @@ export type QaapAgentTaskVisualStatusId =
     | 'changes'
     | 'pr-unknown'
     | 'verified'
+    | 'warnings'
     | 'background';
 
 export interface QaapAgentTaskVisualStatus {
@@ -158,6 +159,15 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         color: 'var(--theia-descriptionForeground)',
         gitPr: true,
     },
+    'warnings': {
+        id: 'warnings',
+        labelKey: 'qaap/mobileProjects/taskStateWarnings',
+        label: 'checks failing',
+        className: 'theia-mod-warnings',
+        iconClass: 'codicon-warning',
+        color: 'var(--theia-notificationsWarningIcon-foreground, #cca700)',
+        gitPr: false,
+    },
     'verified': {
         id: 'verified',
         labelKey: 'qaap/mobileProjects/taskStateVerified',
@@ -250,6 +260,11 @@ export function resolveQaapAgentTaskVisualStatus(
     // (unread + last message from the agent) and paint the same glyph as an ordinary unread reply.
     if (state === 'failed' || state === 'interrupted' || (summary && isFailedRunSummary(summary))) {
         return STATUS_BY_ID['failed'];
+    }
+    // Checked before the Git/PR resolution below: a task with red local verification almost
+    // always has uncommitted changes, and the generic 'changes' chip would mask the warning.
+    if (state === 'completed_with_warnings') {
+        return STATUS_BY_ID['warnings'];
     }
     if (state === 'queued') {
         return STATUS_BY_ID['queued'];

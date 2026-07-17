@@ -15,6 +15,11 @@ export type QaapAgentTaskState =
     | 'running'
     /** Finished with exit code 0. */
     | 'completed'
+    /**
+     * Finished with exit code 0, but the backend self-verification (typecheck/build/test)
+     * was still failing after the fix-turn budget — see {@link QaapAgentTask.verification}.
+     */
+    | 'completed_with_warnings'
     /** Finished with a non-zero exit code or failed to start. */
     | 'failed'
     /** The process was lost (e.g. the backend restarted while it ran). */

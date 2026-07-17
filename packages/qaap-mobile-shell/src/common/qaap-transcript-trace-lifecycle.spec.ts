@@ -8,6 +8,7 @@ import {
     agentMessageHasStructuredTrace,
     appendTraceCheckpointEvent,
     appendTraceRunCancelledEvent,
+    appendTraceVerificationWarningEvent,
     syncSettledTraceEventsOnMessage,
 } from './qaap-transcript-trace-lifecycle';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
@@ -36,6 +37,21 @@ describe('qaap-transcript-trace-lifecycle', () => {
             type: 'run_cancelled',
             message: 'Turn cancelled.',
         });
+    });
+
+    it('appendTraceVerificationWarningEvent appends an error row without failing the turn', () => {
+        const next = appendTraceVerificationWarningEvent(
+            agentMessage({ content: 'done' }),
+            'Verification checks are still failing after 2 fix attempts.',
+        );
+        expect(next.traceEvents).to.have.length(1);
+        expect(next.traceEvents?.[0]).to.deep.include({
+            type: 'error',
+            message: 'Verification checks are still failing after 2 fix attempts.',
+        });
+        // Unlike a preview failure, the turn itself succeeded — message.error must stay unset.
+        expect(next.error).to.equal(undefined);
+        expect(next.content).to.equal('done');
     });
 
     it('appendTraceCheckpointEvent appends a checkpoint row once', () => {

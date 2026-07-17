@@ -13,6 +13,9 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     public runVerify(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {
         return this.verifySuccessfulAgentTask(task);
     }
+    public runGate(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
+        return this.finishSuccessfulTaskAfterVerification(task, exitCode);
+    }
 }
 
 const TASK: QaapAgentTask = {
@@ -126,5 +129,76 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         expect(result?.status).to.equal('failed');
         expect(result && 'summary' in result ? result.summary : '').to.contain('did not complete');
         expect(fixTurns()).to.equal(0);
+    });
+});
+
+/**
+ * Drives `finishSuccessfulTaskAfterVerification` with a stubbed verification loop, capturing the
+ * terminal state handed to `finishTask` — the blocking gate under test.
+ */
+function makeGateRunner(
+    verify: () => Promise<QaapAgentTaskVerification | undefined>,
+    overrides: Partial<Record<string, unknown>> = {},
+): { runner: TestableQaapAgentTaskRunner; tasks: Map<string, QaapAgentTask>; finished: () => { state?: string; exitCode?: number } } {
+    const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+    const tasks = new Map<string, QaapAgentTask>([[TASK.id, { ...TASK }]]);
+    const finished: { state?: string; exitCode?: number } = {};
+    Object.assign(runner, {
+        tasks,
+        activeVerificationPasses: 0,
+        maxConcurrentVerificationPasses: () => 4,
+        verifySuccessfulAgentTask: verify,
+        finishTask: (id: string, state: string, exitCode: number | undefined) => {
+            finished.state = state;
+            finished.exitCode = exitCode;
+            return tasks.get(id);
+        },
+        ...overrides,
+    });
+    return { runner, tasks, finished: () => finished };
+}
+
+describe('QaapAgentTaskRunner verification blocking gate', () => {
+
+    it("finishes as 'completed_with_warnings' when verification failed", async () => {
+        const { runner, tasks, finished } = makeGateRunner(async () =>
+            ({ status: 'failed', command: 'npm run build', attempts: 2, summary: 'npm run build exited with code 1' }));
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed_with_warnings');
+        expect(finished().exitCode).to.equal(0);
+        expect(tasks.get(TASK.id)?.verification?.status).to.equal('failed');
+    });
+
+    it("finishes as 'completed' when verification passed", async () => {
+        const { runner, tasks, finished } = makeGateRunner(async () =>
+            ({ status: 'passed', command: 'npm run build', attempts: 0 }));
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed');
+        expect(tasks.get(TASK.id)?.verification?.status).to.equal('passed');
+    });
+
+    it("finishes as 'completed' when verification was skipped (no edits / no scripts)", async () => {
+        const { runner, tasks, finished } = makeGateRunner(async () => undefined);
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed');
+        expect(tasks.get(TASK.id)?.verification).to.equal(undefined);
+    });
+
+    it("degrades to 'completed_with_warnings' when the verification pass itself crashes", async () => {
+        const { runner, finished } = makeGateRunner(async () => {
+            throw new Error('spawn ENOMEM');
+        });
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed_with_warnings');
+    });
+
+    it("completes without verification when the concurrent-verification cap is full", async () => {
+        const { runner, tasks, finished } = makeGateRunner(
+            async () => ({ status: 'failed', command: 'npm run build', attempts: 2, summary: 'never called' }),
+            { activeVerificationPasses: 4 },
+        );
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed');
+        expect(tasks.get(TASK.id)?.verification).to.equal(undefined);
     });
 });

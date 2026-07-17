@@ -112,7 +112,9 @@ export function areAllSubtasksSettled(subtasks: readonly Pick<TeamTaskParentRef,
 }
 
 export function countFailedSubtasks(subtasks: readonly Pick<TeamTaskParentRef, 'state'>[]): number {
-    return subtasks.filter(task => task.state === 'failed' || task.state === 'interrupted').length;
+    // 'completed_with_warnings' counts as failed here on purpose: the leader synthesizing the
+    // sub-task results must know that a delegated change left the repo's checks red.
+    return subtasks.filter(task => task.state === 'failed' || task.state === 'interrupted' || task.state === 'completed_with_warnings').length;
 }
 
 export function buildTeamSynthesisUserMessage(subtaskCount: number, failedCount: number): string {
