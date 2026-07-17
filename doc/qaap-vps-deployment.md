@@ -34,10 +34,10 @@ Edit `.env`:
 | `QAAP_GITHUB_CLIENT_ID` / `SECRET` | from GitHub OAuth app | Login (or `QAAP_SKIP_AUTH=true` for private labs) |
 | `OPENROUTER_API_KEY` | `sk-or-…` | Powers `@qaiq` when no model is set in Settings |
 | `QAAP_DEFAULT_AGENT` | `qaiq` | Default agent (already the image default) |
-| `CODEX_CLI_VERSION` | `latest` | Codex CLI version installed during Docker build |
-| `CLAUDE_CODE_VERSION` | `latest` | Claude Code CLI version installed during Docker build |
-| `ANTIGRAVITY_CLI_VERSION` | `latest` | Antigravity CLI version installed during Docker build |
-| `OPENCODE_CLI_VERSION` | `latest` | OpenCode CLI (`opencode-ai`) installed during Docker build |
+| `CODEX_CLI_VERSION` | `0.144.5` | Codex CLI version for a source build |
+| `CLAUDE_CODE_VERSION` | `latest` | Claude Code CLI version for a source build |
+| `ANTIGRAVITY_CLI_VERSION` | `latest` | Antigravity CLI version for a source build |
+| `OPENCODE_CLI_VERSION` | `latest` | OpenCode CLI (`opencode-ai`) version for a source build |
 | `COPILOT_CLI_VERSION` | `latest` | GitHub Copilot CLI (`@github/copilot`) installed during Docker build |
 
 Open the firewall port (example with UFW):
@@ -86,7 +86,7 @@ docker compose up --build -d
 docker compose logs -f theia
 ```
 
-## Automated deploy (GitHub Actions + Cursor)
+## Automated deploy (GitHub Actions + GHCR)
 
 One-time setup on your laptop:
 
@@ -113,7 +113,17 @@ Follow the printed steps:
 After secrets exist:
 
 - Every push to **`master`** (except docs-only) runs **Actions → Qaap VPS deploy**.
+- The workflow runs the Rioja smoke gate, builds the production image once on GitHub's runner,
+  pushes a private SHA-tagged image to GHCR, and deploys its immutable digest on the VPS.
+- CI uses the version defaults committed in `Dockerfile`; VPS `.env` build arguments apply only to
+  the documented source-build fallback.
+- The deploy job lends its short-lived `GITHUB_TOKEN` to the SSH process only for `docker pull`,
+  then logs out from GHCR. No persistent GHCR PAT is required on the VPS.
 - Manual run: **Actions → Qaap VPS deploy → Run workflow** (pick branch / `--no-cache`).
+
+The GHCR package remains private by default. Keep it private: the runtime image contains the built
+application and source tree. GitHub links the package to this repository through the
+`org.opencontainers.image.source` label.
 
 Remote update from your machine:
 
@@ -217,11 +227,11 @@ Pin the QAIQ fork revision:
 docker compose build --build-arg QAIQ_REF=v0.15.0-qaap.1
 ```
 
-Pin agent CLI versions, or leave them as `latest` in `.env` to resolve current releases on a
-fresh VPS build:
+Pin agent CLI versions for reproducible source builds. Codex is deliberately pinned because a
+cached Docker layer cannot detect that the npm dist-tag `latest` moved:
 
 ```bash
-CODEX_CLI_VERSION=0.135.0
+CODEX_CLI_VERSION=0.144.5
 CLAUDE_CODE_VERSION=2.1.159
 ANTIGRAVITY_CLI_VERSION=latest
 ```

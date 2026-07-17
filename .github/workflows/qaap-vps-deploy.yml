@@ -1,4 +1,4 @@
-# Deploy Qaap to the production VPS over SSH (Docker Compose rebuild).
+# Build Qaap once in CI, publish it to GHCR, then pull it on the production VPS over SSH.
 # One-time setup: doc/qaap-vps-deployment.md → "Automated deploy"
 name: Qaap VPS deploy
 
@@ -48,6 +48,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.sha }}
 
       - name: Use Node.js 24.x
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
@@ -126,11 +128,94 @@ jobs:
             kill "$(cat test-results/browser-server.pid)" 2>/dev/null || true
           fi
 
+  publish_image:
+    name: Publish immutable GHCR image
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    needs: gate
+    # Publish only after the gate passed, or after an explicit emergency skip. Failed gates never
+    # produce a deployable image.
+    if: >-
+      always()
+      && github.repository == 'juancristobalgd1/qaap'
+      && needs.gate.result != 'failure'
+      && needs.gate.result != 'cancelled'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.published.outputs.ref }}
+      source_sha: ${{ steps.source.outputs.sha }}
+      source_short_sha: ${{ steps.source.outputs.short_sha }}
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout deploy source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.sha }}
+
+      - name: Resolve immutable source and image tag
+        id: source
+        shell: bash
+        run: |
+          SOURCE_SHA="$(git rev-parse HEAD)"
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SOURCE_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          echo "tag=${REGISTRY}/${IMAGE_NAME}:${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve QAIQ revision
+        id: qaiq
+        shell: bash
+        run: |
+          QAIQ_SHA="$(git ls-remote https://github.com/juancristobalgd1/qaiq.git refs/heads/main | cut -f1)"
+          if [ -z "$QAIQ_SHA" ]; then
+            echo "Could not resolve QAIQ main" >&2
+            exit 1
+          fi
+          echo "sha=$QAIQ_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.source.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+          build-args: |
+            QAAP_BUILD_SHA=${{ steps.source.outputs.short_sha }}
+            CACHE_BUST=${{ steps.qaiq.outputs.sha }}
+          no-cache: ${{ github.event.inputs.no_cache == 'true' }}
+          cache-from: type=gha,scope=qaap-production
+          cache-to: type=gha,mode=max,scope=qaap-production,ignore-error=true
+
+      - name: Export immutable image reference
+        id: published
+        shell: bash
+        run: echo "ref=${{ steps.source.outputs.tag }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-22.04
     timeout-minutes: 90
-    needs: gate
+    needs: [gate, publish_image]
     # Deploy when the gate passed, or when it was intentionally skipped via workflow_dispatch.
     # A failed/cancelled gate blocks the deploy.
     if: >-
@@ -138,6 +223,10 @@ jobs:
       && github.repository == 'juancristobalgd1/qaap'
       && needs.gate.result != 'failure'
       && needs.gate.result != 'cancelled'
+      && needs.publish_image.result == 'success'
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - name: Skip when VPS secrets are not configured
@@ -153,25 +242,31 @@ jobs:
       - name: Deploy over SSH
         if: steps.ready.outputs.configured == 'true'
         uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+          QAAP_DEPLOY_IMAGE: ${{ needs.publish_image.outputs.image }}
+          QAAP_DEPLOY_SHA: ${{ needs.publish_image.outputs.source_sha }}
         with:
           host: ${{ secrets.QAAP_VPS_HOST }}
           username: ${{ secrets.QAAP_VPS_USER }}
           key: ${{ secrets.QAAP_VPS_SSH_KEY }}
           port: ${{ secrets.QAAP_VPS_SSH_PORT }}
           command_timeout: 80m
+          envs: GHCR_USERNAME,GHCR_TOKEN,QAAP_DEPLOY_IMAGE,QAAP_DEPLOY_SHA
           script: |
             set -euo pipefail
             REPO_DIR="${{ secrets.QAAP_VPS_REPO_DIR || '/opt/qaap' }}"
             BRANCH="${{ github.event.inputs.branch || 'master' }}"
-            NO_CACHE_FLAG=""
-            if [ "${{ github.event.inputs.no_cache }}" = "true" ]; then
-              NO_CACHE_FLAG="--no-cache"
-            fi
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
             cd "$REPO_DIR"
             git fetch origin
-            git checkout "$BRANCH"
-            git pull --ff-only origin "$BRANCH"
-            ./scripts/qaap-vps-update.sh --branch "$BRANCH" $NO_CACHE_FLAG
+            git checkout --detach "$QAAP_DEPLOY_SHA"
+            ./scripts/qaap-vps-update.sh \
+              --branch "$BRANCH" \
+              --revision "$QAAP_DEPLOY_SHA" \
+              --image "$QAAP_DEPLOY_IMAGE"
 
       - name: Verify public endpoint
         if: steps.ready.outputs.configured == 'true'
@@ -202,7 +297,7 @@ jobs:
           # container is the new build (an image-cache miss, a compose no-op, or a user
           # testing mid-rebuild all bit us in practice). The backend bakes QAAP_BUILD_SHA
           # into the image and serves it at /qaap/api/auth/config; assert it is a prefix
-          # of the commit this workflow deployed.
+          # of the exact source revision baked into the GHCR image.
           if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
             echo "QAAP_VPS_PUBLIC_URL not set — skip build check"
             exit 0
@@ -212,11 +307,9 @@ jobs:
             echo "::warning::Backend did not report a build SHA (pre-QAAP_BUILD_SHA image?) — skipping assertion this once."
             exit 0
           fi
-          # The VPS script pulls the CURRENT master tip, which may already be ahead of the
-          # commit that triggered this run (queued pushes) — accept either.
-          TIP="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/master | cut -f1)"
-          echo "deployed=$DEPLOYED triggering=${GITHUB_SHA} master-tip=${TIP}"
-          case "$GITHUB_SHA $TIP" in
-            "$DEPLOYED"*|*" $DEPLOYED"*) echo "OK: serving container runs the pushed commit (or a newer master tip)." ;;
-            *) echo "::error::Deployed build $DEPLOYED matches neither the pushed commit nor the current master tip — the serving container is stale."; exit 1 ;;
+          EXPECTED="${{ needs.publish_image.outputs.source_sha }}"
+          echo "deployed=$DEPLOYED expected=$EXPECTED image=${{ needs.publish_image.outputs.image }}"
+          case "$EXPECTED" in
+            "$DEPLOYED"*) echo "OK: serving container runs the exact GHCR source revision." ;;
+            *) echo "::error::Deployed build $DEPLOYED does not match GHCR source $EXPECTED."; exit 1 ;;
           esac

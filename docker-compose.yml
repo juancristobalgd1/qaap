@@ -9,6 +9,9 @@
 
 services:
   theia:
+    # CI deploys set this to an immutable GHCR tag+digest. Local/VPS source builds keep the
+    # explicit local tag and continue to use the build block below.
+    image: ${QAAP_THEIA_IMAGE:-qaap-theia:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -16,7 +19,7 @@ services:
         QAAP_IDE_PORT: ${THEIA_PORT:-4873}
         # Set by scripts/qaap-vps-update.sh to the deployed commit's short SHA.
         QAAP_BUILD_SHA: ${QAAP_BUILD_SHA:-dev}
-        CODEX_CLI_VERSION: ${CODEX_CLI_VERSION:-latest}
+        CODEX_CLI_VERSION: ${CODEX_CLI_VERSION:-0.144.5}
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
         ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-latest}
         OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-latest}
