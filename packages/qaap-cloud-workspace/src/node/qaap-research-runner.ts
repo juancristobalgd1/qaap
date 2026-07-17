@@ -337,6 +337,10 @@ export class QaapResearchRunner {
             realChangeFingerprint: '',
             phase: 'propose',
             metrics: [],
+            // Capture HEAD before the agent runs. Besides giving each round a truthful baseline,
+            // this lets the commit phase detect an agent that ignored the prompt and committed
+            // its proposal itself instead of leaving the change for Qaap's audit commit.
+            baselineSha: this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined,
         };
         this.store.upsertRecord(goal.cwd, skeleton);
         await this.runPropose(goal, skeleton, {});
@@ -620,11 +624,15 @@ export class QaapResearchRunner {
     /** Every round is one commit on `qaap/research/<goalId>`, whether or not the agent's proposal
      *  parsed — the fallback path still commits whatever the agent changed. */
     protected async commitRound(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
-        const { sha, baselineSha } = this.commitRoundChanges(goal, record);
+        const { sha, baselineSha, adoptedAgentCommits } = this.commitRoundChanges(goal, record);
         const committed: ResearchExperimentRecord = {
             ...record,
             sha,
             baselineSha,
+            notes: adoptedAgentCommits
+                ? this.appendNote(record.notes,
+                    `Agent advanced HEAD by ${adoptedAgentCommits} commit(s); adopted the resulting HEAD as the round audit instead of creating a duplicate commit.`)
+                : record.notes,
             phase: goal.runCommand ? 'run' : 'measure',
         };
         this.store.upsertRecord(goal.cwd, committed);
@@ -635,9 +643,27 @@ export class QaapResearchRunner {
         }
     }
 
-    protected commitRoundChanges(goal: ResearchGoal, record: ResearchExperimentRecord): { sha?: string; baselineSha?: string } {
+    protected commitRoundChanges(goal: ResearchGoal, record: ResearchExperimentRecord): {
+        sha?: string;
+        baselineSha?: string;
+        adoptedAgentCommits?: number;
+    } {
         const branch = `qaap/research/${goal.id}`;
-        const baselineSha = this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined;
+        const baselineSha = record.baselineSha ?? (this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined);
+        if (baselineSha) {
+            const agentCommitCountResult = this.runGit(goal.cwd, ['rev-list', '--count', `${baselineSha}..HEAD`]);
+            const agentCommitCount = agentCommitCountResult.ok && /^\d+$/.test(agentCommitCountResult.stdout)
+                ? Number(agentCommitCountResult.stdout)
+                : 0;
+            if (agentCommitCount > 0) {
+                // The agent violated the prompt and committed on its own. Preserve that history
+                // as the round audit instead of stacking Qaap's otherwise-automatic commit on top
+                // of it. This is deliberately non-destructive: no reset/rewrite of agent work.
+                this.runGit(goal.cwd, ['checkout', '-B', branch]);
+                const sha = this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined;
+                return { sha, baselineSha, adoptedAgentCommits: agentCommitCount };
+            }
+        }
         this.runGit(goal.cwd, ['checkout', '-B', branch]);
         // Exclude the ledger: it is runner state, not experiment content, and must never end up in
         // a round's commit on the research branch (see LEDGER_PATHSPEC_EXCLUDE).
@@ -657,15 +683,20 @@ export class QaapResearchRunner {
      * hours-long runCommand.
      */
     protected async discardBrokenRound(goal: ResearchGoal, record: ResearchExperimentRecord, reason: string): Promise<void> {
-        const { sha, baselineSha } = this.commitRoundChanges(goal, record);
+        const { sha, baselineSha, adoptedAgentCommits } = this.commitRoundChanges(goal, record);
         const failed: ResearchExperimentRecord = {
             ...record,
             sha,
             baselineSha,
             phase: 'done',
             verdict: 'failed',
-            notes: this.appendNote(record.notes,
-                `Change-quality gate: ${reason} Skipped runCommand/measure; round committed and reverted.`),
+            notes: this.appendNote(
+                adoptedAgentCommits
+                    ? this.appendNote(record.notes,
+                        `Agent advanced HEAD by ${adoptedAgentCommits} commit(s); adopted the resulting HEAD as the round audit instead of creating a duplicate commit.`)
+                    : record.notes,
+                `Change-quality gate: ${reason} Skipped runCommand/measure; round committed and reverted.`,
+            ),
             finishedAt: Date.now(),
         };
         this.store.upsertRecord(goal.cwd, failed);

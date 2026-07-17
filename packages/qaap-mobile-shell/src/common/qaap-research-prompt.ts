@@ -79,6 +79,8 @@ function renderConstraintsSection(): string {
         '',
         '- Do not modify the metric command or the evaluation set — they must stay comparable across rounds.',
         '- Do not edit the experiment ledger file — it is written by the runner, not the agent.',
+        '- Do not create git commits or switch, reset, or rewrite branches. Leave your proposed file changes '
+        + 'uncommitted: Qaap owns the research branch and creates the round audit commit.',
         '- Do not launch the long-running training/run command yourself. Qaap runs it for you: your shell '
         + 'tools time out after roughly 30 seconds, far too short for the actual work.',
     ].join('\n');

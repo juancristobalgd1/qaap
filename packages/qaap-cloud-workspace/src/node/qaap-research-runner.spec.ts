@@ -267,6 +267,41 @@ describe('QaapResearchRunner state machine', () => {
         expect(records[0].sha).to.equal('sha-2'); // baseline (sha-1) captured, then the round's commit (sha-2)
     });
 
+    it('adopts an agent-created commit instead of stacking a duplicate round commit on top', async () => {
+        const store = new FakeResearchStore();
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({ metrics: [METRIC] });
+        store.seedGoal(goal);
+        taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.75', stderr: '', timedOut: false }];
+
+        const gitCalls: Array<readonly string[]> = [];
+        let revParseCalls = 0;
+        const runner = makeRunner(store, taskRunner);
+        Object.assign(runner, {
+            runGit: (_cwd: string, args: readonly string[]) => {
+                gitCalls.push([...args]);
+                if (args[0] === 'rev-parse') {
+                    revParseCalls++;
+                    return { stdout: revParseCalls === 1 ? 'sha-baseline' : 'sha-agent', ok: true };
+                }
+                if (args[0] === 'rev-list') {
+                    return { stdout: '1', ok: true };
+                }
+                return { stdout: '', ok: true };
+            },
+        });
+
+        const promise = runner.callStartNewRound(goal, 1);
+        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ batch_size: 4 }));
+        taskRunner.finishTask(taskRunner.createdTasks[0].id);
+        await promise;
+
+        const [record] = store.readLedgerForGoal(goal);
+        expect(record).to.deep.include({ baselineSha: 'sha-baseline', sha: 'sha-agent', phase: 'done' });
+        expect(record.notes).to.contain('adopted the resulting HEAD');
+        expect(gitCalls.some(args => args[0] === 'commit')).to.equal(false);
+    });
+
     it('discards a completed_with_warnings round: commit + revert, cheap failed verdict, no measure', async () => {
         const store = new FakeResearchStore();
         const taskRunner = new FakeTaskRunner();

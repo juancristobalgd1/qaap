@@ -80,11 +80,13 @@ describe('qaap-research-prompt', () => {
         expect(prompt).to.contain('Exactly one lever');
     });
 
-    it('includes the constraints: no touching metric/eval, no editing the ledger, no launching training itself', () => {
+    it('includes the constraints: no touching metric/eval, ledger or git history, and no launching training itself', () => {
         const prompt = buildResearchRoundPrompt(goal, []);
         expect(prompt).to.match(/metric command/i);
         expect(prompt).to.match(/evaluation set/i);
         expect(prompt).to.match(/ledger/i);
+        expect(prompt).to.match(/do not create git commits/i);
+        expect(prompt).to.match(/leave your proposed file changes uncommitted/i);
         expect(prompt).to.match(/do not launch/i);
         expect(prompt).to.match(/30 second/i);
     });
