@@ -58,9 +58,10 @@ class FakeTaskRunner {
         this.logs.set(taskId, log);
     }
 
-    /** Fires an `onDidChangeTask` completion for `taskId`, as the real runner does when a task settles. */
-    finishTask(taskId: string, state: QaapAgentTask['state'] = 'completed'): void {
-        const task: QaapAgentTask = { id: taskId, title: '', command: '', cwd: '/repo', state, createdAt: 0 };
+    /** Fires an `onDidChangeTask` completion for `taskId`, as the real runner does when a task settles.
+     *  `extra` merges additional task fields (e.g. `verification`/`review`) into the settled task. */
+    finishTask(taskId: string, state: QaapAgentTask['state'] = 'completed', extra: Partial<QaapAgentTask> = {}): void {
+        const task: QaapAgentTask = { id: taskId, title: '', command: '', cwd: '/repo', state, createdAt: 0, ...extra };
         for (const listener of [...this.listeners]) {
             listener({ type: state === 'cancelled' ? 'cancelled' : 'completed', task });
         }
@@ -264,6 +265,70 @@ describe('QaapResearchRunner state machine', () => {
         expect(records[0]).to.deep.include({ phase: 'done', verdict: 'improved', lever: 'learning_rate' });
         expect(records[0].metrics).to.deep.equal([{ name: 'accuracy', value: 0.75, direction: 'max' }]);
         expect(records[0].sha).to.equal('sha-2'); // baseline (sha-1) captured, then the round's commit (sha-2)
+    });
+
+    it('discards a completed_with_warnings round: commit + revert, cheap failed verdict, no measure', async () => {
+        const store = new FakeResearchStore();
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({ metrics: [METRIC] });
+        store.seedGoal(goal);
+
+        const runner = makeRunner(store, taskRunner);
+        const promise = runner.callStartNewRound(goal, 1);
+        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+        taskRunner.finishTask(taskRunner.createdTasks[0].id, 'completed_with_warnings', {
+            verification: { status: 'failed', command: 'npm run build', attempts: 2, summary: 'npm run build exited with code 1.' },
+        });
+        await promise;
+
+        const [record] = store.readLedgerForGoal(goal);
+        expect(record).to.deep.include({ phase: 'done', verdict: 'failed', gateVerification: 'failed', reverted: true });
+        expect(record.notes).to.include('npm run build exited with code 1.');
+        expect(record.sha).to.equal('sha-2');
+        const commands = taskRunner.genericCommandCalls.map(call => call.command).join('\n');
+        expect(commands).to.include('git revert');
+        expect(commands).not.to.include('python measure.py');
+    });
+
+    it('treats a blocked-sentinel propose turn as an infra failure and never commits or measures', async () => {
+        const store = new FakeResearchStore();
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({ metrics: [METRIC] });
+        store.seedGoal(goal);
+
+        const runner = makeRunner(store, taskRunner);
+        const promise = runner.callStartNewRound(goal, 1);
+        taskRunner.setLog(taskRunner.createdTasks[0].id,
+            'I compared the datasets.\n@@QAAP:BLOCKED@@ Which dataset should the baseline use?');
+        taskRunner.finishTask(taskRunner.createdTasks[0].id);
+        await promise;
+
+        const [record] = store.readLedgerForGoal(goal);
+        expect(record).to.deep.include({ phase: 'done', verdict: 'failed' });
+        expect(record.notes).to.include('blocked on input only a human can provide');
+        expect(record.notes).to.include('Which dataset should the baseline use?');
+        expect(record.sha).to.equal(undefined);
+        expect(taskRunner.genericCommandCalls).to.have.lengthOf(0);
+    });
+
+    it('mirrors a passing change-quality gate onto the ledger row', async () => {
+        const store = new FakeResearchStore();
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({ metrics: [METRIC] });
+        store.seedGoal(goal);
+        taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.75', stderr: '', timedOut: false }];
+
+        const runner = makeRunner(store, taskRunner);
+        const promise = runner.callStartNewRound(goal, 1);
+        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+        taskRunner.finishTask(taskRunner.createdTasks[0].id, 'completed', {
+            verification: { status: 'passed', command: 'npm run build', attempts: 0 },
+            review: { status: 'passed', reason: 'matches the hypothesis', agentId: 'qaiq' },
+        });
+        await promise;
+
+        const [record] = store.readLedgerForGoal(goal);
+        expect(record).to.deep.include({ verdict: 'improved', gateVerification: 'passed', gateReview: 'passed' });
     });
 
     it('passes the goal\'s explicit agentModel to the propose task, so it wins over Settings-alias routing', async () => {

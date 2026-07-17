@@ -64,6 +64,14 @@ export interface ResearchExperimentRecord {
     readonly delta?: number;
     readonly bestSoFar?: number;
     readonly reverted?: boolean;
+    /**
+     * Change-quality gate outcome of the propose turn's agent task (verification scripts +
+     * fix-turns, and the independent adversarial review), mirrored from the task by the runner.
+     * Local string literals on purpose — mobile-shell must not import cloud-workspace types
+     * (package cycle; same pattern as `MobileProjectTaskVerification`).
+     */
+    readonly gateVerification?: 'passed' | 'failed' | 'skipped';
+    readonly gateReview?: 'passed' | 'failed' | 'inconclusive';
     readonly notes?: string;
     readonly runAttempts?: number;
     /**

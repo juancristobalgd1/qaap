@@ -29,6 +29,7 @@ import { realChangeFingerprint, type RealFileChange } from '@theia/qaap-mobile-s
 import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
 import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
 import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
+import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';
 
@@ -409,6 +410,17 @@ export class QaapResearchRunner {
         // present as a literal fence in the raw log. Scrape it out first so the marker regex below
         // can actually match. Plain-text agent logs pass through this unchanged.
         const agentText = extractAgentTextFromLog(stdout);
+        // Research propose turns are raw tasks (no conversation), so the store-side 'blocked'
+        // reclassification never runs here — honor the blocked sentinel directly from the agent
+        // text. An autonomous loop has nobody to answer the agent's question; counting it as an
+        // infra failure lets the consecutive-failure termination stop a goal that keeps blocking.
+        const blockedNeed = parseAgentBlockedSignal(agentText);
+        if (blockedNeed !== undefined) {
+            this.finishAsInfraFailure(goal, record,
+                `agent declared itself blocked on input only a human can provide: ${blockedNeed}`,
+                record.runAttempts);
+            return;
+        }
         const proposal = parseExperimentProposal(agentText);
         const diffStat = this.roundDiffStat(goal.cwd);
         // Anti-stall fallback: a format miss must never cost a night of compute. Synthesize a
@@ -442,9 +454,22 @@ export class QaapResearchRunner {
             declaredConfig: resolved.config,
             declaredConfigFingerprint,
             realChangeFingerprint: roundRealChangeFingerprint,
+            // Mirror the task-level change-quality gate (verification scripts + adversarial
+            // review) onto the ledger row — the runner measures, the agent doesn't self-report.
+            gateVerification: finished.verification?.status,
+            gateReview: finished.review?.status,
             notes,
         };
         this.store.upsertRecord(goal.cwd, proposed);
+
+        // The propose task already ran the change-quality gate inside the task runner (script
+        // verification + its fix-turn budget, adversarial review). A round that STILL closes with
+        // warnings is a broken lever: discard it cheaply instead of burning the (hours-long)
+        // runCommand on a change that does not even pass the repo's own checks.
+        if (finished.state === 'completed_with_warnings') {
+            await this.discardBrokenRound(goal, proposed, this.describeGateFailure(finished));
+            return;
+        }
 
         // No-op guard: no repo changes (ledger excluded) AND no parseable proposal means the agent
         // did literally nothing this turn. Never spend an actual runCommand (hours) measuring
@@ -591,18 +616,7 @@ export class QaapResearchRunner {
     /** Every round is one commit on `qaap/research/<goalId>`, whether or not the agent's proposal
      *  parsed — the fallback path still commits whatever the agent changed. */
     protected async commitRound(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
-        const branch = `qaap/research/${goal.id}`;
-        const baselineSha = this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined;
-        this.runGit(goal.cwd, ['checkout', '-B', branch]);
-        // Exclude the ledger: it is runner state, not experiment content, and must never end up in
-        // a round's commit on the research branch (see LEDGER_PATHSPEC_EXCLUDE).
-        this.runGit(goal.cwd, ['add', '-A', '--', '.', LEDGER_PATHSPEC_EXCLUDE]);
-        const message = `research(round ${record.round}): ${(record.lever ?? record.hypothesis).slice(0, 160)}`;
-        // --allow-empty: a round whose proposal made no file changes must still get a placeholder
-        // commit so `sha`/`baselineSha` stay a consistent per-round chain for revert to walk.
-        this.runGit(goal.cwd, ['commit', '--allow-empty', '-m', message]);
-        const sha = this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined;
-
+        const { sha, baselineSha } = this.commitRoundChanges(goal, record);
         const committed: ResearchExperimentRecord = {
             ...record,
             sha,
@@ -615,6 +629,53 @@ export class QaapResearchRunner {
         } else {
             await this.runMeasurePhase(goal, committed);
         }
+    }
+
+    protected commitRoundChanges(goal: ResearchGoal, record: ResearchExperimentRecord): { sha?: string; baselineSha?: string } {
+        const branch = `qaap/research/${goal.id}`;
+        const baselineSha = this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined;
+        this.runGit(goal.cwd, ['checkout', '-B', branch]);
+        // Exclude the ledger: it is runner state, not experiment content, and must never end up in
+        // a round's commit on the research branch (see LEDGER_PATHSPEC_EXCLUDE).
+        this.runGit(goal.cwd, ['add', '-A', '--', '.', LEDGER_PATHSPEC_EXCLUDE]);
+        const message = `research(round ${record.round}): ${(record.lever ?? record.hypothesis).slice(0, 160)}`;
+        // --allow-empty: a round whose proposal made no file changes must still get a placeholder
+        // commit so `sha`/`baselineSha` stay a consistent per-round chain for revert to walk.
+        this.runGit(goal.cwd, ['commit', '--allow-empty', '-m', message]);
+        const sha = this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined;
+        return { sha, baselineSha };
+    }
+
+    /**
+     * A round whose change-quality gate stayed red after the task runner's own fix-turn budget:
+     * commit it anyway (audit trail — the loop's discard pattern is commit + `git revert`, never a
+     * destructive reset), revert it, and record a cheap 'failed' verdict without ever reaching the
+     * hours-long runCommand.
+     */
+    protected async discardBrokenRound(goal: ResearchGoal, record: ResearchExperimentRecord, reason: string): Promise<void> {
+        const { sha, baselineSha } = this.commitRoundChanges(goal, record);
+        const failed: ResearchExperimentRecord = {
+            ...record,
+            sha,
+            baselineSha,
+            phase: 'done',
+            verdict: 'failed',
+            notes: this.appendNote(record.notes,
+                `Change-quality gate: ${reason} Skipped runCommand/measure; round committed and reverted.`),
+            finishedAt: Date.now(),
+        };
+        this.store.upsertRecord(goal.cwd, failed);
+        await this.revertRound(goal, failed);
+    }
+
+    protected describeGateFailure(task: QaapAgentTask): string {
+        if (task.verification?.status === 'failed') {
+            return `verification stayed red after the fix-turn budget (${task.verification.command}): ${task.verification.summary}`;
+        }
+        if (task.review?.status === 'failed') {
+            return `independent review rejected the change: ${task.review.reason || 'no reason given'}`;
+        }
+        return 'the task closed with warnings.';
     }
 
     // ---- phase: run (the long-running work) ----------------------------------
