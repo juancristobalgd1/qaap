@@ -58,6 +58,9 @@ export interface MobileProjectsOverlayFactoryHost {
     onHomeOpenAttention(item: import('../common/qaap-work-hub-home').WorkHubHomeAttentionItem): void;
     onHomeQuickAction(action: import('./mobile-projects-home-ui').WorkHubHomeQuickActionId): Promise<void>;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    readPreference?: (key: string) => unknown;
+    getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
+    stickyComposerQaiqModels?: readonly import('../common/qaap-agent-task-client').QaapQaiqModelOption[];
 }
 
 /** Lazily constructs parallel/team/home overlay UI bundles wired to the panel host. */
@@ -77,6 +80,9 @@ export class MobileProjectsOverlayFactoryUi {
                 }
             },
             onOpenSessionsSidebar: () => this.host.openWorkHubSessionsSidebar(),
+            readPreference: key => this.host.readPreference?.(key),
+            getRegisteredLanguageModels: () => this.host.getRegisteredLanguageModels?.() ?? Promise.resolve([]),
+            getWorkspaceQaiqModels: () => this.host.stickyComposerQaiqModels ?? [],
             buildVariantTaskRow: (project, summary, activeInfo, parentIds) => {
                 const task = this.host.conversationIndexUi.summaryToTaskView(summary);
                 return this.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds);

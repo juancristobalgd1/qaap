@@ -113,6 +113,7 @@ export class QaapParallelRunStore {
                     message: prompt,
                     parallelRunId: id,
                     parallelBaseCwd: cwd,
+                    ...(request.agentModels?.[agentId] ? { agentModel: request.agentModels[agentId] } : {}),
                 });
                 variants.push({
                     id: randomUUID(),

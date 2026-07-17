@@ -66,10 +66,103 @@ export function createAgentBrandChip(options: QaapAgentChipOptions): HTMLElement
     text.className = 'theia-qaap-agent-chip-label';
     text.textContent = label;
     el.append(text);
+    if (options.onClick) {
+        el.setAttribute('aria-pressed', String(!!options.selected));
+    }
     if (options.onClick && !options.disabled) {
         el.addEventListener('click', options.onClick);
     }
     return el;
+}
+
+export interface QaapAgentBrandSplitChipOptions {
+    readonly agentId: string;
+    readonly label?: string;
+    readonly modelLabel?: string;
+    readonly selected?: boolean;
+    readonly disabled?: boolean;
+    readonly menuExpanded?: boolean;
+    readonly onToggle: () => void;
+    readonly onOpenModelMenu?: (anchor: HTMLElement) => void;
+}
+
+/** Split chip: main toggle + optional trailing model menu button. */
+export function createAgentBrandSplitChip(options: QaapAgentBrandSplitChipOptions): HTMLElement {
+    const label = options.label ?? resolveAgentDisplayLabel(options.agentId);
+    // Keep the main face the same size as a plain chip; model belongs in title/aria, not the label.
+    const group = document.createElement('div');
+    group.className = 'theia-qaap-agent-chip-group';
+    group.setAttribute('role', 'group');
+    const groupLabel = options.modelLabel ? `${label} · ${options.modelLabel}` : label;
+    group.setAttribute('aria-label', groupLabel);
+    if (options.modelLabel) {
+        group.title = groupLabel;
+    }
+    if (options.selected) {
+        group.classList.add('theia-mod-selected');
+    }
+    if (options.disabled) {
+        group.classList.add('theia-mod-disabled');
+    }
+
+    const mainBtn = document.createElement('button');
+    mainBtn.type = 'button';
+    mainBtn.className = 'theia-qaap-agent-chip-main';
+    mainBtn.setAttribute('aria-pressed', String(!!options.selected));
+    mainBtn.setAttribute(
+        'aria-label',
+        options.selected
+            ? nls.localize('qaap/mobileProjects/parallelAgentSelected', '{0}, selected', label)
+            : label,
+    );
+    if (options.disabled) {
+        mainBtn.disabled = true;
+    }
+    appendAgentBrandIcon(mainBtn, options.agentId, 'sm');
+    const text = document.createElement('span');
+    text.className = 'theia-qaap-agent-chip-label';
+    text.textContent = label;
+    mainBtn.append(text);
+    if (!options.disabled) {
+        mainBtn.addEventListener('click', options.onToggle);
+    }
+    group.append(mainBtn);
+
+    if (options.onOpenModelMenu) {
+        const menuBtn = document.createElement('button');
+        menuBtn.type = 'button';
+        menuBtn.className = 'theia-qaap-agent-chip-menu';
+        menuBtn.setAttribute('aria-haspopup', 'menu');
+        menuBtn.setAttribute('aria-expanded', String(!!options.menuExpanded));
+        menuBtn.setAttribute(
+            'aria-label',
+            options.modelLabel
+                ? nls.localize(
+                    'qaap/mobileProjects/parallelChooseModelWithCurrent',
+                    'Choose model for {0}, current {1}',
+                    label,
+                    options.modelLabel,
+                )
+                : nls.localize('qaap/mobileProjects/stickyComposerPickModelForAgent', 'Choose model for {0}', label),
+        );
+        if (options.disabled) {
+            menuBtn.disabled = true;
+        }
+        const chevron = document.createElement('span');
+        chevron.className = 'codicon codicon-chevron-down';
+        chevron.setAttribute('aria-hidden', 'true');
+        menuBtn.append(chevron);
+        if (!options.disabled) {
+            menuBtn.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                options.onOpenModelMenu!(menuBtn);
+            });
+        }
+        group.append(menuBtn);
+    }
+
+    return group;
 }
 
 /** Bottom-sheet row for agent pickers. */
@@ -218,11 +311,15 @@ export function createPickerSheetOptionButton(options: {
     readonly statsLabel?: string;
     /** Renders {@link statsLabel} in the warning color to flag models with a slow observed median. */
     readonly statsSlow?: boolean;
+    readonly menuItem?: boolean;
     readonly onSelect: () => void;
 }): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'theia-mobile-sticky-composer-sheet-option theia-qaap-picker-sheet-option';
+    if (options.menuItem) {
+        btn.setAttribute('role', 'menuitem');
+    }
     if (options.selected) {
         btn.classList.add('theia-mod-selected');
     }

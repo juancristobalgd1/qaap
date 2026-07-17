@@ -12,6 +12,7 @@ import {
     type QaapCreateParallelRunRequest,
     type QaapParallelRun,
 } from '../common/qaap-parallel-run';
+import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -67,15 +68,52 @@ export class QaapParallelRunEndpoint implements BackendApplicationContribution {
             this.auth.denyForbidden(res, req, 'agent_task', { cwd: body.cwd });
             return;
         }
+        const agentModels = this.parseAgentModels(body.agentModels);
         try {
             const run = await this.store.create(
-                { cwd: resolved.cwd, prompt: body.prompt, agents: body.agents },
+                {
+                    cwd: resolved.cwd,
+                    prompt: body.prompt,
+                    agents: body.agents,
+                    ...(agentModels ? { agentModels } : {}),
+                },
                 this.auth.resolveUserLogin(ctx),
             );
             res.status(201).json(run);
         } catch (error) {
             res.status(400).json({ error: this.errorMessage(error) });
         }
+    }
+
+    protected parseAgentModels(raw: unknown): Record<string, QaapCreateAgentTaskQaiqModel> | undefined {
+        if (raw === undefined || raw === null) {
+            return undefined;
+        }
+        if (typeof raw !== 'object' || Array.isArray(raw)) {
+            return undefined;
+        }
+        const result: Record<string, QaapCreateAgentTaskQaiqModel> = {};
+        for (const [agentId, value] of Object.entries(raw as Record<string, unknown>)) {
+            if (typeof agentId !== 'string' || !agentId.trim()) {
+                continue;
+            }
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                continue;
+            }
+            const candidate = value as Record<string, unknown>;
+            if (typeof candidate.modelId !== 'string' || !candidate.modelId.trim()) {
+                continue;
+            }
+            if (typeof candidate.provider !== 'string' || typeof candidate.vendor !== 'string') {
+                continue;
+            }
+            result[agentId] = {
+                provider: candidate.provider as QaapCreateAgentTaskQaiqModel['provider'],
+                vendor: candidate.vendor,
+                modelId: candidate.modelId,
+            };
+        }
+        return Object.keys(result).length > 0 ? result : undefined;
     }
 
     protected async handleGet(req: Request, res: Response): Promise<void> {

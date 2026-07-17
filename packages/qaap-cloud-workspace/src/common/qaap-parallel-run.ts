@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
+
 /** HTTP base path for the parallel-runs API (variants in isolated git worktrees). */
 export const QAAP_PARALLEL_RUN_API_PATH = '/qaap/api/parallel-runs';
 
@@ -48,6 +50,8 @@ export interface QaapCreateParallelRunRequest {
     readonly prompt: string;
     /** Agent ids — one isolated worktree + conversation is spawned per agent. */
     readonly agents: string[];
+    /** Optional per-agent model overrides keyed by agent id. */
+    readonly agentModels?: Readonly<Record<string, QaapCreateAgentTaskQaiqModel>>;
 }
 
 /** What to do with the winning variant when the user chooses one. */

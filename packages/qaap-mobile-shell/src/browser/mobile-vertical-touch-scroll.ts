@@ -154,6 +154,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-sticky-composer-activity-body',
     '.theia-mobile-routine-sheet-form',
     '.theia-mobile-parallel-body',
+    '.theia-mobile-parallel-model-menu-list',
     '.theia-mobile-transcript-checks-panel',
     '.theia-mobile-transcript-review-checks-body',
     '.theia-mobile-open-repo-list',

@@ -7,6 +7,8 @@
 // `@theia/qaap-cloud-workspace/src/common/qaap-parallel-run.ts` (kept local, like the other
 // qaap clients in this package, to avoid a cross-package dependency).
 
+import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
+
 export const QAAP_PARALLEL_RUN_API_PATH = '/qaap/api/parallel-runs';
 
 export type QaapParallelVariantState = 'running' | 'idle' | 'failed';
@@ -48,12 +50,21 @@ export interface QaapChooseParallelVariantResultDTO {
     readonly error?: string;
 }
 
-export async function createParallelRun(cwd: string, prompt: string, agents: string[]): Promise<QaapParallelRunDTO> {
+export async function createParallelRun(
+    cwd: string,
+    prompt: string,
+    agents: string[],
+    agentModels?: Readonly<Record<string, QaapCreateAgentTaskQaiqModel>>,
+): Promise<QaapParallelRunDTO> {
+    const payload: Record<string, unknown> = { cwd, prompt, agents };
+    if (agentModels && Object.keys(agentModels).length > 0) {
+        payload.agentModels = agentModels;
+    }
     const response = await fetch(QAAP_PARALLEL_RUN_API_PATH, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cwd, prompt, agents }),
+        body: JSON.stringify(payload),
     });
     if (!response.ok) {
         throw new Error((await response.text()) || response.statusText);

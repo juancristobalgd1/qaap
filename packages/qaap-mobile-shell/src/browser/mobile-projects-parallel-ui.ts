@@ -20,14 +20,31 @@ import {
     type QaapParallelRunVariantDTO,
     type QaapParallelRunVariantStatsDTO,
 } from '../common/qaap-parallel-run-client';
-import { filterUiSelectableVpsAgents, type QaapAgentTaskAgentOption } from '../common/qaap-agent-task-client';
-import { createAgentBrandChip, createAgentRowAvatar, createDiffStatsLine } from './qaap-agent-ui';
+import { filterUiSelectableVpsAgents, fetchAgentModelsForAgent, toQaapCreateAgentTaskQaiqModel, type QaapAgentTaskAgentOption, type QaapCreateAgentTaskQaiqModel, type QaapQaiqModelOption } from '../common/qaap-agent-task-client';
+import {
+    agentSupportsModelPicker,
+    agentUsesSettingsModelCatalog,
+    isSameAgentModel,
+    readStoredAgentModel,
+    writeStoredAgentModel,
+} from '../common/qaap-agent-model-selection';
+import {
+    filterQaiqModelsWithConfiguredCredentials,
+    formatQaiqModelSelectionLabel,
+    listQaiqModelsFromPreferences,
+    listQaiqModelsFromRegisteredLanguageModels,
+    mergeQaiqModelOptions,
+} from '../common/qaap-qaiq-model-catalog';
+import { createAgentBrandChip, createAgentBrandSplitChip, createAgentRowAvatar, createDiffStatsLine, createPickerSheetOptionButton } from './qaap-agent-ui';
 import { MobileSnackbar } from './mobile-snackbar';
 
 export interface MobileProjectsParallelUiDeps {
     getAgents(): QaapAgentTaskAgentOption[];
     onRunsChanged(): void;
     onOpenSessionsSidebar?(): void;
+    readPreference?: (key: string) => unknown;
+    getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
+    getWorkspaceQaiqModels?: () => readonly QaapQaiqModelOption[];
     buildVariantTaskRow(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -42,11 +59,17 @@ export class MobileProjectsParallelUi {
     protected sheetRoot: HTMLElement | undefined;
     protected busy = false;
     protected readonly selectedAgents = new Set<string>();
+    protected readonly selectedAgentModels = new Map<string, QaapCreateAgentTaskQaiqModel>();
+    protected parallelModelMenuRoot: HTMLElement | undefined;
+    protected parallelModelMenuAnchor: HTMLElement | undefined;
+    protected parallelModelMenuDismiss: (() => void) | undefined;
+    protected parallelModelMenuAgentId: string | undefined;
     protected readonly variantSections = new Map<string, HTMLElement>();
 
     constructor(protected readonly deps: MobileProjectsParallelUiDeps) { }
 
     closeSheet(): void {
+        this.closeParallelModelMenu();
         this.sheetRoot?.remove();
         this.sheetRoot = undefined;
         this.busy = false;
@@ -310,8 +333,17 @@ export class MobileProjectsParallelUi {
         }
         this.closeSheet();
         this.selectedAgents.clear();
+        this.selectedAgentModels.clear();
         for (const agent of this.availableAgents().slice(0, 2)) {
             this.selectedAgents.add(agent.id);
+        }
+        if (summary.cwd) {
+            for (const agentId of this.selectedAgents) {
+                const stored = readStoredAgentModel(summary.cwd, agentId);
+                if (stored) {
+                    this.selectedAgentModels.set(agentId, stored);
+                }
+            }
         }
 
         const root = document.createElement('div');
@@ -402,28 +434,12 @@ export class MobileProjectsParallelUi {
 
         const agentsLabel = document.createElement('div');
         agentsLabel.className = 'theia-mobile-parallel-label';
+        agentsLabel.id = 'theia-mobile-parallel-agents-label';
         agentsLabel.textContent = nls.localize('qaap/mobileProjects/parallelAgents', 'Agents');
         const chips = document.createElement('div');
         chips.className = 'theia-mobile-parallel-agents';
-        for (const agent of agents) {
-            const chip = createAgentBrandChip({
-                agentId: agent.id,
-                label: agent.label,
-                selected: this.selectedAgents.has(agent.id),
-                onClick: () => {
-                    if (this.selectedAgents.has(agent.id)) {
-                        this.selectedAgents.delete(agent.id);
-                    } else {
-                        this.selectedAgents.add(agent.id);
-                    }
-                    chip.classList.toggle('theia-mod-selected', this.selectedAgents.has(agent.id));
-                    run.disabled = this.selectedAgents.size === 0;
-                    run.textContent = nls.localize('qaap/mobileProjects/parallelRun', 'Run {0} variants', String(this.selectedAgents.size));
-                },
-            });
-            chips.append(chip);
-        }
-
+        chips.setAttribute('role', 'group');
+        chips.setAttribute('aria-labelledby', agentsLabel.id);
         const run = document.createElement('button');
         run.type = 'button';
         run.className = 'theia-mobile-parallel-run';
@@ -431,7 +447,346 @@ export class MobileProjectsParallelUi {
         run.textContent = nls.localize('qaap/mobileProjects/parallelRun', 'Run {0} variants', String(this.selectedAgents.size));
         run.addEventListener('click', () => { void this.startParallelRun(project, summary, textarea.value); });
 
+        const syncRunButton = (): void => {
+            run.disabled = this.selectedAgents.size === 0;
+            run.textContent = nls.localize('qaap/mobileProjects/parallelRun', 'Run {0} variants', String(this.selectedAgents.size));
+        };
+
+        this.renderParallelAgentChips(chips, agents, summary.cwd, syncRunButton);
+
         body.append(promptLabel, textarea, agentsLabel, chips, run);
+    }
+
+    protected renderParallelAgentChips(
+        chipsHost: HTMLElement,
+        agents: QaapAgentTaskAgentOption[],
+        cwd: string,
+        onSelectionChange: () => void,
+    ): void {
+        chipsHost.replaceChildren();
+        for (const agent of agents) {
+            const selected = this.selectedAgents.has(agent.id);
+            const storedModel = this.selectedAgentModels.get(agent.id);
+            const modelLabel = selected && storedModel ? formatQaiqModelSelectionLabel(storedModel) : undefined;
+            const toggleAgent = (): void => {
+                if (this.selectedAgents.has(agent.id)) {
+                    this.selectedAgents.delete(agent.id);
+                    if (this.parallelModelMenuAgentId === agent.id) {
+                        this.closeParallelModelMenu();
+                    }
+                } else {
+                    this.selectedAgents.add(agent.id);
+                    if (!this.selectedAgentModels.has(agent.id)) {
+                        const stored = readStoredAgentModel(cwd, agent.id);
+                        if (stored) {
+                            this.selectedAgentModels.set(agent.id, stored);
+                        }
+                    }
+                }
+                this.renderParallelAgentChips(chipsHost, agents, cwd, onSelectionChange);
+                onSelectionChange();
+            };
+            const openModelMenu = (anchor: HTMLElement): void => {
+                void this.openParallelModelMenu(anchor, agent, cwd, chipsHost, agents, onSelectionChange);
+            };
+            if (agentSupportsModelPicker(agent.id)) {
+                chipsHost.append(createAgentBrandSplitChip({
+                    agentId: agent.id,
+                    label: agent.label,
+                    modelLabel: selected ? modelLabel : undefined,
+                    selected,
+                    onToggle: toggleAgent,
+                    onOpenModelMenu: selected ? openModelMenu : undefined,
+                    menuExpanded: selected && this.parallelModelMenuAgentId === agent.id,
+                }));
+            } else {
+                chipsHost.append(createAgentBrandChip({
+                    agentId: agent.id,
+                    label: agent.label,
+                    selected,
+                    onClick: toggleAgent,
+                }));
+            }
+        }
+    }
+
+    protected async resolveModelsForParallelAgent(
+        agentId: string,
+    ): Promise<{ readonly models: QaapQaiqModelOption[]; readonly loadFailed: boolean }> {
+        if (agentUsesSettingsModelCatalog(agentId)) {
+            try {
+                const readPref = this.deps.readPreference;
+                const fromWorkspace = this.deps.getWorkspaceQaiqModels?.() ?? [];
+                const fromPreferences = readPref
+                    ? listQaiqModelsFromPreferences(readPref)
+                    : [];
+                const registered = this.deps.getRegisteredLanguageModels
+                    ? listQaiqModelsFromRegisteredLanguageModels(
+                        await this.deps.getRegisteredLanguageModels(),
+                        readPref,
+                    )
+                    : [];
+                const merged = mergeQaiqModelOptions(registered, fromWorkspace, fromPreferences);
+                const models = readPref
+                    ? filterQaiqModelsWithConfiguredCredentials(merged, readPref)
+                    : merged;
+                return { models, loadFailed: false };
+            } catch {
+                return { models: [], loadFailed: true };
+            }
+        }
+        try {
+            const models = await fetchAgentModelsForAgent(agentId);
+            return { models, loadFailed: false };
+        } catch {
+            return { models: [], loadFailed: true };
+        }
+    }
+
+    protected closeParallelModelMenu(): void {
+        const anchor = this.parallelModelMenuAnchor;
+        this.parallelModelMenuDismiss?.();
+        this.parallelModelMenuDismiss = undefined;
+        this.parallelModelMenuRoot?.remove();
+        this.parallelModelMenuRoot = undefined;
+        this.parallelModelMenuAgentId = undefined;
+        if (anchor?.isConnected) {
+            anchor.setAttribute('aria-expanded', 'false');
+            anchor.focus({ preventScroll: true });
+        }
+        this.parallelModelMenuAnchor = undefined;
+    }
+
+    protected positionParallelModelMenu(anchor: HTMLElement, menu: HTMLElement): void {
+        const margin = 8;
+        const gap = 6;
+        const anchorRect = anchor.getBoundingClientRect();
+        // Prefer anchoring to the whole chip group so the menu lines up with the trigger row.
+        const group = anchor.closest('.theia-qaap-agent-chip-group');
+        const groupRect = group?.getBoundingClientRect();
+        const alignRect = groupRect && groupRect.width > 0 ? groupRect : anchorRect;
+        const preferredWidth = Math.max(alignRect.width, 220);
+        menu.style.width = 'max-content';
+        menu.style.minWidth = `${Math.round(preferredWidth)}px`;
+        menu.style.maxWidth = `${Math.round(Math.min(window.innerWidth - margin * 2, 360))}px`;
+        const menuWidth = Math.max(menu.offsetWidth || preferredWidth, preferredWidth);
+        let left = alignRect.left;
+        // Keep the menu under the chip; if it would overflow right, shift left.
+        left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
+        const menuHeight = menu.offsetHeight || Math.min(window.innerHeight * 0.45, 280);
+        const viewport = window.visualViewport;
+        const viewportTop = viewport?.offsetTop ?? 0;
+        const viewportHeight = viewport?.height ?? window.innerHeight;
+        const spaceBelow = viewportTop + viewportHeight - alignRect.bottom - gap;
+        const spaceAbove = alignRect.top - viewportTop - gap;
+        let top: number;
+        if (spaceBelow >= Math.min(menuHeight, 160) || spaceBelow >= spaceAbove) {
+            top = alignRect.bottom + gap;
+        } else {
+            top = alignRect.top - gap - menuHeight;
+        }
+        top = Math.max(viewportTop + margin, Math.min(top, viewportTop + viewportHeight - menuHeight - margin));
+        menu.style.top = `${Math.round(top)}px`;
+        menu.style.left = `${Math.round(left)}px`;
+    }
+
+    protected focusParallelModelMenuItem(list: HTMLElement, index: number): void {
+        const items = list.querySelectorAll<HTMLElement>('[role="menuitem"]');
+        const item = items[index];
+        if (item) {
+            item.focus({ preventScroll: true });
+        }
+    }
+
+    protected populateParallelModelMenuList(
+        list: HTMLElement,
+        agent: QaapAgentTaskAgentOption,
+        cwd: string,
+        models: readonly QaapQaiqModelOption[],
+        loadFailed: boolean,
+        chipsHost: HTMLElement,
+        agents: QaapAgentTaskAgentOption[],
+        onSelectionChange: () => void,
+        onRetry: () => void,
+    ): void {
+        list.replaceChildren();
+        if (loadFailed) {
+            const error = document.createElement('div');
+            error.className = 'theia-mobile-parallel-model-menu-note theia-mod-error';
+            error.setAttribute('role', 'alert');
+            error.textContent = nls.localize(
+                'qaap/mobileProjects/stickyComposerAgentModelsLoadFailed',
+                'Could not load models from the workspace. Check your connection and try again.',
+            );
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'theia-qaap-agent-sheet-retry';
+            retry.textContent = nls.localize('qaap/mobileProjects/retry', 'Retry');
+            retry.addEventListener('click', onRetry);
+            error.append(retry);
+            list.append(error);
+            return;
+        }
+        if (models.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'theia-mobile-parallel-model-menu-note';
+            empty.textContent = agentUsesSettingsModelCatalog(agent.id)
+                ? nls.localize(
+                    'qaap/mobileProjects/stickyComposerNoQaiqModels',
+                    'Add an API key in Settings → AI Features to choose a model.',
+                )
+                : nls.localize('qaap/mobileProjects/parallelModelEmpty', 'No models available.');
+            list.append(empty);
+            return;
+        }
+        const selectedModel = this.selectedAgentModels.get(agent.id) ?? readStoredAgentModel(cwd, agent.id);
+        let focusIndex = 0;
+        for (const [modelIndex, model] of models.entries()) {
+            const isSelected = isSameAgentModel(selectedModel, model);
+            if (isSelected) {
+                focusIndex = modelIndex;
+            }
+            list.append(createPickerSheetOptionButton({
+                label: model.label || formatQaiqModelSelectionLabel(model),
+                selected: isSelected,
+                llmVendor: model.vendor,
+                llmModelId: model.modelId,
+                menuItem: true,
+                onSelect: () => {
+                    const nextModel = toQaapCreateAgentTaskQaiqModel(model);
+                    this.selectedAgentModels.set(agent.id, nextModel);
+                    writeStoredAgentModel(cwd, agent.id, nextModel);
+                    this.selectedAgents.add(agent.id);
+                    this.closeParallelModelMenu();
+                    this.renderParallelAgentChips(chipsHost, agents, cwd, onSelectionChange);
+                    onSelectionChange();
+                },
+            }));
+        }
+        window.requestAnimationFrame(() => this.focusParallelModelMenuItem(list, focusIndex));
+    }
+
+    protected async openParallelModelMenu(
+        anchor: HTMLElement,
+        agent: QaapAgentTaskAgentOption,
+        cwd: string,
+        chipsHost: HTMLElement,
+        agents: QaapAgentTaskAgentOption[],
+        onSelectionChange: () => void,
+    ): Promise<void> {
+        this.closeParallelModelMenu();
+        this.parallelModelMenuAnchor = anchor;
+        this.parallelModelMenuAgentId = agent.id;
+        anchor.setAttribute('aria-expanded', 'true');
+
+        const menu = document.createElement('div');
+        menu.className = 'theia-mobile-parallel-model-menu';
+        menu.setAttribute('role', 'menu');
+        menu.setAttribute(
+            'aria-label',
+            nls.localize('qaap/mobileProjects/stickyComposerPickModelForAgent', 'Choose model for {0}', agent.label),
+        );
+
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-parallel-model-menu-list';
+        menu.append(list);
+
+        const loading = document.createElement('div');
+        loading.className = 'theia-mobile-parallel-model-menu-note';
+        loading.textContent = nls.localize('qaap/mobileProjects/parallelModelLoading', 'Loading models…');
+        list.append(loading);
+
+        // Body-level so position:fixed anchors to the viewport next to the chip.
+        document.body.append(menu);
+        this.parallelModelMenuRoot = menu;
+        this.positionParallelModelMenu(anchor, menu);
+
+        const onMenuKeyDown = (event: KeyboardEvent): void => {
+            const items = Array.from(list.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+            if (items.length === 0) {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    this.closeParallelModelMenu();
+                }
+                return;
+            }
+            const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    this.focusParallelModelMenuItem(
+                        list,
+                        currentIndex < 0 ? 0 : (currentIndex + 1) % items.length,
+                    );
+                    break;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    this.focusParallelModelMenuItem(
+                        list,
+                        currentIndex <= 0 ? items.length - 1 : currentIndex - 1,
+                    );
+                    break;
+                case 'Home':
+                    event.preventDefault();
+                    this.focusParallelModelMenuItem(list, 0);
+                    break;
+                case 'End':
+                    event.preventDefault();
+                    this.focusParallelModelMenuItem(list, items.length - 1);
+                    break;
+                case 'Escape':
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.closeParallelModelMenu();
+                    break;
+            }
+        };
+        const onDismiss = (event: Event): void => {
+            const target = event.target;
+            if (target instanceof Node && (menu.contains(target) || anchor.contains(target))) {
+                return;
+            }
+            this.closeParallelModelMenu();
+        };
+        const onReposition = (): void => this.positionParallelModelMenu(anchor, menu);
+        window.setTimeout(() => window.addEventListener('pointerdown', onDismiss, true), 0);
+        menu.addEventListener('keydown', onMenuKeyDown);
+        window.addEventListener('resize', onReposition);
+        window.addEventListener('scroll', onReposition, true);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', onReposition);
+            window.visualViewport.addEventListener('scroll', onReposition);
+        }
+        this.parallelModelMenuDismiss = (): void => {
+            window.removeEventListener('pointerdown', onDismiss, true);
+            menu.removeEventListener('keydown', onMenuKeyDown);
+            window.removeEventListener('resize', onReposition);
+            window.removeEventListener('scroll', onReposition, true);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', onReposition);
+                window.visualViewport.removeEventListener('scroll', onReposition);
+            }
+        };
+
+        const loadModels = async (): Promise<void> => {
+            const resolved = await this.resolveModelsForParallelAgent(agent.id);
+            if (!menu.isConnected) {
+                return;
+            }
+            this.populateParallelModelMenuList(
+                list,
+                agent,
+                cwd,
+                resolved.models,
+                resolved.loadFailed,
+                chipsHost,
+                agents,
+                onSelectionChange,
+                () => { void loadModels(); },
+            );
+            this.positionParallelModelMenu(anchor, menu);
+        };
+        await loadModels();
     }
 
     protected async startParallelRun(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, prompt: string): Promise<void> {
@@ -455,7 +810,19 @@ export class MobileProjectsParallelUi {
             body.append(loading);
         }
         try {
-            await createParallelRun(summary.cwd, prompt.trim(), agents);
+            const agentModels: Record<string, QaapCreateAgentTaskQaiqModel> = {};
+            for (const agentId of agents) {
+                const model = this.selectedAgentModels.get(agentId);
+                if (model) {
+                    agentModels[agentId] = model;
+                }
+            }
+            await createParallelRun(
+                summary.cwd,
+                prompt.trim(),
+                agents,
+                Object.keys(agentModels).length > 0 ? agentModels : undefined,
+            );
             this.closeSheet();
             MobileSnackbar.show(runningMessage, { kind: 'success', duration: 3600 });
             this.deps.onRunsChanged();
