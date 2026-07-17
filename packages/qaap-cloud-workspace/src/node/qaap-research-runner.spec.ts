@@ -407,6 +407,34 @@ describe('QaapResearchRunner state machine', () => {
         const [record] = store.readLedgerForGoal(goal);
         expect(record).to.deep.include({ phase: 'done', verdict: 'failed' });
         expect(record.notes).to.contain('exited 1');
+        expect(record.notes).to.contain('Captured output tail:');
+        expect(record.notes).to.contain('CUDA OOM');
+    });
+
+    it('caps a failed runCommand output excerpt and keeps the diagnostic tail', async () => {
+        const store = new FakeResearchStore();
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({ metrics: [METRIC], runCommand: 'python train.py' });
+        store.seedGoal(goal);
+        taskRunner.genericCommandResults = [{
+            exitCode: 134,
+            stdout: `old progress ${'x'.repeat(3_000)}`,
+            stderr: '\u001b[31mMPS out of memory\u001b[0m',
+            timedOut: false,
+        }];
+
+        const runner = makeRunner(store, taskRunner);
+        const promise = runner.callStartNewRound(goal, 1);
+        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ model: 'large' }));
+        taskRunner.finishTask(taskRunner.createdTasks[0].id);
+        await promise;
+
+        const [record] = store.readLedgerForGoal(goal);
+        expect(record.notes).to.contain('runCommand exited 134');
+        expect(record.notes).to.contain('...[truncated]...');
+        expect(record.notes).to.contain('MPS out of memory');
+        expect(record.notes).not.to.contain('\u001b[31m');
+        expect(record.notes!.length).to.be.lessThan(2_100);
     });
 
     it('reverts the round with `git revert` (never a hard reset) when the verdict is a regression', async () => {

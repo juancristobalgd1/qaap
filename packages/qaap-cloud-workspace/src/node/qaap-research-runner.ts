@@ -30,12 +30,16 @@ import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-mobi
 import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
 import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
-import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';
 
 /** Wall-clock cap for the `measure` phase's metricCommand — parsing a number should be fast. */
 const MEASURE_TIMEOUT_MS = 2 * 60 * 1000;
 const GIT_COMMAND_TIMEOUT_MS = 15_000;
+/** Keep failed command diagnostics useful without turning the JSONL ledger into a copy of a
+ *  multi-hour training log. The full 12k tail remains in the task log; this smaller excerpt is
+ *  included in the experiment record that the next research round actually reads. */
+const COMMAND_FAILURE_OUTPUT_TAIL_CHARS = 2_000;
 /** Resume attempts for a `run`-phase whose process was lost to a backend restart, not to a real
  *  command failure. After this many, treat it as an infra failure rather than retry forever. */
 const MAX_RUN_RESUME_ATTEMPTS = 2;
@@ -710,7 +714,7 @@ export class QaapResearchRunner {
             this.finishAsInfraFailure(
                 goal,
                 record,
-                `runCommand exited ${result.exitCode}${result.timedOut ? ' (timed out)' : ''}.`,
+                this.describeCommandFailure('runCommand', result),
                 runAttempts,
             );
             return;
@@ -742,7 +746,10 @@ export class QaapResearchRunner {
             }
             const value = result.exitCode === 0 ? parseMetricFromStdout(result.stdout, spec) : undefined;
             if (value === undefined) {
-                this.finishAsInfraFailure(goal, record, `metricCommand for "${spec.name}" failed or produced an unparseable value.`, record.runAttempts);
+                const reason = result.exitCode === 0
+                    ? this.appendCommandOutput(`metricCommand for "${spec.name}" produced an unparseable value.`, result)
+                    : this.describeCommandFailure(`metricCommand for "${spec.name}"`, result);
+                this.finishAsInfraFailure(goal, record, reason, record.runAttempts);
                 return;
             }
             metrics.push({ name: spec.name, value, direction: spec.direction });
@@ -848,6 +855,27 @@ export class QaapResearchRunner {
 
     protected appendNote(existing: string | undefined, note: string): string {
         return existing ? `${existing}\n${note}` : note;
+    }
+
+    protected describeCommandFailure(label: string, result: QaapGenericCommandResult): string {
+        const reason = `${label} exited ${result.exitCode}${result.timedOut ? ' (timed out)' : ''}.`;
+        return this.appendCommandOutput(reason, result);
+    }
+
+    protected appendCommandOutput(reason: string, result: QaapGenericCommandResult): string {
+        const output = `${result.stdout}\n${result.stderr}`
+            // Normalize terminal progress updates and remove ANSI control sequences before the
+            // excerpt is persisted in JSONL and later embedded in an agent prompt.
+            .replace(/\r/g, '\n')
+            .replace(/\u001b\[[0-?]*[ -\/]*[@-~]/g, '')
+            .trim();
+        if (!output) {
+            return reason;
+        }
+        const tail = output.length <= COMMAND_FAILURE_OUTPUT_TAIL_CHARS
+            ? output
+            : `...[truncated]...\n${output.slice(-COMMAND_FAILURE_OUTPUT_TAIL_CHARS)}`;
+        return `${reason}\nCaptured output tail:\n${tail}`;
     }
 
     protected buildResearchCommandEnv(): NodeJS.ProcessEnv {
