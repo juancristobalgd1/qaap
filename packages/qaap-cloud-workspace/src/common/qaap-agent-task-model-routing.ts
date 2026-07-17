@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { agentSupportsModelPicker } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-model-selection';
+import { agentUsesSettingsModelCatalog } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-model-selection';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import { resolveRequestAgentModel } from './qaap-agent-task';
 import {
@@ -92,7 +92,11 @@ export interface ResolveEffectiveAgentModelRequest {
 }
 
 /**
- * Explicit composer/thread model wins. Otherwise route by task kind for agents that expose a model picker.
+ * Explicit composer/thread model wins. Otherwise route by task kind, but ONLY for agents whose
+ * catalog IS the Settings catalog (QAIQ): the routed aliases are QAIQ provider bindings
+ * (NVIDIA/OpenRouter/…), and applying one to a native-catalog CLI (claude, codex, grok, …)
+ * produces `--model <foreign-vendor-model>` → model_not_found. Native CLIs without an explicit
+ * pick run on their own default model.
  */
 export function resolveEffectiveRequestAgentModel(
     request: ResolveEffectiveAgentModelRequest,
@@ -103,7 +107,7 @@ export function resolveEffectiveRequestAgentModel(
     if (explicit) {
         return explicit;
     }
-    if (!agentSupportsModelPicker(agentId)) {
+    if (!agentUsesSettingsModelCatalog(agentId)) {
         return undefined;
     }
     const prompt = (request.prompt ?? request.command ?? '').trim();
