@@ -8,7 +8,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { ElementInspectorService } from './element-inspector-service';
-import { ElementInspectorPanel } from './element-inspector-panel';
+import { ElementInspectorPanel, type ElementInspectorPanelPosition } from './element-inspector-panel';
 import {
     ELEMENT_INSPECTOR_ASK_AGENT_COMMAND_ID,
     ELEMENT_INSPECTOR_COPY_SELECTOR_COMMAND_ID,
@@ -26,11 +26,18 @@ export interface EmbeddedElementInspectorHost extends Disposable {
     syncButtonState(button?: HTMLButtonElement): void;
 }
 
+/** Optional dock controls for the inline preview split (beside / below). */
+export interface EmbeddedElementInspectorLayout {
+    getPosition: () => ElementInspectorPanelPosition;
+    setPosition: (position: ElementInspectorPanelPosition) => void;
+}
+
 export function mountEmbeddedElementInspector(
     container: HTMLElement,
     service: ElementInspectorService,
     commands: CommandRegistry,
     toDispose: DisposableCollection = new DisposableCollection(),
+    layout?: EmbeddedElementInspectorLayout,
 ): EmbeddedElementInspectorHost {
     container.classList.add('theia-mini-browser-inspector', 'qaap-preview-inline-inspector');
     container.hidden = true;
@@ -50,6 +57,12 @@ export function mountEmbeddedElementInspector(
                 onCopySelector={() => runCommand(commands, ELEMENT_INSPECTOR_COPY_SELECTOR_COMMAND_ID)}
                 onAskAgent={() => runCommand(commands, ELEMENT_INSPECTOR_ASK_AGENT_COMMAND_ID)}
                 onGenerateVariant={() => runCommand(commands, ELEMENT_INSPECTOR_GENERATE_VARIANT_COMMAND_ID)}
+                onClose={() => host.hide()}
+                panelPosition={layout?.getPosition()}
+                onPanelPositionChange={layout ? position => {
+                    layout.setPosition(position);
+                    render();
+                } : undefined}
             />,
         );
     };

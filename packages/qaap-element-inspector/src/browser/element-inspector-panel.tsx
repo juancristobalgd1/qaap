@@ -11,21 +11,49 @@ import { ElementInspectorService } from './element-inspector-service';
 import { PickedElement } from './element-inspector-types';
 import { resolveStyleEditTargets } from './qaap-element-style-convention';
 
+export type ElementInspectorPanelPosition = 'side' | 'bottom';
+
 export interface ElementInspectorPanelProps {
     service: ElementInspectorService;
     onCopySelector: () => void;
     onAskAgent: () => void;
     onGenerateVariant: () => void;
+    /** Close / dismiss the inspector panel (inline rail or widget). */
+    onClose?: () => void;
+    /** Current dock position when the panel can move beside/below the preview. */
+    panelPosition?: ElementInspectorPanelPosition;
+    onPanelPositionChange?: (position: ElementInspectorPanelPosition) => void;
 }
 
-export const ElementInspectorPanel: React.FC<ElementInspectorPanelProps> = ({ service, onCopySelector, onAskAgent, onGenerateVariant }) => {
+export const ElementInspectorPanel: React.FC<ElementInspectorPanelProps> = ({
+    service,
+    onCopySelector,
+    onAskAgent,
+    onGenerateVariant,
+    onClose,
+    panelPosition,
+    onPanelPositionChange,
+}) => {
     const picked = service.state.picked;
     const [tab, setTab] = React.useState<'design' | 'css' | 'html'>('design');
+    const header = (
+        <InspectorPanelHeader
+            onClose={onClose}
+            panelPosition={panelPosition}
+            onPanelPositionChange={onPanelPositionChange}
+        />
+    );
     if (!picked) {
-        return <InspectorEmpty />;
+        return (
+            <div className='theia-mini-browser-inspector__root'>
+                {header}
+                <InspectorEmpty />
+            </div>
+        );
     }
     return (
         <div className='theia-mini-browser-inspector__root'>
+            {header}
             <InspectorActions onCopySelector={onCopySelector} onAskAgent={onAskAgent} onGenerateVariant={onGenerateVariant} />
             <div className='theia-mini-browser-inspector__tabs' role='tablist'>
                 {(['design', 'css', 'html'] as const).map(id => (
@@ -44,6 +72,65 @@ export const ElementInspectorPanel: React.FC<ElementInspectorPanelProps> = ({ se
                 {tab === 'html' && <HtmlTab picked={picked} service={service} />}
             </div>
         </div>
+    );
+};
+
+const InspectorPanelHeader: React.FC<{
+    onClose?: () => void;
+    panelPosition?: ElementInspectorPanelPosition;
+    onPanelPositionChange?: (position: ElementInspectorPanelPosition) => void;
+}> = ({ onClose, panelPosition, onPanelPositionChange }) => {
+    const title = nls.localize('theia/mini-browser/elementInspector', 'Element Inspector');
+    const closeLabel = nls.localize('qaap/elementInspector/closePanel', 'Close panel');
+    const besideLabel = nls.localize('qaap/elementInspector/positionBeside', 'Beside preview');
+    const belowLabel = nls.localize('qaap/elementInspector/positionBelow', 'Below preview');
+    const showPosition = Boolean(onPanelPositionChange);
+    const showActions = showPosition || Boolean(onClose);
+    return (
+        <header className='theia-mini-browser-inspector__header'>
+            <h2 className='theia-mini-browser-inspector__header-title'>{title}</h2>
+            {showActions ? (
+                <div className='theia-mini-browser-inspector__header-actions'>
+                    {showPosition ? (
+                        <div className='theia-mini-browser-inspector__header-position' role='group' aria-label={title}>
+                            <button
+                                type='button'
+                                className={
+                                    'theia-mini-browser-inspector__header-position-btn '
+                                    + codicon('layout-sidebar-right')
+                                    + (panelPosition === 'side' ? ' theia-mini-browser-inspector__header-position-btn--active' : '')
+                                }
+                                title={besideLabel}
+                                aria-label={besideLabel}
+                                aria-pressed={panelPosition === 'side'}
+                                onClick={() => onPanelPositionChange?.('side')}
+                            />
+                            <button
+                                type='button'
+                                className={
+                                    'theia-mini-browser-inspector__header-position-btn '
+                                    + codicon('layout-panel')
+                                    + (panelPosition === 'bottom' ? ' theia-mini-browser-inspector__header-position-btn--active' : '')
+                                }
+                                title={belowLabel}
+                                aria-label={belowLabel}
+                                aria-pressed={panelPosition === 'bottom'}
+                                onClick={() => onPanelPositionChange?.('bottom')}
+                            />
+                        </div>
+                    ) : undefined}
+                    {onClose ? (
+                        <button
+                            type='button'
+                            className={'theia-mini-browser-inspector__header-close ' + codicon('close')}
+                            title={closeLabel}
+                            aria-label={closeLabel}
+                            onClick={onClose}
+                        />
+                    ) : undefined}
+                </div>
+            ) : undefined}
+        </header>
     );
 };
 

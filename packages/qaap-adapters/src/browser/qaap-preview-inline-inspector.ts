@@ -14,6 +14,7 @@ import {
 } from '@theia/qaap-element-inspector/lib/browser/element-inspector-panel-mount';
 import {
     applyPreviewInspectorPanelSize,
+    readPreviewInspectorPosition,
     type QaapPreviewInspectorPosition,
     writePreviewInspectorPosition,
 } from './qaap-preview-inspector-panel-size';
@@ -58,6 +59,15 @@ export class QaapPreviewInlineInspector {
             options.service,
             options.commands,
             options.toDispose,
+            {
+                getPosition: () => readPreviewInspectorPosition(),
+                setPosition: position => {
+                    const split = this.container.closest('.qaap-preview-split');
+                    if (split instanceof HTMLElement) {
+                        setPreviewInspectorPosition(split, this.container, position);
+                    }
+                },
+            },
         );
     }
 

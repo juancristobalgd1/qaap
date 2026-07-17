@@ -54,6 +54,7 @@ export class ElementInspectorWidget extends ReactWidget {
                 onCopySelector={() => this.runCommand(ELEMENT_INSPECTOR_COPY_SELECTOR_COMMAND_ID)}
                 onAskAgent={() => this.runCommand(ELEMENT_INSPECTOR_ASK_AGENT_COMMAND_ID)}
                 onGenerateVariant={() => this.runCommand(ELEMENT_INSPECTOR_GENERATE_VARIANT_COMMAND_ID)}
+                onClose={() => this.close()}
             />
         );
     }

@@ -21,6 +21,102 @@
   min-height: 0;
 }
 
+.theia-mini-browser-inspector__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--theia-panel-border);
+  background: var(--theia-sideBarSectionHeader-background, var(--theia-sideBar-background));
+}
+
+.theia-mini-browser-inspector__header-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--theia-sideBarSectionHeader-foreground, var(--theia-descriptionForeground));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mini-browser-inspector__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.theia-mini-browser-inspector__header-position {
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.35));
+  border-radius: var(--tmb-control-radius, 5px);
+  overflow: hidden;
+  background: var(--theia-input-background, transparent);
+}
+
+.theia-mini-browser-inspector__header-position-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  opacity: 0.7;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mini-browser-inspector__header-position-btn + .theia-mini-browser-inspector__header-position-btn {
+  border-left: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.35));
+}
+
+.theia-mini-browser-inspector__header-position-btn:hover {
+  opacity: 1;
+  background: var(--theia-toolbar-hoverBackground, rgba(128, 128, 128, 0.16));
+}
+
+.theia-mini-browser-inspector__header-position-btn--active {
+  opacity: 1;
+  color: var(--theia-list-activeSelectionForeground, var(--theia-foreground));
+  background: var(--theia-list-activeSelectionBackground, rgba(128, 128, 128, 0.22));
+}
+
+.theia-mini-browser-inspector__header-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--tmb-control-radius, 5px);
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  opacity: 0.75;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mini-browser-inspector__header-close:hover {
+  opacity: 1;
+  background: var(--theia-toolbar-hoverBackground, rgba(128, 128, 128, 0.16));
+}
+
 .theia-mini-browser-inspector__empty {
   display: flex;
   flex-direction: column;
