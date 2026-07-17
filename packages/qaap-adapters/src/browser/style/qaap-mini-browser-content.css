@@ -46,6 +46,8 @@
 
 .theia-mini-browser-toolbar .theia-mini-browser-url-field,
 .theia-mini-browser-toolbar-read-only .theia-mini-browser-url-field {
+  --qaap-url-refresh-inset: 2px;
+  --qaap-url-refresh-size: 28px;
   --qaap-url-go-inset: 3px;
   --qaap-url-go-gap: 4px;
   --qaap-url-go-width: 2.75em;
@@ -67,10 +69,23 @@
   line-height: var(--theia-private-mini-browser-height);
   margin: 0;
   box-sizing: border-box;
+  padding-inline-start: calc(var(--qaap-url-refresh-size) + var(--qaap-url-refresh-inset) + 2px);
 }
 
 .theia-mini-browser-toolbar .theia-mini-browser-url-field .theia-input {
   padding-inline-end: calc(var(--qaap-url-go-width) + var(--qaap-url-go-inset) + var(--qaap-url-go-gap));
+}
+
+.theia-mini-browser-url-field .qaap-agent-preview-toolbar-refresh {
+  grid-area: 1 / 1;
+  z-index: 1;
+  justify-self: start;
+  align-self: center;
+  width: var(--qaap-url-refresh-size);
+  height: var(--qaap-url-refresh-size);
+  margin: 0;
+  margin-inline-start: var(--qaap-url-refresh-inset);
+  border-radius: 4px;
 }
 
 .theia-mini-browser-url-field .theia-mini-browser-url-field-go {
@@ -107,11 +122,19 @@
 @container (max-width: 220px) {
   .theia-mini-browser-toolbar .theia-mini-browser-url-field {
     --qaap-url-go-width: 2.25em;
+    --qaap-url-refresh-size: 26px;
   }
 
   .theia-mini-browser-url-field .theia-mini-browser-url-field-go {
     padding: 0 0.35em;
     font-size: calc(var(--theia-ui-font-size0) * 0.92);
+  }
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .theia-mini-browser-toolbar .theia-mini-browser-url-field,
+  .theia-mini-browser-toolbar-read-only .theia-mini-browser-url-field {
+    --qaap-url-refresh-size: 32px;
   }
 }
 

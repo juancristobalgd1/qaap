@@ -532,15 +532,16 @@ export function mountEmbeddedAgentPreviewChrome(
     const toolbar = document.createElement('div');
     toolbar.className = 'qaap-agent-preview-embedded-toolbar theia-mini-browser-toolbar';
 
+    const urlField = document.createElement('div');
+    urlField.className = 'theia-mini-browser-url-field';
+
     const refreshBtn = createQaapPreviewToolbarIconButton(
         nls.localize('theia/mini-browser/reload', 'Reload'),
         'refresh',
         Style.TOOLBAR_REFRESH,
     );
-    toolbar.append(refreshBtn);
+    urlField.append(refreshBtn);
 
-    const urlField = document.createElement('div');
-    urlField.className = 'theia-mini-browser-url-field';
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
     urlInput.className = 'theia-input';
@@ -705,7 +706,7 @@ export function mountEmbeddedAgentPreviewChrome(
         embedded: true,
     });
     previewController = controller;
-    controller.attachToolbarControls(toolbar, refreshBtn);
+    controller.attachToolbarControls(toolbar, urlField);
     disposables.push(controller);
 
     disposables.push(addEventListener(refreshBtn, 'click', (e: MouseEvent) => {

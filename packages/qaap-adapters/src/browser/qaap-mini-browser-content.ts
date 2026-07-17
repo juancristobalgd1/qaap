@@ -272,6 +272,7 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         const field = document.createElement('div');
         field.classList.add(QaapMiniBrowserContentStyle.URL_FIELD);
         parent.appendChild(field);
+        this.createRefresh(field);
         const input = super.createInput(field);
         if (this.getToolbarProps() === 'show') {
             const goButton = document.createElement('button');
@@ -367,7 +368,6 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         parent.appendChild(toolbar);
         this.createPrevious(toolbar);
         this.createNext(toolbar);
-        this.createRefresh(toolbar);
         const input = this.createInput(toolbar);
         this.createWorkbenchControls(toolbar);
         if (this.getToolbarProps() !== 'hide') {
