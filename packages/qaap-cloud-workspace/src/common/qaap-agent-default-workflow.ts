@@ -15,6 +15,7 @@ const SEARCH_HYGIENE_MARKER = '[QAAP search hygiene]';
 const DEV_PREVIEW_MARKER = '[QAAP dev preview]';
 const DEV_SERVER_VERIFICATION_MARKER = '[QAAP dev server verification]';
 const HONEST_REPORTING_MARKER = '[QAAP honest reporting]';
+const ENGINEERING_CONTRACT_MARKER = '[QAAP engineering contract]';
 const BENIGN_CODE_EDIT_MARKER = '[QAAP benign code edit policy]';
 const PLANNING_MARKER = '[QAAP planning]';
 const COMMUNICATION_MARKER = '[QAAP communication]';
@@ -181,6 +182,47 @@ export function buildAgentHonestReportingPromptBlock(): string {
     ].join('\n');
 }
 
+/**
+ * Distills the senior-engineer discipline expected on every non-trivial change — a compact
+ * subset of a much longer internal engineering contract, kept dense because it is paid in tokens
+ * on every task. Five habits, in order: reproduce before fixing, keep the diff minimal, never
+ * overstate certainty, review your own diff before calling it done, and report only what you
+ * actually verified.
+ */
+export function buildAgentEngineeringContractPromptBlock(): string {
+    return [
+        ENGINEERING_CONTRACT_MARKER,
+        'Bug-shaped tasks: reproduce FIRST.',
+        '- Before changing code, reproduce the problem and record the exact command plus the observed error.',
+        '- State the ROOT CAUSE in one sentence before you fix anything.',
+        '- Fix the cause, not the symptom.',
+        '- If you cannot reproduce it, say so explicitly and label everything that follows as a hypothesis, not a fact.',
+        'Minimal change discipline.',
+        '- Make the smallest sufficient diff that solves the problem.',
+        '- Follow the existing repo patterns.',
+        '- Do not mix a refactor or reformatting into the fix.',
+        '- Do not add a new dependency unless strictly required.',
+        '- Remove related dead code you touched along the way.',
+        '- Comment the why, not the what.',
+        'Uncertainty management.',
+        '- Never invent files, APIs, or results.',
+        '- Mark every claim as Confirmed, Hypothesis, or Not verified.',
+        '- Never claim a test passed unless you actually ran it and saw it pass.',
+        '- Absence of errors is not correctness.',
+        'Self diff-review before finishing: re-read your full diff and check —',
+        '- Is every changed file actually necessary for this task?',
+        '- Is there any accidental or out-of-scope change?',
+        '- Did you leave temp code, debug logs, or mocks behind?',
+        '- Could this diff be smaller?',
+        'Evidence-based completion report. End your final message with:',
+        '- Outcome, and — for bugs — the root cause.',
+        '- Files changed.',
+        '- Validations executed, with their EXACT results (commands plus pass/fail counts).',
+        '- What you did NOT verify.',
+        '- Remaining risks, and label any statement without evidence as such.',
+    ].join('\n');
+}
+
 export function appendAgentDefaultWorkflowToPrompt(
     prompt: string,
     agentId: string,
@@ -216,6 +258,9 @@ export function appendAgentDefaultWorkflowToPrompt(
     }
     if (!prompt.includes(HONEST_REPORTING_MARKER)) {
         blocks.push(buildAgentHonestReportingPromptBlock());
+    }
+    if (!prompt.includes(ENGINEERING_CONTRACT_MARKER)) {
+        blocks.push(buildAgentEngineeringContractPromptBlock());
     }
     if (!prompt.includes(DESTRUCTIVE_COMMANDS_MARKER)) {
         blocks.push(buildAgentDestructiveCommandsPromptBlock());

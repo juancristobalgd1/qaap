@@ -11,6 +11,7 @@ import {
     buildAgentDestructiveCommandsPromptBlock,
     buildAgentDevServerVerificationPromptBlock,
     buildAgentEndOfTurnPromptBlock,
+    buildAgentEngineeringContractPromptBlock,
     buildAgentHonestReportingPromptBlock,
     buildAgentPlanningPromptBlock,
     buildAgentRepoMemoryPromptBlock,
@@ -36,6 +37,8 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         expect(result).to.include('curl -s -o /dev/null');
         expect(result).to.include('[QAAP honest reporting]');
         expect(result).to.include('4/9 checks passed');
+        expect(result).to.include('[QAAP engineering contract]');
+        expect(result).to.include('reproduce the problem');
         expect(result).to.include('[QAAP communication]');
         expect(result).to.include('[QAAP end of turn]');
         expect(result).to.include('[QAAP secrets]');
@@ -51,7 +54,9 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
     });
 
     it('leaves shell commands unchanged', () => {
-        expect(appendAgentDefaultWorkflowToPrompt('npm test', 'shell')).to.equal('npm test');
+        const result = appendAgentDefaultWorkflowToPrompt('npm test', 'shell');
+        expect(result).to.equal('npm test');
+        expect(result).not.to.include('[QAAP engineering contract]');
     });
 
     it('does not duplicate the workflow block', () => {
@@ -153,5 +158,37 @@ describe('buildAgentRepoMemoryPromptBlock', () => {
         expect(block).to.include('.qaap/memory.md');
         expect(block).to.include('lasting preference');
         expect(block).to.include('Do not store what the repo already documents');
+    });
+});
+
+describe('buildAgentEngineeringContractPromptBlock', () => {
+    it('covers all five habits: reproduce first, minimal diff, uncertainty labeling, self-review, evidence-based report', () => {
+        const block = buildAgentEngineeringContractPromptBlock();
+        expect(block).to.include('[QAAP engineering contract]');
+        // 1. reproduce first
+        expect(block).to.include('reproduce the problem');
+        expect(block).to.include('ROOT CAUSE');
+        expect(block).to.include('label everything that follows as a hypothesis');
+        // 2. minimal change discipline
+        expect(block).to.include('smallest sufficient diff');
+        expect(block).to.include('Do not add a new dependency unless strictly required');
+        expect(block).to.include('Comment the why, not the what');
+        // 3. uncertainty management
+        expect(block).to.include('Never invent files, APIs, or results');
+        expect(block).to.include('Confirmed, Hypothesis, or Not verified');
+        expect(block).to.include('Absence of errors is not correctness');
+        // 4. self diff-review
+        expect(block).to.include('re-read your full diff');
+        expect(block).to.include('temp code, debug logs, or mocks');
+        // 5. evidence-based completion report
+        expect(block).to.include('EXACT results');
+        expect(block).to.include('What you did NOT verify');
+    });
+
+    it('is dense: fits within roughly 25-35 lines, not a bloated list', () => {
+        const block = buildAgentEngineeringContractPromptBlock();
+        const lineCount = block.split('\n').length;
+        expect(lineCount).to.be.at.least(20);
+        expect(lineCount).to.be.at.most(35);
     });
 });
