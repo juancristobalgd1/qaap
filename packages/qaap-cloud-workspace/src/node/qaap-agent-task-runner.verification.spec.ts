@@ -148,6 +148,7 @@ function makeGateRunner(
         activeVerificationPasses: 0,
         maxConcurrentVerificationPasses: () => 4,
         verifySuccessfulAgentTask: verify,
+        reviewSuccessfulAgentTask: async () => undefined,
         finishTask: (id: string, state: string, exitCode: number | undefined) => {
             finished.state = state;
             finished.exitCode = exitCode;
@@ -200,6 +201,59 @@ describe('QaapAgentTaskRunner verification blocking gate', () => {
         await runner.runGate(TASK, 0);
         expect(finished().state).to.equal('completed');
         expect(tasks.get(TASK.id)?.verification).to.equal(undefined);
+    });
+});
+
+describe('QaapAgentTaskRunner independent review gate', () => {
+
+    it("closes as 'completed_with_warnings' when the reviewer rejects the change", async () => {
+        const { runner, tasks, finished } = makeGateRunner(
+            async () => ({ status: 'passed', command: 'npm run build', attempts: 0 }),
+            { reviewSuccessfulAgentTask: async () => ({ status: 'failed', reason: 'scope creep', agentId: 'qaiq' }) },
+        );
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed_with_warnings');
+        expect(tasks.get(TASK.id)?.review).to.deep.equal({ status: 'failed', reason: 'scope creep', agentId: 'qaiq' });
+    });
+
+    it("stays 'completed' when the reviewer passes the change", async () => {
+        const { runner, tasks, finished } = makeGateRunner(
+            async () => undefined,
+            { reviewSuccessfulAgentTask: async () => ({ status: 'passed', reason: 'matches the request', agentId: 'qaiq' }) },
+        );
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed');
+        expect(tasks.get(TASK.id)?.review?.status).to.equal('passed');
+    });
+
+    it("fails OPEN to 'completed' on an inconclusive review", async () => {
+        const { runner, finished } = makeGateRunner(
+            async () => undefined,
+            { reviewSuccessfulAgentTask: async () => ({ status: 'inconclusive', reason: 'Reviewer timed out before emitting a verdict.' }) },
+        );
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed');
+    });
+
+    it('skips the review entirely when verification already failed (no second agent spend)', async () => {
+        let reviewCalls = 0;
+        const { runner, finished } = makeGateRunner(
+            async () => ({ status: 'failed', command: 'npm run build', attempts: 2, summary: 'red' }),
+            { reviewSuccessfulAgentTask: async () => { reviewCalls++; return undefined; } },
+        );
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed_with_warnings');
+        expect(reviewCalls).to.equal(0);
+    });
+
+    it("degrades a crashing review pass to 'inconclusive' and still completes", async () => {
+        const { runner, tasks, finished } = makeGateRunner(
+            async () => undefined,
+            { reviewSuccessfulAgentTask: async () => { throw new Error('spawn ENOMEM'); } },
+        );
+        await runner.runGate(TASK, 0);
+        expect(finished().state).to.equal('completed');
+        expect(tasks.get(TASK.id)?.review?.status).to.equal('inconclusive');
     });
 });
 

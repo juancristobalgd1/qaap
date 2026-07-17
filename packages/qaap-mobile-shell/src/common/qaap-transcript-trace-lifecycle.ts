@@ -99,6 +99,28 @@ export function appendTraceBlockedEvent(
     };
 }
 
+/**
+ * Timeline note from the independent adversarial review pass (rejected change or no verdict).
+ * Must not set {@code message.error}: the turn itself was delivered.
+ */
+export function appendTraceReviewEvent(
+    message: QaapAgentMessageDTO,
+    note: string,
+    options: { readonly at?: number } = {},
+): QaapAgentMessageDTO {
+    const at = options.at ?? Date.now();
+    const event: QaapTranscriptTraceEventDTO = {
+        type: 'error',
+        id: `review-${at}`,
+        message: note,
+        startedAt: at,
+    };
+    return {
+        ...message,
+        traceEvents: [...(message.traceEvents ?? []), event],
+    };
+}
+
 export function appendTraceCheckpointEvent(
     message: QaapAgentMessageDTO,
     checkpoint: QaapConversationCheckpointDTO,

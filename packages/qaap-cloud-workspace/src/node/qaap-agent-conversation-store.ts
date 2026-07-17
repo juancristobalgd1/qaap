@@ -117,6 +117,7 @@ import {
     appendTraceBlockedEvent,
     appendTraceCheckpointEvent,
     appendTracePreviewFailureEvent,
+    appendTraceReviewEvent,
     appendTraceRunCancelledEvent,
     appendTraceVerificationWarningEvent,
     agentMessageHasStructuredTrace,
@@ -1700,8 +1701,15 @@ export class QaapAgentConversationStore {
             withReply = { ...withReply, checkpoints: [...(withReply.checkpoints ?? []), checkpoint] };
             withReply = this.appendCheckpointTrace(withReply, agentMessageId, checkpoint);
         }
-        if (task.state === 'completed_with_warnings') {
+        if (task.verification?.status === 'failed') {
             withReply = this.appendVerificationWarningTrace(withReply, agentMessageId, task);
+        }
+        if (task.review?.status === 'failed') {
+            withReply = this.appendReviewTrace(withReply, agentMessageId,
+                `Independent review rejected the change: ${task.review.reason || 'no reason given'}`);
+        } else if (task.review?.status === 'inconclusive') {
+            withReply = this.appendReviewTrace(withReply, agentMessageId,
+                'Independent review ran but produced no verdict — the result was not double-checked.');
         }
         // Blocked wins over the verification warning (more urgent for the user), but any warning
         // trace appended above is preserved — both facts stay visible in the transcript.
@@ -2052,6 +2060,23 @@ export class QaapAgentConversationStore {
             }
         }
         return undefined;
+    }
+
+    protected appendReviewTrace(
+        conv: QaapAgentConversation,
+        agentMessageId: string | undefined,
+        note: string,
+    ): QaapAgentConversation {
+        const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
+        if (!targetId) {
+            return conv;
+        }
+        return {
+            ...conv,
+            messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
+                ? appendTraceReviewEvent(message, note)
+                : message),
+        };
     }
 
     protected appendBlockedTrace(

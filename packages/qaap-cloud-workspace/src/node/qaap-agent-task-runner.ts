@@ -26,6 +26,7 @@ import {
     type QaapAgentTaskCwdGroup,
     type QaapAgentTaskDetail,
     type QaapAgentTaskEvent,
+    type QaapAgentTaskReview,
     type QaapAgentTaskState,
     type QaapAgentTaskVerification,
     type QaapCreateAgentTaskRequest,
@@ -94,6 +95,13 @@ import {
 } from './qaap-antigravity-settings';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
+import {
+    buildAgentReviewPrompt,
+    parseAgentReviewVerdict,
+    parseGitNumstat,
+    resolveAgentReviewMode,
+    resolveTaskReviewRisk,
+} from '../common/qaap-agent-review';
 import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
@@ -130,6 +138,9 @@ const QAAP_AGENT_VERIFY_MAX_ATTEMPTS = 2;
 const QAAP_AGENT_VERIFY_WALL_CLOCK_MS = 5 * 60 * 1000;
 const QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS = 12_000;
 const QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS = 4_000;
+/** Wall clock for the independent adversarial review pass (phase C). Mode knob: QAAP_AGENT_REVIEW. */
+const QAAP_AGENT_REVIEW_WALL_CLOCK_MS = 3 * 60 * 1000;
+const QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS = 15_000;
 
 /** Exported so other node/ services that reuse {@link QaapAgentTaskRunner.runGenericCommand} — the
  *  auto-researcher runner's `run`/`measure` phases — can type its result. */
@@ -2077,10 +2088,37 @@ export class QaapAgentTaskRunner {
                     this.tasks.set(task.id, { ...current, verification });
                 }
             }
-            // Blocking gate: a clean exit does not earn 'completed' while the repo's own
-            // checks are red — surface it as a distinct terminal state instead of a badge-only
-            // metadata so the conversation store and the UI can react to it.
-            this.finishTask(task.id, verification?.status === 'failed' ? 'completed_with_warnings' : 'completed', exitCode);
+            // Independent adversarial review (phase C): only when the deterministic gate did not
+            // already flag the task — a red verification closes as warnings without paying for a
+            // second agent. Runs inside the verification slot held above, so concurrency stays
+            // bounded by the same cap.
+            let review: QaapAgentTaskReview | undefined;
+            if (verification?.status !== 'failed') {
+                try {
+                    review = await this.reviewSuccessfulAgentTask(task, verification);
+                } catch (error) {
+                    review = {
+                        status: 'inconclusive',
+                        reason: error instanceof Error ? error.message : String(error),
+                    };
+                }
+                if (this.tasks.get(task.id)?.state !== 'running') {
+                    return;
+                }
+                if (review) {
+                    const current = this.tasks.get(task.id);
+                    if (current) {
+                        this.tasks.set(task.id, { ...current, review });
+                    }
+                }
+            }
+            // Blocking gate: a clean exit does not earn 'completed' while the repo's own checks
+            // are red or the independent reviewer rejected the change — surface it as a distinct
+            // terminal state instead of badge-only metadata so the conversation store and the UI
+            // can react to it. An inconclusive review fails OPEN: the deterministic gates already
+            // ran, and closing every reviewer timeout as a warning would erode trust in the state.
+            const withWarnings = verification?.status === 'failed' || review?.status === 'failed';
+            this.finishTask(task.id, withWarnings ? 'completed_with_warnings' : 'completed', exitCode);
         } finally {
             this.activeVerificationPasses--;
         }
@@ -2136,6 +2174,80 @@ export class QaapAgentTaskRunner {
             attempts,
             summary: this.summarizeVerificationFailure(lastCommand, lastFailure),
         };
+    }
+
+    /**
+     * Independent adversarial review pass (senior-engineer contract, phase C): a second agent with
+     * a CLEAN context judges the finished change against the original request — bugs, scope creep,
+     * false claims — and returns a verdict sentinel. Deliberately runs even when script
+     * verification was skipped for lack of scripts: user repos without typecheck/test leave the
+     * deterministic gate empty, and this pass is the only defense there. Judge-only: no fix turns.
+     * Returns undefined when review is off, the task is low-risk, or no reviewer agent exists.
+     */
+    protected async reviewSuccessfulAgentTask(
+        task: QaapAgentTask,
+        verification: QaapAgentTaskVerification | undefined,
+    ): Promise<QaapAgentTaskReview | undefined> {
+        const mode = resolveAgentReviewMode(process.env.QAAP_AGENT_REVIEW);
+        if (mode === 'off' || !this.isTaskStillRunning(task.id)) {
+            return undefined;
+        }
+        const agentId = this.resolveTaskAgentId(task);
+        if (agentId === SHELL_AGENT_ID) {
+            return undefined;
+        }
+        const env = this.buildChildEnv(task);
+        // Verification already proved edits exist when it ran; re-check only when it was skipped
+        // (undefined covers both "no edits" and "no scripts" — review only cares about the former).
+        if (verification === undefined && !await this.hasEditedFilesForVerification(task, env)) {
+            return undefined;
+        }
+        const numstat = await this.runGenericCommand('git diff --numstat HEAD', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
+        const untracked = await this.runGenericCommand('git ls-files --others --exclude-standard', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
+        const changedFiles = [
+            ...parseGitNumstat(numstat.stdout),
+            // Untracked (new) files never show in `diff HEAD` — count them for the file-count and
+            // sensitive-path signals; their line counts are unknown and stay at 0.
+            ...untracked.stdout.split('\n').map(line => line.trim()).filter(Boolean)
+                .map(path => ({ path, added: 0, removed: 0 })),
+        ];
+        if (mode === 'high-risk' && resolveTaskReviewRisk(changedFiles) === 'low') {
+            return undefined;
+        }
+        const diff = await this.runGenericCommand('git diff HEAD', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
+        const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diff.stdout });
+        let command: string;
+        try {
+            ({ command } = this.buildAgentCommand(
+                prompt,
+                agentId,
+                true,
+                resolveTaskAgentModel(task),
+                task.cwd,
+                undefined,
+                undefined,
+                'full-access',
+            ));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.appendAndFireOutput(task.id, `\n[qaap] Skipping independent review: ${message}\n`);
+            return undefined;
+        }
+        const result = await this.runGenericCommand(command, task.cwd, env, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
+            header: `\n[qaap] High-risk change — starting independent ${agentId} review.\n`,
+            streamOutput: true,
+        });
+        const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
+        if (!verdict) {
+            return {
+                status: 'inconclusive',
+                reason: result.timedOut
+                    ? 'Reviewer timed out before emitting a verdict.'
+                    : 'Reviewer did not emit a verdict.',
+                agentId,
+            };
+        }
+        return { status: verdict.status, reason: verdict.reason, agentId };
     }
 
     protected async hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean> {
