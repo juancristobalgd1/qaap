@@ -98,7 +98,7 @@ export class MobileProjectsTeamUi {
         if (state === 'completed') {
             return 'done';
         }
-        if (state === 'failed' || state === 'interrupted' || state === 'completed_with_warnings') {
+        if (state === 'failed' || state === 'interrupted' || state === 'completed_with_warnings' || state === 'blocked') {
             return 'failed';
         }
         return 'idle';
@@ -112,6 +112,8 @@ export class MobileProjectsTeamUi {
                 return nls.localize('qaap/mobileProjects/teamStateDone', 'Done');
             case 'completed_with_warnings':
                 return nls.localize('qaap/mobileProjects/teamStateChecksFailing', 'Checks failing');
+            case 'blocked':
+                return nls.localize('qaap/mobileProjects/teamStateBlocked', 'Needs you');
             case 'failed':
                 return nls.localize('qaap/mobileProjects/teamStateFailed', 'Failed');
             case 'interrupted':

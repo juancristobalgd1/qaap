@@ -202,3 +202,39 @@ describe('QaapAgentTaskRunner verification blocking gate', () => {
         expect(tasks.get(TASK.id)?.verification).to.equal(undefined);
     });
 });
+
+describe('QaapAgentTaskRunner markTaskBlocked', () => {
+
+    function makeBlockedRunner(state: QaapAgentTask['state']): { runner: TestableQaapAgentTaskRunner; tasks: Map<string, QaapAgentTask> } {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map<string, QaapAgentTask>([[TASK.id, { ...TASK, state }]]);
+        Object.assign(runner, { tasks, persist: async () => undefined });
+        return { runner, tasks };
+    }
+
+    it("reclassifies a delivered 'completed' task as 'blocked'", () => {
+        const { runner, tasks } = makeBlockedRunner('completed');
+        const result = runner.markTaskBlocked(TASK.id);
+        expect(result?.state).to.equal('blocked');
+        expect(tasks.get(TASK.id)?.state).to.equal('blocked');
+    });
+
+    it("reclassifies 'completed_with_warnings' too — blocked wins over the warning", () => {
+        const { runner, tasks } = makeBlockedRunner('completed_with_warnings');
+        expect(runner.markTaskBlocked(TASK.id)?.state).to.equal('blocked');
+        expect(tasks.get(TASK.id)?.state).to.equal('blocked');
+    });
+
+    it('refuses to touch running, failed, or cancelled tasks', () => {
+        for (const state of ['running', 'failed', 'cancelled'] as const) {
+            const { runner, tasks } = makeBlockedRunner(state);
+            expect(runner.markTaskBlocked(TASK.id)).to.equal(undefined);
+            expect(tasks.get(TASK.id)?.state).to.equal(state);
+        }
+    });
+
+    it('returns undefined for an unknown task id', () => {
+        const { runner } = makeBlockedRunner('completed');
+        expect(runner.markTaskBlocked('nope')).to.equal(undefined);
+    });
+});

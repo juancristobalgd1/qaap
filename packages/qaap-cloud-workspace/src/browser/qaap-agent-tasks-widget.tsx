@@ -321,6 +321,7 @@ export class QaapAgentTasksWidget extends ReactWidget {
             case 'running': return nls.localize('qaap/agentTasks/stateRunning', 'Running');
             case 'completed': return nls.localize('qaap/agentTasks/stateCompleted', 'Done');
             case 'completed_with_warnings': return nls.localize('qaap/agentTasks/stateChecksFailing', 'Checks failing');
+            case 'blocked': return nls.localize('qaap/agentTasks/stateBlocked', 'Needs you');
             case 'failed': return nls.localize('qaap/agentTasks/stateFailed', 'Failed');
             case 'cancelled': return nls.localize('qaap/agentTasks/stateCancelled', 'Cancelled');
             case 'interrupted': return nls.localize('qaap/agentTasks/stateInterrupted', 'Interrupted');

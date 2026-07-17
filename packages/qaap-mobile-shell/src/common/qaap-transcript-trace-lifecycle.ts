@@ -76,6 +76,29 @@ export function appendTraceVerificationWarningEvent(
     };
 }
 
+/**
+ * Timeline note for a turn whose agent declared itself blocked on user input (blocked-signal
+ * sentinel). Like {@link appendTraceVerificationWarningEvent}, it must not set
+ * {@code message.error} — the turn ended deliberately, not in failure.
+ */
+export function appendTraceBlockedEvent(
+    message: QaapAgentMessageDTO,
+    need: string,
+    options: { readonly at?: number } = {},
+): QaapAgentMessageDTO {
+    const at = options.at ?? Date.now();
+    const event: QaapTranscriptTraceEventDTO = {
+        type: 'error',
+        id: `blocked-${at}`,
+        message: need,
+        startedAt: at,
+    };
+    return {
+        ...message,
+        traceEvents: [...(message.traceEvents ?? []), event],
+    };
+}
+
 export function appendTraceCheckpointEvent(
     message: QaapAgentMessageDTO,
     checkpoint: QaapConversationCheckpointDTO,

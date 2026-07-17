@@ -20,6 +20,7 @@ const BENIGN_CODE_EDIT_MARKER = '[QAAP benign code edit policy]';
 const PLANNING_MARKER = '[QAAP planning]';
 const COMMUNICATION_MARKER = '[QAAP communication]';
 const END_OF_TURN_MARKER = '[QAAP end of turn]';
+const BLOCKED_SIGNAL_MARKER = '[QAAP blocked signal]';
 const SECRETS_MARKER = '[QAAP secrets]';
 const DESTRUCTIVE_COMMANDS_MARKER = '[QAAP destructive commands]';
 const REPO_MEMORY_MARKER = '[QAAP repo memory]';
@@ -52,6 +53,46 @@ export function buildAgentEndOfTurnPromptBlock(): string {
         'Before ending your turn, check your last paragraph: if it is a plan, a list of next steps, or a promise ("I will…", "the next step is…"), do that work now with tools instead of stopping.',
         'End the turn only when the task is complete or you are blocked on input only the user can provide — and say explicitly which of the two it is.',
     ].join('\n');
+}
+
+/**
+ * Machine-parseable sentinel an agent emits as the LAST non-empty line of its final message when
+ * it cannot proceed without the user. Detected by the conversation store to close the task as
+ * 'blocked' (see {@code parseAgentBlockedSignal}) — the sentinel form keeps a user merely quoting
+ * the word "blocked" (or this doc) from triggering it, because only the final line counts.
+ */
+export const QAAP_AGENT_BLOCKED_SIGNAL_MARKER = '@@QAAP:BLOCKED@@';
+
+export function buildAgentBlockedSignalPromptBlock(): string {
+    return [
+        BLOCKED_SIGNAL_MARKER,
+        'If you cannot finish because you need a decision or information only the user can provide, end your final message with this exact line as the very last non-empty line:',
+        `${QAAP_AGENT_BLOCKED_SIGNAL_MARKER} <one short line: the decision or information you need>`,
+        'Use it only when genuinely blocked — never to hand back work you could verify or decide yourself, and never anywhere else in the message.',
+    ].join('\n');
+}
+
+/**
+ * Returns what the agent said it needs when its final visible text ends with the blocked sentinel,
+ * or {@code undefined} when the turn is not blocked. Only the last non-empty line counts.
+ */
+export function parseAgentBlockedSignal(finalVisibleText: string | undefined): string | undefined {
+    if (!finalVisibleText) {
+        return undefined;
+    }
+    const lines = finalVisibleText.split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        if (!line) {
+            continue;
+        }
+        if (line.startsWith(QAAP_AGENT_BLOCKED_SIGNAL_MARKER)) {
+            return line.slice(QAAP_AGENT_BLOCKED_SIGNAL_MARKER.length).trim()
+                || 'The agent needs your input to continue.';
+        }
+        return undefined;
+    }
+    return undefined;
 }
 
 export function buildAgentSecretsPromptBlock(): string {
@@ -261,6 +302,9 @@ export function appendAgentDefaultWorkflowToPrompt(
     }
     if (!prompt.includes(ENGINEERING_CONTRACT_MARKER)) {
         blocks.push(buildAgentEngineeringContractPromptBlock());
+    }
+    if (!prompt.includes(BLOCKED_SIGNAL_MARKER)) {
+        blocks.push(buildAgentBlockedSignalPromptBlock());
     }
     if (!prompt.includes(DESTRUCTIVE_COMMANDS_MARKER)) {
         blocks.push(buildAgentDestructiveCommandsPromptBlock());

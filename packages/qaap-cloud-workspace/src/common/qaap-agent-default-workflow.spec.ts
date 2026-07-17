@@ -16,6 +16,7 @@ import {
     buildAgentPlanningPromptBlock,
     buildAgentRepoMemoryPromptBlock,
     buildAgentSecretsPromptBlock,
+    parseAgentBlockedSignal,
 } from './qaap-agent-default-workflow';
 
 describe('buildAgentDefaultWorkflowPromptBlock', () => {
@@ -39,6 +40,8 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         expect(result).to.include('4/9 checks passed');
         expect(result).to.include('[QAAP engineering contract]');
         expect(result).to.include('reproduce the problem');
+        expect(result).to.include('[QAAP blocked signal]');
+        expect(result).to.include('@@QAAP:BLOCKED@@');
         expect(result).to.include('[QAAP communication]');
         expect(result).to.include('[QAAP end of turn]');
         expect(result).to.include('[QAAP secrets]');
@@ -190,5 +193,27 @@ describe('buildAgentEngineeringContractPromptBlock', () => {
         const lineCount = block.split('\n').length;
         expect(lineCount).to.be.at.least(20);
         expect(lineCount).to.be.at.most(35);
+    });
+});
+
+describe('parseAgentBlockedSignal', () => {
+    it('detects the sentinel as the last non-empty line and returns the need', () => {
+        const text = 'I compared both options.\n\n@@QAAP:BLOCKED@@ Which database should the export use?\n\n';
+        expect(parseAgentBlockedSignal(text)).to.equal('Which database should the export use?');
+    });
+
+    it('falls back to a generic need when the sentinel line carries no text', () => {
+        expect(parseAgentBlockedSignal('Stuck.\n@@QAAP:BLOCKED@@')).to.equal('The agent needs your input to continue.');
+    });
+
+    it('ignores the sentinel when it is not the last non-empty line (e.g. the user quoted it)', () => {
+        const text = 'The docs mention @@QAAP:BLOCKED@@ as a sentinel.\nAll done, nothing pending.';
+        expect(parseAgentBlockedSignal(text)).to.equal(undefined);
+    });
+
+    it('returns undefined for unmarked or empty text', () => {
+        expect(parseAgentBlockedSignal('All done.')).to.equal(undefined);
+        expect(parseAgentBlockedSignal('')).to.equal(undefined);
+        expect(parseAgentBlockedSignal(undefined)).to.equal(undefined);
     });
 });

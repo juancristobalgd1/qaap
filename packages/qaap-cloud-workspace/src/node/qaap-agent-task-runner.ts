@@ -2663,6 +2663,23 @@ export class QaapAgentTaskRunner {
         return true;
     }
 
+    /**
+     * Reclassify an already-delivered task as 'blocked' — called by the conversation store when the
+     * agent's final message ends with the blocked-signal sentinel. Deliberately does NOT re-fire
+     * onDidChangeTask (a second settled event would re-run the subtask mailbox delivery) nor send
+     * another push notification; clients pick the state up on the next list()/detail().
+     */
+    markTaskBlocked(id: string): QaapAgentTask | undefined {
+        const task = this.tasks.get(id);
+        if (!task || (task.state !== 'completed' && task.state !== 'completed_with_warnings')) {
+            return undefined;
+        }
+        const blocked: QaapAgentTask = { ...task, state: 'blocked' };
+        this.tasks.set(id, blocked);
+        void this.persist();
+        return blocked;
+    }
+
     protected finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const task = this.tasks.get(id);
         if (!task) {

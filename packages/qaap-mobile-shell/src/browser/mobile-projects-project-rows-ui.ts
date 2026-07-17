@@ -536,7 +536,7 @@ export class MobileProjectsProjectRowsUi {
         for (const task of tasks) {
             if (task.state === 'running') {
                 groups.working.push(task);
-            } else if (task.state === 'needs-input' || task.state === 'failed' || task.state === 'interrupted' || task.state === 'completed_with_warnings') {
+            } else if (task.state === 'needs-input' || task.state === 'blocked' || task.state === 'failed' || task.state === 'interrupted' || task.state === 'completed_with_warnings') {
                 groups.needsYou.push(task);
             } else if (now - (task.finishedAt ?? task.createdAt) <= recentWindowMs) {
                 groups.recent.push(task);

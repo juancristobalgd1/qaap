@@ -261,6 +261,10 @@ export function resolveQaapAgentTaskVisualStatus(
     if (state === 'failed' || state === 'interrupted' || (summary && isFailedRunSummary(summary))) {
         return STATUS_BY_ID['failed'];
     }
+    // The agent explicitly asked for the user — highest urgency after failure.
+    if (state === 'blocked') {
+        return STATUS_BY_ID['needs-you'];
+    }
     // Checked before the Git/PR resolution below: a task with red local verification almost
     // always has uncommitted changes, and the generic 'changes' chip would mask the warning.
     if (state === 'completed_with_warnings') {

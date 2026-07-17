@@ -62,6 +62,7 @@ import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/q
 import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
+import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import {
     buildConversationAgentPrompt,
     partitionConversationHistory,
@@ -113,6 +114,7 @@ import {
     resolveNextFallbackAgentModel,
 } from '../common/qaap-agent-model-fallback';
 import {
+    appendTraceBlockedEvent,
     appendTraceCheckpointEvent,
     appendTracePreviewFailureEvent,
     appendTraceRunCancelledEvent,
@@ -1701,6 +1703,12 @@ export class QaapAgentConversationStore {
         if (task.state === 'completed_with_warnings') {
             withReply = this.appendVerificationWarningTrace(withReply, agentMessageId, task);
         }
+        // Blocked wins over the verification warning (more urgent for the user), but any warning
+        // trace appended above is preserved — both facts stay visible in the transcript.
+        const blockedNeed = this.detectAgentBlockedNeed(withReply, agentMessageId);
+        if (blockedNeed !== undefined) {
+            withReply = this.appendBlockedTrace(withReply, agentMessageId, blockedNeed);
+        }
         this.conversations.set(conversationId, withReply);
         const agentMessage = withReply.messages[withReply.messages.length - 1];
         if (agentMessage) {
@@ -1710,6 +1718,12 @@ export class QaapAgentConversationStore {
         }
         this.modelFallbackTriedByUserMessage.delete(userMessageId);
         this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, withReply);
+        if (blockedNeed !== undefined) {
+            // The agent explicitly asked for the user — reclassify the task and never auto-continue
+            // on top of a question only the user can answer.
+            this.taskRunner.markTaskBlocked(task.id);
+            return;
+        }
         if (task.state === 'completed_with_warnings') {
             // The backend verification loop already spent its fix-turn budget on this turn; the
             // text-heuristic auto-continue is blind to that verdict and would just re-prompt
@@ -2008,6 +2022,51 @@ export class QaapAgentConversationStore {
             ...conv,
             messages: conv.messages.map(message => message.id === agentMessageId && message.role === 'agent'
                 ? appendTraceRunCancelledEvent(message, { reason })
+                : message),
+        };
+    }
+
+    /**
+     * Returns what the agent said it needs when its final message ends with the blocked-signal
+     * sentinel (see {@code buildAgentBlockedSignalPromptBlock}), or {@code undefined} otherwise.
+     * Checks the streaming agent message when its id is known, else the last agent message; for
+     * segment-first agents whose {@code content} is empty, the last text segment is checked.
+     */
+    protected detectAgentBlockedNeed(
+        conv: QaapAgentConversation,
+        agentMessageId: string | undefined,
+    ): string | undefined {
+        const target = (agentMessageId ? conv.messages.find(message => message.id === agentMessageId) : undefined)
+            ?? [...conv.messages].reverse().find(message => message.role === 'agent');
+        if (!target || target.role !== 'agent') {
+            return undefined;
+        }
+        if (target.content?.trim()) {
+            return parseAgentBlockedSignal(target.content);
+        }
+        const segments = target.segments ?? [];
+        for (let i = segments.length - 1; i >= 0; i--) {
+            const segment = segments[i];
+            if (segment.type === 'text' && segment.content?.trim()) {
+                return parseAgentBlockedSignal(segment.content);
+            }
+        }
+        return undefined;
+    }
+
+    protected appendBlockedTrace(
+        conv: QaapAgentConversation,
+        agentMessageId: string | undefined,
+        need: string,
+    ): QaapAgentConversation {
+        const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
+        if (!targetId) {
+            return conv;
+        }
+        return {
+            ...conv,
+            messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
+                ? appendTraceBlockedEvent(message, `Blocked — needs your input: ${need}`)
                 : message),
         };
     }

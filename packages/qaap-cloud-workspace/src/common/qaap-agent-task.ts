@@ -20,6 +20,12 @@ export type QaapAgentTaskState =
      * was still failing after the fix-turn budget — see {@link QaapAgentTask.verification}.
      */
     | 'completed_with_warnings'
+    /**
+     * Finished with exit code 0, but the agent explicitly declared it cannot proceed without a
+     * decision or information only the user can provide (blocked-signal sentinel in its final
+     * message). Set post-finish by the conversation store via {@code markTaskBlocked}.
+     */
+    | 'blocked'
     /** Finished with a non-zero exit code or failed to start. */
     | 'failed'
     /** The process was lost (e.g. the backend restarted while it ran). */
