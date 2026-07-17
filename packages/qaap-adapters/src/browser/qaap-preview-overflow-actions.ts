@@ -6,7 +6,6 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { readPreviewInspectorPosition } from './qaap-preview-inspector-panel-size';
 
 export type QaapPreviewOverflowActionId =
     | 'take-screenshot'
@@ -14,8 +13,6 @@ export type QaapPreviewOverflowActionId =
     | 'hard-reload'
     | 'copy-url'
     | 'bookmark-bar'
-    | 'inspector-side'
-    | 'inspector-bottom'
     | 'clear-history'
     | 'clear-cookies'
     | 'clear-cache'
@@ -36,7 +33,6 @@ export interface QaapPreviewOverflowActionContext {
     readonly notify?: (message: string, kind?: 'info' | 'warn') => void;
     readonly bookmarkBarVisible: () => boolean;
     readonly toggleBookmarkBar: () => void;
-    readonly setInspectorPosition?: (position: 'side' | 'bottom') => void;
     readonly clearHistory: () => void;
 }
 
@@ -58,7 +54,6 @@ export interface QaapPreviewOverflowMenuItem {
 
 export function buildPreviewOverflowMenuItems(ctx: Pick<QaapPreviewOverflowActionContext, 'bookmarkBarVisible'>): QaapPreviewOverflowMenuItem[] {
     const bookmarkVisible = ctx.bookmarkBarVisible();
-    const inspectorPosition = readPreviewInspectorPosition();
     return [
         {
             id: 'take-screenshot',
@@ -79,18 +74,6 @@ export function buildPreviewOverflowMenuItems(ctx: Pick<QaapPreviewOverflowActio
                 : nls.localize('qaap/preview/showBookmarkBar', 'Show Bookmark Bar'),
             toggle: true,
             checked: bookmarkVisible,
-        },
-        {
-            id: 'inspector-side',
-            label: nls.localize('qaap/preview/inspectorSide', 'Element Inspector beside preview'),
-            toggle: true,
-            checked: inspectorPosition === 'side',
-        },
-        {
-            id: 'inspector-bottom',
-            label: nls.localize('qaap/preview/inspectorBottom', 'Element Inspector below preview'),
-            toggle: true,
-            checked: inspectorPosition === 'bottom',
         },
         {
             id: 'clear-history',
@@ -131,12 +114,6 @@ export async function runPreviewOverflowAction(
             return;
         case 'bookmark-bar':
             ctx.toggleBookmarkBar();
-            return;
-        case 'inspector-side':
-            ctx.setInspectorPosition?.('side');
-            return;
-        case 'inspector-bottom':
-            ctx.setInspectorPosition?.('bottom');
             return;
         case 'clear-history':
             ctx.clearHistory();

@@ -14,7 +14,6 @@ import { QaapAgentPreviewChromeStyle as Style } from './qaap-agent-preview-chrom
 import { normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
 import {
     QaapPreviewInlineInspector,
-    setPreviewInspectorPosition,
     type QaapPreviewInspectorDeps,
     wirePreviewInspectorResize,
 } from './qaap-preview-inline-inspector';
@@ -55,7 +54,6 @@ export interface QaapAgentPreviewChromeHost {
     takeScreenshot?(): void | Promise<void>;
     onPickElement?(): void;
     onToggleInspector?(): void;
-    setInspectorPosition?(position: 'side' | 'bottom'): void;
 }
 
 export interface QaapAgentPreviewChromeOptions {
@@ -450,9 +448,6 @@ export class QaapAgentPreviewChromeController implements Disposable {
             notify: this.options.notify,
             bookmarkBarVisible: () => this.bookmarkBarVisible,
             toggleBookmarkBar: () => this.toggleBookmarkBar(),
-            setInspectorPosition: this.host.setInspectorPosition
-                ? (position: 'side' | 'bottom') => this.host.setInspectorPosition?.(position)
-                : undefined,
             clearHistory: () => this.clearHistory(),
         };
     }
@@ -626,18 +621,6 @@ export function mountEmbeddedAgentPreviewChrome(
     });
     workbench.append(editBtn);
 
-    const inspectorBtn = document.createElement('button');
-    inspectorBtn.type = 'button';
-    inspectorBtn.title = nls.localize('theia/mini-browser/toggleElementInspector', 'Toggle Element Inspector');
-    inspectorBtn.classList.add('theia-mini-browser-workbench-button', ...codiconArray('layout-panel'));
-    inlineInspector?.bindToggleButton(inspectorBtn);
-    disposables.push(addEventListener(inspectorBtn, 'click', (e: MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        inspectorHandler();
-    }));
-    workbench.append(inspectorBtn);
-
     toolbar.append(urlField, workbench);
 
     root.append(toolbar, body);
@@ -713,7 +696,6 @@ export function mountEmbeddedAgentPreviewChrome(
         },
         onPickElement: pickHandler,
         onToggleInspector: inspectorHandler,
-        setInspectorPosition: position => setPreviewInspectorPosition(split, inspectorSlot, position),
     };
 
     const controller = new QaapAgentPreviewChromeController(adapter, {

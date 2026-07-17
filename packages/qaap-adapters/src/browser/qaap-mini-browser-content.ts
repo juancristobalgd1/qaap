@@ -31,7 +31,6 @@ import {
 import { QaapPreviewFramePicker, QaapPreviewFramePickerFactory } from './qaap-preview-frame-picker';
 import {
     QaapPreviewInlineInspector,
-    setPreviewInspectorPosition,
     wirePreviewInspectorResize,
 } from './qaap-preview-inline-inspector';
 import { createPreviewEditButton } from './qaap-preview-edit-menu';
@@ -78,8 +77,6 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
     protected framePicker: QaapPreviewFramePicker | undefined;
 
     protected inlineInspector: QaapPreviewInlineInspector | undefined;
-
-    protected inspectorToggleButton: HTMLButtonElement | undefined;
 
     protected suspendedPreviewUrl: string | undefined;
 
@@ -135,9 +132,6 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
             messageService: this.messageService,
             toDispose: this.toDispose,
         });
-        if (this.inspectorToggleButton) {
-            this.inlineInspector.bindToggleButton(this.inspectorToggleButton);
-        }
         this.ensureFramePicker().connectInlineInspector(this.inlineInspector);
     }
 
@@ -448,13 +442,6 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
             },
             onPickElement: () => this.startElementPicker(),
             onToggleInspector: () => { void this.openElementInspector(); },
-            setInspectorPosition: position => {
-                const split = this.node.querySelector('.qaap-preview-split');
-                const inspectorSlot = this.node.querySelector('.qaap-preview-inspector-slot');
-                if (split instanceof HTMLElement && inspectorSlot instanceof HTMLElement) {
-                    setPreviewInspectorPosition(split, inspectorSlot, position);
-                }
-            },
         };
     }
 
@@ -493,7 +480,6 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         parent.appendChild(controls);
         this.createOpen(controls);
         this.createInspectButton(controls);
-        this.createInspectorToggleButton(controls);
         return controls;
     }
 
@@ -503,22 +489,6 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
             toDispose: this.toDispose,
         });
         parent.appendChild(button);
-        return button;
-    }
-
-    protected createInspectorToggleButton(parent: HTMLElement): HTMLElement {
-        const button = this.createWorkbenchButton(
-            parent,
-            nls.localize('theia/mini-browser/toggleElementInspector', 'Toggle Element Inspector'),
-            'layout-panel'
-        ) as HTMLButtonElement;
-        this.inspectorToggleButton = button;
-        this.inlineInspector?.bindToggleButton(button);
-        this.toDispose.push(addEventListener(button, 'click', (e: MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            void this.openElementInspector();
-        }));
         return button;
     }
 

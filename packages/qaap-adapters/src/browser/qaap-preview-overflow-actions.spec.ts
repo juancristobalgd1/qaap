@@ -16,8 +16,6 @@ describe('qaap-preview-overflow-actions', () => {
             'hard-reload',
             'copy-url',
             'bookmark-bar',
-            'inspector-side',
-            'inspector-bottom',
             'clear-history',
             'clear-cookies',
             'clear-cache',

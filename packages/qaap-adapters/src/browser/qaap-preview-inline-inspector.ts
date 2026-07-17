@@ -48,7 +48,6 @@ export interface QaapPreviewInlineInspectorOptions {
 export class QaapPreviewInlineInspector {
 
     protected host: EmbeddedElementInspectorHost | undefined;
-    protected toggleButton: HTMLButtonElement | undefined;
 
     constructor(
         protected readonly container: HTMLElement,
@@ -71,23 +70,16 @@ export class QaapPreviewInlineInspector {
         );
     }
 
-    bindToggleButton(button: HTMLButtonElement): void {
-        this.toggleButton = button;
-        this.host?.syncButtonState(button);
-    }
-
     open(): void {
         const split = this.container.closest('.qaap-preview-split');
         if (split instanceof HTMLElement) {
             applyPreviewInspectorPanelSize(this.container, split);
         }
         this.host?.show();
-        this.host?.syncButtonState(this.toggleButton);
     }
 
     close(): void {
         this.host?.hide();
-        this.host?.syncButtonState(this.toggleButton);
     }
 
     toggle(): void {
@@ -98,8 +90,7 @@ export class QaapPreviewInlineInspector {
         if (this.host.isOpen() && !this.options.service.state.picked) {
             this.options.messageService?.info(nls.localize(
                 'qaap/preview/inspectorPickHint',
-                'Use the element picker ({0}) in the preview toolbar, then edit styles here.',
-                'inspect',
+                'Use Edit → Selection in the preview toolbar, then edit styles here.',
             ));
         }
     }
