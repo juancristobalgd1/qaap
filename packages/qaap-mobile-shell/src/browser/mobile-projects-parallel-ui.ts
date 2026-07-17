@@ -284,7 +284,27 @@ export class MobileProjectsParallelUi {
         return summary.lastMessagePreview?.trim() || summary.title || '';
     }
 
-    openParallelRunsSheet(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
+    openParallelRunsSheetForPrompt(project: MobileProjectEntry, cwd: string, promptSeed: string): void {
+        const now = Date.now();
+        const summary: QaapAgentConversationSummaryDTO = {
+            id: `inspector-parallel-${now}`,
+            source: 'qaap-agent',
+            cwd,
+            agentId: '',
+            title: promptSeed.slice(0, 80),
+            status: 'idle',
+            createdAt: now,
+            updatedAt: now,
+            messageCount: 0,
+        };
+        this.openParallelRunsSheet(project, summary, { promptSeed });
+    }
+
+    openParallelRunsSheet(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly promptSeed?: string },
+    ): void {
         if (!this.supportsQaapAgentWorkflow(summary)) {
             return;
         }
@@ -320,20 +340,24 @@ export class MobileProjectsParallelUi {
         root.append(backdrop, sheet);
         document.body.append(root);
         this.sheetRoot = root;
-        void this.loadParallelSetup(body, project, summary);
+        void this.loadParallelSetup(body, project, summary, options);
     }
 
     protected async loadParallelSetup(
         body: HTMLElement,
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly promptSeed?: string },
     ): Promise<void> {
         body.replaceChildren();
         const loading = document.createElement('div');
         loading.className = 'theia-mobile-parallel-note';
         loading.textContent = nls.localize('qaap/mobileProjects/parallelLoading', 'Loading…');
         body.append(loading);
-        const promptSeed = await this.resolveParallelPromptSeed(summary);
+        const seeded = options?.promptSeed?.trim();
+        const promptSeed = seeded
+            ? seeded
+            : await this.resolveParallelPromptSeed(summary);
         if (!this.sheetRoot || !body.isConnected) {
             return;
         }
@@ -416,6 +440,12 @@ export class MobileProjectsParallelUi {
             return;
         }
         this.busy = true;
+        const runningMessage = nls.localize(
+            'qaap/mobileProjects/parallelAgentsRunning',
+            '{0} agents are running variants',
+            String(agents.length),
+        );
+        MobileSnackbar.show(runningMessage, { kind: 'loading', duration: 0 });
         const body = this.resolveParallelBody();
         if (body) {
             body.replaceChildren();
@@ -427,13 +457,10 @@ export class MobileProjectsParallelUi {
         try {
             await createParallelRun(summary.cwd, prompt.trim(), agents);
             this.closeSheet();
-            MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/parallelStarted', '{0} variants started — see them in Chats', String(agents.length)),
-                { kind: 'success', duration: 2800 },
-            );
+            MobileSnackbar.show(runningMessage, { kind: 'success', duration: 3600 });
             this.deps.onRunsChanged();
         } catch (error) {
-            MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
+            MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning', duration: 4200 });
             const setupBody = this.resolveParallelBody();
             if (setupBody) {
                 void this.loadParallelSetup(setupBody, project, summary);

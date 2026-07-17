@@ -99,6 +99,8 @@ import { QaapTerminalFrontendContribution } from './qaap-terminal-frontend-contr
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapComposerEditorContextContribution } from './qaap-composer-editor-context-contribution';
+import { QaapWorkHubComposerPromptContribution } from './qaap-work-hub-composer-prompt-contribution';
+import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import { QaapStickyComposerPromptHistoryContribution } from './qaap-sticky-composer-prompt-history';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
@@ -215,6 +217,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(CommandContribution).toService(QaapComposerEditorContextContribution);
     bind(MenuContribution).toService(QaapComposerEditorContextContribution);
     bind(KeybindingContribution).toService(QaapComposerEditorContextContribution);
+    bind(QaapWorkHubComposerPromptService).toSelf().inSingletonScope();
+    bind(QaapWorkHubComposerPromptContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(QaapWorkHubComposerPromptContribution);
     bind(QaapChatInputCodexLayoutContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapChatInputCodexLayoutContribution);
     bind(QaapChatInputProductContribution).toSelf().inSingletonScope();

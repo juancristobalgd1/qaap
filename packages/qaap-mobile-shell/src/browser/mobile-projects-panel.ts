@@ -2108,6 +2108,88 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.backgroundTaskUi.submitBackgroundAgentTask(project, draft, options);
     }
 
+    /**
+     * External entry (Element Inspector, etc.): submit to the sticky-composer agent
+     * for the active Work Hub project. Returns false when no project can be resolved.
+     */
+    async submitExternalComposerPrompt(
+        draft: string,
+        options: {
+            readonly agentId?: string;
+            readonly agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+        } = {},
+    ): Promise<boolean> {
+        const text = draft.trim();
+        if (!text) {
+            return false;
+        }
+        const project = this.resolveExternalComposerProject();
+        if (!project) {
+            return false;
+        }
+        const selectedAgentId = options.agentId
+            ?? this.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project);
+        const agentModel = options.agentModel
+            ?? this.stickyComposerAgentsUi.resolveStickyComposerAgentModel(selectedAgentId, project);
+        await this.submitBackgroundAgentTask(project, text, {
+            forceVps: true,
+            openConversation: true,
+            selectedAgentId,
+            ...(agentModel ? { agentModel } : {}),
+        });
+        return true;
+    }
+
+    /**
+     * Open the agent/model picker, then submit {@link draft} with the chosen agent.
+     * Returns false when no project can be resolved.
+     */
+    pickAgentAndSubmitExternalPrompt(
+        draft: string,
+        options: {
+            readonly title?: string;
+            readonly intro?: string;
+            readonly anchor?: HTMLElement;
+        } = {},
+    ): boolean {
+        const text = draft.trim();
+        if (!text) {
+            return false;
+        }
+        const project = this.resolveExternalComposerProject();
+        if (!project) {
+            return false;
+        }
+        this.stickyComposerSheetsUi.openExternalAgentPickerForSubmit(project, text, options);
+        return true;
+    }
+
+    openExternalParallelRunsSheet(prompt: string): boolean {
+        const text = prompt.trim();
+        if (!text) {
+            return false;
+        }
+        const project = this.resolveExternalComposerProject();
+        if (!project) {
+            return false;
+        }
+        const cwd = this.projectsService.getProjectCwd(project)
+            ?? this.preparedCwdByProjectId.get(project.id);
+        if (!cwd) {
+            return false;
+        }
+        this.ensureOverlayUi().parallel.openParallelRunsSheetForPrompt(project, cwd, text);
+        return true;
+    }
+
+    protected resolveExternalComposerProject(): MobileProjectEntry | undefined {
+        return this.transcriptController.state.transcriptOpenProject
+            ?? this.transcriptController.state.transcriptComposerProject
+            ?? this.resolveAgentsHubShellProject()
+            ?? this.projects.find(entry => this.projectsService.getProjectCwd(entry))
+            ?? this.projects[0];
+    }
+
     protected async createProjectChatSession(
         project: MobileProjectEntry,
         cwd: string,

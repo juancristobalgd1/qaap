@@ -58,9 +58,9 @@ export class ElementInspectorWidget extends ReactWidget {
         );
     }
 
-    protected runCommand(commandId: string): void {
+    protected runCommand(commandId: string, ...args: unknown[]): void {
         if (this.commands.isEnabled(commandId)) {
-            void this.commands.executeCommand(commandId).catch(() => undefined);
+            void this.commands.executeCommand(commandId, ...args).catch(() => undefined);
         }
     }
 }

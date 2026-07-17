@@ -51,6 +51,7 @@ import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 
 /**
@@ -122,6 +123,8 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly agUiFrontendTools?: QaapAgUiFrontendToolService;
     @inject(QaapComposerEditorContextService)
     protected readonly composerEditorContextService: QaapComposerEditorContextService;
+    @inject(QaapWorkHubComposerPromptService)
+    protected readonly composerPromptService: QaapWorkHubComposerPromptService;
     @inject(MobileProjectsActiveTasks)
     protected readonly activeTasks: MobileProjectsActiveTasks;
     @inject(MobileProjectsConversations)
@@ -244,6 +247,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
         this.workHubPanel.node.classList.add('qaap-work-hub-chat-view-panel');
         host.node.appendChild(this.workHubPanel.node);
         this.resetWorkHubHostScroll(host.node);
+        this.toDispose.push(this.composerPromptService.trackPanel(this.workHubPanel));
         this.toDispose.push(Disposable.create(() => {
             this.workHubPanel?.dispose();
             this.workHubPanel?.node.parentElement?.removeChild(this.workHubPanel.node);

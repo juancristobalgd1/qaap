@@ -10,9 +10,6 @@ import { codicon } from '@theia/core/lib/browser';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
-import { ChatService } from '@theia/ai-chat/lib/common';
-import { AI_CHAT_TOGGLE_COMMAND_ID } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
-import { CoderAgentId } from '@theia/ai-ide/lib/browser/coder-agent';
 import { ElementInspectorService } from './element-inspector-service';
 import { ElementInspectorWidget } from './element-inspector-widget';
 import {
@@ -21,6 +18,11 @@ import {
     formatElementGenerateVariantPrompt,
     guessElementComponentPath,
 } from './qaap-element-inspector-dom-utils';
+
+/** Keep in sync with `@theia/qaap-mobile-shell` {@link QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND}. */
+const QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND = 'qaap.workHub.submitComposerPrompt';
+/** Keep in sync with `@theia/qaap-mobile-shell` {@link QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND}. */
+const QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND = 'qaap.workHub.openParallelRunsSheet';
 
 export const ELEMENT_INSPECTOR_TOGGLE_COMMAND_ID = 'theia-mini-browser.element-inspector.toggle';
 export const ELEMENT_INSPECTOR_REVEAL_COMMAND_ID = 'theia-mini-browser.element-inspector.reveal';
@@ -71,9 +73,6 @@ export class ElementInspectorContribution extends AbstractViewContribution<Eleme
 
     @inject(MessageService)
     protected readonly messages: MessageService;
-
-    @inject(ChatService)
-    protected readonly chatService: ChatService;
 
     @inject(CommandRegistry)
     protected readonly commands: CommandRegistry;
@@ -133,21 +132,7 @@ export class ElementInspectorContribution extends AbstractViewContribution<Eleme
         if (!picked) {
             return;
         }
-        try {
-            await this.commands.executeCommand(AI_CHAT_TOGGLE_COMMAND_ID);
-        } catch {
-            // chat panel may already be open
-        }
-        let session = this.chatService.getActiveSession();
-        if (!session) {
-            session = this.chatService.createSession();
-            this.chatService.setActiveSession(session.id);
-        }
-        const prompt = formatElementAgentPrompt(picked);
-        await this.chatService.sendRequest(session.id, {
-            text: `@${CoderAgentId} ${prompt}`,
-        });
-        await this.openView({ activate: false, reveal: true });
+        await this.submitPromptToComposerAgent(formatElementAgentPrompt(picked));
     }
 
     protected async generateVariantInRepo(): Promise<void> {
@@ -155,20 +140,51 @@ export class ElementInspectorContribution extends AbstractViewContribution<Eleme
         if (!picked) {
             return;
         }
+        if (!this.commands.getCommand(QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND)) {
+            this.messages.warn(nls.localize(
+                'qaap/elementInspector/workHubUnavailable',
+                'Work Hub agent submit is unavailable in this session.',
+            ));
+            return;
+        }
         try {
-            await this.commands.executeCommand(AI_CHAT_TOGGLE_COMMAND_ID);
-        } catch {
-            /* chat panel may already be open */
+            await this.commands.executeCommand(
+                QAAP_WORK_HUB_OPEN_PARALLEL_RUNS_COMMAND,
+                formatElementGenerateVariantPrompt(picked),
+            );
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            this.messages.error(nls.localize(
+                'qaap/elementInspector/askAgentFailed',
+                'Could not ask the agent: {0}',
+                detail,
+            ));
         }
-        let session = this.chatService.getActiveSession();
-        if (!session) {
-            session = this.chatService.createSession();
-            this.chatService.setActiveSession(session.id);
+    }
+
+    /**
+     * Send the prompt to the sticky-composer / Work Hub agent currently selected for
+     * the project — never to the legacy Theia Chat `@coder` agent.
+     */
+    protected async submitPromptToComposerAgent(prompt: string): Promise<void> {
+        if (!this.commands.getCommand(QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND)) {
+            this.messages.warn(nls.localize(
+                'qaap/elementInspector/workHubUnavailable',
+                'Work Hub agent submit is unavailable in this session.',
+            ));
+            return;
         }
-        const prompt = formatElementGenerateVariantPrompt(picked);
-        await this.chatService.sendRequest(session.id, {
-            text: `@${CoderAgentId} ${prompt}`,
-        });
+        try {
+            await this.commands.executeCommand(QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND, prompt);
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            this.messages.error(nls.localize(
+                'qaap/elementInspector/askAgentFailed',
+                'Could not ask the agent: {0}',
+                detail,
+            ));
+            return;
+        }
         await this.openView({ activate: false, reveal: true });
     }
 }

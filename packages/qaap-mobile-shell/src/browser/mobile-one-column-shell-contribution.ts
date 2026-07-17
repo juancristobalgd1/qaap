@@ -49,6 +49,7 @@ import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
+import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 import { QaapWorkHubDiffDelegate, QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
@@ -267,6 +268,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(QaapComposerEditorContextService)
     protected readonly composerEditorContextService: QaapComposerEditorContextService;
 
+    @inject(QaapWorkHubComposerPromptService)
+    protected readonly composerPromptService: QaapWorkHubComposerPromptService;
+
     @inject(QaapProjectBootstrapService)
     protected readonly projectBootstrap: QaapProjectBootstrapService;
 
@@ -334,6 +338,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     protected get bottomBar(): HTMLElement | undefined { return this.bottomBarController.getBottomBarNode(); }
     protected mobileActive = false;
     protected projectsPanel: MobileProjectsPanel | undefined;
+    protected projectsPanelTrack: Disposable | undefined;
     protected agentTaskComposer: MobileAgentTaskComposer | undefined;
     protected workHubPreferencesSheet: MobileWorkHubPreferencesSheet | undefined;
     protected workHubAiConfigurationSheet: MobileWorkHubAiConfigurationSheet | undefined;
@@ -367,6 +372,15 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.scheduleSnapAndUiRefresh();
     };
 
+    protected setTrackedProjectsPanel(panel: MobileProjectsPanel | undefined): void {
+        this.projectsPanelTrack?.dispose();
+        this.projectsPanelTrack = undefined;
+        this.projectsPanel = panel;
+        if (panel) {
+            this.projectsPanelTrack = this.composerPromptService.trackPanel(panel);
+        }
+    }
+
     @postConstruct()
     protected initLandingController(): void {
         this.initBottomBarController();
@@ -377,7 +391,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.initWorkHubBootstrapController();
         this.landingHost = {
             getProjectsPanel: () => this.projectsPanel,
-            setProjectsPanel: panel => { this.projectsPanel = panel; },
+            setProjectsPanel: panel => this.setTrackedProjectsPanel(panel),
             ensureProjectsPanel: forceHomeMode => this.workHubBootstrap.ensureProjectsPanel(forceHomeMode),
             hideProjectsPanel: () => this.hideProjectsPanel(),
             tryBootstrapMobileAgentsChat: () => this.workHubBootstrap.tryBootstrapMobileAgentsChat(),
@@ -604,7 +618,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             onMediaChange: () => this.onMediaChange(),
             cancelAgentsBootstrap: () => this.workHubBootstrap.cancelAgentsBootstrap(),
             getProjectsPanel: () => this.projectsPanel,
-            setProjectsPanel: panel => { this.projectsPanel = panel; },
+            setProjectsPanel: panel => this.setTrackedProjectsPanel(panel),
             tryBootstrapMobileAgentsChat: () => this.workHubBootstrap.tryBootstrapMobileAgentsChat(),
             restoreAgentsSurfaceAfterReload: () => this.workHubBootstrap.restoreAgentsSurfaceAfterReload(),
             syncMobileHubPrimaryBottomChrome: () => this.bottomBarController.syncMobileHubPrimaryBottomChrome(),
@@ -626,7 +640,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.workHubBootstrapHost = {
             isMobileActive: () => this.mobileActive,
             getProjectsPanel: () => this.projectsPanel,
-            setProjectsPanel: panel => { this.projectsPanel = panel; },
+            setProjectsPanel: panel => this.setTrackedProjectsPanel(panel),
             shouldActivateMobileLayout: () => this.shouldActivateMobileLayout(),
             enterMobileLayout: () => this.enterMobileLayout(),
             onMediaChange: () => this.onMediaChange(),
@@ -892,7 +906,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             root.remove();
             if (!this.projectsPanel?.node.isConnected) {
                 this.projectsPanel?.dispose();
-                this.projectsPanel = undefined;
+                this.setTrackedProjectsPanel(undefined);
             }
             this.tryBootstrapMobileAgentsChat();
             return;
@@ -1207,7 +1221,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 this.projectsPanel.node.parentElement.removeChild(this.projectsPanel.node);
             }
         }
-        this.projectsPanel = undefined;
+        this.setTrackedProjectsPanel(undefined);
         this.pullRequestPanelController.disposePullRequestPanel();
         this.shell.node.classList.remove(MOBILE_BOTTOM_OPEN_CLASS);
     }
@@ -1753,7 +1767,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             this.projectsPanel.hide();
             this.projectsPanel.dispose();
             this.projectsPanel.node.parentElement?.removeChild(this.projectsPanel.node);
-            this.projectsPanel = undefined;
+            this.setTrackedProjectsPanel(undefined);
         }
         this.ensureProjectsPanel(false);
         const panel = this.projectsPanel;

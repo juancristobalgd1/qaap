@@ -3682,21 +3682,20 @@ body.theia-mobile-mod-landing .theia-mobile-workbench-top-bar {
   display: none !important;
 }
 
-/* Editor / workspace notifications must not appear above the projects landing. */
+/* Editor / workspace notifications must not appear above the projects landing.
+ * Keep MobileSnackbar visible — it is Work Hub product feedback (parallel runs, etc.). */
 body.theia-mobile-mod-landing .theia-notifications-overlay,
-body.theia-mobile-mod-landing .qaap-project-bootstrap-banner,
-body.theia-mobile-mod-landing .theia-mobile-snackbar {
+body.theia-mobile-mod-landing .qaap-project-bootstrap-banner {
   display: none !important;
   pointer-events: none !important;
 }
 
-/* Agents chat is the primary surface — suppress IDE toasts (terminal restore, etc.). */
+/* Agents chat is the primary surface — suppress IDE toasts (terminal restore, etc.).
+ * Do not hide .theia-mobile-snackbar here; Work Hub uses it for intentional feedback. */
 body.theia-mobile-mod-workhub-composer-header .theia-notifications-overlay,
 body.theia-mobile-mod-workhub-composer-header .qaap-project-bootstrap-banner,
-body.theia-mobile-mod-workhub-composer-header .theia-mobile-snackbar,
 body.theia-mobile-mod-workhub-no-bottom-chrome .theia-notifications-overlay,
-body.theia-mobile-mod-workhub-no-bottom-chrome .qaap-project-bootstrap-banner,
-body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-snackbar {
+body.theia-mobile-mod-workhub-no-bottom-chrome .qaap-project-bootstrap-banner {
   display: none !important;
   pointer-events: none !important;
 }
@@ -9866,6 +9865,20 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.65));
 }
 
+.theia-mobile-sticky-composer-sheet.theia-mod-generate-variant .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-generate-variant .theia-mobile-sticky-composer-sheet-panel {
+  border-top: 2px solid color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 45%, transparent);
+}
+
+.theia-mobile-sticky-composer-sheet.theia-mod-generate-variant .theia-qaap-agent-sheet-default-hint,
+.qaap-sticky-composer-sheet-popover.theia-mod-generate-variant .theia-qaap-agent-sheet-default-hint {
+  margin: 10px 12px 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 8%, var(--theia-editor-background, #1e1e1e));
+  color: var(--theia-foreground, rgba(255, 255, 255, 0.85));
+}
+
 .theia-qaap-agent-sheet-loading-announcement {
   position: absolute;
   width: 1px;
@@ -14848,7 +14861,8 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   left: 50%;
   bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + 12px);
   transform: translate(-50%, 12px);
-  z-index: 10500;
+  /* Above parallel / agent-log overlays so run-start feedback stays readable. */
+  z-index: 2147483020;
   display: inline-flex;
   align-items: center;
   gap: 12px;

@@ -109,8 +109,8 @@ export function mountEmbeddedElementInspector(
     return host;
 }
 
-function runCommand(commands: CommandRegistry, commandId: string): void {
+function runCommand(commands: CommandRegistry, commandId: string, ...args: unknown[]): void {
     if (commands.isEnabled(commandId)) {
-        void commands.executeCommand(commandId).catch(() => undefined);
+        void commands.executeCommand(commandId, ...args).catch(() => undefined);
     }
 }

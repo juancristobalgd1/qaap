@@ -122,6 +122,13 @@ export interface MobileProjectsStickyComposerSheetsHost {
     stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
     closeTranscriptComposerSheets(): void;
     agentsHubShellActive?: boolean;
+    submitExternalComposerPrompt?(
+        draft: string,
+        options?: {
+            readonly agentId?: string;
+            readonly agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+        },
+    ): Promise<boolean>;
 }
 
 export class MobileProjectsStickyComposerSheetsUi {
@@ -306,6 +313,88 @@ export class MobileProjectsStickyComposerSheetsUi {
                     this.closeAllComposerSheets();
                     this.host.stickyComposerRenderUi.renderStickyComposer();
                 },
+                });
+            }).catch(() => {
+                if (this.host.stickyComposerAgentSheet === chrome.sheet) {
+                    this.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog);
+                }
+            });
+        };
+        loadAgentCatalog();
+    }
+
+    /**
+     * One-shot agent/model picker for external prompts (e.g. Generate UI variant).
+     * On selection, persists the pick and submits {@link draft} via the Work Hub runner.
+     */
+    openExternalAgentPickerForSubmit(
+        project: MobileProjectEntry,
+        draft: string,
+        options: {
+            readonly title?: string;
+            readonly intro?: string;
+            readonly anchor?: HTMLElement;
+        } = {},
+    ): void {
+        const usePopover = this.shouldUseAgentPickerPopover(options.anchor);
+        if (usePopover
+            && this.agentSheetAnchor === options.anchor
+            && this.host.stickyComposerAgentSheet) {
+            this.closeAllComposerSheets();
+            return;
+        }
+        this.closeAllComposerSheets();
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
+        const onClose = (): void => { this.closeAllComposerSheets(); };
+        const chrome = this.createComposerAgentPickerChrome({
+            closeTitle: nls.localize('qaap/mobileAgentComposer/close', 'Close'),
+            onClose,
+            anchor: options.anchor,
+            transcriptOverlay: this.shouldElevateComposerSheets(),
+            sheetModifierClass: 'theia-mod-generate-variant',
+        });
+        document.body.append(chrome.sheet);
+        this.host.stickyComposerAgentSheet = chrome.sheet;
+        if (this.shouldUseAgentPickerPopover(options.anchor) && options.anchor) {
+            this.assignAgentPickerPopover(options.anchor, chrome.popoverCleanup);
+            scheduleStickyComposerPopoverPosition(chrome.sheet, options.anchor, this.agentPopoverAlign);
+        }
+        const agentsTitle = options.title
+            ?? nls.localize('qaap/elementInspector/pickVariantAgentTitle', 'Choose agent for UI variant');
+        const agentsIntro = options.intro
+            ?? nls.localize(
+                'qaap/elementInspector/pickVariantAgentIntro',
+                'Pick who should design the variant, then a model if available. The task starts right after.',
+            );
+        const loadAgentCatalog = (): void => {
+            this.host.stickyComposerAgentsUi.showComposerAgentPickerLoading(chrome);
+            this.syncAgentPickerPopoverPosition(chrome.sheet);
+            void this.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }).then(agents => {
+                if (this.host.stickyComposerAgentSheet !== chrome.sheet) {
+                    return;
+                }
+                void this.renderComposerAgentPicker(chrome, {
+                    view: 'agents',
+                    cwd,
+                    agents,
+                    selectedAgentId: this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
+                    includeCoder: false,
+                    agentsTitle,
+                    agentsIntro,
+                    onSelectAgent: (agentId, model) => {
+                        this.host.stickyComposerPinnedAgentId = agentId;
+                        if (cwd) {
+                            writeStoredAgent(cwd, agentId);
+                            if (model) {
+                                writeStoredAgentModel(cwd, agentId, model);
+                            }
+                        }
+                        this.closeAllComposerSheets();
+                        void this.host.submitExternalComposerPrompt?.(draft, {
+                            agentId,
+                            ...(model ? { agentModel: model } : {}),
+                        });
+                    },
                 });
             }).catch(() => {
                 if (this.host.stickyComposerAgentSheet === chrome.sheet) {
@@ -738,9 +827,13 @@ export class MobileProjectsStickyComposerSheetsUi {
         readonly onClose: () => void;
         readonly anchor?: HTMLElement;
         readonly transcriptOverlay?: boolean;
+        readonly sheetModifierClass?: string;
     }): ComposerAgentPickerChrome {
         const panel = document.createElement('section');
         panel.className = 'theia-mobile-sticky-composer-sheet-panel';
+        if (options.sheetModifierClass) {
+            panel.classList.add(options.sheetModifierClass);
+        }
 
         const header = document.createElement('header');
         header.className = 'theia-mobile-sticky-composer-sheet-header';
@@ -792,7 +885,10 @@ export class MobileProjectsStickyComposerSheetsUi {
                 onClose: options.onClose,
                 align: 'end',
                 transcriptOverlay: options.transcriptOverlay,
-                modifierClasses: ['theia-mod-agent-picker'],
+                modifierClasses: [
+                    'theia-mod-agent-picker',
+                    ...(options.sheetModifierClass ? [options.sheetModifierClass] : []),
+                ],
             });
             return {
                 sheet: mounted.root,
@@ -809,10 +905,14 @@ export class MobileProjectsStickyComposerSheetsUi {
             };
         }
 
+        const baseSheetClassName = options.transcriptOverlay
+            ? 'theia-mobile-sticky-composer-sheet theia-mod-agent theia-mod-transcript-overlay'
+            : 'theia-mobile-sticky-composer-sheet theia-mod-agent';
+        const sheetClassName = options.sheetModifierClass
+            ? `${baseSheetClassName} ${options.sheetModifierClass}`
+            : baseSheetClassName;
         const sheet = mountStickyComposerBottomSheet(panel, {
-            sheetClassName: options.transcriptOverlay
-                ? 'theia-mobile-sticky-composer-sheet theia-mod-agent theia-mod-transcript-overlay'
-                : 'theia-mobile-sticky-composer-sheet theia-mod-agent',
+            sheetClassName,
             onClose: options.onClose,
         });
 
@@ -838,6 +938,8 @@ export class MobileProjectsStickyComposerSheetsUi {
             readonly agents: readonly QaapAgentTaskAgentOption[];
             readonly selectedAgentId: string | undefined;
             readonly includeCoder: boolean;
+            readonly agentsTitle?: string;
+            readonly agentsIntro?: string;
             readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
         },
     ): Promise<void> {
@@ -932,11 +1034,13 @@ export class MobileProjectsStickyComposerSheetsUi {
         chrome.backBtn.hidden = true;
         chrome.backBtn.onclick = null;
         chrome.intro.hidden = false;
-        chrome.title.textContent = nls.localize('qaap/mobileProjects/stickyComposerPickAgent', 'Choose agent');
-        chrome.intro.textContent = nls.localize(
-            'qaap/mobileProjects/stickyComposerAgentDefaultHint',
-            'QAIQ is the default Qaap agent. Codex, Claude Code, and others are optional alternatives.',
-        );
+        chrome.title.textContent = options.agentsTitle
+            ?? nls.localize('qaap/mobileProjects/stickyComposerPickAgent', 'Choose agent');
+        chrome.intro.textContent = options.agentsIntro
+            ?? nls.localize(
+                'qaap/mobileProjects/stickyComposerAgentDefaultHint',
+                'QAIQ is the default Qaap agent. Codex, Claude Code, and others are optional alternatives.',
+            );
 
         const agentEntries: QaapAgentPickerSearchEntry[] = [];
         if (options.includeCoder) {
