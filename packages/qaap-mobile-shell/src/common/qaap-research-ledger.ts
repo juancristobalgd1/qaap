@@ -66,6 +66,13 @@ export interface ResearchExperimentRecord {
     readonly reverted?: boolean;
     readonly notes?: string;
     readonly runAttempts?: number;
+    /**
+     * True for the one-off `round: 0` preflight-probe record a goal's very first `runLoop` writes
+     * before round 1 (see `ensurePreflightPassed` in `qaap-research-runner.ts`). Never a real
+     * experiment — callers that count rounds (round numbering, `maxRounds`, stagnation, and
+     * infra-failure streaks via {@link resolveTerminationReason}) must filter it out first.
+     */
+    readonly preflight?: boolean;
 }
 
 /**

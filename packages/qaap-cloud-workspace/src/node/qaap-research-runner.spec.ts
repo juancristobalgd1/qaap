@@ -226,6 +226,21 @@ function loadAuthFailureFixture(): string {
     return fs.readFileSync(path.resolve(__dirname, '../../test-resources/qaap-research-agent-turn-auth-failure.jsonl'), 'utf8');
 }
 
+/**
+ * Completes the runner's preflight probe — always the very first task any `runLoop`/`start` call
+ * creates for a goal without an existing `preflight: true` ledger record — with a healthy
+ * response, then flushes microtasks so the loop advances into round 1. Every `callRunLoop` test
+ * below that cares about round *content* uses this to get past the probe without re-testing it;
+ * the probe itself is covered by the dedicated `describe('preflight probe ...')` block.
+ */
+async function passPreflight(taskRunner: FakeTaskRunner): Promise<void> {
+    expect(taskRunner.createdTasks).to.have.lengthOf.at.least(1);
+    const preflightTask = taskRunner.createdTasks[0];
+    taskRunner.setLog(preflightTask.id, 'READY');
+    taskRunner.finishTask(preflightTask.id);
+    await new Promise(resolve => setImmediate(resolve));
+}
+
 // ---- tests --------------------------------------------------------------------
 
 describe('QaapResearchRunner state machine', () => {
@@ -552,11 +567,12 @@ describe('QaapResearchRunner state machine', () => {
 
         const runner = makeRunner(store, taskRunner);
         const promise = runner.callRunLoop(goal.id);
-        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
-        taskRunner.finishTask(taskRunner.createdTasks[0].id);
+        await passPreflight(taskRunner);
+        taskRunner.setLog(taskRunner.createdTasks[1].id, proposalBlock({ learning_rate: 0.01 }));
+        taskRunner.finishTask(taskRunner.createdTasks[1].id);
         await promise;
 
-        expect(taskRunner.createdTasks).to.have.lengthOf(1); // exactly one round, loop stopped
+        expect(taskRunner.createdTasks).to.have.lengthOf(2); // preflight + exactly one round, loop stopped
         const finalGoal = store.get(goal.id)!;
         expect(finalGoal.status).to.equal('completed');
         expect(finalGoal.terminationReason).to.equal('reached-target');
@@ -576,8 +592,9 @@ describe('QaapResearchRunner state machine', () => {
 
         const runner = makeRunner(store, taskRunner);
         const promise = runner.callRunLoop(goal.id);
-        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
-        taskRunner.finishTask(taskRunner.createdTasks[0].id);
+        await passPreflight(taskRunner);
+        taskRunner.setLog(taskRunner.createdTasks[1].id, proposalBlock({ learning_rate: 0.01 }));
+        taskRunner.finishTask(taskRunner.createdTasks[1].id);
         await new Promise(resolve => setImmediate(resolve));
 
         runner.callCancel(goal.id);
@@ -585,7 +602,7 @@ describe('QaapResearchRunner state machine', () => {
         resolveRun({ exitCode: 1, stdout: '', stderr: 'killed', timedOut: false });
         await promise;
 
-        const [record] = store.readLedgerForGoal(goal);
+        const [record] = store.readLedgerForGoal(goal).filter(r => !r.preflight);
         expect(record.phase).to.equal('run'); // never advanced to a (wrong) 'failed' verdict
         expect(record.verdict).to.equal(undefined);
         expect(store.get(goal.id)!.status).to.equal('cancelled');
@@ -829,23 +846,134 @@ describe('QaapResearchRunner state machine', () => {
 
             const runner = makeRunner(store, taskRunner);
             const promise = runner.callRunLoop(goal.id);
+            await passPreflight(taskRunner);
 
             // Round 1: auth failure.
             await new Promise(resolve => setImmediate(resolve));
-            taskRunner.setLog(taskRunner.createdTasks[0].id, loadAuthFailureFixture());
-            taskRunner.finishTask(taskRunner.createdTasks[0].id, 'completed');
+            taskRunner.setLog(taskRunner.createdTasks[1].id, loadAuthFailureFixture());
+            taskRunner.finishTask(taskRunner.createdTasks[1].id, 'completed');
 
             // Round 2: same failure again — trips infraFailureLimit (2).
             await new Promise(resolve => setImmediate(resolve));
-            expect(taskRunner.createdTasks).to.have.lengthOf(2);
-            taskRunner.setLog(taskRunner.createdTasks[1].id, loadAuthFailureFixture());
-            taskRunner.finishTask(taskRunner.createdTasks[1].id, 'completed');
+            expect(taskRunner.createdTasks).to.have.lengthOf(3);
+            taskRunner.setLog(taskRunner.createdTasks[2].id, loadAuthFailureFixture());
+            taskRunner.finishTask(taskRunner.createdTasks[2].id, 'completed');
             await promise;
 
-            expect(taskRunner.createdTasks).to.have.lengthOf(2); // loop stopped, did not run 5 rounds
+            expect(taskRunner.createdTasks).to.have.lengthOf(3); // preflight + 2 rounds, loop stopped there
             const finalGoal = store.get(goal.id)!;
             expect(finalGoal.status).to.equal('failed');
             expect(finalGoal.terminationReason).to.equal('infra-broken');
+        });
+    });
+
+    describe('preflight probe: fails fast before round 1 ever burns a round on a broken agent', () => {
+
+        it('a real auth-failure log fails the goal immediately, before round 1 starts and with no runCommand', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC], runCommand: 'python train.py' });
+            store.seedGoal(goal);
+
+            const runner = makeRunner(store, taskRunner);
+            const promise = runner.callRunLoop(goal.id);
+            expect(taskRunner.createdTasks).to.have.lengthOf(1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, loadAuthFailureFixture());
+            taskRunner.finishTask(taskRunner.createdTasks[0].id, 'completed');
+            await promise;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(1); // round 1 never started
+            expect(taskRunner.genericCommandCalls).to.have.lengthOf(0); // runCommand never invoked
+            const finalGoal = store.get(goal.id)!;
+            expect(finalGoal.status).to.equal('failed');
+            expect(finalGoal.terminationReason).to.equal('infra-broken');
+            const [record] = store.readLedgerForGoal(goal);
+            expect(record.round).to.equal(0);
+            expect(record.preflight).to.equal(true);
+            expect(record.verdict).to.equal('failed');
+            expect(record.hypothesis).to.equal('(preflight)');
+            expect(record.notes).to.contain('preflight failed');
+            expect(record.notes).to.contain('Failed to authenticate: OAuth session expired and could not be refreshed');
+        });
+
+        it('a task that finishes in the "failed" state also fails the preflight, even with no parseable error in the log', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC] });
+            store.seedGoal(goal);
+
+            const runner = makeRunner(store, taskRunner);
+            const promise = runner.callRunLoop(goal.id);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, 'connection refused before printing anything structured');
+            taskRunner.finishTask(taskRunner.createdTasks[0].id, 'failed');
+            await promise;
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(1); // round 1 never started
+            const finalGoal = store.get(goal.id)!;
+            expect(finalGoal.status).to.equal('failed');
+            expect(finalGoal.terminationReason).to.equal('infra-broken');
+            const [record] = store.readLedgerForGoal(goal);
+            expect(record.verdict).to.equal('failed');
+            expect(record.notes).to.contain('preflight failed');
+        });
+
+        it('a healthy response lets round 1 start normally, and the round-0 preflight record never counts toward maxRounds', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            const goal = makeGoal({ metrics: [METRIC], maxRounds: 1 });
+            store.seedGoal(goal);
+            taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.5', stderr: '', timedOut: false }];
+
+            const runner = makeRunner(store, taskRunner);
+            const promise = runner.callRunLoop(goal.id);
+            expect(taskRunner.createdTasks).to.have.lengthOf(1);
+            await passPreflight(taskRunner);
+
+            expect(taskRunner.createdTasks).to.have.lengthOf(2); // preflight, then round 1's propose task
+            taskRunner.setLog(taskRunner.createdTasks[1].id, proposalBlock({ learning_rate: 0.01 }));
+            taskRunner.finishTask(taskRunner.createdTasks[1].id);
+            await promise;
+
+            const records = store.readLedgerForGoal(goal);
+            expect(records).to.have.lengthOf(2); // preflight (round 0) + round 1
+            const round1 = records.find(r => r.round === 1)!;
+            expect(round1.phase).to.equal('done');
+            const finalGoal = store.get(goal.id)!;
+            // maxRounds=1 is satisfied by round 1 alone — proof the preflight record was excluded
+            // from the count (otherwise this would need 2 real rounds to hit the budget).
+            expect(finalGoal.status).to.equal('completed');
+            expect(finalGoal.terminationReason).to.equal('budget-exhausted');
+        });
+
+        it('does not re-run the preflight on resume when a preflight record already exists (e.g. after a backend restart)', async () => {
+            const store = new FakeResearchStore();
+            const taskRunner = new FakeTaskRunner();
+            // maxRounds: 1 bounds callRunLoop to a single round so the test does not have to script
+            // a second propose task — unrelated to what this test actually checks (no re-probe).
+            const goal = makeGoal({ metrics: [METRIC], maxRounds: 1 });
+            store.seedGoal(goal);
+            store.upsertRecord(goal.cwd, {
+                id: 'preflight-1', goalId: goal.id, round: 0, startedAt: 0, finishedAt: 0,
+                hypothesis: '(preflight)', declaredConfig: {}, declaredConfigFingerprint: '', realChangeFingerprint: '',
+                phase: 'done', metrics: [], notes: 'preflight ok', preflight: true,
+            });
+            taskRunner.genericCommandResults = [{ exitCode: 0, stdout: '0.5', stderr: '', timedOut: false }];
+
+            const runner = makeRunner(store, taskRunner);
+            const promise = runner.callRunLoop(goal.id);
+            // Straight to round 1's propose task — no second preflight probe. `ensurePreflightPassed`
+            // resolves without ever awaiting a task event here (the preflight record already
+            // exists), which still defers `runLoop`'s continuation by one microtask — flush it.
+            await new Promise(resolve => setImmediate(resolve));
+            expect(taskRunner.createdTasks).to.have.lengthOf(1);
+            taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+            taskRunner.finishTask(taskRunner.createdTasks[0].id);
+            await promise;
+
+            const records = store.readLedgerForGoal(goal);
+            expect(records.filter(r => r.preflight)).to.have.lengthOf(1); // still just the original one
+            const round1 = records.find(r => r.round === 1)!;
+            expect(round1.phase).to.equal('done');
         });
     });
 });

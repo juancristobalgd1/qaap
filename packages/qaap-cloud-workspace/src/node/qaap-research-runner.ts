@@ -39,6 +39,23 @@ const GIT_COMMAND_TIMEOUT_MS = 15_000;
  *  command failure. After this many, treat it as an infra failure rather than retry forever. */
 const MAX_RUN_RESUME_ATTEMPTS = 2;
 
+/**
+ * Wall-clock cap for the preflight probe (see {@link QaapResearchRunner.ensurePreflightPassed}).
+ * A trivial "reply READY" turn should settle in seconds; if the CLI is hung this bounds how long
+ * a broken agent can block round 1 before the runner gives up and fails the goal.
+ */
+const PREFLIGHT_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Deliberately trivial and explicit: this only needs to prove the agent CLI can authenticate,
+ * resolve the requested model, and produce a reply — not that it can plan or use tools. Real
+ * incidents this catches (see the round-1 alternative, which burns a whole round discovering the
+ * same thing): an expired CLI session ("Not logged in · Please run /login") and an invalid model
+ * id (`model_not_found`).
+ */
+const PREFLIGHT_PROMPT =
+    'Preflight check. Reply with exactly the single word: READY. Do not use any tools, do not read files, do not plan.';
+
 /** Path (relative to `goal.cwd`) of the runner-owned ledger file — never product of an experiment.
  *  Excluded from every round's diff AND from the round's commit, so it never contaminates
  *  `git diff --stat` (the anti-stall fallback reads it), `git status` (the repeat-config guard
@@ -152,12 +169,17 @@ export class QaapResearchRunner {
     // ---- the loop --------------------------------------------------------
 
     protected async runLoop(goalId: string): Promise<void> {
+        if (!(await this.ensurePreflightPassed(goalId))) {
+            // Either the probe failed (goal already terminated as 'infra-broken') or the goal was
+            // cancelled/vanished while the probe was in flight. Either way, round 1 must not start.
+            return;
+        }
         for (;;) {
             const goal = this.store.get(goalId);
             if (!goal || goal.status !== 'running') {
                 return;
             }
-            const records = this.store.readLedgerForGoal(goal);
+            const records = this.readRoundLedger(goal);
             const last = records[records.length - 1];
             try {
                 if (last && last.phase !== 'done') {
@@ -173,12 +195,116 @@ export class QaapResearchRunner {
             if (!refreshed || refreshed.status !== 'running') {
                 return;
             }
-            const reason = resolveTerminationReason(refreshed, this.store.readLedgerForGoal(refreshed), Date.now());
+            const reason = resolveTerminationReason(refreshed, this.readRoundLedger(refreshed), Date.now());
             if (reason) {
                 this.terminate(refreshed, reason);
                 return;
             }
         }
+    }
+
+    /** The ledger, excluding the `round: 0` preflight-probe record (see {@link ensurePreflightPassed})
+     *  — everything that counts rounds (round numbering, `maxRounds`, stagnation, and infra-failure
+     *  streaks via `resolveTerminationReason`) must never see it. */
+    protected readRoundLedger(goal: ResearchGoal): ResearchExperimentRecord[] {
+        return this.store.readLedgerForGoal(goal).filter(record => !record.preflight);
+    }
+
+    /**
+     * Runs a cheap, once-per-goal sanity check ahead of round 1: spawns the SAME agent/model as
+     * the goal with a trivial "reply READY" prompt and waits for it to settle. This exists because
+     * a broken agent — expired CLI auth, an invalid model id — currently gets discovered only
+     * after the propose turn burns a whole round on it (see `PREFLIGHT_PROMPT`'s doc for the two
+     * real incidents). Detecting it here fails the goal in seconds instead of a round.
+     *
+     * Idempotent per goal: if a `preflight: true` record already exists (a prior probe already
+     * ran, including across a backend restart), this is a no-op that returns `true` immediately.
+     *
+     * Returns `false` when round 1 must not start — either the probe itself failed (the goal was
+     * already terminated as `'infra-broken'` and a `round: 0` record recorded the reason) or the
+     * goal was cancelled/vanished while the probe was in flight.
+     */
+    protected async ensurePreflightPassed(goalId: string): Promise<boolean> {
+        const goal = this.store.get(goalId);
+        if (!goal || goal.status !== 'running') {
+            return false;
+        }
+        if (this.store.readLedgerForGoal(goal).some(record => record.preflight)) {
+            return true;
+        }
+
+        const task = this.taskRunner.create({
+            cwd: goal.cwd,
+            prompt: PREFLIGHT_PROMPT,
+            agent: goal.agentId ?? this.taskRunner.defaultAgent(),
+            title: `Research preflight: ${goal.description}`,
+            autoApprove: true,
+            agentModel: toAgentTaskModel(goal.agentModel),
+        });
+        this.activeExecutionId.set(goal.id, task.id);
+        const finished = await this.waitForTaskFinishOrTimeout(task.id, PREFLIGHT_TIMEOUT_MS);
+        this.activeExecutionId.delete(goal.id);
+        if (this.isCancelled(goal.id)) {
+            return false;
+        }
+
+        if (!finished) {
+            // Timed out: the task may still be running server-side — cancel it so it does not leak.
+            this.taskRunner.cancel(task.id);
+            this.recordPreflightResult(goal, `preflight failed: timed out after ${Math.round(PREFLIGHT_TIMEOUT_MS / 60_000)} minutes with no response.`);
+            this.terminate(goal, 'infra-broken');
+            return false;
+        }
+
+        const detail = await this.taskRunner.detail(finished.id);
+        const stdout = detail?.log ?? '';
+        // Same two-signal check as the propose phase (see the BUG 1 comment on `runPropose`): a
+        // non-zero exit AND a stream-json `result` event with `is_error: true` while exiting 0
+        // (e.g. an expired OAuth session) both mean the CLI itself is broken.
+        const turnError = extractAgentTurnError(stdout);
+        if (finished.state === 'failed' || turnError) {
+            const reason = turnError
+                ?? `agent task exited with a non-zero status${finished.exitCode !== undefined ? ` (exit code ${finished.exitCode})` : ''}.`;
+            this.recordPreflightResult(goal, `preflight failed: ${reason}`);
+            this.terminate(goal, 'infra-broken');
+            return false;
+        }
+
+        // No literal-"READY" requirement — any non-empty prose means the CLI authenticated,
+        // resolved the model, and replied. An empty reply with no error signal at all is still
+        // suspicious enough to fail fast on, rather than let round 1 discover it.
+        const agentText = extractAgentTextFromLog(stdout).trim();
+        if (!agentText) {
+            this.recordPreflightResult(goal, 'preflight failed: agent produced no text response.');
+            this.terminate(goal, 'infra-broken');
+            return false;
+        }
+
+        this.recordPreflightResult(goal, undefined);
+        return true;
+    }
+
+    /** Writes the `round: 0` preflight record. `failureNote` present → verdict `'failed'`, matching
+     *  the shape `finishAsInfraFailure` uses for a normal round's infra failure. */
+    protected recordPreflightResult(goal: ResearchGoal, failureNote: string | undefined): void {
+        const now = Date.now();
+        const record: ResearchExperimentRecord = {
+            id: randomUUID(),
+            goalId: goal.id,
+            round: 0,
+            startedAt: now,
+            finishedAt: now,
+            hypothesis: '(preflight)',
+            declaredConfig: {},
+            declaredConfigFingerprint: '',
+            realChangeFingerprint: '',
+            phase: 'done',
+            metrics: [],
+            verdict: failureNote ? 'failed' : undefined,
+            notes: failureNote ?? 'preflight ok',
+            preflight: true,
+        };
+        this.store.upsertRecord(goal.cwd, record);
     }
 
     protected terminate(goal: ResearchGoal, reason: TerminationReason): void {
@@ -631,6 +757,30 @@ export class QaapResearchRunner {
                 }
                 disposable.dispose();
                 resolve(event.task);
+            });
+        });
+    }
+
+    /** {@link waitForTaskFinish}, but resolves `undefined` instead of hanging forever if the task
+     *  never settles within `timeoutMs` — only used for the preflight probe, which must not be
+     *  able to block round 1 indefinitely on a hung CLI. */
+    protected waitForTaskFinishOrTimeout(taskId: string, timeoutMs: number): Promise<QaapAgentTask | undefined> {
+        return new Promise(resolve => {
+            let settled = false;
+            const timer = setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                resolve(undefined);
+            }, timeoutMs);
+            this.waitForTaskFinish(taskId).then(task => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timer);
+                resolve(task);
             });
         });
     }
