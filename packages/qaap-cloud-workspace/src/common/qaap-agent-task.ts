@@ -68,12 +68,22 @@ export interface QaapAgentTask {
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /** Backend self-verification result for QAIQ tasks that edited files. */
     readonly verification?: QaapAgentTaskVerification;
+    /** Independent adversarial review verdict for high-risk tasks (second agent, clean context). */
+    readonly review?: QaapAgentTaskReview;
 }
 
 export type QaapAgentTaskVerification =
     | { readonly status: 'skipped' }
     | { readonly status: 'passed'; readonly command: string; readonly attempts: number }
     | { readonly status: 'failed'; readonly command: string; readonly attempts: number; readonly summary: string };
+
+export interface QaapAgentTaskReview {
+    /** 'inconclusive' = the reviewer ran but produced no verdict (fail-open to 'completed'). */
+    readonly status: 'passed' | 'failed' | 'inconclusive';
+    readonly reason: string;
+    /** Agent CLI that performed the review. */
+    readonly agentId?: string;
+}
 
 /** A task plus its captured stdout/stderr log. */
 export interface QaapAgentTaskDetail extends QaapAgentTask {
