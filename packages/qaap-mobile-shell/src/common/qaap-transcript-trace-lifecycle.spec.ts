@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     agentMessageHasStructuredTrace,
+    appendTraceBlockedEvent,
     appendTraceCheckpointEvent,
     appendTraceRunCancelledEvent,
     appendTraceVerificationWarningEvent,
@@ -52,6 +53,16 @@ describe('qaap-transcript-trace-lifecycle', () => {
         // Unlike a preview failure, the turn itself succeeded — message.error must stay unset.
         expect(next.error).to.equal(undefined);
         expect(next.content).to.equal('done');
+    });
+
+    it('appendTraceBlockedEvent appends an error row without failing the turn', () => {
+        const next = appendTraceBlockedEvent(agentMessage({ content: 'done' }), 'Blocked — needs your input: which DB?');
+        expect(next.traceEvents).to.have.length(1);
+        expect(next.traceEvents?.[0]).to.deep.include({
+            type: 'error',
+            message: 'Blocked — needs your input: which DB?',
+        });
+        expect(next.error).to.equal(undefined);
     });
 
     it('appendTraceCheckpointEvent appends a checkpoint row once', () => {
