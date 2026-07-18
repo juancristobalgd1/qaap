@@ -137,6 +137,19 @@ export class PreviewAnnotationStore {
         }
     }
 
+    /** Removes every annotation in the scope (draft, confirmed, attached). */
+    clearScope(scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>): number {
+        const ids = this.listScope(scope).map(item => item.id);
+        if (ids.length === 0) {
+            return 0;
+        }
+        for (const id of ids) {
+            this.byId.delete(id);
+        }
+        this.persist();
+        return ids.length;
+    }
+
     protected hydrate(): void {
         if (!this.storage) {
             return;

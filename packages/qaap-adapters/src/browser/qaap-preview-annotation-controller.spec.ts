@@ -11,6 +11,7 @@ import { expect } from 'chai';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import {
     ELEMENT_ANNOTATION_POINT_TYPE,
+    ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE,
     ELEMENT_SET_MODE_TYPE,
 } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
 import { QaapPreviewAnnotationController } from './qaap-preview-annotation-controller';
@@ -452,7 +453,7 @@ describe('qaap-preview-annotation-controller', () => {
         expect(store.list()).to.have.length(1);
     });
 
-    it('Send attaches+submits confirmed annotations, toasts, and marks attached', async () => {
+    it('Send attaches+submits confirmed annotations, toasts, clears store/markers, and exits annotate', async () => {
         const frame = createFrame();
         const slot = document.createElement('div');
         slot.append(frame);
@@ -460,6 +461,15 @@ describe('qaap-preview-annotation-controller', () => {
         const store = new PreviewAnnotationStore(undefined);
         const calls: Array<{ id: string; args: unknown }> = [];
         const toasts: Array<{ message: string; kind?: string }> = [];
+        const scope = {
+            workspaceId: 'ws',
+            threadId: 't1',
+            previewUrl: 'http://localhost:3001/',
+            route: '/home',
+            viewportMode: 'mobile' as const,
+            viewportWidth: 390,
+            viewportHeight: 844,
+        };
         const controller = new QaapPreviewAnnotationController({
             frame,
             frameSlot: slot,
@@ -473,15 +483,7 @@ describe('qaap-preview-annotation-controller', () => {
             messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
             notify: (message, kind) => { toasts.push({ message, kind }); },
             store,
-            getScope: () => ({
-                workspaceId: 'ws',
-                threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
-                route: '/home',
-                viewportMode: 'mobile',
-                viewportWidth: 390,
-                viewportHeight: 844,
-            }),
+            getScope: () => scope,
             startSelectPicker: () => { /* */ },
             injectBridge: () => { /* */ },
             toDispose,
@@ -514,6 +516,35 @@ describe('qaap-preview-annotation-controller', () => {
             status: 'confirmed',
             createdAt: Date.now() + 1,
         });
+        store.add({
+            id: 'draft-left',
+            workspaceId: 'ws',
+            threadId: 't1',
+            previewUrl: 'http://localhost:3001/',
+            route: '/home',
+            comment: '',
+            viewport: { mode: 'mobile', width: 390, height: 844 },
+            anchor: { kind: 'page', documentXRatio: 0.1, documentYRatio: 0.1 },
+            documentXRatio: 0.1,
+            documentYRatio: 0.1,
+            status: 'draft',
+            createdAt: Date.now() + 2,
+        });
+        controller.startAnnotateMode();
+        // Seed marker positions so the overlay has numbered buttons before Send.
+        controller.onWindowMessage(frameMessage(frame, {
+            type: ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE,
+            payload: {
+                items: [
+                    { id: 'a1', clientX: 10, clientY: 20, unresolved: false },
+                    { id: 'a2', clientX: 30, clientY: 40, unresolved: false },
+                    { id: 'draft-left', clientX: 5, clientY: 5, unresolved: false },
+                ],
+            },
+        }));
+        const markersHost = slot.querySelector('.qaap-preview-annotation-markers') as HTMLElement;
+        expect(markersHost.querySelectorAll('.qaap-preview-annotation-marker')).to.have.length(3);
+
         await controller.addAnnotationsToChat();
         expect(calls).to.have.length(1);
         expect(calls[0]!.id).to.equal(QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND);
@@ -521,12 +552,17 @@ describe('qaap-preview-annotation-controller', () => {
         expect((calls[0]!.args as { dedupeKey: string }).dedupeKey).to.contain('a1');
         expect((calls[0]!.args as { dedupeKey: string }).dedupeKey).to.contain('a2');
         expect((calls[0]!.args as { images?: unknown[] }).images).to.equal(undefined);
-        expect(store.get('a1')?.status).to.equal('attached');
-        expect(store.get('a2')?.status).to.equal('attached');
+        expect(store.get('a1')).to.equal(undefined);
+        expect(store.get('a2')).to.equal(undefined);
+        expect(store.get('draft-left')).to.equal(undefined);
+        expect(store.listScope(scope)).to.have.length(0);
+        expect(store.listVisibleMarkers(scope)).to.have.length(0);
+        expect(markersHost.querySelectorAll('.qaap-preview-annotation-marker')).to.have.length(0);
+        expect(controller.getInteractionMode()).to.equal('browse');
         expect(toasts).to.have.length(1);
         expect(toasts[0]!.message).to.match(/2 annotations sent to chat/);
 
-        // Dedupe: already-attached annotations are not sent again.
+        // Cleared scope: nothing left to send again.
         await controller.addAnnotationsToChat();
         expect(calls).to.have.length(1);
         expect(toasts.some(entry => /Confirm at least one annotation/i.test(entry.message))).to.equal(true);
@@ -598,7 +634,7 @@ describe('qaap-preview-annotation-controller', () => {
             data: 'ZmFrZQ==',
         });
         expect(controller.getPendingChatScreenshot()).to.equal(undefined);
-        expect(store.get('shot-1')?.status).to.equal('attached');
+        expect(store.get('shot-1')).to.equal(undefined);
     });
 
     it('Send does not mark attached or toast success when attach/submit fails', async () => {
@@ -789,13 +825,10 @@ describe('qaap-preview-annotation-controller', () => {
         expect(send.disabled).to.equal(false);
         expect(badge.textContent).to.equal('1');
         await controller.addAnnotationsToChat();
-        expect(store.get('ready-2')?.status).to.equal('attached');
+        expect(store.get('ready-2')).to.equal(undefined);
+        expect(controller.getInteractionMode()).to.equal('browse');
         expect(send.disabled).to.equal(true);
         expect(badge.hidden).to.equal(true);
-
-        const close = bar.querySelector('.codicon-close') as HTMLButtonElement;
-        close.click();
-        expect(controller.getInteractionMode()).to.equal('browse');
         expect(bar.classList.contains('qaap-mod-visible')).to.equal(false);
         expect(urlField.classList.contains('qaap-mod-annotate-hidden')).to.equal(false);
         expect(chrome.classList.contains('qaap-mod-annotate-active')).to.equal(false);

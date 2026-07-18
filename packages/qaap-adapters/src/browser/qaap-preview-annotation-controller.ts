@@ -44,8 +44,9 @@ import {
 } from './qaap-preview-overflow-actions';
 
 /**
- * Document with dog-eared corner and +/− — closer to the annotate toolbar
- * design than `codicon-diff-single` (split panes).
+ * Side-by-side compare silhouette (left/right rounded brackets + center split).
+ * Closer to the hold-to-see-original affordance than `codicon-diff-single` or
+ * filled pane icons like `codicon-split-horizontal`.
  */
 function createHoldToSeeOriginalIcon(): SVGSVGElement {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -56,35 +57,23 @@ function createHoldToSeeOriginalIcon(): SVGSVGElement {
     svg.setAttribute('focusable', 'false');
     svg.classList.add('qaap-preview-annotate-toolbar-compare-icon');
 
-    const page = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    page.setAttribute('fill', 'none');
-    page.setAttribute('stroke', 'currentColor');
-    page.setAttribute('stroke-width', '1.2');
-    page.setAttribute('stroke-linecap', 'round');
-    page.setAttribute('stroke-linejoin', 'round');
-    // Page outline with dog-eared top-right corner + fold crease.
-    page.setAttribute(
-        'd',
-        'M3.75 2h5.6L12.25 4.9V13.5a.75.75 0 0 1-.75.75H3.75a.75.75 0 0 1-.75-.75V2.75A.75.75 0 0 1 3.75 2z'
-        + 'M9.35 2v2.15c0 .41.34.75.75.75h2.15',
+    const stroke = (d: string): SVGPathElement => {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'currentColor');
+        path.setAttribute('stroke-width', '1.2');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        path.setAttribute('d', d);
+        return path;
+    };
+
+    // Left rounded bracket, center divider, right rounded bracket.
+    svg.append(
+        stroke('M6.25 3.25H4.5A1.25 1.25 0 0 0 3.25 4.5v7A1.25 1.25 0 0 0 4.5 12.75h1.75'),
+        stroke('M8 3.25v9.5'),
+        stroke('M9.75 3.25H11.5A1.25 1.25 0 0 1 12.75 4.5v7A1.25 1.25 0 0 1 11.5 12.75H9.75'),
     );
-    svg.append(page);
-
-    const plus = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    plus.setAttribute('fill', 'none');
-    plus.setAttribute('stroke', 'currentColor');
-    plus.setAttribute('stroke-width', '1.2');
-    plus.setAttribute('stroke-linecap', 'round');
-    plus.setAttribute('d', 'M7.75 6.1v2.35M6.575 7.275h2.35');
-    svg.append(plus);
-
-    const minus = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    minus.setAttribute('fill', 'none');
-    minus.setAttribute('stroke', 'currentColor');
-    minus.setAttribute('stroke-width', '1.2');
-    minus.setAttribute('stroke-linecap', 'round');
-    minus.setAttribute('d', 'M6.575 10.85h2.35');
-    svg.append(minus);
 
     return svg;
 }
@@ -300,10 +289,8 @@ export class QaapPreviewAnnotationController implements Disposable {
                 ), 'warn');
                 return;
             }
-            this.store.markAttached(annotationIds);
-            this.pendingChatScreenshot = undefined;
+            this.clearAnnotationsAfterSuccessfulSend(scope);
             this.notifyUser(this.formatAnnotationsSentToast(annotationIds.length));
-            this.syncAnnotateToolbar();
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             this.notifyUser(nls.localize(
@@ -311,6 +298,26 @@ export class QaapPreviewAnnotationController implements Disposable {
                 'Could not attach annotations: {0}',
                 detail,
             ), 'warn');
+        }
+    }
+
+    /**
+     * After a successful Work Hub attach/submit: purge the current scope, hide markers,
+     * close the comment popover, reset the toolbar badge, and return to browse.
+     */
+    protected clearAnnotationsAfterSuccessfulSend(scope: PreviewAnnotationScope): void {
+        this.pendingChatScreenshot = undefined;
+        this.provisionalId = undefined;
+        this.closePopover();
+        this.setComparingOriginal(false);
+        this.store.clearScope(scope);
+        this.positions.clear();
+        this.refreshMarkers();
+        // Prefer browse so the URL toolbar returns; annotate can be started again empty.
+        if (this.mode === 'annotate') {
+            this.setInteractionMode('browse');
+        } else {
+            this.syncAnnotateToolbar();
         }
     }
 

@@ -387,13 +387,10 @@ async function runPreviewTakeScreenshot(ctx: QaapPreviewOverflowActionContext): 
         if (!blob) {
             throw new Error('capture failed');
         }
-        // Overflow menu: prefer clipboard when a ClipboardService is wired; otherwise download.
         if (ctx.clipboard && typeof ClipboardItem !== 'undefined') {
-            const copied = await writePngBlobToClipboard(blob);
-            if (copied) {
-                previewNotify(ctx, nls.localize('qaap/preview/screenshotCopied', 'Screenshot copied to clipboard'));
-                return;
-            }
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            previewNotify(ctx, nls.localize('qaap/preview/screenshotCopied', 'Screenshot copied to clipboard'));
+            return;
         }
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');

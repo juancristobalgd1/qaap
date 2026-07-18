@@ -101,6 +101,38 @@ describe('qaap-preview-annotation-store', () => {
         expect(store.listScope(scope()).map(item => item.id)).to.deep.equal([a.id]);
     });
 
+    it('clearScope removes draft/confirmed/attached only for that scope', () => {
+        const store = new PreviewAnnotationStore(undefined);
+        store.add(createPreviewAnnotation(scope({ route: '/about' }), {
+            id: 'other-route',
+            comment: 'keep-other-route',
+            anchor: { kind: 'page', documentXRatio: 0.1, documentYRatio: 0.1 },
+            documentXRatio: 0.1,
+            documentYRatio: 0.1,
+            status: 'confirmed',
+        }));
+        store.add(createPreviewAnnotation(scope(), {
+            id: 'draft-1',
+            comment: '',
+            anchor: { kind: 'page', documentXRatio: 0.2, documentYRatio: 0.2 },
+            documentXRatio: 0.2,
+            documentYRatio: 0.2,
+            status: 'draft',
+        }));
+        store.add(createPreviewAnnotation(scope(), {
+            id: 'conf-1',
+            comment: 'ship',
+            anchor: { kind: 'page', documentXRatio: 0.3, documentYRatio: 0.3 },
+            documentXRatio: 0.3,
+            documentYRatio: 0.3,
+            status: 'confirmed',
+        }));
+        store.markAttached(['conf-1']);
+        expect(store.clearScope(scope())).to.equal(2);
+        expect(store.listScope(scope())).to.have.length(0);
+        expect(store.get('other-route')?.comment).to.equal('keep-other-route');
+    });
+
     it('formats chip title, agent context, and stable dedupe key', () => {
         const items = [
             createPreviewAnnotation(scope(), {

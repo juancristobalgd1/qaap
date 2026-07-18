@@ -449,18 +449,33 @@
   display: none !important;
 }
 
-/* Full-bleed annotate chrome: cancel mini-browser / mobile toolbar insets + island radius. */
+/*
+ * Preview chrome row height must match the URL field row so annotate ON/OFF
+ * does not jump. Product DNA sets `.theia-input { min-height: 42px }`.
+ */
+.theia-mini-browser-toolbar,
+.theia-mini-browser-toolbar-read-only,
+.qaap-agent-preview-embedded-toolbar {
+  --qaap-preview-chrome-row-min-height: 42px;
+  min-height: var(--qaap-preview-chrome-row-min-height);
+  box-sizing: border-box;
+}
+
+/* Full-bleed annotate chrome: cancel horizontal insets + island radius; keep
+ * vertical margin so the row sits on the same Y as the URL toolbar. */
 .theia-mini-browser-toolbar.qaap-mod-annotate-active,
 .theia-mini-browser-toolbar-read-only.qaap-mod-annotate-active,
 .qaap-agent-preview-embedded-toolbar.qaap-mod-annotate-active {
   width: 100%;
   max-width: 100%;
-  margin: 0;
-  margin-top: 0;
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: 0;
   padding: 0;
   box-sizing: border-box;
   border-radius: 0;
   gap: 0;
+  min-height: var(--qaap-preview-chrome-row-min-height);
 }
 
 .qaap-preview-annotate-toolbar {
@@ -472,10 +487,10 @@
   min-width: 0;
   margin: 0;
   box-sizing: border-box;
-  height: calc(var(--theia-private-mini-browser-height, 22px) + 8px);
-  min-height: 34px;
-  max-height: 40px;
-  padding: 3px 6px 3px 4px;
+  height: var(--qaap-preview-chrome-row-min-height);
+  min-height: var(--qaap-preview-chrome-row-min-height);
+  max-height: var(--qaap-preview-chrome-row-min-height);
+  padding: 0 6px 0 4px;
   border-radius: 0;
   background: #2a2a2e;
   border: none;
@@ -571,7 +586,8 @@
   justify-content: center;
   gap: 6px;
   flex: 0 0 auto;
-  min-height: 28px;
+  min-height: 32px;
+  height: 32px;
   padding: 0 10px 0 12px;
   margin: 0;
   border: none;
@@ -666,9 +682,10 @@
   }
 
   .qaap-preview-annotate-toolbar {
-    min-height: 34px;
-    max-height: 40px;
-    padding: 2px 4px 2px 2px;
+    height: var(--qaap-preview-chrome-row-min-height);
+    min-height: var(--qaap-preview-chrome-row-min-height);
+    max-height: var(--qaap-preview-chrome-row-min-height);
+    padding: 0 4px 0 2px;
   }
 
   .qaap-preview-annotate-toolbar-icon-btn {
@@ -679,7 +696,8 @@
   }
 
   .qaap-preview-annotate-toolbar-send {
-    min-height: 30px;
+    min-height: 32px;
+    height: 32px;
     padding: 0 12px 0 14px;
   }
 }

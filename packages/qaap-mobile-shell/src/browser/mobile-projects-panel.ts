@@ -80,12 +80,9 @@ import {
     revokeComposerContextPreview,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
-import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import {
-    buildAttachComposerImageRequests,
     buildPreviewFeedbackAttachmentRequest,
     findPreviewFeedbackEntryIndex,
-    type QaapAttachComposerImageAttachment,
 } from '../common/qaap-preview-feedback-context';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
@@ -2170,7 +2167,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         readonly chipTitle: string;
         readonly contextBody: string;
         readonly dedupeKey: string;
-        readonly images?: readonly QaapAttachComposerImageAttachment[];
     }): boolean {
         const project = this.resolveExternalComposerProject();
         if (!project) {
@@ -2189,12 +2185,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             const entry = createComposerContextEntry(request);
             entry.displayName = args.chipTitle;
             entries.push(entry);
-        }
-        for (const imageRequest of buildAttachComposerImageRequests(args.images)) {
-            const imageEntry = createComposerContextEntry(imageRequest);
-            imageEntry.displayName = ImageContextVariable.parseRequest(imageRequest)?.name
-                || 'preview-screenshot.png';
-            entries.push(imageEntry);
         }
         if (useTranscript) {
             this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
@@ -2218,7 +2208,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         readonly chipTitle: string;
         readonly contextBody: string;
         readonly dedupeKey: string;
-        readonly images?: readonly QaapAttachComposerImageAttachment[];
     }): Promise<boolean> {
         if (!this.attachExternalComposerContext(args)) {
             return false;
@@ -2228,8 +2217,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             return false;
         }
         const request = buildPreviewFeedbackAttachmentRequest(args);
-        const imageRequests = buildAttachComposerImageRequests(args.images);
-        const variables = [request, ...imageRequests];
         const prompt = nls.localize(
             'qaap/workHub/previewFeedbackSubmitPrompt',
             'Please address the attached preview feedback.',
@@ -2259,7 +2246,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 );
                 await this.submitTranscriptViaBackendConversation(project, summary, prompt, {
                     selectedAgentId,
-                    variables,
+                    variables: [request],
                     ...(agentModel ? { agentModel } : {}),
                 });
             } else {
@@ -2291,7 +2278,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                     forceVps: true,
                     openConversation: true,
                     selectedAgentId,
-                    variables,
+                    variables: [request],
                     ...(agentModel ? { agentModel } : {}),
                 });
                 // create→openInline may preserve Preview; force Messages again after open.
@@ -2302,7 +2289,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             return false;
         }
         this.removeExternalPreviewFeedbackChip(args.dedupeKey);
-        this.removeExternalImageContextChips(imageRequests);
         return true;
     }
 
@@ -2326,45 +2312,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         }
         const [removed] = entries.splice(existingIndex, 1);
         revokeComposerContextPreview(removed);
-        if (useTranscript) {
-            this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-        } else {
-            this.stickyComposerRenderUi.renderStickyComposer();
-        }
-    }
-
-    /** Drop annotate-screenshot imageContext chips that were staged for the external submit. */
-    protected removeExternalImageContextChips(imageRequests: readonly AIVariableResolutionRequest[]): void {
-        if (imageRequests.length === 0) {
-            return;
-        }
-        const argsToRemove = new Set(
-            imageRequests.map(request => request.arg).filter((arg): arg is string => !!arg),
-        );
-        if (argsToRemove.size === 0) {
-            return;
-        }
-        const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
-        const entries = useTranscript
-            ? this.transcriptController.state.transcriptComposerContext
-            : this.stickyComposerContext;
-        let removedAny = false;
-        for (let index = entries.length - 1; index >= 0; index--) {
-            const arg = entries[index]?.request.arg;
-            if (!arg || !argsToRemove.has(arg)) {
-                continue;
-            }
-            const [removed] = entries.splice(index, 1);
-            revokeComposerContextPreview(removed);
-            argsToRemove.delete(arg);
-            removedAny = true;
-            if (argsToRemove.size === 0) {
-                break;
-            }
-        }
-        if (!removedAny) {
-            return;
-        }
         if (useTranscript) {
             this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
         } else {
