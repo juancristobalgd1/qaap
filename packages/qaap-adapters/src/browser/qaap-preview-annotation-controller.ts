@@ -29,13 +29,20 @@ import {
     mountAnnotationCommentPopover,
     type AnnotationCommentPopoverHandle,
     type AnnotationComposerSessionControls,
+    type AnnotationPopoverElementRef,
 } from './qaap-preview-annotation-popover';
 import {
     createPreviewAnnotation,
     isBlankAnnotationComment,
     PreviewAnnotationStore,
 } from './qaap-preview-annotation-store';
-import type { PreviewAnnotation, PreviewAnnotationScope } from './qaap-preview-annotation-types';
+import {
+    listPreviewAnnotationElements,
+    previewAnnotationElementKey,
+    type PreviewAnnotation,
+    type PreviewAnnotationElementMeta,
+    type PreviewAnnotationScope,
+} from './qaap-preview-annotation-types';
 import {
     blobToBase64,
     captureSameOriginPreview,
@@ -503,6 +510,36 @@ export class QaapPreviewAnnotationController implements Disposable {
         // Route comes from the in-app navigation; keep previewUrl stable for isolation.
         const route = payload.route || scope.route;
         const activeScope: PreviewAnnotationScope = { ...scope, route };
+
+        // Cursor-style: empty draft = retarget (replace the provisional element).
+        // Only append another unique element once the user has typed a comment.
+        if (this.provisionalId && this.popover && payload.element) {
+            const draft = this.store.get(this.provisionalId);
+            if (draft) {
+                const liveComment = this.popover.getComment();
+                const hasTypedText = !isBlankAnnotationComment(liveComment);
+                if (hasTypedText) {
+                    const existing = listPreviewAnnotationElements(draft);
+                    const nextMeta = buildAnnotationElementMeta(payload);
+                    if (nextMeta) {
+                        const nextKey = previewAnnotationElementKey(nextMeta);
+                        if (existing.some(item => previewAnnotationElementKey(item) === nextKey)) {
+                            return;
+                        }
+                        const elements = [...existing, nextMeta];
+                        this.store.update(draft.id, {
+                            comment: liveComment,
+                            element: elements[0],
+                            elements,
+                        });
+                        this.popover.setElementRefs(elements.map(toPopoverElementRef));
+                        this.syncAnnotateToolbar();
+                        return;
+                    }
+                }
+            }
+        }
+
         if (this.provisionalId) {
             this.store.remove(this.provisionalId);
             this.positions.delete(this.provisionalId);
@@ -523,25 +560,8 @@ export class QaapPreviewAnnotationController implements Disposable {
                 documentYRatio: payload.documentYRatio,
             };
 
-        let elementMeta: PreviewAnnotation['element'] = payload.element
-            ? {
-                tagName: payload.element.tagName,
-                text: payload.element.text,
-                ariaLabel: payload.element.ariaLabel,
-            }
-            : undefined;
-        if (payload.element && elementMeta) {
-            const pseudo = toPickedElementShim(payload);
-            const source = guessSourceLocationFromElement(pseudo);
-            if (source?.file) {
-                elementMeta = {
-                    ...elementMeta,
-                    sourceFile: source.file,
-                    sourceLine: source.line,
-                    component: source.file,
-                };
-            }
-        }
+        const elementMeta = payload.element ? buildAnnotationElementMeta(payload) : undefined;
+        const elements = elementMeta ? [elementMeta] : undefined;
 
         const annotation = createPreviewAnnotation(activeScope, {
             comment: '',
@@ -549,6 +569,7 @@ export class QaapPreviewAnnotationController implements Disposable {
             documentXRatio: payload.documentXRatio,
             documentYRatio: payload.documentYRatio,
             element: elementMeta,
+            elements,
             status: 'draft',
         });
         this.store.add(annotation);
@@ -576,15 +597,18 @@ export class QaapPreviewAnnotationController implements Disposable {
     protected openPopoverFor(annotation: PreviewAnnotation, clientX: number, clientY: number, isNew: boolean): void {
         this.closePopover();
         const panel = this.options.frameSlot.getBoundingClientRect();
+        const elementRefs = listPreviewAnnotationElements(annotation).map(toPopoverElementRef);
+        const fallbackTag = annotation.anchor.kind === 'element'
+            ? annotation.anchor.selector.split(/[\s.#[:>+~]/)[0]
+            : undefined;
         this.popover = mountAnnotationCommentPopover({
             anchorClientX: clientX,
             anchorClientY: clientY,
             panel,
             initialComment: annotation.comment,
-            elementTagName: annotation.element?.tagName
-                ?? (annotation.anchor.kind === 'element'
-                    ? annotation.anchor.selector.split(/[\s.#[:>+~]/)[0]
-                    : undefined),
+            elementRefs: elementRefs.length > 0
+                ? elementRefs
+                : (fallbackTag ? [{ tagName: fallbackTag }] : undefined),
             allowDelete: !isNew,
             composerSession: this.composerSession,
             onWarn: message => {
@@ -1020,4 +1044,50 @@ function toPickedElementShim(payload: AnnotationPointPayload): PickedElement {
         ancestors: [],
         pageUrl: payload.pageUrl,
     };
+}
+
+function extractElementIdHint(element: NonNullable<AnnotationPointPayload['element']>): string | undefined {
+    const attrId = element.attributes?.find(item => item.name === 'id')?.value?.trim();
+    if (attrId) {
+        return attrId.slice(0, 24);
+    }
+    const selectorId = element.selector.match(/#([A-Za-z][\w-]*)/)?.[1];
+    if (selectorId) {
+        return selectorId.slice(0, 24);
+    }
+    const picked = element.pickedId?.trim();
+    if (picked && picked !== 'annotate' && picked.length >= 4) {
+        return picked.slice(-7);
+    }
+    return undefined;
+}
+
+function buildAnnotationElementMeta(payload: AnnotationPointPayload): PreviewAnnotationElementMeta | undefined {
+    if (!payload.element) {
+        return undefined;
+    }
+    let elementMeta: PreviewAnnotationElementMeta = {
+        tagName: payload.element.tagName,
+        selector: payload.element.selector,
+        idHint: extractElementIdHint(payload.element),
+        text: payload.element.text,
+        ariaLabel: payload.element.ariaLabel,
+    };
+    const pseudo = toPickedElementShim(payload);
+    const source = guessSourceLocationFromElement(pseudo);
+    if (source?.file) {
+        elementMeta = {
+            ...elementMeta,
+            sourceFile: source.file,
+            sourceLine: source.line,
+            component: source.file,
+        };
+    }
+    return elementMeta;
+}
+
+function toPopoverElementRef(meta: PreviewAnnotationElementMeta): AnnotationPopoverElementRef {
+    const tagName = meta.tagName.trim().toLowerCase() || 'div';
+    const detail = meta.idHint?.trim();
+    return detail ? { tagName, detail } : { tagName };
 }

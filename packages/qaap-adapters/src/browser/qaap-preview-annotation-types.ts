@@ -13,6 +13,10 @@ export type PreviewAnnotationAnchor =
 
 export interface PreviewAnnotationElementMeta {
     readonly tagName: string;
+    /** Stable selector used for dedupe and agent context (when available). */
+    readonly selector?: string;
+    /** Short id/hash hint shown next to the tag in the popover chip (e.g. DOM id). */
+    readonly idHint?: string;
     readonly text?: string;
     readonly ariaLabel?: string;
     readonly component?: string;
@@ -34,10 +38,37 @@ export interface PreviewAnnotation {
     /** Last known document ratios for unresolved fallback after re-anchor. */
     documentXRatio: number;
     documentYRatio: number;
+    /**
+     * Primary element reference (first selected). Kept for backward compatibility;
+     * prefer {@link elements} when reading multi-select annotate drafts.
+     */
     element?: PreviewAnnotationElementMeta;
+    /** All element references attached to this annotation (multi-select annotate). */
+    elements?: PreviewAnnotationElementMeta[];
     status: PreviewAnnotationStatus;
     readonly createdAt: number;
     unresolved?: boolean;
+}
+
+/** Elements attached to an annotation (multi-select, with legacy `element` fallback). */
+export function listPreviewAnnotationElements(annotation: Pick<PreviewAnnotation, 'element' | 'elements'>): PreviewAnnotationElementMeta[] {
+    if (annotation.elements && annotation.elements.length > 0) {
+        return [...annotation.elements];
+    }
+    return annotation.element ? [annotation.element] : [];
+}
+
+/** Stable key for deduplicating element references in an annotate draft. */
+export function previewAnnotationElementKey(meta: Pick<PreviewAnnotationElementMeta, 'tagName' | 'selector' | 'idHint' | 'text' | 'ariaLabel'>): string {
+    const selector = meta.selector?.trim();
+    if (selector) {
+        return `sel:${selector}`;
+    }
+    const idHint = meta.idHint?.trim();
+    if (idHint) {
+        return `id:${meta.tagName.toLowerCase()}#${idHint}`;
+    }
+    return `tag:${meta.tagName.toLowerCase()}|${meta.text ?? ''}|${meta.ariaLabel ?? ''}`;
 }
 
 export interface PreviewAnnotationScope {

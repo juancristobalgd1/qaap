@@ -48,4 +48,25 @@ describe('qaap-preview-annotation-context', () => {
         expect(withImages?.images).to.have.length(1);
         expect(withImages?.images?.[0]?.name).to.equal('preview-screenshot.png');
     });
+
+    it('formats multi-element annotations in agent context', () => {
+        const confirmed = [
+            annotation({
+                id: 'a1',
+                comment: 'Tweak layout',
+                anchor: { kind: 'element', selector: 'iframe#preview', xRatio: 0.2, yRatio: 0.3 },
+                element: { tagName: 'iframe', selector: 'iframe#preview', idHint: '3e3e3e3' },
+                elements: [
+                    { tagName: 'iframe', selector: 'iframe#preview', idHint: '3e3e3e3' },
+                    { tagName: 'textarea', selector: 'textarea.note' },
+                    { tagName: 'div', selector: 'div.card' },
+                ],
+            }),
+        ];
+        const args = buildAnnotateChatAttachArgs(confirmed, '/home', 'mobile');
+        expect(args?.contextBody).to.contain('Elements (3):');
+        expect(args?.contextBody).to.contain('<iframe> #3e3e3e3');
+        expect(args?.contextBody).to.contain('<textarea>');
+        expect(args?.contextBody).to.contain('<div>');
+    });
 });

@@ -113,25 +113,57 @@
 }
 
 .qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-body {
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
   width: 100%;
   gap: 8px;
   background: transparent;
 }
 
+.qaap-preview-annotation-popover-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.qaap-preview-annotation-popover-chips[hidden] {
+  display: none !important;
+}
+
 /* Same type size and line box as the textarea so chip + placeholder sit on one baseline. */
 .qaap-preview-annotation-popover-chip {
+  --qaap-annotation-chip-tone: var(--qaap-annotation-chip);
   display: inline-flex;
   align-items: center;
   gap: 5px;
   flex: 0 0 auto;
-  max-width: 8em;
+  max-width: 12em;
   margin-top: 0;
-  color: var(--qaap-annotation-chip);
+  color: var(--qaap-annotation-chip-tone);
   font: 500 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   letter-spacing: 0.01em;
   user-select: none;
   pointer-events: none;
+}
+
+.qaap-preview-annotation-popover-chip[data-chip-tone="0"] {
+  --qaap-annotation-chip-tone: #7eb6ff;
+}
+
+.qaap-preview-annotation-popover-chip[data-chip-tone="1"] {
+  --qaap-annotation-chip-tone: #c4a0ff;
+}
+
+.qaap-preview-annotation-popover-chip[data-chip-tone="2"] {
+  --qaap-annotation-chip-tone: #6dcea0;
+}
+
+.qaap-preview-annotation-popover-chip[data-chip-tone="3"] {
+  --qaap-annotation-chip-tone: #f0b47a;
 }
 
 .qaap-preview-annotation-popover-chip-icon {
@@ -139,14 +171,30 @@
   flex: 0 0 auto;
   width: 16px;
   height: 16px;
-  color: var(--qaap-annotation-chip);
+  color: var(--qaap-annotation-chip-tone);
   opacity: 0.95;
 }
 
 .qaap-preview-annotation-popover-chip-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.qaap-preview-annotation-popover-chip-tag {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--qaap-annotation-chip-tone);
+}
+
+.qaap-preview-annotation-popover-chip-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(242, 242, 242, 0.88);
+  font-weight: 450;
 }
 
 /* Seamless with popover charcoal — beat theme textarea wells (--q-surface). */

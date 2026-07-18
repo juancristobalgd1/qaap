@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { PreviewAnnotation } from './qaap-preview-annotation-types';
+import { listPreviewAnnotationElements, type PreviewAnnotation } from './qaap-preview-annotation-types';
 
 /** Command implemented by qaap-mobile-shell — attach chip; pass `submit: true` to also send. */
 export const QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND = 'qaap.workHub.attachComposerContext';
@@ -89,17 +89,39 @@ export function formatPreviewFeedbackAgentContext(annotations: readonly PreviewA
             lines.push(`- Page position: x=${item.anchor.documentXRatio.toFixed(3)}, y=${item.anchor.documentYRatio.toFixed(3)}`);
         }
         lines.push(`- Document position: x=${item.documentXRatio.toFixed(3)}, y=${item.documentYRatio.toFixed(3)}`);
-        if (item.element?.tagName) {
-            lines.push(`- Element: <${item.element.tagName}>`);
-        }
-        if (item.element?.text) {
-            lines.push(`- Text: ${item.element.text}`);
-        }
-        if (item.element?.sourceFile) {
-            const line = item.element.sourceLine !== undefined ? `:${item.element.sourceLine}` : '';
-            lines.push(`- Source: ${item.element.sourceFile}${line}`);
-        } else if (item.element?.component) {
-            lines.push(`- Component: ${item.element.component}`);
+        const elements = listPreviewAnnotationElements(item);
+        if (elements.length > 1) {
+            lines.push(`- Elements (${elements.length}):`);
+            elements.forEach((el, elIndex) => {
+                const label = el.idHint ? `<${el.tagName}> #${el.idHint}` : `<${el.tagName}>`;
+                lines.push(`  ${elIndex + 1}. ${label}`);
+                if (el.selector) {
+                    lines.push(`     Selector: ${el.selector}`);
+                }
+                if (el.text) {
+                    lines.push(`     Text: ${el.text}`);
+                }
+                if (el.sourceFile) {
+                    const line = el.sourceLine !== undefined ? `:${el.sourceLine}` : '';
+                    lines.push(`     Source: ${el.sourceFile}${line}`);
+                } else if (el.component) {
+                    lines.push(`     Component: ${el.component}`);
+                }
+            });
+        } else {
+            const primary = elements[0] ?? item.element;
+            if (primary?.tagName) {
+                lines.push(`- Element: <${primary.tagName}>`);
+            }
+            if (primary?.text) {
+                lines.push(`- Text: ${primary.text}`);
+            }
+            if (primary?.sourceFile) {
+                const line = primary.sourceLine !== undefined ? `:${primary.sourceLine}` : '';
+                lines.push(`- Source: ${primary.sourceFile}${line}`);
+            } else if (primary?.component) {
+                lines.push(`- Component: ${primary.component}`);
+            }
         }
         if (item.unresolved) {
             lines.push('- Note: anchor unresolved (element missing; using last document ratios)');

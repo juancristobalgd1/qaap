@@ -131,6 +131,36 @@ describe('qaap-preview-annotation-popover', () => {
         handle.dispose();
     });
 
+    it('renders multiple element refs and updates them via setElementRefs without clearing the textarea', () => {
+        const handle = mountAnnotationCommentPopover({
+            anchorClientX: 10,
+            anchorClientY: 10,
+            elementRefs: [
+                { tagName: 'iframe', detail: '3e3e3e3' },
+                { tagName: 'textarea' },
+            ],
+            initialComment: 'describe these',
+            onConfirm: () => { /* */ },
+            onCancel: () => { /* */ },
+        });
+
+        const chips = handle.root.querySelectorAll('.qaap-preview-annotation-popover-chip');
+        expect(chips).to.have.length(2);
+        expect(chips[0]?.textContent).to.contain('iframe');
+        expect(chips[0]?.textContent).to.contain('3e3e3e3');
+        expect(chips[1]?.textContent).to.contain('textarea');
+        expect(handle.root.classList.contains('qaap-preview-annotation-popover--expanded')).to.equal(true);
+
+        handle.setElementRefs([
+            { tagName: 'iframe', detail: '3e3e3e3' },
+            { tagName: 'textarea' },
+            { tagName: 'div' },
+        ]);
+        expect(handle.root.querySelectorAll('.qaap-preview-annotation-popover-chip')).to.have.length(3);
+        expect(handle.getComment()).to.equal('describe these');
+        handle.dispose();
+    });
+
     it('expands when the textarea has content and collapses when cleared', () => {
         const handle = mountAnnotationCommentPopover({
             anchorClientX: 10,

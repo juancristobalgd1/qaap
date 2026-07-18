@@ -52,7 +52,9 @@ export function createPreviewAnnotation(
         anchor: partial.anchor,
         documentXRatio: partial.documentXRatio,
         documentYRatio: partial.documentYRatio,
-        element: partial.element,
+        element: partial.element ?? partial.elements?.[0],
+        elements: partial.elements
+            ?? (partial.element ? [partial.element] : undefined),
         status: partial.status ?? 'draft',
         createdAt: partial.createdAt ?? Date.now(),
         unresolved: partial.unresolved,
@@ -95,14 +97,22 @@ export class PreviewAnnotationStore {
         return annotation;
     }
 
-    update(id: string, patch: Partial<Pick<PreviewAnnotation, 'comment' | 'status' | 'unresolved' | 'documentXRatio' | 'documentYRatio' | 'element'>>): PreviewAnnotation | undefined {
+    update(id: string, patch: Partial<Pick<PreviewAnnotation, 'comment' | 'status' | 'unresolved' | 'documentXRatio' | 'documentYRatio' | 'element' | 'elements'>>): PreviewAnnotation | undefined {
         const current = this.byId.get(id);
         if (!current) {
             return undefined;
         }
+        const elements = patch.elements !== undefined
+            ? patch.elements
+            : current.elements;
+        const element = patch.element !== undefined
+            ? patch.element
+            : (patch.elements !== undefined ? patch.elements[0] : current.element);
         const next: PreviewAnnotation = {
             ...current,
             ...patch,
+            element,
+            elements: elements ?? (element ? [element] : undefined),
             comment: patch.comment !== undefined ? sanitizeAnnotationComment(patch.comment) : current.comment,
         };
         this.byId.set(id, next);

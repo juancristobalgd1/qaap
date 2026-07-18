@@ -24,12 +24,24 @@ export interface AnnotationComposerSessionControls {
     attach(host: HTMLElement): AnnotationComposerSessionAttachment;
 }
 
+/** One element reference chip in the annotate popover (tag + optional id/detail). */
+export interface AnnotationPopoverElementRef {
+    readonly tagName: string;
+    /** Optional short identifier shown after the tag (e.g. DOM id / hash). */
+    readonly detail?: string;
+}
+
 export interface MountAnnotationCommentPopoverOptions {
     readonly anchorClientX: number;
     readonly anchorClientY: number;
     readonly panel?: DOMRect;
     readonly initialComment?: string;
-    /** Element tag shown as a compact context chip (e.g. `div`). */
+    /**
+     * Element tags shown as compact context chips (multi-select annotate).
+     * Prefer this over {@link elementTagName}.
+     */
+    readonly elementRefs?: readonly AnnotationPopoverElementRef[];
+    /** @deprecated Prefer {@link elementRefs}. Single element tag chip (e.g. `div`). */
     readonly elementTagName?: string;
     readonly allowDelete?: boolean;
     readonly onConfirm: (comment: string) => void;
@@ -47,6 +59,10 @@ export interface AnnotationCommentPopoverHandle {
     focus(): void;
     /** Confirms the current non-blank draft (same as tapping ✓); returns false when blank. */
     commit(): boolean;
+    /** Current textarea draft (unsanitized raw value). */
+    getComment(): string;
+    /** Replace the element-reference chips without remounting (keeps textarea focus/text). */
+    setElementRefs(refs: readonly AnnotationPopoverElementRef[]): void;
 }
 
 const NARROW_QUERY = '(max-width: 767px), (pointer: coarse)';
@@ -270,6 +286,48 @@ function normalizeElementTagName(raw: string | undefined): string | undefined {
     return trimmed.replace(/^<\/?/, '').replace(/>$/, '').toLowerCase();
 }
 
+function normalizeElementRefs(
+    refs: readonly AnnotationPopoverElementRef[] | undefined,
+    legacyTagName: string | undefined,
+): AnnotationPopoverElementRef[] {
+    if (refs && refs.length > 0) {
+        return refs
+            .map(ref => {
+                const tagName = normalizeElementTagName(ref.tagName);
+                if (!tagName) {
+                    return undefined;
+                }
+                const detail = ref.detail?.trim();
+                return detail ? { tagName, detail } : { tagName };
+            })
+            .filter((ref): ref is AnnotationPopoverElementRef => !!ref);
+    }
+    const legacy = normalizeElementTagName(legacyTagName);
+    return legacy ? [{ tagName: legacy }] : [];
+}
+
+function createElementRefChip(ref: AnnotationPopoverElementRef, toneIndex: number): HTMLSpanElement {
+    const chip = document.createElement('span');
+    chip.className = 'qaap-preview-annotation-popover-chip';
+    chip.dataset.chipTone = String(toneIndex % 4);
+    chip.setAttribute('aria-hidden', 'true');
+    chip.append(createElementTargetSvg('qaap-preview-annotation-popover-chip-icon'));
+    const chipLabel = document.createElement('span');
+    chipLabel.className = 'qaap-preview-annotation-popover-chip-label';
+    const tagEl = document.createElement('span');
+    tagEl.className = 'qaap-preview-annotation-popover-chip-tag';
+    tagEl.textContent = ref.tagName;
+    chipLabel.append(tagEl);
+    if (ref.detail) {
+        const detailEl = document.createElement('span');
+        detailEl.className = 'qaap-preview-annotation-popover-chip-detail';
+        detailEl.textContent = ref.detail;
+        chipLabel.append(detailEl);
+    }
+    chip.append(chipLabel);
+    return chip;
+}
+
 export function mountAnnotationCommentPopover(options: MountAnnotationCommentPopoverOptions): AnnotationCommentPopoverHandle {
     const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const mobile = typeof matchMedia === 'function' && matchMedia(NARROW_QUERY).matches;
@@ -289,18 +347,19 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
     const body = document.createElement('div');
     body.className = 'qaap-preview-annotation-popover-body';
 
-    const elementTag = normalizeElementTagName(options.elementTagName);
-    if (elementTag) {
-        const chip = document.createElement('span');
-        chip.className = 'qaap-preview-annotation-popover-chip';
-        chip.setAttribute('aria-hidden', 'true');
-        chip.append(createElementTargetSvg('qaap-preview-annotation-popover-chip-icon'));
-        const chipLabel = document.createElement('span');
-        chipLabel.className = 'qaap-preview-annotation-popover-chip-label';
-        chipLabel.textContent = elementTag;
-        chip.append(chipLabel);
-        body.append(chip);
-    }
+    const chipsHost = document.createElement('div');
+    chipsHost.className = 'qaap-preview-annotation-popover-chips';
+    chipsHost.hidden = true;
+
+    const renderElementRefs = (refs: readonly AnnotationPopoverElementRef[]): void => {
+        chipsHost.replaceChildren();
+        refs.forEach((ref, index) => {
+            chipsHost.append(createElementRefChip(ref, index));
+        });
+        chipsHost.hidden = refs.length === 0;
+    };
+    renderElementRefs(normalizeElementRefs(options.elementRefs, options.elementTagName));
+    body.append(chipsHost);
 
     const placeholder = nls.localize('qaap/preview/annotationCommentPlaceholder', 'Describe the change');
     const textarea = document.createElement('textarea');
@@ -400,7 +459,8 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
     const syncExpandedState = (): void => {
         const hasText = textarea.value.trim().length > 0;
         const multiLine = textarea.scrollHeight > SINGLE_LINE_HEIGHT_PX + 4;
-        root.classList.toggle('qaap-preview-annotation-popover--expanded', hasText || multiLine);
+        const multiChip = chipsHost.childElementCount > 1;
+        root.classList.toggle('qaap-preview-annotation-popover--expanded', hasText || multiLine || multiChip);
     };
 
     const autosizeInput = (): void => {
@@ -673,6 +733,12 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
             }
             confirm();
             return true;
+        },
+        getComment: () => textarea.value,
+        setElementRefs: (refs: readonly AnnotationPopoverElementRef[]): void => {
+            renderElementRefs(normalizeElementRefs(refs, undefined));
+            syncExpandedState();
+            position();
         },
     };
 }

@@ -231,6 +231,105 @@ describe('qaap-preview-annotation-controller', () => {
         })).to.have.length(0);
     });
 
+    it('retargets the empty draft to a different element, and appends only after text is typed', () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        const store = new PreviewAnnotationStore(undefined);
+        const controller = new QaapPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: () => ({ id: QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND }),
+                executeCommand: async () => true,
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            store,
+            getScope: () => ({
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewId: 'http://localhost:3001/',
+                previewUrl: 'http://localhost:3001/',
+                route: '/home',
+                viewportMode: 'mobile',
+                viewportWidth: 390,
+                viewportHeight: 844,
+            }),
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            toDispose,
+        });
+        controller.setInteractionMode('annotate');
+
+        const point = (element: {
+            selector: string;
+            tagName: string;
+            pickedId?: string;
+            attributes?: Array<{ name: string; value: string }>;
+        }): void => {
+            controller.onWindowMessage(frameMessage(frame, {
+                type: ELEMENT_ANNOTATION_POINT_TYPE,
+                payload: {
+                    version: 1,
+                    clientX: 40,
+                    clientY: 60,
+                    route: '/home',
+                    pageUrl: 'http://localhost:3001/home',
+                    documentXRatio: 0.2,
+                    documentYRatio: 0.3,
+                    viewportWidth: 390,
+                    viewportHeight: 844,
+                    scrollX: 0,
+                    scrollY: 0,
+                    element: {
+                        ...element,
+                        rect: { top: 10, left: 10, width: 80, height: 40 },
+                        xRatio: 0.5,
+                        yRatio: 0.5,
+                        documentXRatio: 0.2,
+                        documentYRatio: 0.3,
+                    },
+                },
+            }));
+        };
+
+        // Empty draft: second click replaces (user retargeted / mis-clicked).
+        point({ selector: 'iframe#preview', tagName: 'iframe', attributes: [{ name: 'id', value: '3e3e3e3' }] });
+        expect(document.querySelectorAll('.qaap-preview-annotation-popover-chip')).to.have.length(1);
+        point({ selector: 'textarea.note', tagName: 'textarea' });
+        let drafts = store.listScope({
+            workspaceId: 'ws', threadId: 't1', previewUrl: 'http://localhost:3001/', route: '/home',
+        });
+        expect(drafts).to.have.length(1);
+        expect(drafts[0]?.elements?.map(item => item.tagName)).to.deep.equal(['textarea']);
+        expect(document.querySelectorAll('.qaap-preview-annotation-popover-chip')).to.have.length(1);
+        expect(document.querySelector('.qaap-preview-annotation-popover-chip')?.textContent).to.contain('textarea');
+
+        // Typed draft: further unique clicks append without losing the comment.
+        const textarea = document.querySelector('.qaap-preview-annotation-popover-input') as HTMLTextAreaElement;
+        expect(textarea).to.exist;
+        textarea.value = 'Align these controls';
+
+        point({ selector: 'div.card', tagName: 'div' });
+        point({ selector: 'button.cta', tagName: 'button' });
+        // Duplicate should be ignored.
+        point({ selector: 'div.card', tagName: 'div' });
+
+        drafts = store.listScope({
+            workspaceId: 'ws', threadId: 't1', previewUrl: 'http://localhost:3001/', route: '/home',
+        });
+        expect(drafts).to.have.length(1);
+        expect(drafts[0]?.elements?.map(item => item.tagName)).to.deep.equal(['textarea', 'div', 'button']);
+        expect((document.querySelector('.qaap-preview-annotation-popover-input') as HTMLTextAreaElement).value)
+            .to.equal('Align these controls');
+        const chips = document.querySelectorAll('.qaap-preview-annotation-popover-chip');
+        expect(chips).to.have.length(3);
+        expect(chips[0]?.textContent).to.contain('textarea');
+        expect(chips[1]?.textContent).to.contain('div');
+        expect(chips[2]?.textContent).to.contain('button');
+    });
+
     it('attaches composerSession controls into the Cursor-style annotation popover', async () => {
         const frame = createFrame();
         const slot = document.createElement('div');
