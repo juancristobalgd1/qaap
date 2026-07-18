@@ -290,6 +290,21 @@ body.qaap-mod-history-resizing * {
   line-height: 1;
 }
 
+.qaap-preview-edit-item-icon--svg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: currentColor;
+}
+
+.qaap-preview-edit-item-icon--svg svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
 .qaap-preview-edit-item-label {
   flex: 1 1 auto;
   min-width: 0;

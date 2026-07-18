@@ -25,6 +25,11 @@ describe('element-picker annotate bridge', () => {
         expect(bridge).to.contain("mode === 'annotate'");
         expect(bridge).to.contain('qaap-annotate-mode');
         expect(bridge).to.contain('theia-mini-browser-annotate-style');
+        expect(bridge).to.contain('theia-mini-browser-annotate-overlay');
+        // Lucide map-pin-plus-inside cursor (path is URL-encoded inside the data URI).
+        expect(bridge).to.contain('7.399%2011.799');
+        expect(bridge).to.contain('%232f8fff');
+        expect(bridge).to.contain(', pointer');
         expect(bridge).to.contain('channel-1');
         expect(bridge).to.contain('event.source !== window.parent');
         expect(bridge).to.contain('event.origin !== PARENT_ORIGIN');

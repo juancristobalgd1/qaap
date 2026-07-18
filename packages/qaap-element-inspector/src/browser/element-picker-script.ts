@@ -26,16 +26,22 @@ const OVERLAY_ID = 'theia-mini-browser-picker-overlay';
 const LABEL_ID = 'theia-mini-browser-picker-label';
 const STYLE_ID = 'theia-mini-browser-picker-style';
 const ANNOTATE_STYLE_ID = 'theia-mini-browser-annotate-style';
+const ANNOTATE_OVERLAY_ID = 'theia-mini-browser-annotate-overlay';
 const TOOLBAR_ID = 'theia-mini-browser-picker-toolbar';
-/** Compact select-element cursor (frame + pointer); hotspot near the tip. */
+/**
+ * Annotate cursor: Lucide `map-pin-plus-inside` (pin a note on the page).
+ * Hotspot at the pin tip; white fill + dark stroke so it reads on light/dark previews.
+ */
 const ANNOTATE_CURSOR_CSS = `url("data:image/svg+xml,${encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
-    + '<path fill="none" stroke="#7eb6ff" stroke-width="1.6" stroke-linecap="round" '
-    + 'd="M5 8V6.2A2 2 0 0 1 7 4.2h2 M13 4.2h2A2 2 0 0 1 17 6.2V8 M17 14v1.8a2 2 0 0 1-2 2h-2"/>'
-    + '<path fill="#fff" stroke="#1a1a1a" stroke-width="1" stroke-linejoin="round" '
-    + 'd="M7.2 6.5v10.2l3.1-2.95 2.1 4.85 1.95-.85-2.1-4.75H16.8z"/>'
+    '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none">'
+    // Soft drop so the pin stays visible on bright surfaces.
+    + '<path fill="rgba(0,0,0,0.2)" d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" transform="translate(0.6 0.7)"/>'
+    + '<path fill="#ffffff" stroke="#1a1a1a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" '
+    + 'd="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>'
+    + '<path stroke="#2f8fff" stroke-width="2" stroke-linecap="round" d="M12 7v6"/>'
+    + '<path stroke="#2f8fff" stroke-width="2" stroke-linecap="round" d="M9 10h6"/>'
     + '</svg>'
-)}") 7 6, crosshair`;
+)}") 12 22, pointer`;
 
 export interface ElementBridgeScriptOptions {
     readonly channelId: string;
@@ -294,7 +300,9 @@ export function buildElementBridgeScript(options?: ElementBridgeScriptOptions): 
 
     let annotateClickHandler = null;
     let annotateKeyHandler = null;
+    let annotateMoveHandler = null;
     const ANNOTATE_STYLE_ID = ${JSON.stringify(ANNOTATE_STYLE_ID)};
+    const ANNOTATE_OVERLAY_ID = ${JSON.stringify(ANNOTATE_OVERLAY_ID)};
     const ANNOTATE_CURSOR = ${JSON.stringify(ANNOTATE_CURSOR_CSS)};
 
     const ensureAnnotateCursorStyle = () => {
@@ -304,14 +312,62 @@ export function buildElementBridgeScript(options?: ElementBridgeScriptOptions): 
             style.id = ANNOTATE_STYLE_ID;
             document.documentElement.appendChild(style);
         }
-        style.textContent = 'html.qaap-annotate-mode, html.qaap-annotate-mode * { cursor: '
-            + ANNOTATE_CURSOR + ' !important; }';
+        // Classic pointer cursor + Codex-style blue hover outline.
+        style.textContent = [
+            'html.qaap-annotate-mode, html.qaap-annotate-mode * { cursor: '
+                + ANNOTATE_CURSOR + ' !important; }',
+            '#' + ANNOTATE_OVERLAY_ID + ' {',
+            '  position: fixed; pointer-events: none; z-index: 2147483645;',
+            '  box-sizing: border-box;',
+            '  border: 2px solid #2f8fff;',
+            '  border-radius: 2px;',
+            '  background: rgba(47, 143, 255, 0.08);',
+            '  transition: top .05s ease, left .05s ease, width .05s ease, height .05s ease;',
+            '}',
+        ].join('\\n');
+    };
+
+    const ensureAnnotateOverlay = () => {
+        let overlay = document.getElementById(ANNOTATE_OVERLAY_ID);
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = ANNOTATE_OVERLAY_ID;
+            document.documentElement.appendChild(overlay);
+        }
+        return overlay;
+    };
+
+    const hideAnnotateOverlay = () => {
+        const overlay = document.getElementById(ANNOTATE_OVERLAY_ID);
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+    };
+
+    const positionAnnotateOverlay = (el) => {
+        if (!el || el.nodeType !== 1 || el.id === ANNOTATE_OVERLAY_ID) {
+            hideAnnotateOverlay();
+            return;
+        }
+        const rect = el.getBoundingClientRect();
+        if (!rect.width && !rect.height) {
+            hideAnnotateOverlay();
+            return;
+        }
+        const overlay = ensureAnnotateOverlay();
+        overlay.style.display = 'block';
+        overlay.style.top = rect.top + 'px';
+        overlay.style.left = rect.left + 'px';
+        overlay.style.width = rect.width + 'px';
+        overlay.style.height = rect.height + 'px';
     };
 
     const clearAnnotateCursorStyle = () => {
         document.documentElement.classList.remove('qaap-annotate-mode');
         const style = document.getElementById(ANNOTATE_STYLE_ID);
         if (style) style.remove();
+        const overlay = document.getElementById(ANNOTATE_OVERLAY_ID);
+        if (overlay) overlay.remove();
     };
 
     const deactivateAnnotateListeners = () => {
@@ -322,6 +378,10 @@ export function buildElementBridgeScript(options?: ElementBridgeScriptOptions): 
         if (annotateKeyHandler) {
             document.removeEventListener('keydown', annotateKeyHandler, true);
             annotateKeyHandler = null;
+        }
+        if (annotateMoveHandler) {
+            document.removeEventListener('mousemove', annotateMoveHandler, true);
+            annotateMoveHandler = null;
         }
         clearAnnotateCursorStyle();
     };
@@ -350,8 +410,14 @@ export function buildElementBridgeScript(options?: ElementBridgeScriptOptions): 
                 bridge.postToParent({ type: ANNOTATION_CANCEL });
             }
         };
+        annotateMoveHandler = (e) => {
+            if (bridge.mode !== 'annotate') return;
+            const el = document.elementFromPoint(e.clientX, e.clientY);
+            positionAnnotateOverlay(el);
+        };
         document.addEventListener('click', annotateClickHandler, true);
         document.addEventListener('keydown', annotateKeyHandler, true);
+        document.addEventListener('mousemove', annotateMoveHandler, true);
     };
 
     bridge.setMode = (mode) => {

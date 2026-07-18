@@ -23,14 +23,16 @@ export function mountPreviewEditMenu(options: MountPreviewEditMenuOptions): { me
     menu.className = 'qaap-preview-edit-menu';
     menu.setAttribute('role', 'menu');
 
-    const items: Array<{ id: PreviewEditMenuAction; label: string; icon: string }> = [
-        { id: 'annotate', label: nls.localize('qaap/preview/editAnnotate', 'Annotate'), icon: 'comment' },
-        { id: 'selection', label: nls.localize('qaap/preview/editSelection', 'Selection'), icon: 'inspect' },
-    ];
-
-    for (const item of items) {
-        menu.append(createPreviewEditMenuRow(item.label, item.id, item.icon));
-    }
+    menu.append(createPreviewEditMenuRow(
+        nls.localize('qaap/preview/editAnnotate', 'Annotate'),
+        'annotate',
+        createMessageCirclePlusIcon(),
+    ));
+    menu.append(createPreviewEditMenuRow(
+        nls.localize('qaap/preview/editSelection', 'Selection'),
+        'selection',
+        'inspect',
+    ));
 
     const activate = (action: PreviewEditMenuAction): void => {
         if (action === 'selection') {
@@ -93,15 +95,59 @@ export function mountPreviewEditMenu(options: MountPreviewEditMenuOptions): { me
     return { menu, dispose };
 }
 
-function createPreviewEditMenuRow(label: string, action: PreviewEditMenuAction, icon: string): HTMLButtonElement {
+function svgEl(tag: string, attrs: Record<string, string>): SVGElement {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, value] of Object.entries(attrs)) {
+        el.setAttribute(key, value);
+    }
+    return el;
+}
+
+/** Lucide `message-circle-plus` — annotate affordance in the Edit menu. */
+function createMessageCirclePlusIcon(): HTMLElement {
+    const host = document.createElement('span');
+    host.className = 'qaap-preview-edit-item-icon qaap-preview-edit-item-icon--svg';
+    host.setAttribute('aria-hidden', 'true');
+    const svg = svgEl('svg', {
+        viewBox: '0 0 24 24',
+        width: '14',
+        height: '14',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '2',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        focusable: 'false',
+    });
+    svg.append(
+        svgEl('path', {
+            d: 'M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719',
+        }),
+        svgEl('path', { d: 'M8 12h8' }),
+        svgEl('path', { d: 'M12 8v8' }),
+    );
+    host.append(svg);
+    return host;
+}
+
+function createPreviewEditMenuRow(
+    label: string,
+    action: PreviewEditMenuAction,
+    icon: string | HTMLElement,
+): HTMLButtonElement {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'qaap-preview-edit-item';
     row.setAttribute('role', 'menuitem');
     row.setAttribute('data-edit-action', action);
-    const iconEl = document.createElement('span');
-    iconEl.classList.add('qaap-preview-edit-item-icon', ...codiconArray(icon));
-    iconEl.setAttribute('aria-hidden', 'true');
+    let iconEl: HTMLElement;
+    if (typeof icon === 'string') {
+        iconEl = document.createElement('span');
+        iconEl.classList.add('qaap-preview-edit-item-icon', ...codiconArray(icon));
+        iconEl.setAttribute('aria-hidden', 'true');
+    } else {
+        iconEl = icon;
+    }
     const text = document.createElement('span');
     text.className = 'qaap-preview-edit-item-label';
     text.textContent = label;

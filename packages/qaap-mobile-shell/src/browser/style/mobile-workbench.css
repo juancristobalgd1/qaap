@@ -24779,6 +24779,22 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   font-size: 16px;
 }
 
+.theia-mobile-projects-sticky-composer-send-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: currentColor;
+  pointer-events: none;
+}
+
+.theia-mobile-projects-sticky-composer-send-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .theia-mobile-projects-sticky-composer-send.theia-mod-ready {
   background: var(--qaap-codex-send-ready-bg);
   color: var(--qaap-codex-send-ready-fg);
