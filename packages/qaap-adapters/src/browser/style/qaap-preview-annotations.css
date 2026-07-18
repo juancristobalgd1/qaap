@@ -598,11 +598,11 @@
   max-height: var(--qaap-preview-chrome-row-min-height);
   padding: 0 6px 0 4px;
   border-radius: 0;
-  background: #2a2a2e;
+  /* Sit on the same chrome surface as the browser toolbar (no gray island). */
+  background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: none;
-  color: #e8e8ea;
+  color: var(--theia-foreground, #e8e8ea);
 }
 
 .qaap-preview-annotate-toolbar.qaap-mod-visible {
@@ -618,6 +618,7 @@
   pointer-events: none;
 }
 
+/* Match `.qaap-agent-preview-toolbar-*` browser chrome icon buttons. */
 .qaap-preview-annotate-toolbar-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -628,42 +629,47 @@
   height: 28px;
   min-width: 28px;
   min-height: 28px;
-  margin: 0;
+  margin: 0 2px;
   padding: 0;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
-  color: rgba(232, 232, 234, 0.82);
+  color: var(--theia-icon-foreground, rgba(232, 232, 234, 0.82));
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
+.qaap-preview-annotate-toolbar-icon-btn::before {
+  font-size: 16px;
+  pointer-events: none;
+}
+
 .qaap-preview-annotate-toolbar-compare-icon {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
   pointer-events: none;
 }
 
 .qaap-preview-annotate-toolbar-icon-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f2f2f4;
+  background: var(--theia-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+  color: var(--theia-foreground, #f2f2f4);
 }
 
 .qaap-preview-annotate-toolbar-icon-btn.qaap-mod-pressed,
 .qaap-preview-annotate-toolbar-icon-btn:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: var(--theia-toolbar-activeBackground, var(--theia-toolbar-hoverBackground, rgba(255, 255, 255, 0.14)));
+  color: var(--theia-foreground, #fff);
 }
 
 .qaap-preview-annotate-toolbar-icon-btn:focus-visible {
-  outline: 2px solid rgba(47, 143, 255, 0.85);
+  outline: 1px solid var(--theia-focusBorder, rgba(47, 143, 255, 0.85));
   outline-offset: 1px;
 }
 
@@ -681,7 +687,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font: 13px/1.2 system-ui, -apple-system, sans-serif;
-  color: rgba(232, 232, 234, 0.55);
+  color: var(--theia-descriptionForeground, rgba(232, 232, 234, 0.55));
   pointer-events: none;
   user-select: none;
 }
@@ -794,11 +800,22 @@
     padding: 0 4px 0 2px;
   }
 
+  /* Same touch target + glyph size as `.qaap-agent-preview-toolbar-*`. */
   .qaap-preview-annotate-toolbar-icon-btn {
     width: 32px;
     height: 32px;
     min-width: 32px;
     min-height: 32px;
+    font-size: 18px;
+  }
+
+  .qaap-preview-annotate-toolbar-icon-btn::before {
+    font-size: 18px;
+  }
+
+  .qaap-preview-annotate-toolbar-compare-icon {
+    width: 18px;
+    height: 18px;
   }
 
   .qaap-preview-annotate-toolbar-send {
