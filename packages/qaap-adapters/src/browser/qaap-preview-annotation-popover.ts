@@ -31,6 +31,13 @@ export interface AnnotationPopoverElementRef {
     readonly detail?: string;
 }
 
+/** Pending image attachment shown as a thumbnail in the annotate popover. */
+export interface AnnotationPopoverPendingImage {
+    readonly id: string;
+    readonly name: string;
+    readonly previewUrl: string;
+}
+
 export interface MountAnnotationCommentPopoverOptions {
     readonly anchorClientX: number;
     readonly anchorClientY: number;
@@ -43,6 +50,8 @@ export interface MountAnnotationCommentPopoverOptions {
     readonly elementRefs?: readonly AnnotationPopoverElementRef[];
     /** @deprecated Prefer {@link elementRefs}. Single element tag chip (e.g. `div`). */
     readonly elementTagName?: string;
+    /** Images already pending for Annotate Send (paste / screenshot). */
+    readonly initialImages?: readonly AnnotationPopoverPendingImage[];
     readonly allowDelete?: boolean;
     readonly onConfirm: (comment: string) => void;
     readonly onCancel: () => void;
@@ -51,6 +60,15 @@ export interface MountAnnotationCommentPopoverOptions {
     readonly onWarn?: (message: string) => void;
     /** Work Hub sticky-composer agent/model controls (compact footer chips). */
     readonly composerSession?: AnnotationComposerSessionControls;
+    /** Fired when the user pastes an image into the comment field. */
+    readonly onPasteImage?: (image: {
+        readonly id: string;
+        readonly file: File;
+        readonly previewUrl: string;
+        readonly name: string;
+    }) => void | Promise<void>;
+    /** Fired when the user removes a pending image thumbnail. */
+    readonly onRemoveImage?: (id: string) => void;
 }
 
 export interface AnnotationCommentPopoverHandle {
@@ -63,6 +81,8 @@ export interface AnnotationCommentPopoverHandle {
     getComment(): string;
     /** Replace the element-reference chips without remounting (keeps textarea focus/text). */
     setElementRefs(refs: readonly AnnotationPopoverElementRef[]): void;
+    /** Replace pending image thumbnails without remounting. */
+    setImages(images: readonly AnnotationPopoverPendingImage[]): void;
 }
 
 const NARROW_QUERY = '(max-width: 767px), (pointer: coarse)';
@@ -109,8 +129,7 @@ function svgEl(tag: string, attrs: Record<string, string>): SVGElement {
 }
 
 /**
- * Cursor-style element target: periwinkle rounded square with a hollow triangular
- * pointer in the bottom-left corner, aiming diagonally toward the frame center.
+ * Select-element glyph (Codex/Cursor): rounded selection frame + classic mouse pointer.
  */
 function createElementTargetSvg(className: string): SVGSVGElement {
     const svg = svgEl('svg', {
@@ -122,25 +141,22 @@ function createElementTargetSvg(className: string): SVGSVGElement {
     }) as SVGSVGElement;
     svg.classList.add(className);
 
-    // Rounded selection frame.
-    svg.append(svgEl('rect', {
-        x: '2.75',
-        y: '2.25',
-        width: '10.5',
-        height: '10.5',
-        rx: '2.1',
+    // Rounded selection frame (open bottom-right so the pointer reads clearly).
+    svg.append(svgEl('path', {
+        d: 'M4.2 5.4V4.1c0-.7.55-1.25 1.25-1.25H7 M9 2.85h1.55c.7 0 1.25.55 1.25 1.25V5.4 M12.8 9V10.9c0 .7-.55 1.25-1.25 1.25H9.9',
         fill: 'none',
         stroke: 'currentColor',
         'stroke-width': '1.35',
-    }));
-    // Hollow wedge in the bottom-left, tip pointing up-center into the frame.
-    svg.append(svgEl('path', {
-        d: 'M4.55 11.85 L4.55 7.15 L9.1 11.85 Z',
-        fill: 'none',
-        stroke: 'currentColor',
-        'stroke-width': '1.3',
-        'stroke-linejoin': 'round',
         'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+    }));
+    // Classic mouse pointer aiming up-left into the frame.
+    svg.append(svgEl('path', {
+        d: 'M5.1 4.6v7.1l2.15-2.05 1.45 3.35 1.35-.6-1.45-3.3H11.4z',
+        fill: 'currentColor',
+        stroke: 'currentColor',
+        'stroke-width': '0.4',
+        'stroke-linejoin': 'round',
     }));
     return svg;
 }
@@ -318,12 +334,7 @@ function createElementRefChip(ref: AnnotationPopoverElementRef, toneIndex: numbe
     tagEl.className = 'qaap-preview-annotation-popover-chip-tag';
     tagEl.textContent = ref.tagName;
     chipLabel.append(tagEl);
-    if (ref.detail) {
-        const detailEl = document.createElement('span');
-        detailEl.className = 'qaap-preview-annotation-popover-chip-detail';
-        detailEl.textContent = ref.detail;
-        chipLabel.append(detailEl);
-    }
+    // Intentionally omit id/detail in the chip — useful for the agent, noise for the user.
     chip.append(chipLabel);
     return chip;
 }
@@ -360,6 +371,53 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
     };
     renderElementRefs(normalizeElementRefs(options.elementRefs, options.elementTagName));
     body.append(chipsHost);
+
+    const imagesHost = document.createElement('div');
+    imagesHost.className = 'qaap-preview-annotation-popover-images';
+    imagesHost.setAttribute('role', 'list');
+    imagesHost.hidden = true;
+
+    let pendingImages: AnnotationPopoverPendingImage[] = [...(options.initialImages ?? [])];
+    let ownedPreviewUrls = new Set<string>();
+
+    const renderImages = (images: readonly AnnotationPopoverPendingImage[]): void => {
+        pendingImages = [...images];
+        imagesHost.replaceChildren();
+        for (const image of pendingImages) {
+            const card = document.createElement('div');
+            card.className = 'qaap-preview-annotation-popover-image';
+            card.setAttribute('role', 'listitem');
+            card.title = image.name;
+
+            const preview = document.createElement('div');
+            preview.className = 'qaap-preview-annotation-popover-image-preview';
+            const img = document.createElement('img');
+            img.className = 'qaap-preview-annotation-popover-image-thumb';
+            img.alt = image.name;
+            img.decoding = 'async';
+            img.src = image.previewUrl;
+            preview.append(img);
+
+            const removeLabel = nls.localize('qaap/preview/annotationRemoveImage', 'Remove image');
+            const removeBtn = createIconButton('qaap-preview-annotation-popover-image-remove', removeLabel, createCloseSvg());
+            removeBtn.addEventListener('click', (e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (options.onRemoveImage) {
+                    options.onRemoveImage(image.id);
+                    return;
+                }
+                renderImages(pendingImages.filter(item => item.id !== image.id));
+                syncExpandedState();
+                position();
+            });
+
+            card.append(preview, removeBtn);
+            imagesHost.append(card);
+        }
+        imagesHost.hidden = pendingImages.length === 0;
+    };
+    renderImages(pendingImages);
 
     const placeholder = nls.localize('qaap/preview/annotationCommentPlaceholder', 'Describe the change');
     const textarea = document.createElement('textarea');
@@ -414,7 +472,7 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
     }
 
     actions.append(spacer, micBtn, confirmBtn);
-    root.append(title, body, actions);
+    root.append(title, imagesHost, body, actions);
     document.body.append(root);
 
     let recognition: SpeechRecognitionLike | undefined;
@@ -460,7 +518,47 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         const hasText = textarea.value.trim().length > 0;
         const multiLine = textarea.scrollHeight > SINGLE_LINE_HEIGHT_PX + 4;
         const multiChip = chipsHost.childElementCount > 1;
-        root.classList.toggle('qaap-preview-annotation-popover--expanded', hasText || multiLine || multiChip);
+        const hasImages = pendingImages.length > 0;
+        root.classList.toggle(
+            'qaap-preview-annotation-popover--expanded',
+            hasText || multiLine || multiChip || hasImages,
+        );
+    };
+
+    const extensionForMime = (mime: string): string => {
+        if (mime === 'image/jpeg') {
+            return 'jpg';
+        }
+        if (mime === 'image/webp') {
+            return 'webp';
+        }
+        if (mime === 'image/gif') {
+            return 'gif';
+        }
+        return 'png';
+    };
+
+    const ingestPastedImageFile = (file: File): void => {
+        const previewUrl = URL.createObjectURL(file);
+        const id = `paste-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const name = file.name?.trim()
+            || `pasted-image.${extensionForMime(file.type || 'image/png')}`;
+        // Show the thumb immediately; controller owns the blob URL after onPasteImage succeeds.
+        renderImages([...pendingImages, { id, name, previewUrl }]);
+        syncExpandedState();
+        position();
+        if (options.onPasteImage) {
+            void Promise.resolve(options.onPasteImage({ id, file, previewUrl, name })).catch(() => {
+                renderImages(pendingImages.filter(item => item.id !== id));
+                syncExpandedState();
+                position();
+                try {
+                    URL.revokeObjectURL(previewUrl);
+                } catch { /* ignore */ }
+            });
+            return;
+        }
+        ownedPreviewUrls.add(previewUrl);
     };
 
     const autosizeInput = (): void => {
@@ -649,6 +747,31 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         autosizeInput();
         position();
     });
+    textarea.addEventListener('paste', (e: ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items || items.length === 0) {
+            return;
+        }
+        const imageFiles: File[] = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (!item || !item.type.startsWith('image/')) {
+                continue;
+            }
+            const file = item.getAsFile();
+            if (file) {
+                imageFiles.push(file);
+            }
+        }
+        if (imageFiles.length === 0) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        for (const file of imageFiles) {
+            ingestPastedImageFile(file);
+        }
+    });
 
     const visibleBounds = (): DOMRect => {
         const panel = options.panel ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
@@ -719,6 +842,13 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         window.removeEventListener('resize', onViewportChange);
         window.visualViewport?.removeEventListener('resize', onViewportChange);
         window.visualViewport?.removeEventListener('scroll', onViewportChange);
+        // Only revoke blob URLs this popover created; controller-owned previews may outlive us.
+        for (const url of ownedPreviewUrls) {
+            try {
+                URL.revokeObjectURL(url);
+            } catch { /* ignore */ }
+        }
+        ownedPreviewUrls = new Set();
         root.remove();
     };
 
@@ -737,6 +867,13 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         getComment: () => textarea.value,
         setElementRefs: (refs: readonly AnnotationPopoverElementRef[]): void => {
             renderElementRefs(normalizeElementRefs(refs, undefined));
+            syncExpandedState();
+            position();
+        },
+        setImages: (images: readonly AnnotationPopoverPendingImage[]): void => {
+            // Controller now owns these preview URLs — stop revoking them on dispose.
+            ownedPreviewUrls = new Set();
+            renderImages(images);
             syncExpandedState();
             position();
         },

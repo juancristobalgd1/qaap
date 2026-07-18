@@ -122,16 +122,15 @@ describe('qaap-preview-annotation-popover', () => {
         expect(chip.textContent).to.contain('div');
         const icon = chip.querySelector('svg.qaap-preview-annotation-popover-chip-icon') as SVGSVGElement;
         expect(icon).to.exist;
-        // Cursor-style: rounded frame + hollow triangular pointer (stroke, not fill).
-        expect(icon.querySelector('rect[fill="none"]')).to.exist;
-        const pointer = icon.querySelector('path') as SVGPathElement;
-        expect(pointer).to.exist;
-        expect(pointer.getAttribute('fill')).to.equal('none');
-        expect(pointer.getAttribute('stroke')).to.equal('currentColor');
+        // Select-element glyph: open frame path + filled mouse pointer.
+        const paths = icon.querySelectorAll('path');
+        expect(paths.length).to.be.at.least(2);
+        expect(paths[0]?.getAttribute('fill')).to.equal('none');
+        expect(paths[1]?.getAttribute('fill')).to.equal('currentColor');
         handle.dispose();
     });
 
-    it('renders multiple element refs and updates them via setElementRefs without clearing the textarea', () => {
+    it('renders multiple element refs and hides id details in the chip UI', () => {
         const handle = mountAnnotationCommentPopover({
             anchorClientX: 10,
             anchorClientY: 10,
@@ -147,7 +146,8 @@ describe('qaap-preview-annotation-popover', () => {
         const chips = handle.root.querySelectorAll('.qaap-preview-annotation-popover-chip');
         expect(chips).to.have.length(2);
         expect(chips[0]?.textContent).to.contain('iframe');
-        expect(chips[0]?.textContent).to.contain('3e3e3e3');
+        expect(chips[0]?.textContent).to.not.contain('3e3e3e3');
+        expect(handle.root.querySelector('.qaap-preview-annotation-popover-chip-detail')).to.not.exist;
         expect(chips[1]?.textContent).to.contain('textarea');
         expect(handle.root.classList.contains('qaap-preview-annotation-popover--expanded')).to.equal(true);
 
@@ -195,6 +195,33 @@ describe('qaap-preview-annotation-popover', () => {
         });
 
         expect(handle.root.classList.contains('qaap-preview-annotation-popover--expanded')).to.equal(true);
+        handle.dispose();
+    });
+
+    it('shows pasted/pending image thumbnails and expands the popover', () => {
+        const handle = mountAnnotationCommentPopover({
+            anchorClientX: 10,
+            anchorClientY: 10,
+            initialImages: [{
+                id: 'img-1',
+                name: 'pasted-image.png',
+                previewUrl: 'data:image/png;base64,AAAA',
+            }],
+            onConfirm: () => { /* */ },
+            onCancel: () => { /* */ },
+        });
+
+        expect(handle.root.classList.contains('qaap-preview-annotation-popover--expanded')).to.equal(true);
+        const strip = handle.root.querySelector('.qaap-preview-annotation-popover-images') as HTMLElement;
+        expect(strip).to.exist;
+        expect(strip.hidden).to.equal(false);
+        const thumb = handle.root.querySelector('.qaap-preview-annotation-popover-image-thumb') as HTMLImageElement;
+        expect(thumb).to.exist;
+        expect(thumb.src).to.contain('data:image/png');
+        expect(thumb.alt).to.equal('pasted-image.png');
+
+        handle.setImages([]);
+        expect((handle.root.querySelector('.qaap-preview-annotation-popover-images') as HTMLElement).hidden).to.equal(true);
         handle.dispose();
     });
 

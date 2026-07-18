@@ -23,6 +23,8 @@ describe('element-picker annotate bridge', () => {
         expect(bridge).to.contain(ELEMENT_ANNOTATION_REANCHOR_TYPE);
         expect(bridge).to.contain('annotateReady');
         expect(bridge).to.contain("mode === 'annotate'");
+        expect(bridge).to.contain('qaap-annotate-mode');
+        expect(bridge).to.contain('theia-mini-browser-annotate-style');
         expect(bridge).to.contain('channel-1');
         expect(bridge).to.contain('event.source !== window.parent');
         expect(bridge).to.contain('event.origin !== PARENT_ORIGIN');

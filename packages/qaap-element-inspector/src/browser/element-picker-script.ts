@@ -25,7 +25,17 @@ const PICKER_GLOBAL = '__theiaMiniBrowserElementPicker__';
 const OVERLAY_ID = 'theia-mini-browser-picker-overlay';
 const LABEL_ID = 'theia-mini-browser-picker-label';
 const STYLE_ID = 'theia-mini-browser-picker-style';
+const ANNOTATE_STYLE_ID = 'theia-mini-browser-annotate-style';
 const TOOLBAR_ID = 'theia-mini-browser-picker-toolbar';
+/** Compact select-element cursor (frame + pointer); hotspot near the tip. */
+const ANNOTATE_CURSOR_CSS = `url("data:image/svg+xml,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
+    + '<path fill="none" stroke="#7eb6ff" stroke-width="1.6" stroke-linecap="round" '
+    + 'd="M5 8V6.2A2 2 0 0 1 7 4.2h2 M13 4.2h2A2 2 0 0 1 17 6.2V8 M17 14v1.8a2 2 0 0 1-2 2h-2"/>'
+    + '<path fill="#fff" stroke="#1a1a1a" stroke-width="1" stroke-linejoin="round" '
+    + 'd="M7.2 6.5v10.2l3.1-2.95 2.1 4.85 1.95-.85-2.1-4.75H16.8z"/>'
+    + '</svg>'
+)}") 7 6, crosshair`;
 
 export interface ElementBridgeScriptOptions {
     readonly channelId: string;
@@ -284,6 +294,25 @@ export function buildElementBridgeScript(options?: ElementBridgeScriptOptions): 
 
     let annotateClickHandler = null;
     let annotateKeyHandler = null;
+    const ANNOTATE_STYLE_ID = ${JSON.stringify(ANNOTATE_STYLE_ID)};
+    const ANNOTATE_CURSOR = ${JSON.stringify(ANNOTATE_CURSOR_CSS)};
+
+    const ensureAnnotateCursorStyle = () => {
+        let style = document.getElementById(ANNOTATE_STYLE_ID);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = ANNOTATE_STYLE_ID;
+            document.documentElement.appendChild(style);
+        }
+        style.textContent = 'html.qaap-annotate-mode, html.qaap-annotate-mode * { cursor: '
+            + ANNOTATE_CURSOR + ' !important; }';
+    };
+
+    const clearAnnotateCursorStyle = () => {
+        document.documentElement.classList.remove('qaap-annotate-mode');
+        const style = document.getElementById(ANNOTATE_STYLE_ID);
+        if (style) style.remove();
+    };
 
     const deactivateAnnotateListeners = () => {
         if (annotateClickHandler) {
@@ -294,9 +323,12 @@ export function buildElementBridgeScript(options?: ElementBridgeScriptOptions): 
             document.removeEventListener('keydown', annotateKeyHandler, true);
             annotateKeyHandler = null;
         }
+        clearAnnotateCursorStyle();
     };
 
     const activateAnnotateListeners = () => {
+        ensureAnnotateCursorStyle();
+        document.documentElement.classList.add('qaap-annotate-mode');
         if (annotateClickHandler) return;
         annotateClickHandler = (e) => {
             if (bridge.mode !== 'annotate') return;

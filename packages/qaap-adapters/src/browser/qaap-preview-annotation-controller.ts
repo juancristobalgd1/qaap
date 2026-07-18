@@ -7,6 +7,7 @@ import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
+import { generateUuid } from '@theia/core/lib/common/uuid';
 import {
     ELEMENT_ANNOTATION_CANCEL_TYPE,
     ELEMENT_ANNOTATION_POINT_TYPE,
@@ -30,6 +31,7 @@ import {
     type AnnotationCommentPopoverHandle,
     type AnnotationComposerSessionControls,
     type AnnotationPopoverElementRef,
+    type AnnotationPopoverPendingImage,
 } from './qaap-preview-annotation-popover';
 import {
     createPreviewAnnotation,
@@ -143,8 +145,15 @@ export class QaapPreviewAnnotationController implements Disposable {
     protected listenerInstalled = false;
     protected notify: ((message: string, kind?: 'info' | 'warn') => void) | undefined;
     protected composerSession: AnnotationComposerSessionControls | undefined;
-    /** Latest annotate-toolbar screenshot; included with Send as image chat context. */
-    protected pendingChatScreenshot: PreviewAnnotationChatImageAttachment | undefined;
+    /**
+     * Pending images for Annotate Send (toolbar screenshot and/or pasted images).
+     * Preview URLs are shown in the open comment popover.
+     */
+    protected pendingChatImages: Array<{
+        readonly id: string;
+        readonly previewUrl: string;
+        readonly attachment: PreviewAnnotationChatImageAttachment;
+    }> = [];
 
     constructor(protected readonly options: QaapPreviewAnnotationControllerOptions) {
         this.store = options.store ?? new PreviewAnnotationStore();
@@ -187,6 +196,7 @@ export class QaapPreviewAnnotationController implements Disposable {
 
     dispose(): void {
         this.closePopover();
+        this.clearPendingChatImages();
         if (this.reanchorRaf) {
             this.cancelScheduledReanchor(this.reanchorRaf);
             this.reanchorRaf = 0;
@@ -285,7 +295,9 @@ export class QaapPreviewAnnotationController implements Disposable {
             ), 'warn');
             return;
         }
-        const images = this.pendingChatScreenshot ? [this.pendingChatScreenshot] : undefined;
+        const images = this.pendingChatImages.length > 0
+            ? this.pendingChatImages.map(item => item.attachment)
+            : undefined;
         const routes = new Set(confirmed.map(item => item.route));
         const titleRoute = routes.size === 1 ? confirmed[0]!.route : scope.route;
         const attachArgs = buildAnnotateChatAttachArgs(
@@ -337,7 +349,7 @@ export class QaapPreviewAnnotationController implements Disposable {
      */
     protected exitAnnotateModeAndClear(): void {
         const scope = this.options.getScope();
-        this.pendingChatScreenshot = undefined;
+        this.clearPendingChatImages();
         this.provisionalId = undefined;
         this.closePopover();
         this.setComparingOriginal(false);
@@ -362,7 +374,7 @@ export class QaapPreviewAnnotationController implements Disposable {
      * toolbar badge, and return to browse.
      */
     protected clearAnnotationsAfterSuccessfulSend(scope: PreviewAnnotationScope, sentIds: readonly string[]): void {
-        this.pendingChatScreenshot = undefined;
+        this.clearPendingChatImages();
         this.provisionalId = undefined;
         this.closePopover();
         this.setComparingOriginal(false);
@@ -383,11 +395,84 @@ export class QaapPreviewAnnotationController implements Disposable {
 
     /** Test seam: seed a pending screenshot that Send includes as image context. */
     setPendingChatScreenshot(image: PreviewAnnotationChatImageAttachment | undefined): void {
-        this.pendingChatScreenshot = image;
+        this.clearPendingChatImages();
+        if (!image) {
+            this.syncPopoverImages();
+            return;
+        }
+        this.pendingChatImages.push({
+            id: generateUuid(),
+            previewUrl: `data:${image.mimeType};base64,${image.data}`,
+            attachment: image,
+        });
+        this.syncPopoverImages();
     }
 
     getPendingChatScreenshot(): PreviewAnnotationChatImageAttachment | undefined {
-        return this.pendingChatScreenshot;
+        return this.pendingChatImages[0]?.attachment;
+    }
+
+    protected listPopoverImages(): AnnotationPopoverPendingImage[] {
+        return this.pendingChatImages.map(item => ({
+            id: item.id,
+            name: item.attachment.name,
+            previewUrl: item.previewUrl,
+        }));
+    }
+
+    protected syncPopoverImages(): void {
+        this.popover?.setImages(this.listPopoverImages());
+    }
+
+    protected clearPendingChatImages(): void {
+        for (const item of this.pendingChatImages) {
+            if (item.previewUrl.startsWith('blob:')) {
+                try {
+                    URL.revokeObjectURL(item.previewUrl);
+                } catch { /* ignore */ }
+            }
+        }
+        this.pendingChatImages = [];
+    }
+
+    protected removePendingChatImage(id: string): void {
+        const next: typeof this.pendingChatImages = [];
+        for (const item of this.pendingChatImages) {
+            if (item.id === id) {
+                if (item.previewUrl.startsWith('blob:')) {
+                    try {
+                        URL.revokeObjectURL(item.previewUrl);
+                    } catch { /* ignore */ }
+                }
+                continue;
+            }
+            next.push(item);
+        }
+        this.pendingChatImages = next;
+        this.syncPopoverImages();
+    }
+
+    protected async addPendingChatImageFromPaste(image: {
+        readonly id: string;
+        readonly file: File;
+        readonly previewUrl: string;
+        readonly name: string;
+    }): Promise<void> {
+        if (this.pendingChatImages.some(item => item.id === image.id)) {
+            this.syncPopoverImages();
+            return;
+        }
+        const data = await blobToBase64(image.file);
+        this.pendingChatImages.push({
+            id: image.id,
+            previewUrl: image.previewUrl,
+            attachment: {
+                name: image.name,
+                mimeType: image.file.type || 'image/png',
+                data,
+            },
+        });
+        this.syncPopoverImages();
     }
 
     protected formatAnnotationsSentToast(count: number): string {
@@ -609,12 +694,15 @@ export class QaapPreviewAnnotationController implements Disposable {
             elementRefs: elementRefs.length > 0
                 ? elementRefs
                 : (fallbackTag ? [{ tagName: fallbackTag }] : undefined),
+            initialImages: this.listPopoverImages(),
             allowDelete: !isNew,
             composerSession: this.composerSession,
             onWarn: message => {
                 this.notify?.(message, 'warn');
                 this.options.messageService.warn(message);
             },
+            onPasteImage: image => this.addPendingChatImageFromPaste(image),
+            onRemoveImage: id => this.removePendingChatImage(id),
             onConfirm: comment => {
                 if (isBlankAnnotationComment(comment)) {
                     return;
@@ -799,11 +887,17 @@ export class QaapPreviewAnnotationController implements Disposable {
                 throw new Error('capture failed');
             }
             const data = await blobToBase64(blob);
-            this.pendingChatScreenshot = {
-                name: 'preview-screenshot.png',
-                mimeType: 'image/png',
-                data,
-            };
+            const previewUrl = URL.createObjectURL(blob);
+            this.pendingChatImages.push({
+                id: generateUuid(),
+                previewUrl,
+                attachment: {
+                    name: 'preview-screenshot.png',
+                    mimeType: 'image/png',
+                    data,
+                },
+            });
+            this.syncPopoverImages();
             const copied = await writePngBlobToClipboard(blob);
             if (copied) {
                 this.notifyUser(nls.localize(
@@ -1087,7 +1181,6 @@ function buildAnnotationElementMeta(payload: AnnotationPointPayload): PreviewAnn
 }
 
 function toPopoverElementRef(meta: PreviewAnnotationElementMeta): AnnotationPopoverElementRef {
-    const tagName = meta.tagName.trim().toLowerCase() || 'div';
-    const detail = meta.idHint?.trim();
-    return detail ? { tagName, detail } : { tagName };
+    // Tag only in the chip UI; idHint stays on the annotation for agent context / dedupe.
+    return { tagName: meta.tagName.trim().toLowerCase() || 'div' };
 }

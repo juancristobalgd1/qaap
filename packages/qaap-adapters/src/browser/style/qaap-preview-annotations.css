@@ -97,6 +97,70 @@
   border: 0;
 }
 
+/* Pasted / screenshot image thumbs — compact composer-style strip. */
+.qaap-preview-annotation-popover-images {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.qaap-preview-annotation-popover-images[hidden] {
+  display: none !important;
+}
+
+.qaap-preview-annotation-popover-images::-webkit-scrollbar {
+  display: none;
+}
+
+.qaap-preview-annotation-popover-image {
+  position: relative;
+  flex: 0 0 auto;
+  width: 72px;
+}
+
+.qaap-preview-annotation-popover-image-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.qaap-preview-annotation-popover-image-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qaap-preview-annotation-popover-image-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+  background: rgba(20, 20, 20, 0.72) !important;
+  color: #f2f2f2 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.qaap-preview-annotation-popover-image-remove:hover {
+  background: rgba(40, 40, 40, 0.9) !important;
+}
+
 .qaap-preview-annotation-popover-body {
   display: flex;
   flex-direction: row;
@@ -188,13 +252,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--qaap-annotation-chip-tone);
-}
-
-.qaap-preview-annotation-popover-chip-detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: rgba(242, 242, 242, 0.88);
-  font-weight: 450;
 }
 
 /* Seamless with popover charcoal — beat theme textarea wells (--q-surface). */
