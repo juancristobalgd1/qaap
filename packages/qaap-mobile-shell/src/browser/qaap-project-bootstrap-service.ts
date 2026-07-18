@@ -6,6 +6,7 @@
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { generateUuid } from '@theia/core/lib/common/uuid';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
@@ -50,6 +51,7 @@ import {
     resolveBootstrapDevTarget,
     resolveBootstrapInstallTarget,
 } from '../common/qaap-project-bootstrap-scaffold-plan';
+import type { QaapPreviewExecutionIdentity, QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
 
 /** Terminal titles created by {@link QaapProjectBootstrapService.spawnCommand}. */
@@ -113,6 +115,8 @@ export interface QaapBootstrapStateChange {
     readonly failureKind?: QaapBootstrapFailureKind;
     /** Port currently being started, including an automatic conflict-recovery retry. */
     readonly activePort?: number;
+    /** Stable for the lifetime of one spawned/reattached dev-server process. */
+    readonly previewRunId?: string;
     /** Original occupied port when Qaap automatically moved this run to {@link activePort}. */
     readonly portRecoveryFrom?: number;
     /** The monorepo app currently selected, when applicable. */
@@ -202,6 +206,7 @@ export class QaapProjectBootstrapService {
     protected refreshDebounceTimer: number | undefined;
     /** Port we asked the dev server to bind to (may differ from the framework default when Qaap uses :3000). */
     protected activeDevPortHint: number | undefined;
+    protected activePreviewRunId: string | undefined;
     /** One-run override used after an occupied port fails to expose a usable HTTP preview. */
     protected devPortOverride: number | undefined;
     /** Prevents an unhealthy project from cycling through ports forever. */
@@ -275,6 +280,11 @@ export class QaapProjectBootstrapService {
     get previewUrl(): string | undefined { return this._previewUrl; }
     get selectedApp(): QaapMonorepoAppCandidate | undefined { return this._selectedApp; }
     get lastPort(): number | undefined { return this._lastPort; }
+
+    /** Reserves a concrete dev process/port for one Work Hub execution. */
+    claimPreviewExecution(port: number, identity: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult> {
+        return this.previewPortClaimService.claim(port, identity);
+    }
 
     /** Current bootstrap state for UI contributions and AI tools. */
     getStateSnapshot(): QaapBootstrapStateChange {
@@ -516,6 +526,7 @@ export class QaapProjectBootstrapService {
         this.devOutputTail = '';
         this.activeDevPortHint = undefined;
         const runId = ++this.devRunGeneration;
+        this.activePreviewRunId = generateUuid();
         this.setPhase('starting');
 
         const spawnPlan = this.buildDevSpawnPlan(plan);
@@ -834,6 +845,7 @@ export class QaapProjectBootstrapService {
         if (isReservedIdePort(port)) {
             return;
         }
+        this.activePreviewRunId ??= generateUuid();
         const existing = this._forwardedPorts.find(p => p.port === port);
         if (existing) {
             return;
@@ -1305,6 +1317,7 @@ export class QaapProjectBootstrapService {
         this.attemptedDevPorts.clear();
         this.portRecoveryFrom = undefined;
         this.activeDevPortHint = undefined;
+        this.activePreviewRunId = undefined;
         this.disposeBootstrapTerminal(this.installTerminal);
         this.installTerminal = undefined;
         this.disposeOrphanBootstrapTerminals();
@@ -1419,6 +1432,7 @@ export class QaapProjectBootstrapService {
                 ? 'next-lock'
                 : portInUse ? 'port-conflict' : failure?.kind,
             activePort: this.activeDevPortHint,
+            previewRunId: this.activePreviewRunId,
             portRecoveryFrom: this.portRecoveryFrom,
             missingDescriptorHint: this._missingDescriptorHint,
         };

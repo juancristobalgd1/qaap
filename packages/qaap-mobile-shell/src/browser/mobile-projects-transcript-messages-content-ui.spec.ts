@@ -13,7 +13,9 @@ import {
     applyStreamingMarkdownHtmlPatch,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-streaming-markdown-view';
 import {
+    extractTranscriptPreviewId,
     MobileProjectsTranscriptMessagesContentUi,
+    normalizeTranscriptPreviewHref,
     TRANSCRIPT_STREAMING_HYBRID_CLASS,
     TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS,
     TRANSCRIPT_STREAMING_INCREMENTAL_MIN_CHARS,
@@ -21,6 +23,7 @@ import {
     transcriptContentNeedsStreamingMarkdown,
 } from './mobile-projects-transcript-messages-content-ui';
 import { QaapTranscriptMarkdownWorkerClient } from './qaap-transcript-markdown-worker-client';
+import { MobileSnackbar } from './mobile-snackbar';
 
 describe('MobileProjectsTranscriptMessagesContentUi', () => {
 
@@ -161,5 +164,78 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         const elapsedMs = performance.now() - start;
         expect(elapsedMs).to.be.below(120);
         expect(host.classList.contains(TRANSCRIPT_STREAMING_HYBRID_CLASS)).to.equal(true);
+    });
+
+    it('recognizes identity proxy and isolated-origin links as integrated previews', () => {
+        const origin = 'https://app.qaap.example';
+        const previewId = 'project-conversation-run-a1b2c3';
+        expect(normalizeTranscriptPreviewHref(`/qaap-preview/${previewId}/dashboard`, origin))
+            .to.equal(`${origin}/qaap-preview/${previewId}/dashboard`);
+        const isolated = `https://${previewId}.preview.qaap.example/dashboard`;
+        expect(normalizeTranscriptPreviewHref(isolated, origin)).to.equal(isolated);
+        expect(extractTranscriptPreviewId(isolated, origin)).to.equal(previewId);
+        expect(normalizeTranscriptPreviewHref('https://example.com/dashboard', origin)).to.equal(undefined);
+        expect(normalizeTranscriptPreviewHref('/qaap-preview/api/probe', origin)).to.equal(undefined);
+        expect(normalizeTranscriptPreviewHref(`ftp://${previewId}.preview.qaap.example/`, origin)).to.equal(undefined);
+    });
+
+    it('linkifies previewId URLs returned as plain agent text', () => {
+        const ui = new MobileProjectsTranscriptMessagesContentUi({} as never);
+        const previewId = 'project-conversation-run-a1b2c3';
+        const linked = ui.linkifyTranscriptPreviewUrls(
+            `Abre /qaap-preview/${previewId}/ o https://${previewId}.preview.qaap.example/`,
+        );
+        expect(linked).to.contain(`[/qaap-preview/${previewId}/](/qaap-preview/${previewId}/)`);
+        expect(linked).to.contain(
+            `[https://${previewId}.preview.qaap.example/](https://${previewId}.preview.qaap.example/)`,
+        );
+    });
+
+    it('validates an identity link and selects the integrated Preview tab', async () => {
+        const previewId = 'project-conversation-run-a1b2c3';
+        const verifiedUrl = `https://${previewId}.preview.qaap.example/`;
+        let selectedTab = '';
+        let persistedUrl = '';
+        const project = { id: 'project', name: 'Project' };
+        const summary = { id: 'conversation' };
+        const host = {
+            transcriptComposerSummary: summary,
+            transcriptOpenSummary: summary,
+            transcriptOpenProject: project,
+            projects: [project],
+            projectsService: {
+                recordProjectPreviewUrl: async (_project: unknown, url: string): Promise<void> => {
+                    persistedUrl = url;
+                },
+            },
+            executionSurfaceTabsUi: {
+                selectTranscriptTab: (tab: string): void => {
+                    selectedTab = tab;
+                },
+            },
+            transcriptPreviewRequestPending: true,
+            transcriptPreviewRequestRunning: true,
+        };
+        const ui = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        const testUi = ui as unknown as {
+            previewPublicOrigin: () => string;
+            probePreviewIdentity: (id: string) => Promise<{ ready: boolean; previewUrl: string; previewId: string }>;
+        };
+        testUi.previewPublicOrigin = () => 'https://app.qaap.example';
+        testUi.probePreviewIdentity = async id => ({ ready: true, previewUrl: verifiedUrl, previewId: id });
+        const snackbar = MobileSnackbar as typeof MobileSnackbar & { show: typeof MobileSnackbar.show };
+        const originalShow = snackbar.show;
+        snackbar.show = () => { /* no DOM timer in this unit test */ };
+        try {
+            const opened = await ui.openTranscriptPreviewUrlFromLink(`/qaap-preview/${previewId}/`);
+            expect(opened).to.equal(true);
+            expect(selectedTab).to.equal('preview');
+            expect(persistedUrl).to.equal(verifiedUrl);
+            expect(host.transcriptOpenProject).to.deep.include({ previewUrl: verifiedUrl });
+            expect(host.transcriptPreviewRequestPending).to.equal(false);
+            expect(host.transcriptPreviewRequestRunning).to.equal(false);
+        } finally {
+            snackbar.show = originalShow;
+        }
     });
 });

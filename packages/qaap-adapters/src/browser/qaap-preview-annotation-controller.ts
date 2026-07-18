@@ -650,7 +650,7 @@ export class QaapPreviewAnnotationController implements Disposable {
         if (this.options.postBridgeMessage) {
             this.options.postBridgeMessage({ type: ELEMENT_ANNOTATION_REANCHOR_TYPE, payload: { items } });
         } else {
-            win.postMessage({ type: ELEMENT_ANNOTATION_REANCHOR_TYPE, payload: { items } }, '*');
+            win.postMessage({ type: ELEMENT_ANNOTATION_REANCHOR_TYPE, payload: { items } }, this.frameTargetOrigin());
         }
     }
 
@@ -694,7 +694,16 @@ export class QaapPreviewAnnotationController implements Disposable {
         if (this.options.postBridgeMessage) {
             this.options.postBridgeMessage({ type: ELEMENT_SET_MODE_TYPE, mode });
         } else {
-            win.postMessage({ type: ELEMENT_SET_MODE_TYPE, mode }, '*');
+            win.postMessage({ type: ELEMENT_SET_MODE_TYPE, mode }, this.frameTargetOrigin());
+        }
+    }
+
+    protected frameTargetOrigin(): string {
+        try {
+            const origin = new URL(this.options.frame.src || window.location.href, window.location.href).origin;
+            return origin === 'null' ? window.location.origin : origin;
+        } catch {
+            return window.location.origin;
         }
     }
 

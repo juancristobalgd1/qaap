@@ -14,12 +14,18 @@ import { buildElementBridgeScript, buildElementPickerScript } from './element-pi
 
 describe('element-picker annotate bridge', () => {
     it('bridge script includes annotate mode protocol without removing select types', () => {
-        const bridge = buildElementBridgeScript();
+        const bridge = buildElementBridgeScript({
+            channelId: 'channel-1',
+            parentOrigin: 'https://app.qaap.example',
+        });
         expect(bridge).to.contain(ELEMENT_SET_MODE_TYPE);
         expect(bridge).to.contain(ELEMENT_ANNOTATION_POINT_TYPE);
         expect(bridge).to.contain(ELEMENT_ANNOTATION_REANCHOR_TYPE);
         expect(bridge).to.contain('annotateReady');
         expect(bridge).to.contain("mode === 'annotate'");
+        expect(bridge).to.contain('channel-1');
+        expect(bridge).to.contain('event.source !== window.parent');
+        expect(bridge).to.contain('event.origin !== PARENT_ORIGIN');
     });
 
     it('picker script still posts the select capture message type', () => {

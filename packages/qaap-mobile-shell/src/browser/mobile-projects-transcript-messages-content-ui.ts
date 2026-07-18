@@ -14,7 +14,11 @@ import {
 import { QaapTranscriptMarkdownWorkerClient } from './qaap-transcript-markdown-worker-client';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
-import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
+import {
+    parseQaapIdentityPreviewRequestPath,
+    type QaapDevPreviewProbeResponse,
+} from '../common/qaap-dev-preview';
 import { collapseExactRepeatedText } from '../common/qaap-qaiq-stream';
 import { prefersReducedMotion } from '../common/qaap-prefers-reduced-motion';
 import { nextStreamSmoothRevealLength } from '../common/qaap-transcript-stream-smooth';
@@ -52,6 +56,66 @@ const STREAM_TOTAL_LENGTH_DATA = 'qaapStreamTotalLength';
  *  attribute serialization on every frame while a long turn streams. */
 const transcriptStreamSourceCache = new WeakMap<HTMLElement, string>();
 
+const QAAP_PREVIEW_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** Extracts the execution identity from same-origin proxy and `preview.qaap` URLs. */
+export function extractTranscriptPreviewId(href: string, publicOrigin: string): string | undefined {
+    try {
+        const origin = new URL(publicOrigin);
+        const parsed = new URL(href.trim(), origin);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return undefined;
+        }
+        if (parsed.origin === origin.origin) {
+            return parseQaapIdentityPreviewRequestPath(parsed.pathname)?.previewId;
+        }
+        const labels = parsed.hostname.toLowerCase().split('.');
+        const previewId = labels[0];
+        if (labels.length >= 3 && labels[1] === 'preview' && QAAP_PREVIEW_ID_PATTERN.test(previewId)) {
+            return previewId;
+        }
+    } catch {
+        return undefined;
+    }
+    return undefined;
+}
+
+/** Returns only URLs that Qaap can safely route into the conversation's integrated preview. */
+export function normalizeTranscriptPreviewHref(href: string, publicOrigin: string): string | undefined {
+    const trimmed = href.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    if (/^\/qaap-dev\/\d{2,5}(?:\/.*)?$/i.test(trimmed)) {
+        return new URL(trimmed, publicOrigin).toString();
+    }
+    if (trimmed.startsWith('/qaap-preview/')) {
+        const parsed = new URL(trimmed, publicOrigin);
+        return parseQaapIdentityPreviewRequestPath(parsed.pathname) ? parsed.toString() : undefined;
+    }
+    if (/^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/.*)?$/i.test(trimmed)) {
+        return normalizePreviewUrlForSameOrigin(trimmed, publicOrigin);
+    }
+    try {
+        const parsed = new URL(trimmed, publicOrigin);
+        const origin = new URL(publicOrigin);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return undefined;
+        }
+        if (parsed.origin === origin.origin
+            && (/^\/qaap-dev\/\d{2,5}(?:\/.*)?$/i.test(parsed.pathname)
+                || !!parseQaapIdentityPreviewRequestPath(parsed.pathname))) {
+            return parsed.toString();
+        }
+        if (extractTranscriptPreviewId(parsed.toString(), publicOrigin)) {
+            return parsed.toString();
+        }
+    } catch {
+        return undefined;
+    }
+    return undefined;
+}
+
 /** Per-row token smoothing state: full received text vs. the prefix revealed so far. */
 interface TranscriptStreamSmoothEntry {
     target: string;
@@ -64,45 +128,47 @@ export class MobileProjectsTranscriptMessagesContentUi {
 
     constructor(protected readonly host: MobileProjectsTranscriptMessagesHost) { }
 
+    protected previewPublicOrigin(): string {
+        return window.location.origin;
+    }
+
+    protected probePreviewPort(port: number): Promise<QaapDevPreviewProbeResponse> {
+        return probeQaapDevPreviewPort(port);
+    }
+
+    protected probePreviewIdentity(previewId: string): Promise<QaapDevPreviewProbeResponse> {
+        return probeQaapIdentityPreview(previewId);
+    }
+
     normalizeTranscriptPreviewLink(href: string): string | undefined {
-        const trimmed = href.trim();
-        if (!trimmed) {
-            return undefined;
-        }
-        if (/^\/qaap-dev\/\d{2,5}(?:\/.*)?$/i.test(trimmed)) {
-            return window.location.origin + trimmed;
-        }
-        if (/^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/.*)?$/i.test(trimmed)) {
-            return normalizePreviewUrlForSameOrigin(trimmed);
-        }
-        try {
-            const parsed = new URL(trimmed, window.location.origin);
-            if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/qaap-dev/')) {
-                return normalizePreviewUrlForSameOrigin(parsed.toString());
-            }
-        } catch {
-            return undefined;
-        }
-        return undefined;
+        return normalizeTranscriptPreviewHref(href, this.previewPublicOrigin());
     }
 
 
     async openTranscriptPreviewUrlFromLink(href: string): Promise<boolean> {
-        const previewUrl = this.normalizeTranscriptPreviewLink(href);
         const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
         const project = this.host.transcriptOpenProject;
+        const publicOrigin = this.previewPublicOrigin();
+        const previewUrl = normalizeTranscriptPreviewHref(href, publicOrigin);
         if (!previewUrl || !summary || !project) {
             return false;
         }
 
         const port = extractDevPreviewPortFromUrl(previewUrl);
+        const previewId = extractTranscriptPreviewId(previewUrl, publicOrigin);
         let verifiedUrl = previewUrl;
         if (port !== undefined) {
-            const probe = await probeQaapDevPreviewPort(port);
+            const probe = await this.probePreviewPort(port);
             if (!probe.ready) {
                 return false;
             }
-            verifiedUrl = normalizePreviewUrlForSameOrigin(probe.previewUrl);
+            verifiedUrl = normalizePreviewUrlForSameOrigin(probe.previewUrl, publicOrigin);
+        } else if (previewId) {
+            const probe = await this.probePreviewIdentity(previewId);
+            if (!probe.ready || probe.previewId !== previewId) {
+                return false;
+            }
+            verifiedUrl = probe.previewUrl;
         }
         this.host.transcriptPreviewRequestPending = false;
         this.host.transcriptPreviewRequestRunning = false;
@@ -445,7 +511,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
     linkifyTranscriptPreviewUrls(content: string | undefined | null): string {
         const text = content ?? '';
         return text.replace(
-            /(^|[\s(])((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-dev\/\d{2,5}(?:\/[^\s\x60<)]*)?)/gi,
+            /(^|[\s(])((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-dev\/\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-preview\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\/[^\s\x60<)]*)?|https?:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.preview\.[a-z0-9.-]+(?::\d{2,5})?(?:\/[^\s\x60<)]*)?)/gi,
             (match, prefix: string, url: string, offset: number) => {
                 const before = text.slice(0, offset);
                 if (/\[[^\]]*$/.test(before) || /\]\([^)]*$/.test(before)) {

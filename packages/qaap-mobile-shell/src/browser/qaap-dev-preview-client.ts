@@ -5,7 +5,9 @@
 
 import {
     QAAP_DEV_PREVIEW_PROBE_PATH,
+    QAAP_IDENTITY_PREVIEW_PROBE_PATH,
     buildQaapDevPreviewOpenUrl,
+    buildQaapIdentityPreviewUrl,
     type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
 
@@ -76,6 +78,36 @@ export async function probeQaapDevPreviewPort(port: number): Promise<QaapDevPrev
         return {
             ready: !!body.ready,
             previewUrl: body.previewUrl || fallback.previewUrl,
+        };
+    } catch {
+        return fallback;
+    }
+}
+
+/** Resolves an owner-authorized execution preview without exposing its reserved port. */
+export async function probeQaapIdentityPreview(previewId: string): Promise<QaapDevPreviewProbeResponse> {
+    const origin = getQaapPublicOrigin();
+    const fallback: QaapDevPreviewProbeResponse = {
+        ready: false,
+        previewUrl: origin ? buildQaapIdentityPreviewUrl(origin, previewId) : '',
+        previewId,
+    };
+    if (!origin || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(previewId)) {
+        return fallback;
+    }
+    try {
+        const response = await fetch(`${origin}${QAAP_IDENTITY_PREVIEW_PROBE_PATH}/${encodeURIComponent(previewId)}`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+            return fallback;
+        }
+        const body = await response.json() as QaapDevPreviewProbeResponse;
+        return {
+            ready: !!body.ready,
+            previewUrl: body.previewUrl || fallback.previewUrl,
+            previewId: typeof body.previewId === 'string' ? body.previewId : previewId,
         };
     } catch {
         return fallback;

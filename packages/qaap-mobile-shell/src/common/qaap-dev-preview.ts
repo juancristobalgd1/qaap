@@ -6,15 +6,21 @@
 /** HTTP path prefix for proxied dev-server preview (Codespaces-style, same origin as Qaap). */
 export const QAAP_DEV_PREVIEW_PREFIX = '/qaap-dev';
 
+/** Identity-scoped proxy. Unlike `/qaap-dev/:port`, the public URL never exposes/reuses a port. */
+export const QAAP_IDENTITY_PREVIEW_PREFIX = '/qaap-preview';
+
 export const QAAP_DEV_PREVIEW_PROBE_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/probe`;
 
 /** Owner claims a preview port for a workspace they own, so the proxy can deny other tenants. */
 export const QAAP_DEV_PREVIEW_CLAIM_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/claim`;
 
+export const QAAP_IDENTITY_PREVIEW_PROBE_PATH = `${QAAP_IDENTITY_PREVIEW_PREFIX}/api/probe`;
+
 export interface QaapDevPreviewProbeResponse {
     readonly ready: boolean;
     /** URL the mini-browser should load via the same-origin `/qaap-dev/:port/` proxy. */
     readonly previewUrl: string;
+    readonly previewId?: string;
 }
 
 const MIN_DEV_PORT = 1024;
@@ -81,6 +87,12 @@ export function buildQaapDevPreviewOpenUrl(publicOrigin: string, port: number): 
     return buildQaapDevPreviewUrl(publicOrigin, port);
 }
 
+export function buildQaapIdentityPreviewUrl(publicOrigin: string, previewId: string, targetPath: string = '/'): string {
+    const base = normalizePublicOrigin(publicOrigin);
+    const suffix = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
+    return `${base}${QAAP_IDENTITY_PREVIEW_PREFIX}/${encodeURIComponent(previewId)}${suffix}`;
+}
+
 /** Friendly holding page while the dev server is still binding (v0-style auto-retry). */
 export function buildDevPreviewWaitingHtml(targetPort: number): string {
     const safePort = String(targetPort);
@@ -127,4 +139,21 @@ export function parseQaapDevPreviewRequestPath(pathname: string): { port: number
     }
     const targetPath = match[2] || '/';
     return { port, targetPath };
+}
+
+/** Parses `/qaap-preview/:previewId/...` without trusting the id as a port or process key. */
+export function parseQaapIdentityPreviewRequestPath(pathname: string): { previewId: string; targetPath: string } | undefined {
+    const match = /^\/qaap-preview\/([^/]+)(\/.*)?$/.exec(pathname);
+    if (!match || match[1] === 'api') {
+        return undefined;
+    }
+    try {
+        const previewId = decodeURIComponent(match[1]);
+        if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(previewId)) {
+            return undefined;
+        }
+        return { previewId, targetPath: match[2] || '/' };
+    } catch {
+        return undefined;
+    }
 }

@@ -15,7 +15,10 @@ export interface QaapPreviewSurfaceHandle {
     readonly frame: HTMLIFrameElement;
     readonly picker: QaapPreviewFramePicker;
     readonly kind: 'embedded' | 'mini-browser';
+    readonly focusRoot: HTMLElement;
+    readonly lastActivatedAt: number;
     isConnected(): boolean;
+    activate(): void;
 }
 
 @injectable()
@@ -25,36 +28,46 @@ export class QaapPreviewSurfaceRegistry {
     protected readonly pickerFactory: QaapPreviewFramePickerFactory;
 
     protected readonly surfaces: QaapPreviewSurfaceHandle[] = [];
+    protected activationSequence = 0;
 
-    registerEmbedded(frame: HTMLIFrameElement, toDispose: DisposableCollection): QaapPreviewSurfaceHandle {
+    registerEmbedded(frame: HTMLIFrameElement, toDispose: DisposableCollection, focusRoot: HTMLElement = frame): QaapPreviewSurfaceHandle {
         const picker = this.pickerFactory.create(frame, toDispose);
-        return this.registerSurface(frame, picker, 'embedded', toDispose);
+        return this.registerSurface(frame, picker, 'embedded', focusRoot, toDispose);
     }
 
     registerMiniBrowserContent(content: QaapMiniBrowserContent, toDispose: DisposableCollection): QaapPreviewSurfaceHandle {
         const frame = content.previewFrame;
         const picker = content.getPreviewFramePicker();
-        const handle = this.registerSurface(frame, picker, 'mini-browser', toDispose);
-        return {
-            frame: handle.frame,
-            picker: handle.picker,
-            kind: handle.kind,
-            isConnected: () => content.node.isConnected,
-        };
+        return this.registerSurface(frame, picker, 'mini-browser', content.node, toDispose, () => content.node.isConnected);
     }
 
     protected registerSurface(
         frame: HTMLIFrameElement,
         picker: QaapPreviewFramePicker,
         kind: QaapPreviewSurfaceHandle['kind'],
+        focusRoot: HTMLElement,
         toDispose: DisposableCollection,
+        isConnected: () => boolean = () => frame.isConnected,
     ): QaapPreviewSurfaceHandle {
+        let lastActivatedAt = ++this.activationSequence;
         const handle: QaapPreviewSurfaceHandle = {
             frame,
             picker,
             kind,
-            isConnected: () => frame.isConnected,
+            focusRoot,
+            get lastActivatedAt(): number { return lastActivatedAt; },
+            isConnected,
+            activate: () => { lastActivatedAt = ++this.activationSequence; },
         };
+        const activate = (): void => handle.activate();
+        focusRoot.addEventListener('pointerdown', activate, true);
+        focusRoot.addEventListener('focusin', activate, true);
+        frame.addEventListener('focus', activate);
+        toDispose.push(Disposable.create(() => {
+            focusRoot.removeEventListener('pointerdown', activate, true);
+            focusRoot.removeEventListener('focusin', activate, true);
+            frame.removeEventListener('focus', activate);
+        }));
         this.surfaces.push(handle);
         toDispose.push(Disposable.create(() => this.removeSurface(handle)));
         return handle;
@@ -66,10 +79,15 @@ export class QaapPreviewSurfaceRegistry {
 
     getActiveSurface(): QaapPreviewSurfaceHandle | undefined {
         const connected = this.getConnectedSurfaces();
-        if (connected.length) {
-            return connected[connected.length - 1];
+        if (!connected.length) {
+            return undefined;
         }
-        return undefined;
+        const activeElement = typeof document === 'undefined' ? undefined : document.activeElement;
+        const focused = activeElement
+            ? connected.filter(surface => surface.frame === activeElement || surface.focusRoot.contains(activeElement))
+            : [];
+        const candidates = focused.length > 0 ? focused : connected;
+        return [...candidates].sort((left, right) => right.lastActivatedAt - left.lastActivatedAt)[0];
     }
 
     getConnectedSurfaces(): readonly QaapPreviewSurfaceHandle[] {

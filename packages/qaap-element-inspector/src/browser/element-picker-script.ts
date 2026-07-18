@@ -7,6 +7,7 @@
 import {
     ELEMENT_PICKER_MESSAGE_TYPE,
     ELEMENT_PICKER_CANCEL_TYPE,
+    ELEMENT_PICKER_START_TYPE,
     ELEMENT_UPDATE_STYLE_TYPE,
     ELEMENT_UPDATE_TEXT_TYPE,
     ELEMENT_REFRESH_REQUEST_TYPE,
@@ -26,6 +27,11 @@ const LABEL_ID = 'theia-mini-browser-picker-label';
 const STYLE_ID = 'theia-mini-browser-picker-style';
 const TOOLBAR_ID = 'theia-mini-browser-picker-toolbar';
 
+export interface ElementBridgeScriptOptions {
+    readonly channelId: string;
+    readonly parentOrigin: string;
+}
+
 /**
  * Resident bridge injected once per loaded page. It tracks picked nodes by id
  * and responds to style / text mutations and refresh requests coming from the parent.
@@ -33,7 +39,7 @@ const TOOLBAR_ID = 'theia-mini-browser-picker-toolbar';
  *
  * Idempotent: re-injecting is a no-op once annotate-ready; an older bridge is upgraded in place.
  */
-export function buildElementBridgeScript(): string {
+export function buildElementBridgeScript(options?: ElementBridgeScriptOptions): string {
     return `(() => {
     const existing = window.${BRIDGE_GLOBAL};
     if (existing && existing.annotateReady) return;
@@ -44,10 +50,13 @@ export function buildElementBridgeScript(): string {
     const REFRESH_REQ = ${JSON.stringify(ELEMENT_REFRESH_REQUEST_TYPE)};
     const REFRESH_RES = ${JSON.stringify(ELEMENT_REFRESH_RESPONSE_TYPE)};
     const SET_MODE = ${JSON.stringify(ELEMENT_SET_MODE_TYPE)};
+    const START_PICKER = ${JSON.stringify(ELEMENT_PICKER_START_TYPE)};
     const ANNOTATION_POINT = ${JSON.stringify(ELEMENT_ANNOTATION_POINT_TYPE)};
     const ANNOTATION_CANCEL = ${JSON.stringify(ELEMENT_ANNOTATION_CANCEL_TYPE)};
     const REANCHOR = ${JSON.stringify(ELEMENT_ANNOTATION_REANCHOR_TYPE)};
     const REANCHOR_RES = ${JSON.stringify(ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE)};
+    const CHANNEL_ID = ${JSON.stringify(options?.channelId ?? '')};
+    const PARENT_ORIGIN = ${JSON.stringify(options?.parentOrigin ?? '')};
 
     const truncate = (s, max) => s.length > max ? s.slice(0, max - 1) + '\u2026' : s;
 
@@ -187,6 +196,12 @@ export function buildElementBridgeScript(): string {
     bridge.serialize = serialize;
     bridge.mode = bridge.mode || 'browse';
     bridge.annotateReady = true;
+    bridge.channelId = CHANNEL_ID;
+    bridge.parentOrigin = PARENT_ORIGIN;
+    bridge.postToParent = (message) => {
+        if (!CHANNEL_ID || !PARENT_ORIGIN) return;
+        window.parent.postMessage({ ...message, channelId: CHANNEL_ID }, PARENT_ORIGIN);
+    };
 
     const buildAnnotationPayload = (clientX, clientY, el) => {
         const ratios = documentRatios(clientX, clientY);
@@ -293,14 +308,14 @@ export function buildElementBridgeScript(): string {
             const clientY = e.clientY;
             const el = document.elementFromPoint(clientX, clientY);
             const payload = buildAnnotationPayload(clientX, clientY, el);
-            window.parent.postMessage({ type: ANNOTATION_POINT, payload }, '*');
+            bridge.postToParent({ type: ANNOTATION_POINT, payload });
         };
         annotateKeyHandler = (e) => {
             if (bridge.mode !== 'annotate') return;
             if (e.key === 'Escape') {
                 e.preventDefault();
                 bridge.setMode('browse');
-                window.parent.postMessage({ type: ANNOTATION_CANCEL }, '*');
+                bridge.postToParent({ type: ANNOTATION_CANCEL });
             }
         };
         document.addEventListener('click', annotateClickHandler, true);
@@ -325,32 +340,31 @@ export function buildElementBridgeScript(): string {
         window.addEventListener('message', (event) => {
             const data = event.data;
             if (!data || typeof data !== 'object') return;
+            if (!CHANNEL_ID || !PARENT_ORIGIN || event.source !== window.parent
+                || event.origin !== PARENT_ORIGIN || data.channelId !== CHANNEL_ID) return;
             if (data.type === UPDATE_STYLE && typeof data.id === 'string' && typeof data.prop === 'string') {
                 const ok = bridge.applyStyle(data.id, data.prop, String(data.value ?? ''), !!data.important);
                 const fresh = ok ? bridge.refresh(data.id) : undefined;
-                if (fresh && event.source) {
-                    event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
-                }
+                if (fresh) bridge.postToParent({ type: REFRESH_RES, payload: fresh });
             } else if (data.type === UPDATE_TEXT && typeof data.id === 'string') {
                 bridge.applyText(data.id, String(data.text ?? ''));
                 const fresh = bridge.refresh(data.id);
-                if (fresh && event.source) {
-                    event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
-                }
+                if (fresh) bridge.postToParent({ type: REFRESH_RES, payload: fresh });
             } else if (data.type === REFRESH_REQ && typeof data.id === 'string') {
                 const fresh = bridge.refresh(data.id);
-                if (fresh && event.source) {
-                    event.source.postMessage({ type: REFRESH_RES, payload: fresh }, '*');
-                }
+                if (fresh) bridge.postToParent({ type: REFRESH_RES, payload: fresh });
             } else if (data.type === SET_MODE) {
                 const mode = data.mode || (data.payload && data.payload.mode);
                 bridge.setMode(mode);
+            } else if (data.type === START_PICKER && typeof data.script === 'string') {
+                const pickerScript = document.createElement('script');
+                pickerScript.textContent = data.script;
+                document.documentElement.appendChild(pickerScript);
+                pickerScript.remove();
             } else if (data.type === REANCHOR) {
                 const items = (data.payload && data.payload.items) || data.items || [];
                 const results = Array.isArray(items) ? items.map(resolveReanchorItem) : [];
-                if (event.source) {
-                    event.source.postMessage({ type: REANCHOR_RES, payload: { items: results } }, '*');
-                }
+                bridge.postToParent({ type: REANCHOR_RES, payload: { items: results } });
             }
         });
     }
@@ -507,9 +521,9 @@ export function buildElementPickerScript(): string {
             try {
                 const pickedId = bridge.register(target);
                 const payload = bridge.serialize(target, pickedId);
-                window.parent.postMessage({ type: MESSAGE_TYPE, payload }, '*');
+                bridge.postToParent({ type: MESSAGE_TYPE, payload });
             } catch (err) {
-                window.parent.postMessage({ type: MESSAGE_TYPE, error: String(err) }, '*');
+                bridge.postToParent({ type: MESSAGE_TYPE, error: String(err) });
             }
         }
         state.deactivate();
@@ -518,7 +532,7 @@ export function buildElementPickerScript(): string {
     const onKey = (e) => {
         if (e.key === 'Escape') {
             e.preventDefault();
-            window.parent.postMessage({ type: CANCEL_TYPE }, '*');
+            bridge.postToParent({ type: CANCEL_TYPE });
             state.deactivate();
         }
     };

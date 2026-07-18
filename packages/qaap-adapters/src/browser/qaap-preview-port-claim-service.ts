@@ -9,12 +9,18 @@ import { getSameOriginPreviewProxyPort } from './qaap-preview-url-utils';
 export const QaapPreviewPortClaimService = Symbol('QaapPreviewPortClaimService');
 
 export type QaapPreviewPortClaimResult =
-    | { readonly kind: 'claimed' }
+    | { readonly kind: 'claimed'; readonly previewId?: string; readonly previewUrl?: string }
     | { readonly kind: 'conflict' }
     | { readonly kind: 'error'; readonly status?: number };
 
 export interface QaapPreviewPortClaimService {
-    claim(port: number): Promise<QaapPreviewPortClaimResult>;
+    claim(port: number, identity?: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult>;
+}
+
+export interface QaapPreviewExecutionIdentity {
+    readonly projectId: string;
+    readonly conversationId: string;
+    readonly runId: string;
 }
 
 /**
@@ -23,7 +29,7 @@ export interface QaapPreviewPortClaimService {
  */
 @injectable()
 export class UnavailableQaapPreviewPortClaimService implements QaapPreviewPortClaimService {
-    async claim(_port: number): Promise<QaapPreviewPortClaimResult> {
+    async claim(_port: number, _identity?: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult> {
         return { kind: 'error' };
     }
 }

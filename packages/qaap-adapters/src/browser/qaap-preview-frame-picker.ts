@@ -6,6 +6,7 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { generateUuid } from '@theia/core/lib/common/uuid';
 import { nls } from '@theia/core/lib/common/nls';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
@@ -13,6 +14,7 @@ import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/brows
 import {
     ELEMENT_PICKER_CANCEL_TYPE,
     ELEMENT_PICKER_MESSAGE_TYPE,
+    ELEMENT_PICKER_START_TYPE,
     ELEMENT_REFRESH_RESPONSE_TYPE,
     ELEMENT_SET_MODE_TYPE,
     PickedElement,
@@ -26,6 +28,10 @@ import type { QaapPreviewInlineInspector } from './qaap-preview-inline-inspector
 import { QaapPreviewAnnotationController } from './qaap-preview-annotation-controller';
 import type { AnnotationComposerSessionControls } from './qaap-preview-annotation-popover';
 import type { PreviewAnnotationScope } from './qaap-preview-annotation-types';
+import {
+    QAAP_PREVIEW_BRIDGE_INIT_TYPE,
+    QAAP_PREVIEW_BRIDGE_READY_TYPE,
+} from '../common/qaap-preview-bridge-protocol';
 
 /** DOM picker + inspector bridge for a single preview iframe (mini-browser or embedded). */
 @injectable()
@@ -63,6 +69,7 @@ export class QaapPreviewFramePicker {
     protected annotationScopeProvider: (() => PreviewAnnotationScope | undefined) | undefined;
     protected notifyHandler: ((message: string, kind?: 'info' | 'warn') => void) | undefined;
     protected composerSession: AnnotationComposerSessionControls | undefined;
+    protected readonly bridgeChannelId = generateUuid();
 
     constructor(
         protected readonly frame: HTMLIFrameElement,
@@ -72,6 +79,7 @@ export class QaapPreviewFramePicker {
         protected readonly inspectorService: ElementInspectorService,
         protected readonly toDispose: DisposableCollection,
     ) {
+        this.installPickerListener();
         toDispose.push(Disposable.create(() => {
             this.pickerListenerInstalled = false;
             this.annotationController = undefined;
@@ -122,6 +130,8 @@ export class QaapPreviewFramePicker {
             getScope: () => this.annotationScopeProvider?.() ?? this.defaultAnnotationScope(),
             startSelectPicker: () => this.startElementPicker(),
             injectBridge: () => this.injectInspectorBridge(),
+            postBridgeMessage: message => this.postBridgeMessage(message),
+            isBridgeMessage: event => this.isTrustedBridgeMessage(event),
             toDispose: this.toDispose,
             composerSession: this.composerSession,
         });
@@ -153,8 +163,9 @@ export class QaapPreviewFramePicker {
     bindInspectorWindow(): void {
         try {
             const win = this.frame.contentWindow;
-            if (win) {
-                this.inspectorService.bind(win);
+            const origin = this.previewOrigin();
+            if (win && origin) {
+                this.inspectorService.bind(win, origin, this.bridgeChannelId);
             }
         } catch {
             /* cross-origin */
@@ -164,11 +175,15 @@ export class QaapPreviewFramePicker {
     injectInspectorBridge(): void {
         try {
             const doc = this.frame.contentDocument;
-            if (!doc) {
+            const parentOrigin = this.parentOrigin();
+            if (!doc || !parentOrigin) {
                 return;
             }
             const script = doc.createElement('script');
-            script.textContent = buildElementBridgeScript();
+            script.textContent = buildElementBridgeScript({
+                channelId: this.bridgeChannelId,
+                parentOrigin,
+            });
             doc.documentElement.appendChild(script);
             script.remove();
         } catch {
@@ -178,6 +193,7 @@ export class QaapPreviewFramePicker {
 
     onFrameLoad(): void {
         this.injectInspectorBridge();
+        this.initializeRemoteBridge();
         this.bindInspectorWindow();
         this.annotationController?.onFrameLoad();
     }
@@ -185,24 +201,23 @@ export class QaapPreviewFramePicker {
     startElementPicker(): void {
         this.installPickerListener();
         try {
-            const doc = this.frame.contentDocument;
             const win = this.frame.contentWindow;
-            if (!doc || !win) {
+            if (!win) {
                 this.notifyPickerUnavailable();
                 return;
             }
             this.injectInspectorBridge();
             // Keep Select as the one-shot picker; only notify the resident bridge of the mode.
             try {
-                win.postMessage({ type: ELEMENT_SET_MODE_TYPE, mode: 'select' }, '*');
+                this.postBridgeMessage({ type: ELEMENT_SET_MODE_TYPE, mode: 'select' });
             } catch {
                 /* ignore */
             }
             this.annotationController?.noteSelectModeActivated();
-            const script = doc.createElement('script');
-            script.textContent = buildElementPickerScript();
-            doc.documentElement.appendChild(script);
-            script.remove();
+            if (!this.postBridgeMessage({ type: ELEMENT_PICKER_START_TYPE, script: buildElementPickerScript() })) {
+                this.notifyPickerUnavailable();
+                return;
+            }
             this.messageService.info(nls.localize(
                 'qaap/preview/pickerActive',
                 'Element picker active — click an element in the preview.',
@@ -241,7 +256,7 @@ export class QaapPreviewFramePicker {
     protected notifyPickerUnavailable(): void {
         this.messageService.warn(nls.localize(
             'theia/mini-browser/pickerUnavailable',
-            'The element picker cannot run on this page because the preview is cross-origin. Open a same-origin preview to use it.',
+            'The element picker bridge is not available for this preview. Reload it and try again.',
         ));
     }
 
@@ -254,10 +269,17 @@ export class QaapPreviewFramePicker {
             if (!event.data || typeof event.data !== 'object') {
                 return;
             }
-            if (this.frame.contentWindow && event.source && event.source !== this.frame.contentWindow) {
+            if (!this.isExpectedFrameMessage(event)) {
                 return;
             }
-            const data = event.data as { type?: string; payload?: PickedElement };
+            const data = event.data as { type?: string; channelId?: string; payload?: PickedElement };
+            if (data.type === QAAP_PREVIEW_BRIDGE_READY_TYPE) {
+                this.initializeRemoteBridge();
+                return;
+            }
+            if (data.channelId !== this.bridgeChannelId) {
+                return;
+            }
             if (data.type === ELEMENT_PICKER_MESSAGE_TYPE && data.payload) {
                 void this.handlePickedElement(data.payload);
             } else if (data.type === ELEMENT_REFRESH_RESPONSE_TYPE && data.payload) {
@@ -271,7 +293,7 @@ export class QaapPreviewFramePicker {
     }
 
     protected async handlePickedElement(element: PickedElement): Promise<void> {
-        this.inspectorService.bind(this.frame.contentWindow ?? undefined);
+        this.bindInspectorWindow();
         this.inspectorService.pick(element);
         const summary = this.formatElementForChat(element);
         try {
@@ -333,6 +355,7 @@ export class QaapPreviewFramePicker {
         const narrow = typeof matchMedia === 'function'
             && matchMedia('(max-width: 767px), (pointer: coarse)').matches;
         return {
+            previewId: previewUrl,
             workspaceId: 'workspace',
             threadId: 'default',
             previewUrl,
@@ -341,5 +364,61 @@ export class QaapPreviewFramePicker {
             viewportWidth: this.frame.clientWidth || window.innerWidth,
             viewportHeight: this.frame.clientHeight || window.innerHeight,
         };
+    }
+
+    protected parentOrigin(): string | undefined {
+        return typeof window !== 'undefined' && window.location?.origin ? window.location.origin : undefined;
+    }
+
+    protected previewOrigin(): string | undefined {
+        const raw = this.frame.src;
+        if (!raw || raw === 'about:blank') {
+            return this.parentOrigin();
+        }
+        try {
+            const origin = new URL(raw, window.location.href).origin;
+            return origin === 'null' ? undefined : origin;
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected isExpectedFrameMessage(event: Pick<MessageEvent, 'source' | 'origin'>): boolean {
+        const expectedOrigin = this.previewOrigin();
+        return !!this.frame.contentWindow
+            && event.source === this.frame.contentWindow
+            && !!expectedOrigin
+            && event.origin === expectedOrigin;
+    }
+
+    protected isTrustedBridgeMessage(event: Pick<MessageEvent, 'data' | 'source' | 'origin'>): boolean {
+        if (!this.isExpectedFrameMessage(event) || !event.data || typeof event.data !== 'object') {
+            return false;
+        }
+        return (event.data as { channelId?: unknown }).channelId === this.bridgeChannelId;
+    }
+
+    protected postBridgeMessage(message: Record<string, unknown>): boolean {
+        const target = this.frame.contentWindow;
+        const origin = this.previewOrigin();
+        if (!target || !origin) {
+            return false;
+        }
+        target.postMessage({ ...message, channelId: this.bridgeChannelId }, origin);
+        return true;
+    }
+
+    protected initializeRemoteBridge(): void {
+        const target = this.frame.contentWindow;
+        const previewOrigin = this.previewOrigin();
+        const parentOrigin = this.parentOrigin();
+        if (!target || !previewOrigin || !parentOrigin) {
+            return;
+        }
+        target.postMessage({
+            type: QAAP_PREVIEW_BRIDGE_INIT_TYPE,
+            channelId: this.bridgeChannelId,
+            script: buildElementBridgeScript({ channelId: this.bridgeChannelId, parentOrigin }),
+        }, previewOrigin);
     }
 }

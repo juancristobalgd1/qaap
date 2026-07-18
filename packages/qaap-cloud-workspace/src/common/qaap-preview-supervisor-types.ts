@@ -13,17 +13,30 @@ export const QAAP_PREVIEW_AUTO_RESTART_MAX = 2;
 export interface QaapPreviewRestartRequest {
     readonly port: number;
     readonly cwd: string;
+    readonly projectId?: string;
+    readonly conversationId?: string;
+    readonly runId?: string;
 }
 
 export interface QaapPreviewRestartResponse {
     readonly status: QaapPreviewProcessStatus;
     readonly port: number;
+    readonly previewId?: string;
+}
+
+export interface QaapPreviewProcessIdentity {
+    readonly previewId: string;
+    readonly projectId: string;
+    readonly conversationId: string;
+    readonly runId: string;
+    readonly ownerLogin?: string;
 }
 
 export type QaapPreviewProcessStatus = 'starting' | 'running' | 'exited';
 
 /** Snapshot of a supervised dev-server child, safe to serialize / render. */
 export interface QaapPreviewProcessSnapshot {
+    readonly previewId?: string;
     readonly port: number;
     readonly cwd: string;
     readonly status: QaapPreviewProcessStatus;
@@ -34,6 +47,7 @@ export interface QaapPreviewProcessSnapshot {
     readonly stderrTail: string[];
     /** Timestamps (ms) of automatic restarts within the current window. */
     readonly autoRestartAt: number[];
+    readonly processId?: number;
 }
 
 /**

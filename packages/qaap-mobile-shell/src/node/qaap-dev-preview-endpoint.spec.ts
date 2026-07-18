@@ -8,6 +8,7 @@ import type { Request } from '@theia/core/shared/express';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
+import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 
 class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
     exposeRewriteDevPreviewBody(body: string, targetPort: number): string {
@@ -20,6 +21,18 @@ class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
 
     exposeMayProxyPort(req: Request, port: number): boolean {
         return this.mayProxyPort(req, port);
+    }
+
+    exposeIdentityPreviewUrl(req: Request, record: QaapDevPreviewRecord): string {
+        return this.buildIdentityPreviewUrl(req, record);
+    }
+
+    exposePreviewIdFromHost(req: Request): string | undefined {
+        return this.previewIdFromHost(req);
+    }
+
+    exposeRewriteIsolatedPreviewCsp(raw: string | undefined, parentOrigin: string): string {
+        return this.rewriteIsolatedPreviewCsp(raw, parentOrigin);
     }
 
     async exposeHandleProbe(req: Request, res: unknown): Promise<void> {
@@ -70,6 +83,53 @@ describe('QaapDevPreviewEndpoint', () => {
     it('rewrites root-relative redirects through the qaap-dev proxy prefix', () => {
         expect(endpoint.exposeRewriteDevPreviewLocation('/login', 5184)).to.equal('/qaap-dev/5184/login');
         expect(endpoint.exposeRewriteDevPreviewLocation('/qaap-dev/5184/login', 5184)).to.equal('/qaap-dev/5184/login');
+    });
+
+    describe('isolated preview origin', () => {
+        const priorBaseDomain = process.env.QAAP_PREVIEW_BASE_DOMAIN;
+        const priorPublicUrl = process.env.QAAP_OAUTH_PUBLIC_URL;
+
+        afterEach(() => {
+            if (priorBaseDomain === undefined) {
+                delete process.env.QAAP_PREVIEW_BASE_DOMAIN;
+            } else {
+                process.env.QAAP_PREVIEW_BASE_DOMAIN = priorBaseDomain;
+            }
+            if (priorPublicUrl === undefined) {
+                delete process.env.QAAP_OAUTH_PUBLIC_URL;
+            } else {
+                process.env.QAAP_OAUTH_PUBLIC_URL = priorPublicUrl;
+            }
+        });
+
+        it('uses a per-preview hostname and capability only when the canonical parent is explicit', () => {
+            process.env.QAAP_PREVIEW_BASE_DOMAIN = 'preview.qaap.example';
+            process.env.QAAP_OAUTH_PUBLIC_URL = 'https://app.qaap.example';
+            const previewId = 'p-project-c-conv-r-run-abc1234';
+            const req = {
+                headers: { 'x-forwarded-proto': 'https', host: 'app.qaap.example' },
+                protocol: 'https',
+                get: () => 'app.qaap.example',
+            } as unknown as Request;
+            const record = {
+                previewId,
+                accessToken: 'secret-token',
+            } as QaapDevPreviewRecord;
+            expect(endpoint.exposeIdentityPreviewUrl(req, record))
+                .to.equal(`https://${previewId}.preview.qaap.example/?qaap_preview_token=secret-token`);
+            expect(endpoint.exposePreviewIdFromHost({
+                headers: { host: `${previewId}.preview.qaap.example` },
+            } as unknown as Request)).to.equal(previewId);
+        });
+
+        it('rewrites frame policy for the Qaap parent and permits the injected loader', () => {
+            expect(endpoint.exposeRewriteIsolatedPreviewCsp(
+                "default-src 'self'; frame-ancestors 'none'",
+                'https://app.qaap.example',
+            )).to.equal(
+                "default-src 'self'; frame-ancestors https://app.qaap.example; script-src 'self' 'unsafe-inline'",
+            );
+        });
     });
 
     describe('mayProxyPort fails closed (H1)', () => {
@@ -123,6 +183,37 @@ describe('QaapDevPreviewEndpoint', () => {
     });
 
     describe('port registry claim semantics (non-stealing)', () => {
+        it('reserves one immutable port record per preview identity', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const first = registry.register({
+                previewId: 'p-project-c-conv-r-run-abc1234',
+                projectId: 'project',
+                conversationId: 'conv',
+                runId: 'run',
+                ownerLogin: 'alice',
+                root: '/workspace/alice/project',
+                port: 5173,
+            });
+            expect(first?.port).to.equal(5173);
+            expect(first?.accessToken).to.be.a('string').and.not.empty;
+            expect(registry.getForOwner(first!.previewId, 'alice')?.root).to.equal('/workspace/alice/project');
+            expect(registry.getForOwner(first!.previewId, 'bob')).to.equal(undefined);
+
+            const collision = registry.register({
+                previewId: 'p-project-c-other-r-run-def5678',
+                projectId: 'project',
+                conversationId: 'other',
+                runId: 'run',
+                ownerLogin: 'alice',
+                root: '/workspace/alice/project',
+                port: 5173,
+            });
+            expect(collision).to.equal(undefined);
+            expect(registry.attachProcess(first!.previewId, 'alice', 4242)).to.equal(true);
+            expect(registry.get(first!.previewId)?.processId).to.equal(4242);
+        });
+
         it('first claim wins and the same login can refresh it', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

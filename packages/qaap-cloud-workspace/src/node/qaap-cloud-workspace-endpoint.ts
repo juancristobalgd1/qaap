@@ -22,9 +22,15 @@ import {
     type QaapTerminalSessionsUpsertRequest,
 } from '../common/qaap-cloud-api-types';
 import {
+    buildQaapIdentityPreviewUrl,
     isAllowedDevPreviewPort,
     parseQaapDevPreviewPort,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
+import {
+    isQaapPreviewIdentity,
+    resolveQaapPreviewIdentity,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-preview-identity';
+import { QaapDevPreviewPortRegistry } from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-port-registry';
 import { QAAP_PREVIEW_RESTART_PATH, type QaapPreviewRestartRequest } from '../common/qaap-preview-supervisor-types';
 import { QaapCloudOrchestrator } from './qaap-cloud-orchestrator';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
@@ -62,6 +68,9 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
 
     @inject(QaapPreviewSupervisor)
     protected readonly previewSupervisor: QaapPreviewSupervisor;
+
+    @inject(QaapDevPreviewPortRegistry)
+    protected readonly previewRegistry: QaapDevPreviewPortRegistry;
 
     @inject(QaapTerminalSessionStore)
     protected readonly terminals: QaapTerminalSessionStore;
@@ -295,6 +304,34 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
         }
         if (ctx.kind !== 'skip' && !this.auth.ownsWorkspacePath(ctx, cwd)) {
             this.auth.denyForbidden(res, req, 'workspace_path', { port });
+            return;
+        }
+        const ownerLogin = ctx.kind === 'authenticated' || ctx.kind === 'skip' ? ctx.userLogin : undefined;
+        if (ownerLogin && isQaapPreviewIdentity(body)) {
+            const identity = resolveQaapPreviewIdentity(body);
+            const record = this.previewRegistry.register({
+                ...identity,
+                ownerLogin,
+                root: cwd,
+                port,
+            });
+            if (!record) {
+                res.status(409).json({ error: 'The preview identity or port is already reserved.' });
+                return;
+            }
+            try {
+                const status = this.previewSupervisor.start(cwd, port, { ...identity, ownerLogin });
+                const processId = this.previewSupervisor.describe(identity.previewId)?.processId;
+                this.previewRegistry.attachProcess(identity.previewId, ownerLogin, processId);
+                res.json({
+                    status,
+                    port,
+                    previewId: identity.previewId,
+                    previewUrl: buildQaapIdentityPreviewUrl(this.resolvePublicOrigin(req), identity.previewId),
+                });
+            } catch (error) {
+                res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+            }
             return;
         }
         const status = this.previewSupervisor.start(cwd, port);

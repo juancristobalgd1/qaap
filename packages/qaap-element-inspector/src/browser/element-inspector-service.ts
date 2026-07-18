@@ -24,6 +24,8 @@ export class ElementInspectorService {
 
     protected _state: ElementInspectorState = { history: [] };
     protected boundWindow: Window | undefined;
+    protected boundOrigin: string | undefined;
+    protected boundChannelId: string | undefined;
 
     get state(): ElementInspectorState {
         return this._state;
@@ -38,8 +40,10 @@ export class ElementInspectorService {
     }
 
     /** Associates the picked element with the iframe `Window` that produced it. */
-    bind(target: Window | undefined): void {
+    bind(target: Window | undefined, origin?: string, channelId?: string): void {
         this.boundWindow = target;
+        this.boundOrigin = origin;
+        this.boundChannelId = channelId;
     }
 
     pick(element: PickedElement): void {
@@ -63,35 +67,38 @@ export class ElementInspectorService {
     /** Sends a style mutation to the iframe bridge for the currently-picked element. */
     updateStyle(property: string, value: string, important: boolean = false): void {
         const picked = this._state.picked;
-        if (!picked || !this.boundWindow) return;
+        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) return;
         this.boundWindow.postMessage({
             type: ELEMENT_UPDATE_STYLE_TYPE,
+            channelId: this.boundChannelId,
             id: picked.pickedId,
             prop: property,
             value,
             important
-        }, '*');
+        }, this.boundOrigin);
     }
 
     /** Sends a `textContent` mutation to the iframe bridge. */
     updateText(text: string): void {
         const picked = this._state.picked;
-        if (!picked || !this.boundWindow) return;
+        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) return;
         this.boundWindow.postMessage({
             type: ELEMENT_UPDATE_TEXT_TYPE,
+            channelId: this.boundChannelId,
             id: picked.pickedId,
             text
-        }, '*');
+        }, this.boundOrigin);
     }
 
     /** Requests a fresh snapshot for the currently-picked element. */
     requestRefresh(): void {
         const picked = this._state.picked;
-        if (!picked || !this.boundWindow) return;
+        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) return;
         this.boundWindow.postMessage({
             type: ELEMENT_REFRESH_REQUEST_TYPE,
+            channelId: this.boundChannelId,
             id: picked.pickedId
-        }, '*');
+        }, this.boundOrigin);
     }
 
     clear(): void {
@@ -100,6 +107,8 @@ export class ElementInspectorService {
         }
         this._state = { history: [] };
         this.boundWindow = undefined;
+        this.boundOrigin = undefined;
+        this.boundChannelId = undefined;
         this.onDidChangeStateEmitter.fire(this._state);
     }
 }

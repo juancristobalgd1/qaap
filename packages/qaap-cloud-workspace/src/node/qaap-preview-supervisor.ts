@@ -12,11 +12,14 @@ import {
     QaapStderrRing,
     shouldAutoRestartPreview,
     type QaapPreviewProcessSnapshot,
+    type QaapPreviewProcessIdentity,
     type QaapPreviewProcessStatus,
 } from '../common/qaap-preview-supervisor-types';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
 interface QaapPreviewProcessRecord {
+    readonly key: string;
+    readonly identity?: QaapPreviewProcessIdentity;
     port: number;
     cwd: string;
     status: QaapPreviewProcessStatus;
@@ -45,28 +48,39 @@ export class QaapPreviewSupervisor {
     @inject(QaapTenantSpawnService)
     protected readonly tenantSpawn: QaapTenantSpawnService;
 
-    protected readonly records = new Map<number, QaapPreviewProcessRecord>();
+    protected readonly records = new Map<string, QaapPreviewProcessRecord>();
     protected cleanupRegistered = false;
 
     /**
      * Starts (or restarts) a dev server for `cwd` on `port`. If a supervised child is already
      * live on that port it is returned as-is. Returns the resulting status.
      */
-    start(cwd: string, port: number): QaapPreviewProcessStatus {
-        const existing = this.records.get(port);
+    start(cwd: string, port: number, identity?: QaapPreviewProcessIdentity): QaapPreviewProcessStatus {
+        const key = identity?.previewId ?? `legacy-port-${port}`;
+        const existing = this.records.get(key);
         if (existing && existing.status !== 'exited' && existing.child && existing.child.exitCode === null) {
             return existing.status;
         }
-        return this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? []);
+        const collision = [...this.records.values()].find(record => record.key !== key
+            && record.port === port && record.status !== 'exited' && record.child?.exitCode === null);
+        if (collision) {
+            throw new Error(`Preview port ${port} is already reserved by ${collision.identity?.previewId ?? collision.key}.`);
+        }
+        return this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? [], identity);
     }
 
     /** Returns a serializable snapshot for the failure page, if this port was ever supervised. */
-    describe(port: number): QaapPreviewProcessSnapshot | undefined {
-        const record = this.records.get(port);
+    describe(previewIdOrPort: string | number): QaapPreviewProcessSnapshot | undefined {
+        const key = typeof previewIdOrPort === 'number' ? `legacy-port-${previewIdOrPort}` : previewIdOrPort;
+        const record = this.records.get(key)
+            ?? (typeof previewIdOrPort === 'number'
+                ? [...this.records.values()].find(candidate => candidate.port === previewIdOrPort)
+                : undefined);
         if (!record) {
             return undefined;
         }
         return {
+            previewId: record.identity?.previewId,
             port: record.port,
             cwd: record.cwd,
             status: record.status,
@@ -76,13 +90,22 @@ export class QaapPreviewSupervisor {
             signal: record.signal,
             stderrTail: record.stderr.snapshot(),
             autoRestartAt: [...record.autoRestartAt],
+            processId: record.child?.pid,
         };
     }
 
-    protected spawnDevServer(cwd: string, port: number, autoRestartAt: number[]): QaapPreviewProcessStatus {
+    protected spawnDevServer(
+        cwd: string,
+        port: number,
+        autoRestartAt: number[],
+        identity?: QaapPreviewProcessIdentity,
+    ): QaapPreviewProcessStatus {
+        const key = identity?.previewId ?? `legacy-port-${port}`;
         const plan = this.resolveDevCommand(cwd);
         if (!plan) {
             const failed: QaapPreviewProcessRecord = {
+                key,
+                identity,
                 port,
                 cwd,
                 status: 'exited',
@@ -93,7 +116,7 @@ export class QaapPreviewSupervisor {
                 autoRestartAt,
             };
             failed.stderr.push('No "dev" or "start" script found in package.json for this workspace.\n');
-            this.records.set(port, failed);
+            this.records.set(key, failed);
             return 'exited';
         }
         this.registerCleanup();
@@ -108,6 +131,8 @@ export class QaapPreviewSupervisor {
             child = this.tenantSpawn.spawnArgvPrepared(plan.command, plan.args, { cwd, env });
         } catch (error) {
             const refused: QaapPreviewProcessRecord = {
+                key,
+                identity,
                 port,
                 cwd,
                 status: 'exited',
@@ -118,10 +143,12 @@ export class QaapPreviewSupervisor {
                 autoRestartAt,
             };
             refused.stderr.push(`Refusing to start the dev server: ${error instanceof Error ? error.message : String(error)}\n`);
-            this.records.set(port, refused);
+            this.records.set(key, refused);
             return 'exited';
         }
         const record: QaapPreviewProcessRecord = {
+            key,
+            identity,
             port,
             cwd,
             status: 'starting',
@@ -131,7 +158,7 @@ export class QaapPreviewSupervisor {
             stderr: new QaapStderrRing(),
             autoRestartAt,
         };
-        this.records.set(port, record);
+        this.records.set(key, record);
 
         child.stderr?.on('data', (chunk: Buffer) => record.stderr.push(chunk.toString()));
         child.stdout?.on('data', (chunk: Buffer) => {
@@ -180,8 +207,8 @@ export class QaapPreviewSupervisor {
         record.autoRestartAt = [...history, now];
         // Small delay so a crash-on-boot app cannot busy-loop between spawns.
         setTimeout(() => {
-            if (this.records.get(record.port) === record && record.status === 'exited') {
-                this.spawnDevServer(record.cwd, record.port, record.autoRestartAt);
+            if (this.records.get(record.key) === record && record.status === 'exited') {
+                this.spawnDevServer(record.cwd, record.port, record.autoRestartAt, record.identity);
             }
         }, 1500).unref?.();
     }

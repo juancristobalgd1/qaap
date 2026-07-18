@@ -29,6 +29,8 @@ export interface PickedElement {
 export const ELEMENT_PICKER_MESSAGE_TYPE = 'theia-mini-browser:element-picker';
 /** Iframe → parent: the picker was cancelled by the user. */
 export const ELEMENT_PICKER_CANCEL_TYPE = 'theia-mini-browser:element-picker-cancel';
+/** Parent → iframe bridge: execute the one-shot picker without parent DOM access. */
+export const ELEMENT_PICKER_START_TYPE = 'theia-mini-browser:element-picker-start';
 /** Parent → iframe: apply a CSS declaration to the previously picked element. */
 export const ELEMENT_UPDATE_STYLE_TYPE = 'theia-mini-browser:element-update-style';
 /** Parent → iframe: replace `textContent` for the previously picked element. */

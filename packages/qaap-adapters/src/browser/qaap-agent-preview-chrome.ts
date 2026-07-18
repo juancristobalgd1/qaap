@@ -586,7 +586,7 @@ export function mountEmbeddedAgentPreviewChrome(
 
     let surfaceHandle: QaapPreviewSurfaceHandle | undefined;
     if (options.previewSurfaces) {
-        surfaceHandle = options.previewSurfaces.registerEmbedded(frame, disposables);
+        surfaceHandle = options.previewSurfaces.registerEmbedded(frame, disposables, root);
     }
 
     const workbench = document.createElement('div');
@@ -670,7 +670,7 @@ export function mountEmbeddedAgentPreviewChrome(
         navigate: (url, navOptions) => {
             const next = normalizePreviewNavigateUrl(url);
             currentUrl = next;
-            urlInput.value = next;
+            urlInput.value = sanitizePreviewDisplayUrl(next);
             if (navOptions?.hard) {
                 const bust = next.includes('?') ? `${next}&_qaap_cache_bust=${Date.now()}` : `${next}?_qaap_cache_bust=${Date.now()}`;
                 frame.src = bust;
@@ -764,7 +764,10 @@ export function mountEmbeddedAgentPreviewChrome(
                 urlInput.value = href;
             }
         } catch {
-            /* cross-origin */
+            // Isolated preview hosts redirect a one-time query capability into a host-only cookie.
+            // Never leave that capability visible/copyable in the preview URL bar afterwards.
+            currentUrl = sanitizePreviewDisplayUrl(currentUrl);
+            urlInput.value = currentUrl;
         }
         surfaceHandle?.picker.onFrameLoad();
         controller.recordVisit();
@@ -792,6 +795,16 @@ export function mountEmbeddedAgentPreviewChrome(
 function normalizePreviewNavigateUrl(url: string): string {
     const opened = normalizeMiniBrowserOpenUrl(url) || url;
     return normalizePreviewUrlForSameOrigin(opened);
+}
+
+function sanitizePreviewDisplayUrl(url: string): string {
+    try {
+        const parsed = new URL(url, window.location.href);
+        parsed.searchParams.delete('qaap_preview_token');
+        return parsed.toString();
+    } catch {
+        return url;
+    }
 }
 
 export function attachAgentPreviewChromeToMiniBrowserContent(

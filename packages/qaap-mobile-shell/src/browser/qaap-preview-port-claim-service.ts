@@ -6,27 +6,36 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import {
     QaapPreviewPortClaimResult,
+    type QaapPreviewExecutionIdentity,
     QaapPreviewPortClaimService,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { QAAP_DEV_PREVIEW_CLAIM_PATH } from '../common/qaap-dev-preview';
 
-type QaapPreviewClaimFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'status'>>;
+type QaapPreviewClaimFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Pick<Response, 'status'> & Partial<Pick<Response, 'json'>>>;
 
 export async function requestQaapPreviewPortClaim(
     port: number,
     root: string,
     origin: string,
     fetcher: QaapPreviewClaimFetch = fetch,
+    identity?: QaapPreviewExecutionIdentity,
 ): Promise<QaapPreviewPortClaimResult> {
     try {
         const response = await fetcher(`${origin.replace(/\/+$/, '')}${QAAP_DEV_PREVIEW_CLAIM_PATH}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ port, root }),
+            body: JSON.stringify({ port, root, ...identity }),
         });
         if (response.status === 204) {
             return { kind: 'claimed' };
+        }
+        if (response.status === 200 && response.json) {
+            const body = await response.json() as { previewId?: unknown; previewUrl?: unknown };
+            if (typeof body.previewId === 'string' && typeof body.previewUrl === 'string') {
+                return { kind: 'claimed', previewId: body.previewId, previewUrl: body.previewUrl };
+            }
+            return { kind: 'error', status: response.status };
         }
         if (response.status === 409) {
             return { kind: 'conflict' };
@@ -47,25 +56,26 @@ export class QaapWorkspacePreviewPortClaimService implements QaapPreviewPortClai
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
 
-    protected readonly pendingClaims = new Map<number, Promise<QaapPreviewPortClaimResult>>();
+    protected readonly pendingClaims = new Map<string, Promise<QaapPreviewPortClaimResult>>();
 
-    async claim(port: number): Promise<QaapPreviewPortClaimResult> {
-        const pending = this.pendingClaims.get(port);
+    async claim(port: number, identity?: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult> {
+        const key = identity ? `${port}:${identity.projectId}:${identity.conversationId}:${identity.runId}` : String(port);
+        const pending = this.pendingClaims.get(key);
         if (pending) {
             return pending;
         }
-        const claim = this.doClaim(port);
-        this.pendingClaims.set(port, claim);
+        const claim = this.doClaim(port, identity);
+        this.pendingClaims.set(key, claim);
         try {
             return await claim;
         } finally {
-            if (this.pendingClaims.get(port) === claim) {
-                this.pendingClaims.delete(port);
+            if (this.pendingClaims.get(key) === claim) {
+                this.pendingClaims.delete(key);
             }
         }
     }
 
-    protected async doClaim(port: number): Promise<QaapPreviewPortClaimResult> {
+    protected async doClaim(port: number, identity?: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult> {
         if (typeof window === 'undefined' || !window.location?.origin) {
             return { kind: 'error' };
         }
@@ -75,7 +85,7 @@ export class QaapWorkspacePreviewPortClaimService implements QaapPreviewPortClai
             if (!root) {
                 return { kind: 'error' };
             }
-            return requestQaapPreviewPortClaim(port, root, window.location.origin);
+            return requestQaapPreviewPortClaim(port, root, window.location.origin, fetch, identity);
         } catch {
             return { kind: 'error' };
         }

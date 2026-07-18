@@ -36,6 +36,7 @@ import {
 import { probeQaapDevPreviewPort, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { buildQaapPreviewId, type QaapPreviewIdentity } from '../common/qaap-preview-identity';
 import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -724,6 +725,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     protected resolvePreviewAnnotationScope(project: MobileProjectEntry, previewUrl: string): {
+        previewId: string;
         workspaceId: string;
         threadId: string;
         previewUrl: string;
@@ -745,7 +747,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         const narrow = typeof matchMedia === 'function'
             && matchMedia('(max-width: 767px), (pointer: coarse)').matches;
         const frame = this.host.transcriptEmbeddedPreview?.frame;
+        const identity = this.resolveTranscriptPreviewIdentity(project, this.host.transcriptOpenSummary);
         return {
+            previewId: buildQaapPreviewId(identity),
             workspaceId: project.id,
             threadId: this.host.transcriptOpenSummaryId
                 ?? this.host.transcriptLastConv?.id
@@ -756,6 +760,43 @@ export class MobileProjectsTranscriptSurfacesUi {
             viewportWidth: frame?.clientWidth || window.innerWidth,
             viewportHeight: frame?.clientHeight || window.innerHeight,
         };
+    }
+
+    protected resolveTranscriptPreviewIdentity(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO | undefined,
+    ): QaapPreviewIdentity {
+        const conversationId = summary?.id
+            ?? this.host.transcriptOpenSummaryId
+            ?? this.host.transcriptLastConv?.id
+            ?? 'default';
+        const conversation = this.host.transcriptLastConv?.id === conversationId
+            ? this.host.transcriptLastConv
+            : undefined;
+        const runId = this.bootstrapAppliesToProject(project)
+            ? this.host.projectBootstrap?.getStateSnapshot().previewRunId
+            : undefined;
+        const fallbackRunId = [...(conversation?.messages ?? [])].reverse()
+            .find(message => message.role === 'user' && !!message.taskId)?.taskId
+            ?? `turn-${summary?.turnStartedAt ?? summary?.updatedAt ?? conversation?.updatedAt ?? 0}`;
+        return { projectId: project.id, conversationId, runId: runId ?? fallbackRunId };
+    }
+
+    protected async claimTranscriptPreviewExecution(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        port: number,
+        fallbackUrl: string,
+    ): Promise<string | undefined> {
+        const bootstrap = this.host.projectBootstrap;
+        if (!bootstrap) {
+            return undefined;
+        }
+        const claim = await bootstrap.claimPreviewExecution(
+            port,
+            this.resolveTranscriptPreviewIdentity(project, summary),
+        );
+        return claim.kind === 'claimed' ? claim.previewUrl ?? fallbackUrl : undefined;
     }
 
     protected async tryMountVerifiedTranscriptPreview(
@@ -807,6 +848,14 @@ export class MobileProjectsTranscriptSurfacesUi {
             }
             return;
         }
+        const executionUrl = await this.claimTranscriptPreviewExecution(project, summary, port, readyUrl);
+        if (!executionUrl) {
+            this.host.messageService?.warn(nls.localize(
+                'qaap/mobileProjects/previewIdentityConflict',
+                'This preview execution could not reserve its own process and port.',
+            ));
+            return;
+        }
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
             this.stageTranscriptPreviewReadyUrl(project.id, readyUrl);
             if (latestProject.previewUrl !== readyUrl) {
@@ -821,7 +870,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             }
             return;
         }
-        if (this.mountedPreviewUrl(project.id) === readyUrl
+        if (this.mountedPreviewUrl(project.id) === executionUrl
             && this.transcriptPreviewProjectId === project.id
             && this.host.transcriptEmbeddedPreview?.root.isConnected === true
             && host.contains(this.host.transcriptEmbeddedPreview.root)
@@ -829,7 +878,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
 
-        this.setMountedPreviewUrl(project.id, readyUrl);
+        this.setMountedPreviewUrl(project.id, executionUrl);
         this.setProbeReadyPreviewUrl(project.id, readyUrl);
         const allowBootstrap = this.host.transcriptPreviewRequestPending;
         this.host.transcriptPreviewRequestPending = false;
@@ -854,7 +903,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             this.disposeTranscriptEmbeddedPreview();
             host.replaceChildren();
         }
-        this.mountTranscriptEmbeddedPreview(host, readyUrl, latestProject);
+        this.mountTranscriptEmbeddedPreview(host, executionUrl, latestProject);
     }
 
     protected shouldKeepTranscriptPreviewTabProbe(
