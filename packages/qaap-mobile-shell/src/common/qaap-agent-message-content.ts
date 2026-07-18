@@ -9,10 +9,11 @@ import { parseAgentLogForTranscript } from './qaap-cli-transcript-stream';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 import {
     extractComposerAttachmentImagePaths,
-    extractComposerAttachmentPreviewFeedbackTitles,
+    extractComposerAttachmentPreviewFeedbackSections,
     hasComposerAttachmentPreamble,
     stripComposerAttachmentPreamble,
 } from './qaap-composer-attachment-prompt';
+import { parsePreviewFeedbackContextBody, type PreviewFeedbackAnnotationDetail } from './qaap-preview-feedback-transcript';
 import { parseComposerSkillDisplayMarker, type ComposerSkillDisplayMetadata } from './qaap-composer-skill-display';
 import { parseComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import { isQaiqStreamMetadataEnvelope } from './qaap-qaiq-stream';
@@ -72,6 +73,8 @@ export interface TranscriptUserContextChip {
     readonly title: string;
     readonly kind: string;
     readonly iconClasses: string;
+    /** Structured preview-feedback annotations; present when the chip can render as a rich card. */
+    readonly annotations?: readonly PreviewFeedbackAnnotationDetail[];
 }
 
 export interface TranscriptUserMessageView {
@@ -102,12 +105,16 @@ export function resolveTranscriptUserMessageView(
     } | undefined,
 ): TranscriptUserMessageView {
     const raw = resolveMessagePreviewText(message);
-    const feedbackTitles = extractComposerAttachmentPreviewFeedbackTitles(raw);
-    const contextChips: TranscriptUserContextChip[] = feedbackTitles.map(title => ({
-        title,
-        kind: QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
-        iconClasses: 'codicon codicon-comment',
-    }));
+    const feedbackSections = extractComposerAttachmentPreviewFeedbackSections(raw);
+    const contextChips: TranscriptUserContextChip[] = feedbackSections.map(section => {
+        const annotations = parsePreviewFeedbackContextBody(section.body);
+        return {
+            title: section.title,
+            kind: QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
+            iconClasses: 'codicon codicon-comment',
+            ...(annotations.length ? { annotations } : {}),
+        };
+    });
     if (message?.optimisticImagePreviews?.length) {
         const display = resolveTranscriptUserDisplay(stripComposerAttachmentPreamble(raw));
         return {

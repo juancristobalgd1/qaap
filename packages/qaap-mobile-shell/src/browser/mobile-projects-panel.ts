@@ -83,7 +83,10 @@ import {
 import {
     buildPreviewFeedbackAttachmentRequest,
     findPreviewFeedbackEntryIndex,
+    normalizeAttachComposerImages,
+    type QaapAttachComposerImageAttachment,
 } from '../common/qaap-preview-feedback-context';
+import { URI } from '@theia/core/lib/common/uri';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import {
@@ -381,6 +384,11 @@ export interface MobileProjectsPanelOptions {
     workHubProjectSkillRoots?: QaapWorkHubProjectSkillRoots;
     /** Opens a workspace file when the user taps a transcript read chip. */
     openTranscriptFile?: (filePath: string) => void | Promise<void>;
+    /** Uploads inline preview-feedback screenshots into the workspace as imageContext requests. */
+    uploadComposerFeedbackImages?: (
+        images: readonly QaapAttachComposerImageAttachment[],
+        targetDir: URI | undefined,
+    ) => Promise<AIVariableResolutionRequest[]>;
     openTranscriptReviewFile?: (filePath: string) => void | Promise<void>;
     /** Codex-style workspace browser for the transcript Files tab. */
     createTranscriptFilesViewServices?: () => TranscriptFilesViewServices | undefined;
@@ -717,6 +725,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly messageService: MessageService | undefined;
     protected readonly resolveVerifyChecks: MobileProjectsPanelOptions['resolveVerifyChecks'];
     protected readonly openTranscriptFile: MobileProjectsPanelOptions['openTranscriptFile'];
+    protected readonly uploadComposerFeedbackImages: MobileProjectsPanelOptions['uploadComposerFeedbackImages'];
     protected readonly openTranscriptReviewFile: (filePath: string) => void | Promise<void>;
     protected readonly createTranscriptFilesViewServices: MobileProjectsPanelOptions['createTranscriptFilesViewServices'];
     protected readonly createTranscriptTerminalViewServices: MobileProjectsPanelOptions['createTranscriptTerminalViewServices'];
@@ -832,6 +841,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.chatAgentService = options.chatAgentService;
         this.messageService = options.messageService;
         this.resolveVerifyChecks = options.resolveVerifyChecks;
+        this.uploadComposerFeedbackImages = options.uploadComposerFeedbackImages;
         const editorOpenFallback = options.openTranscriptFile;
         this.openTranscriptFile = filePath => {
             const state = this.transcriptController.state;
@@ -2167,10 +2177,17 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         readonly chipTitle: string;
         readonly contextBody: string;
         readonly dedupeKey: string;
+        readonly images?: readonly QaapAttachComposerImageAttachment[];
     }): boolean {
         const project = this.resolveExternalComposerProject();
         if (!project) {
             return false;
+        }
+        const attachImages = normalizeAttachComposerImages(args.images);
+        if (attachImages.length && this.uploadComposerFeedbackImages) {
+            void this.uploadComposerFeedbackImages(attachImages, this.resolveExternalComposerUploadDir(project))
+                .then(requests => this.attachExternalFeedbackImageEntries(requests))
+                .catch(() => undefined);
         }
         const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
         const entries = useTranscript
@@ -2208,8 +2225,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         readonly chipTitle: string;
         readonly contextBody: string;
         readonly dedupeKey: string;
+        readonly images?: readonly QaapAttachComposerImageAttachment[];
     }): Promise<boolean> {
-        if (!this.attachExternalComposerContext(args)) {
+        // Images are handled below as submit variables — keep the retry chip image-free.
+        if (!this.attachExternalComposerContext({
+            chipTitle: args.chipTitle,
+            contextBody: args.contextBody,
+            dedupeKey: args.dedupeKey,
+        })) {
             return false;
         }
         const project = this.resolveExternalComposerProject();
@@ -2217,6 +2240,19 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             return false;
         }
         const request = buildPreviewFeedbackAttachmentRequest(args);
+        const feedbackImages = normalizeAttachComposerImages(args.images);
+        let imageRequests: AIVariableResolutionRequest[] = [];
+        if (feedbackImages.length && this.uploadComposerFeedbackImages) {
+            try {
+                imageRequests = await this.uploadComposerFeedbackImages(
+                    feedbackImages,
+                    this.resolveExternalComposerUploadDir(project),
+                );
+            } catch {
+                // Send the annotations anyway; the screenshot stays on the user's clipboard.
+                imageRequests = [];
+            }
+        }
         const prompt = nls.localize(
             'qaap/workHub/previewFeedbackSubmitPrompt',
             'Please address the attached preview feedback.',
@@ -2246,7 +2282,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 );
                 await this.submitTranscriptViaBackendConversation(project, summary, prompt, {
                     selectedAgentId,
-                    variables: [request],
+                    variables: [request, ...imageRequests],
                     ...(agentModel ? { agentModel } : {}),
                 });
             } else {
@@ -2278,18 +2314,47 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                     forceVps: true,
                     openConversation: true,
                     selectedAgentId,
-                    variables: [request],
+                    variables: [request, ...imageRequests],
                     ...(agentModel ? { agentModel } : {}),
                 });
                 // create→openInline may preserve Preview; force Messages again after open.
                 this.activateMessagesSurfaceForExternalSubmit(project);
             }
         } catch {
-            // Keep the chip so the user can retry from the composer.
+            // Keep the chip so the user can retry from the composer; already-uploaded screenshots
+            // become composer image chips so a retry still includes them.
+            this.attachExternalFeedbackImageEntries(imageRequests);
             return false;
         }
         this.removeExternalPreviewFeedbackChip(args.dedupeKey);
         return true;
+    }
+
+    /** Upload dir mirrors the sticky composer: project workspace, else the project cwd. */
+    protected resolveExternalComposerUploadDir(project: MobileProjectEntry): URI | undefined {
+        if (project.uri) {
+            return project.uri;
+        }
+        const cwd = this.projectsService.getProjectCwd(project);
+        return cwd ? new URI().withScheme('file').withPath(cwd) : undefined;
+    }
+
+    protected attachExternalFeedbackImageEntries(requests: readonly AIVariableResolutionRequest[]): void {
+        if (!requests.length) {
+            return;
+        }
+        const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
+        const entries = useTranscript
+            ? this.transcriptController.state.transcriptComposerContext
+            : this.stickyComposerContext;
+        for (const request of requests) {
+            entries.push(createComposerContextEntry(request));
+        }
+        if (useTranscript) {
+            this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+        } else {
+            this.stickyComposerRenderUi.renderStickyComposer();
+        }
     }
 
     /** Reveal Messages + remount the Agents Hub sticky composer (same surface as a manual Send). */

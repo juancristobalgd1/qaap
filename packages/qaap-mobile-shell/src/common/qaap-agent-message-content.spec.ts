@@ -195,8 +195,46 @@ describe('resolveTranscriptUserMessageView', () => {
                 title: 'Preview feedback · 1 annotations · /home · Mobile',
                 kind: 'previewFeedback',
                 iconClasses: 'codicon codicon-comment',
+                annotations: [{ index: 1, comment: 'Move button' }],
             }],
         });
+    });
+
+    it('parses full annotation details into the preview-feedback context chip', () => {
+        const body = [
+            'Preview feedback annotations (compact context — not full DOM):',
+            '',
+            'Annotation 1:',
+            '- Comment: Align the icon',
+            '- Route: /settings',
+            '- Viewport: desktop 1280x800',
+            '- Selector: header .icon',
+            '- Element: <svg>',
+            '- Source: src/header.tsx:10',
+        ].join('\n');
+        const feedbackResolved: ResolvedAIContextVariable = {
+            variable: {
+                id: 'previewFeedback',
+                name: 'previewFeedback',
+                label: 'PreviewFeedback',
+                description: 'Confirmed preview annotations',
+            },
+            value: 'Preview feedback · 1 annotations · /settings · Desktop',
+            contextValue: body,
+        };
+        const content = applyResolvedAttachmentsToPrompt('Fix it.', [feedbackResolved]);
+        const view = resolveTranscriptUserMessageView({ content });
+        expect(view.contextChips).to.have.length(1);
+        const chip = view.contextChips[0]!;
+        expect(chip.annotations).to.deep.equal([{
+            index: 1,
+            comment: 'Align the icon',
+            route: '/settings',
+            viewport: 'desktop 1280x800',
+            selector: 'header .icon',
+            elementTag: 'svg',
+            source: 'src/header.tsx:10',
+        }]);
     });
 
     it('compacts expanded skill prompts to a slash pill display text', () => {

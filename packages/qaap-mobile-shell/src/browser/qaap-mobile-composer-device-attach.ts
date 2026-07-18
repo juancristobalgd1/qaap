@@ -18,6 +18,10 @@ import {
 } from '../common/qaap-composer-context-entry';
 import { isImageAttachmentFileName } from '../common/qaap-sticky-composer-attachment-utils';
 import {
+    normalizeAttachComposerImages,
+    type QaapAttachComposerImageAttachment,
+} from '../common/qaap-preview-feedback-context';
+import {
     createImageContextFromDeviceFile,
 } from '../common/qaap-mobile-composer-device-attach';
 
@@ -102,6 +106,59 @@ async function uploadDeviceImageToWorkspace(
         return undefined;
     }
     return ImageContextVariable.createPathBasedRequest(path, file.name);
+}
+
+function uniqueInlineImageName(name: string): string {
+    const trimmed = name.trim() || 'preview-screenshot.png';
+    const stamp = Date.now().toString(36);
+    const dot = trimmed.lastIndexOf('.');
+    return dot > 0 ? `${trimmed.slice(0, dot)}-${stamp}${trimmed.slice(dot)}` : `${trimmed}-${stamp}`;
+}
+
+function inlineImageToFile(image: QaapAttachComposerImageAttachment): File | undefined {
+    try {
+        const binary = atob(image.data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return new File([bytes], uniqueInlineImageName(image.name), { type: image.mimeType.trim() || 'image/png' });
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Persists inline base64 images (annotate-toolbar screenshots) into the workspace and returns
+ * path-based imageContext requests — same shape as device-picker attachments, so downstream
+ * prompt/preview rendering works unchanged. Unique file names avoid clobbering user files.
+ */
+export async function uploadInlineComposerImagesToWorkspace(
+    images: readonly QaapAttachComposerImageAttachment[],
+    fallbackDir: URI | undefined,
+    fileService: FileService,
+    workspaceService: WorkspaceService,
+): Promise<AIVariableResolutionRequest[]> {
+    const normalized = normalizeAttachComposerImages(images);
+    if (!normalized.length) {
+        return [];
+    }
+    const root = workspaceService.tryGetRoots()[0]?.resource ?? fallbackDir;
+    if (!root) {
+        return [];
+    }
+    const requests: AIVariableResolutionRequest[] = [];
+    for (const image of normalized) {
+        const file = inlineImageToFile(image);
+        if (!file) {
+            continue;
+        }
+        const request = await uploadDeviceImageToWorkspace(file, root, fileService, workspaceService);
+        if (request) {
+            requests.push(request);
+        }
+    }
+    return requests;
 }
 
 export async function createFileContextFromDeviceFiles(

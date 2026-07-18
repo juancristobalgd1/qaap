@@ -54,6 +54,7 @@ import { resolvePinnedEditorContextVariable } from './qaap-composer-editor-conte
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { resolvePreviewFeedbackVariable } from '../common/qaap-preview-feedback-context';
+import { uploadInlineComposerImagesToWorkspace } from './qaap-mobile-composer-device-attach';
 
 export interface MobileProjectsPanelFactoryDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -211,6 +212,12 @@ export class MobileProjectsPanelFactory {
                 formatContextChip: item => resolveStickyComposerContextChip(item, deps.labelProvider),
                 resolveAttachmentPreview: item => resolveStickyComposerAttachmentPreview(
                     item,
+                    deps.fileService,
+                    deps.workspaceService,
+                ),
+                uploadComposerFeedbackImages: (images, targetDir) => uploadInlineComposerImagesToWorkspace(
+                    images,
+                    targetDir,
                     deps.fileService,
                     deps.workspaceService,
                 ),

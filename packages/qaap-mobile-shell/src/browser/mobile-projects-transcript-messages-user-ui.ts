@@ -6,7 +6,8 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { conversationToSummary, rewindConversationToMessage, type QaapAgentConversationDTO, type QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
-import { resolveTranscriptUserMessageView } from '../common/qaap-agent-message-content';
+import { resolveTranscriptUserMessageView, type TranscriptUserContextChip } from '../common/qaap-agent-message-content';
+import { splitPreviewFeedbackSource, type PreviewFeedbackAnnotationDetail } from '../common/qaap-preview-feedback-transcript';
 import { isComposerGitActionOnlyMessage } from '../common/qaap-composer-git-action-display';
 import { isSvgImagePreviewFileName, type QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { resolveTranscriptImagePreviewSrc } from './qaap-transcript-user-attachment-preview-ui';
@@ -117,12 +118,14 @@ export class MobileProjectsTranscriptMessagesUserUi {
         }
     }
 
-    createTranscriptUserContextChips(
-        chips: ReadonlyArray<{ readonly title: string; readonly kind: string; readonly iconClasses: string }>,
-    ): HTMLElement {
+    createTranscriptUserContextChips(chips: readonly TranscriptUserContextChip[]): HTMLElement {
         const list = document.createElement('div');
         list.className = 'theia-mobile-agent-transcript-user-context-chips';
         for (const chip of chips) {
+            if (chip.annotations?.length) {
+                list.append(this.createTranscriptPreviewFeedbackCard(chip));
+                continue;
+            }
             const item = document.createElement('div');
             item.className = 'theia-mobile-agent-transcript-user-context-chip';
             item.dataset.kind = chip.kind;
@@ -136,6 +139,140 @@ export class MobileProjectsTranscriptMessagesUserUi {
             list.append(item);
         }
         return list;
+    }
+
+    /**
+     * Rich, collapsible card for preview-feedback attachments: numbered annotations matching the
+     * markers painted on the preview, each with its comment, element, and source affordance.
+     */
+    protected createTranscriptPreviewFeedbackCard(chip: TranscriptUserContextChip): HTMLElement {
+        const annotations = chip.annotations ?? [];
+        const card = document.createElement('div');
+        card.className = 'theia-mobile-agent-transcript-feedback-card';
+        card.dataset.kind = chip.kind;
+        const expandedByDefault = annotations.length <= 3;
+        if (!expandedByDefault) {
+            card.classList.add('theia-mod-collapsed');
+        }
+
+        const [label, ...metaSegments] = chip.title.split(' · ');
+        const header = document.createElement('button');
+        header.type = 'button';
+        header.className = 'theia-mobile-agent-transcript-feedback-header';
+        header.setAttribute('aria-expanded', String(expandedByDefault));
+
+        const icon = document.createElement('span');
+        icon.className = `theia-mobile-agent-transcript-feedback-icon ${chip.iconClasses}`;
+        icon.setAttribute('aria-hidden', 'true');
+
+        const heading = document.createElement('span');
+        heading.className = 'theia-mobile-agent-transcript-feedback-heading';
+        const title = document.createElement('span');
+        title.className = 'theia-mobile-agent-transcript-feedback-title';
+        title.textContent = label?.trim()
+            || nls.localize('qaap/mobileProjects/previewFeedbackCardTitle', 'Preview feedback');
+        heading.append(title);
+        if (metaSegments.length) {
+            const meta = document.createElement('span');
+            meta.className = 'theia-mobile-agent-transcript-feedback-meta';
+            meta.textContent = metaSegments.join(' · ');
+            heading.append(meta);
+        }
+
+        const chevron = document.createElement('span');
+        chevron.className = 'theia-mobile-agent-transcript-feedback-chevron codicon codicon-chevron-down';
+        chevron.setAttribute('aria-hidden', 'true');
+
+        header.append(icon, heading, chevron);
+        header.addEventListener('click', event => {
+            event.stopPropagation();
+            event.preventDefault();
+            const collapsed = card.classList.toggle('theia-mod-collapsed');
+            header.setAttribute('aria-expanded', String(!collapsed));
+        });
+
+        const body = document.createElement('div');
+        body.className = 'theia-mobile-agent-transcript-feedback-list';
+        for (const annotation of annotations) {
+            body.append(this.createTranscriptPreviewFeedbackItem(annotation));
+        }
+
+        card.append(header, body);
+        return card;
+    }
+
+    protected createTranscriptPreviewFeedbackItem(annotation: PreviewFeedbackAnnotationDetail): HTMLElement {
+        const item = document.createElement('div');
+        item.className = 'theia-mobile-agent-transcript-feedback-item';
+
+        const index = document.createElement('span');
+        index.className = 'theia-mobile-agent-transcript-feedback-index';
+        index.textContent = String(annotation.index);
+
+        const main = document.createElement('div');
+        main.className = 'theia-mobile-agent-transcript-feedback-item-main';
+        const comment = document.createElement('div');
+        comment.className = 'theia-mobile-agent-transcript-feedback-comment';
+        comment.textContent = annotation.comment;
+        main.append(comment);
+
+        const meta = document.createElement('div');
+        meta.className = 'theia-mobile-agent-transcript-feedback-item-meta';
+        if (annotation.elementTag) {
+            const element = document.createElement('span');
+            element.className = 'theia-mobile-agent-transcript-feedback-tag theia-mod-element';
+            element.textContent = `<${annotation.elementTag}>`;
+            if (annotation.elementText) {
+                element.title = annotation.elementText;
+            }
+            meta.append(element);
+        }
+        const source = annotation.source ?? annotation.component;
+        if (source) {
+            meta.append(this.createTranscriptPreviewFeedbackSourceTag(source, !!annotation.source));
+        }
+        if (annotation.selector) {
+            const selector = document.createElement('span');
+            selector.className = 'theia-mobile-agent-transcript-feedback-tag theia-mod-selector';
+            selector.textContent = annotation.selector;
+            selector.title = annotation.selector;
+            meta.append(selector);
+        }
+        if (annotation.unresolved) {
+            const warn = document.createElement('span');
+            warn.className = 'theia-mobile-agent-transcript-feedback-tag theia-mod-unresolved';
+            warn.innerHTML = '<span class="codicon codicon-warning" aria-hidden="true"></span>';
+            warn.append(document.createTextNode(
+                nls.localize('qaap/mobileProjects/previewFeedbackUnresolved', 'Anchor unresolved'),
+            ));
+            meta.append(warn);
+        }
+        if (meta.childElementCount) {
+            main.append(meta);
+        }
+
+        item.append(index, main);
+        return item;
+    }
+
+    protected createTranscriptPreviewFeedbackSourceTag(source: string, openable: boolean): HTMLElement {
+        const openFile = openable ? this.host.openTranscriptFile : undefined;
+        const tag = document.createElement(openFile ? 'button' : 'span');
+        tag.className = 'theia-mobile-agent-transcript-feedback-tag theia-mod-source';
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-file-code';
+        icon.setAttribute('aria-hidden', 'true');
+        tag.append(icon, document.createTextNode(source));
+        tag.title = source;
+        if (tag instanceof HTMLButtonElement && openFile) {
+            tag.type = 'button';
+            tag.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void openFile(splitPreviewFeedbackSource(source).path);
+            });
+        }
+        return tag;
     }
 
     createTranscriptUserImagePreviews(previews: readonly QaapTranscriptUserImagePreview[]): HTMLElement {

@@ -66,6 +66,40 @@ export function extractComposerAttachmentPreviewFeedbackTitles(content: string):
     return titles;
 }
 
+export interface ComposerAttachmentPreviewFeedbackSection {
+    readonly title: string;
+    /** Fenced body under the header — the full formatted annotation context, without the fences. */
+    readonly body: string;
+}
+
+/**
+ * Full `### previewFeedback:` sections (title + fenced body) so the transcript can render every
+ * annotation detail, not just the chip title. Headers without a fenced body yield an empty body.
+ */
+export function extractComposerAttachmentPreviewFeedbackSections(content: string): ComposerAttachmentPreviewFeedbackSection[] {
+    const sections: ComposerAttachmentPreviewFeedbackSection[] = [];
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        const header = /^### previewFeedback:\s*(.+)$/.exec(lines[i]!);
+        const title = header?.[1]?.trim();
+        if (!title) {
+            continue;
+        }
+        let body = '';
+        if (lines[i + 1]?.trim() === '```') {
+            const bodyLines: string[] = [];
+            let j = i + 2;
+            for (; j < lines.length && lines[j]!.trim() !== '```'; j++) {
+                bodyLines.push(lines[j]!);
+            }
+            body = bodyLines.join('\n');
+            i = j;
+        }
+        sections.push({ title, body });
+    }
+    return sections;
+}
+
 export function hasComposerAttachmentPreamble(content: string): boolean {
     return content.includes(ATTACHMENT_PREAMBLE_HEADER)
         || extractComposerAttachmentImagePaths(content).length > 0

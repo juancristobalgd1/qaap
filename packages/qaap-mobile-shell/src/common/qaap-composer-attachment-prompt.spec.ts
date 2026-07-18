@@ -14,6 +14,7 @@ import {
     applyResolvedAttachmentsToPrompt,
     buildResolvedComposerAttachmentBlock,
     extractComposerAttachmentImagePaths,
+    extractComposerAttachmentPreviewFeedbackSections,
     extractComposerAttachmentPreviewFeedbackTitles,
     resolveComposerContextAttachments,
     stripComposerAttachmentPreamble,
@@ -135,6 +136,29 @@ describe('qaap-composer-attachment-prompt', () => {
         expect(stripComposerAttachmentPreamble(outbound)).to.equal(
             'Please address the attached preview feedback.',
         );
+    });
+
+    it('extractComposerAttachmentPreviewFeedbackSections returns title and fenced body', () => {
+        const feedback: ResolvedAIContextVariable = {
+            variable: {
+                id: 'previewFeedback',
+                name: 'previewFeedback',
+                label: 'PreviewFeedback',
+                description: 'Confirmed preview annotations',
+            },
+            value: 'Preview feedback · 2 annotations · /checkout · Mobile',
+            contextValue: 'Annotation 1:\n- Comment: Darker\n\nAnnotation 2:\n- Comment: Bigger button',
+        };
+        const outbound = applyResolvedAttachmentsToPrompt('Please address the attached preview feedback.', [feedback]);
+        const sections = extractComposerAttachmentPreviewFeedbackSections(outbound);
+        expect(sections).to.have.length(1);
+        expect(sections[0]!.title).to.equal('Preview feedback · 2 annotations · /checkout · Mobile');
+        expect(sections[0]!.body).to.equal('Annotation 1:\n- Comment: Darker\n\nAnnotation 2:\n- Comment: Bigger button');
+    });
+
+    it('extractComposerAttachmentPreviewFeedbackSections tolerates headers without a fenced body', () => {
+        const sections = extractComposerAttachmentPreviewFeedbackSections('### previewFeedback: Legacy title\nno fence here');
+        expect(sections).to.deep.equal([{ title: 'Legacy title', body: '' }]);
     });
 
     it('applyResolvedAttachmentsToPrompt returns the draft unchanged when there is no attachment block', () => {
