@@ -70,7 +70,7 @@ export class TheiaApp {
     }
 
     async waitForShellAndInitialized(): Promise<void> {
-        await this.page.waitForSelector(this.appData.loadingSelector, { state: 'detached' });
+        await this.page.waitForSelector(this.appData.loadingSelector, { state: 'hidden' });
         await this.page.waitForSelector(this.appData.shellSelector);
         await this.waitForInitialized();
     }
