@@ -1,0 +1,3 @@
+# Reviewed Eclipse Theia revision used by the Qaap drift gate.
+# Advance this SHA only as part of a deliberate upstream-drift triage.
+f24bc8b12e11ee4b054527565df3648c363b7f86

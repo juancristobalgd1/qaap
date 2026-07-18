@@ -1,5 +1,5 @@
 # Known upstream drift outside packages/qaap-* (historical). Shrink as migrations land.
-# Generated against refs/remotes/upstream/master; paths must match `git diff --name-only refs/remotes/upstream/master`.
+# Generated against the revision in qaap-upstream-base.txt; paths must match `git diff --name-only <revision>`.
 #
 # Empty new-drift set: CI passes while paths are migrated into packages/qaap-* or ALLOWED.
 # Regenerate: node scripts/qaap-drift-check.js --write-baseline

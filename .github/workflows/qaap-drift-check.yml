@@ -1,5 +1,5 @@
-# Blocks new upstream drift outside packages/qaap-* and the documented allowlist.
-# Compares HEAD to eclipse-theia/theia master (see scripts/qaap-drift-check.js).
+# Blocks new drift outside packages/qaap-* and the documented allowlist.
+# Compares HEAD to the reviewed Theia revision in scripts/qaap-upstream-base.txt.
 name: Qaap drift guard
 
 on:
@@ -36,14 +36,21 @@ jobs:
         with:
           node-version: 22.x
 
-      - name: Fetch upstream Theia (eclipse-theia/master)
+      - name: Fetch reviewed upstream Theia base
+        shell: bash
         run: |
+          upstream_base="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' scripts/qaap-upstream-base.txt)"
+          if [[ ! "$upstream_base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid upstream base in scripts/qaap-upstream-base.txt: $upstream_base" >&2
+            exit 2
+          fi
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream https://github.com/eclipse-theia/theia.git
           else
             git remote add upstream https://github.com/eclipse-theia/theia.git
           fi
-          git fetch --no-tags --depth=1 upstream master:upstream/master
+          git fetch --no-tags --depth=1 upstream "$upstream_base"
+          git cat-file -e "${upstream_base}^{commit}"
 
       - name: Run qaap:drift-check
         run: npm run qaap:drift-check

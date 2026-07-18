@@ -27,6 +27,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const baselinePath = path.join(__dirname, 'qaap-drift-baseline.txt');
+const upstreamBasePath = path.join(__dirname, 'qaap-upstream-base.txt');
 
 function sh(cmd) {
     try {
@@ -39,10 +40,30 @@ function sh(cmd) {
 const reportOnly = process.env.QAAP_DRIFT_CHECK_REPORT === '1';
 const writeBaseline = process.argv.includes('--write-baseline');
 
-/** Prefer an unambiguous upstream ref (local branch name can lag behind CI fetch). */
+/** Read the reviewed upstream revision shared by local checks and CI. */
+function loadPinnedUpstreamBase() {
+    if (!fs.existsSync(upstreamBasePath)) {
+        return undefined;
+    }
+    const entries = fs.readFileSync(upstreamBasePath, 'utf8')
+        .split('\n')
+        .map(line => line.replace(/#.*$/, '').trim())
+        .filter(Boolean);
+    if (entries.length !== 1 || !/^[0-9a-f]{40}$/i.test(entries[0])) {
+        console.error('[qaap-drift-check] scripts/qaap-upstream-base.txt must contain exactly one full commit SHA.');
+        process.exit(2);
+    }
+    return entries[0];
+}
+
+/** Prefer an explicit override, then the reviewed base pinned in the repository. */
 function resolveDiffBase() {
     if (process.env.QAAP_DIFF_BASE) {
         return process.env.QAAP_DIFF_BASE;
+    }
+    const pinnedBase = loadPinnedUpstreamBase();
+    if (pinnedBase) {
+        return pinnedBase;
     }
     const candidates = [
         'refs/heads/upstream/master',
@@ -226,6 +247,9 @@ const ALLOWED = [
     /^scripts\/extract-sessions-sidebar\.py$/,
     /^scripts\/extract-sticky-composer-batch\.py$/,
     /^scripts\/wire-mobile-projects-orphans\.py$/,
+    // Fork-local agent guidance and post-task preview workflow (not upstream product code).
+    /^AGENTS\.md$/,
+    /^\.cursor\/rules\/post-task-build-preview\.mdc$/,
     // ---- Misc product seams in upstream Theia packages ---------------------
     /^packages\/ai-chat-ui\/src\/browser\/chat-input-product-chrome\.ts$/,
     /^packages\/ai-chat-ui\/src\/browser\/chat-input-widget\.tsx$/,
