@@ -122,11 +122,13 @@ describe('qaap-preview-annotation-popover', () => {
         expect(chip.textContent).to.contain('div');
         const icon = chip.querySelector('svg.qaap-preview-annotation-popover-chip-icon') as SVGSVGElement;
         expect(icon).to.exist;
-        // Select-element glyph: open frame path + filled mouse pointer.
+        expect(icon.getAttribute('viewBox')).to.equal('0 0 24 24');
+        expect(icon.getAttribute('stroke')).to.equal('currentColor');
+        // Lucide square-mouse-pointer: pointer tip + open square frame.
         const paths = icon.querySelectorAll('path');
-        expect(paths.length).to.be.at.least(2);
-        expect(paths[0]?.getAttribute('fill')).to.equal('none');
-        expect(paths[1]?.getAttribute('fill')).to.equal('currentColor');
+        expect(paths).to.have.length(2);
+        expect(paths[0]?.getAttribute('d')).to.contain('12.034');
+        expect(paths[1]?.getAttribute('d')).to.contain('M21 11V5');
         handle.dispose();
     });
 

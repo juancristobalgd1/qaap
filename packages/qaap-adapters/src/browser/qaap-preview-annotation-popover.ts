@@ -129,35 +129,30 @@ function svgEl(tag: string, attrs: Record<string, string>): SVGElement {
 }
 
 /**
- * Select-element glyph (Codex/Cursor): rounded selection frame + classic mouse pointer.
+ * Lucide `square-mouse-pointer` — chip accent via `currentColor`.
  */
 function createElementTargetSvg(className: string): SVGSVGElement {
     const svg = svgEl('svg', {
-        viewBox: '0 0 16 16',
+        viewBox: '0 0 24 24',
         width: '14',
         height: '14',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '2',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
         'aria-hidden': 'true',
         focusable: 'false',
     }) as SVGSVGElement;
     svg.classList.add(className);
-
-    // Rounded selection frame (open bottom-right so the pointer reads clearly).
-    svg.append(svgEl('path', {
-        d: 'M4.2 5.4V4.1c0-.7.55-1.25 1.25-1.25H7 M9 2.85h1.55c.7 0 1.25.55 1.25 1.25V5.4 M12.8 9V10.9c0 .7-.55 1.25-1.25 1.25H9.9',
-        fill: 'none',
-        stroke: 'currentColor',
-        'stroke-width': '1.35',
-        'stroke-linecap': 'round',
-        'stroke-linejoin': 'round',
-    }));
-    // Classic mouse pointer aiming up-left into the frame.
-    svg.append(svgEl('path', {
-        d: 'M5.1 4.6v7.1l2.15-2.05 1.45 3.35 1.35-.6-1.45-3.3H11.4z',
-        fill: 'currentColor',
-        stroke: 'currentColor',
-        'stroke-width': '0.4',
-        'stroke-linejoin': 'round',
-    }));
+    svg.append(
+        svgEl('path', {
+            d: 'M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z',
+        }),
+        svgEl('path', {
+            d: 'M21 11V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6',
+        }),
+    );
     return svg;
 }
 
