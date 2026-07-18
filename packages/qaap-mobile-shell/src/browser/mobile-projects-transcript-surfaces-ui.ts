@@ -33,7 +33,12 @@ import {
     previewPageTitleMatchesProjectName,
     resolveReadyTranscriptPreviewUrlFromProbe,
 } from '../common/qaap-transcript-preview-offer';
-import { probeQaapDevPreviewPort, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import {
+    isLocalQaapPreviewOrigin,
+    parseQaapIdentityPreviewRequestPath,
+    resolveDevPreviewPublicOrigin,
+} from '../common/qaap-dev-preview';
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { buildQaapPreviewId, type QaapPreviewIdentity } from '../common/qaap-preview-identity';
@@ -784,17 +789,24 @@ export class MobileProjectsTranscriptSurfacesUi {
 
     protected async claimTranscriptPreviewExecution(
         project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
+        _summary: QaapAgentConversationSummaryDTO,
         port: number,
         fallbackUrl: string,
     ): Promise<string | undefined> {
         const bootstrap = this.host.projectBootstrap;
-        if (!bootstrap) {
+        const processId = bootstrap?.previewProcessId;
+        const root = bootstrap?.descriptor?.rootUri.toString();
+        if (!bootstrap || !processId || !root) {
             return undefined;
         }
         const claim = await bootstrap.claimPreviewExecution(
             port,
-            this.resolveTranscriptPreviewIdentity(project, summary),
+            {
+                workspaceId: root,
+                projectId: project.id,
+                processId,
+                root,
+            },
         );
         return claim.kind === 'claimed' ? claim.previewUrl ?? fallbackUrl : undefined;
     }
@@ -808,7 +820,8 @@ export class MobileProjectsTranscriptSurfacesUi {
     ): Promise<void> {
         const port = extractDevPreviewPortFromUrl(candidateUrl);
         if (port === undefined) {
-            if (!this.matchesActivePreviewSummary(summary) || !host.isConnected) {
+            if (!this.matchesActivePreviewSummary(summary) || !host.isConnected
+                || !await this.previewUrlMatchesProject(candidateUrl, latestProject)) {
                 return;
             }
             this.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject);
@@ -857,16 +870,16 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
-            this.stageTranscriptPreviewReadyUrl(project.id, readyUrl);
-            if (latestProject.previewUrl !== readyUrl) {
-                const updatedProject = { ...latestProject, previewUrl: readyUrl };
+            this.stageTranscriptPreviewReadyUrl(project.id, executionUrl);
+            if (latestProject.previewUrl !== executionUrl) {
+                const updatedProject = { ...latestProject, previewUrl: executionUrl };
                 this.host.projects = this.host.projects.map(candidate => candidate.id === updatedProject.id
                     ? updatedProject
                     : candidate);
                 if (this.host.transcriptOpenProject?.id === updatedProject.id) {
                     this.host.transcriptOpenProject = updatedProject;
                 }
-                void this.host.projectsService.recordProjectPreviewUrl(updatedProject, readyUrl).catch(() => undefined);
+                void this.host.projectsService.recordProjectPreviewUrl(updatedProject, executionUrl).catch(() => undefined);
             }
             return;
         }
@@ -879,22 +892,22 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
 
         this.setMountedPreviewUrl(project.id, executionUrl);
-        this.setProbeReadyPreviewUrl(project.id, readyUrl);
+        this.setProbeReadyPreviewUrl(project.id, executionUrl);
         const allowBootstrap = this.host.transcriptPreviewRequestPending;
         this.host.transcriptPreviewRequestPending = false;
         this.host.transcriptPreviewRequestRunning = false;
         if (allowBootstrap) {
-            void this.ensureTranscriptPreviewServing(project, summary, readyUrl, { allowBootstrap: true });
+            void this.ensureTranscriptPreviewServing(project, summary, executionUrl, { allowBootstrap: true });
         }
-        if (latestProject.previewUrl !== readyUrl) {
-            const updatedProject = { ...latestProject, previewUrl: readyUrl };
+        if (latestProject.previewUrl !== executionUrl) {
+            const updatedProject = { ...latestProject, previewUrl: executionUrl };
             this.host.projects = this.host.projects.map(candidate => candidate.id === updatedProject.id
                 ? updatedProject
                 : candidate);
             if (this.host.transcriptOpenProject?.id === updatedProject.id) {
                 this.host.transcriptOpenProject = updatedProject;
             }
-            void this.host.projectsService.recordProjectPreviewUrl(updatedProject, readyUrl).catch(() => undefined);
+            void this.host.projectsService.recordProjectPreviewUrl(updatedProject, executionUrl).catch(() => undefined);
         }
         const hadEmptyPreview = this.host.transcriptEmbeddedPreview?.root.classList.contains('theia-mod-empty-preview') === true;
         if (hadEmptyPreview
@@ -1288,6 +1301,8 @@ export class MobileProjectsTranscriptSurfacesUi {
                 conversation: this.host.transcriptLastConv?.id === summary.id
                     ? this.host.transcriptLastConv
                     : undefined,
+                projectId: project.id,
+                workspaceRoot: this.host.projectsService.getProjectCwd(project) ?? summary.cwd,
             });
             if (!readyUrl || !this.matchesActivePreviewSummary(summary)) {
                 return;
@@ -2020,7 +2035,21 @@ export class MobileProjectsTranscriptSurfacesUi {
 
     async previewUrlMatchesProject(previewUrl: string, project: MobileProjectEntry): Promise<boolean> {
         try {
-            const response = await fetch(normalizePreviewUrlForSameOrigin(previewUrl), { cache: 'no-store' });
+            const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
+            const parsed = new URL(normalized, window.location.href);
+            const identityPath = parseQaapIdentityPreviewRequestPath(parsed.pathname);
+            if (identityPath) {
+                const probe = await probeQaapIdentityPreview(identityPath.previewId);
+                if (!probe.ready) {
+                    return false;
+                }
+                if (probe.projectId) {
+                    return probe.projectId === project.id;
+                }
+                // Legacy identity links predate project coordinates in the probe response. Keep
+                // title matching only for that migration path, never as the primary identity.
+            }
+            const response = await fetch(normalized, { cache: 'no-store' });
             if (!response.ok) {
                 return false;
             }
@@ -2033,6 +2062,9 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     async discoverProjectDevPreviewUrl(project: MobileProjectEntry): Promise<string | undefined> {
+        if (!isLocalQaapPreviewOrigin(resolveDevPreviewPublicOrigin())) {
+            return undefined;
+        }
         const ports = Array.from({ length: 18 }, (_, index) => 5173 + index);
         const probes = await Promise.all(ports.map(async port => {
             const probe = await probeQaapDevPreviewPort(port);
@@ -2122,11 +2154,15 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
 
         const bootstrap = this.host.projectBootstrap;
-        if (bootstrap && this.bootstrapAppliesToProject(project)) {
+        if (bootstrap) {
             const conversation = this.host.transcriptLastConv?.id === summary.id
                 ? this.host.transcriptLastConv
                 : undefined;
-            void ensureTranscriptDevPreview(bootstrap, { conversation }).then(readyUrl => {
+            void ensureTranscriptDevPreview(bootstrap, {
+                conversation,
+                projectId: project.id,
+                workspaceRoot: this.host.projectsService.getProjectCwd(project) ?? summary.cwd,
+            }).then(readyUrl => {
                 if (!readyUrl || !this.matchesActivePreviewSummary(summary)) {
                     return;
                 }

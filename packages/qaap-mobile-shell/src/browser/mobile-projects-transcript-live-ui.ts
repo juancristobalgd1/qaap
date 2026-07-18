@@ -695,7 +695,12 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         this.transcriptDevPreviewBootstrapConversationId = conv.id;
-        void ensureTranscriptDevPreview(bootstrap, { conversation: conv }).then(readyUrl => {
+        const project = this.host.transcriptOpenProject;
+        void ensureTranscriptDevPreview(bootstrap, {
+            conversation: conv,
+            projectId: project?.id,
+            workspaceRoot: project ? this.host.projectsService.getProjectCwd(project) ?? conv.cwd : conv.cwd,
+        }).then(readyUrl => {
             if (readyUrl && this.host.transcriptOpenSummaryId === conv.id) {
                 void this.openReadyTranscriptPreviewUrl(readyUrl, conv);
                 return;

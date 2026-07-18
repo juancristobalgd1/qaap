@@ -5,7 +5,7 @@
 
 import { normalizePreviewUrlForSameOrigin, parsePreviewProxyPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
-import { resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
+import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
 import {
     resolveReadyTranscriptPreviewUrlFromProbe,
     type TranscriptPreviewPortProbeResult,
@@ -28,6 +28,10 @@ export interface EnsureTranscriptDevPreviewOptions {
     readonly conversation?: QaapAgentConversationDTO;
     /** Visual verification uses project bootstrap only; transcript prose may mention another app's port. */
     readonly skipConversationPortProbe?: boolean;
+    /** Work Hub project identity; conversations/sections for the same project share it. */
+    readonly projectId?: string;
+    /** Authoritative project root when it differs from the conversation cwd. */
+    readonly workspaceRoot?: string;
 }
 
 /** Parses a proxied or direct localhost preview URL into a dev-server port. */
@@ -147,14 +151,27 @@ export async function ensureTranscriptDevPreview(
     bootstrap: QaapProjectBootstrapService,
     options: EnsureTranscriptDevPreviewOptions = {},
 ): Promise<string | undefined> {
+    const projectRoot = options.workspaceRoot
+        ?? options.conversation?.parallelBaseCwd
+        ?? options.conversation?.cwd;
+    if (projectRoot) {
+        await bootstrap.refreshFromProjectRoot(projectRoot, options.projectId ?? projectRoot);
+    }
+
+    // On a shared VPS a prose-derived bare port has no project identity. It may be another app
+    // owned by the same user, so only the single-user/local path retains this compatibility probe.
     const fromConversation = options.skipConversationPortProbe
+        || !isLocalQaapPreviewOrigin(resolveDevPreviewPublicOrigin())
         ? undefined
         : await probeTranscriptConversationPorts(options.conversation);
     if (fromConversation) {
         return fromConversation;
     }
 
-    const portHint = options.portHint ?? extractDevPreviewPortFromUrl(options.previewUrlHint);
+    const localPreviewRuntime = isLocalQaapPreviewOrigin(resolveDevPreviewPublicOrigin());
+    const portHint = localPreviewRuntime
+        ? options.portHint ?? extractDevPreviewPortFromUrl(options.previewUrlHint)
+        : undefined;
 
     if (portHint !== undefined) {
         const readyUrl = await probeReadyPreviewUrl(portHint);

@@ -8,11 +8,14 @@ import { Application, NextFunction, Request, Response } from '@theia/core/shared
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import * as http from 'http';
 import * as net from 'net';
+import * as fs from 'fs';
+import * as path from 'path';
 import { timingSafeEqual } from 'crypto';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapDevPreviewPortRegistry, type QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import {
     QAAP_DEV_PREVIEW_CLAIM_PATH,
+    QAAP_DEV_PREVIEW_RELEASE_PATH,
     QAAP_DEV_PREVIEW_PREFIX,
     QAAP_DEV_PREVIEW_PROBE_PATH,
     QAAP_IDENTITY_PREVIEW_PREFIX,
@@ -29,6 +32,8 @@ import {
 import {
     isQaapPreviewIdentity,
     isQaapPreviewId,
+    isQaapProcessPreviewClaimIdentity,
+    isQaapProcessPreviewIdentity,
     resolveQaapPreviewIdentity,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
@@ -41,6 +46,9 @@ const LOCAL_TARGET_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'
 const TEXT_RESPONSE_PATTERN = /\b(?:text\/html|text\/css|application\/javascript|text\/javascript|application\/x-javascript)\b/i;
 const QAAP_PREVIEW_ACCESS_QUERY = 'qaap_preview_token';
 const QAAP_PREVIEW_ACCESS_COOKIE = 'qaap_preview_access';
+const PREVIEW_PORT_ALLOCATION_ATTEMPTS = 128;
+const PREVIEW_RESERVATION_START_GRACE_MS = 5 * 60_000;
+const PREVIEW_REAPER_INTERVAL_MS = 60_000;
 
 function getQaapBackendListenPort(): number {
     const parsed = Number(process.env.PORT);
@@ -55,6 +63,8 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
 
     @inject(QaapDevPreviewPortRegistry)
     protected readonly portRegistry: QaapDevPreviewPortRegistry;
+
+    protected reaperRunning = false;
 
     configure(app: Application): void {
         // Optional isolated-origin mode. DNS/TLS should route `*.QAAP_PREVIEW_BASE_DOMAIN` here;
@@ -84,6 +94,9 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         // Register static /api segments before the `:port` catch-all so they aren't parsed as ports.
         app.post(QAAP_DEV_PREVIEW_CLAIM_PATH, (req, res) => {
             void this.handleClaim(req, res);
+        });
+        app.post(QAAP_DEV_PREVIEW_RELEASE_PATH, (req, res) => {
+            this.handleRelease(req, res);
         });
         app.get(`${QAAP_DEV_PREVIEW_PROBE_PATH}/:port`, (req, res) => {
             if (!this.requireHttpAuth(req, res)) {
@@ -145,6 +158,10 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         }
         const owner = this.auth.resolveUserLogin(ctx);
         if (owner) {
+            if (isQaapProcessPreviewClaimIdentity(body)) {
+                await this.handleProcessClaim(req, res, owner, root, port, body);
+                return;
+            }
             if (isQaapPreviewIdentity(body)) {
                 const identity = resolveQaapPreviewIdentity(body);
                 const registration = {
@@ -184,6 +201,14 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 res.status(409).type('text/plain').send('This preview port is in use by another workspace.');
                 return;
             }
+            if (this.portRegistry.ownerOf(port) === undefined && stale === undefined
+                && await this.probeLocalDevServer(port)) {
+                // After a backend restart an unregistered listener has no trustworthy project or
+                // tenant identity. Adopting it based only on liveness is the exact cross-project
+                // failure this endpoint must prevent. Local skip-auth never enters this branch.
+                res.status(409).type('text/plain').send('This running server has no verifiable preview reservation.');
+                return;
+            }
             if (!this.portRegistry.claim(port, owner)) {
                 // A different tenant holds a live claim — refuse the takeover instead of silently
                 // rebinding their running preview to this caller (keeps H1 meaningful).
@@ -191,6 +216,124 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 return;
             }
         }
+        res.sendStatus(204);
+    }
+
+    /**
+     * Atomically reserves a free port and immutable process identity before the frontend spawns
+     * the dev command. A listening-but-unregistered port is never adopted: after a backend restart
+     * it may belong to another tenant/project, which cannot be proven from liveness alone.
+     */
+    protected async handleProcessClaim(
+        req: Request,
+        res: Response,
+        owner: string,
+        root: string,
+        preferredPort: number,
+        claim: { readonly workspaceId: string; readonly projectId: string; readonly processId: string },
+    ): Promise<void> {
+        const rootPath = path.resolve(FileUri.fsPath(root));
+        let canonicalRoot = rootPath;
+        try {
+            canonicalRoot = fs.realpathSync.native(rootPath);
+        } catch {
+            // Ownership was already checked. A missing root will fail when the process is spawned.
+        }
+        const identity = resolveQaapPreviewIdentity({
+            userId: owner,
+            workspaceId: FileUri.create(canonicalRoot).toString(),
+            projectId: claim.projectId,
+            processId: claim.processId,
+        });
+        const existing = this.portRegistry.getForOwner(identity.previewId, owner);
+        if (existing) {
+            if (existing.root !== canonicalRoot) {
+                res.status(409).type('text/plain').send('This preview identity belongs to a different workspace.');
+                return;
+            }
+            res.status(200).json({
+                previewId: existing.previewId,
+                previewUrl: this.buildIdentityPreviewUrl(req, existing),
+                port: existing.port,
+            });
+            return;
+        }
+
+        for (let offset = 0; offset < PREVIEW_PORT_ALLOCATION_ATTEMPTS; offset++) {
+            const port = this.nextAllocationCandidate(preferredPort, offset);
+            if (this.isIdeListenPort(port)) {
+                continue;
+            }
+            const occupiedRecord = this.portRegistry.getByPort(port);
+            if (occupiedRecord) {
+                const withinStartGrace = Date.now() - occupiedRecord.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
+                if (withinStartGrace || await this.probeLocalDevServer(port)) {
+                    continue;
+                }
+                this.portRegistry.releasePreview(occupiedRecord.previewId, occupiedRecord.ownerLogin);
+                console.info('[qaap-preview] reaped stale registration', {
+                    previewId: occupiedRecord.previewId,
+                    ownerLogin: occupiedRecord.ownerLogin,
+                    port,
+                });
+            } else if (await this.probeLocalDevServer(port)) {
+                // Crucial fail-closed rule: never infer project ownership from a responding port.
+                continue;
+            }
+            const record = this.portRegistry.register({
+                ...identity,
+                ownerLogin: owner,
+                root: canonicalRoot,
+                port,
+            });
+            if (!record) {
+                continue; // concurrent allocator won this candidate; try the next one
+            }
+            console.info('[qaap-preview] reserved', {
+                previewId: record.previewId,
+                ownerLogin: owner,
+                workspaceId: identity.workspaceId,
+                projectId: identity.projectId,
+                processId: identity.processId,
+                port,
+            });
+            res.status(200).json({
+                previewId: record.previewId,
+                previewUrl: this.buildIdentityPreviewUrl(req, record),
+                port,
+            });
+            return;
+        }
+        res.status(503).type('text/plain').send('No safe dev-preview port is currently available.');
+    }
+
+    protected nextAllocationCandidate(preferredPort: number, offset: number): number {
+        const candidate = preferredPort + offset;
+        if (candidate <= 65535) {
+            return candidate;
+        }
+        return 1024 + ((candidate - 1024) % (65535 - 1024 + 1));
+    }
+
+    protected handleRelease(req: Request, res: Response): void {
+        const ctx = this.auth.authenticate(req);
+        if (ctx.kind === 'unauthorized') {
+            res.sendStatus(401);
+            return;
+        }
+        const owner = this.auth.resolveUserLogin(ctx);
+        const previewId = typeof req.body?.previewId === 'string' ? req.body.previewId : undefined;
+        if (!owner || !previewId || !isQaapPreviewId(previewId)) {
+            res.sendStatus(400);
+            return;
+        }
+        const record = this.portRegistry.getForOwner(previewId, owner);
+        if (!record) {
+            res.sendStatus(404);
+            return;
+        }
+        this.portRegistry.releasePreview(previewId, owner);
+        console.info('[qaap-preview] released', { previewId, ownerLogin: owner, port: record.port });
         res.sendStatus(204);
     }
 
@@ -242,6 +385,33 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         server.on('upgrade', (req, socket, head) => {
             this.handleWebSocketUpgrade(req, socket as net.Socket, head);
         });
+        const reaper = setInterval(() => { void this.reapStoppedPreviews(); }, PREVIEW_REAPER_INTERVAL_MS);
+        reaper.unref?.();
+    }
+
+    /** Bounds stale durable records after a reload/backend restart without touching live servers. */
+    protected async reapStoppedPreviews(): Promise<void> {
+        if (this.reaperRunning) {
+            return;
+        }
+        this.reaperRunning = true;
+        try {
+            const now = Date.now();
+            for (const record of this.portRegistry.records()) {
+                if (now - record.touchedAt < PREVIEW_RESERVATION_START_GRACE_MS
+                    || await this.probeLocalDevServer(record.port)) {
+                    continue;
+                }
+                this.portRegistry.releasePreview(record.previewId, record.ownerLogin);
+                console.info('[qaap-preview] reaped stopped process', {
+                    previewId: record.previewId,
+                    ownerLogin: record.ownerLogin,
+                    port: record.port,
+                });
+            }
+        } finally {
+            this.reaperRunning = false;
+        }
     }
 
     protected async handleProbe(req: Request, res: Response): Promise<void> {
@@ -262,6 +432,22 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             return;
         }
         const ready = await this.probeLocalDevServer(port);
+        const record = this.portRegistry.getByPort(port);
+        const login = this.auth.resolveUserLogin(this.auth.authenticate(req));
+        if (record && login === record.ownerLogin) {
+            const body: QaapDevPreviewProbeResponse = {
+                ready,
+                previewUrl: this.buildIdentityPreviewUrl(req, record),
+                previewId: record.previewId,
+                projectId: record.projectId,
+                ...(isQaapProcessPreviewIdentity(record) ? {
+                    workspaceId: record.workspaceId,
+                    processId: record.processId,
+                } : {}),
+            };
+            res.json(body);
+            return;
+        }
         const body: QaapDevPreviewProbeResponse = {
             ready,
             previewUrl: buildQaapDevPreviewOpenUrl(origin, port),
@@ -285,6 +471,11 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             ready: await this.probeLocalDevServer(record.port),
             previewUrl,
             previewId,
+            projectId: record.projectId,
+            ...(isQaapProcessPreviewIdentity(record) ? {
+                workspaceId: record.workspaceId,
+                processId: record.processId,
+            } : {}),
         } satisfies QaapDevPreviewProbeResponse);
     }
 

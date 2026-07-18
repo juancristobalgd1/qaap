@@ -9,18 +9,26 @@ import { getSameOriginPreviewProxyPort } from './qaap-preview-url-utils';
 export const QaapPreviewPortClaimService = Symbol('QaapPreviewPortClaimService');
 
 export type QaapPreviewPortClaimResult =
-    | { readonly kind: 'claimed'; readonly previewId?: string; readonly previewUrl?: string }
+    | { readonly kind: 'claimed'; readonly previewId?: string; readonly previewUrl?: string; readonly port?: number }
     | { readonly kind: 'conflict' }
     | { readonly kind: 'error'; readonly status?: number };
 
 export interface QaapPreviewPortClaimService {
     claim(port: number, identity?: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult>;
+    release?(previewId: string): Promise<boolean>;
 }
 
 export interface QaapPreviewExecutionIdentity {
     readonly projectId: string;
-    readonly conversationId: string;
-    readonly runId: string;
+    /** Canonical project/workspace URI. Required by process-scoped VPS reservations. */
+    readonly workspaceId?: string;
+    /** Logical UUID generated before one concrete dev process starts. */
+    readonly processId?: string;
+    /** Exact root proved by the backend ownership guard; avoids hosted `/workspace` fallback. */
+    readonly root?: string;
+    /** Legacy turn-scoped fields accepted for already persisted preview links. */
+    readonly conversationId?: string;
+    readonly runId?: string;
 }
 
 /**
@@ -31,6 +39,10 @@ export interface QaapPreviewExecutionIdentity {
 export class UnavailableQaapPreviewPortClaimService implements QaapPreviewPortClaimService {
     async claim(_port: number, _identity?: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult> {
         return { kind: 'error' };
+    }
+
+    async release(_previewId: string): Promise<boolean> {
+        return false;
     }
 }
 

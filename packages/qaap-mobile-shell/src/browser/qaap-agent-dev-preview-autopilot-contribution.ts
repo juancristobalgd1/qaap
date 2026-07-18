@@ -142,10 +142,11 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             this.captureAttemptsByTurn.set(turnKey, attempt);
         }
         const outOfBudget = attempt >= VISUAL_CAPTURE_TURN_BUDGET;
-        await this.bootstrap.refreshFromCurrentWorkspace();
         const readyUrl = await ensureTranscriptDevPreview(this.bootstrap, {
             conversation,
             skipConversationPortProbe: true,
+            projectId: conversation.parallelBaseCwd ?? conversation.cwd,
+            workspaceRoot: conversation.parallelBaseCwd ?? conversation.cwd,
         });
         if (readyUrl) {
             await this.bootstrap.focusPreview().catch(() => undefined);

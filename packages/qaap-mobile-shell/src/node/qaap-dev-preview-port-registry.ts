@@ -3,23 +3,29 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
-import type { QaapResolvedPreviewIdentity } from '../common/qaap-preview-identity';
+import { injectable, postConstruct } from '@theia/core/shared/inversify';
+import {
+    isQaapProcessPreviewIdentity,
+    type QaapResolvedPreviewIdentity,
+} from '../common/qaap-preview-identity';
 import { randomBytes } from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
-export interface QaapDevPreviewRegistration extends QaapResolvedPreviewIdentity {
+export type QaapDevPreviewRegistration = QaapResolvedPreviewIdentity & {
     readonly ownerLogin: string;
     readonly root: string;
     readonly port: number;
-    readonly processId?: number;
-}
+    readonly osProcessId?: number;
+};
 
-export interface QaapDevPreviewRecord extends QaapDevPreviewRegistration {
+export type QaapDevPreviewRecord = QaapDevPreviewRegistration & {
     readonly claimedAt: number;
     readonly touchedAt: number;
     /** Per-preview capability used only on an isolated preview hostname. Never sent to other users. */
     readonly accessToken: string;
-}
+};
 
 export interface QaapDevPreviewRegisterOptions {
     /**
@@ -29,13 +35,33 @@ export interface QaapDevPreviewRegisterOptions {
     readonly replaceExpired?: boolean;
 }
 
+interface PersistedQaapDevPreviewRegistry {
+    readonly version: 1;
+    readonly previews: readonly QaapDevPreviewRecord[];
+}
+
+const PERSIST_DEBOUNCE_MS = 100;
+const STORE_FILE_MODE = 0o600;
+const STORE_DIR_MODE = 0o700;
+
+function resolvePreviewRegistryPath(): string {
+    const configured = process.env.QAAP_PREVIEW_REGISTRY_PATH?.trim();
+    if (configured) {
+        return configured;
+    }
+    return process.env.NODE_ENV === 'production'
+        ? '/workspace/.qaap/dev-previews.json'
+        : path.join(os.homedir(), '.qaap', 'dev-previews.json');
+}
+
 /**
  * Maps a dev-preview port to the login that claimed it (having proven workspace ownership), so the
  * `/qaap-dev/:port` proxy can deny a signed-in user reaching another tenant's dev server on the
  * shared host. Claims are the only authoritative owner signal for frontend-started dev servers,
  * which never reach the backend restart path. A claim is refreshed each time the owner re-opens the
  * preview and expires after {@link CLAIM_TTL_MS} so a port later reused by a different user is not
- * blocked by a stale entry. Unclaimed ports fall back to the endpoint's `requireAuth` gate.
+ * blocked by a stale legacy entry. Process-scoped records are durable and the endpoint reaps them
+ * only after confirming that the registered listener has stopped.
  */
 @injectable()
 export class QaapDevPreviewPortRegistry {
@@ -45,6 +71,15 @@ export class QaapDevPreviewPortRegistry {
     protected readonly claims = new Map<number, { readonly ownerLogin: string; at: number }>();
     protected readonly previews = new Map<string, QaapDevPreviewRecord>();
     protected readonly previewIdByPort = new Map<number, string>();
+    protected readonly storePath = resolvePreviewRegistryPath();
+    protected persistTimer: NodeJS.Timeout | undefined;
+    protected persistenceEnabled = false;
+
+    @postConstruct()
+    protected init(): void {
+        this.loadFromDisk();
+        this.persistenceEnabled = true;
+    }
 
     /**
      * Registers immutable execution coordinates and reserves the port for that preview. Neither a
@@ -75,13 +110,14 @@ export class QaapDevPreviewPortRegistry {
             } else {
                 const refreshed = {
                     ...existing,
-                    processId: registration.processId ?? existing.processId,
+                    osProcessId: registration.osProcessId ?? existing.osProcessId,
                     claimedAt: expired ? now : existing.claimedAt,
                     touchedAt: now,
                     accessToken: expired ? randomBytes(24).toString('base64url') : existing.accessToken,
                 };
                 this.previews.set(registration.previewId, refreshed);
                 this.claims.set(registration.port, { ownerLogin: registration.ownerLogin, at: now });
+                this.schedulePersist();
                 return refreshed;
             }
         }
@@ -112,6 +148,7 @@ export class QaapDevPreviewPortRegistry {
         this.previews.set(registration.previewId, record);
         this.previewIdByPort.set(registration.port, registration.previewId);
         this.claims.set(registration.port, { ownerLogin: registration.ownerLogin, at: now });
+        this.schedulePersist();
         return record;
     }
 
@@ -146,6 +183,7 @@ export class QaapDevPreviewPortRegistry {
         if (this.staleOwnerOf(record.port) === record.ownerLogin) {
             this.claims.delete(record.port);
         }
+        this.schedulePersist();
     }
 
     get(previewId: string): QaapDevPreviewRecord | undefined {
@@ -166,14 +204,16 @@ export class QaapDevPreviewPortRegistry {
         const now = Date.now();
         this.previews.set(previewId, { ...record, touchedAt: now });
         this.claims.set(record.port, { ownerLogin, at: now });
+        this.schedulePersist();
     }
 
-    attachProcess(previewId: string, ownerLogin: string, processId: number | undefined): boolean {
+    attachProcess(previewId: string, ownerLogin: string, osProcessId: number | undefined): boolean {
         const record = this.getForOwner(previewId, ownerLogin);
         if (!record) {
             return false;
         }
-        this.previews.set(previewId, { ...record, processId, touchedAt: Date.now() });
+        this.previews.set(previewId, { ...record, osProcessId, touchedAt: Date.now() });
+        this.schedulePersist();
         return true;
     }
 
@@ -189,6 +229,7 @@ export class QaapDevPreviewPortRegistry {
             return false;
         }
         this.claims.set(port, { ownerLogin, at: Date.now() });
+        this.schedulePersist();
         return true;
     }
 
@@ -196,6 +237,7 @@ export class QaapDevPreviewPortRegistry {
     touch(port: number, ownerLogin: string): void {
         if (this.ownerOf(port) === ownerLogin) {
             this.claims.set(port, { ownerLogin, at: Date.now() });
+            this.schedulePersist();
         }
     }
 
@@ -206,6 +248,32 @@ export class QaapDevPreviewPortRegistry {
             this.previewIdByPort.delete(port);
         }
         this.claims.delete(port);
+        this.schedulePersist();
+    }
+
+    releasePreview(previewId: string, ownerLogin: string): boolean {
+        const record = this.getForOwner(previewId, ownerLogin);
+        if (!record) {
+            return false;
+        }
+        this.previews.delete(previewId);
+        if (this.previewIdByPort.get(record.port) === previewId) {
+            this.previewIdByPort.delete(record.port);
+        }
+        if (this.claims.get(record.port)?.ownerLogin === ownerLogin) {
+            this.claims.delete(record.port);
+        }
+        this.schedulePersist();
+        return true;
+    }
+
+    getByPort(port: number): QaapDevPreviewRecord | undefined {
+        const previewId = this.previewIdByPort.get(port);
+        return previewId ? this.get(previewId) : undefined;
+    }
+
+    records(): readonly QaapDevPreviewRecord[] {
+        return [...this.previews.values()].filter(record => !this.isRecordExpired(record));
     }
 
     /** The login that owns this port, or undefined if unclaimed or the claim has expired. */
@@ -233,15 +301,75 @@ export class QaapDevPreviewPortRegistry {
     }
 
     protected isRecordExpired(record: QaapDevPreviewRecord): boolean {
+        // Process-scoped registrations are durable. They are reaped only after the endpoint has
+        // confirmed that their listener is gone, so reloads/backend restarts cannot invalidate a
+        // still-running preview merely because no browser touched it for thirty minutes.
+        if (isQaapProcessPreviewIdentity(record)) {
+            return false;
+        }
         return Date.now() - record.touchedAt > QaapDevPreviewPortRegistry.CLAIM_TTL_MS;
     }
 
     protected sameRegistration(left: QaapDevPreviewRecord, right: QaapDevPreviewRegistration): boolean {
-        return left.ownerLogin === right.ownerLogin
-            && left.projectId === right.projectId
-            && left.conversationId === right.conversationId
-            && left.runId === right.runId
+        return left.previewId === right.previewId
+            && left.ownerLogin === right.ownerLogin
             && left.root === right.root
             && left.port === right.port;
+    }
+
+    protected loadFromDisk(): void {
+        try {
+            const parsed = JSON.parse(fs.readFileSync(this.storePath, 'utf8')) as Partial<PersistedQaapDevPreviewRegistry>;
+            if (parsed.version !== 1 || !Array.isArray(parsed.previews)) {
+                return;
+            }
+            for (const candidate of parsed.previews) {
+                if (!candidate || typeof candidate.previewId !== 'string'
+                    || typeof candidate.ownerLogin !== 'string'
+                    || typeof candidate.root !== 'string'
+                    || !Number.isInteger(candidate.port)
+                    || typeof candidate.accessToken !== 'string') {
+                    continue;
+                }
+                // Persist only the process-scoped format. Legacy port/turn claims intentionally
+                // retain their old TTL semantics and disappear across backend restarts.
+                if (!isQaapProcessPreviewIdentity(candidate)) {
+                    continue;
+                }
+                this.previews.set(candidate.previewId, candidate);
+                this.previewIdByPort.set(candidate.port, candidate.previewId);
+                this.claims.set(candidate.port, { ownerLogin: candidate.ownerLogin, at: Date.now() });
+            }
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                console.warn('[qaap-preview] Could not read the preview registry:', error);
+            }
+        }
+    }
+
+    protected schedulePersist(): void {
+        if (!this.persistenceEnabled || this.persistTimer !== undefined) {
+            return;
+        }
+        this.persistTimer = setTimeout(() => {
+            this.persistTimer = undefined;
+            this.persistNow();
+        }, PERSIST_DEBOUNCE_MS);
+        this.persistTimer.unref?.();
+    }
+
+    protected persistNow(): void {
+        const previews = [...this.previews.values()].filter(record => isQaapProcessPreviewIdentity(record));
+        const dir = path.dirname(this.storePath);
+        const temp = `${this.storePath}.${process.pid}.tmp`;
+        try {
+            fs.mkdirSync(dir, { recursive: true, mode: STORE_DIR_MODE });
+            fs.writeFileSync(temp, JSON.stringify({ version: 1, previews } satisfies PersistedQaapDevPreviewRegistry), { mode: STORE_FILE_MODE });
+            fs.renameSync(temp, this.storePath);
+            try { fs.chmodSync(this.storePath, STORE_FILE_MODE); } catch { /* best effort */ }
+        } catch (error) {
+            console.warn('[qaap-preview] Could not persist the preview registry:', error);
+            try { fs.unlinkSync(temp); } catch { /* ignore */ }
+        }
     }
 }

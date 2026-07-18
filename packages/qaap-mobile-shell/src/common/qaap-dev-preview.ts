@@ -14,6 +14,9 @@ export const QAAP_DEV_PREVIEW_PROBE_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/probe
 /** Owner claims a preview port for a workspace they own, so the proxy can deny other tenants. */
 export const QAAP_DEV_PREVIEW_CLAIM_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/claim`;
 
+/** Releases one authenticated process-scoped preview after its dev process stops. */
+export const QAAP_DEV_PREVIEW_RELEASE_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/release`;
+
 export const QAAP_IDENTITY_PREVIEW_PROBE_PATH = `${QAAP_IDENTITY_PREVIEW_PREFIX}/api/probe`;
 
 export interface QaapDevPreviewProbeResponse {
@@ -21,6 +24,9 @@ export interface QaapDevPreviewProbeResponse {
     /** URL the mini-browser should load via the same-origin `/qaap-dev/:port/` proxy. */
     readonly previewUrl: string;
     readonly previewId?: string;
+    readonly workspaceId?: string;
+    readonly projectId?: string;
+    readonly processId?: string;
 }
 
 const MIN_DEV_PORT = 1024;

@@ -16,6 +16,8 @@ export interface QaapPreviewRestartRequest {
     readonly projectId?: string;
     readonly conversationId?: string;
     readonly runId?: string;
+    readonly workspaceId?: string;
+    readonly processId?: string;
 }
 
 export interface QaapPreviewRestartResponse {
@@ -27,8 +29,11 @@ export interface QaapPreviewRestartResponse {
 export interface QaapPreviewProcessIdentity {
     readonly previewId: string;
     readonly projectId: string;
-    readonly conversationId: string;
-    readonly runId: string;
+    readonly conversationId?: string;
+    readonly runId?: string;
+    readonly userId?: string;
+    readonly workspaceId?: string;
+    readonly processId?: string;
     readonly ownerLogin?: string;
 }
 

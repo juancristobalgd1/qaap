@@ -34,6 +34,22 @@ describe('qaap-preview-identity', () => {
             .not.to.equal(buildQaapPreviewId({ ...identity, runId: 'run-b' }));
     });
 
+    it('isolates process previews by user + workspace + project + process, not conversation', () => {
+        const processIdentity = {
+            userId: 'alice',
+            workspaceId: 'file:///workspace/repos/users/alice/acme/site',
+            projectId: 'github:acme/site',
+            processId: 'process-123',
+        };
+        const previewId = buildQaapPreviewId(processIdentity);
+        expect(isQaapPreviewId(previewId)).to.equal(true);
+        expect(previewId.length).to.be.at.most(63);
+        expect(buildQaapPreviewId({ ...processIdentity, userId: 'bob' })).not.to.equal(previewId);
+        expect(buildQaapPreviewId({ ...processIdentity, workspaceId: 'file:///other' })).not.to.equal(previewId);
+        expect(buildQaapPreviewId({ ...processIdentity, projectId: 'github:acme/other' })).not.to.equal(previewId);
+        expect(buildQaapPreviewId({ ...processIdentity, processId: 'process-456' })).not.to.equal(previewId);
+    });
+
     it('builds and parses the identity-scoped proxy without exposing a port', () => {
         const previewId = buildQaapPreviewId(identity);
         expect(buildQaapIdentityPreviewUrl('https://qaap.example/', previewId, '/dashboard'))

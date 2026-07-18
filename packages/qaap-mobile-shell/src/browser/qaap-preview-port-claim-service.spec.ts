@@ -34,4 +34,29 @@ describe('qaap-preview-port-claim-service', () => {
         expect(await requestQaapPreviewPortClaim(5173, root, origin, async () => Promise.reject(new Error('offline'))))
             .to.deep.equal({ kind: 'error' });
     });
+
+    it('returns the backend-assigned collision-free port for a process identity', async () => {
+        const identity = {
+            workspaceId: root,
+            projectId: 'project-a',
+            processId: 'process-a',
+            root,
+        };
+        let requestedBody: unknown;
+        const result = await requestQaapPreviewPortClaim(5173, root, origin, async (_input, init) => {
+            requestedBody = JSON.parse(String(init?.body));
+            return {
+                status: 200,
+                json: async () => ({
+                    previewId: 'u-alice-w-project-p-project-x-process-abc1234',
+                    previewUrl: 'http://localhost:3000/qaap-preview/u-alice-w-project-p-project-x-process-abc1234/',
+                    port: 5174,
+                }),
+            };
+        }, identity);
+
+        expect(requestedBody).to.deep.equal({ port: 5173, ...identity });
+        expect(result.kind).to.equal('claimed');
+        expect(result.kind === 'claimed' && result.port).to.equal(5174);
+    });
 });

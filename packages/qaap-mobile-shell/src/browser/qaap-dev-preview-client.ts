@@ -78,6 +78,10 @@ export async function probeQaapDevPreviewPort(port: number): Promise<QaapDevPrev
         return {
             ready: !!body.ready,
             previewUrl: body.previewUrl || fallback.previewUrl,
+            previewId: typeof body.previewId === 'string' ? body.previewId : undefined,
+            workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,
+            projectId: typeof body.projectId === 'string' ? body.projectId : undefined,
+            processId: typeof body.processId === 'string' ? body.processId : undefined,
         };
     } catch {
         return fallback;
@@ -108,6 +112,9 @@ export async function probeQaapIdentityPreview(previewId: string): Promise<QaapD
             ready: !!body.ready,
             previewUrl: body.previewUrl || fallback.previewUrl,
             previewId: typeof body.previewId === 'string' ? body.previewId : previewId,
+            workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,
+            projectId: typeof body.projectId === 'string' ? body.projectId : undefined,
+            processId: typeof body.processId === 'string' ? body.processId : undefined,
         };
     } catch {
         return fallback;

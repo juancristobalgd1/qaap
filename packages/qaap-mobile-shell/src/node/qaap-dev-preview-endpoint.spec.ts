@@ -9,11 +9,11 @@ import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
-import { resolveQaapPreviewIdentity, type QaapPreviewIdentity } from '../common/qaap-preview-identity';
+import { resolveQaapPreviewIdentity } from '../common/qaap-preview-identity';
 
 class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
-    exposeRewriteDevPreviewBody(body: string, targetPort: number): string {
-        return this.rewriteDevPreviewBody(body, targetPort);
+    exposeRewriteDevPreviewBody(body: string, targetPort: number, publicPrefix?: string): string {
+        return this.rewriteDevPreviewBody(body, targetPort, publicPrefix);
     }
 
     exposeRewriteDevPreviewLocation(location: string, targetPort: number): string {
@@ -84,6 +84,17 @@ describe('QaapDevPreviewEndpoint', () => {
     it('rewrites root-relative redirects through the qaap-dev proxy prefix', () => {
         expect(endpoint.exposeRewriteDevPreviewLocation('/login', 5184)).to.equal('/qaap-dev/5184/login');
         expect(endpoint.exposeRewriteDevPreviewLocation('/qaap-dev/5184/login', 5184)).to.equal('/qaap-dev/5184/login');
+    });
+
+    it('keeps Vite/HMR module paths inside an identity-scoped preview', () => {
+        expect(endpoint.exposeRewriteDevPreviewBody(
+            'import "/@vite/client"; const socketPath = "/hmr";',
+            5184,
+            '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234',
+        )).to.equal(
+            'import "/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/@vite/client"; '
+            + 'const socketPath = "/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/hmr";',
+        );
     });
 
     describe('isolated preview origin', () => {
@@ -212,7 +223,7 @@ describe('QaapDevPreviewEndpoint', () => {
             });
             expect(collision).to.equal(undefined);
             expect(registry.attachProcess(first!.previewId, 'alice', 4242)).to.equal(true);
-            expect(registry.get(first!.previewId)?.processId).to.equal(4242);
+            expect(registry.get(first!.previewId)?.osProcessId).to.equal(4242);
         });
 
         it('does not implicitly replace an expired preview with different execution coordinates', async () => {
@@ -320,15 +331,24 @@ describe('QaapDevPreviewEndpoint', () => {
     describe('claim endpoint takeover rules', () => {
         class ClaimTestEndpoint extends TestQaapDevPreviewEndpoint {
             listening = false;
+            readonly listeningPorts = new Set<number>();
             readonly probedPorts: number[] = [];
 
             async exposeHandleClaim(req: unknown, res: unknown): Promise<void> {
                 return this.handleClaim(req as never, res as never);
             }
 
+            exposeHandleRelease(req: unknown, res: unknown): void {
+                this.handleRelease(req as never, res as never);
+            }
+
+            async exposeReapStoppedPreviews(): Promise<void> {
+                await this.reapStoppedPreviews();
+            }
+
             protected override probeLocalDevServer(port: number): Promise<boolean> {
                 this.probedPorts.push(port);
-                return Promise.resolve(this.listening);
+                return Promise.resolve(this.listeningPorts.size > 0 ? this.listeningPorts.has(port) : this.listening);
             }
 
             setClaimFakes(login: string, registry: unknown): void {
@@ -342,7 +362,7 @@ describe('QaapDevPreviewEndpoint', () => {
             }
         }
 
-        const claimReq = (port: number, identity?: QaapPreviewIdentity): unknown => ({
+        const claimReq = (port: number, identity?: object): unknown => ({
             body: { port, root: 'file:///workspace/repos/users/bob/site', ...identity },
             headers: {},
             protocol: 'http',
@@ -469,6 +489,159 @@ describe('QaapDevPreviewEndpoint', () => {
 
             expect(res.record.code).to.equal(204);
             expect(registry.ownerOf(4173)).to.equal('alice');
+        });
+
+        it('allocates distinct ports atomically for two projects of the same user', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const firstRes = makeRes();
+            const secondRes = makeRes();
+
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/project-a',
+                projectId: 'project-a',
+                processId: 'process-a',
+            }), firstRes);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/project-b',
+                projectId: 'project-b',
+                processId: 'process-b',
+            }), secondRes);
+
+            expect(firstRes.record.code).to.equal(200);
+            expect((firstRes.record.body as { port: number }).port).to.equal(5173);
+            expect(secondRes.record.code).to.equal(200);
+            expect((secondRes.record.body as { port: number }).port).to.equal(5174);
+        });
+
+        it('keeps two users in distinct preview identities and ports', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            const aliceRes = makeRes();
+            ep.setClaimFakes('alice', registry);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/site',
+                projectId: 'site',
+                processId: 'process-a',
+            }), aliceRes);
+            const bobRes = makeRes();
+            ep.setClaimFakes('bob', registry);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/bob/site',
+                projectId: 'site',
+                processId: 'process-b',
+            }), bobRes);
+
+            const alice = aliceRes.record.body as { previewId: string; port: number };
+            const bob = bobRes.record.body as { previewId: string; port: number };
+            expect(bob.port).to.equal(5174);
+            expect(bob.previewId).not.to.equal(alice.previewId);
+            expect(registry.getForOwner(alice.previewId, 'bob')).to.equal(undefined);
+            expect(registry.getForOwner(bob.previewId, 'alice')).to.equal(undefined);
+        });
+
+        it('returns one stable preview to two sections claiming the same process', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const identity = {
+                workspaceId: 'file:///workspace/alice/project-a',
+                projectId: 'project-a',
+                processId: 'process-a',
+            };
+            const firstRes = makeRes();
+            const secondRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, { ...identity, conversationId: 'conversation-a' }), firstRes);
+            await ep.exposeHandleClaim(claimReq(5999, { ...identity, conversationId: 'conversation-b' }), secondRes);
+
+            expect(secondRes.record.body).to.deep.equal(firstRes.record.body);
+            expect(registry.records()).to.have.length(1);
+        });
+
+        it('skips a previously occupied unregistered port instead of adopting another app', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            ep.listeningPorts.add(8080);
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(8080, {
+                workspaceId: 'file:///workspace/alice/vamello',
+                projectId: 'vamello',
+                processId: 'process-vamello',
+            }), res);
+
+            expect(res.record.code).to.equal(200);
+            expect((res.record.body as { port: number }).port).to.equal(8081);
+            expect(ep.probedPorts).to.include(8080);
+        });
+
+        it('refuses to adopt an unregistered listener through the legacy claim path', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            ep.listeningPorts.add(8080);
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(8080), res);
+            expect(res.record.code).to.equal(409);
+            expect(registry.ownerOf(8080)).to.equal(undefined);
+        });
+
+        it('allows only the owner to release a process preview', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const created = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/site',
+                projectId: 'site',
+                processId: 'process-a',
+            }), created);
+            const previewId = (created.record.body as { previewId: string }).previewId;
+
+            ep.setClaimFakes('bob', registry);
+            const denied = makeRes();
+            ep.exposeHandleRelease({ body: { previewId } }, denied);
+            expect(denied.record.code).to.equal(404);
+            expect(registry.getForOwner(previewId, 'alice')).not.to.equal(undefined);
+
+            ep.setClaimFakes('alice', registry);
+            const released = makeRes();
+            ep.exposeHandleRelease({ body: { previewId } }, released);
+            expect(released.record.code).to.equal(204);
+            expect(registry.get(previewId)).to.equal(undefined);
+        });
+
+        it('reaps a stopped durable process but retains a responding one', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const stoppedRes = makeRes();
+            const liveRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/stopped', projectId: 'stopped', processId: 'process-stopped',
+            }), stoppedRes);
+            await ep.exposeHandleClaim(claimReq(5174, {
+                workspaceId: 'file:///workspace/alice/live', projectId: 'live', processId: 'process-live',
+            }), liveRes);
+            const stoppedId = (stoppedRes.record.body as { previewId: string }).previewId;
+            const liveId = (liveRes.record.body as { previewId: string }).previewId;
+            const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+            previews.set(stoppedId, { ...previews.get(stoppedId)!, touchedAt: Date.now() - 6 * 60_000 });
+            previews.set(liveId, { ...previews.get(liveId)!, touchedAt: Date.now() - 6 * 60_000 });
+            ep.listeningPorts.add(5174);
+
+            await ep.exposeReapStoppedPreviews();
+
+            expect(registry.get(stoppedId)).to.equal(undefined);
+            expect(registry.get(liveId)).not.to.equal(undefined);
         });
     });
 
