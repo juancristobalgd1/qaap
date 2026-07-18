@@ -13,16 +13,24 @@ export type QaapPreviewFeedbackSubmitTarget =
 /**
  * Same session targeting as Work Hub sticky-composer submit:
  * prefer a live (non-idle) open/composer summary; otherwise create a new task.
+ *
+ * Legacy `theia-chat` sessions are excluded: preview feedback submits through the backend
+ * conversation API, and posting there with a Theia chat-session id fails. Falling back to a
+ * fresh task keeps Send deterministic instead of intermittently erroring.
  */
 export function resolvePreviewFeedbackSubmitTarget(
     openSummary: QaapAgentConversationSummaryDTO | undefined,
     composerSummary: QaapAgentConversationSummaryDTO | undefined,
 ): QaapPreviewFeedbackSubmitTarget {
-    if (openSummary && !isAgentsHubIdleConversationSummary(openSummary)) {
+    if (openSummary && isBackendConversationSummary(openSummary)) {
         return { kind: 'active', summary: openSummary };
     }
-    if (composerSummary && !isAgentsHubIdleConversationSummary(composerSummary)) {
+    if (composerSummary && isBackendConversationSummary(composerSummary)) {
         return { kind: 'active', summary: composerSummary };
     }
     return { kind: 'idle' };
+}
+
+function isBackendConversationSummary(summary: QaapAgentConversationSummaryDTO): boolean {
+    return !isAgentsHubIdleConversationSummary(summary) && summary.source !== 'theia-chat';
 }

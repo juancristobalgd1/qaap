@@ -93,6 +93,9 @@ export interface QaapPreviewAnnotationControllerOptions {
     readonly getScope: () => PreviewAnnotationScope | undefined;
     readonly startSelectPicker: () => void;
     readonly injectBridge: () => void;
+    /** Authenticated bridge transport supplied by QaapPreviewFramePicker in production. */
+    readonly postBridgeMessage?: (message: Record<string, unknown>) => boolean;
+    readonly isBridgeMessage?: (event: Pick<MessageEvent, 'data' | 'source' | 'origin'>) => boolean;
     readonly toDispose: DisposableCollection;
     /**
      * Optional override for the annotate-toolbar camera control.
@@ -118,6 +121,7 @@ export class QaapPreviewAnnotationController implements Disposable {
     protected positions = new Map<string, AnnotationMarkerPosition>();
     protected popover: AnnotationCommentPopoverHandle | undefined;
     protected provisionalId: string | undefined;
+    protected sendInFlight = false;
     protected reanchorRaf = 0;
     protected toolbarHost: HTMLElement | undefined;
     protected annotateToolbar: HTMLElement | undefined;
@@ -247,11 +251,19 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     async addAnnotationsToChat(): Promise<void> {
+        if (this.sendInFlight) {
+            return;
+        }
         const scope = this.options.getScope();
         if (!scope) {
             return;
         }
-        const confirmed = this.store.listScope(scope).filter(item => item.status === 'confirmed');
+        // A typed-but-unconfirmed popover draft is the user's most recent intent — commit it
+        // instead of silently dropping it when Send is tapped with the popover still open.
+        this.popover?.commit();
+        // Send every confirmed annotation of this conversation, not just the current route's:
+        // SPA navigation between Confirm and Send must never turn Send into a silent no-op.
+        const confirmed = this.listConfirmedForConversation(scope);
         if (confirmed.length === 0) {
             this.notifyUser(nls.localize(
                 'qaap/preview/annotateNothingToAttach',
@@ -267,9 +279,11 @@ export class QaapPreviewAnnotationController implements Disposable {
             return;
         }
         const images = this.pendingChatScreenshot ? [this.pendingChatScreenshot] : undefined;
+        const routes = new Set(confirmed.map(item => item.route));
+        const titleRoute = routes.size === 1 ? confirmed[0]!.route : scope.route;
         const attachArgs = buildAnnotateChatAttachArgs(
             confirmed,
-            scope.route,
+            titleRoute,
             scope.viewportMode,
             images,
         );
@@ -277,6 +291,7 @@ export class QaapPreviewAnnotationController implements Disposable {
             return;
         }
         const annotationIds = confirmed.map(item => item.id);
+        this.sendInFlight = true;
         try {
             const sent = await this.options.commands.executeCommand(
                 QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
@@ -289,7 +304,7 @@ export class QaapPreviewAnnotationController implements Disposable {
                 ), 'warn');
                 return;
             }
-            this.clearAnnotationsAfterSuccessfulSend(scope);
+            this.clearAnnotationsAfterSuccessfulSend(scope, annotationIds);
             this.notifyUser(this.formatAnnotationsSentToast(annotationIds.length));
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
@@ -298,18 +313,31 @@ export class QaapPreviewAnnotationController implements Disposable {
                 'Could not attach annotations: {0}',
                 detail,
             ), 'warn');
+        } finally {
+            this.sendInFlight = false;
         }
     }
 
+    /** Confirmed annotations for the whole conversation (any route of this preview thread). */
+    protected listConfirmedForConversation(scope: PreviewAnnotationScope): PreviewAnnotation[] {
+        return this.store.listForConversation(scope.workspaceId, scope.threadId, scope.previewId ?? scope.previewUrl)
+            .filter(item => item.status === 'confirmed');
+    }
+
     /**
-     * After a successful Work Hub attach/submit: purge the current scope, hide markers,
-     * close the comment popover, reset the toolbar badge, and return to browse.
+     * After a successful Work Hub attach/submit: remove exactly the sent annotations plus any
+     * leftover drafts in the current scope, hide markers, close the comment popover, reset the
+     * toolbar badge, and return to browse.
      */
-    protected clearAnnotationsAfterSuccessfulSend(scope: PreviewAnnotationScope): void {
+    protected clearAnnotationsAfterSuccessfulSend(scope: PreviewAnnotationScope, sentIds: readonly string[]): void {
         this.pendingChatScreenshot = undefined;
         this.provisionalId = undefined;
         this.closePopover();
         this.setComparingOriginal(false);
+        for (const id of sentIds) {
+            this.store.remove(id);
+            this.positions.delete(id);
+        }
         this.store.clearScope(scope);
         this.positions.clear();
         this.refreshMarkers();
@@ -400,11 +428,15 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     /** Visible for unit tests — validates iframe source before handling protocol payloads. */
-    onWindowMessage(event: Pick<MessageEvent, 'data' | 'source'>): void {
+    onWindowMessage(event: Pick<MessageEvent, 'data' | 'source'> & Partial<Pick<MessageEvent, 'origin'>>): void {
         if (!event.data || typeof event.data !== 'object') {
             return;
         }
-        if (!this.options.frame.contentWindow || event.source !== this.options.frame.contentWindow) {
+        if (this.options.isBridgeMessage) {
+            if (!this.options.isBridgeMessage(event as Pick<MessageEvent, 'data' | 'source' | 'origin'>)) {
+                return;
+            }
+        } else if (!this.options.frame.contentWindow || event.source !== this.options.frame.contentWindow) {
             return;
         }
         const data = event.data as { type?: string; payload?: unknown };
@@ -563,11 +595,14 @@ export class QaapPreviewAnnotationController implements Disposable {
                 this.syncAnnotateToolbar();
             },
         });
+        // The open popover flips Send to enabled (commit-on-send) — resync after mount.
+        this.syncAnnotateToolbar();
     }
 
     protected closePopover(): void {
         this.popover?.dispose();
         this.popover = undefined;
+        this.syncAnnotateToolbar();
     }
 
     protected scheduleReanchor(): void {
@@ -612,7 +647,11 @@ export class QaapPreviewAnnotationController implements Disposable {
             this.refreshMarkers();
             return;
         }
-        win.postMessage({ type: ELEMENT_ANNOTATION_REANCHOR_TYPE, payload: { items } }, '*');
+        if (this.options.postBridgeMessage) {
+            this.options.postBridgeMessage({ type: ELEMENT_ANNOTATION_REANCHOR_TYPE, payload: { items } });
+        } else {
+            win.postMessage({ type: ELEMENT_ANNOTATION_REANCHOR_TYPE, payload: { items } }, '*');
+        }
     }
 
     protected handleReanchorResult(payload: { items?: AnnotationReanchorResultItem[] }): void {
@@ -652,7 +691,11 @@ export class QaapPreviewAnnotationController implements Disposable {
         if (!win) {
             return;
         }
-        win.postMessage({ type: ELEMENT_SET_MODE_TYPE, mode }, '*');
+        if (this.options.postBridgeMessage) {
+            this.options.postBridgeMessage({ type: ELEMENT_SET_MODE_TYPE, mode });
+        } else {
+            win.postMessage({ type: ELEMENT_SET_MODE_TYPE, mode }, '*');
+        }
     }
 
     protected setComparingOriginal(active: boolean): void {
@@ -904,14 +947,17 @@ export class QaapPreviewAnnotationController implements Disposable {
         const scope = this.options.getScope();
         const readyCount = scope ? this.countReadyAnnotations(scope) : 0;
         const scopedCount = scope ? this.store.listScope(scope).length : 0;
+        // An open comment popover counts as sendable: Send commits its draft first, so the
+        // button must not stay disabled while the user is still typing the only annotation.
+        const sendReady = readyCount > 0 || !!this.popover;
 
         if (this.annotateSendBadge) {
             this.annotateSendBadge.textContent = String(readyCount);
             this.annotateSendBadge.hidden = readyCount <= 0;
         }
         if (this.annotateSendButton) {
-            this.annotateSendButton.disabled = readyCount <= 0;
-            this.annotateSendButton.classList.toggle('qaap-mod-disabled', readyCount <= 0);
+            this.annotateSendButton.disabled = !sendReady;
+            this.annotateSendButton.classList.toggle('qaap-mod-disabled', !sendReady);
         }
         if (this.annotateUndoButton) {
             this.annotateUndoButton.disabled = scopedCount <= 0;
@@ -919,10 +965,10 @@ export class QaapPreviewAnnotationController implements Disposable {
         }
     }
 
-    protected countReadyAnnotations(
-        scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>,
-    ): number {
-        return this.store.listScope(scope).filter(item => item.status === 'confirmed').length;
+    protected countReadyAnnotations(scope: PreviewAnnotationScope): number {
+        // Mirror addAnnotationsToChat: Send covers every confirmed annotation of the
+        // conversation, so the badge/enabled state must count the same set.
+        return this.listConfirmedForConversation(scope).length;
     }
 }
 

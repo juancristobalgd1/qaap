@@ -45,6 +45,8 @@ export interface AnnotationCommentPopoverHandle {
     readonly root: HTMLElement;
     dispose(): void;
     focus(): void;
+    /** Confirms the current non-blank draft (same as tapping ✓); returns false when blank. */
+    commit(): boolean;
 }
 
 const NARROW_QUERY = '(max-width: 767px), (pointer: coarse)';
@@ -546,13 +548,17 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         if (root.contains(target)) {
             return;
         }
-        // Agent/model sheets mount on body — ignore those clicks.
+        // Agent/model sheets mount on body — ignore those clicks. The annotate toolbar is also
+        // exempt: its Send button commits the open draft itself, and prompting "Discard this
+        // comment?" from its mousedown would block Send behind a modal (renderer freeze on
+        // embedded panes) and silently drop the user's draft.
         if (target instanceof Element && target.closest(
             [
                 '.qaap-sticky-composer-sheet-popover',
                 '.theia-mobile-sticky-composer-sheet',
                 '.theia-mobile-projects-sticky-composer-sheet',
                 '.qaap-sticky-composer-popover',
+                '.qaap-preview-annotate-toolbar',
             ].join(', '),
         )) {
             return;
@@ -660,6 +666,14 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         root,
         dispose,
         focus: () => textarea.focus(),
+        commit: () => {
+            const comment = sanitizeAnnotationComment(textarea.value);
+            if (!comment) {
+                return false;
+            }
+            confirm();
+            return true;
+        },
     };
 }
 

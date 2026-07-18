@@ -452,6 +452,7 @@ export class MobileProjectsAgentsHubInlineUi {
         outbound: string,
         agentId?: string,
         imagePreviews?: readonly QaapTranscriptUserImagePreview[],
+        contentOverride?: string,
     ): QaapAgentConversationDTO {
         const trimmed = outbound.trim();
         const cachedMessages = this.host.transcriptLastConv?.id === summary.id
@@ -460,7 +461,9 @@ export class MobileProjectsAgentsHubInlineUi {
         const pendingUserMessage = {
             id: `pending-user-${Date.now()}`,
             role: 'user' as const,
-            content: trimmed,
+            // contentOverride carries the resolved outbound (attachment preamble included) so
+            // context cards render on the optimistic row exactly like on the persisted row.
+            content: contentOverride?.trim() || trimmed,
             createdAt: Date.now(),
             ...(imagePreviews?.length ? { optimisticImagePreviews: imagePreviews } : {}),
         };
@@ -520,12 +523,13 @@ export class MobileProjectsAgentsHubInlineUi {
         draft: string,
         agentId: string,
         imagePreviews?: readonly QaapTranscriptUserImagePreview[],
+        contentOverride?: string,
     ): void {
         const outbound = draft.trim();
         if (!outbound && !imagePreviews?.length) {
             return;
         }
-        const conv = this.buildOptimisticSubmitConversation(summary, outbound, agentId, imagePreviews);
+        const conv = this.buildOptimisticSubmitConversation(summary, outbound, agentId, imagePreviews, contentOverride);
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
         this.seedTranscriptOptimisticConversation(conv);
     }

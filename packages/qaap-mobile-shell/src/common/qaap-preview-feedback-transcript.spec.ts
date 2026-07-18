@@ -75,4 +75,40 @@ describe('qaap-preview-feedback-transcript', () => {
         expect(splitPreviewFeedbackSource('src/app/foo.tsx:42')).to.deep.equal({ path: 'src/app/foo.tsx', line: 42 });
         expect(splitPreviewFeedbackSource('src/app/foo.tsx')).to.deep.equal({ path: 'src/app/foo.tsx' });
     });
+
+    it('round-trips the real qaap-adapters formatter output (format drift guard)', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { formatPreviewFeedbackAgentContext } = require('@theia/qaap-adapters/lib/browser/qaap-preview-annotation-context');
+        const body: string = formatPreviewFeedbackAgentContext([
+            {
+                id: 'a1',
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewUrl: 'http://localhost:3001/',
+                route: '/checkout',
+                comment: 'Make it darker',
+                viewport: { mode: 'mobile', width: 375, height: 812 },
+                anchor: { kind: 'element', selector: '.cta', xRatio: 0.5, yRatio: 0.25 },
+                documentXRatio: 0.4,
+                documentYRatio: 0.6,
+                element: { tagName: 'button', text: 'Pay now', sourceFile: 'src/cta.tsx', sourceLine: 7 },
+                status: 'confirmed',
+                createdAt: 1,
+                unresolved: true,
+            },
+        ]);
+        const details = parsePreviewFeedbackContextBody(body);
+        expect(details).to.have.length(1);
+        expect(details[0]).to.deep.include({
+            index: 1,
+            comment: 'Make it darker',
+            route: '/checkout',
+            viewport: 'mobile 375x812',
+            selector: '.cta',
+            elementTag: 'button',
+            elementText: 'Pay now',
+            source: 'src/cta.tsx:7',
+            unresolved: true,
+        });
+    });
 });

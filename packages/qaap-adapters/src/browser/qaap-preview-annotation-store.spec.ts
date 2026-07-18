@@ -38,6 +38,12 @@ describe('qaap-preview-annotation-store', () => {
         expect(isBlankAnnotationComment('ok')).to.equal(false);
     });
 
+    it('neutralizes backtick fences that would break the outbound fenced block', () => {
+        expect(sanitizeAnnotationComment('```\ncode fence\n```')).to.equal('code fence');
+        expect(sanitizeAnnotationComment('before\n````js\nafter')).to.equal('before\njs\nafter');
+        expect(sanitizeAnnotationComment('inline ``` stays')).to.equal('inline ``` stays');
+    });
+
     it('isolates annotations by conversation and route', () => {
         const store = new PreviewAnnotationStore(undefined);
         store.add(createPreviewAnnotation(scope(), {

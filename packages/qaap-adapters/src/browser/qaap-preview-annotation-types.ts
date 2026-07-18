@@ -22,6 +22,8 @@ export interface PreviewAnnotationElementMeta {
 
 export interface PreviewAnnotation {
     readonly id: string;
+    /** Execution identity; keeps two focused preview tabs from sharing marker/send state. */
+    readonly previewId: string;
     readonly threadId: string;
     readonly workspaceId: string;
     readonly previewUrl: string;
@@ -39,6 +41,8 @@ export interface PreviewAnnotation {
 }
 
 export interface PreviewAnnotationScope {
+    /** Optional for legacy callers; new Work Hub previews always provide the execution previewId. */
+    readonly previewId?: string;
     readonly workspaceId: string;
     readonly threadId: string;
     readonly previewUrl: string;
@@ -49,5 +53,8 @@ export interface PreviewAnnotationScope {
 }
 
 export function buildPreviewAnnotationScopeKey(scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>): string {
-    return [scope.workspaceId, scope.threadId, scope.previewUrl, scope.route].join('::');
+    const previewId = 'previewId' in scope && typeof scope.previewId === 'string'
+        ? scope.previewId
+        : scope.previewUrl;
+    return [scope.workspaceId, scope.threadId, previewId, scope.route].join('::');
 }

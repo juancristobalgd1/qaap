@@ -42,4 +42,11 @@ describe('resolvePreviewFeedbackSubmitTarget', () => {
         expect(resolvePreviewFeedbackSubmitTarget(undefined, undefined)).to.deep.equal({ kind: 'idle' });
         expect(resolvePreviewFeedbackSubmitTarget(idle, undefined)).to.deep.equal({ kind: 'idle' });
     });
+
+    it('never targets legacy theia-chat sessions (backend post would fail)', () => {
+        const theiaChat = summary({ id: 'chat-1', source: 'theia-chat' });
+        expect(resolvePreviewFeedbackSubmitTarget(theiaChat, undefined)).to.deep.equal({ kind: 'idle' });
+        const backend = summary({ id: 'conv-2', source: 'qaap-agent' });
+        expect(resolvePreviewFeedbackSubmitTarget(theiaChat, backend)).to.deep.equal({ kind: 'active', summary: backend });
+    });
 });

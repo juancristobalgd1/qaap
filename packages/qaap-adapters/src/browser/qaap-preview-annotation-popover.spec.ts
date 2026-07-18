@@ -81,6 +81,33 @@ describe('qaap-preview-annotation-popover', () => {
         expect(document.querySelector('.qaap-preview-annotation-popover')).to.not.exist;
     });
 
+    it('commit() confirms a non-blank draft and reports false when blank', () => {
+        const confirmed: string[] = [];
+        const blankHandle = mountAnnotationCommentPopover({
+            anchorClientX: 40,
+            anchorClientY: 40,
+            onConfirm: comment => { confirmed.push(comment); },
+            onCancel: () => { /* */ },
+        });
+        expect(blankHandle.commit()).to.equal(false);
+        expect(confirmed).to.have.length(0);
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.exist;
+        blankHandle.dispose();
+
+        const handle = mountAnnotationCommentPopover({
+            anchorClientX: 40,
+            anchorClientY: 40,
+            onConfirm: comment => { confirmed.push(comment); },
+            onCancel: () => { /* */ },
+        });
+        const input = handle.root.querySelector('.qaap-preview-annotation-popover-input') as HTMLTextAreaElement;
+        input.value = '  Make it darker  ';
+        expect(handle.commit()).to.equal(true);
+        expect(confirmed).to.deep.equal(['Make it darker']);
+        // Confirm disposes the popover DOM.
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.not.exist;
+    });
+
     it('shows an element tag chip with target SVG when elementTagName is provided', () => {
         const handle = mountAnnotationCommentPopover({
             anchorClientX: 10,
@@ -246,6 +273,36 @@ describe('qaap-preview-annotation-popover', () => {
         expect(document.querySelector('.qaap-preview-annotation-popover')).to.exist;
 
         popoverSheet.remove();
+        handle.dispose();
+    });
+
+    it('ignores mousedown on the annotate toolbar so Send can commit the open draft', async () => {
+        let cancelled = 0;
+        const handle = mountAnnotationCommentPopover({
+            anchorClientX: 10,
+            anchorClientY: 10,
+            initialComment: 'keep open',
+            onConfirm: () => { /* */ },
+            onCancel: () => { cancelled += 1; },
+        });
+        await new Promise<void>(resolve => {
+            setTimeout(resolve, 0);
+        });
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'qaap-preview-annotate-toolbar';
+        const sendBtn = document.createElement('button');
+        sendBtn.className = 'qaap-preview-annotate-toolbar-send';
+        toolbar.append(sendBtn);
+        document.body.append(toolbar);
+
+        sendBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+        // No cancel and — critically — no blocking `window.confirm` discard prompt.
+        expect(cancelled).to.equal(0);
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.exist;
+
+        toolbar.remove();
         handle.dispose();
     });
 });

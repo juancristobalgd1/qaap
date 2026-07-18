@@ -11,6 +11,7 @@ function annotation(partial: Partial<PreviewAnnotation> & Pick<PreviewAnnotation
     return {
         workspaceId: 'ws',
         threadId: 't1',
+        previewId: 'http://localhost:3001/',
         previewUrl: 'http://localhost:3001/',
         route: '/home',
         viewport: { mode: 'mobile', width: 390, height: 844 },

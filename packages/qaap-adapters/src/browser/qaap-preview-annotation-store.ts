@@ -17,6 +17,9 @@ const MAX_COMMENT_LENGTH = 2000;
 export function sanitizeAnnotationComment(raw: string): string {
     return raw
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+        // A line of backticks would terminate the fenced previewFeedback block in the outbound
+        // prompt and truncate every following annotation — neutralize fence markers.
+        .replace(/^(\s*)`{3,}/gm, '$1')
         .trim()
         .slice(0, MAX_COMMENT_LENGTH);
 }
@@ -27,7 +30,7 @@ export function isBlankAnnotationComment(raw: string | undefined): boolean {
 
 export function createPreviewAnnotation(
     scope: PreviewAnnotationScope,
-    partial: Omit<PreviewAnnotation, 'id' | 'threadId' | 'workspaceId' | 'previewUrl' | 'route' | 'viewport' | 'createdAt' | 'status'> & {
+    partial: Omit<PreviewAnnotation, 'id' | 'previewId' | 'threadId' | 'workspaceId' | 'previewUrl' | 'route' | 'viewport' | 'createdAt' | 'status'> & {
         readonly status?: PreviewAnnotationStatus;
         readonly createdAt?: number;
         readonly id?: string;
@@ -35,6 +38,7 @@ export function createPreviewAnnotation(
 ): PreviewAnnotation {
     return {
         id: partial.id ?? generateUuid(),
+        previewId: scope.previewId ?? scope.previewUrl,
         threadId: scope.threadId,
         workspaceId: scope.workspaceId,
         previewUrl: scope.previewUrl,
@@ -71,8 +75,10 @@ export class PreviewAnnotationStore {
         return this.list().filter(item => buildPreviewAnnotationScopeKey(item) === key);
     }
 
-    listForConversation(workspaceId: string, threadId: string): PreviewAnnotation[] {
-        return this.list().filter(item => item.workspaceId === workspaceId && item.threadId === threadId);
+    listForConversation(workspaceId: string, threadId: string, previewId?: string): PreviewAnnotation[] {
+        return this.list().filter(item => item.workspaceId === workspaceId
+            && item.threadId === threadId
+            && (previewId === undefined || item.previewId === previewId));
     }
 
     listVisibleMarkers(scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>): PreviewAnnotation[] {
@@ -167,7 +173,10 @@ export class PreviewAnnotationStore {
                 if (!isPreviewAnnotationRecord(item)) {
                     continue;
                 }
-                this.byId.set(item.id, item);
+                this.byId.set(item.id, {
+                    ...item,
+                    previewId: typeof item.previewId === 'string' ? item.previewId : item.previewUrl,
+                });
             }
         } catch {
             /* corrupt session payload */
@@ -192,6 +201,7 @@ function isPreviewAnnotationRecord(value: unknown): value is PreviewAnnotation {
     }
     const record = value as Partial<PreviewAnnotation>;
     return typeof record.id === 'string'
+        && (record.previewId === undefined || typeof record.previewId === 'string')
         && typeof record.threadId === 'string'
         && typeof record.workspaceId === 'string'
         && typeof record.previewUrl === 'string'

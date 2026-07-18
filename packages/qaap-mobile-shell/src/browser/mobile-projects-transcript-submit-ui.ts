@@ -231,10 +231,20 @@ export class MobileProjectsTranscriptSubmitUi {
             const pendingAgent = resolveExplicitAgentForSubmit(content, {
                 pinnedChatAgentId: options.selectedAgentId ?? options.widget?.pinnedAgent?.id ?? summary.agentId,
             }) ?? options.selectedAgentId ?? summary.agentId;
+            // Resolve attachments for the optimistic paint so context cards (e.g. preview
+            // feedback) render immediately; the create call below resolves its own outbound.
+            let optimisticContent = content;
+            if (options.variables?.length && this.host.applyComposerAttachmentsToDraft) {
+                try {
+                    optimisticContent = await this.host.applyComposerAttachmentsToDraft(content, options.variables);
+                } catch {
+                    // Bare draft is still correct; the server render reconciles.
+                }
+            }
             const optimisticAt = this.renderInstantSubmitOptimistic(summary, {
                 id: `pending-user-${Date.now()}`,
                 role: 'user',
-                content,
+                content: optimisticContent,
                 createdAt: Date.now(),
             }, options.imagePreviews);
             const postStartAt = Date.now();

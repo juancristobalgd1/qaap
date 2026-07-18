@@ -148,7 +148,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/home',
                 viewportMode: 'mobile',
                 viewportWidth: 390,
@@ -250,7 +251,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/home',
                 viewportMode: 'desktop',
                 viewportWidth: 800,
@@ -333,7 +335,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/home',
                 viewportMode: 'desktop',
                 viewportWidth: 800,
@@ -405,7 +408,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/',
                 viewportMode: 'desktop',
                 viewportWidth: 800,
@@ -464,6 +468,7 @@ describe('qaap-preview-annotation-controller', () => {
         const scope = {
             workspaceId: 'ws',
             threadId: 't1',
+            previewId: 'http://localhost:3001/',
             previewUrl: 'http://localhost:3001/',
             route: '/home',
             viewportMode: 'mobile' as const,
@@ -492,6 +497,7 @@ describe('qaap-preview-annotation-controller', () => {
             id: 'a1',
             workspaceId: 'ws',
             threadId: 't1',
+            previewId: 'http://localhost:3001/',
             previewUrl: 'http://localhost:3001/',
             route: '/home',
             comment: 'Hi',
@@ -506,6 +512,7 @@ describe('qaap-preview-annotation-controller', () => {
             id: 'a2',
             workspaceId: 'ws',
             threadId: 't1',
+            previewId: 'http://localhost:3001/',
             previewUrl: 'http://localhost:3001/',
             route: '/home',
             comment: 'There',
@@ -520,6 +527,7 @@ describe('qaap-preview-annotation-controller', () => {
             id: 'draft-left',
             workspaceId: 'ws',
             threadId: 't1',
+            previewId: 'http://localhost:3001/',
             previewUrl: 'http://localhost:3001/',
             route: '/home',
             comment: '',
@@ -568,6 +576,145 @@ describe('qaap-preview-annotation-controller', () => {
         expect(toasts.some(entry => /Confirm at least one annotation/i.test(entry.message))).to.equal(true);
     });
 
+    it('Send includes confirmed annotations from other routes after SPA navigation', async () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        const store = new PreviewAnnotationStore(undefined);
+        const calls: Array<{ id: string; args: unknown }> = [];
+        const controller = new QaapPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: (id: string) => id === QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND ? { id } : undefined,
+                executeCommand: async (id: string, args: unknown) => {
+                    calls.push({ id, args });
+                    return true;
+                },
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            store,
+            // The user navigated the preview SPA to /checkout after confirming on other routes.
+            getScope: () => ({
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
+                route: '/checkout',
+                viewportMode: 'mobile',
+                viewportWidth: 390,
+                viewportHeight: 844,
+            }),
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            toDispose,
+        });
+        store.add({
+            id: 'home-1',
+            workspaceId: 'ws',
+            threadId: 't1',
+            previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
+            route: '/home',
+            comment: 'Home issue',
+            viewport: { mode: 'mobile', width: 390, height: 844 },
+            anchor: { kind: 'page', documentXRatio: 0.2, documentYRatio: 0.3 },
+            documentXRatio: 0.2,
+            documentYRatio: 0.3,
+            status: 'confirmed',
+            createdAt: Date.now(),
+        });
+        store.add({
+            id: 'pricing-1',
+            workspaceId: 'ws',
+            threadId: 't1',
+            previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
+            route: '/pricing',
+            comment: 'Pricing issue',
+            viewport: { mode: 'mobile', width: 390, height: 844 },
+            anchor: { kind: 'page', documentXRatio: 0.4, documentYRatio: 0.5 },
+            documentXRatio: 0.4,
+            documentYRatio: 0.5,
+            status: 'confirmed',
+            createdAt: Date.now() + 1,
+        });
+
+        await controller.addAnnotationsToChat();
+        expect(calls).to.have.length(1);
+        const args = calls[0]!.args as { chipTitle: string; contextBody: string; dedupeKey: string };
+        expect(args.dedupeKey).to.contain('home-1');
+        expect(args.dedupeKey).to.contain('pricing-1');
+        expect(args.contextBody).to.contain('/home');
+        expect(args.contextBody).to.contain('/pricing');
+        // Mixed routes: the chip title falls back to the live scope route.
+        expect(args.chipTitle).to.contain('/checkout');
+        expect(store.get('home-1')).to.equal(undefined);
+        expect(store.get('pricing-1')).to.equal(undefined);
+    });
+
+    it('Send commits a typed-but-unconfirmed popover draft instead of dropping it', async () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        const store = new PreviewAnnotationStore(undefined);
+        const calls: Array<{ id: string; args: unknown }> = [];
+        const controller = new QaapPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: (id: string) => id === QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND ? { id } : undefined,
+                executeCommand: async (id: string, args: unknown) => {
+                    calls.push({ id, args });
+                    return true;
+                },
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            store,
+            getScope: () => ({
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
+                route: '/home',
+                viewportMode: 'mobile',
+                viewportWidth: 390,
+                viewportHeight: 844,
+            }),
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            toDispose,
+        });
+        controller.setInteractionMode('annotate');
+        controller.onWindowMessage(frameMessage(frame, {
+            type: ELEMENT_ANNOTATION_POINT_TYPE,
+            payload: {
+                version: 1,
+                clientX: 40,
+                clientY: 60,
+                route: '/home',
+                pageUrl: 'http://localhost:3001/home',
+                documentXRatio: 0.2,
+                documentYRatio: 0.3,
+                viewportWidth: 390,
+                viewportHeight: 844,
+                scrollX: 0,
+                scrollY: 0,
+            },
+        }));
+        const textarea = document.querySelector('.qaap-preview-annotation-popover-input') as HTMLTextAreaElement;
+        textarea.value = 'Still typing this one';
+
+        await controller.addAnnotationsToChat();
+        expect(calls).to.have.length(1);
+        const args = calls[0]!.args as { contextBody: string };
+        expect(args.contextBody).to.contain('Still typing this one');
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.not.exist;
+        expect(store.list()).to.have.length(0);
+    });
+
     it('Send includes pending annotate screenshot as image chat context', async () => {
         const frame = createFrame();
         const slot = document.createElement('div');
@@ -590,7 +737,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/home',
                 viewportMode: 'mobile',
                 viewportWidth: 390,
@@ -604,6 +752,7 @@ describe('qaap-preview-annotation-controller', () => {
             id: 'shot-1',
             workspaceId: 'ws',
             threadId: 't1',
+            previewId: 'http://localhost:3001/',
             previewUrl: 'http://localhost:3001/',
             route: '/home',
             comment: 'With screenshot',
@@ -657,7 +806,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/home',
                 viewportMode: 'mobile',
                 viewportWidth: 390,
@@ -671,6 +821,7 @@ describe('qaap-preview-annotation-controller', () => {
             id: 'fail-1',
             workspaceId: 'ws',
             threadId: 't1',
+            previewId: 'http://localhost:3001/',
             previewUrl: 'http://localhost:3001/',
             route: '/home',
             comment: 'Nope',
@@ -718,7 +869,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/home',
                 viewportMode: 'mobile',
                 viewportWidth: 390,
@@ -773,6 +925,7 @@ describe('qaap-preview-annotation-controller', () => {
             id: 'ready-1',
             workspaceId: 'ws',
             threadId: 't1',
+            previewId: 'http://localhost:3001/',
             previewUrl: 'http://localhost:3001/',
             route: '/home',
             comment: 'Ship it',
@@ -810,6 +963,7 @@ describe('qaap-preview-annotation-controller', () => {
             id: 'ready-2',
             workspaceId: 'ws',
             threadId: 't1',
+            previewId: 'http://localhost:3001/',
             previewUrl: 'http://localhost:3001/',
             route: '/home',
             comment: 'Again',
@@ -863,7 +1017,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/home',
                 viewportMode: 'mobile',
                 viewportWidth: 390,
@@ -920,7 +1075,8 @@ describe('qaap-preview-annotation-controller', () => {
             getScope: () => ({
                 workspaceId: 'ws',
                 threadId: 't1',
-                previewUrl: 'http://localhost:3001/',
+                previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
                 route: '/home',
                 viewportMode: 'mobile',
                 viewportWidth: 390,

@@ -2307,7 +2307,17 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 );
                 const chatHost = this.resolveActiveTranscriptChatHost();
                 if (chatHost) {
-                    this.renderIdleSubmitOptimistic(chatHost, idleSummary, prompt, selectedAgentId);
+                    // Paint the rich preview-feedback card immediately: resolve the attachment
+                    // preamble for the optimistic row instead of waiting for the server render.
+                    let optimisticContent = prompt;
+                    if (this.applyComposerAttachmentsToDraft) {
+                        try {
+                            optimisticContent = await this.applyComposerAttachmentsToDraft(prompt, [request, ...imageRequests]);
+                        } catch {
+                            // Fall back to the bare prompt; the server render reconciles.
+                        }
+                    }
+                    this.renderIdleSubmitOptimistic(chatHost, idleSummary, prompt, selectedAgentId, undefined, optimisticContent);
                 }
                 this.transcriptStickyComposerUi.refreshComposerActivityStack();
                 await this.submitBackgroundAgentTask(project, prompt, {
@@ -2991,8 +3001,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         draft: string,
         selectedAgentId: string,
         imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
+        contentOverride?: string,
     ): void {
-        this.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, selectedAgentId, imagePreviews);
+        this.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, selectedAgentId, imagePreviews, contentOverride);
     }
 
     protected shouldUseAgentsHubLanding(): boolean {
@@ -3041,8 +3052,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         draft: string,
         agentId: string,
         imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
+        contentOverride?: string,
     ): void {
-        this.agentsHubInlineUi.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, agentId, imagePreviews);
+        this.agentsHubInlineUi.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, agentId, imagePreviews, contentOverride);
     }
 
     protected teardownAgentsHubExecutionShell(): void {
