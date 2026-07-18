@@ -2305,6 +2305,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                     selectedAgentId,
                     idleSummary.cwd || this.projectsService.getProjectCwd(project),
                 );
+                // Send usually fires from the Preview tab, where the messages shell may be
+                // unmounted — ensure it exists so the optimistic paint has a live host.
+                this.ensureAgentsHubExecutionShellRendered();
                 const chatHost = this.resolveActiveTranscriptChatHost();
                 if (chatHost) {
                     // Paint the rich preview-feedback card immediately: resolve the attachment
@@ -2329,6 +2332,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 });
                 // create→openInline may preserve Preview; force Messages again after open.
                 this.activateMessagesSurfaceForExternalSubmit(project);
+                this.ensureExternalSubmitConversationRendered();
             }
         } catch {
             // Keep the chip so the user can retry from the composer; already-uploaded screenshots
@@ -2374,6 +2378,30 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         if (this.agentsHubShellActive) {
             this.stickyComposerRenderUi.renderStickyComposer();
         }
+    }
+
+    /**
+     * After an external submit created/opened a conversation, the revealed messages host can
+     * still hold the idle "Ready when you are." landing DOM if the surface switch raced the
+     * open (Send fires from the Preview tab). Repaint the opened conversation explicitly.
+     */
+    protected ensureExternalSubmitConversationRendered(): void {
+        this.ensureAgentsHubExecutionShellRendered();
+        const state = this.transcriptController.state;
+        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
+        if (!summary || isAgentsHubIdleConversationSummary(summary)) {
+            return;
+        }
+        const conv = state.transcriptLastConv?.id === summary.id
+            ? state.transcriptLastConv
+            : this.transcriptConversationCache.get(summary.id);
+        const chatHost = this.resolveActiveTranscriptChatHost();
+        if (!conv || !chatHost) {
+            return;
+        }
+        state.transcriptLastFingerprint = undefined;
+        this.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
+        this.transcriptLiveUi.ensureTranscriptConversationRefresh();
     }
 
     protected removeExternalPreviewFeedbackChip(dedupeKey: string): void {

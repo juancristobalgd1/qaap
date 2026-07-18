@@ -48,12 +48,34 @@ export class QaapWorkHubComposerPromptService {
         });
     }
 
+
+    /**
+     * Panels ranked by REAL on-screen presence. Multiple panels can report
+     * {@link MobileProjectsPanel.isVisible} true at once (home + workspace instances share the
+     * flag lifecycle), and dispatching an external submit to an off-screen panel opens the
+     * conversation in a detached DOM while the visible hub keeps its idle landing. The panel
+     * whose root is connected and laid out must always win.
+     */
+    protected panelsByDisplayPriority(): MobileProjectsPanel[] {
+        // getClientRects over offsetParent: the hub root is position:fixed, whose offsetParent
+        // is null even while displayed. A detached root has no client rects either way.
+        const displayed = (panel: MobileProjectsPanel): boolean => {
+            const node = panel.node;
+            return !!node?.isConnected && !node.hidden && node.getClientRects().length > 0;
+        };
+        const connected = (panel: MobileProjectsPanel): boolean => !!panel.node?.isConnected;
+        return [...this.panels].sort((left, right) =>
+            Number(displayed(right)) - Number(displayed(left))
+            || Number(connected(right)) - Number(connected(left))
+            || Number(right.isVisible()) - Number(left.isVisible()));
+    }
+
     async submitPrompt(prompt: string, options: QaapWorkHubSubmitComposerPromptOptions = {}): Promise<void> {
         const text = typeof prompt === 'string' ? prompt.trim() : '';
         if (!text) {
             return;
         }
-        const ordered = [...this.panels].sort((left, right) => Number(right.isVisible()) - Number(left.isVisible()));
+        const ordered = this.panelsByDisplayPriority();
         for (const panel of ordered) {
             if (await panel.submitExternalComposerPrompt(text, options)) {
                 return;
@@ -74,7 +96,7 @@ export class QaapWorkHubComposerPromptService {
         if (!text) {
             return;
         }
-        const ordered = [...this.panels].sort((left, right) => Number(right.isVisible()) - Number(left.isVisible()));
+        const ordered = this.panelsByDisplayPriority();
         for (const panel of ordered) {
             if (panel.pickAgentAndSubmitExternalPrompt(text, options)) {
                 return;
@@ -89,7 +111,7 @@ export class QaapWorkHubComposerPromptService {
         if (!text) {
             return;
         }
-        const ordered = [...this.panels].sort((left, right) => Number(right.isVisible()) - Number(left.isVisible()));
+        const ordered = this.panelsByDisplayPriority();
         for (const panel of ordered) {
             if (panel.openExternalParallelRunsSheet(text)) {
                 return;
@@ -107,7 +129,7 @@ export class QaapWorkHubComposerPromptService {
      * that includes the context to the current chat.
      */
     async attachComposerContext(args: QaapAttachComposerContextArgs): Promise<boolean> {
-        const ordered = [...this.panels].sort((left, right) => Number(right.isVisible()) - Number(left.isVisible()));
+        const ordered = this.panelsByDisplayPriority();
         for (const panel of ordered) {
             if (args.submit) {
                 if (await panel.sendExternalComposerContext(args)) {
