@@ -115,6 +115,11 @@ export interface QaapPreviewAnnotationControllerOptions {
      * Work Hub sticky-composer agent/model controls for the annotation popover footer.
      */
     readonly composerSession?: AnnotationComposerSessionControls;
+    /**
+     * Optional confirm gate for toolbar delete-all. Defaults to a Theia ConfirmDialog
+     * (lazy-loaded so unit tests do not pull Lumino).
+     */
+    readonly confirmDeleteAllAnnotations?: () => boolean | Promise<boolean>;
 }
 
 /**
@@ -139,6 +144,8 @@ export class QaapPreviewAnnotationController implements Disposable {
     protected annotateSendButton: HTMLButtonElement | undefined;
     protected annotateSendBadge: HTMLElement | undefined;
     protected annotateUndoButton: HTMLButtonElement | undefined;
+    protected annotateRedoButton: HTMLButtonElement | undefined;
+    protected annotateDeleteButton: HTMLButtonElement | undefined;
     protected annotateScreenshotButton: HTMLButtonElement | undefined;
     protected annotateCompareButton: HTMLButtonElement | undefined;
     protected comparingOriginal = false;
@@ -267,6 +274,27 @@ export class QaapPreviewAnnotationController implements Disposable {
         this.syncAnnotateToolbar();
     }
 
+    redoLastAnnotation(): void {
+        const scope = this.options.getScope();
+        if (!scope) {
+            return;
+        }
+        const restored = this.store.redoLast(scope);
+        if (!restored) {
+            return;
+        }
+        const frameRect = this.options.frame.getBoundingClientRect();
+        this.positions.set(restored.id, {
+            id: restored.id,
+            clientX: restored.documentXRatio * frameRect.width,
+            clientY: restored.documentYRatio * frameRect.height,
+            unresolved: restored.unresolved,
+        });
+        this.refreshMarkers();
+        this.scheduleReanchor();
+        this.syncAnnotateToolbar();
+    }
+
     async addAnnotationsToChat(): Promise<void> {
         if (this.sendInFlight) {
             return;
@@ -344,10 +372,31 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     /**
-     * Toolbar × — leaving Annotate discards the session: every annotation of this preview
-     * conversation (any route), the open comment popover, and the pending screenshot.
+     * Toolbar × — leave Annotate without wiping confirmed notes. Drops only an unfinished
+     * draft popover (same as Escape), keeps markers / pending screenshots for when Annotate
+     * is opened again.
      */
-    protected exitAnnotateModeAndClear(): void {
+    protected exitAnnotateMode(): void {
+        this.closePopover();
+        if (this.provisionalId) {
+            this.store.remove(this.provisionalId);
+            this.positions.delete(this.provisionalId);
+            this.provisionalId = undefined;
+            this.refreshMarkers();
+        }
+        this.setComparingOriginal(false);
+        if (this.mode === 'annotate') {
+            this.setInteractionMode('browse');
+        } else {
+            this.syncAnnotateToolbar();
+        }
+    }
+
+    /**
+     * Toolbar delete — wipe every annotation of this preview conversation (any route),
+     * the open comment popover, and pending screenshots. Stays in Annotate after clearing.
+     */
+    protected clearAllAnnotations(): void {
         const scope = this.options.getScope();
         this.clearPendingChatImages();
         this.provisionalId = undefined;
@@ -365,7 +414,49 @@ export class QaapPreviewAnnotationController implements Disposable {
         }
         this.positions.clear();
         this.refreshMarkers();
-        this.setInteractionMode('browse');
+        this.syncAnnotateToolbar();
+    }
+
+    /** Confirm, then {@link clearAllAnnotations}. No-op when there is nothing to delete. */
+    protected async confirmAndClearAllAnnotations(): Promise<void> {
+        if (!this.hasClearableAnnotations()) {
+            return;
+        }
+        const confirmed = await this.askDeleteAllConfirmation();
+        if (!confirmed) {
+            return;
+        }
+        this.clearAllAnnotations();
+    }
+
+    protected async askDeleteAllConfirmation(): Promise<boolean> {
+        if (this.options.confirmDeleteAllAnnotations) {
+            return !!(await this.options.confirmDeleteAllAnnotations());
+        }
+        // Lazy-load so controller unit tests that never delete do not import Lumino widgets.
+        const { ConfirmDialog } = await import('@theia/core/lib/browser/dialogs');
+        return !!(await new ConfirmDialog({
+            title: nls.localize('qaap/preview/annotateDeleteAll', 'Delete all annotations'),
+            msg: nls.localize(
+                'qaap/preview/annotateDeleteAllConfirm',
+                'Are you sure you want to delete all annotations?',
+            ),
+        }).open());
+    }
+
+    protected hasClearableAnnotations(): boolean {
+        const scope = this.options.getScope();
+        if (!scope) {
+            return this.pendingChatImages.length > 0 || !!this.provisionalId;
+        }
+        if (this.pendingChatImages.length > 0 || !!this.provisionalId) {
+            return true;
+        }
+        return this.store.listForConversation(
+            scope.workspaceId,
+            scope.threadId,
+            scope.previewId ?? scope.previewUrl,
+        ).length > 0;
     }
 
     /**
@@ -947,11 +1038,23 @@ export class QaapPreviewAnnotationController implements Disposable {
         closeBtn.title = nls.localize('qaap/preview/annotateClose', 'Close annotate');
         closeBtn.setAttribute('aria-label', closeBtn.title);
 
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-trash';
+        deleteBtn.title = nls.localize('qaap/preview/annotateDeleteAll', 'Delete all annotations');
+        deleteBtn.setAttribute('aria-label', deleteBtn.title);
+
         const undoBtn = document.createElement('button');
         undoBtn.type = 'button';
         undoBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-discard';
         undoBtn.title = nls.localize('qaap/preview/annotateUndo', 'Undo');
         undoBtn.setAttribute('aria-label', undoBtn.title);
+
+        const redoBtn = document.createElement('button');
+        redoBtn.type = 'button';
+        redoBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-redo';
+        redoBtn.title = nls.localize('qaap/preview/annotateRedo', 'Redo');
+        redoBtn.setAttribute('aria-label', redoBtn.title);
 
         const hint = document.createElement('span');
         hint.className = 'qaap-preview-annotate-toolbar-hint';
@@ -987,7 +1090,7 @@ export class QaapPreviewAnnotationController implements Disposable {
         sendBtn.title = nls.localize('qaap/preview/annotateSendToChat', 'Send to chat');
         sendBtn.setAttribute('aria-label', sendBtn.title);
 
-        bar.append(closeBtn, undoBtn, hint, screenshotBtn, compareBtn, sendBtn);
+        bar.append(closeBtn, deleteBtn, undoBtn, redoBtn, hint, screenshotBtn, compareBtn, sendBtn);
         // Full-width sibling of URL / workbench / overflow — not nested in workbench-controls.
         chrome.append(bar);
 
@@ -995,18 +1098,33 @@ export class QaapPreviewAnnotationController implements Disposable {
         this.annotateSendButton = sendBtn;
         this.annotateSendBadge = badge;
         this.annotateUndoButton = undoBtn;
+        this.annotateRedoButton = redoBtn;
+        this.annotateDeleteButton = deleteBtn;
         this.annotateScreenshotButton = screenshotBtn;
         this.annotateCompareButton = compareBtn;
 
         const onClose = (e: MouseEvent): void => {
             e.preventDefault();
             e.stopPropagation();
-            this.exitAnnotateModeAndClear();
+            this.exitAnnotateMode();
+        };
+        const onDelete = (e: MouseEvent): void => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (deleteBtn.disabled) {
+                return;
+            }
+            void this.confirmAndClearAllAnnotations();
         };
         const onUndo = (e: MouseEvent): void => {
             e.preventDefault();
             e.stopPropagation();
             this.undoLastAnnotation();
+        };
+        const onRedo = (e: MouseEvent): void => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.redoLastAnnotation();
         };
         const onScreenshot = (e: MouseEvent): void => {
             e.preventDefault();
@@ -1050,7 +1168,9 @@ export class QaapPreviewAnnotationController implements Disposable {
             void this.addAnnotationsToChat();
         };
         closeBtn.addEventListener('click', onClose);
+        deleteBtn.addEventListener('click', onDelete);
         undoBtn.addEventListener('click', onUndo);
+        redoBtn.addEventListener('click', onRedo);
         screenshotBtn.addEventListener('click', onScreenshot);
         const onCompareLostCapture = (): void => {
             this.setComparingOriginal(false);
@@ -1064,7 +1184,9 @@ export class QaapPreviewAnnotationController implements Disposable {
         this.toDispose.push(Disposable.create(() => {
             this.setComparingOriginal(false);
             closeBtn.removeEventListener('click', onClose);
+            deleteBtn.removeEventListener('click', onDelete);
             undoBtn.removeEventListener('click', onUndo);
+            redoBtn.removeEventListener('click', onRedo);
             screenshotBtn.removeEventListener('click', onScreenshot);
             compareBtn.removeEventListener('pointerdown', onCompareDown);
             compareBtn.removeEventListener('pointerup', onCompareRelease);
@@ -1080,6 +1202,8 @@ export class QaapPreviewAnnotationController implements Disposable {
             this.annotateSendButton = undefined;
             this.annotateSendBadge = undefined;
             this.annotateUndoButton = undefined;
+            this.annotateRedoButton = undefined;
+            this.annotateDeleteButton = undefined;
             this.annotateScreenshotButton = undefined;
             this.annotateCompareButton = undefined;
         }));
@@ -1113,6 +1237,16 @@ export class QaapPreviewAnnotationController implements Disposable {
         if (this.annotateUndoButton) {
             this.annotateUndoButton.disabled = scopedCount <= 0;
             this.annotateUndoButton.classList.toggle('qaap-mod-disabled', scopedCount <= 0);
+        }
+        if (this.annotateRedoButton) {
+            const canRedo = scope ? this.store.canRedo(scope) : false;
+            this.annotateRedoButton.disabled = !canRedo;
+            this.annotateRedoButton.classList.toggle('qaap-mod-disabled', !canRedo);
+        }
+        if (this.annotateDeleteButton) {
+            const canDelete = this.hasClearableAnnotations();
+            this.annotateDeleteButton.disabled = !canDelete;
+            this.annotateDeleteButton.classList.toggle('qaap-mod-disabled', !canDelete);
         }
     }
 

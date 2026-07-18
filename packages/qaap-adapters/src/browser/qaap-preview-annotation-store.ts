@@ -63,6 +63,8 @@ export function createPreviewAnnotation(
 
 export class PreviewAnnotationStore {
     protected readonly byId = new Map<string, PreviewAnnotation>();
+    /** Undone annotations awaiting redo, keyed by scope (`workspaceId|threadId|previewUrl|route`). */
+    protected readonly redoByScope = new Map<string, PreviewAnnotation[]>();
 
     constructor(protected readonly storage: Storage | undefined = typeof sessionStorage === 'undefined' ? undefined : sessionStorage) {
         this.hydrate();
@@ -92,6 +94,7 @@ export class PreviewAnnotationStore {
     }
 
     add(annotation: PreviewAnnotation): PreviewAnnotation {
+        this.clearRedo(annotation);
         this.byId.set(annotation.id, annotation);
         this.persist();
         return annotation;
@@ -121,8 +124,12 @@ export class PreviewAnnotationStore {
     }
 
     remove(id: string): boolean {
+        const current = this.byId.get(id);
         const ok = this.byId.delete(id);
         if (ok) {
+            if (current) {
+                this.clearRedo(current);
+            }
             this.persist();
         }
         return ok;
@@ -135,8 +142,44 @@ export class PreviewAnnotationStore {
         if (!last) {
             return undefined;
         }
-        this.remove(last.id);
+        this.byId.delete(last.id);
+        this.pushRedo(scope, last);
+        this.persist();
         return last;
+    }
+
+    /** Restores the most recently undone annotation in the scope (redo). */
+    redoLast(scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>): PreviewAnnotation | undefined {
+        const stack = this.redoByScope.get(buildPreviewAnnotationScopeKey(scope));
+        const restored = stack?.pop();
+        if (!restored) {
+            return undefined;
+        }
+        if (!stack?.length) {
+            this.redoByScope.delete(buildPreviewAnnotationScopeKey(scope));
+        }
+        this.byId.set(restored.id, restored);
+        this.persist();
+        return restored;
+    }
+
+    canRedo(scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>): boolean {
+        const stack = this.redoByScope.get(buildPreviewAnnotationScopeKey(scope));
+        return !!stack?.length;
+    }
+
+    protected pushRedo(
+        scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>,
+        annotation: PreviewAnnotation,
+    ): void {
+        const key = buildPreviewAnnotationScopeKey(scope);
+        const stack = this.redoByScope.get(key) ?? [];
+        stack.push(annotation);
+        this.redoByScope.set(key, stack);
+    }
+
+    protected clearRedo(scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>): void {
+        this.redoByScope.delete(buildPreviewAnnotationScopeKey(scope));
     }
 
     markAttached(ids: readonly string[]): void {
@@ -156,6 +199,7 @@ export class PreviewAnnotationStore {
     /** Removes every annotation in the scope (draft, confirmed, attached). */
     clearScope(scope: Pick<PreviewAnnotationScope, 'workspaceId' | 'threadId' | 'previewUrl' | 'route'>): number {
         const ids = this.listScope(scope).map(item => item.id);
+        this.clearRedo(scope);
         if (ids.length === 0) {
             return 0;
         }

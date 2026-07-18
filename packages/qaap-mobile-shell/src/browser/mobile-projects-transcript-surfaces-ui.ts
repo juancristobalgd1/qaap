@@ -1340,8 +1340,11 @@ export class MobileProjectsTranscriptSurfacesUi {
             input.value = '';
             input.placeholder = nls.localize('qaap/mobileProjects/previewUrlPlaceholder', 'Ingresa una URL');
         }
-        const content = this.host.transcriptEmbeddedPreview.root.querySelector<HTMLElement>('.qaap-preview-content-area');
-        if (!content) {
+        // Mount inside the frame slot so the play affordance never paints over the
+        // inline Element Inspector rail (sibling of the frame in `.qaap-preview-split`).
+        const frameSlot = this.host.transcriptEmbeddedPreview.root.querySelector<HTMLElement>('.qaap-preview-frame-slot')
+            ?? this.host.transcriptEmbeddedPreview.root.querySelector<HTMLElement>('.qaap-preview-content-area');
+        if (!frameSlot) {
             return;
         }
         const overlay = document.createElement('div');
@@ -1361,7 +1364,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         btn.addEventListener('click', () => { void this.requestTranscriptPreview(project, summary); });
         wrap.append(btn);
         overlay.append(wrap);
-        content.append(overlay);
+        frameSlot.append(overlay);
         this.updateTranscriptPreviewRunButtonState();
     }
 

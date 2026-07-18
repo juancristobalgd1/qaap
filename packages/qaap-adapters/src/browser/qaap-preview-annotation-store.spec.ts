@@ -73,7 +73,7 @@ describe('qaap-preview-annotation-store', () => {
         expect(store.listVisibleMarkers(scope({ route: '/about' })).map(item => item.comment)).to.deep.equal(['c']);
     });
 
-    it('supports provisional confirm, cancel via remove, multi, edit, and undo', () => {
+    it('supports provisional confirm, cancel via remove, multi, edit, undo, and redo', () => {
         const store = new PreviewAnnotationStore(undefined);
         const first = store.add(createPreviewAnnotation(scope(), {
             comment: '',
@@ -103,8 +103,25 @@ describe('qaap-preview-annotation-store', () => {
         }));
         store.update(a.id, { comment: 'one-edited' });
         expect(store.get(a.id)?.comment).to.equal('one-edited');
+        expect(store.canRedo(scope())).to.equal(false);
         expect(store.undoLast(scope())?.id).to.equal(b.id);
         expect(store.listScope(scope()).map(item => item.id)).to.deep.equal([a.id]);
+        expect(store.canRedo(scope())).to.equal(true);
+        expect(store.redoLast(scope())?.id).to.equal(b.id);
+        expect(store.listScope(scope()).map(item => item.id)).to.deep.equal([a.id, b.id]);
+        expect(store.canRedo(scope())).to.equal(false);
+
+        store.undoLast(scope());
+        expect(store.canRedo(scope())).to.equal(true);
+        store.add(createPreviewAnnotation(scope(), {
+            comment: 'three',
+            anchor: { kind: 'page', documentXRatio: 0.3, documentYRatio: 0.3 },
+            documentXRatio: 0.3,
+            documentYRatio: 0.3,
+            status: 'confirmed',
+        }));
+        expect(store.canRedo(scope())).to.equal(false);
+        expect(store.redoLast(scope())).to.equal(undefined);
     });
 
     it('clearScope removes draft/confirmed/attached only for that scope', () => {

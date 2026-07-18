@@ -130,7 +130,7 @@ describe('qaap-preview-annotation-controller', () => {
         expect(controller.getInteractionMode()).to.equal('annotate');
     });
 
-    it('creates provisional marker, confirms, rejects empty, cancels, and undoes', () => {
+    it('creates provisional marker, confirms, rejects empty, cancels, undoes, and redoes', () => {
         const frame = createFrame();
         const slot = document.createElement('div');
         slot.append(frame);
@@ -225,10 +225,23 @@ describe('qaap-preview-annotation-controller', () => {
             workspaceId: 'ws', threadId: 't1', previewUrl: 'http://localhost:3001/', route: '/home',
         })).to.have.length(1);
 
+        const undoneId = store.list()[0]!.id;
         controller.undoLastAnnotation();
         expect(store.listScope({
             workspaceId: 'ws', threadId: 't1', previewUrl: 'http://localhost:3001/', route: '/home',
         })).to.have.length(0);
+        expect(store.canRedo({
+            workspaceId: 'ws', threadId: 't1', previewUrl: 'http://localhost:3001/', route: '/home',
+        })).to.equal(true);
+
+        controller.redoLastAnnotation();
+        expect(store.listScope({
+            workspaceId: 'ws', threadId: 't1', previewUrl: 'http://localhost:3001/', route: '/home',
+        }).map(item => item.id)).to.deep.equal([undoneId]);
+        expect(store.get(undoneId)?.comment).to.equal('Looks off');
+        expect(store.canRedo({
+            workspaceId: 'ws', threadId: 't1', previewUrl: 'http://localhost:3001/', route: '/home',
+        })).to.equal(false);
     });
 
     it('retargets the empty draft to a different element, and appends only after text is typed', () => {
@@ -753,7 +766,7 @@ describe('qaap-preview-annotation-controller', () => {
         expect(store.get('pricing-1')).to.equal(undefined);
     });
 
-    it('toolbar close clears every annotation and the open comment popover', () => {
+    it('toolbar close leaves confirmed annotations and only drops the open draft popover', () => {
         const frame = createFrame();
         const slot = document.createElement('div');
         slot.append(frame);
@@ -818,11 +831,76 @@ describe('qaap-preview-annotation-controller', () => {
         expect(store.list().length).to.be.greaterThan(1);
 
         // The toolbar chrome is not mounted in this harness — invoke the × handler directly.
-        (controller as unknown as { exitAnnotateModeAndClear(): void }).exitAnnotateModeAndClear();
+        (controller as unknown as { exitAnnotateMode(): void }).exitAnnotateMode();
 
-        expect(store.list()).to.have.length(0);
+        expect(store.get('confirmed-1')).to.exist;
+        expect(store.list().some(item => item.status === 'draft')).to.equal(false);
         expect(document.querySelector('.qaap-preview-annotation-popover')).to.not.exist;
         expect(controller.getInteractionMode()).to.equal('browse');
+    });
+
+    it('toolbar delete asks for confirmation then clears every annotation', async () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        const store = new PreviewAnnotationStore(undefined);
+        let confirmCalls = 0;
+        let nextAnswer = false;
+        const controller = new QaapPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: () => ({ id: QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND }),
+                executeCommand: async () => true,
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            store,
+            getScope: () => ({
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewId: 'http://localhost:3001/',
+                previewUrl: 'http://localhost:3001/',
+                route: '/home',
+                viewportMode: 'mobile',
+                viewportWidth: 390,
+                viewportHeight: 844,
+            }),
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            confirmDeleteAllAnnotations: () => {
+                confirmCalls += 1;
+                return nextAnswer;
+            },
+            toDispose,
+        });
+        controller.setInteractionMode('annotate');
+        store.add({
+            id: 'confirmed-1',
+            workspaceId: 'ws',
+            threadId: 't1',
+            previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
+            route: '/other-route',
+            comment: 'Confirmed elsewhere',
+            viewport: { mode: 'mobile', width: 390, height: 844 },
+            anchor: { kind: 'page', documentXRatio: 0.2, documentYRatio: 0.3 },
+            documentXRatio: 0.2,
+            documentYRatio: 0.3,
+            status: 'confirmed',
+            createdAt: Date.now(),
+        });
+
+        await (controller as unknown as { confirmAndClearAllAnnotations(): Promise<void> }).confirmAndClearAllAnnotations();
+        expect(confirmCalls).to.equal(1);
+        expect(store.get('confirmed-1')).to.exist;
+        expect(controller.getInteractionMode()).to.equal('annotate');
+
+        nextAnswer = true;
+        await (controller as unknown as { confirmAndClearAllAnnotations(): Promise<void> }).confirmAndClearAllAnnotations();
+        expect(confirmCalls).to.equal(2);
+        expect(store.list()).to.have.length(0);
+        expect(controller.getInteractionMode()).to.equal('annotate');
     });
 
     it('Send commits a typed-but-unconfirmed popover draft instead of dropping it', async () => {
@@ -1010,7 +1088,7 @@ describe('qaap-preview-annotation-controller', () => {
         expect(toasts[0]!.message).to.match(/Could not send annotations to chat/i);
     });
 
-    it('overlays URL chrome with annotate action bar and wires close/undo/send', async () => {
+    it('overlays URL chrome with annotate action bar and wires close/undo/redo/send', async () => {
         const frame = createFrame();
         const slot = document.createElement('div');
         slot.append(frame);
@@ -1068,17 +1146,26 @@ describe('qaap-preview-annotation-controller', () => {
         expect(urlField.classList.contains('qaap-mod-annotate-hidden')).to.equal(true);
         expect(chrome.classList.contains('qaap-mod-annotate-active')).to.equal(true);
         expect(workbench.contains(bar)).to.equal(false);
-        expect(bar.querySelector('.codicon-trash')).to.equal(null);
+        const deleteBtn = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.codicon-trash') as HTMLButtonElement;
+        expect(deleteBtn).to.exist;
+        expect(deleteBtn.disabled || deleteBtn.classList.contains('qaap-mod-disabled')).to.equal(true);
 
         const send = bar.querySelector('.qaap-preview-annotate-toolbar-send') as HTMLButtonElement;
         const badge = bar.querySelector('.qaap-preview-annotate-toolbar-send-badge') as HTMLElement;
         const undo = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.codicon-discard') as HTMLButtonElement;
+        const redo = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.codicon-redo') as HTMLButtonElement;
         const screenshot = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.codicon-device-camera') as HTMLButtonElement;
         const compare = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.qaap-preview-annotate-toolbar-compare-btn') as HTMLButtonElement;
         expect(send).to.exist;
         expect(undo).to.exist;
+        expect(redo).to.exist;
         expect(screenshot).to.exist;
         expect(compare).to.exist;
+        const closeBtn = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.codicon-close') as HTMLButtonElement;
+        expect(closeBtn).to.exist;
+        expect(closeBtn.nextElementSibling).to.equal(deleteBtn);
+        expect(deleteBtn.nextElementSibling).to.equal(undo);
+        expect(undo.nextElementSibling).to.equal(redo);
         expect(compare.classList.contains('codicon-diff-single')).to.equal(false);
         expect(compare.querySelector('svg.qaap-preview-annotate-toolbar-compare-icon')).to.exist;
         expect(compare.title).to.equal('Hold to see original');
@@ -1086,6 +1173,9 @@ describe('qaap-preview-annotation-controller', () => {
         expect(send.disabled).to.equal(true);
         expect(badge.hidden).to.equal(true);
         expect(undo.disabled || undo.classList.contains('qaap-mod-disabled')).to.equal(true);
+        expect(redo.disabled || redo.classList.contains('qaap-mod-disabled')).to.equal(true);
+        expect(redo.title).to.equal('Redo');
+        expect(redo.getAttribute('aria-label')).to.equal('Redo');
 
         expect(screenshot.title).to.equal('Screenshot and attach');
         expect(screenshot.getAttribute('aria-label')).to.equal('Screenshot and attach');
@@ -1129,6 +1219,17 @@ describe('qaap-preview-annotation-controller', () => {
         expect(store.get('ready-1')).to.equal(undefined);
         expect(send.disabled).to.equal(true);
         expect(badge.hidden).to.equal(true);
+        expect(redo.disabled).to.equal(false);
+        expect(redo.classList.contains('qaap-mod-disabled')).to.equal(false);
+
+        redo.click();
+        expect(store.get('ready-1')?.comment).to.equal('Ship it');
+        expect(send.disabled).to.equal(false);
+        expect(badge.textContent).to.equal('1');
+        expect(redo.disabled || redo.classList.contains('qaap-mod-disabled')).to.equal(true);
+
+        undo.click();
+        expect(store.get('ready-1')).to.equal(undefined);
 
         store.add({
             id: 'ready-2',
@@ -1147,6 +1248,7 @@ describe('qaap-preview-annotation-controller', () => {
         });
         controller.setInteractionMode('browse');
         controller.setInteractionMode('annotate');
+        expect(redo.disabled || redo.classList.contains('qaap-mod-disabled')).to.equal(true);
         expect(send.disabled).to.equal(false);
         expect(badge.textContent).to.equal('1');
         await controller.addAnnotationsToChat();

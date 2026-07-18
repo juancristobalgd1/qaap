@@ -456,6 +456,7 @@ body.qaap-mod-history-resizing * {
 
 .qaap-preview-inspector-slot {
   position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   flex: 0 0 320px;
