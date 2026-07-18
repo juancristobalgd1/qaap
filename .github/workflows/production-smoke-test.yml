@@ -67,4 +67,9 @@ jobs:
 
       - name: Run Smoke Test (examples/playwright/src/tests/theia-app)
         shell: bash
+        # Exercise the production shell, not the unauthenticated login gate. This is the same
+        # local-only test mode used by the pre-deploy gate; the smoke test itself still runs.
+        env:
+          QAAP_SKIP_AUTH: 'true'
+          QAAP_CLOUD_MODE: local
         run: npm run test:playwright -- theia-app
