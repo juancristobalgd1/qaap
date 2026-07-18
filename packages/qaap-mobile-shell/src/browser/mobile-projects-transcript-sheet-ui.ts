@@ -540,15 +540,14 @@ export class MobileProjectsTranscriptSheetUi {
     }
 
     /**
-     * Publishes the floating composer's height as `--qaap-transcript-composer-height` on the
-     * sheet root, so the empty-state quick actions can hover just above it (ChatGPT-style) while
-     * the chat surface scrolls behind.
+     * Publishes composer height on the sheet root (`--qaap-transcript-composer-height`) for
+     * edge-fade / layout consumers. Scroll clearance is geometric (composer is a flex sibling).
      */
     protected observeTranscriptComposerSize(root: HTMLElement, composer: HTMLElement): void {
         this.host.transcriptComposerSizeDispose.dispose();
         const apply = () => {
-            const height = composer.hidden ? 0 : composer.offsetHeight;
-            root.style.setProperty('--qaap-transcript-composer-height', `${Math.round(height)}px`);
+            const height = composer.hidden ? 0 : Math.round(composer.getBoundingClientRect().height);
+            root.style.setProperty('--qaap-transcript-composer-height', `${height}px`);
         };
         apply();
         if (typeof ResizeObserver === 'undefined') {

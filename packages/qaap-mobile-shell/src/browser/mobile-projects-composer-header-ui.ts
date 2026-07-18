@@ -81,14 +81,9 @@ export class MobileProjectsComposerHeaderUi {
         const composerVisible = this.host.root.classList.contains('theia-mod-sticky-composer')
             && !this.host.stickyComposerHost.hidden
             && this.host.stickyComposerHost.offsetHeight > 0;
-        if (composerVisible) {
-            const lift = this.host.stickyComposerHost.offsetHeight;
-            this.host.stickyComposerFabLiftPx = lift;
-            this.host.root.style.setProperty('--theia-mobile-projects-fab-lift', `${lift}px`);
-            return;
-        }
-        this.host.stickyComposerFabLiftPx = 0;
-        this.host.root.style.setProperty('--theia-mobile-projects-fab-lift', '0px');
+        const lift = composerVisible ? Math.round(this.host.stickyComposerHost.getBoundingClientRect().height) : 0;
+        this.host.stickyComposerFabLiftPx = lift;
+        this.host.root.style.setProperty('--theia-mobile-projects-fab-lift', `${lift}px`);
     }
 
     /** Branch (+ project tray) stay visible for idle and active conversations; only the destination pill is idle-only. */

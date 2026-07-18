@@ -459,7 +459,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             ));
         }
         row.append(body);
-        if (streaming && conv) {
+        if (streaming && conv && !hasToolSegments) {
             this.ensureAndSyncTranscriptLiveStatusFooter(body, segments, conv, { streaming: true });
         }
         if (streaming) {

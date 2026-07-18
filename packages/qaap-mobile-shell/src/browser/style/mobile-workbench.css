@@ -5945,13 +5945,18 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 /*
- * The transcript ends 8px above the sticky composer's top border — content does NOT
- * scroll behind the frosted-glass input. The 8px gap gives a small visual breathing
- * room between the last message and the composer chrome.
+ * Transcript scrollport vs composer lip — negative value overlaps the composer
+ * top edge. Composer clearance stays geometric
+ * (flex sibling below the scroll host). `--theia-mobile-projects-fab-lift` is
+ * only for FAB lift.
  */
-.theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agent-transcript {
-  padding-bottom: 8px;
-  scroll-padding-bottom: 8px;
+.theia-mobile-projects {
+  --theia-mobile-transcript-composer-scroll-gap: -28px;
+}
+
+.theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]),
+.theia-mobile-agent-transcript-root .theia-mobile-agent-transcript-chat-input {
+  margin-top: var(--theia-mobile-transcript-composer-scroll-gap, -28px);
 }
 
 .theia-mobile-projects-sticky-composer {
@@ -10546,6 +10551,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 .theia-mobile-projects.theia-mod-agents-hub-shell-active,
 .theia-mobile-agent-transcript-root {
   --theia-mobile-execution-chrome-pad-x: 12px;
+  --theia-mobile-transcript-composer-scroll-gap: -28px;
   --theia-mobile-execution-header-pad-top: 10px;
   --theia-mobile-execution-header-pad-bottom: 6px;
   --theia-mobile-execution-header-title-row: 40px;
@@ -16626,6 +16632,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
   background: #fff;
 }
 
+/* Scoped to the preview frame slot — must not cover `.qaap-preview-inspector-slot`. */
 .theia-mobile-transcript-preview-empty-overlay {
   position: absolute;
   inset: 0;
@@ -18385,7 +18392,7 @@ body>.theia-mobile-transcript-files-menu {
   flex: 1 1 auto;
   min-height: 0;
   gap: 0;
-  padding: clamp(24px, 8vh, 72px) 18px calc(var(--qaap-transcript-composer-height, 0px) + 96px);
+  padding: clamp(24px, 8vh, 72px) 18px 96px;
 }
 
 .theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) {
@@ -18437,7 +18444,7 @@ body>.theia-mobile-transcript-files-menu {
 
 @media (max-width: 640px) {
   .theia-mobile-agent-transcript.theia-mod-empty-chat {
-    padding: clamp(18px, 6vh, 52px) 16px calc(var(--qaap-transcript-composer-height, 0px) + 82px);
+    padding: clamp(18px, 6vh, 52px) 16px 82px;
   }
 
   .theia-mobile-agent-transcript-empty-logo {
@@ -24218,12 +24225,9 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
 }
 
 .theia-mobile-agent-transcript-root .theia-mobile-agent-transcript-chat-input {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  flex: 0 0 auto;
   z-index: 8;
-  flex: none;
   padding: 0;
   border-top: none;
   background: transparent !important;
@@ -24257,15 +24261,12 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
   border-top: none;
 }
 
-/* Agents hub inline + project detail — codex composer overlays scroll; transcript passes behind. */
+/* Agents hub inline + project detail — codex composer is a flex sibling below scroll (not overlay). */
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]) {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  flex: 0 0 auto;
   z-index: 8;
-  flex-shrink: 0;
-  margin-top: 0 !important;
+  margin-top: var(--theia-mobile-transcript-composer-scroll-gap, -28px) !important;
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -24299,15 +24300,17 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 /*
- * Codex inline transcript — the codex composer is position:absolute (overlays the
- * scroll area), so padding-bottom must include the composer height plus an 8px gap.
- * Content does not scroll behind the floating composer.
+ * Transcript scroller — viewport is clipped above the composer (flex layout). Overlap
+ * is geometric (composer margin-top); keep non-negative scroll padding for the last row.
  */
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript,
-.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex) .theia-mobile-agents-hub-inline-transcript>.theia-mobile-agent-transcript {
+.theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript,
+.theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agents-hub-inline-transcript>.theia-mobile-agent-transcript,
+.theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript,
+.theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agent-transcript,
+.theia-mobile-agent-transcript-root .theia-mobile-agent-log-sheet.theia-mod-transcript>.theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript {
   box-sizing: border-box;
-  padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
-  scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 8px);
+  padding-bottom: max(0px, var(--theia-mobile-transcript-composer-scroll-gap, -28px));
+  scroll-padding-bottom: max(0px, var(--theia-mobile-transcript-composer-scroll-gap, -28px));
 }
 
 .theia-mobile-agent-transcript-chat-input {
@@ -28304,12 +28307,13 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 }
 
 /* ─── ProcessAccordion: the single collapsible for all process steps ──────── */
-/* Codex-style: "Processed in 2m 31s" header with a subtle divider.            */
+/* Codex-style process header — no bottom rule here; the live turn footer divider
+ * (`.theia-mobile-agent-live-status`) is the only horizontal rule above composer chrome. */
 /* Auto-expands while working, auto-collapses on success, open on error.       */
 
 .theia-mobile-process-accordion {
   margin: 0 0 20px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  border-bottom: none;
 }
 
 .theia-mobile-process-accordion-header {

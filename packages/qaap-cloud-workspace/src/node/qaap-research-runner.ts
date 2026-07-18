@@ -33,8 +33,9 @@ import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';
 
-/** Wall-clock cap for the `measure` phase's metricCommand — parsing a number should be fast. */
-const MEASURE_TIMEOUT_MS = 2 * 60 * 1000;
+/** Minimum wall-clock cap for a `measure` phase. Model-backed metrics may need the goal's full
+ *  compute budget even though parsing their final number is cheap. */
+const MIN_MEASURE_TIMEOUT_MS = 2 * 60 * 1000;
 const GIT_COMMAND_TIMEOUT_MS = 15_000;
 /** Keep failed command diagnostics useful without turning the JSONL ledger into a copy of a
  *  multi-hour training log. The full 12k tail remains in the task log; this smaller excerpt is
@@ -768,7 +769,7 @@ export class QaapResearchRunner {
                 goal.cwd,
                 this.buildResearchCommandEnv(),
                 taskId,
-                MEASURE_TIMEOUT_MS,
+                Math.max(MIN_MEASURE_TIMEOUT_MS, goal.runTimeoutMs),
                 { header: `\n[qaap-research] round ${record.round}: measuring ${spec.name}\n`, tailOutput: true },
             );
             this.activeExecutionId.delete(goal.id);

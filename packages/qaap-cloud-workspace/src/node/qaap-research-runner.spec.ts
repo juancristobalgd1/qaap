@@ -821,6 +821,7 @@ describe('QaapResearchRunner state machine', () => {
             expect(taskRunner.createdTasks).to.have.lengthOf(0);
             expect(taskRunner.genericCommandCalls).to.have.lengthOf(1);
             expect(taskRunner.genericCommandCalls[0].command).to.equal('python measure.py'); // never re-ran train.py
+            expect(taskRunner.genericCommandCalls[0].timeoutMs).to.equal(goal.runTimeoutMs);
             const [record] = store.readLedgerForGoal(goal);
             expect(record).to.deep.include({ phase: 'done', verdict: 'improved' });
         });

@@ -1,4 +1,5 @@
-/* Claude-style live turn footer: logo + activity + elapsed · tokens. */
+/* Claude-style live turn footer: logo + activity + elapsed · tokens.
+ * Sole horizontal divider above the floating composer chrome during streaming. */
 
 .theia-mobile-agent-live-status {
   box-sizing: border-box;
