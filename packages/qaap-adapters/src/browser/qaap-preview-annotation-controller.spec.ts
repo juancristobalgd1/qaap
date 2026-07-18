@@ -55,6 +55,12 @@ function dispatchPointer(target: EventTarget, type: 'pointerdown' | 'pointerup' 
     target.dispatchEvent(event);
 }
 
+class TestPreviewAnnotationController extends QaapPreviewAnnotationController {
+    invokeTakeScreenshot(): Promise<void> {
+        return this.takeScreenshot();
+    }
+}
+
 describe('qaap-preview-annotation-controller', () => {
     let toDispose: DisposableCollection;
 
@@ -87,6 +93,40 @@ describe('qaap-preview-annotation-controller', () => {
     afterEach(() => {
         toDispose.dispose();
         document.body.replaceChildren();
+    });
+
+    it('coalesces concurrent annotate screenshot requests', async () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        let calls = 0;
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        const controller = new TestPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: () => undefined,
+                executeCommand: async () => undefined,
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            getScope: () => undefined,
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            takeScreenshot: async () => {
+                calls += 1;
+                await gate;
+            },
+            toDispose,
+        });
+
+        const first = controller.invokeTakeScreenshot();
+        const second = controller.invokeTakeScreenshot();
+        expect(calls).to.equal(1);
+        release();
+        await Promise.all([first, second]);
+        expect(calls).to.equal(1);
     });
 
     it('activates annotate via set-mode without changing iframe src', () => {

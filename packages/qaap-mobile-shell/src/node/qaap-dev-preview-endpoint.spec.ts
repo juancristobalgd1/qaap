@@ -9,6 +9,7 @@ import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
+import { resolveQaapPreviewIdentity, type QaapPreviewIdentity } from '../common/qaap-preview-identity';
 
 class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
     exposeRewriteDevPreviewBody(body: string, targetPort: number): string {
@@ -214,6 +215,57 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.get(first!.previewId)?.processId).to.equal(4242);
         });
 
+        it('does not implicitly replace an expired preview with different execution coordinates', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const first = registry.register({
+                previewId: 'p-project-c-conv-r-run-abc1234',
+                projectId: 'project',
+                conversationId: 'conv',
+                runId: 'run',
+                ownerLogin: 'alice',
+                root: '/workspace/alice/project',
+                port: 4173,
+            })!;
+            const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+            const claims = (registry as unknown as { claims: Map<number, { ownerLogin: string; at: number }> }).claims;
+            previews.set(first.previewId, { ...first, touchedAt: Date.now() - 31 * 60_000 });
+            claims.set(first.port, { ownerLogin: 'alice', at: Date.now() - 31 * 60_000 });
+
+            const changed = {
+                ...first,
+                ownerLogin: 'bob',
+                root: '/workspace/bob/project',
+                port: 5173,
+            };
+            expect(registry.expiredRegistrationConflicts(changed).map(conflict => conflict.port)).to.deep.equal([4173]);
+            expect(registry.register(changed)).to.equal(undefined);
+            expect(registry.staleOwnerOf(4173)).to.equal('alice');
+        });
+
+        it('rotates the isolated-host capability when the same registration is renewed after expiry', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const registration = {
+                previewId: 'p-project-c-conv-r-run-abc1234',
+                projectId: 'project',
+                conversationId: 'conv',
+                runId: 'run',
+                ownerLogin: 'alice',
+                root: '/workspace/alice/project',
+                port: 4173,
+            };
+            const first = registry.register(registration)!;
+            const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+            const claims = (registry as unknown as { claims: Map<number, { ownerLogin: string; at: number }> }).claims;
+            previews.set(first.previewId, { ...first, touchedAt: Date.now() - 31 * 60_000 });
+            claims.set(first.port, { ownerLogin: 'alice', at: Date.now() - 31 * 60_000 });
+
+            const renewed = registry.register(registration)!;
+            expect(renewed.accessToken).not.to.equal(first.accessToken);
+            expect(registry.ownerOf(4173)).to.equal('alice');
+        });
+
         it('first claim wins and the same login can refresh it', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();
@@ -268,12 +320,14 @@ describe('QaapDevPreviewEndpoint', () => {
     describe('claim endpoint takeover rules', () => {
         class ClaimTestEndpoint extends TestQaapDevPreviewEndpoint {
             listening = false;
+            readonly probedPorts: number[] = [];
 
             async exposeHandleClaim(req: unknown, res: unknown): Promise<void> {
                 return this.handleClaim(req as never, res as never);
             }
 
-            protected override probeLocalDevServer(): Promise<boolean> {
+            protected override probeLocalDevServer(port: number): Promise<boolean> {
+                this.probedPorts.push(port);
                 return Promise.resolve(this.listening);
             }
 
@@ -288,22 +342,82 @@ describe('QaapDevPreviewEndpoint', () => {
             }
         }
 
-        const claimReq = (port: number): unknown => ({
-            body: { port, root: 'file:///workspace/repos/users/bob/site' },
+        const claimReq = (port: number, identity?: QaapPreviewIdentity): unknown => ({
+            body: { port, root: 'file:///workspace/repos/users/bob/site', ...identity },
             headers: {},
+            protocol: 'http',
+            get: () => 'localhost:3000',
         });
 
-        const makeRes = (): { record: { code: number } } => {
-            const record = { code: 0 };
+        const makeRes = (): { record: { code: number; body?: unknown } } => {
+            const record: { code: number; body?: unknown } = { code: 0 };
             const res = {
                 record,
                 status(code: number): unknown { record.code = code; return res; },
                 sendStatus(code: number): void { record.code = code; },
                 type(): unknown { return res; },
                 send(): void { /* body ignored */ },
+                json(body: unknown): void { record.body = body; },
             };
             return res;
         };
+
+        const expirePreview = (registry: QaapDevPreviewPortRegistry, record: QaapDevPreviewRecord): void => {
+            const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+            const claims = (registry as unknown as { claims: Map<number, { ownerLogin: string; at: number }> }).claims;
+            previews.set(record.previewId, { ...record, touchedAt: Date.now() - 31 * 60_000 });
+            claims.set(record.port, { ownerLogin: record.ownerLogin, at: Date.now() - 31 * 60_000 });
+        };
+
+        it('refuses replacing an expired identity while its previous port still listens', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const identity = { projectId: 'project', conversationId: 'conv', runId: 'run' };
+            const first = registry.register({
+                ...resolveQaapPreviewIdentity(identity),
+                ownerLogin: 'alice',
+                root: '/workspace/repos/users/alice/site',
+                port: 4173,
+            })!;
+            expirePreview(registry, first);
+
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('bob', registry);
+            ep.listening = true;
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, identity), res);
+
+            expect(res.record.code).to.equal(409);
+            expect(ep.probedPorts).to.deep.equal([4173]);
+            expect(registry.staleOwnerOf(4173)).to.equal('alice');
+            expect(registry.ownerOf(5173)).to.equal(undefined);
+        });
+
+        it('replaces an expired identity only after its previous port is free and rotates its capability', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const identity = { projectId: 'project', conversationId: 'conv', runId: 'run' };
+            const resolved = resolveQaapPreviewIdentity(identity);
+            const first = registry.register({
+                ...resolved,
+                ownerLogin: 'alice',
+                root: '/workspace/repos/users/alice/site',
+                port: 4173,
+            })!;
+            expirePreview(registry, first);
+
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('bob', registry);
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, identity), res);
+
+            expect(res.record.code).to.equal(200);
+            expect(ep.probedPorts).to.deep.equal([4173]);
+            const replacement = registry.getForOwner(resolved.previewId, 'bob')!;
+            expect(replacement.port).to.equal(5173);
+            expect(replacement.accessToken).not.to.equal(first.accessToken);
+            expect(registry.ownerOf(4173)).to.equal(undefined);
+        });
 
         it('refuses reassigning an EXPIRED claim while the previous tenant server still listens', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');

@@ -95,12 +95,16 @@ Current state of these paths:
 
 `npm audit --omit=dev` still reports **one critical for `decompress@4.2.1`**
 (GHSA-mp2f-45pm-3cg9, hardlink/symlink path traversal during archive
-extraction). It is a **false positive**: the package is unmaintained with no
-fixed release, so we neutralise the vulnerability in place with
+extraction). The package is unmaintained with no fixed release, so we backport
+the complete upstream-fork remediation in place with
 `dev-packages/cli/patches/decompress+4.2.1.patch` (applied by `theia-patch` on
-install), which refuses any link entry whose target escapes the extraction
-directory. `npm audit` keys off the version string and cannot see the patch, so
-the critical will persist in the report until upstream Theia drops `decompress`.
+install). The patch uses `path.relative` containment, resolves and verifies link
+targets, creates hardlinks from the verified absolute target, protects every
+file-like entry from writes through symlinks, and strips setuid/setgid/sticky
+bits. `scripts/qaap-decompress-security-check.js` runs after patching on every
+install and exercises those boundaries. `npm audit` keys off the version string
+and cannot see the backport, so the critical will persist in the report until
+upstream Theia drops `decompress`.
 Do not "fix" it by aliasing to the ESM fork `@xhmikosr/decompress` — Theia
 `require()`s it from CommonJS and the ESM default-export shape breaks every call
 site.

@@ -183,8 +183,14 @@ export function parseGithubFullNameFromWorkspacePath(workspacePath: string): str
         return undefined;
     }
     const afterRepos = segments.slice(reposIndex + 1);
-    if (afterRepos[0] === QAAP_USER_REPOS_SEGMENT && afterRepos.length >= 4) {
-        return `${afterRepos[2]}/${afterRepos[3]}`.toLowerCase();
+    if (afterRepos[0] === QAAP_USER_REPOS_SEGMENT) {
+        if (afterRepos.length >= 4) {
+            return `${afterRepos[2]}/${afterRepos[3]}`.toLowerCase();
+        }
+        // Legacy per-user paths (`users/{login}/{repo}`) do not encode the
+        // repository owner. Treat them as ambiguous instead of falling through
+        // and incorrectly identifying every repo as `users/{login}`.
+        return undefined;
     }
     if (afterRepos.length >= 2) {
         return `${afterRepos[0]}/${afterRepos[1]}`.toLowerCase();

@@ -147,12 +147,27 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         if (owner) {
             if (isQaapPreviewIdentity(body)) {
                 const identity = resolveQaapPreviewIdentity(body);
-                const record = this.portRegistry.register({
+                const registration = {
                     ...identity,
                     ownerLogin: owner,
                     root,
                     port,
-                });
+                };
+                const expiredConflicts = this.portRegistry.expiredRegistrationConflicts(registration);
+                const stalePortOwner = this.portRegistry.staleOwnerOf(port);
+                const portsToProbe = new Set(expiredConflicts.map(conflict => conflict.port));
+                if (stalePortOwner !== undefined && stalePortOwner !== owner) {
+                    portsToProbe.add(port);
+                }
+                for (const conflictPort of portsToProbe) {
+                    if (await this.probeLocalDevServer(conflictPort)) {
+                        res.status(409).type('text/plain').send('This preview identity or port is already in use.');
+                        return;
+                    }
+                }
+                const replaceExpired = expiredConflicts.length > 0
+                    || (stalePortOwner !== undefined && stalePortOwner !== owner);
+                const record = this.portRegistry.register(registration, { replaceExpired });
                 if (!record) {
                     res.status(409).type('text/plain').send('This preview identity or port is already in use.');
                     return;

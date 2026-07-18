@@ -1,33 +1,114 @@
 diff --git a/node_modules/decompress/index.js b/node_modules/decompress/index.js
-index 6aa67ca..0534b96 100644
+index 6aa67ca..b01350b 100644
 --- a/node_modules/decompress/index.js
 +++ b/node_modules/decompress/index.js
-@@ -106,8 +106,28 @@ const extractFile = (input, output, opts) => runPlugins(input, opts).then(files
- 						if (realDestinationDir.indexOf(realOutputPath) !== 0) {
+@@ -19,6 +19,11 @@ const runPlugins = (input, opts) => {
+ 	return Promise.all(opts.plugins.map(x => x(input, opts))).then(files => files.reduce((a, b) => a.concat(b)));
+ };
+ 
++const isInsideOutput = (target, root) => {
++	const relative = path.relative(root, target);
++	return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
++};
++
+ const safeMakeDir = (dir, realOutputPath) => {
+ 	return fsP.realpath(dir)
+ 		.catch(_ => {
+@@ -26,7 +31,7 @@ const safeMakeDir = (dir, realOutputPath) => {
+ 			return safeMakeDir(parent, realOutputPath);
+ 		})
+ 		.then(realParentPath => {
+-			if (realParentPath.indexOf(realOutputPath) !== 0) {
++			if (!isInsideOutput(realParentPath, realOutputPath)) {
+ 				throw (new Error('Refusing to create a directory outside the output path.'));
+ 			}
+ 
+@@ -34,6 +39,27 @@ const safeMakeDir = (dir, realOutputPath) => {
+ 		});
+ };
+ 
++const ensureLinkTargetInsideOutput = (linkname, linkBase, realOutputPath) => {
++	const target = path.resolve(linkBase, linkname);
++	if (!isInsideOutput(target, realOutputPath)) {
++		return Promise.reject(new Error('Refusing to create a link pointing outside the output directory: ' + target));
++	}
++
++	return fsP.realpath(target)
++		.then(realTarget => {
++			if (!isInsideOutput(realTarget, realOutputPath)) {
++				throw new Error('Refusing to create a link pointing outside the output directory: ' + realTarget);
++			}
++			return target;
++		})
++		.catch(error => {
++			if (error && error.code === 'ENOENT') {
++				return target;
++			}
++			throw error;
++		});
++};
++
+ const preventWritingThroughSymlink = (destination, realOutputPath) => {
+ 	return fsP.readlink(destination)
+ 		.catch(_ => {
+@@ -75,7 +101,8 @@ const extractFile = (input, output, opts) => runPlugins(input, opts).then(files
+ 
+ 	return Promise.all(files.map(x => {
+ 		const dest = path.join(output, x.path);
+-		const mode = x.mode & ~process.umask();
++		// Never honor setuid, setgid, or sticky bits supplied by an archive.
++		const mode = (x.mode & 0o777) & ~process.umask();
+ 		const now = new Date();
+ 
+ 		if (x.type === 'directory') {
+@@ -93,37 +120,36 @@ const extractFile = (input, output, opts) => runPlugins(input, opts).then(files
+ 				return safeMakeDir(path.dirname(dest), realOutputPath)
+ 					.then(() => realOutputPath);
+ 			})
+-			.then(realOutputPath => {
+-				if (x.type === 'file') {
+-					return preventWritingThroughSymlink(dest, realOutputPath);
+-				}
+-
+-				return realOutputPath;
+-			})
+ 			.then(realOutputPath => {
+ 				return fsP.realpath(path.dirname(dest))
+ 					.then(realDestinationDir => {
+-						if (realDestinationDir.indexOf(realOutputPath) !== 0) {
++						if (!isInsideOutput(realDestinationDir, realOutputPath)) {
  							throw (new Error('Refusing to write outside output directory: ' + realDestinationDir));
  						}
 +						return realOutputPath;
  					});
  			})
+-			.then(() => {
 +			.then(realOutputPath => {
-+				// GHSA-mp2f-45pm-3cg9: a hardlink/symlink entry whose linkname escapes the
-+				// output directory lets a crafted archive read or overwrite arbitrary files on
-+				// the host (a malicious VSIX extracted server-side). Reject any link target that
-+				// resolves outside the extraction root. Hardlink targets are resolved against the
-+				// output root; symlink targets against the link's own directory.
-+				if (x.type === 'link' || x.type === 'symlink') {
-+					// Anchor the target to the realpath'd output root (never `dest`, which is built
-+					// from the un-realpath'd output and would mismatch when /tmp -> /private/tmp).
-+					// Hardlink targets are archive-root relative; symlink targets are relative to
-+					// the link's own directory within the archive.
-+					const base = x.type === 'link' ? realOutputPath : path.join(realOutputPath, path.dirname(x.path));
-+					const resolvedTarget = path.resolve(base, x.linkname);
-+					if (resolvedTarget !== realOutputPath && resolvedTarget.indexOf(realOutputPath + path.sep) !== 0) {
-+						throw new Error('Refusing to create a link pointing outside the output directory: ' + x.linkname);
-+					}
-+				}
-+				return realOutputPath;
-+			})
- 			.then(() => {
  				if (x.type === 'link') {
- 					return fsP.link(x.linkname, dest);
+-					return fsP.link(x.linkname, dest);
++					return ensureLinkTargetInsideOutput(x.linkname, realOutputPath, realOutputPath)
++						.then(target => fsP.link(target, dest));
+ 				}
+ 
+ 				if (x.type === 'symlink' && process.platform === 'win32') {
+-					return fsP.link(x.linkname, dest);
++					return ensureLinkTargetInsideOutput(x.linkname, path.dirname(dest), realOutputPath)
++						.then(target => fsP.link(target, dest));
+ 				}
+ 
+ 				if (x.type === 'symlink') {
+-					return fsP.symlink(x.linkname, dest);
++					return ensureLinkTargetInsideOutput(x.linkname, path.dirname(dest), realOutputPath)
++						.then(() => fsP.symlink(x.linkname, dest));
+ 				}
+ 
+-				return fsP.writeFile(dest, x.data, {mode});
++				// Guard every file-like entry, including tar's `contiguous-file` type.
++				return preventWritingThroughSymlink(dest, realOutputPath)
++					.then(() => fsP.writeFile(dest, x.data, {mode}));
+ 			})
+-			.then(() => x.type === 'file' && fsP.utimes(dest, now, x.mtime))
++			.then(() => x.type !== 'link' && x.type !== 'symlink' && fsP.utimes(dest, now, x.mtime))
+ 			.then(() => x);
+ 	}));
+ });

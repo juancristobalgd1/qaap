@@ -5,7 +5,14 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { buildPreviewOverflowMenuItems, clonePreviewDocumentWithComputedStyles } from './qaap-preview-overflow-actions';
+import {
+    buildPreviewOverflowMenuItems,
+    captureSameOriginPreview,
+    clonePreviewDocumentWithComputedStyles,
+    QAAP_PREVIEW_CAPTURE_MAX_DOM_ELEMENTS,
+    QaapPreviewCaptureGuard,
+    resolvePreviewCaptureDimensions,
+} from './qaap-preview-overflow-actions';
 
 describe('qaap-preview-overflow-actions', () => {
 
@@ -42,6 +49,48 @@ describe('qaap-preview-overflow-actions', () => {
             expect(main?.style.width).to.equal('420px');
             expect(main?.style.backgroundColor).to.equal('rgb(255, 255, 255)');
             expect(main?.style.color).to.equal('rgb(1, 2, 3)');
+        } finally {
+            disableJSDOM();
+        }
+    });
+
+    it('bounds full-page captures by default and enforces a hard pixel ceiling', () => {
+        expect(resolvePreviewCaptureDimensions(12000, 30000)).to.deep.equal({ width: 1600, height: 2400 });
+        const explicitlyLarge = resolvePreviewCaptureDimensions(12000, 30000, {
+            maxWidth: 12000,
+            maxHeight: 30000,
+        });
+        expect(explicitlyLarge.width * explicitlyLarge.height).to.be.at.most(8_000_000);
+        expect(resolvePreviewCaptureDimensions(12000, 30000, { maxWidth: 800, maxHeight: 600 }))
+            .to.deep.equal({ width: 800, height: 600 });
+    });
+
+    it('blocks a concurrent capture and releases the guard after settlement', async () => {
+        const guard = new QaapPreviewCaptureGuard();
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        const first = guard.run(async () => {
+            await gate;
+            return 'first';
+        });
+
+        expect(await guard.run(async () => 'second')).to.equal(undefined);
+        release();
+        expect(await first).to.equal('first');
+        expect(await guard.run(async () => 'third')).to.equal('third');
+    });
+
+    it('refuses an over-complex DOM before allocating a canvas', async () => {
+        const disableJSDOM = enableJSDOM();
+        try {
+            const fragment = document.createDocumentFragment();
+            for (let index = 0; index < QAAP_PREVIEW_CAPTURE_MAX_DOM_ELEMENTS; index++) {
+                fragment.append(document.createElement('div'));
+            }
+            document.body.append(fragment);
+            const frame = document.createElement('iframe');
+
+            expect(await captureSameOriginPreview(document, frame)).to.equal(undefined);
         } finally {
             disableJSDOM();
         }

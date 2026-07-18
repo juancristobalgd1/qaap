@@ -21,6 +21,14 @@ export interface QaapDevPreviewRecord extends QaapDevPreviewRegistration {
     readonly accessToken: string;
 }
 
+export interface QaapDevPreviewRegisterOptions {
+    /**
+     * Allows replacing expired, conflicting records. Callers must first verify that every port
+     * returned by {@link QaapDevPreviewPortRegistry.expiredRegistrationConflicts} is no longer accepting connections.
+     */
+    readonly replaceExpired?: boolean;
+}
+
 /**
  * Maps a dev-preview port to the login that claimed it (having proven workspace ownership), so the
  * `/qaap-dev/:port` proxy can deny a signed-in user reaching another tenant's dev server on the
@@ -42,38 +50,102 @@ export class QaapDevPreviewPortRegistry {
      * Registers immutable execution coordinates and reserves the port for that preview. Neither a
      * second execution nor a second tenant may overwrite a live mapping.
      */
-    register(registration: QaapDevPreviewRegistration): QaapDevPreviewRecord | undefined {
+    register(
+        registration: QaapDevPreviewRegistration,
+        options: QaapDevPreviewRegisterOptions = {},
+    ): QaapDevPreviewRecord | undefined {
         const now = Date.now();
+        const livePortOwner = this.ownerOf(registration.port);
+        if (livePortOwner !== undefined && livePortOwner !== registration.ownerLogin) {
+            return undefined;
+        }
+        const stalePortOwner = this.staleOwnerOf(registration.port);
+        if (stalePortOwner !== undefined && stalePortOwner !== registration.ownerLogin && !options.replaceExpired) {
+            return undefined;
+        }
+
         const existing = this.previews.get(registration.previewId);
-        if (existing && !this.isRecordExpired(existing)) {
+        if (existing) {
+            const expired = this.isRecordExpired(existing);
             if (!this.sameRegistration(existing, registration)) {
-                return undefined;
+                if (!expired || !options.replaceExpired) {
+                    return undefined;
+                }
+                this.removeExpiredRecord(existing);
+            } else {
+                const refreshed = {
+                    ...existing,
+                    processId: registration.processId ?? existing.processId,
+                    claimedAt: expired ? now : existing.claimedAt,
+                    touchedAt: now,
+                    accessToken: expired ? randomBytes(24).toString('base64url') : existing.accessToken,
+                };
+                this.previews.set(registration.previewId, refreshed);
+                this.claims.set(registration.port, { ownerLogin: registration.ownerLogin, at: now });
+                return refreshed;
             }
-            const refreshed = { ...existing, processId: registration.processId ?? existing.processId, touchedAt: now };
-            this.previews.set(registration.previewId, refreshed);
-            this.claims.set(registration.port, { ownerLogin: registration.ownerLogin, at: now });
-            return refreshed;
         }
 
         const occupiedBy = this.previewIdByPort.get(registration.port);
         if (occupiedBy && occupiedBy !== registration.previewId) {
             const occupied = this.previews.get(occupiedBy);
-            if (occupied && !this.isRecordExpired(occupied)) {
-                return undefined;
+            if (occupied) {
+                if (!this.isRecordExpired(occupied) || !options.replaceExpired) {
+                    return undefined;
+                }
+                this.removeExpiredRecord(occupied);
+            } else {
+                this.previewIdByPort.delete(registration.port);
             }
-            this.previews.delete(occupiedBy);
+        }
+
+        if (options.replaceExpired && this.staleOwnerOf(registration.port) !== undefined) {
+            this.claims.delete(registration.port);
         }
 
         const record: QaapDevPreviewRecord = {
             ...registration,
-            claimedAt: existing?.claimedAt ?? now,
+            claimedAt: now,
             touchedAt: now,
-            accessToken: existing?.accessToken ?? randomBytes(24).toString('base64url'),
+            accessToken: randomBytes(24).toString('base64url'),
         };
         this.previews.set(registration.previewId, record);
         this.previewIdByPort.set(registration.port, registration.previewId);
         this.claims.set(registration.port, { ownerLogin: registration.ownerLogin, at: now });
         return record;
+    }
+
+    /**
+     * Returns expired records that a changed registration would replace by preview identity or
+     * port. Live conflicts are intentionally omitted: they can never be replaced.
+     */
+    expiredRegistrationConflicts(registration: QaapDevPreviewRegistration): QaapDevPreviewRecord[] {
+        const conflicts = new Map<string, QaapDevPreviewRecord>();
+        const existing = this.previews.get(registration.previewId);
+        if (existing && this.isRecordExpired(existing) && !this.sameRegistration(existing, registration)) {
+            conflicts.set(existing.previewId, existing);
+        }
+        const occupiedBy = this.previewIdByPort.get(registration.port);
+        if (occupiedBy && occupiedBy !== registration.previewId) {
+            const occupied = this.previews.get(occupiedBy);
+            if (occupied && this.isRecordExpired(occupied)) {
+                conflicts.set(occupied.previewId, occupied);
+            }
+        }
+        return [...conflicts.values()];
+    }
+
+    protected removeExpiredRecord(record: QaapDevPreviewRecord): void {
+        if (this.previews.get(record.previewId) !== record || !this.isRecordExpired(record)) {
+            return;
+        }
+        this.previews.delete(record.previewId);
+        if (this.previewIdByPort.get(record.port) === record.previewId) {
+            this.previewIdByPort.delete(record.port);
+        }
+        if (this.staleOwnerOf(record.port) === record.ownerLogin) {
+            this.claims.delete(record.port);
+        }
     }
 
     get(previewId: string): QaapDevPreviewRecord | undefined {

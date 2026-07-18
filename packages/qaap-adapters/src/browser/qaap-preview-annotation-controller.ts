@@ -148,6 +148,7 @@ export class QaapPreviewAnnotationController implements Disposable {
     protected annotateDeleteButton: HTMLButtonElement | undefined;
     protected annotateScreenshotButton: HTMLButtonElement | undefined;
     protected annotateCompareButton: HTMLButtonElement | undefined;
+    protected screenshotCaptureInFlight: Promise<void> | undefined;
     protected comparingOriginal = false;
     protected listenerInstalled = false;
     protected notify: ((message: string, kind?: 'info' | 'warn') => void) | undefined;
@@ -951,11 +952,27 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     protected async takeScreenshot(): Promise<void> {
-        if (this.options.takeScreenshot) {
-            await this.options.takeScreenshot();
+        if (this.screenshotCaptureInFlight) {
+            await this.screenshotCaptureInFlight;
             return;
         }
-        await this.captureScreenshotForChat();
+        const capture = (async (): Promise<void> => {
+            if (this.options.takeScreenshot) {
+                await this.options.takeScreenshot();
+                return;
+            }
+            await this.captureScreenshotForChat();
+        })();
+        this.screenshotCaptureInFlight = capture;
+        this.syncAnnotateToolbar();
+        try {
+            await capture;
+        } finally {
+            if (this.screenshotCaptureInFlight === capture) {
+                this.screenshotCaptureInFlight = undefined;
+                this.syncAnnotateToolbar();
+            }
+        }
     }
 
     /**
@@ -1247,6 +1264,12 @@ export class QaapPreviewAnnotationController implements Disposable {
             const canDelete = this.hasClearableAnnotations();
             this.annotateDeleteButton.disabled = !canDelete;
             this.annotateDeleteButton.classList.toggle('qaap-mod-disabled', !canDelete);
+        }
+        if (this.annotateScreenshotButton) {
+            const captureBusy = !!this.screenshotCaptureInFlight;
+            this.annotateScreenshotButton.disabled = captureBusy;
+            this.annotateScreenshotButton.classList.toggle('qaap-mod-disabled', captureBusy);
+            this.annotateScreenshotButton.setAttribute('aria-busy', captureBusy ? 'true' : 'false');
         }
     }
 

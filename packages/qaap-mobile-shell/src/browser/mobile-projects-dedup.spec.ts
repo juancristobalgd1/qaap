@@ -231,4 +231,71 @@ describe('mobile-projects-dedup', () => {
         expect(deduped.map(candidate => candidate.id)).to.deep.equal([alpha.id, beta.id]);
     });
 
+    it('drops a github card when a recent workspace points at the same cloned repo', () => {
+        const uri = new URI('file:///workspace/repos/users/jcristgd/acme/cloud-spark-dev');
+        const recent = project({
+            id: `recent:${uri.toString()}`,
+            name: 'cloud-spark-dev',
+            uri,
+        });
+        const github = project({
+            id: 'github:acme/cloud-spark-dev',
+            name: 'cloud-spark-dev',
+            github: {
+                owner: 'acme',
+                name: 'cloud-spark-dev',
+                fullName: 'acme/cloud-spark-dev',
+                htmlUrl: 'https://github.com/acme/cloud-spark-dev',
+                private: false,
+            },
+        });
+
+        const deduped = deduplicateMobileProjectEntries([github, recent], ctx);
+
+        expect(deduped).to.have.length(1);
+        expect(deduped[0].id).to.equal(recent.id);
+    });
+
+    it('drops a ws session card when a github card describes the same hosted clone', () => {
+        const uri = new URI('file:///workspace/repos/users/jcristgd/acme/cloud-spark-dev');
+        const workspaceSession = project({
+            id: `ws:${uri.toString()}`,
+            name: 'cloud-spark-dev',
+            uri,
+        });
+        const github = project({
+            id: 'github:acme/cloud-spark-dev',
+            name: 'cloud-spark-dev',
+            github: {
+                owner: 'acme',
+                name: 'cloud-spark-dev',
+                fullName: 'acme/cloud-spark-dev',
+                htmlUrl: 'https://github.com/acme/cloud-spark-dev',
+                private: false,
+            },
+        });
+
+        const deduped = deduplicateMobileProjectEntries([github, workspaceSession], ctx);
+
+        expect(deduped).to.have.length(1);
+        expect(deduped[0].id).to.equal(workspaceSession.id);
+    });
+
+    it('keeps distinct repositories stored in ambiguous legacy per-user paths', () => {
+        const first = project({
+            id: 'recent:file:///workspace/repos/users/jcristgd/first-project',
+            name: 'first-project',
+            uri: new URI('file:///workspace/repos/users/jcristgd/first-project'),
+        });
+        const second = project({
+            id: 'recent:file:///workspace/repos/users/jcristgd/second-project',
+            name: 'second-project',
+            uri: new URI('file:///workspace/repos/users/jcristgd/second-project'),
+        });
+
+        const deduped = deduplicateMobileProjectEntries([first, second], ctx);
+
+        expect(deduped.map(candidate => candidate.id)).to.deep.equal([first.id, second.id]);
+    });
+
 });

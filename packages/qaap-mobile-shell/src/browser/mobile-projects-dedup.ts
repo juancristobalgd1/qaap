@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import URI from '@theia/core/lib/common/uri';
+import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 export interface MobileProjectDedupContext {
@@ -105,6 +106,13 @@ function collectProjectDeduplicationKeys(
 
     if (project.github) {
         claims.add(`github:${project.github.owner}/${project.github.name}`.toLowerCase());
+    } else {
+        const inferredGithub = inferGithubKeyFromWorkspacePath(ctx.cwdFromUri(project.uri));
+        if (inferredGithub) {
+            // Link recent/ws cards to the matching github: session row even when URIs differ
+            // (legacy flat clone vs per-user path) or the github card has no uri yet.
+            claims.add(inferredGithub);
+        }
     }
 
     const cwd = ctx.cwdFromUri(project.uri);
@@ -122,4 +130,12 @@ function collectProjectDeduplicationKeys(
     }
 
     return { claims: [...claims], probes: [...probes] };
+}
+
+function inferGithubKeyFromWorkspacePath(cwd: string | undefined): string | undefined {
+    if (!cwd) {
+        return undefined;
+    }
+    const fullName = parseGithubFullNameFromWorkspacePath(cwd);
+    return fullName ? `github:${fullName}`.toLowerCase() : undefined;
 }

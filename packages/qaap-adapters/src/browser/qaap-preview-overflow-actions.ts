@@ -52,6 +52,80 @@ export interface QaapPreviewOverflowMenuItem {
     readonly checked?: boolean;
 }
 
+export interface QaapPreviewCaptureLimits {
+    readonly maxWidth?: number;
+    readonly maxHeight?: number;
+}
+
+export interface QaapPreviewCaptureDimensions {
+    readonly width: number;
+    readonly height: number;
+}
+
+export const QAAP_PREVIEW_CAPTURE_DEFAULT_MAX_WIDTH = 1600;
+export const QAAP_PREVIEW_CAPTURE_DEFAULT_MAX_HEIGHT = 2400;
+export const QAAP_PREVIEW_CAPTURE_MAX_DOM_ELEMENTS = 5000;
+const QAAP_PREVIEW_CAPTURE_HARD_MAX_WIDTH = 4096;
+const QAAP_PREVIEW_CAPTURE_HARD_MAX_HEIGHT = 8192;
+const QAAP_PREVIEW_CAPTURE_HARD_MAX_PIXELS = 8_000_000;
+const QAAP_PREVIEW_CAPTURE_MAX_SERIALIZED_CHARACTERS = 4 * 1024 * 1024;
+
+/** Prevent simultaneous DOM cloning/canvas allocation across preview surfaces. */
+export class QaapPreviewCaptureGuard {
+    protected active = false;
+
+    async run<T>(capture: () => Promise<T>): Promise<T | undefined> {
+        if (this.active) {
+            return undefined;
+        }
+        this.active = true;
+        try {
+            return await capture();
+        } finally {
+            this.active = false;
+        }
+    }
+}
+
+const previewCaptureGuard = new QaapPreviewCaptureGuard();
+
+export function resolvePreviewCaptureDimensions(
+    naturalWidth: number,
+    naturalHeight: number,
+    limits: QaapPreviewCaptureLimits = {},
+): QaapPreviewCaptureDimensions {
+    const maxWidth = normalizePreviewCaptureLimit(
+        limits.maxWidth,
+        QAAP_PREVIEW_CAPTURE_DEFAULT_MAX_WIDTH,
+        QAAP_PREVIEW_CAPTURE_HARD_MAX_WIDTH,
+    );
+    const maxHeight = normalizePreviewCaptureLimit(
+        limits.maxHeight,
+        QAAP_PREVIEW_CAPTURE_DEFAULT_MAX_HEIGHT,
+        QAAP_PREVIEW_CAPTURE_HARD_MAX_HEIGHT,
+    );
+    let width = Math.min(normalizePreviewCaptureSize(naturalWidth), maxWidth);
+    let height = Math.min(normalizePreviewCaptureSize(naturalHeight), maxHeight);
+    const pixels = width * height;
+    if (pixels > QAAP_PREVIEW_CAPTURE_HARD_MAX_PIXELS) {
+        const scale = Math.sqrt(QAAP_PREVIEW_CAPTURE_HARD_MAX_PIXELS / pixels);
+        width = Math.max(1, Math.floor(width * scale));
+        height = Math.max(1, Math.floor(height * scale));
+    }
+    return { width, height };
+}
+
+function normalizePreviewCaptureLimit(value: number | undefined, fallback: number, hardMaximum: number): number {
+    if (value === undefined || !Number.isFinite(value) || value <= 0) {
+        return fallback;
+    }
+    return Math.min(Math.floor(value), hardMaximum);
+}
+
+function normalizePreviewCaptureSize(value: number): number {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
+}
+
 export function buildPreviewOverflowMenuItems(ctx: Pick<QaapPreviewOverflowActionContext, 'bookmarkBarVisible'>): QaapPreviewOverflowMenuItem[] {
     const bookmarkVisible = ctx.bookmarkBarVisible();
     return [
@@ -263,12 +337,27 @@ async function runPreviewCopyCurrentUrl(ctx: QaapPreviewOverflowActionContext): 
 export async function captureSameOriginPreview(
     doc: Document,
     frame: HTMLIFrameElement,
-    limits?: { readonly maxWidth?: number; readonly maxHeight?: number },
+    limits?: QaapPreviewCaptureLimits,
 ): Promise<Blob | undefined> {
+    return previewCaptureGuard.run(() => captureSameOriginPreviewUnlocked(doc, frame, limits));
+}
+
+async function captureSameOriginPreviewUnlocked(
+    doc: Document,
+    frame: HTMLIFrameElement,
+    limits?: QaapPreviewCaptureLimits,
+): Promise<Blob | undefined> {
+    if (doc.documentElement.querySelectorAll('*').length + 1 > QAAP_PREVIEW_CAPTURE_MAX_DOM_ELEMENTS) {
+        return undefined;
+    }
     const naturalWidth = Math.max(doc.documentElement.scrollWidth, doc.documentElement.clientWidth, frame.clientWidth, 1);
     const naturalHeight = Math.max(doc.documentElement.scrollHeight, doc.documentElement.clientHeight, frame.clientHeight, 1);
-    const width = Math.min(naturalWidth, limits?.maxWidth ?? naturalWidth);
-    const height = Math.min(naturalHeight, limits?.maxHeight ?? naturalHeight);
+    const { width, height } = resolvePreviewCaptureDimensions(naturalWidth, naturalHeight, limits);
+    const captureRoot = clonePreviewDocumentWithComputedStyles(doc);
+    const serializedCaptureRoot = new XMLSerializer().serializeToString(captureRoot);
+    if (serializedCaptureRoot.length > QAAP_PREVIEW_CAPTURE_MAX_SERIALIZED_CHARACTERS) {
+        return undefined;
+    }
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -276,11 +365,10 @@ export async function captureSameOriginPreview(
     if (!ctx) {
         return undefined;
     }
-    const captureRoot = clonePreviewDocumentWithComputedStyles(doc);
     const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
   <foreignObject width="100%" height="100%">
-    ${new XMLSerializer().serializeToString(captureRoot)}
+    ${serializedCaptureRoot}
   </foreignObject>
 </svg>`;
     const img = new Image();

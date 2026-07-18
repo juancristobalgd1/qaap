@@ -4,7 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveTenantSegmentFromWorkspacePath } from './qaap-user-isolation';
+import {
+    parseGithubFullNameFromWorkspacePath,
+    resolveTenantSegmentFromWorkspacePath,
+} from './qaap-user-isolation';
 
 describe('resolveTenantSegmentFromWorkspacePath', () => {
     const reposRoot = '/workspace/repos';
@@ -35,5 +38,22 @@ describe('resolveTenantSegmentFromWorkspacePath', () => {
 
     it('does not escape the users root via traversal', () => {
         expect(resolveTenantSegmentFromWorkspacePath(reposRoot, '/workspace/repos/users/../secret')).to.equal(undefined);
+    });
+});
+
+describe('parseGithubFullNameFromWorkspacePath', () => {
+    it('parses canonical per-user repository paths', () => {
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice/acme/site'))
+            .to.equal('acme/site');
+    });
+
+    it('parses legacy repository paths that encode owner and repository', () => {
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/acme/site'))
+            .to.equal('acme/site');
+    });
+
+    it('does not invent an owner for ambiguous legacy per-user paths', () => {
+        expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice/site'))
+            .to.equal(undefined);
     });
 });
