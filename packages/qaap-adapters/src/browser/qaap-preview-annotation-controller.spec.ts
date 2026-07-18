@@ -654,6 +654,78 @@ describe('qaap-preview-annotation-controller', () => {
         expect(store.get('pricing-1')).to.equal(undefined);
     });
 
+    it('toolbar close clears every annotation and the open comment popover', () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        const store = new PreviewAnnotationStore(undefined);
+        const controller = new QaapPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: () => ({ id: QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND }),
+                executeCommand: async () => true,
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            store,
+            getScope: () => ({
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewId: 'http://localhost:3001/',
+                previewUrl: 'http://localhost:3001/',
+                route: '/home',
+                viewportMode: 'mobile',
+                viewportWidth: 390,
+                viewportHeight: 844,
+            }),
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            toDispose,
+        });
+        controller.setInteractionMode('annotate');
+        store.add({
+            id: 'confirmed-1',
+            workspaceId: 'ws',
+            threadId: 't1',
+            previewId: 'http://localhost:3001/',
+            previewUrl: 'http://localhost:3001/',
+            route: '/other-route',
+            comment: 'Confirmed elsewhere',
+            viewport: { mode: 'mobile', width: 390, height: 844 },
+            anchor: { kind: 'page', documentXRatio: 0.2, documentYRatio: 0.3 },
+            documentXRatio: 0.2,
+            documentYRatio: 0.3,
+            status: 'confirmed',
+            createdAt: Date.now(),
+        });
+        controller.onWindowMessage(frameMessage(frame, {
+            type: ELEMENT_ANNOTATION_POINT_TYPE,
+            payload: {
+                version: 1,
+                clientX: 40,
+                clientY: 60,
+                route: '/home',
+                pageUrl: 'http://localhost:3001/home',
+                documentXRatio: 0.2,
+                documentYRatio: 0.3,
+                viewportWidth: 390,
+                viewportHeight: 844,
+                scrollX: 0,
+                scrollY: 0,
+            },
+        }));
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.exist;
+        expect(store.list().length).to.be.greaterThan(1);
+
+        // The toolbar chrome is not mounted in this harness — invoke the × handler directly.
+        (controller as unknown as { exitAnnotateModeAndClear(): void }).exitAnnotateModeAndClear();
+
+        expect(store.list()).to.have.length(0);
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.not.exist;
+        expect(controller.getInteractionMode()).to.equal('browse');
+    });
+
     it('Send commits a typed-but-unconfirmed popover draft instead of dropping it', async () => {
         const frame = createFrame();
         const slot = document.createElement('div');

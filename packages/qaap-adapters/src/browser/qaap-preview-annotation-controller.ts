@@ -325,6 +325,31 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     /**
+     * Toolbar × — leaving Annotate discards the session: every annotation of this preview
+     * conversation (any route), the open comment popover, and the pending screenshot.
+     */
+    protected exitAnnotateModeAndClear(): void {
+        const scope = this.options.getScope();
+        this.pendingChatScreenshot = undefined;
+        this.provisionalId = undefined;
+        this.closePopover();
+        this.setComparingOriginal(false);
+        if (scope) {
+            for (const item of this.store.listForConversation(
+                scope.workspaceId,
+                scope.threadId,
+                scope.previewId ?? scope.previewUrl,
+            )) {
+                this.store.remove(item.id);
+            }
+            this.store.clearScope(scope);
+        }
+        this.positions.clear();
+        this.refreshMarkers();
+        this.setInteractionMode('browse');
+    }
+
+    /**
      * After a successful Work Hub attach/submit: remove exactly the sent annotations plus any
      * leftover drafts in the current scope, hide markers, close the comment popover, reset the
      * toolbar badge, and return to browse.
@@ -858,8 +883,7 @@ export class QaapPreviewAnnotationController implements Disposable {
         const onClose = (e: MouseEvent): void => {
             e.preventDefault();
             e.stopPropagation();
-            this.setComparingOriginal(false);
-            this.setInteractionMode('browse');
+            this.exitAnnotateModeAndClear();
         };
         const onUndo = (e: MouseEvent): void => {
             e.preventDefault();

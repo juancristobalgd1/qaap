@@ -119,15 +119,16 @@
   background: transparent;
 }
 
+/* Same type size and line box as the textarea so chip + placeholder sit on one baseline. */
 .qaap-preview-annotation-popover-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   flex: 0 0 auto;
   max-width: 8em;
-  margin-top: 2px;
+  margin-top: 0;
   color: var(--qaap-annotation-chip);
-  font: 500 12px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   letter-spacing: 0.01em;
   user-select: none;
   pointer-events: none;
@@ -136,8 +137,8 @@
 .qaap-preview-annotation-popover-chip-icon {
   display: block;
   flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   color: var(--qaap-annotation-chip);
   opacity: 0.95;
 }
