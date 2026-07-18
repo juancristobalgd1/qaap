@@ -27,6 +27,22 @@ export function shouldUseStickyComposerDesktopPopover(anchor?: HTMLElement): anc
     return !matchesMobileNarrowViewport() && anchor instanceof HTMLElement;
 }
 
+/** Agent chip inside the Cursor-style preview annotation popover footer. */
+export function isStickyComposerAnnotationPopoverAnchor(anchor?: HTMLElement): anchor is HTMLElement {
+    return anchor instanceof HTMLElement
+        && anchor.closest('.qaap-preview-annotation-popover') instanceof HTMLElement;
+}
+
+/**
+ * Prefer an anchored sheet popover when the viewport is wide enough for desktop
+ * chrome, or when the control lives inside the annotation comment popover
+ * (narrow preview must not take over the Work Hub with a full-screen sheet).
+ */
+export function shouldUseStickyComposerPopover(anchor?: HTMLElement): anchor is HTMLElement {
+    return shouldUseStickyComposerDesktopPopover(anchor)
+        || isStickyComposerAnnotationPopoverAnchor(anchor);
+}
+
 function getStickyComposerViewportBounds(): StickyComposerViewportBounds {
     const viewport = window.visualViewport;
     const top = viewport?.offsetTop ?? 0;
@@ -73,7 +89,8 @@ export function scheduleStickyComposerPopoverPosition(
 }
 
 function resolveStickyComposerPopoverLayoutHost(anchor: HTMLElement): HTMLElement | undefined {
-    const host = anchor.closest('.theia-mobile-projects')
+    const host = anchor.closest('.qaap-preview-annotation-popover')
+        ?? anchor.closest('.theia-mobile-projects')
         ?? anchor.closest('.theia-mobile-agent-transcript-root')
         ?? anchor.closest('#theia-app-shell');
     return host instanceof HTMLElement ? host : undefined;
@@ -206,6 +223,7 @@ export function wireStickyComposerPopoverDismiss(
     const onKeyDown = (event: KeyboardEvent): void => {
         if (event.key === 'Escape') {
             event.preventDefault();
+            event.stopPropagation();
             onClose();
             anchor.focus();
         }
@@ -244,6 +262,10 @@ export function mountStickyComposerSheetPopover(
     for (const modifierClass of options.modifierClasses ?? []) {
         popover.classList.add(modifierClass);
         panel.classList.add(modifierClass);
+    }
+    if (isStickyComposerAnnotationPopoverAnchor(options.anchor)) {
+        popover.classList.add('theia-mod-annotation-anchor');
+        panel.classList.add('theia-mod-annotation-anchor');
     }
     popover.setAttribute('role', 'dialog');
     popover.append(panel);

@@ -690,7 +690,14 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptLastSseDeltaAt = undefined;
         this.host.transcriptLiveUi.clearTranscriptSemanticProgressClock();
         const chatHost = this.ensureAgentsHubExecutionShell(project, summary);
-        const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project);
+        // Opening a real conversation (e.g. Annotate Send / first sticky submit) must land on
+        // Messages — keeping Preview hid the user turn while the composer still showed working.
+        const activeTab = isAgentsHubIdleConversationSummary(summary)
+            ? this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project)
+            : 'messages';
+        if (activeTab === 'messages') {
+            this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
+        }
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
         if (chatHost) {

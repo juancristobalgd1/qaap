@@ -16,6 +16,7 @@ const ATTACHMENT_SECTION_SEPARATOR = '\n\n---\n\n';
 
 const IMAGE_CONTEXT_HEADER_PATTERN = /^### imageContext:\s*(.+)$/gm;
 const WORKSPACE_IMAGE_ATTACHED_PATTERN = /^Workspace image attached:\s*([^\s(]+)/gm;
+const PREVIEW_FEEDBACK_HEADER_PATTERN = /^### previewFeedback:\s*(.+)$/gm;
 
 export function extractComposerAttachmentImagePaths(content: string): string[] {
     const paths = new Set<string>();
@@ -37,7 +38,8 @@ export function extractComposerAttachmentImagePaths(content: string): string[] {
 /** Returns only the typed user draft, omitting composer attachment preamble blocks. */
 export function stripComposerAttachmentPreamble(content: string): string {
     if (!content.includes(ATTACHMENT_PREAMBLE_HEADER)
-        && extractComposerAttachmentImagePaths(content).length === 0) {
+        && extractComposerAttachmentImagePaths(content).length === 0
+        && extractComposerAttachmentPreviewFeedbackTitles(content).length === 0) {
         return content;
     }
     const separatorIndex = content.lastIndexOf(ATTACHMENT_SECTION_SEPARATOR);
@@ -45,10 +47,29 @@ export function stripComposerAttachmentPreamble(content: string): string {
         return content.slice(separatorIndex + ATTACHMENT_SECTION_SEPARATOR.length).trim();
     }
     if (content.includes(ATTACHMENT_PREAMBLE_HEADER)
-        || extractComposerAttachmentImagePaths(content).length > 0) {
+        || extractComposerAttachmentImagePaths(content).length > 0
+        || extractComposerAttachmentPreviewFeedbackTitles(content).length > 0) {
         return '';
     }
     return content;
+}
+
+/** Titles from `### previewFeedback:` attachment headers (for transcript chips). */
+export function extractComposerAttachmentPreviewFeedbackTitles(content: string): string[] {
+    const titles: string[] = [];
+    for (const match of content.matchAll(PREVIEW_FEEDBACK_HEADER_PATTERN)) {
+        const title = match[1]?.trim();
+        if (title) {
+            titles.push(title);
+        }
+    }
+    return titles;
+}
+
+export function hasComposerAttachmentPreamble(content: string): boolean {
+    return content.includes(ATTACHMENT_PREAMBLE_HEADER)
+        || extractComposerAttachmentImagePaths(content).length > 0
+        || extractComposerAttachmentPreviewFeedbackTitles(content).length > 0;
 }
 
 /** Meta variables that summarize other context — never inline as attachments. */

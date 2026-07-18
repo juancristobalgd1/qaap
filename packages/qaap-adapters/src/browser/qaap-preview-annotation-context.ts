@@ -9,6 +9,45 @@ import type { PreviewAnnotation } from './qaap-preview-annotation-types';
 /** Command implemented by qaap-mobile-shell — attach chip; pass `submit: true` to also send. */
 export const QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND = 'qaap.workHub.attachComposerContext';
 
+/** Inline image payload forwarded with annotate Send (base64, no workspace upload). */
+export interface PreviewAnnotationChatImageAttachment {
+    readonly name: string;
+    readonly mimeType: string;
+    readonly data: string;
+}
+
+export interface PreviewAnnotationChatAttachArgs {
+    readonly chipTitle: string;
+    readonly contextBody: string;
+    readonly dedupeKey: string;
+    readonly submit: true;
+    readonly images?: readonly PreviewAnnotationChatImageAttachment[];
+}
+
+export function buildAnnotateChatAttachArgs(
+    confirmed: readonly PreviewAnnotation[],
+    route: string,
+    viewportMode: 'desktop' | 'mobile',
+    images?: readonly PreviewAnnotationChatImageAttachment[],
+): PreviewAnnotationChatAttachArgs | undefined {
+    if (confirmed.length === 0) {
+        return undefined;
+    }
+    const chipTitle = formatPreviewFeedbackChipTitle(confirmed, route, viewportMode);
+    const contextBody = formatPreviewFeedbackAgentContext(confirmed);
+    const dedupeKey = buildPreviewFeedbackDedupeKey(confirmed[0]!, confirmed.map(item => item.id));
+    const args: PreviewAnnotationChatAttachArgs = {
+        chipTitle,
+        contextBody,
+        dedupeKey,
+        submit: true,
+    };
+    if (images?.length) {
+        return { ...args, images };
+    }
+    return args;
+}
+
 export function formatPreviewFeedbackChipTitle(
     annotations: readonly PreviewAnnotation[],
     route: string,

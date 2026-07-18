@@ -45,6 +45,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
         row.className = 'theia-mobile-agent-transcript-msg theia-mod-user';
         const messageView = resolveTranscriptUserMessageView(msg);
         const imagePreviews = messageView.imagePreviews;
+        const contextChips = messageView.contextChips;
         const gitActionOnly = !!messageView.gitActionInvocation && isComposerGitActionOnlyMessage(msg.content);
         if (gitActionOnly) {
             wrap.classList.add('theia-mod-git-action-record');
@@ -53,6 +54,9 @@ export class MobileProjectsTranscriptMessagesUserUi {
         if (imagePreviews.length) {
             wrap.append(this.createTranscriptUserImagePreviews(imagePreviews));
             void this.hydrateTranscriptUserImagePreviews(wrap, imagePreviews);
+        }
+        if (contextChips.length) {
+            wrap.append(this.createTranscriptUserContextChips(contextChips));
         }
         const contentEl = document.createElement('div');
         contentEl.className = 'theia-mobile-agent-transcript-content';
@@ -68,7 +72,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
                 this.toolUi.renderTranscriptRichContent(contentEl, displayContent, { defer, sync: !defer });
             }
             row.append(contentEl);
-        } else if (!imagePreviews.length) {
+        } else if (!imagePreviews.length && !contextChips.length) {
             const fallback = resolveTranscriptUserMessageView(msg).displayText;
             if (fallback.trim()) {
                 this.toolUi.renderTranscriptRichContent(contentEl, fallback, { defer, sync: !defer });
@@ -111,6 +115,27 @@ export class MobileProjectsTranscriptMessagesUserUi {
         if (userText) {
             contentEl.append(document.createTextNode(` ${userText}`));
         }
+    }
+
+    createTranscriptUserContextChips(
+        chips: ReadonlyArray<{ readonly title: string; readonly kind: string; readonly iconClasses: string }>,
+    ): HTMLElement {
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-agent-transcript-user-context-chips';
+        for (const chip of chips) {
+            const item = document.createElement('div');
+            item.className = 'theia-mobile-agent-transcript-user-context-chip';
+            item.dataset.kind = chip.kind;
+            const icon = document.createElement('span');
+            icon.className = `theia-mobile-agent-transcript-user-context-chip-icon ${chip.iconClasses}`;
+            icon.setAttribute('aria-hidden', 'true');
+            const title = document.createElement('span');
+            title.className = 'theia-mobile-agent-transcript-user-context-chip-title';
+            title.textContent = chip.title;
+            item.append(icon, title);
+            list.append(item);
+        }
+        return list;
     }
 
     createTranscriptUserImagePreviews(previews: readonly QaapTranscriptUserImagePreview[]): HTMLElement {

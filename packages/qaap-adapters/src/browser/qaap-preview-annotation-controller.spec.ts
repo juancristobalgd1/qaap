@@ -229,6 +229,163 @@ describe('qaap-preview-annotation-controller', () => {
         })).to.have.length(0);
     });
 
+    it('attaches composerSession controls into the Cursor-style annotation popover', async () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        const store = new PreviewAnnotationStore(undefined);
+        let attached = 0;
+        let disposed = 0;
+        const controller = new QaapPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: () => ({ id: QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND }),
+                executeCommand: async () => true,
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            store,
+            getScope: () => ({
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewUrl: 'http://localhost:3001/',
+                route: '/home',
+                viewportMode: 'desktop',
+                viewportWidth: 800,
+                viewportHeight: 600,
+            }),
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            toDispose,
+            composerSession: {
+                attach: host => {
+                    attached += 1;
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'theia-mobile-projects-sticky-composer-agent';
+                    btn.textContent = 'Codex';
+                    host.append(btn);
+                    return {
+                        dispose: () => {
+                            disposed += 1;
+                            host.replaceChildren();
+                        },
+                    };
+                },
+            },
+        });
+        controller.setInteractionMode('annotate');
+        controller.onWindowMessage(frameMessage(frame, {
+            type: ELEMENT_ANNOTATION_POINT_TYPE,
+            payload: {
+                version: 1,
+                clientX: 40,
+                clientY: 60,
+                route: '/home',
+                pageUrl: 'http://localhost:3001/home',
+                documentXRatio: 0.2,
+                documentYRatio: 0.3,
+                viewportWidth: 390,
+                viewportHeight: 844,
+                scrollX: 0,
+                scrollY: 0,
+                element: {
+                    selector: 'button.cta',
+                    tagName: 'button',
+                    rect: { top: 10, left: 10, width: 80, height: 40 },
+                    xRatio: 0.5,
+                    yRatio: 0.5,
+                    documentXRatio: 0.2,
+                    documentYRatio: 0.3,
+                },
+            },
+        }));
+        expect(attached).to.equal(1);
+        const popover = document.querySelector('.qaap-preview-annotation-popover') as HTMLElement;
+        expect(popover).to.exist;
+        expect(popover.querySelector('.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent'))
+            .to.exist;
+        expect(document.querySelector('.qaap-preview-annotation-workhub-composer')).to.not.exist;
+
+        const cancel = popover.querySelector('.qaap-preview-annotation-popover-cancel') as HTMLButtonElement;
+        cancel.click();
+        expect(disposed).to.equal(1);
+    });
+
+    it('applies setComposerSession after construction (reuse / late wire)', async () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        const store = new PreviewAnnotationStore(undefined);
+        let attached = 0;
+        const controller = new QaapPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: () => ({ id: QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND }),
+                executeCommand: async () => true,
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            store,
+            getScope: () => ({
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewUrl: 'http://localhost:3001/',
+                route: '/home',
+                viewportMode: 'desktop',
+                viewportWidth: 800,
+                viewportHeight: 600,
+            }),
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            toDispose,
+        });
+        controller.setComposerSession({
+            attach: host => {
+                attached += 1;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'theia-mobile-projects-sticky-composer-agent';
+                btn.textContent = 'QAIQ';
+                host.append(btn);
+                return { dispose: () => host.replaceChildren() };
+            },
+        });
+        controller.setInteractionMode('annotate');
+        controller.onWindowMessage(frameMessage(frame, {
+            type: ELEMENT_ANNOTATION_POINT_TYPE,
+            payload: {
+                version: 1,
+                clientX: 40,
+                clientY: 60,
+                route: '/home',
+                pageUrl: 'http://localhost:3001/home',
+                documentXRatio: 0.2,
+                documentYRatio: 0.3,
+                viewportWidth: 390,
+                viewportHeight: 844,
+                scrollX: 0,
+                scrollY: 0,
+                element: {
+                    selector: 'button.cta',
+                    tagName: 'button',
+                    rect: { top: 10, left: 10, width: 80, height: 40 },
+                    xRatio: 0.5,
+                    yRatio: 0.5,
+                    documentXRatio: 0.2,
+                    documentYRatio: 0.3,
+                },
+            },
+        }));
+        expect(attached).to.equal(1);
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.exist;
+        expect(document.querySelector(
+            '.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent',
+        )?.textContent).to.equal('QAIQ');
+    });
+
     it('rejects unauthorized message sources', () => {
         const frame = createFrame();
         const slot = document.createElement('div');
@@ -363,6 +520,7 @@ describe('qaap-preview-annotation-controller', () => {
         expect(calls[0]!.args).to.include({ submit: true });
         expect((calls[0]!.args as { dedupeKey: string }).dedupeKey).to.contain('a1');
         expect((calls[0]!.args as { dedupeKey: string }).dedupeKey).to.contain('a2');
+        expect((calls[0]!.args as { images?: unknown[] }).images).to.equal(undefined);
         expect(store.get('a1')?.status).to.equal('attached');
         expect(store.get('a2')?.status).to.equal('attached');
         expect(toasts).to.have.length(1);
@@ -372,6 +530,75 @@ describe('qaap-preview-annotation-controller', () => {
         await controller.addAnnotationsToChat();
         expect(calls).to.have.length(1);
         expect(toasts.some(entry => /Confirm at least one annotation/i.test(entry.message))).to.equal(true);
+    });
+
+    it('Send includes pending annotate screenshot as image chat context', async () => {
+        const frame = createFrame();
+        const slot = document.createElement('div');
+        slot.append(frame);
+        document.body.append(slot);
+        const store = new PreviewAnnotationStore(undefined);
+        const calls: Array<{ id: string; args: unknown }> = [];
+        const controller = new QaapPreviewAnnotationController({
+            frame,
+            frameSlot: slot,
+            commands: {
+                getCommand: (id: string) => id === QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND ? { id } : undefined,
+                executeCommand: async (id: string, args: unknown) => {
+                    calls.push({ id, args });
+                    return true;
+                },
+            } as never,
+            messageService: { info: () => { /* */ }, warn: () => { /* */ }, error: () => { /* */ } } as never,
+            store,
+            getScope: () => ({
+                workspaceId: 'ws',
+                threadId: 't1',
+                previewUrl: 'http://localhost:3001/',
+                route: '/home',
+                viewportMode: 'mobile',
+                viewportWidth: 390,
+                viewportHeight: 844,
+            }),
+            startSelectPicker: () => { /* */ },
+            injectBridge: () => { /* */ },
+            toDispose,
+        });
+        store.add({
+            id: 'shot-1',
+            workspaceId: 'ws',
+            threadId: 't1',
+            previewUrl: 'http://localhost:3001/',
+            route: '/home',
+            comment: 'With screenshot',
+            viewport: { mode: 'mobile', width: 390, height: 844 },
+            anchor: { kind: 'page', documentXRatio: 0.2, documentYRatio: 0.3 },
+            documentXRatio: 0.2,
+            documentYRatio: 0.3,
+            status: 'confirmed',
+            createdAt: Date.now(),
+        });
+        controller.setPendingChatScreenshot({
+            name: 'preview-screenshot.png',
+            mimeType: 'image/png',
+            data: 'ZmFrZQ==',
+        });
+        expect(controller.getPendingChatScreenshot()?.data).to.equal('ZmFrZQ==');
+        await controller.addAnnotationsToChat();
+        expect(calls).to.have.length(1);
+        const args = calls[0]!.args as {
+            submit: boolean;
+            images?: Array<{ name: string; mimeType: string; data: string }>;
+        };
+        expect(args.submit).to.equal(true);
+        expect(args.images).to.have.length(1);
+        expect(args.images![0]).to.deep.equal({
+            name: 'preview-screenshot.png',
+            mimeType: 'image/png',
+            data: 'ZmFrZQ==',
+        });
+        expect(controller.getPendingChatScreenshot()).to.equal(undefined);
+        expect(store.get('shot-1')?.status).to.equal('attached');
     });
 
     it('Send does not mark attached or toast success when attach/submit fails', async () => {
@@ -488,15 +715,21 @@ describe('qaap-preview-annotation-controller', () => {
         const badge = bar.querySelector('.qaap-preview-annotate-toolbar-send-badge') as HTMLElement;
         const undo = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.codicon-discard') as HTMLButtonElement;
         const screenshot = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.codicon-device-camera') as HTMLButtonElement;
-        const compare = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.codicon-diff-single') as HTMLButtonElement;
+        const compare = bar.querySelector('.qaap-preview-annotate-toolbar-icon-btn.qaap-preview-annotate-toolbar-compare-btn') as HTMLButtonElement;
         expect(send).to.exist;
         expect(undo).to.exist;
         expect(screenshot).to.exist;
         expect(compare).to.exist;
+        expect(compare.classList.contains('codicon-diff-single')).to.equal(false);
+        expect(compare.querySelector('svg.qaap-preview-annotate-toolbar-compare-icon')).to.exist;
+        expect(compare.title).to.equal('Hold to see original');
+        expect(compare.getAttribute('aria-label')).to.equal('Hold to see original');
         expect(send.disabled).to.equal(true);
         expect(badge.hidden).to.equal(true);
         expect(undo.disabled || undo.classList.contains('qaap-mod-disabled')).to.equal(true);
 
+        expect(screenshot.title).to.equal('Screenshot and attach');
+        expect(screenshot.getAttribute('aria-label')).to.equal('Screenshot and attach');
         screenshot.click();
         expect(screenshotCalls).to.equal(1);
 
@@ -667,7 +900,7 @@ describe('qaap-preview-annotation-controller', () => {
 
         controller.setInteractionMode('annotate');
         const bar = chrome.querySelector('.qaap-preview-annotate-toolbar') as HTMLElement;
-        const compare = bar.querySelector('.codicon-diff-single') as HTMLButtonElement;
+        const compare = bar.querySelector('.qaap-preview-annotate-toolbar-compare-btn') as HTMLButtonElement;
         dispatchPointer(compare, 'pointerdown', 7);
 
         controller.onWindowMessage(frameMessage(frame, {

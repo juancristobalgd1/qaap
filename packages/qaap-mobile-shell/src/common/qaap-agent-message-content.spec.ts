@@ -151,6 +151,7 @@ describe('resolveTranscriptUserMessageView', () => {
                 fileName: 'huggingface-color.svg',
                 wsRelativePath: 'huggingface-color.svg',
             }],
+            contextChips: [],
         });
     });
 
@@ -162,6 +163,38 @@ describe('resolveTranscriptUserMessageView', () => {
                 src: '',
                 fileName: 'huggingface-color.svg',
                 wsRelativePath: 'huggingface-color.svg',
+            }],
+            contextChips: [],
+        });
+    });
+
+    it('surfaces preview-feedback attachments as context chips and strips the agent preamble', () => {
+        const feedbackResolved: ResolvedAIContextVariable = {
+            variable: {
+                id: 'previewFeedback',
+                name: 'previewFeedback',
+                label: 'PreviewFeedback',
+                description: 'Confirmed preview annotations',
+            },
+            arg: JSON.stringify({
+                k: 'previewFeedback|ws|t1|url|/home|a1',
+                b: 'Preview feedback annotations\n\nAnnotation 1:\n- Comment: Move button',
+                t: 'Preview feedback · 1 annotations · /home · Mobile',
+            }),
+            value: 'Preview feedback · 1 annotations · /home · Mobile',
+            contextValue: 'Preview feedback annotations\n\nAnnotation 1:\n- Comment: Move button',
+        };
+        const content = applyResolvedAttachmentsToPrompt(
+            'Please address the attached preview feedback.',
+            [feedbackResolved],
+        );
+        expect(resolveTranscriptUserMessageView({ content })).to.deep.equal({
+            displayText: 'Please address the attached preview feedback.',
+            imagePreviews: [],
+            contextChips: [{
+                title: 'Preview feedback · 1 annotations · /home · Mobile',
+                kind: 'previewFeedback',
+                iconClasses: 'codicon codicon-comment',
             }],
         });
     });
@@ -183,6 +216,7 @@ describe('resolveTranscriptUserMessageView', () => {
         expect(resolveTranscriptUserMessageView({ content })).to.deep.equal({
             displayText: '/loop mejora de rendimiento',
             imagePreviews: [],
+            contextChips: [],
             skillInvocation: {
                 skillName: 'loop',
                 prefix: undefined,
@@ -203,6 +237,7 @@ describe('resolveTranscriptUserMessageView', () => {
         expect(resolveTranscriptUserMessageView({ content })).to.deep.equal({
             displayText: 'Commit & Push',
             imagePreviews: [],
+            contextChips: [],
             gitActionInvocation: {
                 action: 'commit-push',
                 label: 'Commit & Push',

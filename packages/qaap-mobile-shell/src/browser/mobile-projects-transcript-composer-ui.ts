@@ -271,6 +271,7 @@ export class MobileProjectsTranscriptComposerUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         anchor?: HTMLElement,
+        options?: { readonly onSelectionApplied?: () => void },
     ): void {
         if (summary.source === 'theia-chat') {
             return;
@@ -328,6 +329,7 @@ export class MobileProjectsTranscriptComposerUi {
                     this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
                     this.closeAllComposerSheets();
                     this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+                    options?.onSelectionApplied?.();
                 },
                 });
             }).catch(() => {

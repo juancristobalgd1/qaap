@@ -9,12 +9,15 @@ import { parseAgentLogForTranscript } from './qaap-cli-transcript-stream';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 import {
     extractComposerAttachmentImagePaths,
+    extractComposerAttachmentPreviewFeedbackTitles,
+    hasComposerAttachmentPreamble,
     stripComposerAttachmentPreamble,
 } from './qaap-composer-attachment-prompt';
 import { parseComposerSkillDisplayMarker, type ComposerSkillDisplayMetadata } from './qaap-composer-skill-display';
 import { parseComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import { isQaiqStreamMetadataEnvelope } from './qaap-qaiq-stream';
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
+import { QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME } from './qaap-preview-feedback-context';
 
 interface AgentContentBlock {
     readonly type?: string;
@@ -65,9 +68,16 @@ type MessagePreviewLike = {
 };
 
 
+export interface TranscriptUserContextChip {
+    readonly title: string;
+    readonly kind: string;
+    readonly iconClasses: string;
+}
+
 export interface TranscriptUserMessageView {
     readonly displayText: string;
     readonly imagePreviews: readonly QaapTranscriptUserImagePreview[];
+    readonly contextChips: readonly TranscriptUserContextChip[];
     readonly skillInvocation?: ComposerSkillDisplayMetadata;
     readonly gitActionInvocation?: ComposerGitActionDisplayMetadata;
 }
@@ -79,8 +89,11 @@ function basenameFromWorkspacePath(path: string): string {
 }
 
 /**
- * Resolves transcript user-row copy and image previews. Optimistic pending rows keep client
- * previews; persisted rows parse attachment preamble metadata out of {@link content}.
+ * Resolves transcript user-row copy, image previews, and context chips. Optimistic pending rows
+ * keep client previews; persisted rows parse attachment preamble metadata out of {@link content}.
+ *
+ * Preview-feedback / file attachment preambles are stripped from display text so the user bubble
+ * shows a readable chip + typed prompt (agent still receives the full outbound content).
  */
 export function resolveTranscriptUserMessageView(
     message: MessagePreviewLike & {
@@ -89,20 +102,28 @@ export function resolveTranscriptUserMessageView(
     } | undefined,
 ): TranscriptUserMessageView {
     const raw = resolveMessagePreviewText(message);
+    const feedbackTitles = extractComposerAttachmentPreviewFeedbackTitles(raw);
+    const contextChips: TranscriptUserContextChip[] = feedbackTitles.map(title => ({
+        title,
+        kind: QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
+        iconClasses: 'codicon codicon-comment',
+    }));
     if (message?.optimisticImagePreviews?.length) {
         const display = resolveTranscriptUserDisplay(stripComposerAttachmentPreamble(raw));
         return {
             displayText: display.displayText,
             imagePreviews: message.optimisticImagePreviews,
+            contextChips,
             ...(display.skillInvocation ? { skillInvocation: display.skillInvocation } : {}),
             ...(display.gitActionInvocation ? { gitActionInvocation: display.gitActionInvocation } : {}),
         };
     }
     const imagePaths = extractComposerAttachmentImagePaths(raw);
-    if (imagePaths.length === 0) {
+    if (imagePaths.length === 0 && contextChips.length === 0 && !hasComposerAttachmentPreamble(raw)) {
         return {
             ...resolveTranscriptUserDisplay(raw),
             imagePreviews: [],
+            contextChips: [],
         };
     }
     const display = resolveTranscriptUserDisplay(stripComposerAttachmentPreamble(raw));
@@ -115,6 +136,7 @@ export function resolveTranscriptUserMessageView(
             fileName: basenameFromWorkspacePath(path),
             wsRelativePath: path,
         })),
+        contextChips,
     };
 }
 

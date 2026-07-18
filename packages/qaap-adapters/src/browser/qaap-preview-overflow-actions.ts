@@ -348,6 +348,30 @@ export function clonePreviewDocumentWithComputedStyles(doc: Document): HTMLEleme
     return clone;
 }
 
+/** Copy a PNG blob to the system clipboard. Returns false when ClipboardItem/write is unavailable or blocked. */
+export async function writePngBlobToClipboard(blob: Blob): Promise<boolean> {
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+        return false;
+    }
+    try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export async function blobToBase64(blob: Blob): Promise<string> {
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
+    }
+    return btoa(binary);
+}
+
 async function runPreviewTakeScreenshot(ctx: QaapPreviewOverflowActionContext): Promise<void> {
     const frame = ctx.getFrame();
     const doc = frame?.contentDocument;
@@ -363,10 +387,13 @@ async function runPreviewTakeScreenshot(ctx: QaapPreviewOverflowActionContext): 
         if (!blob) {
             throw new Error('capture failed');
         }
+        // Overflow menu: prefer clipboard when a ClipboardService is wired; otherwise download.
         if (ctx.clipboard && typeof ClipboardItem !== 'undefined') {
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            previewNotify(ctx, nls.localize('qaap/preview/screenshotCopied', 'Screenshot copied to clipboard'));
-            return;
+            const copied = await writePngBlobToClipboard(blob);
+            if (copied) {
+                previewNotify(ctx, nls.localize('qaap/preview/screenshotCopied', 'Screenshot copied to clipboard'));
+                return;
+            }
         }
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');

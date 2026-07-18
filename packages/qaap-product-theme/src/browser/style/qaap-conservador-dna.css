@@ -303,8 +303,8 @@ body.qaap-theme-dark .theia-input,
 body.qaap-theme-light .theia-input,
 body.qaap-theme-dark input:not(.theia-mobile-projects-sticky-composer-input):not(.theia-mobile-projects-search-input),
 body.qaap-theme-light input:not(.theia-mobile-projects-sticky-composer-input):not(.theia-mobile-projects-search-input),
-body.qaap-theme-dark textarea:not(.theia-mobile-projects-sticky-composer-input),
-body.qaap-theme-light textarea:not(.theia-mobile-projects-sticky-composer-input),
+body.qaap-theme-dark textarea:not(.theia-mobile-projects-sticky-composer-input):not(.qaap-preview-annotation-popover-input),
+body.qaap-theme-light textarea:not(.theia-mobile-projects-sticky-composer-input):not(.qaap-preview-annotation-popover-input),
 body.qaap-theme-dark .monaco-inputbox,
 body.qaap-theme-light .monaco-inputbox {
   min-height: 42px;

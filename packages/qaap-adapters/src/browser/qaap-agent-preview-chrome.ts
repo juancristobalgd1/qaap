@@ -510,6 +510,11 @@ export interface EmbeddedAgentPreviewChromeOptions extends QaapAgentPreviewChrom
     readonly onToggleInspector?: () => void;
     readonly onAnnotate?: () => void;
     readonly getAnnotationScope?: () => import('./qaap-preview-annotation-types').PreviewAnnotationScope | undefined;
+    /**
+     * When provided (Work Hub), annotation popover footer gets sticky-composer
+     * agent/model controls that share session preference with the transcript composer.
+     */
+    readonly composerSession?: import('./qaap-preview-annotation-popover').AnnotationComposerSessionControls;
 }
 
 export interface EmbeddedAgentPreviewChrome extends Disposable {
@@ -639,6 +644,9 @@ export function mountEmbeddedAgentPreviewChrome(
 
     if (surfaceHandle) {
         surfaceHandle.picker.setNotify(options.notify);
+        if (options.composerSession) {
+            surfaceHandle.picker.setComposerSession(options.composerSession);
+        }
         surfaceHandle.picker.ensureAnnotationController(frameSlot, workbench);
         if (options.getAnnotationScope) {
             surfaceHandle.picker.setAnnotationScopeProvider(options.getAnnotationScope);

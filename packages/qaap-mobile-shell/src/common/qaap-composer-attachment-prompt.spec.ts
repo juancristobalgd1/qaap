@@ -14,6 +14,7 @@ import {
     applyResolvedAttachmentsToPrompt,
     buildResolvedComposerAttachmentBlock,
     extractComposerAttachmentImagePaths,
+    extractComposerAttachmentPreviewFeedbackTitles,
     resolveComposerContextAttachments,
     stripComposerAttachmentPreamble,
 } from './qaap-composer-attachment-prompt';
@@ -114,6 +115,26 @@ describe('qaap-composer-attachment-prompt', () => {
     it('stripComposerAttachmentPreamble keeps only the typed draft', () => {
         const outbound = applyResolvedAttachmentsToPrompt('qwqq', [IMAGE_RESOLVED]);
         expect(stripComposerAttachmentPreamble(outbound)).to.equal('qwqq');
+    });
+
+    it('extractComposerAttachmentPreviewFeedbackTitles reads previewFeedback headers', () => {
+        const feedback: ResolvedAIContextVariable = {
+            variable: {
+                id: 'previewFeedback',
+                name: 'previewFeedback',
+                label: 'PreviewFeedback',
+                description: 'Confirmed preview annotations',
+            },
+            value: 'Preview feedback · 1 annotations · / · Desktop',
+            contextValue: 'Annotation 1:\n- Comment: Darker',
+        };
+        const outbound = applyResolvedAttachmentsToPrompt('Please address the attached preview feedback.', [feedback]);
+        expect(extractComposerAttachmentPreviewFeedbackTitles(outbound)).to.deep.equal([
+            'Preview feedback · 1 annotations · / · Desktop',
+        ]);
+        expect(stripComposerAttachmentPreamble(outbound)).to.equal(
+            'Please address the attached preview feedback.',
+        );
     });
 
     it('applyResolvedAttachmentsToPrompt returns the draft unchanged when there is no attachment block', () => {

@@ -64,11 +64,13 @@ import {
     type ContextUsageBreakdownView,
 } from './qaap-chat-context-usage-panel';
 import {
+    isStickyComposerAnnotationPopoverAnchor,
     markStickyComposerPopoverAnchor,
     mountStickyComposerBottomSheet,
     mountStickyComposerSheetPopover,
     scheduleStickyComposerPopoverPosition,
     shouldUseStickyComposerDesktopPopover,
+    shouldUseStickyComposerPopover,
     type StickyComposerPopoverAlign,
 } from './qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -238,7 +240,7 @@ export class MobileProjectsStickyComposerSheetsUi {
     }
 
     shouldUseAgentPickerPopover(anchor?: HTMLElement): anchor is HTMLElement {
-        return shouldUseStickyComposerDesktopPopover(anchor);
+        return shouldUseStickyComposerPopover(anchor);
     }
 
     isAgentPickerPopoverAnchoredTo(anchor?: HTMLElement): boolean {
@@ -254,7 +256,8 @@ export class MobileProjectsStickyComposerSheetsUi {
 
     assignAgentPickerPopover(anchor: HTMLElement, cleanup: (() => void) | undefined): void {
         this.agentSheetAnchor = anchor;
-        this.agentPopoverAlign = 'end';
+        // Annotation footer chip sits mid-card; start-align so the menu stays over the comment UI.
+        this.agentPopoverAlign = isStickyComposerAnnotationPopoverAnchor(anchor) ? 'start' : 'end';
         this.agentPopoverCleanup = cleanup;
     }
 
@@ -880,10 +883,13 @@ export class MobileProjectsStickyComposerSheetsUi {
         panel.append(header, intro, search, list);
 
         if (this.shouldUseAgentPickerPopover(options.anchor)) {
+            const align: StickyComposerPopoverAlign = isStickyComposerAnnotationPopoverAnchor(options.anchor)
+                ? 'start'
+                : 'end';
             const mounted = mountStickyComposerSheetPopover(panel, {
                 anchor: options.anchor,
                 onClose: options.onClose,
-                align: 'end',
+                align,
                 transcriptOverlay: options.transcriptOverlay,
                 modifierClasses: [
                     'theia-mod-agent-picker',

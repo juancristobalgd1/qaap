@@ -6,6 +6,24 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { isBlankAnnotationComment, sanitizeAnnotationComment } from './qaap-preview-annotation-store';
 
+/**
+ * Cursor-style annotation comment popover (empty pill → expanded card).
+ * Work Hub may attach sticky-composer agent/model controls via {@link composerSession}.
+ */
+
+/** Handle returned by {@link AnnotationComposerSessionControls.attach}. */
+export interface AnnotationComposerSessionAttachment {
+    dispose(): void;
+}
+
+/**
+ * Optional Work Hub agent/model chrome for the expanded popover footer.
+ * Implemented in mobile-shell so sheets/preferences stay shared with the sticky composer.
+ */
+export interface AnnotationComposerSessionControls {
+    attach(host: HTMLElement): AnnotationComposerSessionAttachment;
+}
+
 export interface MountAnnotationCommentPopoverOptions {
     readonly anchorClientX: number;
     readonly anchorClientY: number;
@@ -19,6 +37,8 @@ export interface MountAnnotationCommentPopoverOptions {
     readonly onDelete?: () => void;
     /** Optional toast when speech recognition is unavailable. */
     readonly onWarn?: (message: string) => void;
+    /** Work Hub sticky-composer agent/model controls (compact footer chips). */
+    readonly composerSession?: AnnotationComposerSessionControls;
 }
 
 export interface AnnotationCommentPopoverHandle {
@@ -62,16 +82,162 @@ export function getAnnotationSpeechRecognitionCtor(): (new () => SpeechRecogniti
     return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
-function createIconActionButton(className: string, codicon: string, label: string): HTMLButtonElement {
+function svgEl(tag: string, attrs: Record<string, string>): SVGElement {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, value] of Object.entries(attrs)) {
+        el.setAttribute(key, value);
+    }
+    return el;
+}
+
+/**
+ * Cursor-style element target: periwinkle rounded square with a hollow triangular
+ * pointer in the bottom-left corner, aiming diagonally toward the frame center.
+ */
+function createElementTargetSvg(className: string): SVGSVGElement {
+    const svg = svgEl('svg', {
+        viewBox: '0 0 16 16',
+        width: '14',
+        height: '14',
+        'aria-hidden': 'true',
+        focusable: 'false',
+    }) as SVGSVGElement;
+    svg.classList.add(className);
+
+    // Rounded selection frame.
+    svg.append(svgEl('rect', {
+        x: '2.75',
+        y: '2.25',
+        width: '10.5',
+        height: '10.5',
+        rx: '2.1',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.35',
+    }));
+    // Hollow wedge in the bottom-left, tip pointing up-center into the frame.
+    svg.append(svgEl('path', {
+        d: 'M4.55 11.85 L4.55 7.15 L9.1 11.85 Z',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.3',
+        'stroke-linejoin': 'round',
+        'stroke-linecap': 'round',
+    }));
+    return svg;
+}
+
+function createMicSvg(): SVGSVGElement {
+    const svg = svgEl('svg', {
+        viewBox: '0 0 16 16',
+        width: '16',
+        height: '16',
+        'aria-hidden': 'true',
+        focusable: 'false',
+    }) as SVGSVGElement;
+    svg.classList.add('qaap-preview-annotation-popover-glyph');
+    // Capsule mic body.
+    svg.append(svgEl('rect', {
+        x: '5.5', y: '1.5', width: '5', height: '8', rx: '2.5',
+        fill: 'currentColor',
+    }));
+    // Stand arc + stem.
+    svg.append(svgEl('path', {
+        d: 'M3.25 7.25 A4.75 4.75 0 0 0 12.75 7.25 M8 12 v2.25 M5.5 14.25 h5',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.35',
+        'stroke-linecap': 'round',
+    }));
+    return svg;
+}
+
+function createStopSvg(): SVGSVGElement {
+    const svg = svgEl('svg', {
+        viewBox: '0 0 16 16',
+        width: '16',
+        height: '16',
+        'aria-hidden': 'true',
+        focusable: 'false',
+    }) as SVGSVGElement;
+    svg.classList.add('qaap-preview-annotation-popover-glyph');
+    svg.append(svgEl('circle', {
+        cx: '8', cy: '8', r: '6',
+        fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4',
+    }));
+    svg.append(svgEl('rect', {
+        x: '5.25', y: '5.25', width: '5.5', height: '5.5', rx: '1',
+        fill: 'currentColor',
+    }));
+    return svg;
+}
+
+function createCheckSvg(): SVGSVGElement {
+    const svg = svgEl('svg', {
+        viewBox: '0 0 16 16',
+        width: '15',
+        height: '15',
+        'aria-hidden': 'true',
+        focusable: 'false',
+    }) as SVGSVGElement;
+    svg.classList.add('qaap-preview-annotation-popover-glyph');
+    svg.append(svgEl('path', {
+        d: 'M3.6 8.2 L6.7 11.2 L12.5 4.6',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.75',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+    }));
+    return svg;
+}
+
+function createCloseSvg(): SVGSVGElement {
+    const svg = svgEl('svg', {
+        viewBox: '0 0 16 16',
+        width: '14',
+        height: '14',
+        'aria-hidden': 'true',
+        focusable: 'false',
+    }) as SVGSVGElement;
+    svg.classList.add('qaap-preview-annotation-popover-glyph');
+    svg.append(svgEl('path', {
+        d: 'M4 4 L12 12 M12 4 L4 12',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.6',
+        'stroke-linecap': 'round',
+    }));
+    return svg;
+}
+
+function createTrashSvg(): SVGSVGElement {
+    const svg = svgEl('svg', {
+        viewBox: '0 0 16 16',
+        width: '14',
+        height: '14',
+        'aria-hidden': 'true',
+        focusable: 'false',
+    }) as SVGSVGElement;
+    svg.classList.add('qaap-preview-annotation-popover-glyph');
+    svg.append(svgEl('path', {
+        d: 'M3.5 4.5 h9 M6 4.5 V3.25 h4 V4.5 M5 4.5 l.6 8.25 h4.8 L11 4.5',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.35',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+    }));
+    return svg;
+}
+
+function createIconButton(className: string, label: string, glyph: SVGSVGElement): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `qaap-preview-annotation-popover-icon-btn ${className}`;
     button.title = label;
     button.setAttribute('aria-label', label);
-    const icon = document.createElement('span');
-    icon.className = `codicon codicon-${codicon}`;
-    icon.setAttribute('aria-hidden', 'true');
-    button.append(icon);
+    button.append(glyph);
     return button;
 }
 
@@ -99,7 +265,6 @@ function normalizeElementTagName(raw: string | undefined): string | undefined {
     if (!trimmed) {
         return undefined;
     }
-    // Prefer a short tag token; strip leading '<' / trailing '>' if callers pass markup.
     return trimmed.replace(/^<\/?/, '').replace(/>$/, '').toLowerCase();
 }
 
@@ -127,12 +292,11 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         const chip = document.createElement('span');
         chip.className = 'qaap-preview-annotation-popover-chip';
         chip.setAttribute('aria-hidden', 'true');
-        const chipIcon = document.createElement('span');
-        chipIcon.className = 'codicon codicon-inspect qaap-preview-annotation-popover-chip-icon';
+        chip.append(createElementTargetSvg('qaap-preview-annotation-popover-chip-icon'));
         const chipLabel = document.createElement('span');
         chipLabel.className = 'qaap-preview-annotation-popover-chip-label';
         chipLabel.textContent = elementTag;
-        chip.append(chipIcon, chipLabel);
+        chip.append(chipLabel);
         body.append(chip);
     }
 
@@ -143,7 +307,6 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
     textarea.value = options.initialComment ?? '';
     textarea.rows = 1;
     textarea.setAttribute('aria-label', placeholder);
-
     body.append(textarea);
 
     const actions = document.createElement('div');
@@ -151,20 +314,26 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
 
     const micStartLabel = nls.localize('qaap/preview/annotationMicStart', 'Dictate with microphone');
     const micStopLabel = nls.localize('qaap/preview/annotationMicStop', 'Stop dictation');
-    const micBtn = createIconActionButton('qaap-preview-annotation-popover-mic', 'mic', micStartLabel);
+    const micBtn = createIconButton('qaap-preview-annotation-popover-mic', micStartLabel, createMicSvg());
     micBtn.setAttribute('aria-pressed', 'false');
 
     const cancelLabel = nls.localizeByDefault('Cancel');
-    const cancelBtn = createIconActionButton('qaap-preview-annotation-popover-cancel', 'close', cancelLabel);
+    const cancelBtn = createIconButton('qaap-preview-annotation-popover-cancel', cancelLabel, createCloseSvg());
 
     const confirmLabel = nls.localize('qaap/preview/annotationConfirm', 'Confirm');
-    const confirmBtn = createIconActionButton('qaap-preview-annotation-popover-confirm', 'arrow-up', confirmLabel);
+    const confirmBtn = createIconButton('qaap-preview-annotation-popover-confirm', confirmLabel, createCheckSvg());
 
-    actions.append(cancelBtn, micBtn, confirmBtn);
+    const spacer = document.createElement('span');
+    spacer.className = 'qaap-preview-annotation-popover-actions-spacer';
+    spacer.setAttribute('aria-hidden', 'true');
+
+    // Footer (expanded): [× close] [delete?] [agent/model?] | spacer | gray mic | white send
+    // Empty: CSS hides cancel/send/spacer/session — only white mic remains on the right.
+    actions.append(cancelBtn);
 
     if (options.allowDelete && options.onDelete) {
         const deleteLabel = nls.localizeByDefault('Delete');
-        const deleteBtn = createIconActionButton('qaap-preview-annotation-popover-delete', 'trash', deleteLabel);
+        const deleteBtn = createIconButton('qaap-preview-annotation-popover-delete', deleteLabel, createTrashSvg());
         deleteBtn.addEventListener('click', (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
@@ -172,9 +341,18 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
             options.onDelete?.();
             dispose();
         });
-        actions.prepend(deleteBtn);
+        actions.append(deleteBtn);
     }
 
+    let sessionAttachment: AnnotationComposerSessionAttachment | undefined;
+    if (options.composerSession) {
+        const sessionHost = document.createElement('div');
+        sessionHost.className = 'qaap-preview-annotation-popover-session';
+        sessionAttachment = options.composerSession.attach(sessionHost);
+        actions.append(sessionHost);
+    }
+
+    actions.append(spacer, micBtn, confirmBtn);
     root.append(title, body, actions);
     document.body.append(root);
 
@@ -183,16 +361,16 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
     let dictationBaseline = '';
     let dictationTrailing = '';
 
+    const setMicGlyph = (listening: boolean): void => {
+        micBtn.replaceChildren(listening ? createStopSvg() : createMicSvg());
+    };
+
     const markMicIdle = (): void => {
         micBtn.classList.remove('qaap-preview-annotation-popover-mic--listening');
         micBtn.setAttribute('aria-pressed', 'false');
         micBtn.title = micStartLabel;
         micBtn.setAttribute('aria-label', micStartLabel);
-        const icon = micBtn.querySelector('.codicon');
-        if (icon) {
-            icon.classList.remove('codicon-stop-circle');
-            icon.classList.add('codicon-mic');
-        }
+        setMicGlyph(false);
     };
 
     const markMicListening = (): void => {
@@ -200,11 +378,7 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         micBtn.setAttribute('aria-pressed', 'true');
         micBtn.title = micStopLabel;
         micBtn.setAttribute('aria-label', micStopLabel);
-        const icon = micBtn.querySelector('.codicon');
-        if (icon) {
-            icon.classList.remove('codicon-mic');
-            icon.classList.add('codicon-stop-circle');
-        }
+        setMicGlyph(true);
     };
 
     const stopDictation = (): void => {
@@ -275,7 +449,6 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
                 applyDictationTranscript(buildTranscriptFromEvent(event));
             };
             rec.onerror = () => {
-                // Fatal and recoverable errors both end the session for this compact UI.
                 stopDictation();
             };
             rec.onend = () => {
@@ -344,8 +517,16 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         dispose();
     };
 
+    const isAgentPickerSurfaceOpen = (): boolean => !!document.querySelector(
+        '.qaap-sticky-composer-sheet-popover, .theia-mobile-sticky-composer-sheet, .theia-mobile-projects-sticky-composer-sheet',
+    );
+
     const onKeyDown = (e: KeyboardEvent): void => {
         if (e.key === 'Escape') {
+            // Agent/model picker owns Escape first; keep the annotation draft intact.
+            if (isAgentPickerSurfaceOpen()) {
+                return;
+            }
             e.preventDefault();
             e.stopPropagation();
             requestCancel();
@@ -359,7 +540,21 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
 
     const onOutside = (e: MouseEvent): void => {
         const target = e.target as Node | null;
-        if (target && root.contains(target)) {
+        if (!target) {
+            return;
+        }
+        if (root.contains(target)) {
+            return;
+        }
+        // Agent/model sheets mount on body — ignore those clicks.
+        if (target instanceof Element && target.closest(
+            [
+                '.qaap-sticky-composer-sheet-popover',
+                '.theia-mobile-sticky-composer-sheet',
+                '.theia-mobile-projects-sticky-composer-sheet',
+                '.qaap-sticky-composer-popover',
+            ].join(', '),
+        )) {
             return;
         }
         requestCancel();
@@ -383,7 +578,6 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
     textarea.addEventListener('keydown', onKeyDown);
     textarea.addEventListener('input', () => {
         if (dictationActive) {
-            // Manual edits end the current dictation baseline session.
             stopDictation();
         }
         autosizeInput();
@@ -410,10 +604,9 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         const margin = 8;
         const gap = 10;
         const bounds = visibleBounds();
-        const width = root.offsetWidth || (mobile ? Math.min(340, bounds.width - margin * 2) : 320);
+        const width = root.offsetWidth || (mobile ? Math.min(360, bounds.width - margin * 2) : 340);
         const height = root.offsetHeight || 44;
 
-        // Prefer beside/below the marker; flip when it would leave the panel.
         let left = options.anchorClientX + gap;
         let top = options.anchorClientY + gap;
         if (left + width > bounds.right - margin) {
@@ -422,7 +615,6 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
         if (top + height > bounds.bottom - margin) {
             top = options.anchorClientY - height - gap;
         }
-        // Keep floating near the marker; nudge up into the visual viewport when the keyboard covers it.
         left = Math.max(bounds.left + margin, Math.min(left, bounds.right - width - margin));
         top = Math.max(bounds.top + margin, Math.min(top, bounds.bottom - height - margin));
         root.style.left = `${Math.round(left)}px`;
@@ -455,6 +647,8 @@ export function mountAnnotationCommentPopover(options: MountAnnotationCommentPop
 
     const dispose = (): void => {
         stopDictation();
+        sessionAttachment?.dispose();
+        sessionAttachment = undefined;
         document.removeEventListener('mousedown', onOutside, true);
         window.removeEventListener('resize', onViewportChange);
         window.visualViewport?.removeEventListener('resize', onViewportChange);

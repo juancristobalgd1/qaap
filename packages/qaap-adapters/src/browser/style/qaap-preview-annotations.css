@@ -41,33 +41,48 @@
   opacity: 0.85;
 }
 
-/* Floating Cursor-style comment input anchored near the marker. */
+/* Floating Cursor-style comment input anchored near the marker.
+ * Empty = slim charcoal pill + white mic. Typed = rounded card + footer actions. */
 .qaap-preview-annotation-popover {
+  /* Periwinkle / sky-blue — matches Cursor element-tag accent. */
   --qaap-annotation-chip: #7eb6ff;
+  --qaap-annotation-bg: #1e1e1e;
+  --qaap-annotation-placeholder: #757575;
+  --qaap-annotation-text: #f2f2f2;
+  --qaap-annotation-mic-idle: rgba(245, 245, 245, 0.48);
   position: fixed;
   z-index: 2147483026;
   box-sizing: border-box;
   width: min(340px, calc(100vw - 24px));
+  min-height: 44px;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 6px 6px 6px 12px;
+  gap: 10px;
+  padding: 5px 5px 5px 14px;
   border-radius: 999px;
-  background: #1e1e22;
-  color: #e8e8ea;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--qaap-annotation-bg);
+  color: var(--qaap-annotation-text);
+  border: none;
   box-shadow:
-    0 8px 28px rgba(0, 0, 0, 0.42),
-    0 2px 6px rgba(0, 0, 0, 0.28);
+    0 8px 28px rgba(0, 0, 0, 0.32),
+    0 1px 6px rgba(0, 0, 0, 0.18);
+  transition:
+    border-radius 140ms ease,
+    padding 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .qaap-preview-annotation-popover--expanded {
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  padding: 12px 10px 8px 12px;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 12px 12px 14px;
   border-radius: 18px;
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.38),
+    0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .qaap-preview-annotation-popover-title {
@@ -86,32 +101,44 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 .qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-body {
   align-items: flex-start;
   width: 100%;
+  gap: 8px;
+  background: transparent;
 }
 
 .qaap-preview-annotation-popover-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex: 0 0 auto;
-  max-width: 7.5em;
+  max-width: 8em;
+  margin-top: 2px;
   color: var(--qaap-annotation-chip);
-  font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font: 500 12px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
   user-select: none;
   pointer-events: none;
 }
 
 .qaap-preview-annotation-popover-chip-icon {
-  font-size: 12px;
-  line-height: 1;
+  display: block;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--qaap-annotation-chip);
   opacity: 0.95;
 }
 
@@ -121,42 +148,58 @@
   white-space: nowrap;
 }
 
-.qaap-preview-annotation-popover-input {
+/* Seamless with popover charcoal — beat theme textarea wells (--q-surface). */
+.qaap-preview-annotation-popover .qaap-preview-annotation-popover-input,
+.qaap-preview-annotation-popover textarea.qaap-preview-annotation-popover-input {
   flex: 1 1 auto;
   min-width: 0;
   width: auto;
-  min-height: 22px;
+  min-height: 22px !important;
   height: 22px;
   max-height: 140px;
   resize: none;
   box-sizing: border-box;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: #f5f5f7;
-  padding: 2px 0;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--qaap-annotation-text);
+  caret-color: #fff;
+  padding: 0 !important;
   margin: 0;
-  font: 13px/1.4 system-ui, -apple-system, sans-serif;
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   outline: none;
-  box-shadow: none;
+  box-shadow: none !important;
   overflow-y: hidden;
   field-sizing: content;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
-.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-input {
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-input,
+.qaap-preview-annotation-popover--expanded textarea.qaap-preview-annotation-popover-input {
   width: 100%;
-  min-height: 44px;
+  min-height: 24px !important;
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 .qaap-preview-annotation-popover-input::placeholder {
-  color: rgba(232, 232, 234, 0.48);
+  color: var(--qaap-annotation-placeholder);
+  opacity: 1;
 }
 
-.qaap-preview-annotation-popover-input:focus {
+.qaap-preview-annotation-popover-input:focus,
+.qaap-preview-annotation-popover-input:focus-visible {
   outline: none;
-  box-shadow: none;
+  box-shadow: none !important;
+  border: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
+/* Empty pill: actions collapse to the white mic circle on the right. */
 .qaap-preview-annotation-popover-actions {
   display: flex;
   align-items: center;
@@ -168,9 +211,101 @@
 
 .qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-actions {
   width: 100%;
-  justify-content: flex-end;
-  gap: 4px;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
   padding-top: 2px;
+  min-height: 32px;
+}
+
+.qaap-preview-annotation-popover-actions-spacer {
+  display: none;
+  flex: 1 1 auto;
+  min-width: 8px;
+  height: 1px;
+}
+
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-actions-spacer {
+  display: block;
+}
+
+/* Work Hub agent/model chip host (populated by mobile-shell sticky-composer controls). */
+.qaap-preview-annotation-popover-session {
+  display: none;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(168px, 42vw);
+}
+
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-session {
+  display: inline-flex;
+}
+
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 28px;
+  max-width: 100%;
+  padding: 0 8px 0 6px;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 245, 0.92);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent:focus-visible {
+  outline: 2px solid rgba(110, 177, 255, 0.9);
+  outline-offset: 1px;
+}
+
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent:disabled,
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent.theia-mod-locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  min-width: 0;
+  letter-spacing: 0.01em;
+}
+
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent .codicon-chevron-down {
+  font-size: 10px;
+  opacity: 0.72;
+  flex: 0 0 auto;
+}
+
+.qaap-preview-annotation-popover-session .theia-mobile-projects-sticky-composer-agent.theia-mod-logo-only {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
 }
 
 .qaap-preview-annotation-popover-icon-btn {
@@ -178,33 +313,34 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
   padding: 0;
   margin: 0;
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: rgba(232, 232, 234, 0.78);
+  color: var(--qaap-annotation-mic-idle);
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
 }
 
-.qaap-preview-annotation-popover-icon-btn .codicon {
-  font-size: 14px;
-  line-height: 1;
+.qaap-preview-annotation-popover-glyph {
+  display: block;
+  flex: 0 0 auto;
+  pointer-events: none;
 }
 
 .qaap-preview-annotation-popover-icon-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
-  color: #f2f2f4;
+  color: rgba(245, 245, 245, 0.9);
 }
 
 .qaap-preview-annotation-popover-icon-btn:focus-visible {
-  outline: 2px solid rgba(47, 143, 255, 0.85);
+  outline: 2px solid rgba(110, 177, 255, 0.9);
   outline-offset: 1px;
 }
 
@@ -213,35 +349,74 @@
   cursor: not-allowed;
 }
 
-/* Compact empty pill: circular white mic; hide cancel/confirm until expanded. */
+/* Expanded footer: compact × close (cancel / dismiss popover). */
+.qaap-preview-annotation-popover-cancel {
+  color: var(--qaap-annotation-mic-idle);
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+}
+
+/* Empty: hide cancel / send / delete / session — only white mic remains. */
 .qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-cancel,
 .qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-confirm,
-.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-delete {
+.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-delete,
+.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-session,
+.qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-actions-spacer {
   display: none;
 }
 
 .qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-mic {
-  background: #f4f4f5;
-  color: #1c1c1e;
+  background: #fff;
+  color: #111;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
 }
 
 .qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-mic:hover:not(:disabled) {
-  background: #fff;
-  color: #111;
+  background: #f4f4f4;
+  color: #000;
 }
 
-.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-cancel {
-  margin-right: auto;
+/* Expanded: mic is a quiet gray icon; send is the white circle. */
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-mic {
+  background: transparent;
+  color: var(--qaap-annotation-mic-idle);
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-mic:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(245, 245, 245, 0.88);
+}
+
+.qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-confirm {
+  background: #fff;
+  color: #111;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
 }
 
 .qaap-preview-annotation-popover-confirm {
-  background: rgba(255, 255, 255, 0.94);
-  color: #1c1c1e;
+  background: #fff;
+  color: #111;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
 }
 
 .qaap-preview-annotation-popover-confirm:hover:not(:disabled) {
-  background: #fff;
-  color: #111;
+  background: #f2f2f2;
+  color: #000;
 }
 
 .qaap-preview-annotation-popover-mic--listening {
@@ -256,6 +431,10 @@
 
 .qaap-preview-annotation-popover-delete {
   color: rgba(255, 140, 140, 0.9);
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
 }
 
 /* ChatGPT-style annotate action bar — replaces the URL field while annotate is active. */
@@ -268,6 +447,20 @@
 .theia-mini-browser-toolbar-read-only.qaap-mod-annotate-active > :not(.qaap-preview-annotate-toolbar),
 .qaap-agent-preview-embedded-toolbar.qaap-mod-annotate-active > :not(.qaap-preview-annotate-toolbar) {
   display: none !important;
+}
+
+/* Full-bleed annotate chrome: cancel mini-browser / mobile toolbar insets + island radius. */
+.theia-mini-browser-toolbar.qaap-mod-annotate-active,
+.theia-mini-browser-toolbar-read-only.qaap-mod-annotate-active,
+.qaap-agent-preview-embedded-toolbar.qaap-mod-annotate-active {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  margin-top: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border-radius: 0;
+  gap: 0;
 }
 
 .qaap-preview-annotate-toolbar {
@@ -283,10 +476,11 @@
   min-height: 34px;
   max-height: 40px;
   padding: 3px 6px 3px 4px;
-  border-radius: 10px;
+  border-radius: 0;
   background: #2a2a2e;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
   color: #e8e8ea;
 }
 
@@ -326,6 +520,14 @@
   line-height: 1;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-preview-annotate-toolbar-compare-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  pointer-events: none;
 }
 
 .qaap-preview-annotate-toolbar-icon-btn:hover:not(:disabled) {
@@ -422,15 +624,36 @@
 
 @media (max-width: 767px), (pointer: coarse) {
   .qaap-preview-annotation-popover {
-    width: min(340px, calc(100vw - 20px));
-    padding: 7px 7px 7px 12px;
+    width: min(360px, calc(100vw - 20px));
+    min-height: 46px;
+    padding: 6px 6px 6px 14px;
   }
 
   .qaap-preview-annotation-popover--expanded {
-    padding: 12px 10px 8px 12px;
+    padding: 12px 12px 12px 14px;
+    gap: 10px;
+  }
+
+  .qaap-preview-annotation-popover--expanded .qaap-preview-annotation-popover-actions {
+    gap: 8px;
+    min-height: 32px;
+  }
+
+  .qaap-preview-annotation-popover:not(.qaap-preview-annotation-popover--expanded) .qaap-preview-annotation-popover-mic {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
   }
 
   .qaap-preview-annotation-popover-icon-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .qaap-preview-annotation-popover-confirm {
     width: 32px;
     height: 32px;
     min-width: 32px;

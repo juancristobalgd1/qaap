@@ -7,8 +7,11 @@ import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT } from './mobile-keyboard-helper';
 import {
+    isStickyComposerAnnotationPopoverAnchor,
     mountStickyComposerBottomSheet,
+    mountStickyComposerSheetPopover,
     positionStickyComposerPopover,
+    shouldUseStickyComposerPopover,
     wireStickyComposerPopoverPosition,
 } from './qaap-sticky-composer-popover';
 
@@ -23,6 +26,55 @@ describe('qaap-sticky-composer-popover', () => {
 
     after(() => {
         disableJSDOM();
+    });
+
+    it('forces popover mode for annotation popover agent anchors on narrow viewports', () => {
+        const annotation = document.createElement('div');
+        annotation.className = 'qaap-preview-annotation-popover';
+        const anchor = document.createElement('button');
+        annotation.append(anchor);
+        document.body.append(annotation);
+
+        expect(isStickyComposerAnnotationPopoverAnchor(anchor)).to.equal(true);
+        expect(isStickyComposerAnnotationPopoverAnchor(document.createElement('button'))).to.equal(false);
+        // Annotation anchors force popover even when the sticky composer would use a bottom sheet.
+        const matchMedia = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            matches: String(query).includes('max-width'),
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        })) as typeof window.matchMedia;
+        expect(shouldUseStickyComposerPopover(document.createElement('button'))).to.equal(false);
+        expect(shouldUseStickyComposerPopover(anchor)).to.equal(true);
+        window.matchMedia = matchMedia;
+
+        const pendingFrames = new Map<number, FrameRequestCallback>();
+        let nextFrame = 1;
+        window.requestAnimationFrame = callback => {
+            const handle = nextFrame++;
+            pendingFrames.set(handle, callback);
+            return handle;
+        };
+        window.cancelAnimationFrame = handle => {
+            pendingFrames.delete(handle);
+        };
+
+        const panel = document.createElement('section');
+        const mounted = mountStickyComposerSheetPopover(panel, {
+            anchor,
+            onClose: () => undefined,
+            modifierClasses: ['theia-mod-agent-picker'],
+        });
+        expect(mounted.root.classList.contains('theia-mod-annotation-anchor')).to.equal(true);
+        expect(mounted.root.classList.contains('theia-mod-agent-picker')).to.equal(true);
+        mounted.cleanup();
+        mounted.root.remove();
+        annotation.remove();
     });
 
     it('positions fixed popovers inside the visual viewport', () => {

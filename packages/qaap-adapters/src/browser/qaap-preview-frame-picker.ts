@@ -24,6 +24,7 @@ import {
 } from '@theia/qaap-element-inspector/lib/browser/element-inspector-contribution';
 import type { QaapPreviewInlineInspector } from './qaap-preview-inline-inspector';
 import { QaapPreviewAnnotationController } from './qaap-preview-annotation-controller';
+import type { AnnotationComposerSessionControls } from './qaap-preview-annotation-popover';
 import type { PreviewAnnotationScope } from './qaap-preview-annotation-types';
 
 /** DOM picker + inspector bridge for a single preview iframe (mini-browser or embedded). */
@@ -61,6 +62,7 @@ export class QaapPreviewFramePicker {
     protected annotationController: QaapPreviewAnnotationController | undefined;
     protected annotationScopeProvider: (() => PreviewAnnotationScope | undefined) | undefined;
     protected notifyHandler: ((message: string, kind?: 'info' | 'warn') => void) | undefined;
+    protected composerSession: AnnotationComposerSessionControls | undefined;
 
     constructor(
         protected readonly frame: HTMLIFrameElement,
@@ -90,6 +92,12 @@ export class QaapPreviewFramePicker {
         this.annotationController?.setNotify(notify);
     }
 
+    /** Wire Work Hub agent/model session controls into the annotation popover footer. */
+    setComposerSession(session: AnnotationComposerSessionControls | undefined): void {
+        this.composerSession = session;
+        this.annotationController?.setComposerSession(session);
+    }
+
     /**
      * Lazily mounts annotate markers/toolbar over the preview frame slot.
      * Safe to call multiple times; later calls can supply a toolbar host if the first
@@ -101,6 +109,7 @@ export class QaapPreviewFramePicker {
                 this.annotationController.setToolbarHost(toolbarHost);
             }
             this.annotationController.setNotify(this.notifyHandler);
+            this.annotationController.setComposerSession(this.composerSession);
             return this.annotationController;
         }
         this.annotationController = new QaapPreviewAnnotationController({
@@ -114,6 +123,7 @@ export class QaapPreviewFramePicker {
             startSelectPicker: () => this.startElementPicker(),
             injectBridge: () => this.injectInspectorBridge(),
             toDispose: this.toDispose,
+            composerSession: this.composerSession,
         });
         return this.annotationController;
     }

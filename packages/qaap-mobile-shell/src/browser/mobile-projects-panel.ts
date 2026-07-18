@@ -38,7 +38,12 @@ import {
 } from '../common/qaap-work-hub-team';
 import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
 import { MobileProjectsService } from './mobile-projects-service';
-import { isAgentsHubExecutionSurfacePainted, isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import {
+    buildAgentsHubIdleConversationSummary,
+    isAgentsHubExecutionSurfacePainted,
+    isAgentsHubIdleConversationSummary,
+} from '../common/qaap-agents-hub-landing';
+import { resolvePreviewFeedbackSubmitTarget } from '../common/qaap-preview-feedback-submit-target';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
     buildProbeStreamingSummaries,
@@ -75,9 +80,12 @@ import {
     revokeComposerContextPreview,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
+import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import {
+    buildAttachComposerImageRequests,
     buildPreviewFeedbackAttachmentRequest,
     findPreviewFeedbackEntryIndex,
+    type QaapAttachComposerImageAttachment,
 } from '../common/qaap-preview-feedback-context';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
@@ -90,6 +98,8 @@ import {
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
+import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
+import { createAnnotationComposerSessionControls } from './qaap-preview-annotation-composer-session';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     type ExecutionSurfaceTabId,
@@ -2114,12 +2124,53 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     /**
+     * Sticky-composer agent/model controls for the Cursor-style annotation popover footer.
+     * Shares the same agent sheet + session preference as the Work Hub transcript composer.
+     */
+    resolveAnnotationComposerSession(): AnnotationComposerSessionControls | undefined {
+        const state = this.transcriptController.state;
+        // Same resolution as other Work Hub composer entry points — do not require
+        // transcriptOpenProject alone (sticky / shell session may still be active).
+        const project = this.resolveExternalComposerProject();
+        const summary = state.transcriptOpenSummary
+            ?? state.transcriptComposerSummary
+            ?? (project ? this.resolveShellSummary(project) : undefined);
+        if (!project || !summary) {
+            return undefined;
+        }
+        return createAnnotationComposerSessionControls({
+            agentLocked: summary.source === 'theia-chat',
+            resolveAgentId: () => this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
+                project,
+                summary,
+            ),
+            resolveAgentLabel: () => this.transcriptComposerUi.resolveTranscriptComposerAgentLabel(),
+            resolveAgentModel: () => {
+                const cwd = this.projectsService.getProjectCwd(project) ?? summary.cwd;
+                return this.transcriptComposerUi.resolveTranscriptComposerAgentModel(
+                    this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+                    cwd,
+                );
+            },
+            onOpenAgentSheet: (anchor, onSelectionApplied) => {
+                this.transcriptComposerUi.openTranscriptComposerAgentSheet(
+                    project,
+                    summary,
+                    anchor,
+                    { onSelectionApplied },
+                );
+            },
+        });
+    }
+
+    /**
      * Attach a context chip to the active composer (transcript if open, else sticky) without sending.
      */
     attachExternalComposerContext(args: {
         readonly chipTitle: string;
         readonly contextBody: string;
         readonly dedupeKey: string;
+        readonly images?: readonly QaapAttachComposerImageAttachment[];
     }): boolean {
         const project = this.resolveExternalComposerProject();
         if (!project) {
@@ -2139,6 +2190,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             entry.displayName = args.chipTitle;
             entries.push(entry);
         }
+        for (const imageRequest of buildAttachComposerImageRequests(args.images)) {
+            const imageEntry = createComposerContextEntry(imageRequest);
+            imageEntry.displayName = ImageContextVariable.parseRequest(imageRequest)?.name
+                || 'preview-screenshot.png';
+            entries.push(imageEntry);
+        }
         if (useTranscript) {
             this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
         } else {
@@ -2150,14 +2207,18 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     /**
-     * Attach preview feedback to the current composer, then submit a message that includes
-     * that context to the active chat. Leaves unrelated composer draft text intact.
-     * On success, removes only the matching preview-feedback chip (dedupe).
+     * Attach preview feedback to the current composer, then submit through the same path as
+     * typing in the Work Hub sticky composer and pressing Send:
+     * - idle Agents Hub → optimistic user turn + {@link submitBackgroundAgentTask}
+     * - open session → {@link submitTranscriptViaBackendConversation}
+     * Leaves unrelated composer draft text intact. On success, removes only the matching
+     * preview-feedback chip (dedupe).
      */
     async sendExternalComposerContext(args: {
         readonly chipTitle: string;
         readonly contextBody: string;
         readonly dedupeKey: string;
+        readonly images?: readonly QaapAttachComposerImageAttachment[];
     }): Promise<boolean> {
         if (!this.attachExternalComposerContext(args)) {
             return false;
@@ -2167,14 +2228,27 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             return false;
         }
         const request = buildPreviewFeedbackAttachmentRequest(args);
+        const imageRequests = buildAttachComposerImageRequests(args.images);
+        const variables = [request, ...imageRequests];
         const prompt = nls.localize(
             'qaap/workHub/previewFeedbackSubmitPrompt',
             'Please address the attached preview feedback.',
         );
-        const summary = this.transcriptController.state.transcriptOpenSummary
-            ?? this.transcriptController.state.transcriptComposerSummary;
+        // Annotate Send often fires from the Preview tab — land on Messages first so the
+        // optimistic user bubble + sticky composer match a normal composer submit.
+        this.activateMessagesSurfaceForExternalSubmit(project);
+        const state = this.transcriptController.state;
+        const target = resolvePreviewFeedbackSubmitTarget(
+            state.transcriptOpenSummary,
+            state.transcriptComposerSummary,
+        );
         try {
-            if (summary && !isAgentsHubIdleConversationSummary(summary)) {
+            if (target.kind === 'active') {
+                const summary = target.summary;
+                if (state.transcriptOpenSummaryId !== summary.id || !this.agentsHubInlineActive) {
+                    await this.openInlineTranscript(project, summary);
+                    this.activateMessagesSurfaceForExternalSubmit(project);
+                }
                 const selectedAgentId = this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
                     project,
                     summary,
@@ -2185,29 +2259,60 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 );
                 await this.submitTranscriptViaBackendConversation(project, summary, prompt, {
                     selectedAgentId,
-                    variables: [request],
+                    variables,
                     ...(agentModel ? { agentModel } : {}),
                 });
             } else {
-                const selectedAgentId = this.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project);
-                const agentModel = this.stickyComposerAgentsUi.resolveStickyComposerAgentModel(
-                    selectedAgentId,
+                const idleSummary = state.transcriptOpenSummary
+                    && isAgentsHubIdleConversationSummary(state.transcriptOpenSummary)
+                    ? state.transcriptOpenSummary
+                    : state.transcriptComposerSummary
+                        && isAgentsHubIdleConversationSummary(state.transcriptComposerSummary)
+                        ? state.transcriptComposerSummary
+                        : buildAgentsHubIdleConversationSummary(
+                            this.projectsService.getProjectCwd(project)
+                                ?? this.preparedCwdByProjectId.get(project.id)
+                                ?? '',
+                        );
+                const selectedAgentId = this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
                     project,
+                    idleSummary,
                 );
+                const agentModel = this.transcriptComposerUi.resolveTranscriptComposerAgentModel(
+                    selectedAgentId,
+                    idleSummary.cwd || this.projectsService.getProjectCwd(project),
+                );
+                const chatHost = this.resolveActiveTranscriptChatHost();
+                if (chatHost) {
+                    this.renderIdleSubmitOptimistic(chatHost, idleSummary, prompt, selectedAgentId);
+                }
+                this.transcriptStickyComposerUi.refreshComposerActivityStack();
                 await this.submitBackgroundAgentTask(project, prompt, {
                     forceVps: true,
                     openConversation: true,
                     selectedAgentId,
-                    variables: [request],
+                    variables,
                     ...(agentModel ? { agentModel } : {}),
                 });
+                // create→openInline may preserve Preview; force Messages again after open.
+                this.activateMessagesSurfaceForExternalSubmit(project);
             }
         } catch {
             // Keep the chip so the user can retry from the composer.
             return false;
         }
         this.removeExternalPreviewFeedbackChip(args.dedupeKey);
+        this.removeExternalImageContextChips(imageRequests);
         return true;
+    }
+
+    /** Reveal Messages + remount the Agents Hub sticky composer (same surface as a manual Send). */
+    protected activateMessagesSurfaceForExternalSubmit(project: MobileProjectEntry): void {
+        this.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
+        this.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
+        if (this.agentsHubShellActive) {
+            this.stickyComposerRenderUi.renderStickyComposer();
+        }
     }
 
     protected removeExternalPreviewFeedbackChip(dedupeKey: string): void {
@@ -2221,6 +2326,45 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         }
         const [removed] = entries.splice(existingIndex, 1);
         revokeComposerContextPreview(removed);
+        if (useTranscript) {
+            this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+        } else {
+            this.stickyComposerRenderUi.renderStickyComposer();
+        }
+    }
+
+    /** Drop annotate-screenshot imageContext chips that were staged for the external submit. */
+    protected removeExternalImageContextChips(imageRequests: readonly AIVariableResolutionRequest[]): void {
+        if (imageRequests.length === 0) {
+            return;
+        }
+        const argsToRemove = new Set(
+            imageRequests.map(request => request.arg).filter((arg): arg is string => !!arg),
+        );
+        if (argsToRemove.size === 0) {
+            return;
+        }
+        const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
+        const entries = useTranscript
+            ? this.transcriptController.state.transcriptComposerContext
+            : this.stickyComposerContext;
+        let removedAny = false;
+        for (let index = entries.length - 1; index >= 0; index--) {
+            const arg = entries[index]?.request.arg;
+            if (!arg || !argsToRemove.has(arg)) {
+                continue;
+            }
+            const [removed] = entries.splice(index, 1);
+            revokeComposerContextPreview(removed);
+            argsToRemove.delete(arg);
+            removedAny = true;
+            if (argsToRemove.size === 0) {
+                break;
+            }
+        }
+        if (!removedAny) {
+            return;
+        }
         if (useTranscript) {
             this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
         } else {

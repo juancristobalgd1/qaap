@@ -15,6 +15,7 @@ import {
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
+import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -161,6 +162,7 @@ export interface MobileProjectsTranscriptSurfacesHost {
     setAutoVerifyEnabled(cwd: string | undefined, on: boolean): void;
     onResumePreview?(project: MobileProjectEntry): void | Promise<void>;
     projectBootstrap?: QaapProjectBootstrapService;
+    resolveAnnotationComposerSession(): AnnotationComposerSessionControls | undefined;
 }
 
 /** Execution-surface tab content: plan, review, preview, files, and terminal. */
@@ -682,6 +684,9 @@ export class MobileProjectsTranscriptSurfacesUi {
                 && host.contains(root)
                 && !root.classList.contains('theia-mod-empty-preview')) {
                 this.setMountedPreviewUrl(project.id, normalized);
+                // Re-wire opener/scope even on same-URL remounts (controller may have been
+                // created before Work Hub comment composer was available).
+                this.wireTranscriptPreviewAnnotationScope(project, normalized);
                 return;
             }
             this.host.transcriptEmbeddedPreview.setUrl(normalized);
@@ -705,6 +710,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 window.open(target, '_blank', 'noopener,noreferrer');
             },
             getAnnotationScope: () => this.resolvePreviewAnnotationScope(project, normalized),
+            composerSession: this.host.resolveAnnotationComposerSession(),
         });
         this.wireTranscriptPreviewAnnotationScope(project, normalized);
         this.setMountedPreviewUrl(project.id, normalized);
@@ -714,6 +720,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         const frame = this.host.transcriptEmbeddedPreview?.frame;
         const surface = this.host.previewSurfaceRegistry?.getSurfaceForFrame(frame);
         surface?.picker.setAnnotationScopeProvider(() => this.resolvePreviewAnnotationScope(project, previewUrl));
+        surface?.picker.setComposerSession(this.host.resolveAnnotationComposerSession());
     }
 
     protected resolvePreviewAnnotationScope(project: MobileProjectEntry, previewUrl: string): {
@@ -740,7 +747,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         const frame = this.host.transcriptEmbeddedPreview?.frame;
         return {
             workspaceId: project.id,
-            threadId: this.host.transcriptLastConv?.id ?? 'default',
+            threadId: this.host.transcriptOpenSummaryId
+                ?? this.host.transcriptLastConv?.id
+                ?? 'default',
             previewUrl: stablePreviewUrl,
             route,
             viewportMode: narrow ? 'mobile' : 'desktop',
@@ -1272,7 +1281,10 @@ export class MobileProjectsTranscriptSurfacesUi {
             openExternal: target => {
                 window.open(target, '_blank', 'noopener,noreferrer');
             },
+            getAnnotationScope: () => this.resolvePreviewAnnotationScope(project, 'about:blank'),
+            composerSession: this.host.resolveAnnotationComposerSession(),
         });
+        this.wireTranscriptPreviewAnnotationScope(project, 'about:blank');
         this.host.transcriptEmbeddedPreview.root.classList.add('theia-mod-empty-preview');
         const input = this.host.transcriptEmbeddedPreview.root.querySelector<HTMLInputElement>('.theia-mini-browser-url-field input');
         if (input) {

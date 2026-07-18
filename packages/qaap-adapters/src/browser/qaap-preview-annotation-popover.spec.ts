@@ -41,6 +41,7 @@ describe('qaap-preview-annotation-popover', () => {
         const mic = handle.root.querySelector('.qaap-preview-annotation-popover-mic') as HTMLButtonElement;
         const cancel = handle.root.querySelector('.qaap-preview-annotation-popover-cancel') as HTMLButtonElement;
         const confirm = handle.root.querySelector('.qaap-preview-annotation-popover-confirm') as HTMLButtonElement;
+        const spacer = handle.root.querySelector('.qaap-preview-annotation-popover-actions-spacer') as HTMLElement;
 
         expect(input).to.exist;
         expect(input.rows).to.equal(1);
@@ -48,13 +49,20 @@ describe('qaap-preview-annotation-popover', () => {
         expect(mic).to.exist;
         expect(cancel).to.exist;
         expect(confirm).to.exist;
+        expect(spacer).to.exist;
         expect(handle.root.classList.contains('qaap-preview-annotation-popover--expanded')).to.equal(false);
 
-        expect(cancel.textContent?.trim()).to.equal('');
-        expect(confirm.textContent?.trim()).to.equal('');
-        expect(cancel.querySelector('.codicon-close')).to.exist;
-        expect(confirm.querySelector('.codicon-arrow-up')).to.exist;
-        expect(mic.querySelector('.codicon-mic')).to.exist;
+        // Empty pill: cancel is a compact × icon button; confirm is send.
+        expect(cancel.classList.contains('qaap-preview-annotation-popover-icon-btn')).to.equal(true);
+        expect(cancel.classList.contains('qaap-preview-annotation-popover-context-chip')).to.equal(false);
+        const cancelGlyph = cancel.querySelector('svg.qaap-preview-annotation-popover-glyph') as SVGSVGElement;
+        expect(cancelGlyph).to.exist;
+        expect(cancelGlyph.querySelector('path')?.getAttribute('d') ?? '').to.match(/M4 4 L12 12/i);
+        const confirmGlyph = confirm.querySelector('svg.qaap-preview-annotation-popover-glyph') as SVGSVGElement;
+        expect(confirmGlyph).to.exist;
+        // Confirm uses a checkmark path (not arrow-up).
+        expect(confirmGlyph.querySelector('path')?.getAttribute('d') ?? '').to.match(/L6\.7 11\.2/i);
+        expect(mic.querySelector('svg.qaap-preview-annotation-popover-glyph')).to.exist;
 
         expect(cancel.getAttribute('aria-label')).to.be.ok;
         expect(confirm.getAttribute('aria-label')).to.be.ok;
@@ -62,11 +70,18 @@ describe('qaap-preview-annotation-popover', () => {
         expect(cancel.title).to.be.ok;
         expect(confirm.title).to.be.ok;
 
+        // DOM order: cancel × → spacer → mic → confirm (empty CSS hides cancel/send).
+        const actions = handle.root.querySelector('.qaap-preview-annotation-popover-actions') as HTMLElement;
+        const kids = Array.from(actions.children);
+        expect(kids.indexOf(cancel)).to.be.lessThan(kids.indexOf(spacer));
+        expect(kids.indexOf(spacer)).to.be.lessThan(kids.indexOf(mic));
+        expect(kids.indexOf(mic)).to.be.lessThan(kids.indexOf(confirm));
+
         handle.dispose();
         expect(document.querySelector('.qaap-preview-annotation-popover')).to.not.exist;
     });
 
-    it('shows an element tag chip when elementTagName is provided', () => {
+    it('shows an element tag chip with target SVG when elementTagName is provided', () => {
         const handle = mountAnnotationCommentPopover({
             anchorClientX: 10,
             anchorClientY: 10,
@@ -78,6 +93,14 @@ describe('qaap-preview-annotation-popover', () => {
         const chip = handle.root.querySelector('.qaap-preview-annotation-popover-chip') as HTMLElement;
         expect(chip).to.exist;
         expect(chip.textContent).to.contain('div');
+        const icon = chip.querySelector('svg.qaap-preview-annotation-popover-chip-icon') as SVGSVGElement;
+        expect(icon).to.exist;
+        // Cursor-style: rounded frame + hollow triangular pointer (stroke, not fill).
+        expect(icon.querySelector('rect[fill="none"]')).to.exist;
+        const pointer = icon.querySelector('path') as SVGPathElement;
+        expect(pointer).to.exist;
+        expect(pointer.getAttribute('fill')).to.equal('none');
+        expect(pointer.getAttribute('stroke')).to.equal('currentColor');
         handle.dispose();
     });
 
@@ -132,7 +155,7 @@ describe('qaap-preview-annotation-popover', () => {
 
         const deleteBtn = handle.root.querySelector('.qaap-preview-annotation-popover-delete') as HTMLButtonElement;
         expect(deleteBtn).to.exist;
-        expect(deleteBtn.querySelector('.codicon-trash')).to.exist;
+        expect(deleteBtn.querySelector('svg.qaap-preview-annotation-popover-glyph')).to.exist;
         deleteBtn.click();
         expect(deleted).to.equal(true);
         expect(document.querySelector('.qaap-preview-annotation-popover')).to.not.exist;
@@ -142,5 +165,87 @@ describe('qaap-preview-annotation-popover', () => {
         expect(() => getAnnotationSpeechRecognitionCtor()).to.not.throw();
         expect(canConfirmAnnotationComment('  ok  ')).to.equal(true);
         expect(canConfirmAnnotationComment('   ')).to.equal(false);
+    });
+
+    it('attaches optional composerSession agent controls in the expanded footer', () => {
+        let attached = 0;
+        let disposed = 0;
+        const handle = mountAnnotationCommentPopover({
+            anchorClientX: 10,
+            anchorClientY: 10,
+            initialComment: 'note',
+            onConfirm: () => { /* */ },
+            onCancel: () => { /* */ },
+            composerSession: {
+                attach: host => {
+                    attached += 1;
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'theia-mobile-projects-sticky-composer-agent';
+                    btn.textContent = 'Codex';
+                    host.append(btn);
+                    return {
+                        dispose: () => {
+                            disposed += 1;
+                            host.replaceChildren();
+                        },
+                    };
+                },
+            },
+        });
+
+        expect(attached).to.equal(1);
+        expect(handle.root.classList.contains('qaap-preview-annotation-popover--expanded')).to.equal(true);
+        const session = handle.root.querySelector('.qaap-preview-annotation-popover-session') as HTMLElement;
+        expect(session).to.exist;
+        expect(session.querySelector('.theia-mobile-projects-sticky-composer-agent')?.textContent).to.equal('Codex');
+
+        const actions = handle.root.querySelector('.qaap-preview-annotation-popover-actions') as HTMLElement;
+        const cancel = handle.root.querySelector('.qaap-preview-annotation-popover-cancel') as HTMLElement;
+        const spacer = handle.root.querySelector('.qaap-preview-annotation-popover-actions-spacer') as HTMLElement;
+        const kids = Array.from(actions.children);
+        expect(kids.indexOf(cancel)).to.be.lessThan(kids.indexOf(session));
+        expect(kids.indexOf(session)).to.be.lessThan(kids.indexOf(spacer));
+
+        handle.dispose();
+        expect(disposed).to.equal(1);
+    });
+
+    it('ignores outside clicks that land on sticky composer agent sheets', async () => {
+        let cancelled = 0;
+        const handle = mountAnnotationCommentPopover({
+            anchorClientX: 10,
+            anchorClientY: 10,
+            initialComment: 'keep open',
+            onConfirm: () => { /* */ },
+            onCancel: () => { cancelled += 1; },
+        });
+
+        // Outside listener is installed on the next frame / timeout (jsdom has no rAF).
+        await new Promise<void>(resolve => {
+            setTimeout(resolve, 0);
+        });
+
+        const sheet = document.createElement('div');
+        sheet.className = 'theia-mobile-sticky-composer-sheet theia-mod-agent';
+        document.body.append(sheet);
+
+        sheet.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+        expect(cancelled).to.equal(0);
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.exist;
+
+        sheet.remove();
+
+        const popoverSheet = document.createElement('div');
+        popoverSheet.className = 'qaap-sticky-composer-sheet-popover theia-mod-agent-picker theia-mod-annotation-anchor';
+        document.body.append(popoverSheet);
+        popoverSheet.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+        expect(cancelled).to.equal(0);
+        expect(document.querySelector('.qaap-preview-annotation-popover')).to.exist;
+
+        popoverSheet.remove();
+        handle.dispose();
     });
 });

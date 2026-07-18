@@ -16,6 +16,7 @@ import {
 } from '../common/qaap-composer-context-entry';
 import {
     isPreviewFeedbackRequest,
+    parsePreviewFeedbackArg,
     QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
 } from '../common/qaap-preview-feedback-context';
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
@@ -127,8 +128,10 @@ export function resolveStickyComposerContextChip(
         return resolveFileContextChip(request, labelProvider);
     }
     if (isPreviewFeedbackRequest(request)) {
+        const parsed = parsePreviewFeedbackArg(request.arg);
         return {
-            title: nls.localize('qaap/preview/feedbackChipFallback', 'Preview feedback'),
+            title: parsed?.t?.trim()
+                || nls.localize('qaap/preview/feedbackChipFallback', 'Preview feedback'),
             iconClasses: 'codicon codicon-comment',
             kind: QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
             attachmentKind: 'context',

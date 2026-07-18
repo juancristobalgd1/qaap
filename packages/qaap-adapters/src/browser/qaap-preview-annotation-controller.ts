@@ -20,20 +20,74 @@ import {
 import { guessSourceLocationFromElement } from '@theia/qaap-element-inspector/lib/browser/qaap-element-inspector-source-map';
 import type { PickedElement } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
 import {
-    buildPreviewFeedbackDedupeKey,
-    formatPreviewFeedbackAgentContext,
-    formatPreviewFeedbackChipTitle,
+    buildAnnotateChatAttachArgs,
     QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
+    type PreviewAnnotationChatImageAttachment,
 } from './qaap-preview-annotation-context';
 import { mountPreviewAnnotationMarkers, type AnnotationMarkerPosition, type PreviewAnnotationMarkersHandle } from './qaap-preview-annotation-markers';
-import { mountAnnotationCommentPopover, type AnnotationCommentPopoverHandle } from './qaap-preview-annotation-popover';
+import {
+    mountAnnotationCommentPopover,
+    type AnnotationCommentPopoverHandle,
+    type AnnotationComposerSessionControls,
+} from './qaap-preview-annotation-popover';
 import {
     createPreviewAnnotation,
     isBlankAnnotationComment,
     PreviewAnnotationStore,
 } from './qaap-preview-annotation-store';
 import type { PreviewAnnotation, PreviewAnnotationScope } from './qaap-preview-annotation-types';
-import { previewNotify, runPreviewOverflowAction } from './qaap-preview-overflow-actions';
+import {
+    blobToBase64,
+    captureSameOriginPreview,
+    previewNotify,
+    writePngBlobToClipboard,
+} from './qaap-preview-overflow-actions';
+
+/**
+ * Document with dog-eared corner and +/− — closer to the annotate toolbar
+ * design than `codicon-diff-single` (split panes).
+ */
+function createHoldToSeeOriginalIcon(): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('width', '14');
+    svg.setAttribute('height', '14');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    svg.classList.add('qaap-preview-annotate-toolbar-compare-icon');
+
+    const page = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    page.setAttribute('fill', 'none');
+    page.setAttribute('stroke', 'currentColor');
+    page.setAttribute('stroke-width', '1.2');
+    page.setAttribute('stroke-linecap', 'round');
+    page.setAttribute('stroke-linejoin', 'round');
+    // Page outline with dog-eared top-right corner + fold crease.
+    page.setAttribute(
+        'd',
+        'M3.75 2h5.6L12.25 4.9V13.5a.75.75 0 0 1-.75.75H3.75a.75.75 0 0 1-.75-.75V2.75A.75.75 0 0 1 3.75 2z'
+        + 'M9.35 2v2.15c0 .41.34.75.75.75h2.15',
+    );
+    svg.append(page);
+
+    const plus = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    plus.setAttribute('fill', 'none');
+    plus.setAttribute('stroke', 'currentColor');
+    plus.setAttribute('stroke-width', '1.2');
+    plus.setAttribute('stroke-linecap', 'round');
+    plus.setAttribute('d', 'M7.75 6.1v2.35M6.575 7.275h2.35');
+    svg.append(plus);
+
+    const minus = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    minus.setAttribute('fill', 'none');
+    minus.setAttribute('stroke', 'currentColor');
+    minus.setAttribute('stroke-width', '1.2');
+    minus.setAttribute('stroke-linecap', 'round');
+    minus.setAttribute('d', 'M6.575 10.85h2.35');
+    svg.append(minus);
+
+    return svg;
+}
 
 export interface QaapPreviewAnnotationControllerOptions {
     readonly frame: HTMLIFrameElement;
@@ -51,8 +105,15 @@ export interface QaapPreviewAnnotationControllerOptions {
     readonly startSelectPicker: () => void;
     readonly injectBridge: () => void;
     readonly toDispose: DisposableCollection;
-    /** Optional override; defaults to preview overflow take-screenshot action. */
+    /**
+     * Optional override for the annotate-toolbar camera control.
+     * Default: capture preview → clipboard + attach as chat context for Send.
+     */
     readonly takeScreenshot?: () => void | Promise<void>;
+    /**
+     * Work Hub sticky-composer agent/model controls for the annotation popover footer.
+     */
+    readonly composerSession?: AnnotationComposerSessionControls;
 }
 
 /**
@@ -81,11 +142,15 @@ export class QaapPreviewAnnotationController implements Disposable {
     protected comparingOriginal = false;
     protected listenerInstalled = false;
     protected notify: ((message: string, kind?: 'info' | 'warn') => void) | undefined;
+    protected composerSession: AnnotationComposerSessionControls | undefined;
+    /** Latest annotate-toolbar screenshot; included with Send as image chat context. */
+    protected pendingChatScreenshot: PreviewAnnotationChatImageAttachment | undefined;
 
     constructor(protected readonly options: QaapPreviewAnnotationControllerOptions) {
         this.store = options.store ?? new PreviewAnnotationStore();
         this.toolbarHost = options.toolbarHost;
         this.notify = options.notify;
+        this.composerSession = options.composerSession;
         this.markers = mountPreviewAnnotationMarkers(options.frameSlot, {
             onMarkerActivate: (id, x, y) => this.openExistingAnnotation(id, x, y),
         });
@@ -113,6 +178,11 @@ export class QaapPreviewAnnotationController implements Disposable {
     /** Wire Work Hub–visible toasts (e.g. MobileSnackbar) after construction. */
     setNotify(notify: ((message: string, kind?: 'info' | 'warn') => void) | undefined): void {
         this.notify = notify;
+    }
+
+    /** Wire Work Hub agent/model session controls into the annotation popover footer. */
+    setComposerSession(session: AnnotationComposerSessionControls | undefined): void {
+        this.composerSession = session;
     }
 
     dispose(): void {
@@ -207,19 +277,21 @@ export class QaapPreviewAnnotationController implements Disposable {
             ), 'warn');
             return;
         }
-        const chipTitle = formatPreviewFeedbackChipTitle(confirmed, scope.route, scope.viewportMode);
-        const contextBody = formatPreviewFeedbackAgentContext(confirmed);
-        const dedupeKey = buildPreviewFeedbackDedupeKey(confirmed[0]!, confirmed.map(item => item.id));
+        const images = this.pendingChatScreenshot ? [this.pendingChatScreenshot] : undefined;
+        const attachArgs = buildAnnotateChatAttachArgs(
+            confirmed,
+            scope.route,
+            scope.viewportMode,
+            images,
+        );
+        if (!attachArgs) {
+            return;
+        }
         const annotationIds = confirmed.map(item => item.id);
         try {
             const sent = await this.options.commands.executeCommand(
                 QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
-                {
-                    chipTitle,
-                    contextBody,
-                    dedupeKey,
-                    submit: true,
-                },
+                attachArgs,
             );
             if (sent !== true) {
                 this.notifyUser(nls.localize(
@@ -229,6 +301,7 @@ export class QaapPreviewAnnotationController implements Disposable {
                 return;
             }
             this.store.markAttached(annotationIds);
+            this.pendingChatScreenshot = undefined;
             this.notifyUser(this.formatAnnotationsSentToast(annotationIds.length));
             this.syncAnnotateToolbar();
         } catch (error) {
@@ -239,6 +312,15 @@ export class QaapPreviewAnnotationController implements Disposable {
                 detail,
             ), 'warn');
         }
+    }
+
+    /** Test seam: seed a pending screenshot that Send includes as image context. */
+    setPendingChatScreenshot(image: PreviewAnnotationChatImageAttachment | undefined): void {
+        this.pendingChatScreenshot = image;
+    }
+
+    getPendingChatScreenshot(): PreviewAnnotationChatImageAttachment | undefined {
+        return this.pendingChatScreenshot;
     }
 
     protected formatAnnotationsSentToast(count: number): string {
@@ -257,6 +339,12 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     handleEscape(): boolean {
+        // Agent/model picker (portaled above the annotation card) owns Escape first.
+        if (document.querySelector(
+            '.qaap-sticky-composer-sheet-popover, .theia-mobile-sticky-composer-sheet, .theia-mobile-projects-sticky-composer-sheet',
+        )) {
+            return false;
+        }
         if (this.popover) {
             this.popover.dispose();
             this.popover = undefined;
@@ -434,7 +522,11 @@ export class QaapPreviewAnnotationController implements Disposable {
                     ? annotation.anchor.selector.split(/[\s.#[:>+~]/)[0]
                     : undefined),
             allowDelete: !isNew,
-            onWarn: message => this.options.messageService.warn(message),
+            composerSession: this.composerSession,
+            onWarn: message => {
+                this.notify?.(message, 'warn');
+                this.options.messageService.warn(message);
+            },
             onConfirm: comment => {
                 if (isBlankAnnotationComment(comment)) {
                     return;
@@ -576,39 +668,52 @@ export class QaapPreviewAnnotationController implements Disposable {
             await this.options.takeScreenshot();
             return;
         }
-        await runPreviewOverflowAction('take-screenshot', {
-            getFrame: () => this.options.frame,
-            getCurrentUrl: () => {
-                try {
-                    return this.options.frame.contentWindow?.location.href
-                        ?? this.options.frame.src
-                        ?? '';
-                } catch {
-                    return this.options.frame.src || '';
-                }
-            },
-            reload: () => {
-                try {
-                    this.options.frame.contentWindow?.location.reload();
-                } catch {
-                    /* cross-origin */
-                }
-            },
-            hardReload: () => {
-                try {
-                    this.options.frame.contentWindow?.location.reload();
-                } catch {
-                    /* cross-origin */
-                }
-            },
-            openExternal: () => { /* annotate toolbar does not open external */ },
-            copyCurrentUrl: async () => { /* unused for screenshot */ },
-            messageService: this.options.messageService,
-            notify: this.notify,
-            bookmarkBarVisible: () => false,
-            toggleBookmarkBar: () => { /* unused */ },
-            clearHistory: () => { /* unused */ },
-        });
+        await this.captureScreenshotForChat();
+    }
+
+    /**
+     * Annotate-toolbar camera: capture preview frame, copy to clipboard, and keep as
+     * pending chat context for the next Send. Never triggers a download.
+     */
+    protected async captureScreenshotForChat(): Promise<void> {
+        const frame = this.options.frame;
+        const doc = frame.contentDocument;
+        if (!doc?.body) {
+            this.notifyUser(nls.localize(
+                'qaap/preview/screenshotUnavailable',
+                'Screenshots only work for same-origin previews. Open in browser to capture cross-origin pages.',
+            ), 'warn');
+            return;
+        }
+        try {
+            const blob = await captureSameOriginPreview(doc, frame);
+            if (!blob) {
+                throw new Error('capture failed');
+            }
+            const data = await blobToBase64(blob);
+            this.pendingChatScreenshot = {
+                name: 'preview-screenshot.png',
+                mimeType: 'image/png',
+                data,
+            };
+            const copied = await writePngBlobToClipboard(blob);
+            if (copied) {
+                this.notifyUser(nls.localize(
+                    'qaap/preview/screenshotCopiedAndAttached',
+                    'Screenshot copied and attached',
+                ));
+            } else {
+                this.notifyUser(nls.localize(
+                    'qaap/preview/screenshotAttachedClipboardBlocked',
+                    'Screenshot attached (clipboard unavailable)',
+                ), 'warn');
+            }
+        } catch {
+            this.notifyUser(nls.localize(
+                'qaap/preview/screenshotFailed',
+                'Could not capture a screenshot for this page.',
+            ), 'warn');
+        }
     }
 
     protected ensureAnnotateToolbar(): void {
@@ -653,15 +758,19 @@ export class QaapPreviewAnnotationController implements Disposable {
         const screenshotBtn = document.createElement('button');
         screenshotBtn.type = 'button';
         screenshotBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-device-camera';
-        screenshotBtn.title = nls.localize('qaap/preview/takeScreenshot', 'Take Screenshot');
+        screenshotBtn.title = nls.localize(
+            'qaap/preview/screenshotAndAttach',
+            'Screenshot and attach',
+        );
         screenshotBtn.setAttribute('aria-label', screenshotBtn.title);
 
         const compareBtn = document.createElement('button');
         compareBtn.type = 'button';
-        compareBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-diff-single';
+        compareBtn.className = 'qaap-preview-annotate-toolbar-icon-btn qaap-preview-annotate-toolbar-compare-btn';
         compareBtn.title = nls.localize('qaap/preview/annotateHoldToSeeOriginal', 'Hold to see original');
         compareBtn.setAttribute('aria-label', compareBtn.title);
         compareBtn.setAttribute('aria-pressed', 'false');
+        compareBtn.append(createHoldToSeeOriginalIcon());
 
         const sendBtn = document.createElement('button');
         sendBtn.type = 'button';
