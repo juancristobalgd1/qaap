@@ -327,19 +327,15 @@ export class MobileProjectsTranscriptMessagesUserUi {
             if (preview.src) {
                 return;
             }
+            // No isConnected guard: virtual-list rows are built detached and mounted later,
+            // so a connectivity precondition would leave the thumb shimmering forever.
             const card = cards[index];
-            if (!card?.isConnected) {
-                return;
-            }
-            const thumbHost = card.querySelector<HTMLElement>('.theia-mobile-agent-transcript-user-attachment-thumb');
-            const img = card.querySelector<HTMLImageElement>('.theia-mobile-agent-transcript-user-attachment-image');
+            const thumbHost = card?.querySelector<HTMLElement>('.theia-mobile-agent-transcript-user-attachment-thumb');
+            const img = card?.querySelector<HTMLImageElement>('.theia-mobile-agent-transcript-user-attachment-image');
             if (!thumbHost || !img) {
                 return;
             }
             const src = await resolveTranscriptImagePreviewSrc(preview, resolvePreview);
-            if (!card.isConnected) {
-                return;
-            }
             thumbHost.classList.remove('theia-mod-loading');
             if (src) {
                 img.src = src;

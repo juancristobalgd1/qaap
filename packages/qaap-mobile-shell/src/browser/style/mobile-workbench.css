@@ -18727,6 +18727,12 @@ body>.theia-mobile-transcript-files-menu {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  overflow: hidden;
+}
+
+/* Hide the alt-text glyph run while the thumb has no source (loading/missing). */
+.theia-mobile-agent-transcript-user-attachment-image:not([src]) {
+  visibility: hidden;
 }
 
 /* Preview-feedback rich card: numbered annotations sent from Annotate mode. */
