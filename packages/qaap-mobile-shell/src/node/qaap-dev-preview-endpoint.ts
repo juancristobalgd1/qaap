@@ -540,19 +540,30 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         }
         const identity = parseQaapIdentityPreviewRequestPath(pathname);
         const legacy = identity ? undefined : parseQaapDevPreviewRequestPath(pathname);
-        const identityRecord = identity ? this.previewForRequest(req, identity.previewId) : undefined;
-        const targetPort = identityRecord?.port ?? legacy?.port;
-        const targetPath = identity?.targetPath ?? legacy?.targetPath;
-        if (!targetPort || !targetPath || this.isIdeListenPort(targetPort)) {
+        if (!identity && !legacy) {
             return;
         }
-        // Reject anonymous WebSocket upgrades — mirror the HTTP-route auth gate.
+        // Reject anonymous WebSocket upgrades before resolving a tenant record. Previously an
+        // identity-scoped request without access returned early with an open/hanging socket.
         if (this.auth.authenticate(req as unknown as Request).kind === 'unauthorized') {
             socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
             socket.destroy();
             return;
         }
-        if ((identity && !identityRecord) || (!identity && !this.mayProxyPort(req, targetPort))) {
+        const identityRecord = identity ? this.previewForRequest(req, identity.previewId) : undefined;
+        if (identity && !identityRecord) {
+            socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+        const targetPort = identityRecord?.port ?? legacy?.port;
+        const targetPath = identity?.targetPath ?? legacy?.targetPath;
+        if (!targetPort || !targetPath || this.isIdeListenPort(targetPort)) {
+            socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+        if (!identity && !this.mayProxyPort(req, targetPort)) {
             socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
             socket.destroy();
             return;

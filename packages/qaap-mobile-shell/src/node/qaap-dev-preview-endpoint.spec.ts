@@ -40,6 +40,10 @@ class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
         return this.handleProbe(req, res as never);
     }
 
+    exposeHandleWebSocketUpgrade(req: unknown, socket: unknown): void {
+        this.handleWebSocketUpgrade(req as never, socket as never, Buffer.alloc(0));
+    }
+
     touchedPorts: number[] = [];
 
     setFakes(ctx: QaapGithubAuthContext, claimedOwner: string | undefined): void {
@@ -660,6 +664,44 @@ describe('QaapDevPreviewEndpoint', () => {
             const res = { status(code: number): unknown { status = code; return this; }, json(): unknown { return this; } };
             await ep.exposeHandleProbe(probeReq('5173'), res);
             expect(status).to.equal(403);
+        });
+    });
+
+    describe('identity WebSocket ownership', () => {
+        const makeSocket = (): { writes: string[]; destroyed: boolean; write(value: string): void; destroy(): void } => ({
+            writes: [],
+            destroyed: false,
+            write(value: string): void { this.writes.push(value); },
+            destroy(): void { this.destroyed = true; },
+        });
+
+        it('rejects another authenticated user with an explicit 403 instead of hanging', () => {
+            const ep = new TestQaapDevPreviewEndpoint();
+            const mutable = ep as unknown as { auth: unknown; portRegistry: unknown };
+            mutable.auth = {
+                authenticate: () => ({ kind: 'authenticated', userLogin: 'bob', session: {}, sessionId: 's' }),
+                resolveUserLogin: () => 'bob',
+            };
+            mutable.portRegistry = { getForOwner: () => undefined };
+            const socket = makeSocket();
+            ep.exposeHandleWebSocketUpgrade({
+                url: '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/@vite/client',
+                headers: {},
+            }, socket);
+            expect(socket.writes.join('')).to.contain('403 Forbidden');
+            expect(socket.destroyed).to.equal(true);
+        });
+
+        it('rejects an anonymous identity WebSocket with 401', () => {
+            const ep = new TestQaapDevPreviewEndpoint();
+            ep.setFakes({ kind: 'unauthorized' }, undefined);
+            const socket = makeSocket();
+            ep.exposeHandleWebSocketUpgrade({
+                url: '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/@vite/client',
+                headers: {},
+            }, socket);
+            expect(socket.writes.join('')).to.contain('401 Unauthorized');
+            expect(socket.destroyed).to.equal(true);
         });
     });
 });
