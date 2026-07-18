@@ -53,6 +53,44 @@ if ! command -v docker >/dev/null; then
     exit 1
 fi
 
+ensure_docker_pull_space() {
+    local minimum_free_gb="${QAAP_DOCKER_MIN_FREE_GB:-25}"
+    if [[ ! "$minimum_free_gb" =~ ^[0-9]+$ ]]; then
+        echo "QAAP_DOCKER_MIN_FREE_GB must be a non-negative integer: $minimum_free_gb" >&2
+        exit 1
+    fi
+
+    local docker_root
+    docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+    if [[ -z "$docker_root" || ! -d "$docker_root" ]]; then
+        docker_root="/"
+    fi
+
+    local available_kb
+    available_kb="$(df -Pk "$docker_root" | awk 'NR == 2 { print $4 }')"
+    if [[ ! "$available_kb" =~ ^[0-9]+$ ]]; then
+        echo "Could not determine free space for Docker root: $docker_root" >&2
+        exit 1
+    fi
+
+    local minimum_free_kb=$((minimum_free_gb * 1024 * 1024))
+    echo "[qaap-vps-update] Docker free space: $((available_kb / 1024 / 1024)) GiB (minimum: ${minimum_free_gb} GiB)"
+    if (( available_kb >= minimum_free_kb )); then
+        return
+    fi
+
+    echo "[qaap-vps-update] low Docker disk space; pruning unused build cache and images"
+    docker builder prune --all --force | tail -n 1
+    docker image prune --all --force | tail -n 1
+
+    available_kb="$(df -Pk "$docker_root" | awk 'NR == 2 { print $4 }')"
+    echo "[qaap-vps-update] Docker free space after prune: $((available_kb / 1024 / 1024)) GiB"
+    if (( available_kb < minimum_free_kb )); then
+        echo "Insufficient Docker disk space after pruning: need ${minimum_free_gb} GiB under $docker_root" >&2
+        exit 1
+    fi
+}
+
 echo "[qaap-vps-update] repo: $REPO_DIR"
 echo "[qaap-vps-update] branch: $BRANCH"
 
@@ -87,6 +125,7 @@ export QAAP_BUILD_SHA="$BEFORE"
 if [[ -n "$IMAGE_REF" ]]; then
     export QAAP_THEIA_IMAGE="$IMAGE_REF"
     echo "[qaap-vps-update] image: $QAAP_THEIA_IMAGE"
+    ensure_docker_pull_space
     docker compose pull theia
     IMAGE_REVISION="$(docker image inspect "$QAAP_THEIA_IMAGE" \
         --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null || true)"
