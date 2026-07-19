@@ -697,9 +697,12 @@ export class QaapProjectBootstrapService {
             // The probe endpoint fails closed on unclaimed ports (SEC-8) — re-claim before probing
             // so a backend restart or an expired claim does not lock the owner out of their preview.
             await this.claimDevPreviewPort(rememberedPort);
-            const probe = await probeQaapDevPreviewPort(rememberedPort);
+            // The claim may resolve to a different allocated port than the remembered one (stale
+            // localStorage, inline PORT=… in the dev script) — probe the authoritative target.
+            const target = this.resolvePrimaryPreviewTarget(rememberedPort, '');
+            const probe = await probeQaapDevPreviewPort(target.port);
             if (probe.ready) {
-                await this.openPreview(probe.previewUrl);
+                await this.openPreview(target.url || probe.previewUrl);
                 return;
             }
         }
@@ -961,15 +964,35 @@ export class QaapProjectBootstrapService {
             // action instead of a generic "Run & Preview" CTA.
             this._lastPort = port;
             if (options?.alreadyReady) {
-                void claimed.then(() => this.openPreview(
-                    this.activePreviewClaim?.port === port ? this.activePreviewClaim.previewUrl : isolatedUrl,
-                    /* primary */ true,
-                    { auto: true },
-                ));
+                void claimed.then(() => {
+                    const target = this.resolvePrimaryPreviewTarget(port, isolatedUrl);
+                    this._lastPort = target.port;
+                    return this.openPreview(target.url, /* primary */ true, { auto: true });
+                });
             } else {
-                void claimed.then(() => this.openPrimaryPreviewWhenReady(port, isolatedUrl, { auto: true }));
+                void claimed.then(() => {
+                    const target = this.resolvePrimaryPreviewTarget(port, isolatedUrl);
+                    this._lastPort = target.port;
+                    return this.openPrimaryPreviewWhenReady(target.port, target.url, { auto: true });
+                });
             }
         }
+    }
+
+    /**
+     * The port allocator is authoritative for the primary preview. Detected ports (terminal
+     * output, persisted `lastPort`, an inline `PORT=…` in the project's own dev script) can
+     * disagree with the allocated one — e.g. Lavadiario's dev script hardcodes `PORT=8080` while
+     * the claim runs the server on 3003 — and a `/qaap-dev/:port` URL for a port the claim did not
+     * grant always fails closed (403). Whenever an identity claim is live, route the primary
+     * preview through the claim's port and stable identity URL instead.
+     */
+    protected resolvePrimaryPreviewTarget(port: number, url: string): { port: number; url: string } {
+        const claim = this.activePreviewClaim;
+        if (claim && claim.port !== undefined && claim.port !== port) {
+            return { port: claim.port, url: claim.previewUrl };
+        }
+        return { port, url };
     }
 
     /**
@@ -1022,6 +1045,7 @@ export class QaapProjectBootstrapService {
         if (this._previewUrl) {
             return;
         }
+        ({ port, url } = this.resolvePrimaryPreviewTarget(port, url));
         const ready = await waitForQaapDevPreviewPort(port, {
             maxAttempts: DEV_PREVIEW_OPEN_PROBE_ATTEMPTS,
             intervalMs: DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS,
