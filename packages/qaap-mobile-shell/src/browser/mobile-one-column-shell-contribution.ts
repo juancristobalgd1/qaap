@@ -156,7 +156,7 @@ import {
 import {
     BottomBarSecondaryItem,
     EXPLORER_VIEW_CONTAINER_ID,
-    MINI_BROWSER_PREVIEW_WIDGET_ID,
+    isMiniBrowserPreviewWidgetId,
     MOBILE_BOTTOM_OPEN_CLASS,
     MobileBottomButton,
     MobileBottomButtonId,
@@ -1949,7 +1949,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     protected getActivePreviewWidget(): LuminoWidget | undefined {
         const active = this.shell.activeWidget ?? this.shell.currentWidget;
-        if (active?.id === MINI_BROWSER_PREVIEW_WIDGET_ID && this.shell.getAreaFor(active) === 'main') {
+        if (isMiniBrowserPreviewWidgetId(active?.id) && active && this.shell.getAreaFor(active) === 'main') {
             return active;
         }
         return undefined;
@@ -1957,7 +1957,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     protected findPreviewWidget(): LuminoWidget | undefined {
         for (const area of ['main', 'right', 'left', 'bottom'] as ApplicationShell.Area[]) {
-            const match = this.shell.getWidgets(area).find(widget => widget.id === MINI_BROWSER_PREVIEW_WIDGET_ID);
+            const match = this.shell.getWidgets(area).find(widget => isMiniBrowserPreviewWidgetId(widget.id));
             if (match) {
                 return match;
             }
@@ -1966,7 +1966,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected getMainPreviewWidget(): LuminoWidget | undefined {
-        return this.shell.getWidgets('main').find(widget => widget.id === MINI_BROWSER_PREVIEW_WIDGET_ID);
+        return this.shell.getWidgets('main').find(widget => isMiniBrowserPreviewWidgetId(widget.id));
     }
 
     /** True when the preview tab has mini-browser chrome (not a layout-restore shell with no content). */

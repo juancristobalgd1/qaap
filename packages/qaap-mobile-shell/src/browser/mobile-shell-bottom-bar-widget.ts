@@ -14,6 +14,15 @@ export const WORKBENCH_CHAT_VIEW_WIDGET_ID = 'chat-view-widget';
 export const WORKBENCH_TOGGLE_TERMINAL = 'workbench.action.terminal.toggleTerminal';
 /** Shared preview tab id ({@link MiniBrowserOpenHandler.PREVIEW_URI}). */
 export const MINI_BROWSER_PREVIEW_WIDGET_ID = 'mini-browser:__minibrowser__preview__';
+
+/**
+ * True for the legacy shared preview tab and for every project-scoped preview tab
+ * (`mini-browser:__minibrowser__preview__:/<workspace>/<project>`, see `qaap-preview-widget-uri.ts`
+ * in `qaap-adapters`).
+ */
+export function isMiniBrowserPreviewWidgetId(id: string | undefined): boolean {
+    return !!id && id.startsWith(MINI_BROWSER_PREVIEW_WIDGET_ID);
+}
 export const EXPLORER_VIEW_CONTAINER_ID = 'explorer-view-container';
 export const OPEN_AI_CONFIGURATION_COMMAND = 'aiConfiguration:open';
 export const EDIT_CHAT_SESSION_SETTINGS_COMMAND = 'chat:widget:session-settings';

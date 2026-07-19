@@ -647,6 +647,77 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.get(stoppedId)).to.equal(undefined);
             expect(registry.get(liveId)).not.to.equal(undefined);
         });
+
+        it('supersedes the previous preview of the same project when its dev server is relaunched', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const firstRes = makeRes();
+            const secondRes = makeRes();
+
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/vamello',
+                projectId: 'vamello',
+                processId: 'process-run-1',
+            }), firstRes);
+            // Same project, new dev-server run (fresh processId) — must retire the old record
+            // instead of leaking a second registration + held port (observed on the VPS: the same
+            // project held ports 3000 AND 3001).
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/vamello',
+                projectId: 'vamello',
+                processId: 'process-run-2',
+            }), secondRes);
+
+            const first = firstRes.record.body as { previewId: string };
+            const second = secondRes.record.body as { previewId: string; port: number };
+            expect(second.previewId).to.not.equal(first.previewId);
+            expect(second.port).to.equal(5173);
+            expect(registry.get(first.previewId)).to.equal(undefined);
+            expect(registry.records()).to.have.length(1);
+        });
+
+        it('does not supersede a different project of the same user', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/project-a',
+                projectId: 'project-a',
+                processId: 'process-a',
+            }), makeRes());
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/project-b',
+                projectId: 'project-b',
+                processId: 'process-b',
+            }), makeRes());
+            expect(registry.records()).to.have.length(2);
+        });
+
+        it('reaps a record whose OS process is dead even while its port still answers', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const { spawnSync } = await import('child_process');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/site', projectId: 'site', processId: 'process-a',
+            }), res);
+            const previewId = (res.record.body as { previewId: string }).previewId;
+            // A pid that certainly exited: spawnSync completes before returning.
+            const deadPid = spawnSync(process.execPath, ['-e', '0']).pid;
+            registry.attachProcess(previewId, 'alice', deadPid);
+            // Port still answers (recycled by another process) and the record is inside the grace
+            // window — the dead pid must still trigger an immediate reap.
+            ep.listeningPorts.add(5173);
+
+            await ep.exposeReapStoppedPreviews();
+
+            expect(registry.get(previewId)).to.equal(undefined);
+        });
     });
 
     describe('probe ownership (SEC-8)', () => {

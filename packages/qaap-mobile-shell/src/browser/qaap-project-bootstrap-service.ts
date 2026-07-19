@@ -20,6 +20,7 @@ import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-servi
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
 import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
+import { QaapPreviewWidgetKey, QaapProjectPreviewOpener } from './qaap-project-preview-opener';
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import {
     QaapBootstrapPhase,
@@ -1330,6 +1331,34 @@ export class QaapProjectBootstrapService {
         }
     }
 
+    /**
+     * Identity of the preview surface for the active project.
+     *
+     * Must use the exact same fallback as {@link reserveActivePreview} so the widget key and the
+     * server-side claim always describe the same project; a divergence would open two tabs.
+     */
+    protected previewWidgetKey(): QaapPreviewWidgetKey | undefined {
+        const workspaceRoot = this.activeWorkspaceRoot ?? this._descriptor?.rootUri;
+        if (!workspaceRoot) {
+            return undefined;
+        }
+        return {
+            workspaceId: workspaceRoot.toString(),
+            projectId: this.activeProjectId ?? workspaceRoot.toString()
+        };
+    }
+
+    /** Routes to the project-scoped preview widget when the Qaap open handler is bound. */
+    protected async openPreviewWidget(url: string): Promise<void> {
+        const key = this.previewWidgetKey();
+        const handler = this.miniBrowser as Partial<QaapProjectPreviewOpener>;
+        if (key && typeof handler.openProjectPreview === 'function') {
+            await handler.openProjectPreview(url, key);
+            return;
+        }
+        await this.miniBrowser.openPreview(url);
+    }
+
     protected async openPreview(url: string, isPrimary: boolean = true, options?: { auto?: boolean }): Promise<void> {
         // Re-claim the target port right before opening: claims are TTL'd server-side and the
         // proxy fails closed, so an open without a live claim 403s the owner's own preview.
@@ -1348,7 +1377,7 @@ export class QaapProjectBootstrapService {
             return;
         }
         try {
-            await this.miniBrowser.openPreview(url);
+            await this.openPreviewWidget(url);
             this._previewUrl = url;
             if (isPrimary) {
                 const targetPort = this.extractPort(url);

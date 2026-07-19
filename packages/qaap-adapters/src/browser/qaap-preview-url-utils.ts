@@ -6,6 +6,9 @@
 /** Same prefix as {@link QAAP_DEV_PREVIEW_PREFIX} in qaap-mobile-shell (keep in sync). */
 export const QAAP_DEV_PREVIEW_PATH_PREFIX = '/qaap-dev';
 
+/** Same prefix as {@link QAAP_IDENTITY_PREVIEW_PREFIX} in qaap-mobile-shell (keep in sync). */
+export const QAAP_IDENTITY_PREVIEW_PATH_PREFIX = '/qaap-preview';
+
 const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);
 const BARE_LOCAL_DEV_URL_PATTERN = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(\/.*)?$/i;
 
@@ -113,6 +116,25 @@ export function parsePreviewProxyPath(pathname: string): QaapPreviewProxyPath | 
         return undefined;
     }
     return { port, targetPath: match[2] || '/' };
+}
+
+export interface QaapPreviewIdentityPath {
+    readonly previewId: string;
+    readonly targetPath: string;
+}
+
+/**
+ * Parses `/qaap-preview/:previewId/...` paths on the IDE origin.
+ *
+ * The preview id is an opaque, server-issued identity (`userId+workspaceId+projectId+processId`);
+ * it is never interpreted here beyond a conservative character check.
+ */
+export function parsePreviewIdentityPath(pathname: string): QaapPreviewIdentityPath | undefined {
+    const match = /^\/qaap-preview\/([A-Za-z0-9._-]{1,128})(\/.*)?$/.exec(pathname);
+    if (!match) {
+        return undefined;
+    }
+    return { previewId: match[1], targetPath: match[2] || '/' };
 }
 
 /**

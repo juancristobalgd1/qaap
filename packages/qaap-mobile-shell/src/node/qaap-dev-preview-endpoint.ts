@@ -259,6 +259,12 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             return;
         }
 
+        this.supersedeProjectPreviews({
+            previewId: identity.previewId,
+            workspaceId: FileUri.create(canonicalRoot).toString(),
+            projectId: claim.projectId,
+        }, owner);
+
         for (let offset = 0; offset < PREVIEW_PORT_ALLOCATION_ATTEMPTS; offset++) {
             const port = this.nextAllocationCandidate(preferredPort, offset);
             if (this.isIdeListenPort(port)) {
@@ -305,6 +311,65 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             return;
         }
         res.status(503).type('text/plain').send('No safe dev-preview port is currently available.');
+    }
+
+    /**
+     * Retires older previews of the same project before registering a new one.
+     *
+     * A fresh `processId` for an already-registered project means the dev server was relaunched
+     * (`processId` is stable across browser reloads — it is restored from the probe on reattach),
+     * so the previous registration is dead weight. Without this, restarting a project's app leaks
+     * one registration and one held port per restart: the VPS registry was observed holding two
+     * live previews for the same project on ports 3000 and 3001.
+     */
+    protected supersedeProjectPreviews(
+        project: { readonly previewId: string; readonly workspaceId: string; readonly projectId: string },
+        owner: string
+    ): void {
+        for (const record of this.portRegistry.records()) {
+            if (record.ownerLogin !== owner
+                || record.previewId === project.previewId
+                || !isQaapProcessPreviewIdentity(record)
+                || record.workspaceId !== project.workspaceId
+                || record.projectId !== project.projectId) {
+                continue;
+            }
+            // Only supervisor-spawned previews carry an OS pid; those we own and may terminate.
+            // Terminal-spawned dev servers are merely unpublished — the reaper collects them once
+            // they stop answering, and the fail-closed probe rule keeps the port unusable meanwhile.
+            this.terminatePreviewProcess(record);
+            this.portRegistry.releasePreview(record.previewId, record.ownerLogin);
+            console.info('[qaap-preview] superseded previous preview for project', {
+                previewId: record.previewId,
+                ownerLogin: record.ownerLogin,
+                projectId: project.projectId,
+                port: record.port,
+            });
+        }
+    }
+
+    protected terminatePreviewProcess(record: { readonly osProcessId?: number }): void {
+        if (record.osProcessId === undefined) {
+            return;
+        }
+        try {
+            process.kill(record.osProcessId, 'SIGTERM');
+        } catch {
+            // Already gone, or not ours to signal; the registration is released either way.
+        }
+    }
+
+    /** True when a recorded OS process is known to be gone (supervisor-spawned previews only). */
+    protected isPreviewProcessDead(record: { readonly osProcessId?: number }): boolean {
+        if (record.osProcessId === undefined) {
+            return false;
+        }
+        try {
+            process.kill(record.osProcessId, 0);
+            return false;
+        } catch (err) {
+            return (err as NodeJS.ErrnoException)?.code === 'ESRCH';
+        }
     }
 
     protected nextAllocationCandidate(preferredPort: number, offset: number): number {
@@ -398,8 +463,11 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         try {
             const now = Date.now();
             for (const record of this.portRegistry.records()) {
-                if (now - record.touchedAt < PREVIEW_RESERVATION_START_GRACE_MS
-                    || await this.probeLocalDevServer(record.port)) {
+                // A dead OS process is reaped immediately, even inside the start grace and even if
+                // the port answers — a recycled port would otherwise keep a zombie record alive.
+                if (!this.isPreviewProcessDead(record)
+                    && (now - record.touchedAt < PREVIEW_RESERVATION_START_GRACE_MS
+                        || await this.probeLocalDevServer(record.port))) {
                     continue;
                 }
                 this.portRegistry.releasePreview(record.previewId, record.ownerLogin);

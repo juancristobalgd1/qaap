@@ -6,7 +6,7 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
-import { codicon, PanelLayout } from '@theia/core/lib/browser';
+import { codicon, PanelLayout, Widget } from '@theia/core/lib/browser';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
@@ -18,6 +18,7 @@ import { MiniBrowserOpenerOptions } from '@theia/mini-browser/lib/browser/mini-b
 import { formatMiniBrowserNavigateError, normalizeMiniBrowserOpenUrl } from '@theia/mini-browser/lib/browser/mini-browser-url-utils';
 import { isMiniBrowserPreviewPlaceholderUrl } from './qaap-mini-browser-defaults';
 import { QaapMiniBrowser } from './qaap-mini-browser';
+import { isQaapPreviewWidgetUri, QaapPreviewWidgetKey, qaapPreviewWidgetUri } from './qaap-preview-widget-uri';
 
 /**
  * Qaap mobile / URL preview behavior for mini-browser open handler.
@@ -30,7 +31,7 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
 
     override async open(uri: URI, options?: MiniBrowserOpenerOptions): Promise<MiniBrowser> {
         const widget = await super.open(uri, options);
-        if (uri.isEqual(MiniBrowserOpenHandler.PREVIEW_URI) && this.isMobileOneColumn()) {
+        if (isQaapPreviewWidgetUri(uri) && this.isMobileOneColumn()) {
             const area = this.shell.getAreaFor(widget);
             if (area === 'main') {
                 await this.shell.activateWidget(widget.id);
@@ -98,7 +99,7 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
         uri?: URI,
         options?: MiniBrowserOpenerOptions
     ): Promise<MiniBrowserOpenerOptions & { widgetOptions: ApplicationShell.WidgetOptions }> {
-        if (uri?.isEqual(MiniBrowserOpenHandler.PREVIEW_URI)) {
+        if (isQaapPreviewWidgetUri(uri)) {
             let result = await this.defaultOptions();
             if (options) {
                 result = { ...result, ...options };
@@ -130,7 +131,18 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
         return this.open(MiniBrowserOpenHandler.PREVIEW_URI, props);
     }
 
-    protected async openPreviewForProduct(startPage: string): Promise<MiniBrowser | undefined> {
+    /**
+     * Opens the preview of a specific project in its own widget.
+     *
+     * Each project gets a dedicated preview tab keyed by {@link QaapPreviewWidgetKey}, so switching
+     * project / conversation / section can never show another project's preview, and two projects
+     * can be previewed side by side.
+     */
+    async openProjectPreview(startPage: string, key: QaapPreviewWidgetKey): Promise<MiniBrowser | undefined> {
+        return this.openPreviewForProduct(startPage, key);
+    }
+
+    protected async openPreviewForProduct(startPage: string, key?: QaapPreviewWidgetKey): Promise<MiniBrowser | undefined> {
         const trimmed = normalizeMiniBrowserOpenUrl(startPage);
         if (!trimmed) {
             this.messages.warn(nls.localize('theia/mini-browser/emptyUrl', 'Please enter a URL.'));
@@ -148,8 +160,31 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
             return undefined;
         }
         const props = await this.getOpenPreviewProps(mapped);
-        await this.closePreviewIfNeedsFreshAttach(props.widgetOptions?.area ?? this.previewArea());
-        return this.open(MiniBrowserOpenHandler.PREVIEW_URI, props);
+        const uri = qaapPreviewWidgetUri(key);
+        await this.closePreviewIfNeedsFreshAttach(props.widgetOptions?.area ?? this.previewArea(), uri);
+        if (key) {
+            await this.closeLegacyPreviewWidget();
+        }
+        return this.open(uri, props);
+    }
+
+    /**
+     * Closes the identity-less preview tab once a project-scoped one takes over.
+     *
+     * Restored layouts (and the pre-fix single-tab flow) contain the legacy widget id; without this
+     * the user would see a stale, unowned "Preview" tab next to the project ones.
+     */
+    protected async closeLegacyPreviewWidget(): Promise<void> {
+        const legacy = await this.getWidget(MiniBrowserOpenHandler.PREVIEW_URI);
+        if (legacy?.isAttached) {
+            await this.shell.closeWidget(legacy.id, { save: false });
+        }
+    }
+
+    /** Preview tabs are synthetic surfaces; they have no source document to open. */
+    protected override getSourceUri(ref?: Widget): URI | undefined {
+        const uri = super.getSourceUri(ref);
+        return isQaapPreviewWidgetUri(uri) ? undefined : uri;
     }
 
     protected override async getOpenPreviewProps(startPage: string): Promise<MiniBrowserOpenerOptions> {
@@ -177,8 +212,8 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
         return this.isMobileOneColumn() ? 'main' : 'right';
     }
 
-    protected async closePreviewIfNeedsFreshAttach(area: ApplicationShell.Area): Promise<void> {
-        const existing = await this.getWidget(MiniBrowserOpenHandler.PREVIEW_URI);
+    protected async closePreviewIfNeedsFreshAttach(area: ApplicationShell.Area, uri: URI = MiniBrowserOpenHandler.PREVIEW_URI): Promise<void> {
+        const existing = await this.getWidget(uri);
         if (!existing?.isAttached) {
             return;
         }
