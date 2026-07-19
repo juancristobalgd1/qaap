@@ -55,7 +55,8 @@ import {
 } from '../common/qaap-project-bootstrap-scaffold-plan';
 import type { QaapPreviewExecutionIdentity, QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
-import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
+import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
+import { resolveQaapReattachedPreviewIdentity } from './qaap-preview-reattachment';
 
 /** Storage key used to remember per-workspace user intent (skip / installed). */
 const STORAGE_KEY = 'qaap.projectBootstrap.state.v1';
@@ -1147,11 +1148,27 @@ export class QaapProjectBootstrapService {
             if (!probe.ready || !this.probeBelongsToActiveProject(probe.projectId)) {
                 continue;
             }
+            this.adoptExistingPreviewIdentity(port, probe);
             this._portConflictPort = port;
             this.recordForwardedPort(port, probe.previewUrl, { alreadyReady: true });
             return true;
         }
         return false;
+    }
+
+    /**
+     * A process-scoped probe is authoritative for an owner who has already passed the port gate.
+     * Restore its exact identity before {@link recordForwardedPort} refreshes the claim; otherwise a
+     * page reload would generate a fresh process id and reserve an unused alternate port while the
+     * original dev server continued running on the remembered one.
+     */
+    protected adoptExistingPreviewIdentity(port: number, probe: QaapDevPreviewProbeResponse): void {
+        const restored = resolveQaapReattachedPreviewIdentity(port, probe);
+        if (!restored) {
+            return;
+        }
+        this.activePreviewRunId = restored.processId;
+        this.activePreviewClaim = restored.claim;
     }
 
     /** A shared-host port is reusable only when its backend record names the selected project. */
