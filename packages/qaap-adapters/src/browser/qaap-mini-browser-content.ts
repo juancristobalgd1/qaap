@@ -40,6 +40,7 @@ import {
 } from './qaap-preview-port-claim-service';
 import { getSameOriginPreviewProxyPort, normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
+import { getQaapPreviewFrameSlot } from './qaap-mini-browser-frame-lifecycle';
 /**
  * Qaap mini-browser preview: element inspector, workbench toolbar, read-only URL editing.
  */
@@ -231,6 +232,10 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
             if (this.framePicker && this.inlineInspector) {
                 this.framePicker.connectInlineInspector(this.inlineInspector);
             }
+        }
+        const workbench = this.node.querySelector(`.${QaapMiniBrowserContentStyle.WORKBENCH_CONTROLS}`);
+        if (workbench instanceof HTMLElement) {
+            this.mountAnnotationController(workbench);
         }
         if (!this.surfaceHandle) {
             this.surfaceHandle = this.previewSurfaces.registerMiniBrowserContent(this, this.toDispose);
@@ -495,11 +500,20 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
             toDispose: this.toDispose,
         });
         parent.appendChild(button);
-        const frameSlot = this.frame.parentElement;
-        if (frameSlot) {
-            this.ensureFramePicker().ensureAnnotationController(frameSlot, parent);
-        }
+        this.mountAnnotationController(parent);
         return button;
+    }
+
+    /**
+     * The base constructor creates the toolbar before assigning `this.frame`. Mount annotation
+     * controls only after the iframe exists; {@link onAfterAttach} completes the deferred mount.
+     */
+    protected mountAnnotationController(toolbarHost: HTMLElement): void {
+        const frame = this.frame as HTMLIFrameElement | undefined;
+        const frameSlot = getQaapPreviewFrameSlot(frame);
+        if (frameSlot) {
+            this.ensureFramePicker().ensureAnnotationController(frameSlot, toolbarHost);
+        }
     }
 
     protected createWorkbenchButton(parent: HTMLElement, title: string, icon: string): HTMLButtonElement {
