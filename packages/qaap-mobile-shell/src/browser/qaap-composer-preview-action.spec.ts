@@ -65,4 +65,56 @@ describe('qaap-composer-preview-action', () => {
         )).to.equal(false);
         expect(opened).to.have.length(1);
     });
+
+    const IDENTITY_URL = 'http://localhost:3000/qaap-preview/u-alice-w-file-wor-p-file-wor-x-11111111-abcdefgh/';
+    const identityReady: ComposerPreviewRuntime = { ...ready, previewUrl: IDENTITY_URL };
+
+    it('accepts identity preview URLs as candidates (no port required)', () => {
+        // Regression: identity URLs have no port; "no port ⇒ no candidate" silently disabled the
+        // Open-preview pill for every identity-proxied app on the VPS.
+        expect(resolveComposerPreviewCandidate(identityReady, 'http://localhost:3000')).to.equal(IDENTITY_URL);
+        expect(resolveVerifiedComposerPreviewUrl(identityReady, IDENTITY_URL, 'http://localhost:3000')).to.equal(IDENTITY_URL);
+    });
+
+    it('never verifies one identity against another', () => {
+        const other = 'http://localhost:3000/qaap-preview/u-alice-w-file-wor-p-file-wor-x-22222222-zzzzzzzz/';
+        expect(resolveVerifiedComposerPreviewUrl(identityReady, other, 'http://localhost:3000')).to.equal(undefined);
+    });
+
+    it('opens an identity preview through the identity probe', async () => {
+        const probed: string[] = [];
+        const opened: string[] = [];
+        const didOpen = await openCurrentComposerPreview(
+            'project-a',
+            () => identityReady,
+            async target => {
+                probed.push(target.previewId ?? `port:${target.port}`);
+                return { ready: true, previewUrl: IDENTITY_URL };
+            },
+            async url => {
+                opened.push(url);
+                return true;
+            },
+            'http://localhost:3000',
+        );
+        expect(didOpen).to.equal(true);
+        expect(probed).to.deep.equal(['u-alice-w-file-wor-p-file-wor-x-11111111-abcdefgh']);
+        expect(opened).to.deep.equal([IDENTITY_URL]);
+    });
+
+    it('opens a port candidate whose probe answers with the canonical identity URL', async () => {
+        const opened: string[] = [];
+        const didOpen = await openCurrentComposerPreview(
+            'project-a',
+            () => ready,
+            async () => ({ ready: true, previewUrl: IDENTITY_URL }),
+            async url => {
+                opened.push(url);
+                return true;
+            },
+            'http://localhost:3000',
+        );
+        expect(didOpen).to.equal(true);
+        expect(opened).to.deep.equal([IDENTITY_URL]);
+    });
 });

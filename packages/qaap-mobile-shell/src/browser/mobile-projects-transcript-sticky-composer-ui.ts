@@ -106,7 +106,8 @@ import {
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
-import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
+import { extractTranscriptPreviewId } from './mobile-projects-transcript-messages-content-ui';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
 import {
@@ -390,11 +391,20 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (this.composerPreviewProbeInFlight) {
             return;
         }
+        // Identity preview URLs (`/qaap-preview/<id>/`) carry no port — verify them through the
+        // identity probe instead of silently bailing, or the "Open preview" pill can never appear
+        // for identity-proxied apps (the "started the app but nothing to click" failure).
         const port = extractDevPreviewPortFromUrl(candidate);
-        if (port === undefined) {
+        const identityId = port === undefined
+            ? extractTranscriptPreviewId(candidate, window.location.origin)
+            : undefined;
+        if (port === undefined && !identityId) {
             return;
         }
-        this.composerPreviewProbeInFlight = probeQaapDevPreviewPort(port).then(probe => {
+        const probePromise = port !== undefined
+            ? probeQaapDevPreviewPort(port)
+            : probeQaapIdentityPreview(identityId!);
+        this.composerPreviewProbeInFlight = probePromise.then(probe => {
             this.composerPreviewLastCheckedAt = Date.now();
             const currentProject = this.host.transcriptComposerProject;
             const stillCurrent = currentProject?.id === project.id
@@ -425,7 +435,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 const current = this.host.transcriptComposerProject;
                 return current ? this.resolveComposerPreviewRuntime(current) : undefined;
             },
-            probeQaapDevPreviewPort,
+            target => target.previewId !== undefined
+                ? probeQaapIdentityPreview(target.previewId)
+                : probeQaapDevPreviewPort(target.port!),
             url => this.host.transcriptOpenProject?.id === projectId
                 ? this.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(url)
                 : Promise.resolve(false),
