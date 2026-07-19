@@ -239,10 +239,14 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         } catch {
             // Ownership was already checked. A missing root will fail when the process is spawned.
         }
+        const canonicalProjectId = FileUri.create(canonicalRoot).toString();
         const identity = resolveQaapPreviewIdentity({
             userId: owner,
-            workspaceId: FileUri.create(canonicalRoot).toString(),
-            projectId: claim.projectId,
+            workspaceId: canonicalProjectId,
+            // UI routing keys (`ws:…`, `github:…`) are presentation state, not execution identity.
+            // Derive projectId from the ownership-checked root so every section and entry flow
+            // resolves the same project/process tuple and cannot create a parallel registration.
+            projectId: canonicalProjectId,
             processId: claim.processId,
         });
         const existing = this.portRegistry.getForOwner(identity.previewId, owner);
@@ -259,10 +263,38 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             return;
         }
 
+        // A restored terminal/session can present a different frontend process UUID for the same
+        // listener. The durable live record is authoritative: publishing a fresh identity on the
+        // next free port would point the iframe at a port where this process never started.
+        const previousProjectRecords = this.portRegistry.records()
+            .filter(record => record.ownerLogin === owner
+                && isQaapProcessPreviewIdentity(record)
+                && record.workspaceId === canonicalProjectId
+                && record.projectId === canonicalProjectId
+                && record.root === canonicalRoot)
+            .sort((left, right) => Number(right.port === preferredPort) - Number(left.port === preferredPort)
+                || right.touchedAt - left.touchedAt);
+        for (const record of previousProjectRecords) {
+            if (!this.isPreviewProcessDead(record) && await this.probeLocalDevServer(record.port)) {
+                console.info('[qaap-preview] reattached existing live project preview', {
+                    previewId: record.previewId,
+                    ownerLogin: owner,
+                    projectId: canonicalProjectId,
+                    port: record.port,
+                });
+                res.status(200).json({
+                    previewId: record.previewId,
+                    previewUrl: this.buildIdentityPreviewUrl(req, record),
+                    port: record.port,
+                });
+                return;
+            }
+        }
+
         this.supersedeProjectPreviews({
             previewId: identity.previewId,
-            workspaceId: FileUri.create(canonicalRoot).toString(),
-            projectId: claim.projectId,
+            workspaceId: canonicalProjectId,
+            projectId: canonicalProjectId,
         }, owner);
 
         for (let offset = 0; offset < PREVIEW_PORT_ALLOCATION_ATTEMPTS; offset++) {
@@ -465,8 +497,10 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             for (const record of this.portRegistry.records()) {
                 // A dead OS process is reaped immediately, even inside the start grace and even if
                 // the port answers — a recycled port would otherwise keep a zombie record alive.
+                // The UI probes while showing loading/error. Use the immutable reservation age,
+                // not touchedAt, so those probes cannot keep a dead listener registered forever.
                 if (!this.isPreviewProcessDead(record)
-                    && (now - record.touchedAt < PREVIEW_RESERVATION_START_GRACE_MS
+                    && (now - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS
                         || await this.probeLocalDevServer(record.port))) {
                     continue;
                 }

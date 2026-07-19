@@ -7,10 +7,13 @@ import { expect } from 'chai';
 import {
     buildQaapPreviewId,
     isQaapPreviewId,
+    normalizeQaapPreviewProjectId,
+    qaapPreviewProjectIdMatches,
     resolveQaapPreviewIdentity,
 } from './qaap-preview-identity';
 import {
     buildQaapIdentityPreviewUrl,
+    findQaapIdentityPreviewUrl,
     parseQaapIdentityPreviewRequestPath,
 } from './qaap-dev-preview';
 
@@ -50,11 +53,34 @@ describe('qaap-preview-identity', () => {
         expect(buildQaapPreviewId({ ...processIdentity, processId: 'process-456' })).not.to.equal(previewId);
     });
 
+    it('matches canonical project roots across Work Hub routing keys', () => {
+        const canonical = 'file:///workspace/repos/users/alice/acme/site';
+        expect(normalizeQaapPreviewProjectId(`ws:${canonical}`)).to.equal(canonical);
+        expect(normalizeQaapPreviewProjectId(`recent:${canonical}`)).to.equal(canonical);
+        expect(qaapPreviewProjectIdMatches(canonical, `ws:${canonical}`)).to.equal(true);
+        expect(qaapPreviewProjectIdMatches(canonical, 'github:acme/site', canonical)).to.equal(true);
+        expect(qaapPreviewProjectIdMatches(canonical, 'ws:file:///workspace/repos/users/alice/acme/other')).to.equal(false);
+        expect(qaapPreviewProjectIdMatches('github:acme/site', 'github:acme/site')).to.equal(true);
+        expect(qaapPreviewProjectIdMatches('github:acme/site', canonical)).to.equal(false);
+    });
+
     it('builds and parses the identity-scoped proxy without exposing a port', () => {
         const previewId = buildQaapPreviewId(identity);
         expect(buildQaapIdentityPreviewUrl('https://qaap.example/', previewId, '/dashboard'))
             .to.equal(`https://qaap.example/qaap-preview/${previewId}/dashboard`);
         expect(parseQaapIdentityPreviewRequestPath(`/qaap-preview/${previewId}/dashboard`))
             .to.deep.equal({ previewId, targetPath: '/dashboard' });
+    });
+
+    it('prefers a stable identity candidate over agent-reported bare ports', () => {
+        const previewId = buildQaapPreviewId(identity);
+        const identityUrl = buildQaapIdentityPreviewUrl('https://qaap.example/', previewId);
+        expect(findQaapIdentityPreviewUrl([
+            'https://qaap.example/qaap-dev/8080/',
+            identityUrl,
+        ], 'https://qaap.example/')).to.equal(identityUrl);
+        expect(findQaapIdentityPreviewUrl([
+            'https://qaap.example/qaap-dev/8080/',
+        ], 'https://qaap.example/')).to.equal(undefined);
     });
 });

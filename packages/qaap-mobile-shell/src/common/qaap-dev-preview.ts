@@ -163,3 +163,24 @@ export function parseQaapIdentityPreviewRequestPath(pathname: string): { preview
         return undefined;
     }
 }
+
+/** Returns the first stable identity URL, ignoring legacy bare-port candidates. */
+export function findQaapIdentityPreviewUrl(
+    candidates: Array<string | undefined>,
+    publicOrigin: string = resolveDevPreviewPublicOrigin(),
+): string | undefined {
+    for (const candidate of candidates) {
+        if (!candidate) {
+            continue;
+        }
+        try {
+            const parsed = new URL(candidate, publicOrigin);
+            if (parseQaapIdentityPreviewRequestPath(parsed.pathname)) {
+                return candidate;
+            }
+        } catch {
+            // Ignore malformed compatibility candidates.
+        }
+    }
+    return undefined;
+}

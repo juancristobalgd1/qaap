@@ -366,8 +366,12 @@ describe('QaapDevPreviewEndpoint', () => {
             }
         }
 
-        const claimReq = (port: number, identity?: object): unknown => ({
-            body: { port, root: 'file:///workspace/repos/users/bob/site', ...identity },
+        const claimReq = (
+            port: number,
+            identity?: object,
+            root = 'file:///workspace/repos/users/bob/site',
+        ): unknown => ({
+            body: { port, root, ...identity },
             headers: {},
             protocol: 'http',
             get: () => 'localhost:3000',
@@ -507,12 +511,12 @@ describe('QaapDevPreviewEndpoint', () => {
                 workspaceId: 'file:///workspace/alice/project-a',
                 projectId: 'project-a',
                 processId: 'process-a',
-            }), firstRes);
+            }, 'file:///workspace/alice/project-a'), firstRes);
             await ep.exposeHandleClaim(claimReq(5173, {
                 workspaceId: 'file:///workspace/alice/project-b',
                 projectId: 'project-b',
                 processId: 'process-b',
-            }), secondRes);
+            }, 'file:///workspace/alice/project-b'), secondRes);
 
             expect(firstRes.record.code).to.equal(200);
             expect((firstRes.record.body as { port: number }).port).to.equal(5173);
@@ -530,14 +534,14 @@ describe('QaapDevPreviewEndpoint', () => {
                 workspaceId: 'file:///workspace/alice/site',
                 projectId: 'site',
                 processId: 'process-a',
-            }), aliceRes);
+            }, 'file:///workspace/alice/site'), aliceRes);
             const bobRes = makeRes();
             ep.setClaimFakes('bob', registry);
             await ep.exposeHandleClaim(claimReq(5173, {
                 workspaceId: 'file:///workspace/bob/site',
                 projectId: 'site',
                 processId: 'process-b',
-            }), bobRes);
+            }, 'file:///workspace/bob/site'), bobRes);
 
             const alice = aliceRes.record.body as { previewId: string; port: number };
             const bob = bobRes.record.body as { previewId: string; port: number };
@@ -554,16 +558,22 @@ describe('QaapDevPreviewEndpoint', () => {
             ep.setClaimFakes('alice', registry);
             const identity = {
                 workspaceId: 'file:///workspace/alice/project-a',
-                projectId: 'project-a',
+                projectId: 'ws:file:///workspace/alice/project-a',
                 processId: 'process-a',
             };
             const firstRes = makeRes();
             const secondRes = makeRes();
-            await ep.exposeHandleClaim(claimReq(5173, { ...identity, conversationId: 'conversation-a' }), firstRes);
-            await ep.exposeHandleClaim(claimReq(5999, { ...identity, conversationId: 'conversation-b' }), secondRes);
+            const root = 'file:///workspace/alice/project-a';
+            await ep.exposeHandleClaim(claimReq(5173, { ...identity, conversationId: 'conversation-a' }, root), firstRes);
+            await ep.exposeHandleClaim(claimReq(5999, {
+                ...identity,
+                projectId: 'github:alice/project-a',
+                conversationId: 'conversation-b',
+            }, root), secondRes);
 
             expect(secondRes.record.body).to.deep.equal(firstRes.record.body);
             expect(registry.records()).to.have.length(1);
+            expect(registry.records()[0].projectId).to.equal(root);
         });
 
         it('skips a previously occupied unregistered port instead of adopting another app', async () => {
@@ -622,7 +632,7 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.get(previewId)).to.equal(undefined);
         });
 
-        it('reaps a stopped durable process but retains a responding one', async () => {
+        it('reaps a stopped durable process despite UI polling but retains a responding one', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();
             const ep = new ClaimTestEndpoint();
@@ -631,15 +641,24 @@ describe('QaapDevPreviewEndpoint', () => {
             const liveRes = makeRes();
             await ep.exposeHandleClaim(claimReq(5173, {
                 workspaceId: 'file:///workspace/alice/stopped', projectId: 'stopped', processId: 'process-stopped',
-            }), stoppedRes);
+            }, 'file:///workspace/alice/stopped'), stoppedRes);
             await ep.exposeHandleClaim(claimReq(5174, {
                 workspaceId: 'file:///workspace/alice/live', projectId: 'live', processId: 'process-live',
-            }), liveRes);
+            }, 'file:///workspace/alice/live'), liveRes);
             const stoppedId = (stoppedRes.record.body as { previewId: string }).previewId;
             const liveId = (liveRes.record.body as { previewId: string }).previewId;
             const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
-            previews.set(stoppedId, { ...previews.get(stoppedId)!, touchedAt: Date.now() - 6 * 60_000 });
-            previews.set(liveId, { ...previews.get(liveId)!, touchedAt: Date.now() - 6 * 60_000 });
+            const now = Date.now();
+            previews.set(stoppedId, {
+                ...previews.get(stoppedId)!,
+                claimedAt: now - 6 * 60_000,
+                touchedAt: now,
+            });
+            previews.set(liveId, {
+                ...previews.get(liveId)!,
+                claimedAt: now - 6 * 60_000,
+                touchedAt: now,
+            });
             ep.listeningPorts.add(5174);
 
             await ep.exposeReapStoppedPreviews();
@@ -660,7 +679,7 @@ describe('QaapDevPreviewEndpoint', () => {
                 workspaceId: 'file:///workspace/alice/vamello',
                 projectId: 'vamello',
                 processId: 'process-run-1',
-            }), firstRes);
+            }, 'file:///workspace/alice/vamello'), firstRes);
             // Same project, new dev-server run (fresh processId) — must retire the old record
             // instead of leaking a second registration + held port (observed on the VPS: the same
             // project held ports 3000 AND 3001).
@@ -668,13 +687,41 @@ describe('QaapDevPreviewEndpoint', () => {
                 workspaceId: 'file:///workspace/alice/vamello',
                 projectId: 'vamello',
                 processId: 'process-run-2',
-            }), secondRes);
+            }, 'file:///workspace/alice/vamello'), secondRes);
 
             const first = firstRes.record.body as { previewId: string };
             const second = secondRes.record.body as { previewId: string; port: number };
             expect(second.previewId).to.not.equal(first.previewId);
             expect(second.port).to.equal(5173);
             expect(registry.get(first.previewId)).to.equal(undefined);
+            expect(registry.records()).to.have.length(1);
+        });
+
+        it('reattaches a restored section to the live project process instead of allocating an unused port', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const firstRes = makeRes();
+            const restoredSectionRes = makeRes();
+
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/vamello',
+                projectId: 'vamello',
+                processId: 'process-run-original',
+            }, 'file:///workspace/alice/vamello'), firstRes);
+            ep.listeningPorts.add(5173);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: 'file:///workspace/alice/vamello',
+                projectId: 'vamello',
+                processId: 'stale-restored-terminal-id',
+            }, 'file:///workspace/alice/vamello'), restoredSectionRes);
+
+            expect(restoredSectionRes.record.code).to.equal(200);
+            expect(restoredSectionRes.record.body).to.deep.include({
+                previewId: (firstRes.record.body as { previewId: string }).previewId,
+                port: 5173,
+            });
             expect(registry.records()).to.have.length(1);
         });
 
@@ -687,12 +734,12 @@ describe('QaapDevPreviewEndpoint', () => {
                 workspaceId: 'file:///workspace/alice/project-a',
                 projectId: 'project-a',
                 processId: 'process-a',
-            }), makeRes());
+            }, 'file:///workspace/alice/project-a'), makeRes());
             await ep.exposeHandleClaim(claimReq(5173, {
                 workspaceId: 'file:///workspace/alice/project-b',
                 projectId: 'project-b',
                 processId: 'process-b',
-            }), makeRes());
+            }, 'file:///workspace/alice/project-b'), makeRes());
             expect(registry.records()).to.have.length(2);
         });
 

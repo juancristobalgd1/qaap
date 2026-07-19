@@ -35,13 +35,18 @@ import {
 } from '../common/qaap-transcript-preview-offer';
 import { probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import {
+    findQaapIdentityPreviewUrl,
     isLocalQaapPreviewOrigin,
     parseQaapIdentityPreviewRequestPath,
     resolveDevPreviewPublicOrigin,
 } from '../common/qaap-dev-preview';
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import { buildQaapPreviewId, type QaapPreviewIdentity } from '../common/qaap-preview-identity';
+import {
+    buildQaapPreviewId,
+    qaapPreviewProjectIdMatches,
+    type QaapPreviewIdentity,
+} from '../common/qaap-preview-identity';
 import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -795,19 +800,10 @@ export class MobileProjectsTranscriptSurfacesUi {
     ): Promise<string | undefined> {
         const bootstrap = this.host.projectBootstrap;
         const processId = bootstrap?.previewProcessId;
-        const root = bootstrap?.descriptor?.rootUri.toString();
-        if (!bootstrap || !processId || !root) {
+        if (!bootstrap || !processId) {
             return undefined;
         }
-        const claim = await bootstrap.claimPreviewExecution(
-            port,
-            {
-                workspaceId: root,
-                projectId: project.id,
-                processId,
-                root,
-            },
-        );
+        const claim = await bootstrap.claimPreviewExecution(port);
         return claim.kind === 'claimed' ? claim.previewUrl ?? fallbackUrl : undefined;
     }
 
@@ -2066,7 +2062,20 @@ export class MobileProjectsTranscriptSurfacesUi {
                     return false;
                 }
                 if (probe.projectId) {
-                    return probe.projectId === project.id;
+                    const cwd = this.host.projectsService.getProjectCwd(project)
+                        ?? this.host.preparedCwdByProjectId.get(project.id);
+                    let cwdUri: string | undefined;
+                    try {
+                        cwdUri = cwd ? FileUri.create(cwd).toString() : undefined;
+                    } catch {
+                        cwdUri = undefined;
+                    }
+                    return qaapPreviewProjectIdMatches(
+                        probe.projectId,
+                        project.id,
+                        project.uri?.toString(),
+                        cwdUri,
+                    );
                 }
                 // Legacy identity links predate project coordinates in the probe response. Keep
                 // title matching only for that migration path, never as the primary identity.
@@ -2133,6 +2142,21 @@ export class MobileProjectsTranscriptSurfacesUi {
         project: MobileProjectEntry,
         conv: QaapAgentConversationDTO | undefined,
     ): string | undefined {
+        const storedUrl = project.previewUrl ? normalizePreviewUrlForSameOrigin(project.previewUrl) : undefined;
+        const bootstrapUrl = this.bootstrapRunningPreviewUrl(project);
+        // On the hosted multi-project runtime, an identity-scoped URL is authoritative. Agent
+        // prose can still mention the package's hard-coded localhost/default port (for example
+        // 8080) even though the allocator launched the process on 3000. Letting that hint win
+        // discards a valid registry URL and can probe or display another unregistered process.
+        // Keep conversation ports only as the legacy/local fallback when no stable identity is
+        // available yet.
+        const identityUrl = findQaapIdentityPreviewUrl(
+            [storedUrl, bootstrapUrl],
+            window.location.href,
+        );
+        if (identityUrl) {
+            return identityUrl;
+        }
         if (conv) {
             const fromConversation = findTranscriptPreviewUrlFromConversation(conv, window.location.origin);
             if (fromConversation) {
@@ -2151,11 +2175,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (this.host.transcriptPreviewRequestPending && conv?.status === 'streaming') {
             return undefined;
         }
-        const storedUrl = project.previewUrl ? normalizePreviewUrlForSameOrigin(project.previewUrl) : undefined;
         if (storedUrl) {
             return storedUrl;
         }
-        const bootstrapUrl = this.bootstrapRunningPreviewUrl(project);
         if (bootstrapUrl) {
             return bootstrapUrl;
         }

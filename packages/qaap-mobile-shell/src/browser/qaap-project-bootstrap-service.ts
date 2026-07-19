@@ -54,9 +54,10 @@ import {
     resolveBootstrapDevTarget,
     resolveBootstrapInstallTarget,
 } from '../common/qaap-project-bootstrap-scaffold-plan';
-import type { QaapPreviewExecutionIdentity, QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
+import type { QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
 import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
+import { qaapPreviewProjectIdMatches } from '../common/qaap-preview-identity';
 import { resolveQaapReattachedPreviewIdentity } from './qaap-preview-reattachment';
 
 /** Storage key used to remember per-workspace user intent (skip / installed). */
@@ -294,9 +295,24 @@ export class QaapProjectBootstrapService {
     /** Stable identity URL of the live claim — the authoritative navigation target for the primary preview. */
     get previewClaimUrl(): string | undefined { return this.activePreviewClaim?.previewUrl; }
 
-    /** Reserves a concrete dev process/port for one Work Hub execution. */
-    claimPreviewExecution(port: number, identity: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult> {
-        return this.previewPortClaimService.claim(port, identity);
+    /**
+     * Re-claims the active process without letting a section invent another project identity.
+     * The descriptor/root and process UUID are the same authority used by the initial reservation.
+     */
+    async claimPreviewExecution(port: number): Promise<QaapPreviewPortClaimResult> {
+        const processRoot = this._descriptor?.rootUri ?? this.activeWorkspaceRoot;
+        if (!this.activePreviewRunId || !processRoot) {
+            return { kind: 'error' };
+        }
+        const claim = await this.reserveActivePreview(port, processRoot);
+        if (claim.kind === 'claimed' && claim.previewId && claim.previewUrl && claim.port !== undefined) {
+            this.activePreviewClaim = {
+                previewId: claim.previewId,
+                previewUrl: claim.previewUrl,
+                port: claim.port,
+            };
+        }
+        return claim;
     }
 
     /** Detects and runs the exact Work Hub project instead of the hosted multi-repo container. */
@@ -1180,11 +1196,11 @@ export class QaapProjectBootstrapService {
             if (isReservedIdePort(port)) {
                 continue;
             }
-            // Claim-then-probe: the probe fails closed on unclaimed ports, so without the claim an
-            // authenticated owner could never re-attach to their own already-running server. The
-            // claim is non-stealing (409 when a different tenant holds it), so sweeping the
-            // candidate list cannot hijack another workspace's preview.
-            await this.claimDevPreviewPort(port);
+            // Refresh only the owner/port gate before probing. A process-scoped claim here can
+            // replace the durable identity before the probe tells us which process is actually
+            // listening (observed after reload with multiple restored Dev terminals). The legacy
+            // claim is non-stealing and cannot adopt an unregistered listener in cloud mode.
+            await this.previewPortClaimService.claim(port);
             const probe = await probeQaapDevPreviewPort(port);
             if (!probe.ready || !this.probeBelongsToActiveProject(probe.projectId)) {
                 continue;
@@ -1214,11 +1230,16 @@ export class QaapProjectBootstrapService {
 
     /** A shared-host port is reusable only when its backend record names the selected project. */
     protected probeBelongsToActiveProject(projectId: string | undefined): boolean {
-        if (!this.activeProjectId) {
+        const workspaceRoot = this.activeWorkspaceRoot ?? this._descriptor?.rootUri;
+        if (!workspaceRoot) {
             return true;
         }
         if (projectId) {
-            return projectId === this.activeProjectId;
+            return qaapPreviewProjectIdMatches(
+                projectId,
+                this.previewProjectId(workspaceRoot),
+                this.activeProjectId,
+            );
         }
         return isLocalQaapPreviewOrigin(resolveDevPreviewPublicOrigin());
     }

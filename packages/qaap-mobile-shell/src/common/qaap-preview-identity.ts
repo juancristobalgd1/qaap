@@ -120,3 +120,31 @@ export function isQaapProcessPreviewIdentity<T>(value: T): value is T & QaapProc
     return typeof candidate?.userId === 'string' && candidate.userId.trim().length > 0
         && isQaapProcessPreviewClaimIdentity(candidate);
 }
+
+/**
+ * Work Hub can address one project through routing keys such as `ws:file:///…` or
+ * `recent:file:///…`, while the preview registry deliberately stores the canonical workspace URI.
+ * Strip only those UI routing prefixes; GitHub repo keys remain distinct legacy identities.
+ */
+export function normalizeQaapPreviewProjectId(value: string): string {
+    const trimmed = value.trim();
+    for (const prefix of ['ws:', 'recent:']) {
+        if (trimmed.startsWith(prefix)) {
+            const candidate = trimmed.slice(prefix.length);
+            if (/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)) {
+                return candidate;
+            }
+        }
+    }
+    return trimmed;
+}
+
+/** Matches a registry project id against canonical roots and legacy Work Hub keys. */
+export function qaapPreviewProjectIdMatches(
+    previewProjectId: string,
+    ...projectCandidates: Array<string | undefined>
+): boolean {
+    const normalizedPreviewId = normalizeQaapPreviewProjectId(previewProjectId);
+    return projectCandidates.some(candidate => candidate !== undefined
+        && normalizeQaapPreviewProjectId(candidate) === normalizedPreviewId);
+}
