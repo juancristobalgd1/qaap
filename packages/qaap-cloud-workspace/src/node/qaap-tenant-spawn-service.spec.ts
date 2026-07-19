@@ -18,6 +18,7 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     readonly launches: LaunchCall[] = [];
     identity: { uid?: number; gid?: number } = {};
     setpriv = true;
+    setprivPath = '/usr/bin/setpriv';
     prepared: string[] = [];
 
     override resolveSpawnIdentity(): { uid?: number; gid?: number } {
@@ -25,6 +26,9 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     }
     protected override isSetprivAvailable(): boolean {
         return this.setpriv;
+    }
+    protected override resolveSetprivExecutable(): string | undefined {
+        return this.setpriv ? this.setprivPath : undefined;
     }
     override prepareTenantIsolation(cwd: string): void {
         this.prepared.push(cwd);
@@ -93,7 +97,7 @@ describe('QaapTenantSpawnService.wrapShellForTenant (interactive terminal)', () 
         const svc = new TestTenantSpawnService();
         svc.identity = { uid: 20005, gid: 20005 };
         const wrapped = svc.wrapShellForTenant(tenantCwd, '/bin/bash', ['-l']);
-        expect(wrapped.file).to.equal('setpriv');
+        expect(wrapped.file).to.equal('/usr/bin/setpriv');
         expect(wrapped.args).to.deep.equal(
             ['--reuid', '20005', '--regid', '20005', '--clear-groups', '--', '/bin/bash', '-l']);
     });
@@ -173,7 +177,7 @@ describe('QaapTenantSpawnService.wrapGitForTenant (mutating git over a tenant re
         const svc = new TestTenantSpawnService();
         svc.identity = { uid: 20005, gid: 20005 };
         const wrapped = svc.wrapGitForTenant('/workspace/repos/users/alice/o/r', ['worktree', 'add', '-b', 'b', '/wt', 'HEAD']);
-        expect(wrapped.file).to.equal('setpriv');
+        expect(wrapped.file).to.equal('/usr/bin/setpriv');
         expect(wrapped.args).to.deep.equal([
             '--reuid', '20005', '--regid', '20005', '--clear-groups', '--',
             'git', '-c', 'core.hooksPath=/dev/null', '-C', '/workspace/repos/users/alice/o/r',

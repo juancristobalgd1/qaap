@@ -60,6 +60,7 @@ export class QaapTenantSpawnService {
     protected agentIsolationRefusalLogged = false;
     protected tenantParentsHardened = false;
     protected setprivAvailable: boolean | undefined;
+    protected setprivExecutable: string | undefined;
 
     protected getTenantUidRegistry(): QaapTenantUidRegistry {
         if (!this.tenantUidRegistry) {
@@ -80,6 +81,35 @@ export class QaapTenantSpawnService {
             this.setprivAvailable = !probe.error && probe.status === 0;
         }
         return this.setprivAvailable;
+    }
+
+    /**
+     * Resolve `setpriv` to an absolute executable path for node-pty terminals. Theia deliberately
+     * validates a requested terminal shell with `fs.accessSync`; a bare PATH command such as
+     * `setpriv` fails that validation, is replaced with the default shell, and then receives the
+     * setpriv argv (`--reuid`, `--regid`, ...). The fallback shell exits immediately, which used to
+     * make every VPS Preview bootstrap report that its dev terminal was closed too early.
+     */
+    protected resolveSetprivExecutable(): string | undefined {
+        if (this.setprivExecutable) {
+            return this.setprivExecutable;
+        }
+        if (!this.isSetprivAvailable()) {
+            return undefined;
+        }
+        const searchDirectories = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+        for (const directory of searchDirectories) {
+            const candidate = path.resolve(directory, 'setpriv');
+            try {
+                fs.accessSync(candidate, fs.constants.X_OK);
+                this.setprivExecutable = candidate;
+                return candidate;
+            } catch {
+                // Keep searching PATH. isSetprivAvailable already proved the command exists, but a
+                // relative or concurrently changed PATH must still fail closed below.
+            }
+        }
+        return undefined;
     }
 
     /**
@@ -374,13 +404,14 @@ export class QaapTenantSpawnService {
         }
         this.prepareTenantIsolation(cwd);
         const gid = identity.gid ?? identity.uid;
-        if (!this.isSetprivAvailable()) {
+        const setprivExecutable = this.resolveSetprivExecutable();
+        if (!setprivExecutable) {
             throw new Error('Refusing to open a terminal under a shared/root uid: setpriv (util-linux) is '
                 + 'required to drop privileges for the interactive shell but was not found on PATH. '
                 + 'Install util-linux in the backend image.');
         }
         return {
-            file: 'setpriv',
+            file: setprivExecutable,
             args: ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
         };
     }
