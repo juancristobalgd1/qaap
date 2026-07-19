@@ -192,6 +192,13 @@ export async function ensureTranscriptDevPreview(
 
     let snapshot = bootstrap.getStateSnapshot();
     if (!snapshot.descriptor) {
+        if (projectRoot) {
+            // An explicit project root was requested and yielded no runnable descriptor. Falling
+            // back to the *currently open* workspace here would detect and start a DIFFERENT
+            // project's dev server and record its URL onto this one (the historic cross-project
+            // previewUrl poisoning). Fail instead; the caller surfaces the error.
+            return undefined;
+        }
         await bootstrap.refreshFromCurrentWorkspace();
         snapshot = bootstrap.getStateSnapshot();
     }

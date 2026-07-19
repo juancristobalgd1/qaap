@@ -369,7 +369,14 @@ export class QaapHeadlessVisualCaptureService {
         if (await this.probePort(port)) {
             return { ok: true, port };
         }
-        this.supervisor.start(app.root, port);
+        // Identity-keyed (per app root), never the global `legacy-port-<port>` supervisor key:
+        // capture servers must not collide with — or be mistaken for — user preview processes.
+        // Deliberately NOT registered in the dev-preview port registry: this is an internal
+        // loopback server, not a user-facing preview, and must stay non-proxyable.
+        this.supervisor.start(app.root, port, {
+            previewId: `qaap-headless-capture:${app.root}`,
+            projectId: app.root,
+        });
         const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
         while (Date.now() < deadline) {
             if (await this.probePort(port)) {

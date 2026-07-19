@@ -6,8 +6,10 @@
 import { expect } from 'chai';
 import {
     collectTrustedBootstrapPreviewPorts,
+    ensureTranscriptDevPreview,
     extractDevPreviewPortFromUrl,
 } from './qaap-transcript-preview-bootstrap';
+import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 
 describe('qaap-transcript-preview-bootstrap', () => {
     it('extractDevPreviewPortFromUrl reads qaap-dev proxy paths', () => {
@@ -27,5 +29,30 @@ describe('qaap-transcript-preview-bootstrap', () => {
             activePort: 5180,
         })).to.deep.equal([5180, 5179]);
         expect(collectTrustedBootstrapPreviewPorts({})).to.deep.equal([]);
+    });
+
+    it('never falls back to the current workspace when an explicit project root yields no descriptor', async () => {
+        // Regression guard for the cross-project previewUrl poisoning: with workspace A open and a
+        // transcript of project B whose root is unrunnable, the old code refreshed from the CURRENT
+        // workspace and returned project A's preview URL as project B's.
+        const calls: string[] = [];
+        const bootstrap = {
+            refreshFromProjectRoot: async (root: string, projectId: string): Promise<void> => {
+                calls.push(`root:${root}:${projectId}`);
+            },
+            refreshFromCurrentWorkspace: async (): Promise<void> => {
+                calls.push('current-workspace');
+            },
+            getStateSnapshot: () => ({ descriptor: undefined }),
+        } as unknown as QaapProjectBootstrapService;
+
+        const result = await ensureTranscriptDevPreview(bootstrap, {
+            projectId: 'github:owner/project-b',
+            workspaceRoot: '/workspace/repos/users/owner/owner/project-b',
+            skipConversationPortProbe: true,
+        });
+
+        expect(result).to.equal(undefined);
+        expect(calls).to.deep.equal(['root:/workspace/repos/users/owner/owner/project-b:github:owner/project-b']);
     });
 });

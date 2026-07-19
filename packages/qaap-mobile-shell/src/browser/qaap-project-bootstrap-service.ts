@@ -445,10 +445,24 @@ export class QaapProjectBootstrapService {
         }
         return this.previewPortClaimService.claim(port, {
             workspaceId: workspaceRoot.toString(),
-            projectId: this.activeProjectId ?? workspaceRoot.toString(),
+            projectId: this.previewProjectId(workspaceRoot),
             processId,
             root: workspaceRoot.toString(),
         });
+    }
+
+    /**
+     * Canonical project identity for previews: the workspace root URI.
+     *
+     * `activeProjectId` is a hub repo key whose spelling depends on the entry flow
+     * (`github:owner/repo` from a transcript, `ws:file:///…` from an open workspace). Using it in
+     * the preview identity made the SAME project claim two different `previewId`s — observed live
+     * on the VPS as duplicate registry records (ports 3000 and 3003 for one project) that the
+     * server-side supersede could not match. The root URI is invariant across flows: one project
+     * root ⇒ one preview identity ⇒ one widget.
+     */
+    protected previewProjectId(workspaceRoot: URI): string {
+        return workspaceRoot.toString();
     }
 
     /** Select a monorepo app; updates the dev plan that {@link runDevServer} will use. */
@@ -1368,7 +1382,7 @@ export class QaapProjectBootstrapService {
         }
         return {
             workspaceId: workspaceRoot.toString(),
-            projectId: this.activeProjectId ?? workspaceRoot.toString()
+            projectId: this.previewProjectId(workspaceRoot)
         };
     }
 

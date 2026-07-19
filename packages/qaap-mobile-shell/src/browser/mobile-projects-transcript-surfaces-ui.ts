@@ -1384,6 +1384,28 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     /**
+     * Project root that is safe to hand to the dev-server bootstrap: the hub project's own cwd
+     * first, then the session cwd only when it is a real per-project filesystem path (never the
+     * shared container root).
+     */
+    protected resolveRunnableTranscriptProjectRoot(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): string | undefined {
+        const projectCwd = this.host.projectsService.getProjectCwd(project);
+        if (projectCwd && !isQaapWorkspaceContainerPath(projectCwd)) {
+            return projectCwd;
+        }
+        const sessionCwd = summary.cwd;
+        if (sessionCwd
+            && isTranscriptWorkspaceFilesystemPath(sessionCwd)
+            && !isQaapWorkspaceContainerPath(sessionCwd)) {
+            return sessionCwd;
+        }
+        return undefined;
+    }
+
+    /**
      * Workspace path for transcript Files/Terminal.
      * Hub project URI locally; on the VPS, {@link QaapAgentConversationSummaryDTO.cwd} wins for agent tasks.
      */
@@ -2154,16 +2176,45 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
 
         const bootstrap = this.host.projectBootstrap;
-        if (bootstrap) {
+        // Old sessions can carry a corrupt cwd (e.g. the bare `/workspace` container root from an
+        // early agent run). Feeding that root to the bootstrap either stalls silently (no
+        // package.json → no descriptor) or, worse, falls back to whatever workspace is currently
+        // open and records ANOTHER project's preview URL onto this one. Validate first and fail
+        // loudly instead.
+        const projectRoot = this.resolveRunnableTranscriptProjectRoot(project, summary);
+        if (bootstrap && !projectRoot) {
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobileProjects/previewRootUnresolved',
+                    'Could not resolve this project\'s folder — open the project and retry.'
+                ),
+                { kind: 'warning' },
+            );
+        }
+        if (bootstrap && projectRoot) {
             const conversation = this.host.transcriptLastConv?.id === summary.id
                 ? this.host.transcriptLastConv
                 : undefined;
             void ensureTranscriptDevPreview(bootstrap, {
                 conversation,
                 projectId: project.id,
-                workspaceRoot: this.host.projectsService.getProjectCwd(project) ?? summary.cwd,
+                workspaceRoot: projectRoot,
             }).then(readyUrl => {
-                if (!readyUrl || !this.matchesActivePreviewSummary(summary)) {
+                if (!readyUrl) {
+                    if (this.matchesActivePreviewSummary(summary)
+                        && this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
+                        MobileSnackbar.show(
+                            nls.localize(
+                                'qaap/mobileProjects/previewStartFailed',
+                                'The dev server for {0} did not start. Check the Terminal view for details.',
+                                project.name ?? project.id,
+                            ),
+                            { kind: 'warning' },
+                        );
+                    }
+                    return;
+                }
+                if (!this.matchesActivePreviewSummary(summary)) {
                     return;
                 }
                 if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
