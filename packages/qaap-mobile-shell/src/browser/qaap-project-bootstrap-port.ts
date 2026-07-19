@@ -142,11 +142,19 @@ export function wrapDevCommandForPort(command: string, port: number, kind: QaapP
     }
 }
 
+// npm lifecycle scripts can contain their own `PORT=8080` assignment, which overrides a plain
+// `PORT=8081 npm run dev` prefix. Every supported Qaap runtime uses Node 22+, so preload a tiny,
+// dependency-free module that restores the allocator-owned port before application code runs.
+// Framework CLI flags remain in place below because they also cover servers which prefer argv.
+const FORCE_NODE_PREVIEW_PORT_IMPORT = '--import=data:text/javascript,process.env.PORT%3Dprocess.env.QAAP_PREVIEW_PORT';
+
 function prefixPortEnv(command: string, port: number, isWindows: boolean): string {
     if (isWindows) {
-        return `set "PORT=${port}"&& ${command}`;
+        return `set "QAAP_PREVIEW_PORT=${port}"&& set "PORT=${port}"&& `
+            + `set "NODE_OPTIONS=%NODE_OPTIONS% ${FORCE_NODE_PREVIEW_PORT_IMPORT}"&& ${command}`;
     }
-    return `PORT=${port} ${command}`;
+    return `QAAP_PREVIEW_PORT=${port} PORT=${port} `
+        + `NODE_OPTIONS="$NODE_OPTIONS ${FORCE_NODE_PREVIEW_PORT_IMPORT}" ${command}`;
 }
 
 function appendCliPortFlag(command: string, port: number, isWindows: boolean): string {

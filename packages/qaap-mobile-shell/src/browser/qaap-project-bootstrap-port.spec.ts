@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { execFileSync } from 'child_process';
 import {
     getImplicitDevPort,
     isReservedIdePort,
@@ -37,11 +38,16 @@ describe('qaap-project-bootstrap-port', () => {
     });
 
     it('wrapDevCommandForPort uses PORT= for CRA-style stacks', () => {
-        expect(wrapDevCommandForPort('npm run dev', 3001, 'node-cra')).to.equal('PORT=3001 npm run dev');
+        const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra');
+        expect(command).to.include('QAAP_PREVIEW_PORT=3001 PORT=3001');
+        expect(command).to.include('--import=data:text/javascript,process.env.PORT%3Dprocess.env.QAAP_PREVIEW_PORT');
+        expect(command).to.match(/npm run dev$/);
     });
 
     it('wrapDevCommandForPort sets PORT and --port for Vite (overrides Docker IDE PORT)', () => {
-        expect(wrapDevCommandForPort('npm run dev', 5174, 'node-vite')).to.equal('PORT=5174 npm run dev -- --port 5174');
+        const command = wrapDevCommandForPort('npm run dev', 5174, 'node-vite');
+        expect(command).to.include('QAAP_PREVIEW_PORT=5174 PORT=5174');
+        expect(command).to.match(/npm run dev -- --port 5174$/);
     });
 
     it('getImplicitDevPort defaults generic Node apps to 3000', () => {
@@ -50,7 +56,19 @@ describe('qaap-project-bootstrap-port', () => {
     });
 
     it('wrapDevCommandForPort passes -p to Next after PORT=', () => {
-        expect(wrapDevCommandForPort('npm run dev', 3001, 'node-next')).to.equal('PORT=3001 npm run dev -- -p 3001');
+        expect(wrapDevCommandForPort('npm run dev', 3001, 'node-next')).to.match(/npm run dev -- -p 3001$/);
+    });
+
+    it('forces the allocated port when an npm script overwrites PORT inline', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const command = wrapDevCommandForPort(
+            `PORT=8080 node -e 'process.stdout.write(process.env.PORT)'`,
+            8081,
+            'node-generic',
+        );
+        expect(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })).to.equal('8081');
     });
 
     it('pickNextDevPort advances past conflicts, prior attempts, and the IDE listener', () => {
