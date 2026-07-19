@@ -144,6 +144,21 @@ export class MobileProjectsTranscriptMessagesContentUi {
         return normalizeTranscriptPreviewHref(href, this.previewPublicOrigin());
     }
 
+    /** Verified identity URL of the bootstrap's live preview claim, if its process answers. */
+    protected async resolveClaimPreviewUrlFallback(): Promise<string | undefined> {
+        const bootstrap = this.host.projectBootstrap;
+        const claimPreviewId = bootstrap?.previewId;
+        const claimUrl = bootstrap?.previewClaimUrl;
+        if (!claimPreviewId || !claimUrl) {
+            return undefined;
+        }
+        const probe = await this.probePreviewIdentity(claimPreviewId);
+        if (!probe.ready || probe.previewId !== claimPreviewId) {
+            return undefined;
+        }
+        return probe.previewUrl || claimUrl;
+    }
+
 
     async openTranscriptPreviewUrlFromLink(href: string): Promise<boolean> {
         const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
@@ -159,16 +174,30 @@ export class MobileProjectsTranscriptMessagesContentUi {
         let verifiedUrl = previewUrl;
         if (port !== undefined) {
             const probe = await this.probePreviewPort(port);
-            if (!probe.ready) {
-                return false;
+            if (probe.ready) {
+                verifiedUrl = normalizePreviewUrlForSameOrigin(probe.previewUrl, publicOrigin);
+            } else {
+                // The clicked port is stale more often than not: agents quote the framework's
+                // default (5173, 8080) while the allocator ran the server elsewhere, and probes on
+                // unclaimed ports fail closed. The live claim's identity URL is the authoritative
+                // target — resolve through it before giving up.
+                const claimUrl = await this.resolveClaimPreviewUrlFallback();
+                if (!claimUrl) {
+                    return false;
+                }
+                verifiedUrl = claimUrl;
             }
-            verifiedUrl = normalizePreviewUrlForSameOrigin(probe.previewUrl, publicOrigin);
         } else if (previewId) {
             const probe = await this.probePreviewIdentity(previewId);
             if (!probe.ready || probe.previewId !== previewId) {
-                return false;
+                const claimUrl = await this.resolveClaimPreviewUrlFallback();
+                if (!claimUrl) {
+                    return false;
+                }
+                verifiedUrl = claimUrl;
+            } else {
+                verifiedUrl = probe.previewUrl;
             }
-            verifiedUrl = probe.previewUrl;
         }
         this.host.transcriptPreviewRequestPending = false;
         this.host.transcriptPreviewRequestRunning = false;
@@ -500,9 +529,23 @@ export class MobileProjectsTranscriptMessagesContentUi {
             event.preventDefault();
             event.stopPropagation();
             void this.openTranscriptPreviewUrlFromLink(href).then(handled => {
-                if (!handled) {
-                    window.open(href, '_blank', 'noopener');
+                if (handled) {
+                    return;
                 }
+                if (this.normalizeTranscriptPreviewLink(href)) {
+                    // A dev-preview URL that could not be resolved. Opening it in a new tab would
+                    // point the user's OWN machine at localhost:<port> — a guaranteed dead page on
+                    // a remote deployment. Explain instead.
+                    MobileSnackbar.show(
+                        nls.localize(
+                            'qaap/mobileProjects/previewLinkUnavailable',
+                            'That preview is not running right now. Use the Preview view to start it.'
+                        ),
+                        { kind: 'warning' },
+                    );
+                    return;
+                }
+                window.open(href, '_blank', 'noopener');
             });
         });
     }

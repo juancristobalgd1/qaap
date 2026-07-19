@@ -222,7 +222,11 @@ function stickyComposerHasChangesToReview(options: StickyComposerActivityStackOp
 function stickyComposerHasActivityRow(options: StickyComposerActivityStackOptions): boolean {
     return stickyComposerHasChangesToReview(options)
         || !!options.hasCommittableChanges
-        || !!(options.hasFileActivity && (!!options.onRunApp || !!options.onOpenPreview));
+        // A ready preview is an actionable state on its own: the user asked "levanta la app" and
+        // must always get the clickable "Open preview" affordance, even when the turn produced no
+        // reviewable file activity (e.g. deps-only install before serving).
+        || !!options.onOpenPreview
+        || !!(options.hasFileActivity && !!options.onRunApp);
 }
 
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {

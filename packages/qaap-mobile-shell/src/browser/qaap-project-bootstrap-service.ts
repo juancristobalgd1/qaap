@@ -291,6 +291,8 @@ export class QaapProjectBootstrapService {
     get lastPort(): number | undefined { return this._lastPort; }
     get previewProcessId(): string | undefined { return this.activePreviewRunId; }
     get previewId(): string | undefined { return this.activePreviewClaim?.previewId; }
+    /** Stable identity URL of the live claim — the authoritative navigation target for the primary preview. */
+    get previewClaimUrl(): string | undefined { return this.activePreviewClaim?.previewUrl; }
 
     /** Reserves a concrete dev process/port for one Work Hub execution. */
     claimPreviewExecution(port: number, identity: QaapPreviewExecutionIdentity): Promise<QaapPreviewPortClaimResult> {

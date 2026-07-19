@@ -37,6 +37,19 @@ describe('qaap-transcript-preview-offer', () => {
             .to.equal('http://localhost:3000/qaap-dev/4321/');
     });
 
+    it('extractDevPreviewUrlFromAgentText tolerates punctuated port hints agents actually emit', () => {
+        // Live VPS failure: the agent replied "serving on the live preview port (5173)" and the
+        // old `port\s+N` regex missed it, leaving the chat with nothing clickable.
+        expect(extractDevPreviewUrlFromAgentText('serving on the live preview port (5173).', 'http://localhost:3000'))
+            .to.equal('http://localhost:3000/qaap-dev/5173/');
+        expect(extractDevPreviewUrlFromAgentText('Puerto: 8080', 'http://localhost:3000'))
+            .to.equal('http://localhost:3000/qaap-dev/8080/');
+        expect(extractDevPreviewUrlFromAgentText('port #3001 listo', 'http://localhost:3000'))
+            .to.equal('http://localhost:3000/qaap-dev/3001/');
+        expect(extractDevPreviewUrlFromAgentText('exported 3 files', 'http://localhost:3000'))
+            .to.equal(undefined);
+    });
+
     it('isLikelyDevServerShellCommand matches common dev commands', () => {
         expect(isLikelyDevServerShellCommand('pnpm dev')).to.equal(true);
         expect(isLikelyDevServerShellCommand('npm run start')).to.equal(true);

@@ -2214,18 +2214,24 @@ export class MobileProjectsTranscriptSurfacesUi {
                     }
                     return;
                 }
-                if (!this.matchesActivePreviewSummary(summary)) {
-                    return;
-                }
-                if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
-                    return;
-                }
+                // ALWAYS record the ready URL, even when the user stayed on the Chat view.
+                // Recording only while the Preview tab was active meant a chat-dwelling user never
+                // got `project.previewUrl` set, so the "Open preview" pill had no URL to offer —
+                // the observed "the agent started the app but there is nothing to click" failure.
                 const refreshed = this.host.projects.find(candidate => candidate.id === project.id) ?? project;
                 this.host.projects = this.host.projects.map(candidate => candidate.id === refreshed.id
                     ? { ...candidate, previewUrl: readyUrl }
                     : candidate);
                 void this.host.projectsService.recordProjectPreviewUrl({ ...refreshed, previewUrl: readyUrl }, readyUrl);
-                this.renderPreviewTab({ ...refreshed, previewUrl: readyUrl }, summary);
+                if (!this.matchesActivePreviewSummary(summary)) {
+                    return;
+                }
+                this.stageTranscriptPreviewReadyUrl(project.id, readyUrl);
+                if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
+                    this.renderPreviewTab({ ...refreshed, previewUrl: readyUrl }, summary);
+                } else {
+                    this.host.transcriptScheduleRefresh?.();
+                }
             });
         }
 

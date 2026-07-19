@@ -9,7 +9,9 @@ import { resolveQaapTranscriptTrace, resolveAgentMessageSegments } from './qaap-
 
 const DEV_SERVER_COMMAND_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\b(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev|remix\s+dev)\b|\bnpx\s+vite\b|\bnpx\s+next\b/i;
 const DEV_URL_IN_TEXT_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):(\d{2,5})(?:\/[^\s`*)\]]*)?/i;
-const PORT_HINT_RE = /\b(?:port(?:o|)?|puerto)\s+(\d{2,5})\b/i;
+// Tolerates the punctuation agents actually emit: "port 5173", "port (5173)", "puerto: 5173",
+// "port #5173". A bare `\s+` missed "port (5173)" and silently dropped the only preview signal.
+const PORT_HINT_RE = /\b(?:ports?|puertos?)\s*[:#(]?\s*(\d{2,5})\b/i;
 /** Common dev ports (Vite/Next) plus Qaap static bootstrap (8080). */
 const DEFAULT_VITE_PROBE_PORTS = [5173, 5174, 5175, 5176, 3000, 3001, 4173, 8080];
 
