@@ -31,6 +31,10 @@ import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
  */
 
 const HEADLESS_CAPTURE_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_HEADLESS_VISUAL_CAPTURE?.trim() ?? '');
+/** Boot backlog cap: everything beyond this settles lazily when its conversation reactivates. */
+const STARTUP_SWEEP_MAX_CAPTURES = 2;
+/** Let the backend finish booting (plugins, frontends reconnecting) before any capture work. */
+const STARTUP_SWEEP_DELAY_MS = 60_000;
 /** Wait budget for a dev server we just started (cold installs can be slow). */
 const SERVER_READY_TIMEOUT_MS = 90_000;
 const SERVER_PROBE_INTERVAL_MS = 750;
@@ -234,14 +238,20 @@ export class QaapHeadlessVisualCaptureService {
             }
         });
         // Startup sweep: settle evidence slots that were pending when the backend last stopped
-        // (turns that settled mid-restart, or before this service existed).
+        // (turns that settled mid-restart, or before this service existed). BOUNDED: an unbounded
+        // sweep over a day's backlog once queued a capture per pending conversation right after
+        // boot, spawned a dev server for each, pinned the CPU, failed the container healthcheck,
+        // and crash-looped the VPS. Only the most recent few are worth settling automatically —
+        // older ones settle if/when their conversation becomes active again.
         setTimeout(() => {
-            for (const summary of this.store.list(undefined)) {
-                if (summary.visualVerificationPending) {
-                    this.schedule(summary.id, summary.messageCount);
-                }
+            const pending = this.store.list(undefined)
+                .filter(summary => summary.visualVerificationPending)
+                .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+                .slice(0, STARTUP_SWEEP_MAX_CAPTURES);
+            for (const summary of pending) {
+                this.schedule(summary.id, summary.messageCount);
             }
-        }, 10_000);
+        }, STARTUP_SWEEP_DELAY_MS);
     }
 
     protected schedule(conversationId: string, messageCount: number): void {
@@ -323,6 +333,7 @@ export class QaapHeadlessVisualCaptureService {
             return;
         }
         let staticServer: http.Server | undefined;
+        let supervisedPreviewId: string | undefined;
         try {
             let port: number;
             if (app.kind === 'static') {
@@ -332,6 +343,7 @@ export class QaapHeadlessVisualCaptureService {
             } else {
                 const ready = await this.ensureScriptServer(app);
                 if (ready.ok) {
+                    supervisedPreviewId = ready.startedPreviewId;
                     port = ready.port;
                 } else {
                     // The dev script did not yield a reachable port, but the app may still be a
@@ -358,11 +370,19 @@ export class QaapHeadlessVisualCaptureService {
             }
         } finally {
             staticServer?.close();
+            if (supervisedPreviewId) {
+                // A capture-owned dev server must never outlive its capture. Leaked servers from
+                // the startup sweep once accumulated (~46 npm/vite processes), pinned the CPU,
+                // failed the container healthcheck, and put the VPS into a restart loop.
+                this.supervisor.stop(supervisedPreviewId);
+            }
         }
     }
 
     /** Reuses an already-listening expected port, otherwise starts the app via the supervisor. */
-    protected async ensureScriptServer(app: QaapHeadlessCaptureAppTarget): Promise<{ ok: true; port: number } | { ok: false; reason: string }> {
+    protected async ensureScriptServer(
+        app: QaapHeadlessCaptureAppTarget,
+    ): Promise<{ ok: true; port: number; startedPreviewId?: string } | { ok: false; reason: string }> {
         // Probing the IDE's own listen port would "find" Qaap itself and screenshot the wrong
         // thing — shift to an alternate port instead ($PORT-honoring dev servers follow along).
         const port = app.expectedPort === qaapIdeListenPort() ? app.expectedPort + 7 : app.expectedPort;
@@ -373,22 +393,25 @@ export class QaapHeadlessVisualCaptureService {
         // capture servers must not collide with — or be mistaken for — user preview processes.
         // Deliberately NOT registered in the dev-preview port registry: this is an internal
         // loopback server, not a user-facing preview, and must stay non-proxyable.
+        const startedPreviewId = `qaap-headless-capture:${app.root}`;
         this.supervisor.start(app.root, port, {
-            previewId: `qaap-headless-capture:${app.root}`,
+            previewId: startedPreviewId,
             projectId: app.root,
         });
         const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
         while (Date.now() < deadline) {
             if (await this.probePort(port)) {
-                return { ok: true, port };
+                return { ok: true, port, startedPreviewId };
             }
             const snapshot = this.supervisor.describe(port);
             if (snapshot?.status === 'exited') {
                 const tail = snapshot.stderrTail?.slice(-3).join(' ').trim();
+                this.supervisor.stop(startedPreviewId);
                 return { ok: false, reason: tail || `the dev process exited (code ${snapshot.exitCode ?? '?'})` };
             }
             await new Promise(resolve => setTimeout(resolve, SERVER_PROBE_INTERVAL_MS));
         }
+        this.supervisor.stop(startedPreviewId);
         return { ok: false, reason: `nothing answered on port ${port} within ${SERVER_READY_TIMEOUT_MS / 1000}s` };
     }
 

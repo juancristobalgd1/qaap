@@ -69,6 +69,27 @@ export class QaapPreviewSupervisor {
         return this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? [], identity);
     }
 
+    /**
+     * Terminates a supervised child and retires its record. Used by short-lived consumers
+     * (headless capture) so their servers never outlive the job that needed them.
+     */
+    stop(previewId: string): boolean {
+        const record = this.records.get(previewId);
+        if (!record) {
+            return false;
+        }
+        this.records.delete(previewId);
+        if (record.child && record.child.exitCode === null) {
+            try {
+                record.child.kill('SIGTERM');
+            } catch {
+                // Already gone — retiring the record is all that matters.
+            }
+            return true;
+        }
+        return false;
+    }
+
     /** Returns a serializable snapshot for the failure page, if this port was ever supervised. */
     describe(previewIdOrPort: string | number): QaapPreviewProcessSnapshot | undefined {
         const key = typeof previewIdOrPort === 'number' ? `legacy-port-${previewIdOrPort}` : previewIdOrPort;
