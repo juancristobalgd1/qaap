@@ -61,6 +61,8 @@ export class QaapTenantSpawnService {
     protected tenantParentsHardened = false;
     protected setprivAvailable: boolean | undefined;
     protected setprivExecutable: string | undefined;
+    /** Repositories whose complete working tree was repaired during this backend lifetime. */
+    protected readonly ownershipPreparedRoots = new Set<string>();
 
     protected getTenantUidRegistry(): QaapTenantUidRegistry {
         if (!this.tenantUidRegistry) {
@@ -181,9 +183,12 @@ export class QaapTenantSpawnService {
      * Provision + lock everything the tenant uid needs before a process spawns under it, and give it
      * ownership of its working tree. Combines: locking the tenant root owner-only (0700), provisioning
      * an `/etc/passwd`+`/etc/group` record and a private HOME, hardening traversable parents (0711),
-     * and a `chown -R` of the cwd (which the backend created as root). No-op unless uid-per-user is on,
-     * the backend is root, and the cwd resolves to a tenant tree. Fail closed: a registry throw
-     * (range exhausted / persistence failure) propagates out and fails the spawn.
+     * and a one-time-per-backend `chown -R` of the cwd (which the backend may have created as root).
+     * Checking only the directory uid is insufficient: a legacy migration or root-owned Git
+     * operation can leave an owner-correct directory containing root-owned lockfiles, making npm
+     * fail with EACCES. No-op unless uid-per-user is on, the backend is root, and the cwd resolves to
+     * a tenant tree. Fail closed: a registry throw (range exhausted / persistence failure) propagates
+     * out and fails the spawn.
      */
     prepareTenantIsolation(cwd: string): void {
         this.assertTenantCwdInProduction(cwd);
@@ -196,21 +201,28 @@ export class QaapTenantSpawnService {
         if (identity.uid === undefined) {
             return;
         }
-        let currentUid: number | undefined;
-        try {
-            currentUid = fs.statSync(cwd).uid;
-        } catch {
-            return; // cwd missing — let the spawn surface the real error
-        }
-        if (currentUid === identity.uid) {
-            return; // already owned by the target uid
+        const ownershipRoot = path.resolve(cwd);
+        if (this.ownershipPreparedRoots.has(ownershipRoot)) {
+            return;
         }
         const gid = identity.gid ?? identity.uid;
-        const result = spawnSync('chown', ['-R', `${identity.uid}:${gid}`, cwd], { stdio: 'ignore' });
-        if (result.status !== 0) {
-            console.warn(`[qaap-security] could not chown cwd ${cwd} to ${identity.uid}:${gid} `
-                + `(exit ${result.status ?? 'signal'}); the process may not be able to write.`);
+        if (this.applyTenantWorkingTreeOwnership(ownershipRoot, identity.uid, gid)) {
+            this.ownershipPreparedRoots.add(ownershipRoot);
         }
+    }
+
+    /** Recursive ownership repair seam, kept separate so the once-per-backend behavior is testable. */
+    protected applyTenantWorkingTreeOwnership(cwd: string, uid: number, gid: number): boolean {
+        if (!fs.existsSync(cwd)) {
+            return false; // cwd missing — let the spawn surface the real error
+        }
+        const result = spawnSync('chown', ['-R', `${uid}:${gid}`, cwd], { stdio: 'ignore' });
+        if (result.status !== 0) {
+            console.warn(`[qaap-security] could not chown cwd ${cwd} to ${uid}:${gid} `
+                + `(exit ${result.status ?? 'signal'}); the process may not be able to write.`);
+            return false;
+        }
+        return true;
     }
 
     /**

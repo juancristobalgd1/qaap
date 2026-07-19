@@ -42,8 +42,42 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     }
 }
 
+class TestOwnershipRepairService extends QaapTenantSpawnService {
+    readonly repairs: Array<{ cwd: string; uid: number; gid: number }> = [];
+    repairSucceeds = true;
+
+    protected override isBackendRoot(): boolean { return true; }
+    override resolveSpawnIdentity(): { uid: number; gid: number } { return { uid: 20005, gid: 20006 }; }
+    protected override assertTenantCwdInProduction(): void { /* test seam */ }
+    protected override ensureTenantRootIsolated(): void { /* test seam */ }
+    protected override ensureTenantIdentityProvisioned(): void { /* test seam */ }
+    protected override applyTenantWorkingTreeOwnership(cwd: string, uid: number, gid: number): boolean {
+        this.repairs.push({ cwd, uid, gid });
+        return this.repairSucceeds;
+    }
+}
+
 const reposRoot = resolveQaapReposRoot();
 const tenantCwd = `${reposRoot}/users/alice/octocat/hello`;
+
+describe('QaapTenantSpawnService.prepareTenantIsolation', () => {
+
+    it('repairs the complete working tree once even when the root directory was already tenant-owned', () => {
+        const svc = new TestOwnershipRepairService();
+        svc.prepareTenantIsolation(tenantCwd);
+        svc.prepareTenantIsolation(tenantCwd);
+        expect(svc.repairs).to.deep.equal([{ cwd: tenantCwd, uid: 20005, gid: 20006 }]);
+    });
+
+    it('retries ownership repair after a failed chown', () => {
+        const svc = new TestOwnershipRepairService();
+        svc.repairSucceeds = false;
+        svc.prepareTenantIsolation(tenantCwd);
+        svc.repairSucceeds = true;
+        svc.prepareTenantIsolation(tenantCwd);
+        expect(svc.repairs).to.have.length(2);
+    });
+});
 
 describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
 
