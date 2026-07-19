@@ -11,7 +11,7 @@ import {
     type TranscriptPreviewPortProbeResult,
 } from '../common/qaap-transcript-preview-offer';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { probeQaapDevPreviewPort, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 
 const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);
@@ -119,6 +119,8 @@ async function probeBootstrapListeningPorts(
     return undefined;
 }
 
+const CLAIM_PROBE_INTERVAL_MS = 1_000;
+
 function waitForBootstrapPreviewUrl(
     bootstrap: QaapProjectBootstrapService,
     timeoutMs: number,
@@ -133,12 +135,34 @@ function waitForBootstrapPreviewUrl(
             toDispose.dispose();
             resolve(url);
         };
-        toDispose.push(Disposable.create(() => window.clearTimeout(timerId)));
+        toDispose.push(Disposable.create(() => {
+            window.clearTimeout(timerId);
+            window.clearInterval(claimTimerId);
+        }));
         toDispose.push(bootstrap.onStateChange(state => {
             if (state.previewUrl && state.phase === 'running') {
                 finish(state.previewUrl);
             }
         }));
+        // The state-change path depends on spotting the dev server's banner in terminal output —
+        // fragile (custom banners, cleared terminals, missed events). The reservation already
+        // knows the authoritative identity, so poll it directly: the moment the process answers
+        // through the identity proxy, the preview is ready regardless of what the terminal said.
+        let claimProbeInFlight = false;
+        const claimTimerId = window.setInterval(() => {
+            const previewId = bootstrap.previewId;
+            const claimUrl = bootstrap.previewClaimUrl;
+            if (!previewId || !claimUrl || claimProbeInFlight) {
+                return;
+            }
+            claimProbeInFlight = true;
+            probeQaapIdentityPreview(previewId).then(probe => {
+                claimProbeInFlight = false;
+                if (probe.ready && probe.previewId === previewId) {
+                    finish(probe.previewUrl || claimUrl);
+                }
+            }, () => { claimProbeInFlight = false; });
+        }, CLAIM_PROBE_INTERVAL_MS);
         const timerId = window.setTimeout(() => finish(undefined), timeoutMs);
     });
 }
