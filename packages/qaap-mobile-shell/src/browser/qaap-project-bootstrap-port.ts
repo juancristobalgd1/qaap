@@ -132,29 +132,50 @@ export function wrapDevCommandForPort(command: string, port: number, kind: QaapP
         case 'node-astro':
         case 'node-svelte':
             // Vite reads `process.env.PORT` before CLI flags; Docker sets PORT to the IDE port (4873).
-            return appendCliPortFlag(prefixPortEnv(command, port, isWindows), port, isWindows);
+            return appendCliPortFlag(prefixPortEnv(command, port, kind, isWindows), port, isWindows);
         case 'node-next':
-            return appendNextDevPort(prefixPortEnv(command, port, isWindows), port, isWindows);
+            return appendNextDevPort(prefixPortEnv(command, port, kind, isWindows), port, isWindows);
         case 'node-remix':
-            return appendCliPortFlag(prefixPortEnv(command, port, isWindows), port, isWindows);
+            return appendCliPortFlag(prefixPortEnv(command, port, kind, isWindows), port, isWindows);
         default:
-            return prefixPortEnv(command, port, isWindows);
+            return prefixPortEnv(command, port, kind, isWindows);
     }
 }
 
 // npm lifecycle scripts can contain their own `PORT=8080` assignment, which overrides a plain
 // `PORT=8081 npm run dev` prefix. Every supported Qaap runtime uses Node 22+, so preload a tiny,
-// dependency-free module that restores the allocator-owned port before application code runs.
-// Framework CLI flags remain in place below because they also cover servers which prefer argv.
-const FORCE_NODE_PREVIEW_PORT_IMPORT = '--import=data:text/javascript,process.env.PORT%3Dprocess.env.QAAP_PREVIEW_PORT';
+// dependency-free module before application code runs. Framework CLIs need a targeted argv patch:
+// forcing PORT in *every* child poisoned multi-process scripts such as `concurrently "vite" "node
+// bridge.js"` — the bridge inherited the preview port while Vite's config still selected :8080.
+// The targeted preload reaches a nested Vite/Next/Astro/Remix executable without touching sibling
+// services. Generic/CRA scripts keep the legacy PORT restore for inline `PORT=… node …` commands.
+const FORCE_NODE_PREVIEW_PORT_SOURCE = 'process.env.PORT=process.env.QAAP_PREVIEW_PORT';
+const FORCE_FRAMEWORK_PREVIEW_PORT_SOURCE = [
+    'const p=process.env.QAAP_PREVIEW_PORT,a=process.argv,'
+        + "e=(a[1]||'').replaceAll('\\\\','/').split('/').pop()||'',"
+        + "h=a.some(v=>v==='--port'||v==='-p'||v.startsWith('--port='))",
+    "if(p&&!h){if(/^(vite|vite\\.js|astro|astro\\.js)$/.test(e)){a.push('--port',p,'--strictPort')}else if(/^(next|next\\.js)$/.test(e)){a.push('-p',p)}else if(/^(remix|remix\\.js)$/.test(e)){a.push('--port',p)}}",
+].join(';');
 
-function prefixPortEnv(command: string, port: number, isWindows: boolean): string {
+function forceNodePreviewPortImport(kind: QaapProjectKind): string {
+    const source = kind === 'node-vite'
+        || kind === 'node-astro'
+        || kind === 'node-svelte'
+        || kind === 'node-next'
+        || kind === 'node-remix'
+        ? FORCE_FRAMEWORK_PREVIEW_PORT_SOURCE
+        : FORCE_NODE_PREVIEW_PORT_SOURCE;
+    return `--import=data:text/javascript;base64,${btoa(source)}`;
+}
+
+function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isWindows: boolean): string {
+    const forcePortImport = forceNodePreviewPortImport(kind);
     if (isWindows) {
         return `set "QAAP_PREVIEW_PORT=${port}"&& set "PORT=${port}"&& `
-            + `set "NODE_OPTIONS=%NODE_OPTIONS% ${FORCE_NODE_PREVIEW_PORT_IMPORT}"&& ${command}`;
+            + `set "NODE_OPTIONS=%NODE_OPTIONS% ${forcePortImport}"&& ${command}`;
     }
     return `QAAP_PREVIEW_PORT=${port} PORT=${port} `
-        + `NODE_OPTIONS="$NODE_OPTIONS ${FORCE_NODE_PREVIEW_PORT_IMPORT}" ${command}`;
+        + `NODE_OPTIONS="$NODE_OPTIONS ${forcePortImport}" ${command}`;
 }
 
 function appendCliPortFlag(command: string, port: number, isWindows: boolean): string {

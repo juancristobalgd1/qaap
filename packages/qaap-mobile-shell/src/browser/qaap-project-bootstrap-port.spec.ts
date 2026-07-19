@@ -5,6 +5,9 @@
 
 import { expect } from 'chai';
 import { execFileSync } from 'child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
     getImplicitDevPort,
     isReservedIdePort,
@@ -40,7 +43,7 @@ describe('qaap-project-bootstrap-port', () => {
     it('wrapDevCommandForPort uses PORT= for CRA-style stacks', () => {
         const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra');
         expect(command).to.include('QAAP_PREVIEW_PORT=3001 PORT=3001');
-        expect(command).to.include('--import=data:text/javascript,process.env.PORT%3Dprocess.env.QAAP_PREVIEW_PORT');
+        expect(command).to.include('--import=data:text/javascript;base64,');
         expect(command).to.match(/npm run dev$/);
     });
 
@@ -69,6 +72,40 @@ describe('qaap-project-bootstrap-port', () => {
             'node-generic',
         );
         expect(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })).to.equal('8081');
+    });
+
+    it('forces a nested Vite child without overwriting a sibling service port', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const directory = mkdtempSync(join(tmpdir(), 'qaap-preview-port-'));
+        const vite = join(directory, 'vite');
+        const sibling = join(directory, 'server.js');
+        const runner = join(directory, 'runner.cjs');
+        try {
+            writeFileSync(vite, "process.stdout.write(JSON.stringify({ port: process.env.PORT, argv: process.argv.slice(2) }));");
+            writeFileSync(sibling, "process.stdout.write(process.env.PORT || '');");
+            writeFileSync(runner, [
+                "const { execFileSync } = require('child_process');",
+                `const app = execFileSync(process.execPath, [${JSON.stringify(vite)}], { encoding: 'utf8' });`,
+                `const sibling = execFileSync(process.execPath, [${JSON.stringify(sibling)}], {`,
+                "    encoding: 'utf8', env: { ...process.env, PORT: '8787' },",
+                '});',
+                "process.stdout.write(JSON.stringify({ app: JSON.parse(app), sibling }));",
+            ].join('\n'));
+            // The trailing CLI flag is deliberately swallowed by the runner, just like
+            // `concurrently`; the inherited targeted preload must still patch the Vite child.
+            const command = wrapDevCommandForPort(`node ${JSON.stringify(runner)}`, 5182, 'node-vite');
+            const result = JSON.parse(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })) as {
+                app: { port: string; argv: string[] };
+                sibling: string;
+            };
+            expect(result.app.port).to.equal('5182');
+            expect(result.app.argv).to.deep.equal(['--port', '5182', '--strictPort']);
+            expect(result.sibling).to.equal('8787');
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
     });
 
     it('pickNextDevPort advances past conflicts, prior attempts, and the IDE listener', () => {
