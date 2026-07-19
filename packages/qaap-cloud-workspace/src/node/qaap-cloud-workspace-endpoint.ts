@@ -8,6 +8,7 @@ import { Application, Request, Response } from '@theia/core/shared/express';
 import { json } from 'body-parser';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import * as http from 'http';
+import * as fs from 'fs';
 import * as path from 'path';
 import {
     QAAP_CDP_PROBE_URL,
@@ -334,8 +335,39 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             }
             return;
         }
+        // No identity in the request (the failure page only posts {port, cwd}): recover the
+        // identity from the port registry instead of falling back to the port-keyed supervisor
+        // record, so a restarted preview keeps its previewId and stays owner-scoped.
+        if (ownerLogin) {
+            const record = this.previewRegistry.getByPort(port);
+            if (record && record.ownerLogin === ownerLogin && this.sameWorkspacePath(record.root, cwd)) {
+                try {
+                    const status = this.previewSupervisor.start(cwd, port, { ...record, ownerLogin });
+                    const processId = this.previewSupervisor.describe(record.previewId)?.processId;
+                    this.previewRegistry.attachProcess(record.previewId, ownerLogin, processId);
+                    res.json({
+                        status,
+                        port,
+                        previewId: record.previewId,
+                        previewUrl: buildQaapIdentityPreviewUrl(this.resolvePublicOrigin(req), record.previewId),
+                    });
+                } catch (error) {
+                    res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+                }
+                return;
+            }
+        }
         const status = this.previewSupervisor.start(cwd, port);
         res.json({ status, port });
+    }
+
+    protected sameWorkspacePath(a: string, b: string): boolean {
+        try {
+            return path.resolve(a) === path.resolve(b)
+                || fs.realpathSync.native(path.resolve(a)) === fs.realpathSync.native(path.resolve(b));
+        } catch {
+            return path.resolve(a) === path.resolve(b);
+        }
     }
 
     protected async handleGetTerminalSessions(req: Request, res: Response): Promise<void> {
