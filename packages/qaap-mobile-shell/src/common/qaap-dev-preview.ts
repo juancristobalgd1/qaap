@@ -110,13 +110,28 @@ export const QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER = 'data-qaap-preview-vite-en
  * `/@vite/env` restores those globals, and is a no-op for non-Vite dev servers (the import 404s
  * and the catch swallows it). Top-level await keeps later module scripts (the app entry) from
  * executing before the env globals exist.
+ *
+ * The same script then rebases `TSS_ROUTER_BASEPATH` onto the proxy prefix: client-side routers
+ * match `window.location.pathname`, which under the path proxy is `/qaap-preview/<id>/…` while
+ * the SSR matched the stripped path — without the rebase TanStack Start hydration dies with
+ * "Expected to find a match below the root match" and the preview stays blank (verified live on
+ * the VPS with a Lovable-generated app that renders fine when served without the proxy).
  */
 export function injectQaapPreviewViteEnvBootstrap(html: string, publicPrefix: string): string {
     if (!html || html.includes(QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER) || html.includes('/@vite/client')) {
         return html;
     }
+    const rebase = publicPrefix
+        ? 'try{'
+        + 'const e=(globalThis.process=globalThis.process||{env:{}}).env=globalThis.process.env||{};'
+        + `const x=${JSON.stringify(publicPrefix.replace(/\/+$/, ''))};`
+        + 'const b=typeof e.TSS_ROUTER_BASEPATH==="string"?e.TSS_ROUTER_BASEPATH:"";'
+        + 'if(!b.startsWith(x)){e.TSS_ROUTER_BASEPATH=x+(b&&b!=="/"?b:"");}'
+        + '}catch{}'
+        : '';
     const script = `<script type="module" ${QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER}>`
         + `try{await import(${JSON.stringify(`${publicPrefix}/@vite/env`)})}catch{}`
+        + rebase
         + '</script>';
     const headOpen = /<head(?:\s[^>]*)?>/i;
     if (headOpen.test(html)) {
