@@ -289,6 +289,7 @@ import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 import type { TranscriptFilesViewServices } from './qaap-transcript-files-view';
 import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
 import {
@@ -916,11 +917,35 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         if (!project || !summary) {
             return;
         }
+        // The bootstrap is scoped to the ACTIVE workspace. If the open transcript belongs to a
+        // different project, surfacing its Preview tab here would show (and let the surface
+        // record) another app's preview — never mirror a foreign bootstrap navigation.
+        if (!this.projectOwnsActiveBootstrap(project)) {
+            return;
+        }
         if (this.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
             return;
         }
         this.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
     };
+
+    /** True when `project`'s clone directory is the workspace the bootstrap service operates on. */
+    protected projectOwnsActiveBootstrap(project: MobileProjectEntry): boolean {
+        const rootUri = this.projectBootstrap?.descriptor?.rootUri;
+        if (!rootUri) {
+            return false;
+        }
+        const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
+        if (!cwd) {
+            return false;
+        }
+        const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+        try {
+            return normalize(FileUri.fsPath(rootUri.toString())) === normalize(cwd);
+        } catch {
+            return false;
+        }
+    }
 
     protected handleHeaderBackClick(): void {
         this.hubHeaderUi.handleHeaderBackClick();

@@ -482,6 +482,19 @@ export class QaapProjectBootstrapService {
         return { command: plan.command, cwd: new URI(plan.cwdKey) };
     }
 
+    /**
+     * Whether a runnable app exists at `root` (manifest at the root or a scaffolded subfolder),
+     * with actionable copy when it does not. Root-agnostic on purpose: the hub Preview tab asks
+     * about ANY project, not just the active workspace.
+     */
+    async describeRunnableApp(root: URI): Promise<{ runnable: boolean; hint?: string }> {
+        const descriptor = await this.detector.detect(root);
+        if (descriptor) {
+            return { runnable: true };
+        }
+        return { runnable: false, hint: await this.getMissingDescriptorHint(root) };
+    }
+
     /** Actionable copy when preview cannot run because no runnable project was detected. */
     async getMissingDescriptorHint(explicitRoot?: URI): Promise<string | undefined> {
         const roots = explicitRoot ? undefined : await this.workspaceService.roots;

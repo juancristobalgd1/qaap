@@ -1530,6 +1530,48 @@ export class MobileProjectsTranscriptSurfacesUi {
         overlay.append(wrap);
         frameSlot.append(overlay);
         this.updateTranscriptPreviewRunButtonState();
+        this.annotateEmptyPreviewWhenNotRunnable(project, summary, wrap, btn);
+    }
+
+    /**
+     * A repo with no runnable app (no manifest, no index.html, no scaffolded subfolder — e.g. a
+     * freshly created GitHub repo holding only a README) used to show a play button that silently
+     * did nothing. Say so instead, reusing the ready-overlay typography.
+     */
+    protected annotateEmptyPreviewWhenNotRunnable(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        wrap: HTMLElement,
+        runButton: HTMLButtonElement,
+    ): void {
+        const rootPath = this.resolveRunnableTranscriptProjectRoot(project, summary);
+        const bootstrap = this.host.projectBootstrap;
+        if (!rootPath || typeof bootstrap?.describeRunnableApp !== 'function') {
+            return;
+        }
+        void bootstrap.describeRunnableApp(FileUri.create(rootPath)).then(result => {
+            if (result.runnable || !wrap.isConnected) {
+                return;
+            }
+            if (this.host.transcriptOpenProject && this.host.transcriptOpenProject.id !== project.id) {
+                return;
+            }
+            runButton.hidden = true;
+            const note = document.createElement('div');
+            note.className = 'theia-mobile-transcript-preview-ready';
+            const title = document.createElement('div');
+            title.className = 'theia-mobile-transcript-preview-ready-title';
+            title.textContent = nls.localize('qaap/mobileProjects/previewNoApp', 'Este repositorio aún no tiene una app ejecutable');
+            const detail = document.createElement('p');
+            detail.className = 'theia-mobile-transcript-preview-ready-hint';
+            detail.textContent = result.hint
+                ?? nls.localize(
+                    'qaap/mobileProjects/previewNoAppHint',
+                    'No se encontró package.json ni index.html. Pídele al agente que genere la app, o sube el código del proyecto a este repositorio.',
+                );
+            note.append(title, detail);
+            wrap.append(note);
+        }).catch(() => undefined);
     }
 
     /**

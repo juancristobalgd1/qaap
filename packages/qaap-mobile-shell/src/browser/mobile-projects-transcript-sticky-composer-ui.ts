@@ -463,8 +463,17 @@ export class MobileProjectsTranscriptStickyComposerUi {
             // transcript surface can lack an open summary right after a reload). Route through the
             // bootstrap opener: its qaap-bootstrap-preview-opened event surfaces the hub Preview
             // tab, and the IDE surface gets the mini-browser widget as before. Keep the pill.
+            //
+            // ONLY when the active bootstrap actually belongs to this project: the bootstrap is
+            // scoped to the active workspace, so falling back while another project's transcript
+            // is open would surface (and record) the WRONG app's preview — observed live as an
+            // empty repo getting another project's previewUrl persisted onto its hub session.
             const bootstrap = this.host.projectBootstrap;
-            if (bootstrap && this.host.transcriptComposerProject?.id === projectId) {
+            const project = this.host.transcriptComposerProject;
+            const ownsBootstrap = !!project
+                && project.id === projectId
+                && !!resolveComposerPreviewCandidate(this.resolveComposerPreviewRuntime(project));
+            if (bootstrap && ownsBootstrap) {
                 await bootstrap.focusPreview();
                 return;
             }
