@@ -130,12 +130,17 @@ export function injectQaapPreviewViteEnvBootstrap(html: string, publicPrefix: st
     if (!html || html.includes(QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER) || html.includes('/@vite/client')) {
         return html;
     }
+    // `/@vite/env` can evaluate more than once (query-suffixed duplicates in the module graph) and
+    // the app entry is an async module script, so a plain assignment gets clobbered/raced. Pin the
+    // rebased value with an accessor: env.mjs re-walks assign through the no-op setter harmlessly.
     const rebase = publicPrefix
         ? 'try{'
-        + 'const e=(globalThis.process=globalThis.process||{env:{}}).env=globalThis.process.env||{};'
+        + 'const p=globalThis.process=globalThis.process||{env:{}};'
+        + 'const e=p.env=p.env||{};'
         + `const x=${JSON.stringify(publicPrefix.replace(/\/+$/, ''))};`
         + 'const b=typeof e.TSS_ROUTER_BASEPATH==="string"?e.TSS_ROUTER_BASEPATH:"";'
-        + 'if(!b.startsWith(x)){e.TSS_ROUTER_BASEPATH=x+(b&&b!=="/"?b:"");}'
+        + 'const v=b.startsWith(x)?b:x+(b&&b!=="/"?b:"");'
+        + 'Object.defineProperty(e,"TSS_ROUTER_BASEPATH",{configurable:true,get:()=>v,set:()=>{}});'
         + '}catch{}'
         : '';
     const script = `<script type="module" ${QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER}>`

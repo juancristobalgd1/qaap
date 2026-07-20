@@ -76,7 +76,7 @@ describe('qaap-dev-preview', () => {
     it('injectQaapPreviewViteEnvBootstrap rebases TSS_ROUTER_BASEPATH onto the proxy prefix', () => {
         const injected = injectQaapPreviewViteEnvBootstrap('<html><head></head></html>', '/qaap-preview/abc/');
         expect(injected).to.contain('const x="/qaap-preview/abc"');
-        expect(injected).to.contain('e.TSS_ROUTER_BASEPATH=x+(b&&b!=="/"?b:"")');
+        expect(injected).to.contain('Object.defineProperty(e,"TSS_ROUTER_BASEPATH"');
         // Isolated-host mode keeps the app at the origin root — no rebase script at all.
         expect(injectQaapPreviewViteEnvBootstrap('<html><head></head></html>', ''))
             .to.not.contain('TSS_ROUTER_BASEPATH');
