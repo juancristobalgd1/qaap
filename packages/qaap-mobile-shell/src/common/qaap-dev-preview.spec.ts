@@ -8,6 +8,7 @@ import {
     buildDevPreviewWaitingHtml,
     buildQaapDevPreviewOpenUrl,
     buildQaapDevPreviewUrl,
+    injectQaapPreviewViteEnvBootstrap,
     parseQaapDevPreviewRequestPath,
     parseQaapDevPreviewPort,
 } from './qaap-dev-preview';
@@ -48,5 +49,27 @@ describe('qaap-dev-preview', () => {
         expect(html).to.contain('3001');
         expect(html).to.contain('location.reload');
         expect(html).to.contain('Starting dev server');
+    });
+
+    it('injectQaapPreviewViteEnvBootstrap injects a prefix-aware /@vite/env import at head start', () => {
+        const html = '<html><head><title>x</title><script type="module" async="">import("/qaap-preview/abc/entry")</script></head><body></body></html>';
+        const injected = injectQaapPreviewViteEnvBootstrap(html, '/qaap-preview/abc');
+        expect(injected).to.contain('<head><script type="module" data-qaap-preview-vite-env>');
+        expect(injected).to.contain('await import("/qaap-preview/abc/@vite/env")');
+        expect(injected.indexOf('data-qaap-preview-vite-env')).to.be.lessThan(injected.indexOf('entry'));
+    });
+
+    it('injectQaapPreviewViteEnvBootstrap is idempotent and skips pages that already load @vite/client', () => {
+        const once = injectQaapPreviewViteEnvBootstrap('<html><head></head></html>', '/qaap-dev/5173');
+        expect(injectQaapPreviewViteEnvBootstrap(once, '/qaap-dev/5173')).to.equal(once);
+        const healthy = '<html><head><script type="module" src="/qaap-dev/5173/@vite/client"></script></head></html>';
+        expect(injectQaapPreviewViteEnvBootstrap(healthy, '/qaap-dev/5173')).to.equal(healthy);
+    });
+
+    it('injectQaapPreviewViteEnvBootstrap handles isolated-host mode (empty prefix) and headless HTML', () => {
+        expect(injectQaapPreviewViteEnvBootstrap('<html><body>x</body></html>', ''))
+            .to.contain('await import("/@vite/env")');
+        expect(injectQaapPreviewViteEnvBootstrap('<div>fragment</div>', ''))
+            .to.match(/^<script type="module" data-qaap-preview-vite-env>/);
     });
 });

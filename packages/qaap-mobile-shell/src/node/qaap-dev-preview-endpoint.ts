@@ -23,6 +23,7 @@ import {
     buildDevPreviewWaitingHtml,
     buildQaapDevPreviewOpenUrl,
     buildQaapIdentityPreviewUrl,
+    injectQaapPreviewViteEnvBootstrap,
     isAllowedDevPreviewPort,
     parseQaapDevPreviewPort,
     parseQaapIdentityPreviewRequestPath,
@@ -771,7 +772,10 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 const rewritten = this.rewriteDevPreviewBody(body, targetPort, publicPrefix);
                 const contentType = proxyRes.headers['content-type'];
                 outgoing.end(typeof contentType === 'string' && /\btext\/html\b/i.test(contentType)
-                    ? injectQaapPreviewBridgeLoader(rewritten, this.resolvePublicOrigin(incoming))
+                    ? injectQaapPreviewViteEnvBootstrap(
+                        injectQaapPreviewBridgeLoader(rewritten, this.resolvePublicOrigin(incoming)),
+                        publicPrefix,
+                    )
                     : rewritten);
             });
         });

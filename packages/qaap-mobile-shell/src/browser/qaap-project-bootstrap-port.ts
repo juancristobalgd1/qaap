@@ -171,11 +171,25 @@ function forceNodePreviewPortImport(kind: QaapProjectKind): string {
 function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isWindows: boolean): string {
     const forcePortImport = forceNodePreviewPortImport(kind);
     if (isWindows) {
-        return `set "QAAP_PREVIEW_PORT=${port}"&& set "PORT=${port}"&& `
+        return `set "QAAP_PREVIEW_PORT=${port}"&& set "PORT=${port}"&& set "NODE_ENV=development"&& `
             + `set "NODE_OPTIONS=%NODE_OPTIONS% ${forcePortImport}"&& ${command}`;
     }
-    return `QAAP_PREVIEW_PORT=${port} PORT=${port} `
+    return `QAAP_PREVIEW_PORT=${port} PORT=${port} NODE_ENV=development `
         + `NODE_OPTIONS="$NODE_OPTIONS ${forcePortImport}" ${command}`;
+}
+
+/**
+ * Dev/install commands must not inherit the host's `NODE_ENV=production` (the Docker/VPS backend
+ * exports it): `npm install` then skips devDependencies and `vite dev` poisons the browser with a
+ * production `process.env.NODE_ENV` via `/@vite/env`, flipping React and framework dev branches.
+ * An inline assignment in the project's own script still wins over this prefix — deliberate.
+ */
+export function wrapCommandForDevNodeEnv(command: string): string {
+    const isWindows = typeof navigator !== 'undefined' && /win/i.test(navigator.platform);
+    if (isWindows) {
+        return `set "NODE_ENV=development"&& ${command}`;
+    }
+    return `NODE_ENV=development ${command}`;
 }
 
 function appendCliPortFlag(command: string, port: number, isWindows: boolean): string {

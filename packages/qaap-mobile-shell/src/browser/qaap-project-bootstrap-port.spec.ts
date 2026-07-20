@@ -47,6 +47,11 @@ describe('qaap-project-bootstrap-port', () => {
         expect(command).to.match(/npm run dev$/);
     });
 
+    it('wrapDevCommandForPort forces NODE_ENV=development so production hosts do not poison vite dev', () => {
+        const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra');
+        expect(command).to.include('NODE_ENV=development ');
+    });
+
     it('wrapDevCommandForPort sets PORT and --port for Vite (overrides Docker IDE PORT)', () => {
         const command = wrapDevCommandForPort('npm run dev', 5174, 'node-vite');
         expect(command).to.include('QAAP_PREVIEW_PORT=5174 PORT=5174');

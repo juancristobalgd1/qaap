@@ -288,6 +288,7 @@ import {
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
 import type { TranscriptFilesViewServices } from './qaap-transcript-files-view';
 import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
 import {
@@ -896,7 +897,30 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         const grabber = this.panelChromeUi.constructPanelShell();
         this.panelChromeUi.wirePanelInteractions(grabber, this.onAuthSessionChanged);
         this.installAgentsHubEmptySurfaceGuard();
+        window.addEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, this.onBootstrapPreviewOpened);
     }
+
+    /**
+     * The bootstrap just opened/navigated the IDE mini-browser preview widget. While the Work Hub
+     * is the foreground surface that widget sits hidden behind the hub overlay and is suspended to
+     * `about:blank`, so every "Open preview" affordance looked like a silent no-op. Mirror the
+     * navigation into the hub's own Preview tab — the same surface as "Change view → Preview".
+     */
+    protected readonly onBootstrapPreviewOpened = (): void => {
+        if (!this.visible || !this.agentsHubShellActive) {
+            return;
+        }
+        const state = this.transcriptController.state;
+        const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
+        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
+        if (!project || !summary) {
+            return;
+        }
+        if (this.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
+            return;
+        }
+        this.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
+    };
 
     protected handleHeaderBackClick(): void {
         this.hubHeaderUi.handleHeaderBackClick();
@@ -1073,6 +1097,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     dispose(): void {
+        window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, this.onBootstrapPreviewOpened);
         this.closeHeaderOverflowMenu();
         this.closeHeaderIdeViewPickerMenu();
         this.headerOverflowMenu?.remove();

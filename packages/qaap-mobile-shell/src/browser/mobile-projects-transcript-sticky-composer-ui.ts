@@ -443,6 +443,15 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 : Promise.resolve(false),
         );
         if (!opened) {
+            // A URL the backend just verified as ready must not dead-end in a silent no-op (the
+            // transcript surface can lack an open summary right after a reload). Route through the
+            // bootstrap opener: its qaap-bootstrap-preview-opened event surfaces the hub Preview
+            // tab, and the IDE surface gets the mini-browser widget as before. Keep the pill.
+            const bootstrap = this.host.projectBootstrap;
+            if (bootstrap && this.host.transcriptComposerProject?.id === projectId) {
+                await bootstrap.focusPreview();
+                return;
+            }
             this.verifiedComposerPreview = undefined;
             this.composerPreviewLastCheckedAt = 0;
             this.refreshComposerActivityStack();

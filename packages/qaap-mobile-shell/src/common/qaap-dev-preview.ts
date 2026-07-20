@@ -99,6 +99,36 @@ export function buildQaapIdentityPreviewUrl(publicOrigin: string, previewId: str
     return `${base}${QAAP_IDENTITY_PREVIEW_PREFIX}/${encodeURIComponent(previewId)}${suffix}`;
 }
 
+export const QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER = 'data-qaap-preview-vite-env';
+
+/**
+ * In dev, Vite materializes the config `define` entries as runtime globals via `/@vite/env`
+ * (loaded by `/@vite/client`). SSR frameworks are responsible for injecting `/@vite/client` into
+ * their rendered HTML; some app stacks fail to (observed: TanStack Start behind config wrappers),
+ * and then every raw `process.env.X` read left in dev-served modules crashes hydration with
+ * "process is not defined" — a blank preview. A catch-guarded, order-preserving import of
+ * `/@vite/env` restores those globals, and is a no-op for non-Vite dev servers (the import 404s
+ * and the catch swallows it). Top-level await keeps later module scripts (the app entry) from
+ * executing before the env globals exist.
+ */
+export function injectQaapPreviewViteEnvBootstrap(html: string, publicPrefix: string): string {
+    if (!html || html.includes(QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER) || html.includes('/@vite/client')) {
+        return html;
+    }
+    const script = `<script type="module" ${QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER}>`
+        + `try{await import(${JSON.stringify(`${publicPrefix}/@vite/env`)})}catch{}`
+        + '</script>';
+    const headOpen = /<head(?:\s[^>]*)?>/i;
+    if (headOpen.test(html)) {
+        return html.replace(headOpen, match => `${match}${script}`);
+    }
+    const htmlOpen = /<html(?:\s[^>]*)?>/i;
+    if (htmlOpen.test(html)) {
+        return html.replace(htmlOpen, match => `${match}${script}`);
+    }
+    return `${script}${html}`;
+}
+
 /** Friendly holding page while the dev server is still binding (v0-style auto-retry). */
 export function buildDevPreviewWaitingHtml(targetPort: number): string {
     const safePort = String(targetPort);

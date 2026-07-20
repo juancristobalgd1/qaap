@@ -36,6 +36,7 @@ import {
     isReservedIdePort,
     pickNextDevPort,
     resolveBootstrapDevPort,
+    wrapCommandForDevNodeEnv,
     wrapDevCommandForPort,
 } from './qaap-project-bootstrap-port';
 import {
@@ -444,15 +445,12 @@ export class QaapProjectBootstrapService {
         const frameworkPort = plan.expectedPort ?? getImplicitDevPort(plan.kind);
         const targetPort = this.devPortOverride ?? resolveBootstrapDevPort(frameworkPort, idePort);
         if (targetPort === undefined) {
-            return { command: plan.command, targetPort: undefined };
+            return { command: wrapCommandForDevNodeEnv(plan.command), targetPort: undefined };
         }
-        if (targetPort !== undefined) {
-            return {
-                command: wrapDevCommandForPort(plan.command, targetPort, plan.kind),
-                targetPort,
-            };
-        }
-        return { command: plan.command, targetPort: undefined };
+        return {
+            command: wrapDevCommandForPort(plan.command, targetPort, plan.kind),
+            targetPort,
+        };
     }
 
     protected reserveActivePreview(port: number, cwd: URI): Promise<QaapPreviewPortClaimResult> {
@@ -522,7 +520,8 @@ export class QaapProjectBootstrapService {
             }
             const terminal = await this.spawnCommandWithRetry({
                 title: `Install (${descriptor.packageManager})`,
-                command: installPlan.command,
+                // NODE_ENV=production hosts would otherwise skip devDependencies (vite & friends).
+                command: wrapCommandForDevNodeEnv(installPlan.command),
                 cwd: installPlan.cwd,
                 reveal: false,
             });
