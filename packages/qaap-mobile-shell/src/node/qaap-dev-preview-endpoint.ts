@@ -94,6 +94,19 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             }
             void this.forwardHttp(req, res, record.port, req.url || '/', '');
         });
+        // The IDE shell must never render inside a frame: typing the bare Qaap origin into the
+        // preview bar — or a previewed app navigating its own iframe to "/" — loaded Qaap
+        // recursively inside itself. Registered AFTER the isolated-host middleware (which never
+        // calls next() for preview hosts), so it only ever touches the MAIN origin's shell
+        // document; proxied previews, webviews, and mini-browser endpoints keep their own rules.
+        app.use((req: Request, res: Response, next: NextFunction) => {
+            const path = (req.path || '').toLowerCase();
+            if (path === '/' || path === '/index.html') {
+                res.setHeader('X-Frame-Options', 'DENY');
+                res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+            }
+            next();
+        });
         // Register static /api segments before the `:port` catch-all so they aren't parsed as ports.
         app.post(QAAP_DEV_PREVIEW_CLAIM_PATH, (req, res) => {
             void this.handleClaim(req, res);

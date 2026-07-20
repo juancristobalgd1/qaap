@@ -11,7 +11,11 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { MiniBrowserProps } from '@theia/mini-browser/lib/browser/mini-browser-content';
 import { normalizeMiniBrowserOpenUrl } from '@theia/mini-browser/lib/browser/mini-browser-url-utils';
 import { QaapAgentPreviewChromeStyle as Style } from './qaap-agent-preview-chrome-style';
-import { normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
+import {
+    QAAP_DEV_PREVIEW_PATH_PREFIX,
+    QAAP_IDENTITY_PREVIEW_PATH_PREFIX,
+    normalizePreviewUrlForSameOrigin,
+} from './qaap-preview-url-utils';
 import {
     QaapPreviewInlineInspector,
     type QaapPreviewInspectorDeps,
@@ -679,6 +683,17 @@ export function mountEmbeddedAgentPreviewChrome(
         },
         navigate: (url, navOptions) => {
             const next = normalizePreviewNavigateUrl(url);
+            if (isQaapIdeShellUrl(next)) {
+                previewNotify(
+                    { messageService: options.messageService, notify: options.notify },
+                    nls.localize(
+                        'qaap/preview/ideShellBlocked',
+                        'Esa URL es el propio Qaap, no tu app. Usa "Open preview" o escribe la URL de tu aplicación.',
+                    ),
+                    'warn',
+                );
+                return;
+            }
             currentUrl = next;
             syncUrlInput(sanitizePreviewDisplayUrl(next));
             if (navOptions?.hard) {
@@ -805,6 +820,25 @@ export function mountEmbeddedAgentPreviewChrome(
 function normalizePreviewNavigateUrl(url: string): string {
     const opened = normalizeMiniBrowserOpenUrl(url) || url;
     return normalizePreviewUrlForSameOrigin(opened);
+}
+
+/**
+ * True when `url` would load the Qaap IDE shell itself (typing the bare VPS/IDE origin into the
+ * preview bar loaded Qaap recursively inside its own preview). Anything on the IDE origin that is
+ * not a `/qaap-preview/…` or `/qaap-dev/…` proxied path is the shell or its APIs — never a user
+ * app — so the preview refuses to navigate there.
+ */
+function isQaapIdeShellUrl(url: string): boolean {
+    try {
+        const parsed = new URL(url, window.location.href);
+        if (parsed.origin !== window.location.origin) {
+            return false;
+        }
+        const path = parsed.pathname;
+        return !(path.startsWith(`${QAAP_IDENTITY_PREVIEW_PATH_PREFIX}/`) || path.startsWith(`${QAAP_DEV_PREVIEW_PATH_PREFIX}/`));
+    } catch {
+        return false;
+    }
 }
 
 function sanitizePreviewDisplayUrl(url: string): string {
