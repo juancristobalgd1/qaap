@@ -33,7 +33,7 @@ import {
     previewPageTitleMatchesProjectName,
     resolveReadyTranscriptPreviewUrlFromProbe,
 } from '../common/qaap-transcript-preview-offer';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import {
     findQaapIdentityPreviewUrl,
     isLocalQaapPreviewOrigin,
@@ -87,6 +87,13 @@ interface ProjectPreviewRuntimeState {
     probeReadyUrl?: string;
     lastSyncedUrl?: string;
 }
+
+/**
+ * Cadence of the mounted-identity supersession watch. Chained dev runs (retry, second tab,
+ * backend restart) retire the claim the iframe is mounted on; nothing else probes once mounted,
+ * so without this watch the surface shows the proxy's 403 page until a full reload.
+ */
+const TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS = 8_000;
 
 /** Panel surface for Plan, Changes, Preview, Files, and Terminal execution tabs. */
 export interface MobileProjectsTranscriptSurfacesHost {
@@ -181,6 +188,7 @@ export class MobileProjectsTranscriptSurfacesUi {
 
     protected readonly transcriptPreviewEnsureRequests = new Set<string>();
     protected transcriptPreviewProbeTimer: number | undefined;
+    protected transcriptPreviewIdentityWatchTimer: number | undefined;
     protected readonly previewRuntimeByProjectId = new Map<string, ProjectPreviewRuntimeState>();
     protected transcriptPreviewProjectId: string | undefined;
 
@@ -627,6 +635,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     disposeTranscriptEmbeddedPreview(): void {
+        this.stopTranscriptPreviewIdentityWatch();
         this.host.transcriptEmbeddedPreview?.dispose();
         this.host.transcriptEmbeddedPreview = undefined;
         if (this.transcriptPreviewProjectId) {
@@ -640,6 +649,7 @@ export class MobileProjectsTranscriptSurfacesUi {
      * Keeps the last preview URL staged for a fast remount when Preview is opened again.
      */
     suspendTranscriptPreviewIframe(): void {
+        this.stopTranscriptPreviewIdentityWatch();
         const chrome = this.host.transcriptEmbeddedPreview;
         if (!chrome) {
             return;
@@ -685,6 +695,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     mountTranscriptEmbeddedPreview(host: HTMLElement, previewUrl: string, project: MobileProjectEntry): void {
         const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
         this.transcriptPreviewProjectId = project.id;
+        this.scheduleTranscriptPreviewIdentityWatch(project);
         if (this.host.transcriptEmbeddedPreview) {
             this.clearTranscriptEmptyPreviewChrome();
             const root = this.host.transcriptEmbeddedPreview.root;
@@ -848,6 +859,12 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.stopTranscriptPreviewTabProbe();
         const readyUrl = normalizePreviewUrlForSameOrigin(probe.previewUrl);
         if (!await this.previewUrlMatchesProject(readyUrl, latestProject)) {
+            const reconciled = await this.reconcileSupersededProjectPreviewUrl(latestProject, readyUrl);
+            if (reconciled && this.transcriptPreviewProjectId === project.id && host.isConnected) {
+                const adopted = this.adoptReconciledProjectPreviewUrl(latestProject, reconciled);
+                void this.tryMountProjectScopedPreview(host, project, summary, adopted, reconciled);
+                return;
+            }
             const cleared = this.clearMismatchedProjectPreviewUrl(latestProject, readyUrl);
             if (this.transcriptPreviewProjectId === project.id && host.isConnected) {
                 this.disposeTranscriptEmbeddedPreview();
@@ -977,6 +994,133 @@ export class MobileProjectsTranscriptSurfacesUi {
         void this.tryMountProjectScopedPreview(host, project, summary, updatedProject, discovered);
     }
 
+    /**
+     * Queries the preview registry for this project's newest live claim and returns its ready
+     * identity URL. Also hands the claim to the bootstrap when it owns this project, so the
+     * composer "Open preview" pill and the persisted session record follow the same swap.
+     */
+    protected async fetchCurrentProjectClaimUrl(project: MobileProjectEntry): Promise<string | undefined> {
+        const cwd = this.host.projectsService.getProjectCwd(project)
+            ?? this.host.preparedCwdByProjectId.get(project.id);
+        let cwdUri: string | undefined;
+        try {
+            cwdUri = cwd ? FileUri.create(cwd).toString() : undefined;
+        } catch {
+            cwdUri = undefined;
+        }
+        const current = await fetchQaapCurrentDevPreview([
+            cwdUri,
+            project.uri?.toString(),
+            project.id,
+        ]);
+        if (!current?.ready || !current.previewUrl) {
+            return undefined;
+        }
+        if (this.bootstrapAppliesToProject(project)) {
+            this.host.projectBootstrap?.adoptSupersedingPreviewClaim(current);
+        }
+        return normalizePreviewUrlForSameOrigin(current.previewUrl);
+    }
+
+    /**
+     * Newest live claim URL when `staleUrl` stopped resolving. Chained dev runs supersede the
+     * claim a surface is still mounted on — the identity proxy then answers only "This preview
+     * belongs to another execution" — so swap to the successor instead of requiring a reload.
+     */
+    protected async reconcileSupersededProjectPreviewUrl(
+        project: MobileProjectEntry,
+        staleUrl: string,
+    ): Promise<string | undefined> {
+        const currentUrl = await this.fetchCurrentProjectClaimUrl(project);
+        if (!currentUrl || currentUrl === normalizePreviewUrlForSameOrigin(staleUrl)) {
+            return undefined;
+        }
+        return currentUrl;
+    }
+
+    /** Applies a reconciled claim URL to hub state, runtime staging, and the session store. */
+    protected adoptReconciledProjectPreviewUrl(project: MobileProjectEntry, previewUrl: string): MobileProjectEntry {
+        const updated = { ...project, previewUrl };
+        this.host.projects = this.host.projects.map(candidate => candidate.id === updated.id
+            ? updated
+            : candidate);
+        if (this.host.transcriptOpenProject?.id === updated.id) {
+            this.host.transcriptOpenProject = updated;
+        }
+        this.setProbeReadyPreviewUrl(project.id, previewUrl);
+        void this.host.projectsService.recordProjectPreviewUrl(updated, previewUrl).catch(() => undefined);
+        return updated;
+    }
+
+    protected stopTranscriptPreviewIdentityWatch(): void {
+        if (this.transcriptPreviewIdentityWatchTimer !== undefined) {
+            window.clearTimeout(this.transcriptPreviewIdentityWatchTimer);
+            this.transcriptPreviewIdentityWatchTimer = undefined;
+        }
+    }
+
+    protected scheduleTranscriptPreviewIdentityWatch(project: MobileProjectEntry): void {
+        this.stopTranscriptPreviewIdentityWatch();
+        this.transcriptPreviewIdentityWatchTimer = window.setTimeout(() => {
+            this.transcriptPreviewIdentityWatchTimer = undefined;
+            void this.verifyMountedTranscriptPreviewIdentity(project);
+        }, TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS);
+    }
+
+    /**
+     * Supersession watch for a mounted identity-scoped preview. Once mounted, nothing else
+     * probes the iframe's claim, so a claim retired by a newer run would keep showing the
+     * proxy's 403 page until a full reload. Probe the mounted identity and, when it dies while
+     * a newer live claim exists for the same project, remount in place with the successor URL.
+     */
+    protected async verifyMountedTranscriptPreviewIdentity(project: MobileProjectEntry): Promise<void> {
+        const chrome = this.host.transcriptEmbeddedPreview;
+        if (!chrome || !chrome.root.isConnected
+            || this.transcriptPreviewProjectId !== project.id
+            || chrome.root.classList.contains('theia-mod-empty-preview')) {
+            return;
+        }
+        if (document.hidden) {
+            this.scheduleTranscriptPreviewIdentityWatch(project);
+            return;
+        }
+        const mountedUrl = this.getTranscriptEmbeddedPreviewUrl() ?? this.mountedPreviewUrl(project.id);
+        if (!mountedUrl) {
+            return;
+        }
+        let identity: { previewId: string } | undefined;
+        try {
+            identity = parseQaapIdentityPreviewRequestPath(new URL(mountedUrl, window.location.href).pathname);
+        } catch {
+            identity = undefined;
+        }
+        if (!identity) {
+            // Legacy port-scoped mounts cannot be superseded-403'd; the tab probe covers them.
+            return;
+        }
+        const probe = await probeQaapIdentityPreview(identity.previewId);
+        const stillMounted = (): boolean => this.host.transcriptEmbeddedPreview === chrome
+            && chrome.root.isConnected
+            && this.transcriptPreviewProjectId === project.id;
+        if (!stillMounted()) {
+            return;
+        }
+        if (probe.ready) {
+            this.scheduleTranscriptPreviewIdentityWatch(project);
+            return;
+        }
+        const latestProject = this.host.projects.find(candidate => candidate.id === project.id) ?? project;
+        const reconciled = await this.reconcileSupersededProjectPreviewUrl(latestProject, mountedUrl);
+        const hostElement = this.executionPreviewHost();
+        if (reconciled && stillMounted() && hostElement?.isConnected) {
+            const adopted = this.adoptReconciledProjectPreviewUrl(latestProject, reconciled);
+            this.mountTranscriptEmbeddedPreview(hostElement, reconciled, adopted);
+            return;
+        }
+        // The successor claim may still be booting (or the run died) — keep watching.
+        this.scheduleTranscriptPreviewIdentityWatch(project);
+    }
+
     protected clearMismatchedProjectPreviewUrl(
         project: MobileProjectEntry,
         _previewUrl: string,
@@ -1003,10 +1147,19 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         if (!await this.previewUrlMatchesProject(candidateUrl, latestProject)) {
-            const cleared = this.clearMismatchedProjectPreviewUrl(latestProject, candidateUrl);
+            // A superseded claim probes as dead even though the project has a newer live one
+            // (chained runs: retry, second tab, backend restart). Swap before falling back to
+            // the destructive clear-and-rediscover path, which cannot recover on hosted origins.
+            const reconciled = await this.reconcileSupersededProjectPreviewUrl(latestProject, candidateUrl);
             if (this.transcriptPreviewProjectId !== project.id || !host.isConnected) {
                 return;
             }
+            if (reconciled) {
+                const adopted = this.adoptReconciledProjectPreviewUrl(latestProject, reconciled);
+                void this.tryMountProjectScopedPreview(host, project, summary, adopted, reconciled);
+                return;
+            }
+            const cleared = this.clearMismatchedProjectPreviewUrl(latestProject, candidateUrl);
             this.disposeTranscriptEmbeddedPreview();
             host.replaceChildren();
             this.mountTranscriptEmptyPreview(host, cleared, summary);
@@ -2093,6 +2246,14 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     async discoverProjectDevPreviewUrl(project: MobileProjectEntry): Promise<string | undefined> {
+        // The preview registry knows the project's live claim even on hosted origins, where the
+        // legacy localhost port-scan below is unavailable. This is what recovers a surface whose
+        // stored URL was cleared after its claim was superseded by a newer run.
+        const currentClaimUrl = await this.fetchCurrentProjectClaimUrl(project);
+        if (currentClaimUrl && await this.previewUrlMatchesProject(currentClaimUrl, project)) {
+            void this.host.projectsService.recordProjectPreviewUrl(project, currentClaimUrl);
+            return currentClaimUrl;
+        }
         if (!isLocalQaapPreviewOrigin(resolveDevPreviewPublicOrigin())) {
             return undefined;
         }

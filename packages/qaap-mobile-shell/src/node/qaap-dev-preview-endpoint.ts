@@ -15,6 +15,7 @@ import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapDevPreviewPortRegistry, type QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import {
     QAAP_DEV_PREVIEW_CLAIM_PATH,
+    QAAP_DEV_PREVIEW_CURRENT_PATH,
     QAAP_DEV_PREVIEW_RELEASE_PATH,
     QAAP_DEV_PREVIEW_PREFIX,
     QAAP_DEV_PREVIEW_PROBE_PATH,
@@ -35,6 +36,7 @@ import {
     isQaapPreviewId,
     isQaapProcessPreviewClaimIdentity,
     isQaapProcessPreviewIdentity,
+    qaapPreviewProjectIdMatches,
     resolveQaapPreviewIdentity,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
@@ -104,6 +106,12 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 return;
             }
             void this.handleProbe(req, res);
+        });
+        app.get(QAAP_DEV_PREVIEW_CURRENT_PATH, (req, res) => {
+            if (!this.requireHttpAuth(req, res)) {
+                return;
+            }
+            void this.handleCurrentProjectPreview(req, res);
         });
         app.get(`${QAAP_IDENTITY_PREVIEW_PROBE_PATH}/:previewId`, (req, res) => {
             if (!this.requireHttpAuth(req, res)) {
@@ -556,6 +564,50 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             previewUrl: buildQaapDevPreviewOpenUrl(origin, port),
         };
         res.json(body);
+    }
+
+    /**
+     * Resolves the caller's newest live claim for a project (`?projectId=` accepts the canonical
+     * root URI or a Work Hub routing key, repeatable). Chained dev runs supersede earlier claims,
+     * so a surface still mounted on the retired `/qaap-preview/<previewId>/` URL 403s in
+     * {@link handleIdentityProxy}; this lookup lets it remount the live claim without a reload.
+     * Owner-scoped like the identity probe: other tenants' projects resolve to 404, never data.
+     */
+    protected async handleCurrentProjectPreview(req: Request, res: Response): Promise<void> {
+        const raw = req.query.projectId;
+        const projectCandidates = (Array.isArray(raw) ? raw : [raw])
+            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+        if (projectCandidates.length === 0) {
+            res.status(400).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
+            return;
+        }
+        const login = this.auth.resolveUserLogin(this.auth.authenticate(req));
+        if (!login) {
+            res.status(403).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
+            return;
+        }
+        const record = this.portRegistry.records()
+            .filter(candidate => candidate.ownerLogin === login
+                && isQaapProcessPreviewIdentity(candidate)
+                && !this.isIdeListenPort(candidate.port)
+                && qaapPreviewProjectIdMatches(candidate.projectId, ...projectCandidates))
+            .sort((left, right) => right.touchedAt - left.touchedAt || right.claimedAt - left.claimedAt)[0];
+        if (!record) {
+            res.status(404).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
+            return;
+        }
+        this.portRegistry.touchPreview(record.previewId, login);
+        res.json({
+            ready: await this.probeLocalDevServer(record.port),
+            previewUrl: this.buildIdentityPreviewUrl(req, record),
+            previewId: record.previewId,
+            projectId: record.projectId,
+            port: record.port,
+            ...(isQaapProcessPreviewIdentity(record) ? {
+                workspaceId: record.workspaceId,
+                processId: record.processId,
+            } : {}),
+        } satisfies QaapDevPreviewProbeResponse);
     }
 
     protected async handleIdentityProbe(req: Request, res: Response): Promise<void> {

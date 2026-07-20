@@ -404,11 +404,27 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const probePromise = port !== undefined
             ? probeQaapDevPreviewPort(port)
             : probeQaapIdentityPreview(identityId!);
-        this.composerPreviewProbeInFlight = probePromise.then(probe => {
+        this.composerPreviewProbeInFlight = probePromise.then(async probe => {
             this.composerPreviewLastCheckedAt = Date.now();
             const currentProject = this.host.transcriptComposerProject;
             const stillCurrent = currentProject?.id === project.id
                 && resolveComposerPreviewCandidate(this.resolveComposerPreviewRuntime(currentProject));
+            if (!probe.ready && stillCurrent) {
+                // The candidate claim may have been superseded by a newer run (retry, second
+                // tab, backend restart) — its identity probe then 403s although the project has
+                // a live preview. Adopting the successor refreshes `bootstrap.previewUrl`, so
+                // the re-sync below verifies the live claim instead of dropping the pill.
+                const adopted = await this.host.projectBootstrap?.reconcileSupersededPreviewClaim()
+                    .catch(() => false);
+                if (adopted && this.host.transcriptComposerProject?.id === project.id) {
+                    this.composerPreviewLastCheckedAt = 0;
+                    window.setTimeout(() => {
+                        if (this.host.transcriptComposerProject?.id === project.id) {
+                            this.refreshComposerActivityStack();
+                        }
+                    }, 0);
+                }
+            }
             const next = probe.ready && stillCurrent
                 ? { projectId: project.id, url: probe.previewUrl }
                 : undefined;

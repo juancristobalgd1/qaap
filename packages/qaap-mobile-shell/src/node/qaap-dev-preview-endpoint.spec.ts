@@ -785,6 +785,128 @@ describe('QaapDevPreviewEndpoint', () => {
         });
     });
 
+    describe('current project preview lookup (supersede reconciliation)', () => {
+        class CurrentTestEndpoint extends TestQaapDevPreviewEndpoint {
+            listening = true;
+
+            async exposeHandleCurrent(req: unknown, res: unknown): Promise<void> {
+                return this.handleCurrentProjectPreview(req as never, res as never);
+            }
+
+            protected override probeLocalDevServer(): Promise<boolean> {
+                return Promise.resolve(this.listening);
+            }
+
+            setCurrentFakes(login: string, registry: unknown): void {
+                const mutable = this as unknown as { auth: unknown; portRegistry: unknown };
+                mutable.auth = {
+                    authenticate: () => ({ kind: 'authenticated', userLogin: login, session: {}, sessionId: 's' }),
+                    resolveUserLogin: () => login,
+                };
+                mutable.portRegistry = registry;
+            }
+        }
+
+        const currentReq = (...projectIds: string[]): unknown => ({
+            query: { projectId: projectIds.length === 1 ? projectIds[0] : projectIds },
+            headers: {},
+            protocol: 'http',
+            get: () => 'localhost:3000',
+        });
+
+        const makeJsonRes = (): { record: { code: number; body?: { ready?: boolean; previewId?: string; previewUrl?: string; port?: number } } } => {
+            const record: { code: number; body?: { ready?: boolean; previewId?: string; previewUrl?: string; port?: number } } = { code: 200 };
+            const res = {
+                record,
+                status(code: number): unknown { record.code = code; return res; },
+                json(body: never): void { record.body = body; },
+            };
+            return res;
+        };
+
+        const projectRoot = 'file:///workspace/repos/users/alice/site';
+
+        const registerProcessPreview = (
+            registry: QaapDevPreviewPortRegistry,
+            processId: string,
+            port: number,
+            owner = 'alice',
+        ): QaapDevPreviewRecord => registry.register({
+            ...resolveQaapPreviewIdentity({
+                userId: owner,
+                workspaceId: projectRoot,
+                projectId: projectRoot,
+                processId,
+            }),
+            ownerLogin: owner,
+            root: '/workspace/repos/users/alice/site',
+            port,
+        })!;
+
+        it('returns the newest live claim for the project, honoring ws:-prefixed candidates', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const superseded = registerProcessPreview(registry, 'run-old', 4173);
+            const newest = registerProcessPreview(registry, 'run-new', 4174);
+            // Chained-run shape: the previous claim is strictly older than its successor.
+            const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+            previews.set(superseded.previewId, {
+                ...superseded,
+                claimedAt: superseded.claimedAt - 60_000,
+                touchedAt: superseded.touchedAt - 60_000,
+            });
+
+            const ep = new CurrentTestEndpoint();
+            ep.setCurrentFakes('alice', registry);
+            const res = makeJsonRes();
+            await ep.exposeHandleCurrent(currentReq(`ws:${projectRoot}`), res);
+
+            expect(res.record.code).to.equal(200);
+            expect(res.record.body?.previewId).to.equal(newest.previewId);
+            expect(res.record.body?.ready).to.equal(true);
+            expect(res.record.body?.port).to.equal(4174);
+            expect(res.record.body?.previewUrl).to.contain(`/qaap-preview/${newest.previewId}`);
+        });
+
+        it('404s when the project only has claims owned by another tenant', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            registerProcessPreview(registry, 'run-1', 4173);
+
+            const ep = new CurrentTestEndpoint();
+            ep.setCurrentFakes('mallory', registry);
+            const res = makeJsonRes();
+            await ep.exposeHandleCurrent(currentReq(projectRoot), res);
+
+            expect(res.record.code).to.equal(404);
+            expect(res.record.body?.previewId).to.equal(undefined);
+        });
+
+        it('400s without a projectId candidate', async () => {
+            const ep = new CurrentTestEndpoint();
+            ep.setCurrentFakes('alice', new (await import('./qaap-dev-preview-port-registry')).QaapDevPreviewPortRegistry());
+            const res = makeJsonRes();
+            await ep.exposeHandleCurrent({ query: {}, headers: {}, protocol: 'http', get: () => 'localhost:3000' }, res);
+            expect(res.record.code).to.equal(400);
+        });
+
+        it('reports ready=false while the successor claim is still booting', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const record = registerProcessPreview(registry, 'run-boot', 4175);
+
+            const ep = new CurrentTestEndpoint();
+            ep.listening = false;
+            ep.setCurrentFakes('alice', registry);
+            const res = makeJsonRes();
+            await ep.exposeHandleCurrent(currentReq(projectRoot), res);
+
+            expect(res.record.code).to.equal(200);
+            expect(res.record.body?.previewId).to.equal(record.previewId);
+            expect(res.record.body?.ready).to.equal(false);
+        });
+    });
+
     describe('identity WebSocket ownership', () => {
         const makeSocket = (): { writes: string[]; destroyed: boolean; write(value: string): void; destroy(): void } => ({
             writes: [],

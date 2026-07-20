@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import {
+    QAAP_DEV_PREVIEW_CURRENT_PATH,
     QAAP_DEV_PREVIEW_PROBE_PATH,
     QAAP_IDENTITY_PREVIEW_PROBE_PATH,
     buildQaapDevPreviewOpenUrl,
@@ -85,6 +86,46 @@ export async function probeQaapDevPreviewPort(port: number): Promise<QaapDevPrev
         };
     } catch {
         return fallback;
+    }
+}
+
+/**
+ * Resolves the caller's newest live claim for a project. Used to reconcile a surface stuck on a
+ * superseded `/qaap-preview/<previewId>/` URL (chained dev runs: retry, second tab, backend
+ * restart) with the currently registered execution — without requiring a page reload.
+ */
+export async function fetchQaapCurrentDevPreview(
+    projectCandidates: Array<string | undefined>,
+): Promise<QaapDevPreviewProbeResponse | undefined> {
+    const origin = getQaapPublicOrigin();
+    const candidates = projectCandidates.filter((value): value is string => !!value?.trim());
+    if (!origin || candidates.length === 0) {
+        return undefined;
+    }
+    try {
+        const query = candidates.map(value => `projectId=${encodeURIComponent(value)}`).join('&');
+        const response = await fetch(`${origin}${QAAP_DEV_PREVIEW_CURRENT_PATH}?${query}`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+            return undefined;
+        }
+        const body = await response.json() as QaapDevPreviewProbeResponse;
+        if (typeof body.previewId !== 'string' || typeof body.previewUrl !== 'string' || !body.previewUrl) {
+            return undefined;
+        }
+        return {
+            ready: !!body.ready,
+            previewUrl: body.previewUrl,
+            previewId: body.previewId,
+            workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,
+            projectId: typeof body.projectId === 'string' ? body.projectId : undefined,
+            processId: typeof body.processId === 'string' ? body.processId : undefined,
+            port: typeof body.port === 'number' ? body.port : undefined,
+        };
+    } catch {
+        return undefined;
     }
 }
 

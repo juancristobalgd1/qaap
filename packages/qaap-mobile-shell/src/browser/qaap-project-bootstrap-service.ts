@@ -29,7 +29,7 @@ import {
     QaapProjectDescriptor,
     QaapProjectKind,
 } from './qaap-project-bootstrap-types';
-import { probeQaapDevPreviewPort, toDevPreviewUrl, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, toDevPreviewUrl, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
 import {
     getImplicitDevPort,
     getQaapIdeListenPort,
@@ -314,6 +314,67 @@ export class QaapProjectBootstrapService {
             };
         }
         return claim;
+    }
+
+    /**
+     * Adopts a newer live claim for the active project when this session's claim was superseded
+     * by a chained run (retry, second tab, backend restart). The retired `/qaap-preview/<id>/`
+     * URL 403s in the identity proxy; adopting the successor lets every surface (transcript
+     * iframe, composer pill, session store) re-resolve the preview without a page reload.
+     * Returns true when a different live claim was adopted.
+     */
+    adoptSupersedingPreviewClaim(current: QaapDevPreviewProbeResponse): boolean {
+        if (!current.previewId || !current.previewUrl || current.port === undefined) {
+            return false;
+        }
+        if (this.activePreviewClaim?.previewId === current.previewId
+            && this.activePreviewClaim.previewUrl === current.previewUrl) {
+            return false;
+        }
+        // Same guard as reattach: never adopt a claim that names a different project.
+        if (!this.probeBelongsToActiveProject(current.projectId)) {
+            return false;
+        }
+        if (current.processId) {
+            this.activePreviewRunId = current.processId;
+        }
+        this.activePreviewClaim = {
+            previewId: current.previewId,
+            previewUrl: current.previewUrl,
+            port: current.port,
+        };
+        this._lastPort = current.port;
+        if (this._previewUrl) {
+            // Only replace an already-published URL; first publication stays with the run flow.
+            this._previewUrl = current.previewUrl;
+        }
+        this.stateEmitter.fire(this.buildStateChange(this._phase));
+        if (this.activeProjectId) {
+            void this.hubProjects.recordProjectSession({
+                repoKey: this.activeProjectId,
+                previewUrl: current.previewUrl,
+            }).catch(() => undefined);
+        }
+        return true;
+    }
+
+    /**
+     * Queries the backend for the newest live claim of the active project and adopts it when it
+     * differs from this session's claim. Call when a mounted preview or its probe starts 403ing.
+     */
+    async reconcileSupersededPreviewClaim(): Promise<boolean> {
+        const workspaceRoot = this.activeWorkspaceRoot ?? this._descriptor?.rootUri;
+        if (!workspaceRoot) {
+            return false;
+        }
+        const current = await fetchQaapCurrentDevPreview([
+            this.previewProjectId(workspaceRoot),
+            this.activeProjectId,
+        ]);
+        if (!current?.ready) {
+            return false;
+        }
+        return this.adoptSupersedingPreviewClaim(current);
     }
 
     /** Detects and runs the exact Work Hub project instead of the hosted multi-repo container. */

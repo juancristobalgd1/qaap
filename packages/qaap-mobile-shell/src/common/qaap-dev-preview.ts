@@ -19,6 +19,13 @@ export const QAAP_DEV_PREVIEW_RELEASE_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/rel
 
 export const QAAP_IDENTITY_PREVIEW_PROBE_PATH = `${QAAP_IDENTITY_PREVIEW_PREFIX}/api/probe`;
 
+/**
+ * Resolves the caller's newest live claim for a project. Chained dev runs (retry, second tab,
+ * backend restart) supersede the previous claim, so a surface still mounted on the old
+ * `/qaap-preview/<previewId>/` URL starts 403ing; this endpoint lets it reconcile without a reload.
+ */
+export const QAAP_DEV_PREVIEW_CURRENT_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/current`;
+
 export interface QaapDevPreviewProbeResponse {
     readonly ready: boolean;
     /** URL the mini-browser should load via the same-origin `/qaap-dev/:port/` proxy. */
@@ -27,6 +34,8 @@ export interface QaapDevPreviewProbeResponse {
     readonly workspaceId?: string;
     readonly projectId?: string;
     readonly processId?: string;
+    /** Reserved port of the claim. Only owner-scoped responses (claim/current) include it. */
+    readonly port?: number;
 }
 
 const MIN_DEV_PORT = 1024;
