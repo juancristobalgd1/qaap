@@ -1966,22 +1966,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     anchor,
                 );
             },
-            showWorkspaceBar: this.host.composerHeaderUi.shouldShowComposerWorkspaceBar(summary),
-            // Destination only applies while the summary is the idle placeholder (submit creates a
-            // new conversation); once a real conversation exists its cwd is fixed.
-            workspaceDestination: isAgentsHubIdleConversationSummary(summary)
-                ? {
-                    label: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestinationLabel(project),
-                    iconClass: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestinationIconClass(project),
-                    onOpen: anchor => {
-                        this.host.stickyComposerWorkspaceUi.openComposerWorkspaceDestinationSheet(
-                            project,
-                            !this.host.agentsHubShellActive,
-                            anchor,
-                        );
-                    },
-                }
-                : undefined,
             transcriptOverlay: !this.host.agentsHubShellActive,
         });
         const modeHint = describeComposerInteractionMode(this.host.transcriptComposerModeId);

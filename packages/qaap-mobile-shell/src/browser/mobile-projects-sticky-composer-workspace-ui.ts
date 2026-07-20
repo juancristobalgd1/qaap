@@ -7,13 +7,18 @@ import { nls } from '@theia/core/lib/common/nls';
 import { QAAP_GIT_REVIEW_API_PATH, type QaapGitBranchesResponse } from '../common/qaap-git-review';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { StickyComposerWorkspaceBarView } from './qaap-sticky-composer-workspace-bar';
 import {
+    createComposerWorkspaceSheetNavGroup,
+    type ComposerWorkspaceSheetNavKind,
+    type StickyComposerWorkspaceBarView,
+} from './qaap-sticky-composer-workspace-bar';
+import {
+    isWorkHubHeaderProjectPopoverAnchor,
     markStickyComposerPopoverAnchor,
     mountStickyComposerBottomSheet,
     mountStickyComposerSheetPopover,
     scheduleStickyComposerPopoverPosition,
-    shouldUseStickyComposerDesktopPopover,
+    shouldUseStickyComposerPopover,
     type StickyComposerPopoverAlign,
 } from './qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -63,6 +68,8 @@ stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').Mo
 /** Where a new composer task runs: the project's working tree or a fresh isolated git worktree. */
 export type QaapComposerWorkspaceDestination = 'local' | 'worktree';
 
+export type ComposerWorkspaceSheetOpenIntent = 'toggle' | 'switch';
+
 export class MobileProjectsStickyComposerWorkspaceUi {
     private workspaceSheetAnchor: HTMLElement | undefined;
     private workspacePopoverCleanup: (() => void) | undefined;
@@ -107,7 +114,56 @@ export class MobileProjectsStickyComposerWorkspaceUi {
     }
 
     protected shouldUseWorkspacePopover(anchor?: HTMLElement): anchor is HTMLElement {
-        return shouldUseStickyComposerDesktopPopover(anchor);
+        return shouldUseStickyComposerPopover(anchor);
+    }
+
+    protected shouldToggleCloseComposerWorkspaceSheet(
+        anchor: HTMLElement | undefined,
+        intent: ComposerWorkspaceSheetOpenIntent,
+    ): boolean {
+        return intent === 'toggle'
+            && this.shouldUseWorkspacePopover(anchor)
+            && this.workspaceSheetAnchor === anchor
+            && !!this.host.stickyComposerWorkspaceSheet;
+    }
+
+    protected appendComposerWorkspaceSheetNavIfHeader(
+        panel: HTMLElement,
+        project: MobileProjectEntry,
+        active: ComposerWorkspaceSheetNavKind,
+        transcriptOverlay: boolean,
+        anchor?: HTMLElement,
+    ): void {
+        if (!isWorkHubHeaderProjectPopoverAnchor(anchor)) {
+            return;
+        }
+        const header = panel.querySelector('.theia-mobile-sticky-composer-sheet-header');
+        const nav = createComposerWorkspaceSheetNavGroup({
+            active,
+            destinationIconClass: this.resolveComposerWorkspaceDestinationIconClass(project),
+            onSelect: kind => {
+                if (kind === active) {
+                    return;
+                }
+                const intent: ComposerWorkspaceSheetOpenIntent = 'switch';
+                switch (kind) {
+                    case 'project':
+                        this.openComposerWorkspaceProjectSheet(project, transcriptOverlay, anchor, intent);
+                        break;
+                    case 'branch':
+                        this.openComposerWorkspaceBranchSheet(project, transcriptOverlay, anchor, intent);
+                        break;
+                    case 'destination':
+                        this.openComposerWorkspaceDestinationSheet(project, transcriptOverlay, anchor, intent);
+                        break;
+                }
+            },
+        });
+        if (header) {
+            header.after(nav);
+        } else {
+            panel.prepend(nav);
+        }
     }
 
     protected syncWorkspacePopoverPosition(): void {
@@ -263,10 +319,9 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         project: MobileProjectEntry,
         transcriptOverlay = false,
         anchor?: HTMLElement,
+        intent: ComposerWorkspaceSheetOpenIntent = 'toggle',
     ): void {
-        if (this.shouldUseWorkspacePopover(anchor)
-            && this.workspaceSheetAnchor === anchor
-            && this.host.stickyComposerWorkspaceSheet) {
+        if (this.shouldToggleCloseComposerWorkspaceSheet(anchor, intent)) {
             this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
             return;
         }
@@ -280,6 +335,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             nls.localize('qaap/composerWorkspace/projectSheetTitle', 'Project'),
             onClose,
         ));
+        this.appendComposerWorkspaceSheetNavIfHeader(panel, project, 'project', transcriptOverlay, anchor);
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-sticky-composer-sheet-list';
@@ -350,10 +406,9 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         project: MobileProjectEntry,
         transcriptOverlay = false,
         anchor?: HTMLElement,
+        intent: ComposerWorkspaceSheetOpenIntent = 'toggle',
     ): void {
-        if (this.shouldUseWorkspacePopover(anchor)
-            && this.workspaceSheetAnchor === anchor
-            && this.host.stickyComposerWorkspaceSheet) {
+        if (this.shouldToggleCloseComposerWorkspaceSheet(anchor, intent)) {
             this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
             return;
         }
@@ -367,6 +422,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             nls.localize('qaap/composerWorkspace/destinationSheetTitle', 'Run in'),
             onClose,
         ));
+        this.appendComposerWorkspaceSheetNavIfHeader(panel, project, 'destination', transcriptOverlay, anchor);
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-sticky-composer-sheet-list';
@@ -483,10 +539,9 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         project: MobileProjectEntry,
         transcriptOverlay = false,
         anchor?: HTMLElement,
+        intent: ComposerWorkspaceSheetOpenIntent = 'toggle',
     ): void {
-        if (this.shouldUseWorkspacePopover(anchor)
-            && this.workspaceSheetAnchor === anchor
-            && this.host.stickyComposerWorkspaceSheet) {
+        if (this.shouldToggleCloseComposerWorkspaceSheet(anchor, intent)) {
             this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
             return;
         }
@@ -500,6 +555,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             nls.localize('qaap/composerWorkspace/branchSheetTitle', 'Branch'),
             onClose,
         ));
+        this.appendComposerWorkspaceSheetNavIfHeader(panel, project, 'branch', transcriptOverlay, anchor);
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-sticky-composer-sheet-list';

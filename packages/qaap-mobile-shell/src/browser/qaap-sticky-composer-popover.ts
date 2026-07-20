@@ -33,14 +33,22 @@ export function isStickyComposerAnnotationPopoverAnchor(anchor?: HTMLElement): a
         && anchor.closest('.qaap-preview-annotation-popover') instanceof HTMLElement;
 }
 
+/** Work Hub header project control — always open as a top-anchored popover. */
+export function isWorkHubHeaderProjectPopoverAnchor(anchor?: HTMLElement): anchor is HTMLElement {
+    return anchor instanceof HTMLElement
+        && anchor.classList.contains('theia-mobile-projects-header-project');
+}
+
 /**
  * Prefer an anchored sheet popover when the viewport is wide enough for desktop
- * chrome, or when the control lives inside the annotation comment popover
- * (narrow preview must not take over the Work Hub with a full-screen sheet).
+ * chrome, when the control lives inside the annotation comment popover
+ * (narrow preview must not take over the Work Hub with a full-screen sheet),
+ * or when opening from the Work Hub header project button.
  */
 export function shouldUseStickyComposerPopover(anchor?: HTMLElement): anchor is HTMLElement {
     return shouldUseStickyComposerDesktopPopover(anchor)
-        || isStickyComposerAnnotationPopoverAnchor(anchor);
+        || isStickyComposerAnnotationPopoverAnchor(anchor)
+        || isWorkHubHeaderProjectPopoverAnchor(anchor);
 }
 
 function getStickyComposerViewportBounds(): StickyComposerViewportBounds {

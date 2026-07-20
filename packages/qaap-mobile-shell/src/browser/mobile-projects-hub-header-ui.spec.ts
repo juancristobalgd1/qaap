@@ -42,8 +42,13 @@ describe('MobileProjectsHubHeaderUi', () => {
     }): MobileProjectsHubHeaderHost {
         const shellProject = options?.shellProject;
         const activeTab = options?.activeTab ?? 'messages';
+        const headerProjectBtn = document.createElement('button');
+        const headerProjectLabelEl = document.createElement('span');
+        headerProjectBtn.append(headerProjectLabelEl);
         return {
             sessionsMenuBtn: document.createElement('button'),
+            headerProjectBtn,
+            headerProjectLabelEl,
             headerNewChatBtn: document.createElement('button'),
             headerOverflowMenuBtn: document.createElement('button'),
             headerBackBtn: document.createElement('button'),
@@ -57,10 +62,17 @@ describe('MobileProjectsHubHeaderUi', () => {
             agentsHubShellActive: options?.agentsHubShellActive ?? false,
             transcriptOpenProject: options?.transcriptOpenProject,
             transcriptOpenSummary: undefined,
+            projects: shellProject || options?.transcriptOpenProject
+                ? [shellProject, options?.transcriptOpenProject].filter((entry): entry is MobileProjectEntry => !!entry)
+                : [],
             isProjectDetailView: () => false,
             isProjectDiffView: () => false,
             shouldUseAgentsHubLanding: () => true,
             resolveAgentsHubShellProject: () => shellProject,
+            resolveHomePinnedProject: () => shellProject ?? options?.transcriptOpenProject,
+            composerHeaderUi: {
+                resolveStickyComposerProject: (projects: MobileProjectEntry[]) => projects[0],
+            } as unknown as MobileProjectsHubHeaderHost['composerHeaderUi'],
             hubQueryUi: {} as MobileProjectsHubHeaderHost['hubQueryUi'],
             projectNavigationUi: {} as MobileProjectsHubHeaderHost['projectNavigationUi'],
             transcriptHeaderUi: {} as MobileProjectsHubHeaderHost['transcriptHeaderUi'],
@@ -190,6 +202,46 @@ describe('MobileProjectsHubHeaderUi', () => {
 
             expect(host.titleEl.classList.contains('theia-mod-sr-only')).to.equal(true);
             expect(host.titleEl.textContent).to.equal('Agents');
+        });
+
+        it('shows the header project control with the conversation title beside the folder', () => {
+            const p = project('mockup', 'Mockup');
+            const summary = {
+                id: 'test-id',
+                title: 'Corrige aislamiento de pre',
+            } as MobileProjectsHubHeaderHost['transcriptOpenSummary'];
+            const host = createRenderableHost({
+                agentsHubInlineActive: true,
+                transcriptOpenProject: p,
+                transcriptOpenSummary: summary,
+                transcriptTitle: 'Mockup · Corrige aislamiento de pre',
+            });
+            host.projects = [p];
+            host.resolveHomePinnedProject = () => p;
+            host.composerHeaderUi = {
+                resolveStickyComposerProject: () => p,
+            } as unknown as MobileProjectsHubHeaderHost['composerHeaderUi'];
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            expect(host.headerProjectBtn.hidden).to.equal(false);
+            expect(host.headerProjectLabelEl.textContent).to.equal('Corrige aislamiento de pre');
+            expect(host.headerProjectBtn.getAttribute('aria-label')).to.contain('Mockup');
+        });
+
+        it('shows the active project name in the header project control on Agents landing', () => {
+            const p = project('mockup', 'Mockup');
+            const host = createRenderableHost({ useAgentsHubLanding: true });
+            host.projects = [p];
+            host.resolveHomePinnedProject = () => p;
+            host.composerHeaderUi = {
+                resolveStickyComposerProject: () => p,
+            } as unknown as MobileProjectsHubHeaderHost['composerHeaderUi'];
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            expect(host.headerProjectBtn.hidden).to.equal(false);
+            expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
         });
 
         it('keeps titles visible on non-Agents surfaces', () => {

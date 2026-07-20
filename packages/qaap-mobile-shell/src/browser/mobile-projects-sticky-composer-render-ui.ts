@@ -536,14 +536,6 @@ export class MobileProjectsStickyComposerRenderUi {
                     anchor,
                 );
             },
-            showWorkspaceBar: this.host.composerHeaderUi.shouldShowComposerWorkspaceBar(),
-            workspaceDestination: {
-                label: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestinationLabel(project),
-                iconClass: this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestinationIconClass(project),
-                onOpen: anchor => {
-                    this.host.stickyComposerWorkspaceUi.openComposerWorkspaceDestinationSheet(project, false, anchor);
-                },
-            },
         });
         const modeHint = describeComposerInteractionMode(this.host.stickyComposerModeId);
         if (modeHint) {

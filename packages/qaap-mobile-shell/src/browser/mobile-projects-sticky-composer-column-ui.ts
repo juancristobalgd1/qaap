@@ -26,11 +26,6 @@ import {
     type StickyComposerContextChipView,
 } from './qaap-sticky-composer-context-ui';
 import {
-    appendStickyComposerWorkspaceContextField,
-    createStickyComposerWorkspacePill,
-    renderStickyComposerWorkspaceBar,
-} from './qaap-sticky-composer-workspace-bar';
-import {
     createContextUsageIndicatorBadge,
 } from './qaap-chat-context-usage-indicator';
 import type { StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
@@ -104,13 +99,6 @@ export class MobileProjectsStickyComposerColumnUi {
         getSkillNames?: () => readonly string[];
         onContextUsageBadgeMounted?: (badge: HTMLButtonElement) => void;
         onOpenContextUsageSheet?: (anchor: HTMLButtonElement) => void;
-        showWorkspaceBar?: boolean;
-        /** "Run in" destination pill (Local / New Worktree) — only on the new-task composer. */
-        workspaceDestination?: {
-            readonly label: string;
-            readonly iconClass: string;
-            readonly onOpen: (anchor: HTMLButtonElement) => void;
-        };
         transcriptOverlay?: boolean;
     }): HTMLElement {
         const column = document.createElement('div');
@@ -147,10 +135,11 @@ export class MobileProjectsStickyComposerColumnUi {
             options.onAttach(attachBtn);
         });
 
-        const controlsLeftItems: HTMLElement[] = [];
+        let approvalBtn: HTMLButtonElement | undefined;
+        let bindApprovalPolicyClick: (() => void) | undefined;
         if (options.approvalPolicyId && options.onOpenApprovalPolicySheet) {
             const approvalPolicy = resolveAgentApprovalPolicyOption(options.approvalPolicyId);
-            const approvalBtn = document.createElement('button');
+            approvalBtn = document.createElement('button');
             approvalBtn.type = 'button';
             approvalBtn.className = 'theia-mobile-projects-sticky-composer-approval-policy';
             approvalBtn.title = nls.localize(
@@ -162,12 +151,14 @@ export class MobileProjectsStickyComposerColumnUi {
             approvalBtn.setAttribute('aria-haspopup', 'dialog');
             populateApprovalPolicyToolbarButton(approvalBtn, approvalPolicy);
             const approvalButton = approvalBtn;
-            bindStickyComposerControlClick(approvalBtn, ev => {
-                this.openComposerControlSheet(ev, input, () => options.onOpenApprovalPolicySheet!(approvalButton));
-            });
-            controlsLeftItems.push(approvalBtn);
+            bindApprovalPolicyClick = () => {
+                bindStickyComposerControlClick(approvalButton, ev => {
+                    this.openComposerControlSheet(ev, input, () => options.onOpenApprovalPolicySheet!(approvalButton));
+                });
+            };
         }
 
+        const controlsLeftItems: HTMLElement[] = [];
         const agentBtn = document.createElement('button');
         agentBtn.type = 'button';
         agentBtn.className = 'theia-mobile-projects-sticky-composer-agent';
@@ -193,8 +184,8 @@ export class MobileProjectsStickyComposerColumnUi {
             agentBtn.classList.add('theia-mod-locked');
             agentBtn.disabled = true;
         }
+        controlsLeftItems.push(agentBtn);
 
-        const toolbarItems: HTMLElement[] = [];
         const modes = options.modes ?? [];
         let modeBtn: HTMLButtonElement | undefined;
         if (modes.length > 1 && options.onOpenModeSheet && options.resolveModeLabel) {
@@ -212,31 +203,12 @@ export class MobileProjectsStickyComposerColumnUi {
             });
         }
 
-        const contextFields = document.createElement('div');
-        contextFields.className = 'theia-mobile-projects-sticky-composer-context-fields';
-        const agentField = document.createElement('div');
-        agentField.className = 'theia-mobile-projects-sticky-composer-context-field theia-mod-agent';
-        if (options.showWorkspaceBar) {
-            wrap.classList.add('theia-mod-workspace-context');
-            const workspaceView = this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceBarView(options.project);
-            const projectPill = createStickyComposerWorkspacePill({
-                iconClass: 'codicon-folder',
-                label: workspaceView.projectName,
-                ariaLabel: nls.localize('qaap/composerWorkspace/projectAria', 'Project: {0}', workspaceView.projectName),
-                fieldKind: 'project',
-                onClick: anchor => {
-                    this.host.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(
-                        options.project,
-                        options.transcriptOverlay === true,
-                        anchor,
-                    );
-                },
-            });
-            const projectField = document.createElement('div');
-            projectField.className = 'theia-mobile-projects-sticky-composer-context-field theia-mod-project';
-            projectField.append(projectPill);
-            contextFields.append(projectField);
-            toolbar.classList.add('theia-mod-has-workspace-pill', 'theia-mod-workspace-context-tray');
+        const toolbarItems: HTMLElement[] = [];
+        if (modeBtn) {
+            toolbarItems.push(modeBtn);
+        }
+        if (approvalBtn) {
+            toolbarItems.push(approvalBtn);
         }
 
         toolbar.append(...toolbarItems);
@@ -244,15 +216,8 @@ export class MobileProjectsStickyComposerColumnUi {
         usageBadge.classList.add('theia-mobile-projects-sticky-composer-context-usage');
         const trayRight = document.createElement('div');
         trayRight.className = 'theia-mobile-projects-sticky-composer-tray-right';
-        agentBtn.classList.add('theia-mod-field-agent');
-        agentField.append(agentBtn, usageBadge);
-        if (options.showWorkspaceBar) {
-            contextFields.append(agentField);
-            toolbar.prepend(contextFields);
-        } else {
-            trayRight.append(agentBtn, usageBadge);
-            toolbar.append(trayRight);
-        }
+        trayRight.append(usageBadge);
+        toolbar.append(trayRight);
 
         const stage = document.createElement('div');
         stage.className = 'theia-mobile-projects-sticky-composer-stage';
@@ -273,6 +238,7 @@ export class MobileProjectsStickyComposerColumnUi {
         );
         input.value = options.getDraft();
         input.disabled = !options.canSubmit;
+        bindApprovalPolicyClick?.();
 
         const sendBtn = document.createElement('button');
         sendBtn.type = 'button';
@@ -493,9 +459,6 @@ export class MobileProjectsStickyComposerColumnUi {
 
         inputBody.append(inputEditor);
         controlsLeft.append(attachBtn);
-        if (modeBtn) {
-            controlsLeft.append(modeBtn);
-        }
         for (const item of controlsLeftItems) {
             controlsLeft.append(item);
         }
@@ -543,40 +506,6 @@ export class MobileProjectsStickyComposerColumnUi {
         card.append(stage);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
         wrap.append(card);
-        if (options.showWorkspaceBar) {
-            wrap.classList.add('theia-mod-workspace-bar-below');
-            const workspaceView = this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceBarView(options.project);
-            const workspaceBar = renderStickyComposerWorkspaceBar({
-                view: workspaceView,
-                includeProject: false,
-                includeBranch: true,
-                onOpenProject: anchor => {
-                    this.host.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(
-                        options.project,
-                        options.transcriptOverlay === true,
-                        anchor,
-                    );
-                },
-                onOpenBranch: anchor => {
-                    this.host.stickyComposerWorkspaceUi.openComposerWorkspaceBranchSheet(
-                        options.project,
-                        options.transcriptOverlay === true,
-                        anchor,
-                    );
-                },
-            });
-            if (options.workspaceDestination) {
-                const destinationPill = createStickyComposerWorkspacePill({
-                    iconClass: options.workspaceDestination.iconClass,
-                    label: options.workspaceDestination.label,
-                    ariaLabel: nls.localize('qaap/composerWorkspace/destinationAria', 'Run in: {0}', options.workspaceDestination.label),
-                    fieldKind: 'destination',
-                    onClick: anchor => options.workspaceDestination!.onOpen(anchor),
-                });
-                appendStickyComposerWorkspaceContextField(workspaceBar, destinationPill, 'destination', { divider: false });
-            }
-            wrap.append(workspaceBar);
-        }
         column.append(wrap);
         return column;
     }

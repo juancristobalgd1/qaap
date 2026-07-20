@@ -86,9 +86,9 @@ export class MobileProjectsComposerHeaderUi {
         this.host.root.style.setProperty('--theia-mobile-projects-fab-lift', `${lift}px`);
     }
 
-    /** Branch (+ project tray) stay visible for idle and active conversations; only the destination pill is idle-only. */
+    /** Project / branch / destination live in the Work Hub header project menu — not in the sticky composer. */
     shouldShowComposerWorkspaceBar(_summary?: QaapAgentConversationSummaryDTO): boolean {
-        return true;
+        return false;
     }
 
     pinStickyComposerToQaiq(cwd: string | undefined): void {

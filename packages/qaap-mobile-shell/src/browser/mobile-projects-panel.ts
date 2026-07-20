@@ -506,6 +506,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly titleAttentionEl: HTMLSpanElement;
     protected readonly headerBackBtn: HTMLButtonElement;
     protected readonly sessionsMenuBtn: HTMLButtonElement;
+    protected readonly headerProjectBtn: HTMLButtonElement;
+    protected readonly headerProjectLabelEl: HTMLSpanElement;
     protected readonly headerNewChatBtn: HTMLButtonElement;
     protected readonly headerOverflowMenuBtn: HTMLButtonElement;
     protected readonly newFabBtn: HTMLButtonElement;
@@ -1706,6 +1708,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async onHeaderNewChatClick(): Promise<void> {
         await this.onWorkHubSessionsSidebarNewChat();
+    }
+
+    protected onHeaderProjectClick(anchor: HTMLButtonElement): void {
+        const project = this.hubHeaderUi.resolveHeaderProject();
+        if (!project) {
+            return;
+        }
+        this.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(project, false, anchor);
     }
 
     protected syncHeaderIdeViewPicker(): void {

@@ -23,6 +23,8 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         if (typeof document === 'undefined') {
             enableJSDOM();
         }
+        // Node's AbortSignal is incompatible with jsdom addEventListener({ signal }).
+        globalThis.AbortController = window.AbortController;
         document.body.replaceChildren();
         if (!HTMLElement.prototype.scrollTo) {
             HTMLElement.prototype.scrollTo = () => undefined;
@@ -119,6 +121,145 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
             'Current',
             'Next',
         ]);
+    });
+
+    it('opens the project menu as a top popover when anchored to the Work Hub header control', () => {
+        const projects = [project('current', 'Current', true)];
+        const host = createHost(projects);
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+        const anchor = document.createElement('button');
+        anchor.className = 'theia-mobile-projects-header-project';
+        document.body.append(anchor);
+        const matchMedia = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            matches: String(query).includes('max-width'),
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        })) as typeof window.matchMedia;
+
+        ui.openComposerWorkspaceProjectSheet(projects[0], false, anchor);
+
+        expect(host.stickyComposerWorkspaceSheet?.classList.contains('qaap-sticky-composer-sheet-popover')).to.equal(true);
+        window.matchMedia = matchMedia;
+        anchor.remove();
+    });
+
+    it('renders Project, Branch, and Run in nav when opened from the Work Hub header', () => {
+        const projects = [project('current', 'Current', true)];
+        const host = createHost(projects);
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+        const anchor = document.createElement('button');
+        anchor.className = 'theia-mobile-projects-header-project';
+        document.body.append(anchor);
+        const matchMedia = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            matches: String(query).includes('max-width'),
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        })) as typeof window.matchMedia;
+
+        ui.openComposerWorkspaceProjectSheet(projects[0], false, anchor);
+
+        const nav = document.body.querySelector('.theia-mobile-composer-workspace-sheet-nav [role="group"]');
+        expect(nav).to.not.equal(null);
+        const labels = [...document.body.querySelectorAll<HTMLButtonElement>(
+            '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option',
+        )].map(btn => btn.textContent?.trim());
+        expect(labels).to.deep.equal(['Project', 'Branch', 'Run in']);
+        const projectBtn = document.body.querySelector<HTMLButtonElement>(
+            '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option.theia-mod-selected',
+        );
+        expect(projectBtn?.textContent?.trim()).to.equal('Project');
+        expect(projectBtn?.querySelector('.codicon-folder')).to.not.equal(null);
+        expect(document.body.querySelector(
+            '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Branch"] .codicon-git-branch',
+        )).to.not.equal(null);
+        expect(document.body.querySelector(
+            '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Run in"] .codicon-device-desktop',
+        )).to.not.equal(null);
+        expect(projectBtn?.getAttribute('aria-pressed')).to.equal('true');
+        window.matchMedia = matchMedia;
+        anchor.remove();
+    });
+
+    it('header nav Branch and Run in buttons invoke the same workspace sheet openers', () => {
+        const projects = [project('current', 'Current', true)];
+        const host = createHost(projects);
+        host.stickyComposerSheetsUi = {
+            closeStickyComposerSheets: () => {
+                host.stickyComposerWorkspaceSheet?.remove();
+                host.stickyComposerWorkspaceSheet = undefined;
+            },
+        } as unknown as MobileProjectsStickyComposerWorkspaceHost['stickyComposerSheetsUi'];
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+        const anchor = document.createElement('button');
+        anchor.className = 'theia-mobile-projects-header-project';
+        document.body.append(anchor);
+        const matchMedia = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            matches: String(query).includes('max-width'),
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        })) as typeof window.matchMedia;
+
+        let openedBranch = 0;
+        let openedDestination = 0;
+        const originalOpenBranch = ui.openComposerWorkspaceBranchSheet.bind(ui);
+        const originalOpenDestination = ui.openComposerWorkspaceDestinationSheet.bind(ui);
+        ui.openComposerWorkspaceBranchSheet = (projectEntry, transcriptOverlay, sheetAnchor, intent) => {
+            openedBranch += 1;
+            expect(projectEntry.id).to.equal('current');
+            expect(sheetAnchor).to.equal(anchor);
+            expect(intent).to.equal('switch');
+            originalOpenBranch(projectEntry, transcriptOverlay, sheetAnchor, intent);
+        };
+        ui.openComposerWorkspaceDestinationSheet = (projectEntry, transcriptOverlay, sheetAnchor, intent) => {
+            openedDestination += 1;
+            expect(projectEntry.id).to.equal('current');
+            expect(sheetAnchor).to.equal(anchor);
+            expect(intent).to.equal('switch');
+            originalOpenDestination(projectEntry, transcriptOverlay, sheetAnchor, intent);
+        };
+
+        ui.openComposerWorkspaceProjectSheet(projects[0], false, anchor);
+        document.body.querySelector<HTMLButtonElement>(
+            '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Branch"]',
+        )?.click();
+        document.body.querySelector<HTMLButtonElement>(
+            '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Run in"]',
+        )?.click();
+
+        expect(openedBranch).to.equal(1);
+        expect(openedDestination).to.equal(1);
+        expect(host.stickyComposerWorkspaceSheet?.querySelector('.theia-mobile-sticky-composer-sheet-header h2')?.textContent?.trim())
+            .to.equal('Run in');
+        window.matchMedia = matchMedia;
+        anchor.remove();
+    });
+
+    it('does not render header workspace nav for bottom-sheet project picker', () => {
+        const projects = [project('current', 'Current', true)];
+        const host = createHost(projects);
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+
+        ui.openComposerWorkspaceProjectSheet(projects[0]);
+
+        expect(document.body.querySelector('.theia-mobile-composer-workspace-sheet-nav')).to.equal(null);
     });
 
     it('selectComposerWorkspaceProject opens an existing conversation when switching inline projects', async () => {

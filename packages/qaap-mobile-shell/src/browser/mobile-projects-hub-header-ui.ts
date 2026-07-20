@@ -15,6 +15,8 @@ import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcri
 
 export interface MobileProjectsHubHeaderHost {
     sessionsMenuBtn: HTMLButtonElement;
+    headerProjectBtn: HTMLButtonElement;
+    headerProjectLabelEl: HTMLSpanElement;
     headerNewChatBtn: HTMLButtonElement;
     headerOverflowMenuBtn: HTMLButtonElement;
     headerBackBtn: HTMLButtonElement;
@@ -28,11 +30,14 @@ export interface MobileProjectsHubHeaderHost {
     agentsHubShellActive: boolean;
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
+    projects: MobileProjectEntry[];
 
     isProjectDetailView(): boolean;
     isProjectDiffView(): boolean;
     shouldUseAgentsHubLanding(): boolean;
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
+    resolveHomePinnedProject(): MobileProjectEntry | undefined;
+    composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
@@ -64,6 +69,7 @@ export class MobileProjectsHubHeaderUi {
             && !inProjectDiff;
         this.host.sessionsMenuBtn.hidden = !showSessionsMenu;
         this.host.sessionsMenuBtn.setAttribute('aria-hidden', showSessionsMenu ? 'false' : 'true');
+        this.syncHeaderProjectControl(showSessionsMenu);
         const showNewChatBtn = showSessionsMenu && this.resolveHeaderNewChatVisible();
         this.host.headerNewChatBtn.hidden = !showNewChatBtn;
         this.host.headerNewChatBtn.setAttribute('aria-hidden', showNewChatBtn ? 'false' : 'true');
@@ -153,6 +159,49 @@ export class MobileProjectsHubHeaderUi {
         }
         this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/title', 'Work Hub');
         this.syncAgentsHubAccountChrome();
+    }
+
+    syncHeaderProjectControl(showSessionsMenu: boolean): void {
+        const project = this.resolveHeaderProject();
+        const sectionTitle = this.resolveHeaderProjectSectionTitle(project);
+        const showProject = showSessionsMenu && !!project && sectionTitle.length > 0;
+        this.host.headerProjectBtn.hidden = !showProject;
+        this.host.headerProjectBtn.setAttribute('aria-hidden', showProject ? 'false' : 'true');
+        this.host.headerProjectLabelEl.textContent = sectionTitle;
+        if (!showProject || !project) {
+            return;
+        }
+        const aria = nls.localize('qaap/composerWorkspace/projectAria', 'Project: {0}', project.name);
+        this.host.headerProjectBtn.title = aria;
+        this.host.headerProjectBtn.setAttribute('aria-label', aria);
+    }
+
+    resolveHeaderProject(): MobileProjectEntry | undefined {
+        if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject) {
+            return this.host.transcriptOpenProject;
+        }
+        if (this.host.agentsHubShellActive) {
+            const shellProject = this.host.resolveAgentsHubShellProject();
+            if (shellProject) {
+                return shellProject;
+            }
+        }
+        return this.host.composerHeaderUi.resolveStickyComposerProject(this.host.projects)
+            ?? this.host.resolveHomePinnedProject();
+    }
+
+    /**
+     * Short section label next to the folder control: conversation title when a session is open,
+     * otherwise the active project name.
+     */
+    resolveHeaderProjectSectionTitle(project: MobileProjectEntry | undefined): string {
+        if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummary) {
+            const conversationTitle = this.host.transcriptOpenSummary.title?.trim();
+            if (conversationTitle) {
+                return conversationTitle;
+            }
+        }
+        return project?.name?.trim() ?? '';
     }
 
     resolveHeaderNewChatVisible(): boolean {
