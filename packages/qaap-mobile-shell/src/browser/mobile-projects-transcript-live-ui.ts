@@ -112,6 +112,7 @@ export interface MobileProjectsTranscriptLiveHost {
     transcriptComposerSendRefresh: (() => void) | undefined;
     transcriptPreviewRequestPending: boolean;
     transcriptPreviewRequestRunning: boolean;
+    transcriptPreviewSuppressedByUser: boolean;
     transcriptApprovalRefreshTimer: number | undefined;
     cachedAgentApprovals: import('../common/qaap-agent-approval-client').QaapAgentApprovalRequestDTO[];
     projectsService: MobileProjectsService;
@@ -809,11 +810,15 @@ export class MobileProjectsTranscriptLiveUi {
         this.transcriptPreviewPollMisses = 0;
         const project = this.host.transcriptOpenProject;
         const summary = this.host.transcriptOpenSummary;
-        if (messageRequestsDevPreview(content) && project && summary) {
+        if (messageRequestsDevPreview(content) && project && summary && !this.host.transcriptPreviewSuppressedByUser) {
             this.host.transcriptPreviewRequestPending = true;
             this.host.beginTranscriptDevPreviewRequest(project, summary);
         }
-        this.ensureTranscriptDevPreviewWatch(conv, { restartPreviewPoll: true });
+        if (!this.host.transcriptPreviewSuppressedByUser) {
+            this.ensureTranscriptDevPreviewWatch(conv, { restartPreviewPoll: true });
+        } else {
+            this.stopTranscriptPreviewOfferRefresh();
+        }
     }
 
     maybeSyncTranscriptVisuallySettledChrome(conv: QaapAgentConversationDTO): void {

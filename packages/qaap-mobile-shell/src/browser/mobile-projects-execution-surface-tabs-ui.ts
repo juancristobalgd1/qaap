@@ -230,6 +230,11 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         this.host.stickyComposerRenderUi.renderStickyComposer();
         this.syncExecutionSurfaceChrome(project);
         this.host.renderHeader();
+        if (tab === 'preview') {
+            this.host.transcriptSurfacesUi.syncHeaderPreviewRunButton(project, summary);
+        } else {
+            this.host.transcriptSurfacesUi.hideHeaderPreviewRunButton();
+        }
     }
 
     /** Hide all execution surfaces; reveal exactly one tab. */
@@ -372,6 +377,8 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             this.host.headerExecutionTabsHost.replaceChildren();
             this.host.projectDetailTabStrip = undefined;
             this.host.headerExecutionTabsProjectId = undefined;
+            // Do not hide the preview-run control here — hub re-renders call this with no
+            // project detail selection even while an Agents Hub Preview session is open.
             return;
         }
         this.host.headerExecutionTabsHost.hidden = false;

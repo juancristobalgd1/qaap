@@ -104,6 +104,7 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             transcriptComposerSendRefresh: undefined,
             transcriptPreviewRequestPending: false,
             transcriptPreviewRequestRunning: false,
+            transcriptPreviewSuppressedByUser: false,
             transcriptApprovalRefreshTimer: undefined,
             cachedAgentApprovals: [approval()],
             projectsService: {} as MobileProjectsTranscriptLiveHost['projectsService'],

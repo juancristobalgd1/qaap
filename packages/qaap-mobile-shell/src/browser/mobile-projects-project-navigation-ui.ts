@@ -35,6 +35,7 @@ export interface MobileProjectsProjectNavigationHost {
     } | undefined;
     headerExecutionTabsProjectId: string | undefined;
     headerExecutionTabsHost: HTMLElement;
+    headerPreviewRunHost: HTMLElement;
     projects: MobileProjectEntry[];
     projectsService: MobileProjectsService;
     commands: CommandRegistry;
@@ -51,6 +52,7 @@ export interface MobileProjectsProjectNavigationHost {
     closeCardMenu(): void;
     stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
+    transcriptSurfacesUi: import('./mobile-projects-transcript-surfaces-ui').MobileProjectsTranscriptSurfacesUi;
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     render(): void;
     syncLandingHubListChrome(): void;
@@ -139,6 +141,8 @@ export class MobileProjectsProjectNavigationUi {
         this.host.headerExecutionTabsProjectId = undefined;
         this.host.headerExecutionTabsHost.hidden = true;
         this.host.headerExecutionTabsHost.replaceChildren();
+        this.host.transcriptSurfacesUi.hideHeaderPreviewRunButton();
+        this.host.headerPreviewRunHost.replaceChildren();
     }
 
     resolveSelectedProject(

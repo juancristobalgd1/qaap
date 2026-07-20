@@ -86,6 +86,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptUi: MobileProjectsTranscriptUi;
     tasksHubUi: MobileProjectsTasksHubUi;
     headerExecutionTabsHost: HTMLElement;
+    headerPreviewRunHost: HTMLElement;
     preparedCwdByProjectId: Map<string, string>;
     projectsService: MobileProjectsService;
 
@@ -96,6 +97,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
     transcriptMessagesUi: MobileProjectsTranscriptMessagesUi;
+    transcriptSurfacesUi: import('./mobile-projects-transcript-surfaces-ui').MobileProjectsTranscriptSurfacesUi;
     renderHeader(): void;
     renderSubtitle(): void;
     renderList(): void;
@@ -552,6 +554,7 @@ export class MobileProjectsAgentsHubInlineUi {
                 this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
             }
             this.host.executionSurfaceTabsUi.syncExecutionSurfaceChrome(project);
+            this.host.transcriptSurfacesUi.syncHeaderPreviewRunButton(project, summary);
             this.host.root.classList.add('theia-mod-agents-hub-inline-active');
             this.host.root.classList.add('theia-mod-agents-hub-shell-active');
             return;
@@ -565,6 +568,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
         this.host.executionSurfaceTabsUi.syncExecutionSurfaceChrome(project);
+        this.host.transcriptSurfacesUi.syncHeaderPreviewRunButton(project, summary);
         this.host.root.classList.add('theia-mod-agents-hub-inline-active');
         this.host.root.classList.add('theia-mod-agents-hub-shell-active');
     }
@@ -603,6 +607,8 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.agentsHubInlineTranscriptRoot = undefined;
         this.host.headerExecutionTabsHost.hidden = true;
         this.host.headerExecutionTabsHost.replaceChildren();
+        this.host.transcriptSurfacesUi.hideHeaderPreviewRunButton();
+        this.host.headerPreviewRunHost.replaceChildren();
         if (this.host.transcriptPlanHost) {
             this.host.transcriptPlanHost.remove();
             this.host.transcriptReviewHost?.remove();

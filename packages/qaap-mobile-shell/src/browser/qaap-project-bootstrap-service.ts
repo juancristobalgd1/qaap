@@ -873,6 +873,28 @@ export class QaapProjectBootstrapService {
         }
     }
 
+    /**
+     * Cancels an in-flight install/dev launch and tears down the active preview terminal for the
+     * current conversation. Used when the Work Hub header Stop control is pressed.
+     */
+    cancelActivePreviewLaunch(): void {
+        this.devRunGeneration++;
+        this.installGeneration++;
+        this.releaseActivePreview();
+        this.cancelDevPreviewFallbacks();
+        this.cancelDevPreviewHealthMonitor();
+        this.cleanupDevTerminal();
+        this.disposeBootstrapTerminal(this.installTerminal);
+        this.installTerminal = undefined;
+        this.devTerminalConversationId = undefined;
+        this._previewUrl = undefined;
+        this._error = undefined;
+        this._needsInstall = false;
+        if (this._phase === 'installing' || this._phase === 'starting' || this._phase === 'running') {
+            this.setPhase(this._descriptor?.nodeModulesPresent ? 'ready-to-run' : 'detected');
+        }
+    }
+
     /** User dismissed the banner; remember so we do not nag on every reload. */
     skip(): void {
         if (this._descriptor) {

@@ -114,6 +114,7 @@ export const TRANSCRIPT_OVERLAY_STATE_KEYS = [
     'transcriptTerminalSlidesByWorkspace',
     'transcriptPreviewRequestRunning',
     'transcriptPreviewRequestPending',
+    'transcriptPreviewSuppressedByUser',
     'transcriptPreviewRecoveryRequests',
     'diffReviewWidget',
     'projectDetailSurfaceTargets',
@@ -219,6 +220,8 @@ export class TranscriptOverlayState {
     readonly transcriptTerminalSlidesByWorkspace = new Map<TranscriptWorkspaceSurfaceKey, TranscriptTerminalSliderState>();
     transcriptPreviewRequestRunning = false;
     transcriptPreviewRequestPending = false;
+    /** User hit Stop — ignore in-flight bootstrap/probe remounts until Play is pressed again. */
+    transcriptPreviewSuppressedByUser = false;
     readonly transcriptPreviewRecoveryRequests = new Set<string>();
     diffReviewWidget: Widget | undefined;
     projectDetailSurfaceTargets: {

@@ -108,6 +108,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             transcriptUi: {} as MobileProjectsAgentsHubInlineHost['transcriptUi'],
             tasksHubUi: {} as MobileProjectsAgentsHubInlineHost['tasksHubUi'],
             headerExecutionTabsHost: document.createElement('div'),
+            headerPreviewRunHost: document.createElement('div'),
             preparedCwdByProjectId: new Map(),
             projectsService: {
                 resolveCurrentWorkspaceProject: () => undefined,
@@ -118,6 +119,10 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             transcriptComposerUi: {} as MobileProjectsAgentsHubInlineHost['transcriptComposerUi'],
             transcriptStickyComposerUi: {} as MobileProjectsAgentsHubInlineHost['transcriptStickyComposerUi'],
             transcriptHeaderUi: { refreshTranscriptExecutionChrome: () => undefined } as unknown as MobileProjectsAgentsHubInlineHost['transcriptHeaderUi'],
+            transcriptSurfacesUi: {
+                syncHeaderPreviewRunButton: () => undefined,
+                hideHeaderPreviewRunButton: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSurfacesUi'],
             transcriptLiveUi: {
                 clearTranscriptSemanticProgressClock: () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],

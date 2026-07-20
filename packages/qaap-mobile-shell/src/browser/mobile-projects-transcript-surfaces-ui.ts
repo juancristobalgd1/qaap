@@ -115,6 +115,7 @@ export interface MobileProjectsTranscriptSurfacesHost {
     transcriptEmbeddedPreview: EmbeddedAgentPreviewChrome | undefined;
     transcriptPreviewRequestRunning: boolean;
     transcriptPreviewRequestPending: boolean;
+    transcriptPreviewSuppressedByUser: boolean;
     readonly transcriptPreviewRecoveryRequests: Set<string>;
     transcriptHistoryPanelOpen: boolean;
     transcriptHistoryPanelHeightPx: number | undefined;
@@ -153,6 +154,8 @@ export interface MobileProjectsTranscriptSurfacesHost {
     transcriptComposerUi: MobileProjectsTranscriptComposerUi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
+    headerPreviewRunHost: HTMLElement;
+    root: HTMLElement;
 
     renderChecksSection(
         host: HTMLElement | undefined,
@@ -182,6 +185,10 @@ export interface MobileProjectsTranscriptSurfacesHost {
     onResumePreview?(project: MobileProjectEntry): void | Promise<void>;
     projectBootstrap?: QaapProjectBootstrapService;
     resolveAnnotationComposerSession(): AnnotationComposerSessionControls | undefined;
+    /** Same cancel path as the sticky-composer Stop control. */
+    onCancelConversation?(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
+    cancelOpenTranscriptStream?(): void;
+    transcriptComposerSendRefresh?: (() => void) | undefined;
 }
 
 /** Execution-surface tab content: plan, review, preview, files, and terminal. */
@@ -193,6 +200,8 @@ export class MobileProjectsTranscriptSurfacesUi {
     protected readonly previewRuntimeByConversationId = new Map<string, ConversationPreviewRuntimeState>();
     protected transcriptPreviewProjectId: string | undefined;
     protected transcriptPreviewConversationScopeId: string | undefined;
+    /** Bumped on Stop / new Play so in-flight ensureTranscriptDevPreview callbacks are ignored. */
+    protected previewLaunchGeneration = 0;
 
     constructor(
         protected readonly host: MobileProjectsTranscriptSurfacesHost,
@@ -722,6 +731,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 // Re-wire opener/scope even on same-URL remounts (controller may have been
                 // created before Work Hub comment composer was available).
                 this.wireTranscriptPreviewAnnotationScope(project, normalized);
+                this.syncHeaderPreviewRunButton(project, summary);
                 return;
             }
             this.host.transcriptEmbeddedPreview.setUrl(normalized);
@@ -730,6 +740,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             if (!host.contains(root)) {
                 host.append(root);
             }
+            this.syncHeaderPreviewRunButton(project, summary);
             return;
         }
         this.host.transcriptEmbeddedPreview = mountEmbeddedAgentPreviewChrome(host, {
@@ -749,6 +760,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         });
         this.wireTranscriptPreviewAnnotationScope(project, normalized);
         this.setMountedPreviewUrl(conversationScopeId, normalized);
+        this.syncHeaderPreviewRunButton(project, summary);
     }
 
     protected wireTranscriptPreviewAnnotationScope(project: MobileProjectEntry, previewUrl: string): void {
@@ -1197,6 +1209,13 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (!host) {
             return;
         }
+        if (this.host.transcriptPreviewSuppressedByUser) {
+            this.disposeTranscriptEmbeddedPreview();
+            host.replaceChildren();
+            this.mountTranscriptEmptyPreview(host, project, summary);
+            this.syncHeaderPreviewRunButton(project, summary);
+            return;
+        }
         this.ensurePreviewProjectContext(project);
 
         const conv = this.host.transcriptLastConv;
@@ -1366,6 +1385,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv,
         project: MobileProjectEntry | undefined = this.host.transcriptOpenProject,
     ): boolean {
+        if (this.host.transcriptPreviewSuppressedByUser) {
+            return false;
+        }
         if (this.host.transcriptPreviewRequestRunning || this.host.transcriptPreviewRequestPending) {
             return true;
         }
@@ -1381,28 +1403,193 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     findTranscriptPreviewRunButton(): HTMLButtonElement | undefined {
-        const button = this.host.transcriptEmbeddedPreview?.root.querySelector('.theia-mobile-transcript-preview-run');
-        return button instanceof HTMLButtonElement ? button : undefined;
+        const headerButton = this.host.headerPreviewRunHost.querySelector('.theia-mobile-transcript-preview-run');
+        if (headerButton instanceof HTMLButtonElement) {
+            return headerButton;
+        }
+        const overlayButton = this.host.transcriptEmbeddedPreview?.root.querySelector('.theia-mobile-transcript-preview-run');
+        return overlayButton instanceof HTMLButtonElement ? overlayButton : undefined;
+    }
+
+    /**
+     * Ensures the Preview play control is mounted and visible in the Work Hub header.
+     *
+     * Important: this method only SHOWS/updates the button. Concurrent refresh paths used to call
+     * sync with incomplete args or a briefly flipped tab and set `hidden=true`, which made the
+     * control flicker/disappear on click. Hiding is exclusive to
+     * {@link hideHeaderPreviewRunButton} (leaving the Preview tab / tearing down the shell).
+     */
+    syncHeaderPreviewRunButton(
+        project: MobileProjectEntry | undefined = this.host.transcriptOpenProject,
+        summary: QaapAgentConversationSummaryDTO | undefined = this.host.transcriptOpenSummary,
+        conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv,
+    ): void {
+        const host = this.host.headerPreviewRunHost;
+        const openProject = project ?? this.host.transcriptOpenProject;
+        const openSummary = summary ?? this.host.transcriptOpenSummary;
+        if (!openProject || !openSummary) {
+            return;
+        }
+        const onPreviewTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject) === 'preview';
+        const previewRequestInFlight = this.host.transcriptPreviewRequestRunning
+            || this.host.transcriptPreviewRequestPending;
+        if (!onPreviewTab && !previewRequestInFlight) {
+            return;
+        }
+        if (!onPreviewTab && previewRequestInFlight) {
+            // Submit / conversation-open paths may force Messages mid-request; keep Preview
+            // selected so the header play control never leaves the chrome while starting preview.
+            this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(openProject, 'preview');
+            this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('preview');
+            this.host.root.classList.toggle('theia-mod-project-surface-chat', false);
+            this.host.root.classList.toggle('theia-mod-project-surface-tools', true);
+        }
+        let button = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-run');
+        if (!button) {
+            button = this.createTranscriptPreviewRunButton(openProject, openSummary);
+            host.replaceChildren(button);
+        }
+        host.hidden = false;
+        this.applyTranscriptPreviewRunButtonState(button, openProject, openSummary, conv);
+    }
+
+    /** Hide the header play control — only when leaving Preview or tearing down the shell. */
+    hideHeaderPreviewRunButton(): void {
+        this.host.headerPreviewRunHost.hidden = true;
+    }
+
+    protected createTranscriptPreviewRunButton(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'theia-mobile-transcript-preview-run theia-mobile-transcript-preview-run--header';
+        const ring = document.createElement('span');
+        ring.className = 'theia-mobile-transcript-preview-run-ring';
+        ring.setAttribute('aria-hidden', 'true');
+        const icon = document.createElement('i');
+        icon.className = 'codicon codicon-play';
+        icon.setAttribute('aria-hidden', 'true');
+        btn.append(ring, icon);
+        const label = nls.localize('qaap/mobileProjects/previewButton', 'Vista previa');
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+        return btn;
     }
 
     updateTranscriptPreviewRunButtonState(conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv): void {
-        const button = this.findTranscriptPreviewRunButton();
-        if (!button) {
-            return;
+        this.syncHeaderPreviewRunButton(this.host.transcriptOpenProject, this.host.transcriptOpenSummary, conv);
+    }
+
+    /** True while preview is starting, probing, or already mounted live — show Stop instead of Play. */
+    protected isTranscriptPreviewStoppable(
+        conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv,
+        project: MobileProjectEntry | undefined = this.host.transcriptOpenProject,
+    ): boolean {
+        if (this.host.transcriptPreviewSuppressedByUser) {
+            return false;
         }
-        const loading = this.isTranscriptPreviewWaiting(conv);
-        button.disabled = loading;
-        button.classList.toggle('theia-mod-loading', loading);
-        const label = loading
-            ? nls.localize('qaap/mobileProjects/previewLoading', 'Loading…')
+        if (this.isTranscriptPreviewWaiting(conv, project)) {
+            return true;
+        }
+        const root = this.host.transcriptEmbeddedPreview?.root;
+        if (root?.isConnected && !root.classList.contains('theia-mod-empty-preview')) {
+            return true;
+        }
+        return !!this.mountedPreviewUrl(this.previewScopeId());
+    }
+
+    protected applyTranscriptPreviewRunButtonState(
+        button: HTMLButtonElement,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv,
+    ): void {
+        const stoppable = this.isTranscriptPreviewStoppable(conv, project);
+        const waiting = this.isTranscriptPreviewWaiting(conv, project);
+        button.disabled = false;
+        button.classList.toggle('theia-mod-loading', waiting);
+        button.classList.toggle('theia-mod-stop', stoppable);
+        const icon = button.querySelector<HTMLElement>('.codicon');
+        if (icon) {
+            icon.classList.toggle('codicon-play', !stoppable);
+            icon.classList.toggle('codicon-debug-stop', stoppable);
+        }
+        const label = stoppable
+            ? nls.localize('qaap/mobileProjects/previewStop', 'Detener vista previa')
             : nls.localize('qaap/mobileProjects/previewButton', 'Vista previa');
         button.title = label;
         button.setAttribute('aria-label', label);
-        if (loading) {
+        if (waiting) {
             button.setAttribute('aria-busy', 'true');
         } else {
             button.removeAttribute('aria-busy');
         }
+        button.onclick = () => {
+            if (this.isTranscriptPreviewStoppable(this.host.transcriptLastConv, project)) {
+                this.stopTranscriptPreview(project, summary);
+                return;
+            }
+            void this.requestTranscriptPreview(project, summary);
+        };
+    }
+
+    /** Cancel an in-flight preview start or tear down a live iframe back to the empty play state. */
+    stopTranscriptPreview(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void {
+        // Invalidate every in-flight ensure/probe/submit callback first.
+        this.previewLaunchGeneration += 1;
+        this.host.transcriptPreviewSuppressedByUser = true;
+        this.host.transcriptPreviewRequestRunning = false;
+        this.host.transcriptPreviewRequestPending = false;
+        this.transcriptPreviewEnsureRequests.clear();
+        this.stopTranscriptPreviewTabProbe();
+        this.stopTranscriptPreviewIdentityWatch();
+        this.clearPreviewRuntimeForConversation(this.previewScopeId(summary));
+        this.host.projectBootstrap?.cancelActivePreviewLaunch();
+        const cleared = { ...project, previewUrl: undefined };
+        this.host.projects = this.host.projects.map(candidate => candidate.id === cleared.id ? cleared : candidate);
+        if (this.host.transcriptOpenProject?.id === cleared.id) {
+            this.host.transcriptOpenProject = cleared;
+        }
+        this.disposeTranscriptEmbeddedPreview();
+        // Paint Play immediately — sync before remount so the icon never waits on empty chrome.
+        this.syncHeaderPreviewRunButton(cleared, summary);
+        const host = this.executionPreviewHost();
+        if (host && this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'preview') {
+            this.mountTranscriptEmptyPreview(host, cleared, summary);
+            this.syncHeaderPreviewRunButton(cleared, summary);
+        }
+        // Also stop the agent turn that was asked to prepare the preview (composer Stop).
+        this.cancelPreviewAgentTurn(project, summary);
+        MobileSnackbar.dismiss();
+        MobileSnackbar.show(
+            nls.localize('qaap/mobileProjects/previewStopped', 'Vista previa detenida'),
+            { duration: 1400 },
+        );
+    }
+
+    /**
+     * Cancels the streaming agent turn associated with a preview launch — same effect as tapping
+     * Stop in the sticky composer — so "Prepare this app for live in-IDE preview…" does not keep
+     * running after the user aborted the preview.
+     */
+    protected cancelPreviewAgentTurn(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void {
+        const openProject = this.host.transcriptOpenProject ?? project;
+        const openSummary = this.host.transcriptOpenSummary ?? summary;
+        const hasRealConversation = !!openSummary && !isAgentsHubIdleConversationSummary(openSummary);
+        if (hasRealConversation && this.host.onCancelConversation) {
+            this.host.onCancelConversation(openProject, openSummary);
+        } else {
+            this.host.cancelOpenTranscriptStream?.();
+        }
+        this.host.transcriptComposerSendRefresh?.();
     }
 
     recoverTranscriptPreviewUrl(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
@@ -1535,33 +1722,11 @@ export class MobileProjectsTranscriptSurfacesUi {
             input.value = '';
             input.placeholder = nls.localize('qaap/mobileProjects/previewUrlPlaceholder', 'Ingresa una URL');
         }
-        // Mount inside the frame slot so the play affordance never paints over the
-        // inline Element Inspector rail (sibling of the frame in `.qaap-preview-split`).
-        const frameSlot = this.host.transcriptEmbeddedPreview.root.querySelector<HTMLElement>('.qaap-preview-frame-slot')
-            ?? this.host.transcriptEmbeddedPreview.root.querySelector<HTMLElement>('.qaap-preview-content-area');
-        if (!frameSlot) {
-            return;
-        }
-        const overlay = document.createElement('div');
-        overlay.className = 'theia-mobile-transcript-preview-empty-overlay';
-        const wrap = document.createElement('div');
-        wrap.className = 'theia-mobile-transcript-preview-empty';
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'theia-mobile-transcript-preview-run';
-        const ring = document.createElement('span');
-        ring.className = 'theia-mobile-transcript-preview-run-ring';
-        ring.setAttribute('aria-hidden', 'true');
-        const icon = document.createElement('i');
-        icon.className = 'codicon codicon-play';
-        icon.setAttribute('aria-hidden', 'true');
-        btn.append(ring, icon);
-        btn.addEventListener('click', () => { void this.requestTranscriptPreview(project, summary); });
-        wrap.append(btn);
-        overlay.append(wrap);
-        frameSlot.append(overlay);
-        this.updateTranscriptPreviewRunButtonState();
-        this.annotateEmptyPreviewWhenNotRunnable(project, summary, wrap, btn);
+        // Play control lives in the Work Hub header (left of Change view). Keep the empty frame
+        // chrome clear so the iframe URL field stays the only content affordance here.
+        this.host.transcriptEmbeddedPreview.root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
+        this.syncHeaderPreviewRunButton(project, summary);
+        this.annotateEmptyPreviewWhenNotRunnable(project, summary);
     }
 
     /**
@@ -1572,22 +1737,26 @@ export class MobileProjectsTranscriptSurfacesUi {
     protected annotateEmptyPreviewWhenNotRunnable(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
-        wrap: HTMLElement,
-        runButton: HTMLButtonElement,
     ): void {
         const rootPath = this.resolveRunnableTranscriptProjectRoot(project, summary);
         const bootstrap = this.host.projectBootstrap;
-        if (!rootPath || typeof bootstrap?.describeRunnableApp !== 'function') {
+        const frameSlot = this.host.transcriptEmbeddedPreview?.root.querySelector<HTMLElement>('.qaap-preview-frame-slot')
+            ?? this.host.transcriptEmbeddedPreview?.root.querySelector<HTMLElement>('.qaap-preview-content-area');
+        if (!frameSlot || !rootPath || typeof bootstrap?.describeRunnableApp !== 'function') {
             return;
         }
         void bootstrap.describeRunnableApp(FileUri.create(rootPath)).then(result => {
-            if (result.runnable || !wrap.isConnected) {
+            if (result.runnable || !frameSlot.isConnected) {
                 return;
             }
             if (this.host.transcriptOpenProject && this.host.transcriptOpenProject.id !== project.id) {
                 return;
             }
-            runButton.hidden = true;
+            frameSlot.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
+            const overlay = document.createElement('div');
+            overlay.className = 'theia-mobile-transcript-preview-empty-overlay';
+            const wrap = document.createElement('div');
+            wrap.className = 'theia-mobile-transcript-preview-empty';
             const note = document.createElement('div');
             note.className = 'theia-mobile-transcript-preview-ready';
             const title = document.createElement('div');
@@ -1602,6 +1771,9 @@ export class MobileProjectsTranscriptSurfacesUi {
                 );
             note.append(title, detail);
             wrap.append(note);
+            overlay.append(wrap);
+            frameSlot.append(overlay);
+            this.syncHeaderPreviewRunButton(project, summary);
         }).catch(() => undefined);
     }
 
@@ -2217,6 +2389,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         summary: QaapAgentConversationSummaryDTO,
         conv: QaapAgentConversationDTO,
     ): Promise<void> {
+        if (this.host.transcriptPreviewSuppressedByUser) {
+            return;
+        }
         const awaitingPreview = conversationShouldWatchDevPreview(conv, window.location.origin)
             || this.host.transcriptPreviewRequestPending;
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview'
@@ -2361,6 +2536,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (this.host.transcriptOpenProject?.id === cleared.id) {
             this.host.transcriptOpenProject = cleared;
         }
+        this.syncHeaderPreviewRunButton(cleared, summary);
     }
 
     stageTranscriptPreviewReadyUrl(conversationScopeId: string, readyUrl: string): void {
@@ -2432,9 +2608,21 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (this.host.transcriptPreviewRequestRunning) {
             return;
         }
+        this.host.transcriptPreviewSuppressedByUser = false;
+        const launchGeneration = ++this.previewLaunchGeneration;
+        MobileSnackbar.show(
+            nls.localize('qaap/mobileProjects/previewStarting', 'Levantando preview…'),
+            { duration: 2200 },
+        );
+        // Keep the header play control mounted across the whole request lifecycle.
+        this.syncHeaderPreviewRunButton(project, summary);
         const latestProject = this.host.projects.find(candidate => candidate.id === project.id) ?? project;
         if (latestProject.previewUrl && this.host.onResumePreview) {
+            if (launchGeneration !== this.previewLaunchGeneration || this.host.transcriptPreviewSuppressedByUser) {
+                return;
+            }
             await this.host.onResumePreview(latestProject);
+            this.syncHeaderPreviewRunButton(project, summary);
             return;
         }
 
@@ -2464,6 +2652,9 @@ export class MobileProjectsTranscriptSurfacesUi {
                 projectId: project.id,
                 workspaceRoot: projectRoot,
             }).then(readyUrl => {
+                if (launchGeneration !== this.previewLaunchGeneration || this.host.transcriptPreviewSuppressedByUser) {
+                    return;
+                }
                 if (!readyUrl) {
                     if (this.matchesActivePreviewSummary(summary)
                         && this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
@@ -2505,12 +2696,16 @@ export class MobileProjectsTranscriptSurfacesUi {
         );
         this.host.transcriptPreviewRequestRunning = true;
         this.host.transcriptPreviewRequestPending = true;
+        // Pin Preview before submit — create/open conversation paths force Messages and would
+        // otherwise tear the header play control out mid-click.
+        this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
         this.updateTranscriptPreviewRunButtonState();
         if (summary.cwd) {
             this.host.setAutoVerifyEnabled(summary.cwd, true);
             this.host.refreshTranscriptChecksViews(project, summary);
         }
         this.renderPreviewTab(project, summary);
+        this.syncHeaderPreviewRunButton(project, summary);
         try {
             await this.host.submitTranscriptViaBackendConversation(project, summary, message, {
                 selectedAgentId: this.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
@@ -2520,18 +2715,33 @@ export class MobileProjectsTranscriptSurfacesUi {
                     summary.cwd,
                 ),
             });
-            MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/previewRequestSent', 'Preview request sent to agent'),
-                { kind: 'success', duration: 1600 },
-            );
+            // Stop may have landed while submit was still creating the turn — cancel again now
+            // that the request exists, same as composer Stop after the message is in flight.
+            if (launchGeneration !== this.previewLaunchGeneration || this.host.transcriptPreviewSuppressedByUser) {
+                this.cancelPreviewAgentTurn(project, summary);
+                return;
+            }
             this.host.transcriptScheduleRefresh?.();
         } catch (error) {
+            if (launchGeneration !== this.previewLaunchGeneration || this.host.transcriptPreviewSuppressedByUser) {
+                this.cancelPreviewAgentTurn(project, summary);
+                return;
+            }
             this.host.transcriptPreviewRequestPending = false;
             MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
         } finally {
-            this.host.transcriptPreviewRequestRunning = false;
-            if (this.matchesActivePreviewSummary(summary) && this.transcriptPreviewProjectId === project.id) {
-                this.renderPreviewTab(project, summary);
+            if (launchGeneration === this.previewLaunchGeneration && !this.host.transcriptPreviewSuppressedByUser) {
+                this.host.transcriptPreviewRequestRunning = false;
+                this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
+                this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('preview');
+                this.host.root.classList.toggle('theia-mod-project-surface-chat', false);
+                this.host.root.classList.toggle('theia-mod-project-surface-tools', true);
+                if (this.matchesActivePreviewSummary(summary) && this.transcriptPreviewProjectId === project.id) {
+                    this.renderPreviewTab(project, summary);
+                }
+                this.syncHeaderPreviewRunButton(project, summary);
+            } else {
+                this.host.transcriptPreviewRequestRunning = false;
             }
         }
     }
