@@ -656,6 +656,16 @@ export function mountEmbeddedAgentPreviewChrome(
     let currentUrl = normalizePreviewNavigateUrl(options.url);
     let previewController: QaapAgentPreviewChromeController | undefined;
 
+    // The dev-server holding page reloads itself every couple of seconds, and each iframe load
+    // used to rewrite the URL field — wiping whatever the user was typing mid-load. Never touch
+    // the field while it owns focus; it resyncs on the next programmatic update after blur.
+    const syncUrlInput = (value: string): void => {
+        if (document.activeElement === urlInput) {
+            return;
+        }
+        urlInput.value = value;
+    };
+
     const adapter: QaapAgentPreviewChromeHost = {
         getRoot: () => root,
         getFrame: () => frame,
@@ -670,7 +680,7 @@ export function mountEmbeddedAgentPreviewChrome(
         navigate: (url, navOptions) => {
             const next = normalizePreviewNavigateUrl(url);
             currentUrl = next;
-            urlInput.value = sanitizePreviewDisplayUrl(next);
+            syncUrlInput(sanitizePreviewDisplayUrl(next));
             if (navOptions?.hard) {
                 const bust = next.includes('?') ? `${next}&_qaap_cache_bust=${Date.now()}` : `${next}?_qaap_cache_bust=${Date.now()}`;
                 frame.src = bust;
@@ -761,13 +771,13 @@ export function mountEmbeddedAgentPreviewChrome(
             const href = frame.contentWindow?.location.href;
             if (href && href !== 'about:blank') {
                 currentUrl = href;
-                urlInput.value = href;
+                syncUrlInput(href);
             }
         } catch {
             // Isolated preview hosts redirect a one-time query capability into a host-only cookie.
             // Never leave that capability visible/copyable in the preview URL bar afterwards.
             currentUrl = sanitizePreviewDisplayUrl(currentUrl);
-            urlInput.value = currentUrl;
+            syncUrlInput(currentUrl);
         }
         surfaceHandle?.picker.onFrameLoad();
         controller.recordVisit();

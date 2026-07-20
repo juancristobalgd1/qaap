@@ -1472,11 +1472,23 @@ export class MobileProjectsTranscriptSurfacesUi {
         });
     }
 
+    /** True while the user is typing in the mounted preview's URL field. */
+    protected isTranscriptPreviewUrlFieldActive(): boolean {
+        const input = this.host.transcriptEmbeddedPreview?.root.querySelector('.theia-mini-browser-url-field input');
+        return !!input && input === document.activeElement;
+    }
+
     mountTranscriptEmptyPreview(
         host: HTMLElement,
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): void {
+        // Probe churn (identity mismatch, run restarts) can decide to fall back to the empty state
+        // while the user is typing a URL into the live chrome — never tear the field out from
+        // under their cursor; the next probe tick re-evaluates after blur.
+        if (this.isTranscriptPreviewUrlFieldActive()) {
+            return;
+        }
         const removeEmptyState = (): void => {
             this.host.transcriptEmbeddedPreview?.root.classList.remove('theia-mod-empty-preview');
             this.host.transcriptEmbeddedPreview?.root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
