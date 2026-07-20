@@ -54,7 +54,8 @@ describe('qaap-dev-preview', () => {
     it('injectQaapPreviewViteEnvBootstrap injects a prefix-aware /@vite/env import at head start', () => {
         const html = '<html><head><title>x</title><script type="module" async="">import("/qaap-preview/abc/entry")</script></head><body></body></html>';
         const injected = injectQaapPreviewViteEnvBootstrap(html, '/qaap-preview/abc');
-        expect(injected).to.contain('<head><script type="module" data-qaap-preview-vite-env>');
+        expect(injected).to.match(/<head><script>try\{var p=globalThis\.process/);
+        expect(injected).to.contain('<script type="module" data-qaap-preview-vite-env>');
         expect(injected).to.contain('await import("/qaap-preview/abc/@vite/env")');
         expect(injected.indexOf('data-qaap-preview-vite-env')).to.be.lessThan(injected.indexOf('entry'));
     });
@@ -75,8 +76,11 @@ describe('qaap-dev-preview', () => {
 
     it('injectQaapPreviewViteEnvBootstrap rebases TSS_ROUTER_BASEPATH onto the proxy prefix', () => {
         const injected = injectQaapPreviewViteEnvBootstrap('<html><head></head></html>', '/qaap-preview/abc/');
-        expect(injected).to.contain('const x="/qaap-preview/abc"');
+        expect(injected).to.contain('var x="/qaap-preview/abc"');
         expect(injected).to.contain('Object.defineProperty(e,"TSS_ROUTER_BASEPATH"');
+        // The pin is a classic script so it executes during parsing, before any (async) module.
+        expect(injected.indexOf('Object.defineProperty(e,"TSS_ROUTER_BASEPATH"'))
+            .to.be.lessThan(injected.indexOf('data-qaap-preview-vite-env'));
         // Isolated-host mode keeps the app at the origin root — no rebase script at all.
         expect(injectQaapPreviewViteEnvBootstrap('<html><head></head></html>', ''))
             .to.not.contain('TSS_ROUTER_BASEPATH');

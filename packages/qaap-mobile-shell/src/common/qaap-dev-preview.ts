@@ -130,22 +130,23 @@ export function injectQaapPreviewViteEnvBootstrap(html: string, publicPrefix: st
     if (!html || html.includes(QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER) || html.includes('/@vite/client')) {
         return html;
     }
-    // `/@vite/env` can evaluate more than once (query-suffixed duplicates in the module graph) and
-    // the app entry is an async module script, so a plain assignment gets clobbered/raced. Pin the
-    // rebased value with an accessor: env.mjs re-walks assign through the no-op setter harmlessly.
+    // The rebase must be a CLASSIC inline script: it executes during parsing, before ANY module —
+    // the app entry is an async module and can call hydrateStart before deferred modules run, so a
+    // module-scheduled assignment loses the race. The accessor also survives `/@vite/env`
+    // re-evaluations (query-suffixed duplicates re-walk the defines through the no-op setter).
     const rebase = publicPrefix
-        ? 'try{'
-        + 'const p=globalThis.process=globalThis.process||{env:{}};'
-        + 'const e=p.env=p.env||{};'
-        + `const x=${JSON.stringify(publicPrefix.replace(/\/+$/, ''))};`
-        + 'const b=typeof e.TSS_ROUTER_BASEPATH==="string"?e.TSS_ROUTER_BASEPATH:"";'
-        + 'const v=b.startsWith(x)?b:x+(b&&b!=="/"?b:"");'
-        + 'Object.defineProperty(e,"TSS_ROUTER_BASEPATH",{configurable:true,get:()=>v,set:()=>{}});'
-        + '}catch{}'
+        ? '<script>try{'
+        + 'var p=globalThis.process=globalThis.process||{env:{}};'
+        + 'var e=p.env=p.env||{};'
+        + `var x=${JSON.stringify(publicPrefix.replace(/\/+$/, ''))};`
+        + 'var b=typeof e.TSS_ROUTER_BASEPATH==="string"?e.TSS_ROUTER_BASEPATH:"";'
+        + 'var v=b.indexOf(x)===0?b:x+(b&&b!=="/"?b:"");'
+        + 'Object.defineProperty(e,"TSS_ROUTER_BASEPATH",{configurable:true,get:function(){return v;},set:function(){}});'
+        + '}catch(err){}</script>'
         : '';
-    const script = `<script type="module" ${QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER}>`
+    const script = rebase
+        + `<script type="module" ${QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER}>`
         + `try{await import(${JSON.stringify(`${publicPrefix}/@vite/env`)})}catch{}`
-        + rebase
         + '</script>';
     const headOpen = /<head(?:\s[^>]*)?>/i;
     if (headOpen.test(html)) {
