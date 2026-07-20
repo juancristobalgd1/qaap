@@ -55,7 +55,29 @@ describe('qaap-project-bootstrap-port', () => {
     it('wrapDevCommandForPort sets PORT and --port for Vite (overrides Docker IDE PORT)', () => {
         const command = wrapDevCommandForPort('npm run dev', 5174, 'node-vite');
         expect(command).to.include('QAAP_PREVIEW_PORT=5174 PORT=5174');
-        expect(command).to.match(/npm run dev -- --port 5174$/);
+        expect(command).to.match(/npm run dev -- --port 5174 --strictPort$/);
+        expect(command).to.include('--strictPort');
+    });
+
+    it('wrapDevCommandForPort injects port flags into concurrently vite subcommands', () => {
+        const command = wrapDevCommandForPort(
+            'npx concurrently "vite" "node bridge.js"',
+            5173,
+            'node-vite',
+        );
+        expect(command).to.include('"vite --port 5173 --strictPort"');
+        expect(command).to.include('"node bridge.js"');
+        expect(command).to.match(/ -- --port 5173 --strictPort$/);
+    });
+
+    it('wrapDevCommandForPort injects port flags into quoted vite dev chains (cloud-spark style)', () => {
+        const command = wrapDevCommandForPort(
+            'npx concurrently "vite dev --host 0.0.0.0" "node scripts/run-pty-bridge.mjs || true"',
+            5173,
+            'node-vite',
+        );
+        expect(command).to.include('"vite dev --host 0.0.0.0 --port 5173 --strictPort"');
+        expect(command).to.include('"node scripts/run-pty-bridge.mjs || true"');
     });
 
     it('getImplicitDevPort defaults generic Node apps to 3000', () => {
@@ -108,6 +130,30 @@ describe('qaap-project-bootstrap-port', () => {
             expect(result.app.port).to.equal('5182');
             expect(result.app.argv).to.deep.equal(['--port', '5182', '--strictPort']);
             expect(result.sibling).to.equal('8787');
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    });
+
+    it('still adds --strictPort when the Vite child already receives --port in argv', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const directory = mkdtempSync(join(tmpdir(), 'qaap-preview-port-'));
+        const vite = join(directory, 'vite');
+        const runner = join(directory, 'runner-with-port.cjs');
+        try {
+            writeFileSync(vite, "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) }));");
+            writeFileSync(runner, [
+                "const { execFileSync } = require('child_process');",
+                `const app = execFileSync(process.execPath, [${JSON.stringify(vite)}, '--port', '5182'], { encoding: 'utf8' });`,
+                "process.stdout.write(app);",
+            ].join('\n'));
+            const command = wrapDevCommandForPort(`node ${JSON.stringify(runner)}`, 5182, 'node-vite');
+            const result = JSON.parse(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })) as {
+                argv: string[];
+            };
+            expect(result.argv).to.deep.equal(['--port', '5182', '--strictPort']);
         } finally {
             rmSync(directory, { recursive: true, force: true });
         }

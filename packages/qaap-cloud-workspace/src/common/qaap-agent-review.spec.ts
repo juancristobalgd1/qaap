@@ -99,6 +99,7 @@ describe('buildAgentReviewPrompt', () => {
         const prompt = buildAgentReviewPrompt({ originalCommand: 'codex exec "add export"', diff: 'x'.repeat(50), diffCapChars: 10 });
         expect(prompt).to.include('Do NOT edit any file');
         expect(prompt).to.include('@@QAAP:VERDICT@@');
+        expect(prompt).to.include('Do not start an application, dev server, watcher');
         expect(prompt).to.include('(diff truncated)');
         expect(prompt).to.include('codex exec "add export"');
     });

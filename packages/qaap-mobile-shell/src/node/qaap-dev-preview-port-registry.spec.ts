@@ -31,6 +31,7 @@ describe('QaapDevPreviewPortRegistry persistence', () => {
                 userId: 'alice',
                 workspaceId: 'file:///workspace/repos/users/alice/acme/site',
                 projectId: 'github:acme/site',
+                conversationId: 'section-a',
                 processId: 'process-a',
             });
             const first = new PersistentTestRegistry();

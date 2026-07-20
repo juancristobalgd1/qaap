@@ -32,16 +32,19 @@ import {
     type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
 import {
+    QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
     isQaapPreviewIdentity,
     isQaapPreviewId,
     isQaapProcessPreviewClaimIdentity,
     isQaapProcessPreviewIdentity,
+    normalizeQaapPreviewConversationId,
     qaapPreviewProjectIdMatches,
     resolveQaapPreviewIdentity,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
 import { normalizeQaapPublicUrl } from './qaap-github-oauth-config';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
+import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 
 const PROBE_TIMEOUT_MS = 2500;
@@ -252,7 +255,12 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         owner: string,
         root: string,
         preferredPort: number,
-        claim: { readonly workspaceId: string; readonly projectId: string; readonly processId: string },
+        claim: {
+            readonly workspaceId: string;
+            readonly projectId: string;
+            readonly processId: string;
+            readonly conversationId?: string;
+        },
     ): Promise<void> {
         const rootPath = path.resolve(FileUri.fsPath(root));
         let canonicalRoot = rootPath;
@@ -262,13 +270,15 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             // Ownership was already checked. A missing root will fail when the process is spawned.
         }
         const canonicalProjectId = FileUri.create(canonicalRoot).toString();
+        const conversationId = normalizeQaapPreviewConversationId(claim.conversationId);
         const identity = resolveQaapPreviewIdentity({
             userId: owner,
             workspaceId: canonicalProjectId,
             // UI routing keys (`ws:…`, `github:…`) are presentation state, not execution identity.
-            // Derive projectId from the ownership-checked root so every section and entry flow
-            // resolves the same project/process tuple and cannot create a parallel registration.
+            // Derive projectId from the ownership-checked root so every entry flow of one section
+            // resolves the same project/conversation/process tuple.
             projectId: canonicalProjectId,
+            conversationId,
             processId: claim.processId,
         });
         const existing = this.portRegistry.getForOwner(identity.previewId, owner);
@@ -277,31 +287,36 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 res.status(409).type('text/plain').send('This preview identity belongs to a different workspace.');
                 return;
             }
-            res.status(200).json({
-                previewId: existing.previewId,
-                previewUrl: this.buildIdentityPreviewUrl(req, existing),
-                port: existing.port,
-            });
-            return;
+            if (!this.isPreviewProcessDead(existing) && await this.probeLocalDevServer(existing.port)) {
+                res.status(200).json({
+                    previewId: existing.previewId,
+                    previewUrl: this.buildIdentityPreviewUrl(req, existing),
+                    port: existing.port,
+                });
+                return;
+            }
+            this.terminatePreviewProcess(existing);
+            this.portRegistry.releasePreview(existing.previewId, owner);
         }
 
-        // A restored terminal/session can present a different frontend process UUID for the same
-        // listener. The durable live record is authoritative: publishing a fresh identity on the
-        // next free port would point the iframe at a port where this process never started.
-        const previousProjectRecords = this.portRegistry.records()
+        // Reattach only within the same conversation/section. Another section of the same project
+        // must keep its own live claim (Cursor/Codex-style independent previews).
+        const previousSectionRecords = this.portRegistry.records()
             .filter(record => record.ownerLogin === owner
                 && isQaapProcessPreviewIdentity(record)
                 && record.workspaceId === canonicalProjectId
                 && record.projectId === canonicalProjectId
-                && record.root === canonicalRoot)
+                && record.root === canonicalRoot
+                && normalizeQaapPreviewConversationId(record.conversationId) === conversationId)
             .sort((left, right) => Number(right.port === preferredPort) - Number(left.port === preferredPort)
                 || right.touchedAt - left.touchedAt);
-        for (const record of previousProjectRecords) {
+        for (const record of previousSectionRecords) {
             if (!this.isPreviewProcessDead(record) && await this.probeLocalDevServer(record.port)) {
-                console.info('[qaap-preview] reattached existing live project preview', {
+                console.info('[qaap-preview] reattached existing live section preview', {
                     previewId: record.previewId,
                     ownerLogin: owner,
                     projectId: canonicalProjectId,
+                    conversationId,
                     port: record.port,
                 });
                 res.status(200).json({
@@ -311,12 +326,15 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 });
                 return;
             }
+            this.terminatePreviewProcess(record);
+            this.portRegistry.releasePreview(record.previewId, owner);
         }
 
-        this.supersedeProjectPreviews({
+        this.supersedeConversationPreviews({
             previewId: identity.previewId,
             workspaceId: canonicalProjectId,
             projectId: canonicalProjectId,
+            conversationId,
         }, owner);
 
         for (let offset = 0; offset < PREVIEW_PORT_ALLOCATION_ATTEMPTS; offset++) {
@@ -354,6 +372,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 ownerLogin: owner,
                 workspaceId: identity.workspaceId,
                 projectId: identity.projectId,
+                conversationId: identity.conversationId,
                 processId: identity.processId,
                 port,
             });
@@ -368,48 +387,71 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
     }
 
     /**
-     * Retires older previews of the same project before registering a new one.
+     * Retires older previews of the same project **and conversation** before registering a new one.
      *
-     * A fresh `processId` for an already-registered project means the dev server was relaunched
-     * (`processId` is stable across browser reloads — it is restored from the probe on reattach),
-     * so the previous registration is dead weight. Without this, restarting a project's app leaks
-     * one registration and one held port per restart: the VPS registry was observed holding two
-     * live previews for the same project on ports 3000 and 3001.
+     * A fresh `processId` inside one section means that section relaunched its app; other sections
+     * of the same project must keep their independent claims (Cursor/Codex-style).
      */
-    protected supersedeProjectPreviews(
-        project: { readonly previewId: string; readonly workspaceId: string; readonly projectId: string },
+    protected supersedeConversationPreviews(
+        scope: {
+            readonly previewId: string;
+            readonly workspaceId: string;
+            readonly projectId: string;
+            readonly conversationId: string;
+        },
         owner: string
     ): void {
+        const conversationId = normalizeQaapPreviewConversationId(scope.conversationId);
         for (const record of this.portRegistry.records()) {
             if (record.ownerLogin !== owner
-                || record.previewId === project.previewId
+                || record.previewId === scope.previewId
                 || !isQaapProcessPreviewIdentity(record)
-                || record.workspaceId !== project.workspaceId
-                || record.projectId !== project.projectId) {
+                || record.workspaceId !== scope.workspaceId
+                || record.projectId !== scope.projectId
+                || normalizeQaapPreviewConversationId(record.conversationId) !== conversationId) {
                 continue;
             }
-            // Only supervisor-spawned previews carry an OS pid; those we own and may terminate.
-            // Terminal-spawned dev servers are merely unpublished — the reaper collects them once
-            // they stop answering, and the fail-closed probe rule keeps the port unusable meanwhile.
+            // Kill the recorded OS pid when present, and always SIGTERM whatever is still listening
+            // on the claimed port. Terminal-spawned previews rarely record osProcessId; leaving
+            // those listeners alive after release was the VPS orphan path (claim gone, process live).
             this.terminatePreviewProcess(record);
             this.portRegistry.releasePreview(record.previewId, record.ownerLogin);
-            console.info('[qaap-preview] superseded previous preview for project', {
+            console.info('[qaap-preview] superseded previous preview for conversation', {
                 previewId: record.previewId,
                 ownerLogin: record.ownerLogin,
-                projectId: project.projectId,
+                projectId: scope.projectId,
+                conversationId,
                 port: record.port,
             });
         }
     }
 
-    protected terminatePreviewProcess(record: { readonly osProcessId?: number }): void {
-        if (record.osProcessId === undefined) {
-            return;
+    /** @deprecated Use {@link supersedeConversationPreviews}. Kept for test subclasses. */
+    protected supersedeProjectPreviews(
+        project: { readonly previewId: string; readonly workspaceId: string; readonly projectId: string },
+        owner: string
+    ): void {
+        this.supersedeConversationPreviews({
+            ...project,
+            conversationId: QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
+        }, owner);
+    }
+
+    protected terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number }): void {
+        if (record.osProcessId !== undefined) {
+            try {
+                process.kill(record.osProcessId, 'SIGTERM');
+            } catch {
+                // Already gone, or not ours to signal; the registration is released either way.
+            }
+            try {
+                process.kill(-record.osProcessId, 'SIGTERM');
+            } catch {
+                // Process group may not exist or may not be ours.
+            }
         }
-        try {
-            process.kill(record.osProcessId, 'SIGTERM');
-        } catch {
-            // Already gone, or not ours to signal; the registration is released either way.
+        if (record.port !== undefined) {
+            terminateListenersOnPort(record.port);
         }
     }
 
@@ -599,19 +641,45 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             res.status(403).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
         }
+        const conversationFilter = typeof req.query.conversationId === 'string'
+            ? normalizeQaapPreviewConversationId(req.query.conversationId)
+            : undefined;
         const record = this.portRegistry.records()
             .filter(candidate => candidate.ownerLogin === login
                 && isQaapProcessPreviewIdentity(candidate)
                 && !this.isIdeListenPort(candidate.port)
-                && qaapPreviewProjectIdMatches(candidate.projectId, ...projectCandidates))
+                && qaapPreviewProjectIdMatches(candidate.projectId, ...projectCandidates)
+                && (conversationFilter === undefined
+                    || normalizeQaapPreviewConversationId(candidate.conversationId) === conversationFilter))
             .sort((left, right) => right.touchedAt - left.touchedAt || right.claimedAt - left.claimedAt)[0];
         if (!record) {
             res.status(404).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
         }
-        this.portRegistry.touchPreview(record.previewId, login);
+        const ready = await this.probeLocalDevServer(record.port);
+        if (ready) {
+            this.portRegistry.touchPreview(record.previewId, login);
+            res.json({
+                ready: true,
+                previewUrl: this.buildIdentityPreviewUrl(req, record),
+                previewId: record.previewId,
+                projectId: record.projectId,
+                port: record.port,
+                ...(isQaapProcessPreviewIdentity(record) ? {
+                    workspaceId: record.workspaceId,
+                    processId: record.processId,
+                } : {}),
+            } satisfies QaapDevPreviewProbeResponse);
+            return;
+        }
+        const withinStartGrace = Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
+        if (!withinStartGrace) {
+            this.portRegistry.releasePreview(record.previewId, login);
+            res.status(404).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
+            return;
+        }
         res.json({
-            ready: await this.probeLocalDevServer(record.port),
+            ready: false,
             previewUrl: this.buildIdentityPreviewUrl(req, record),
             previewId: record.previewId,
             projectId: record.projectId,
@@ -898,13 +966,37 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         // routeIds like `/qaap-preview/<id>/qaap-preview/<id>/…/_authenticated`, which made every
         // routed SPA render blank under the proxy). Only rewrite positions that are URLs by
         // construction: markup attributes, CSS url(), module specifiers, and fetch() calls.
-        return body
+        const rewritten = body
             .replace(/\b(src|href|action)=("|')\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1=$2${prefix}/`)
             .replace(/\burl\(\s*(["']?)\/(?!\/|qaap-(?:dev|preview)\/)/g, `url($1${prefix}/`)
             .replace(/(\bimport\s*(?:\(|[^"'`]*from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
             .replace(/(\bexport\s+[^"'`]*from\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
             .replace(/(\bnew\s+URL\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
             .replace(/(\bfetch\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`);
+        return this.rewriteViteHmrClient(rewritten, prefix);
+    }
+
+    /**
+     * Vite derives its HMR socket from the origin of `/@vite/client`, but deliberately discards
+     * that module's pathname. Behind a path proxy this makes it connect to `/` instead of the
+     * identity-scoped preview route, so the upgrade never reaches the owning dev server. Its
+     * `base` must be rebased for hot-update module imports for the same reason.
+     *
+     * Keep this narrowly fingerprinted to Vite's generated client. Rewriting arbitrary string
+     * literals or application `base` variables corrupts client-side routers.
+     */
+    protected rewriteViteHmrClient(body: string, publicPrefix: string): string {
+        if (!publicPrefix
+            || !body.includes('[vite] connecting')
+            || !body.includes('vite-hmr')
+            || !body.includes('Direct websocket connection fallback')
+            || !body.includes('import.meta.url')) {
+            return body;
+        }
+        const publicBase = `${publicPrefix.replace(/\/+$/, '')}/`;
+        return body
+            .replace(/^const socketHost = .*;$/m, `const socketHost = importMetaUrl.host + ${JSON.stringify(publicBase)};`)
+            .replace(/^const base = .*;$/m, `const base = ${JSON.stringify(publicBase)};`);
     }
 
     protected rewriteIsolatedPreviewCsp(raw: string | string[] | undefined, parentOrigin: string): string {

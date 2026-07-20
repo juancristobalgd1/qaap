@@ -1681,6 +1681,31 @@ export class QaapAgentTaskRunner {
         return escalation;
     }
 
+    /**
+     * Remove descendants that outlive an agent which exited normally.
+     *
+     * A coding agent or its independent reviewer can run a shell tool that backgrounds a watcher
+     * or dev server. The agent process-group leader may then exit with code 0 while that descendant
+     * is re-parented to the backend init process. It is no longer attributable through the task map,
+     * can occupy a project-independent port, and previously survived project switches and reloads.
+     *
+     * Normal exit is already the graceful shutdown boundary for the group leader, so any process
+     * still in its detached group is residual task work and is killed immediately. Qaap-managed
+     * Preview terminals are spawned by the terminal service in their own process groups and are not
+     * descendants of the agent, so they continue running across navigation and reloads.
+     */
+    protected reapAgentProcessGroupAfterExit(child: ChildProcess): void {
+        const pid = child.pid;
+        if (!pid || globalThis.process.platform === 'win32') {
+            return;
+        }
+        try {
+            globalThis.process.kill(-pid, 'SIGKILL');
+        } catch {
+            // ESRCH is the common clean case: the agent left no descendants behind.
+        }
+    }
+
     /** Pending QAIQ stdio `can_use_tool` requests for a running task. */
     listPendingQaiqControlRequests(taskId: string): readonly QaapQaiqPendingControlRequest[] {
         return this.pendingQaiqControlRequests.get(taskId) ?? [];
@@ -2023,6 +2048,9 @@ export class QaapAgentTaskRunner {
         });
         child.on('error', error => {
             logStream.write(`\n[qaap] process error: ${error.message}\n`);
+        });
+        child.once('exit', () => {
+            this.reapAgentProcessGroupAfterExit(child);
         });
         child.on('close', code => {
             clearIdleTimer();
@@ -2443,6 +2471,9 @@ export class QaapAgentTaskRunner {
             });
             child.on('error', error => {
                 stderr += `${error.message}\n`;
+            });
+            child.once('exit', () => {
+                this.reapAgentProcessGroupAfterExit(child);
             });
             child.on('close', code => {
                 clearTimeout(timeout);
@@ -2970,6 +3001,9 @@ export class QaapAgentTaskRunner {
             child.on('error', error => {
                 clearTimeout(timer);
                 reject(error);
+            });
+            child.once('exit', () => {
+                this.reapAgentProcessGroupAfterExit(child);
             });
             child.on('close', code => {
                 clearTimeout(timer);

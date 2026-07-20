@@ -37,11 +37,12 @@ describe('qaap-preview-identity', () => {
             .not.to.equal(buildQaapPreviewId({ ...identity, runId: 'run-b' }));
     });
 
-    it('isolates process previews by user + workspace + project + process, not conversation', () => {
+    it('isolates process previews by user + workspace + project + conversation + process', () => {
         const processIdentity = {
             userId: 'alice',
             workspaceId: 'file:///workspace/repos/users/alice/acme/site',
             projectId: 'github:acme/site',
+            conversationId: 'section-a',
             processId: 'process-123',
         };
         const previewId = buildQaapPreviewId(processIdentity);
@@ -50,7 +51,18 @@ describe('qaap-preview-identity', () => {
         expect(buildQaapPreviewId({ ...processIdentity, userId: 'bob' })).not.to.equal(previewId);
         expect(buildQaapPreviewId({ ...processIdentity, workspaceId: 'file:///other' })).not.to.equal(previewId);
         expect(buildQaapPreviewId({ ...processIdentity, projectId: 'github:acme/other' })).not.to.equal(previewId);
+        expect(buildQaapPreviewId({ ...processIdentity, conversationId: 'section-b' })).not.to.equal(previewId);
         expect(buildQaapPreviewId({ ...processIdentity, processId: 'process-456' })).not.to.equal(previewId);
+        expect(buildQaapPreviewId({
+            ...processIdentity,
+            conversationId: 'section-a',
+            processId: 'process-123',
+        })).to.equal(previewId);
+        expect(buildQaapPreviewId({
+            ...processIdentity,
+            conversationId: 'section-b',
+            processId: 'process-123',
+        })).not.to.equal(previewId);
     });
 
     it('matches canonical project roots across Work Hub routing keys', () => {

@@ -112,6 +112,40 @@ describe('QaapDevPreviewEndpoint', () => {
         );
     });
 
+    it('rebases the generated Vite HMR client onto the identity-scoped preview', () => {
+        const viteClient = [
+            'console.debug("[vite] connecting...");',
+            'const importMetaUrl = new URL(import.meta.url);',
+            'const hmrPort = null;',
+            'const socketHost = `${null || importMetaUrl.hostname}:${hmrPort || importMetaUrl.port}${"/"}`;',
+            'const base = "/" || "/";',
+            'new WebSocket(`${socketProtocol}://${socketHost}`, "vite-hmr");',
+            'console.info("[vite] Direct websocket connection fallback.");',
+        ].join('\n');
+        const prefix = '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234';
+
+        expect(endpoint.exposeRewriteDevPreviewBody(viteClient, 5184, prefix)).to.equal([
+            'console.debug("[vite] connecting...");',
+            'const importMetaUrl = new URL(import.meta.url);',
+            'const hmrPort = null;',
+            `const socketHost = importMetaUrl.host + "${prefix}/";`,
+            `const base = "${prefix}/";`,
+            'new WebSocket(`${socketProtocol}://${socketHost}`, "vite-hmr");',
+            'console.info("[vite] Direct websocket connection fallback.");',
+        ].join('\n'));
+    });
+
+    it('does not rewrite application socketHost or base variables as Vite internals', () => {
+        const applicationSource = [
+            'const importMetaUrl = new URL(import.meta.url);',
+            'const socketHost = "example.test/ws";',
+            'const base = "/app";',
+            'new WebSocket(socketHost, "vite-hmr");',
+        ].join('\n');
+
+        expect(endpoint.exposeRewriteDevPreviewBody(applicationSource, 5184)).to.equal(applicationSource);
+    });
+
     describe('isolated preview origin', () => {
         const priorBaseDomain = process.env.QAAP_PREVIEW_BASE_DOMAIN;
         const priorPublicUrl = process.env.QAAP_OAUTH_PUBLIC_URL;
@@ -562,7 +596,7 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.getForOwner(bob.previewId, 'alice')).to.equal(undefined);
         });
 
-        it('returns one stable preview to two sections claiming the same process', async () => {
+        it('returns one stable preview when processId and conversation match', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();
             const ep = new ClaimTestEndpoint();
@@ -571,20 +605,49 @@ describe('QaapDevPreviewEndpoint', () => {
                 workspaceId: 'file:///workspace/alice/project-a',
                 projectId: 'ws:file:///workspace/alice/project-a',
                 processId: 'process-a',
+                conversationId: 'conversation-a',
             };
             const firstRes = makeRes();
             const secondRes = makeRes();
             const root = 'file:///workspace/alice/project-a';
-            await ep.exposeHandleClaim(claimReq(5173, { ...identity, conversationId: 'conversation-a' }, root), firstRes);
+            await ep.exposeHandleClaim(claimReq(5173, identity, root), firstRes);
+            ep.listeningPorts.add(5173);
             await ep.exposeHandleClaim(claimReq(5999, {
                 ...identity,
                 projectId: 'github:alice/project-a',
-                conversationId: 'conversation-b',
             }, root), secondRes);
 
             expect(secondRes.record.body).to.deep.equal(firstRes.record.body);
             expect(registry.records()).to.have.length(1);
             expect(registry.records()[0].projectId).to.equal(root);
+        });
+
+        it('keeps independent previews for different conversations with different process ids', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/project-a';
+            const firstRes = makeRes();
+            const secondRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: root,
+                projectId: root,
+                processId: 'process-a',
+                conversationId: 'conversation-a',
+            }, root), firstRes);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: root,
+                projectId: root,
+                processId: 'process-b',
+                conversationId: 'conversation-b',
+            }, root), secondRes);
+
+            const first = firstRes.record.body as { previewId: string; port: number };
+            const second = secondRes.record.body as { previewId: string; port: number };
+            expect(first.previewId).not.to.equal(second.previewId);
+            expect(second.port).to.equal(5174);
+            expect(registry.records()).to.have.length(2);
         });
 
         it('skips a previously occupied unregistered port instead of adopting another app', async () => {
@@ -678,27 +741,28 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.get(liveId)).not.to.equal(undefined);
         });
 
-        it('supersedes the previous preview of the same project when its dev server is relaunched', async () => {
+        it('supersedes the previous preview of the same conversation when its dev server is relaunched', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();
             const ep = new ClaimTestEndpoint();
             ep.setClaimFakes('alice', registry);
             const firstRes = makeRes();
             const secondRes = makeRes();
+            const root = 'file:///workspace/alice/vamello';
+            const conversationId = 'section-a';
 
             await ep.exposeHandleClaim(claimReq(5173, {
-                workspaceId: 'file:///workspace/alice/vamello',
+                workspaceId: root,
                 projectId: 'vamello',
                 processId: 'process-run-1',
-            }, 'file:///workspace/alice/vamello'), firstRes);
-            // Same project, new dev-server run (fresh processId) — must retire the old record
-            // instead of leaking a second registration + held port (observed on the VPS: the same
-            // project held ports 3000 AND 3001).
+                conversationId,
+            }, root), firstRes);
             await ep.exposeHandleClaim(claimReq(5173, {
-                workspaceId: 'file:///workspace/alice/vamello',
+                workspaceId: root,
                 projectId: 'vamello',
                 processId: 'process-run-2',
-            }, 'file:///workspace/alice/vamello'), secondRes);
+                conversationId,
+            }, root), secondRes);
 
             const first = firstRes.record.body as { previewId: string };
             const second = secondRes.record.body as { previewId: string; port: number };
@@ -706,6 +770,35 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(second.port).to.equal(5173);
             expect(registry.get(first.previewId)).to.equal(undefined);
             expect(registry.records()).to.have.length(1);
+        });
+
+        it('does not supersede another conversation preview of the same project', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/vamello';
+            const firstRes = makeRes();
+            const secondRes = makeRes();
+
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: root,
+                projectId: 'vamello',
+                processId: 'process-section-a',
+                conversationId: 'section-a',
+            }, root), firstRes);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: root,
+                projectId: 'vamello',
+                processId: 'process-section-b',
+                conversationId: 'section-b',
+            }, root), secondRes);
+
+            const first = firstRes.record.body as { previewId: string };
+            const second = secondRes.record.body as { previewId: string };
+            expect(registry.get(first.previewId)).not.to.equal(undefined);
+            expect(registry.get(second.previewId)).not.to.equal(undefined);
+            expect(registry.records()).to.have.length(2);
         });
 
         it('reattaches a restored section to the live project process instead of allocating an unused port', async () => {
@@ -776,6 +869,32 @@ describe('QaapDevPreviewEndpoint', () => {
 
             expect(registry.get(previewId)).to.equal(undefined);
         });
+
+        it('reclaims the same processId when its registered port is dead instead of returning it as ready', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/vamello';
+            const identity = {
+                workspaceId: root,
+                projectId: 'vamello',
+                processId: 'process-run-1',
+            };
+            const firstRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, identity, root), firstRes);
+            const first = firstRes.record.body as { previewId: string; port: number };
+            expect(first.port).to.equal(5173);
+
+            ep.listening = false;
+            const reclaimRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, identity, root), reclaimRes);
+
+            expect(reclaimRes.record.code).to.equal(200);
+            expect((reclaimRes.record.body as { port: number }).port).to.equal(5173);
+            expect((reclaimRes.record.body as { previewId: string }).previewId).to.equal(first.previewId);
+            expect(registry.records()).to.have.length(1);
+        });
     });
 
     describe('probe ownership (SEC-8)', () => {
@@ -842,11 +961,13 @@ describe('QaapDevPreviewEndpoint', () => {
             processId: string,
             port: number,
             owner = 'alice',
+            conversationId = 'default',
         ): QaapDevPreviewRecord => registry.register({
             ...resolveQaapPreviewIdentity({
                 userId: owner,
                 workspaceId: projectRoot,
                 projectId: projectRoot,
+                conversationId,
                 processId,
             }),
             ownerLogin: owner,
@@ -915,6 +1036,29 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(res.record.code).to.equal(200);
             expect(res.record.body?.previewId).to.equal(record.previewId);
             expect(res.record.body?.ready).to.equal(false);
+            expect(res.record.body?.previewUrl).to.contain(`/qaap-preview/${record.previewId}`);
+        });
+
+        it('404s and releases a dead claim once the start grace expires', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const record = registerProcessPreview(registry, 'run-dead', 4176);
+            const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+            previews.set(record.previewId, {
+                ...record,
+                claimedAt: Date.now() - 6 * 60_000,
+            });
+
+            const ep = new CurrentTestEndpoint();
+            ep.listening = false;
+            ep.setCurrentFakes('alice', registry);
+            const res = makeJsonRes();
+            await ep.exposeHandleCurrent(currentReq(projectRoot), res);
+
+            expect(res.record.code).to.equal(404);
+            expect(res.record.body?.ready).to.equal(false);
+            expect(res.record.body?.previewUrl).to.equal('');
+            expect(registry.get(record.previewId)).to.equal(undefined);
         });
     });
 

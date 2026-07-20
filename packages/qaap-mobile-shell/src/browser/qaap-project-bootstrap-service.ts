@@ -58,8 +58,20 @@ import {
 import type { QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
 import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
-import { qaapPreviewProjectIdMatches } from '../common/qaap-preview-identity';
+import {
+    normalizeQaapPreviewConversationId,
+    QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
+    qaapPreviewProjectIdMatches,
+} from '../common/qaap-preview-identity';
 import { resolveQaapReattachedPreviewIdentity } from './qaap-preview-reattachment';
+import {
+    QAAP_PREVIEW_TERMINAL_KIND,
+    extractQaapPreviewTerminalPort,
+    isQaapBootRestoredPreviewTerminal,
+    isQaapRestoredPreviewTerminal,
+    isRestoredPreviewProbeOwned,
+    shouldDisposeRestoredPreviewTerminal,
+} from './qaap-preview-terminal-lifecycle';
 
 /** Storage key used to remember per-workspace user intent (skip / installed). */
 const STORAGE_KEY = 'qaap.projectBootstrap.state.v1';
@@ -85,6 +97,8 @@ const DEV_OUTPUT_TAIL_MAX = 12_000;
 const TERMINAL_SPAWN_MAX_ATTEMPTS = 3;
 const TERMINAL_SPAWN_RETRY_DELAY_MS = 450;
 const TERMINAL_READY_DELAY_MS = 120;
+/** Let destroyTermOnClose release a restored preview's listener before reserving its replacement. */
+const RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS = 500;
 
 /** Extracts `127.0.0.1:3000` / `localhost:5173` from an `EADDRINUSE` line. */
 const PORT_IN_USE_ADDR_REGEX = /(?:127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]|::1):(\d{2,5})/i;
@@ -98,6 +112,9 @@ const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 250;
 
 /** Delay before auto-attaching or restarting a remembered dev port after workspace load. */
 const DEV_PREVIEW_WARMUP_DELAY_MS = 800;
+/** Detect a dead restored process even when Theia reconstructs its terminal after the preview URL. */
+const DEV_PREVIEW_HEALTH_INTERVAL_MS = 2500;
+const DEV_PREVIEW_HEALTH_FAILURE_LIMIT = 2;
 /** Bounded conflict recovery: enough to escape a cluster of stale dev servers without looping forever. */
 const DEV_PORT_RECOVERY_MAX_ATTEMPTS = 8;
 
@@ -210,6 +227,16 @@ export class QaapProjectBootstrapService {
     /** Port we asked the dev server to bind to (may differ from the framework default when Qaap uses :3000). */
     protected activeDevPortHint: number | undefined;
     protected activePreviewRunId: string | undefined;
+    protected activePreviewConversationId: string = QAAP_DEFAULT_PREVIEW_CONVERSATION_ID;
+    protected readonly previewRunIdByConversation = new Map<string, string>();
+    /** Live claims keyed by conversation/section so section B cannot release section A's preview. */
+    protected readonly previewClaimByConversation = new Map<string, {
+        readonly previewId: string;
+        readonly previewUrl: string;
+        readonly port: number;
+    }>();
+    /** Conversation that owns {@link devTerminal}, when a dev run is in flight or attached. */
+    protected devTerminalConversationId: string | undefined;
     /** Project selected in Work Hub; hosted `/workspace` is never a valid substitute. */
     protected activeProjectId: string | undefined;
     protected activeWorkspaceRoot: URI | undefined;
@@ -230,6 +257,8 @@ export class QaapProjectBootstrapService {
     protected devTerminalListener = Disposable.NULL;
     protected devPreviewFallbackTimers: number[] = [];
     protected devPreviewWarmupTimer: number | undefined;
+    protected devPreviewHealthTimer: number | undefined;
+    protected devPreviewHealthFailures = 0;
     /** Rolling tail of the current dev terminal output for failure diagnostics. */
     protected devOutputTail = '';
     /** Set when detection finds no runnable project — explains orphan scaffolds vs empty workspace. */
@@ -247,6 +276,7 @@ export class QaapProjectBootstrapService {
             if (typeof window !== 'undefined' && this.refreshDebounceTimer !== undefined) {
                 window.clearTimeout(this.refreshDebounceTimer);
             }
+            this.cancelDevPreviewHealthMonitor();
         }));
         // Debug surface (used by integration tests and power users). Exposes the bare minimum to
         // simulate dev-server output and inspect state without hand-injecting through Inversify.
@@ -300,18 +330,51 @@ export class QaapProjectBootstrapService {
      * Re-claims the active process without letting a section invent another project identity.
      * The descriptor/root and process UUID are the same authority used by the initial reservation.
      */
-    async claimPreviewExecution(port: number): Promise<QaapPreviewPortClaimResult> {
+    protected bindPreviewConversation(conversationId?: string): string {
+        this.activePreviewConversationId = normalizeQaapPreviewConversationId(conversationId);
+        const remembered = this.previewRunIdByConversation.get(this.activePreviewConversationId);
+        if (remembered) {
+            this.activePreviewRunId = remembered;
+        }
+        // Restore this section's claim into the active slot without touching other sections.
+        this.activePreviewClaim = this.previewClaimByConversation.get(this.activePreviewConversationId);
+        return this.activePreviewConversationId;
+    }
+
+    protected rememberActivePreviewClaim(claim: {
+        readonly previewId: string;
+        readonly previewUrl: string;
+        readonly port: number;
+    }): void {
+        this.activePreviewClaim = claim;
+        this.previewClaimByConversation.set(this.activePreviewConversationId, claim);
+    }
+
+    protected ensurePreviewProcessIdForConversation(conversationId?: string): string {
+        const scope = this.bindPreviewConversation(conversationId);
+        let processId = this.previewRunIdByConversation.get(scope);
+        if (!processId) {
+            processId = generateUuid();
+            this.previewRunIdByConversation.set(scope, processId);
+        }
+        this.activePreviewRunId = processId;
+        return processId;
+    }
+
+    async claimPreviewExecution(port: number, conversationId?: string): Promise<QaapPreviewPortClaimResult> {
+        this.bindPreviewConversation(conversationId);
+        this.ensurePreviewProcessIdForConversation(conversationId);
         const processRoot = this._descriptor?.rootUri ?? this.activeWorkspaceRoot;
         if (!this.activePreviewRunId || !processRoot) {
             return { kind: 'error' };
         }
         const claim = await this.reserveActivePreview(port, processRoot);
         if (claim.kind === 'claimed' && claim.previewId && claim.previewUrl && claim.port !== undefined) {
-            this.activePreviewClaim = {
+            this.rememberActivePreviewClaim({
                 previewId: claim.previewId,
                 previewUrl: claim.previewUrl,
                 port: claim.port,
-            };
+            });
         }
         return claim;
     }
@@ -337,12 +400,13 @@ export class QaapProjectBootstrapService {
         }
         if (current.processId) {
             this.activePreviewRunId = current.processId;
+            this.previewRunIdByConversation.set(this.activePreviewConversationId, current.processId);
         }
-        this.activePreviewClaim = {
+        this.rememberActivePreviewClaim({
             previewId: current.previewId,
             previewUrl: current.previewUrl,
             port: current.port,
-        };
+        });
         this._lastPort = current.port;
         if (this._previewUrl) {
             // Only replace an already-published URL; first publication stays with the run flow.
@@ -538,6 +602,7 @@ export class QaapProjectBootstrapService {
             projectId: this.previewProjectId(workspaceRoot),
             processId,
             root: workspaceRoot.toString(),
+            conversationId: this.activePreviewConversationId,
         });
     }
 
@@ -641,10 +706,18 @@ export class QaapProjectBootstrapService {
      * Called by contributions when the user clicks "Run" on the banner (or auto after install).
      * Spawns the dev script, listens to its output, and opens the preview when a URL appears.
      */
-    async runDevServer(): Promise<void> {
+    async runDevServer(options?: { conversationId?: string }): Promise<void> {
+        if (options?.conversationId !== undefined) {
+            this.bindPreviewConversation(options.conversationId);
+        }
         const plan = this.resolveDevPlan();
         const descriptor = this._descriptor;
-        if (!plan || !descriptor || this._phase === 'starting' || this._phase === 'running') {
+        if (!plan || !descriptor) {
+            return;
+        }
+        const busyForActiveConversation = (this._phase === 'starting' || this._phase === 'running')
+            && this.devTerminalConversationId === this.activePreviewConversationId;
+        if (busyForActiveConversation) {
             return;
         }
         this.devPortOverride = undefined;
@@ -672,13 +745,26 @@ export class QaapProjectBootstrapService {
 
         let spawnPlan = this.buildDevSpawnPlan(plan);
         this.activeDevPortHint = spawnPlan.targetPort;
-        // Reattach before creating a new process identity. This is what lets a project preview
-        // survive section changes/page reloads while another project's process runs in parallel.
-        if (this._lastPort !== undefined && await this.tryAttachToExistingServer([this._lastPort])) {
+        const label = this._selectedApp?.name ?? descriptor.name;
+        // Reattach only to THIS section's claim. Using the global `_lastPort` would collapse a new
+        // conversation onto another section's live server (shared project, independent previews).
+        const sectionPort = this.previewClaimByConversation.get(this.activePreviewConversationId)?.port;
+        if (sectionPort !== undefined && await this.tryAttachToExistingServer([sectionPort])) {
             return;
         }
 
-        this.activePreviewRunId = generateUuid();
+        // VPS/container restore can resurrect Dev terminals whose durable claim was already reaped.
+        // Reconcile globally before cwd-scoped disposal so orphan listeners do not respawn.
+        await this.reconcileRestoredPreviewTerminals();
+
+        // Persistent Theia terminals can be reconstructed after a backend/workspace restore after
+        // their durable claim has already been reaped. Letting that old Dev terminal keep booting
+        // while allocating a fresh claim produces two servers for the same project (observed on the
+        // VPS at :3002 and :3003). A live registered process returned above; anything matched here
+        // is an unclaimed restored terminal for this exact cwd and must be stopped before restart.
+        await this.disposeRestoredPreviewTerminals(plan.cwd, `Dev (${label})`);
+
+        this.ensurePreviewProcessIdForConversation(this.activePreviewConversationId);
         if (spawnPlan.targetPort !== undefined) {
             this.attemptedDevPorts.add(spawnPlan.targetPort);
             const reservation = await this.reserveActivePreview(spawnPlan.targetPort, plan.cwd);
@@ -696,11 +782,11 @@ export class QaapProjectBootstrapService {
                 this.setPhase('run-failed');
                 return;
             }
-            this.activePreviewClaim = {
+            this.rememberActivePreviewClaim({
                 previewId: reservation.previewId,
                 previewUrl: reservation.previewUrl,
                 port: reservation.port,
-            };
+            });
             // Persist the stable identity URL as soon as the reservation exists. If the user
             // switches projects while the process is still booting, the other section can resolve
             // this exact preview instead of scanning global ports.
@@ -720,11 +806,11 @@ export class QaapProjectBootstrapService {
         }
 
         try {
-            const label = this._selectedApp?.name ?? descriptor.name;
             const spawnOptions = {
                 title: `Dev (${label})`,
                 command: spawnPlan.command,
                 cwd: plan.cwd,
+                kind: QAAP_PREVIEW_TERMINAL_KIND,
             };
             const terminal = matchesMobileOneColumnLayout()
                 ? await this.spawnCommandWithRetry(spawnOptions)
@@ -737,6 +823,7 @@ export class QaapProjectBootstrapService {
                 this.monitorPreviewProcessLifetime(terminal, processClaim.previewId);
             }
             this.devTerminal = terminal;
+            this.devTerminalConversationId = this.activePreviewConversationId;
             this.devTerminalListener.dispose();
             const onOutput = terminal.onOutput(data => {
                 this.appendDevOutput(data);
@@ -750,7 +837,11 @@ export class QaapProjectBootstrapService {
                     return;
                 }
                 if (this._phase === 'starting' || this._phase === 'running') {
-                    void this.failDevRun(`Dev server exited with code ${event.code ?? '?'}`, plan, runId);
+                    void this.failDevRun(nls.localize(
+                        'qaap/projectBootstrap/devServerExited',
+                        'Dev server exited with code {0}.',
+                        String(event.code ?? '?'),
+                    ), plan, runId);
                 }
             });
             const onWidgetClose = terminal.onTerminalDidClose(() => {
@@ -758,7 +849,10 @@ export class QaapProjectBootstrapService {
                     return;
                 }
                 if (this._phase === 'starting' || this._phase === 'running') {
-                    void this.failDevRun('Dev server tab closed.', plan, runId);
+                    void this.failDevRun(nls.localize(
+                        'qaap/projectBootstrap/devServerTabClosed',
+                        'Dev server tab closed.',
+                    ), plan, runId);
                 }
             });
             this.devTerminalListener = new DisposableCollection(onOutput, onProcessExit, onWidgetClose);
@@ -1041,7 +1135,7 @@ export class QaapProjectBootstrapService {
         if (isReservedIdePort(port)) {
             return;
         }
-        this.activePreviewRunId ??= generateUuid();
+        this.ensurePreviewProcessIdForConversation(this.activePreviewConversationId);
         const existing = this._forwardedPorts.find(p => p.port === port);
         if (existing) {
             return;
@@ -1134,11 +1228,11 @@ export class QaapProjectBootstrapService {
             ? await this.reserveActivePreview(port, processRoot)
             : await this.previewPortClaimService.claim(port);
         if (claim.kind === 'claimed' && claim.previewId && claim.previewUrl && claim.port !== undefined) {
-            this.activePreviewClaim = {
+            this.rememberActivePreviewClaim({
                 previewId: claim.previewId,
                 previewUrl: claim.previewUrl,
                 port: claim.port,
-            };
+            });
         }
     }
 
@@ -1279,6 +1373,17 @@ export class QaapProjectBootstrapService {
                 continue;
             }
             this.adoptExistingPreviewIdentity(port, probe);
+            const plan = this.resolveDevPlan();
+            const descriptor = this._descriptor;
+            if (plan && descriptor) {
+                const label = this._selectedApp?.name ?? descriptor.name;
+                // Every adoption path (warmup, reload, section switch, manual open) converges here.
+                // Retain only the restored terminal whose allocator marker names this claim's port.
+                const restoredTerminal = await this.disposeRestoredPreviewTerminals(plan.cwd, `Dev (${label})`, port);
+                if (restoredTerminal) {
+                    this.watchAttachedDevTerminal(restoredTerminal, plan);
+                }
+            }
             this._portConflictPort = port;
             this.recordForwardedPort(port, probe.previewUrl, { alreadyReady: true });
             return true;
@@ -1298,7 +1403,8 @@ export class QaapProjectBootstrapService {
             return;
         }
         this.activePreviewRunId = restored.processId;
-        this.activePreviewClaim = restored.claim;
+        this.previewRunIdByConversation.set(this.activePreviewConversationId, restored.processId);
+        this.rememberActivePreviewClaim(restored.claim);
     }
 
     /** A shared-host port is reusable only when its backend record names the selected project. */
@@ -1544,6 +1650,7 @@ export class QaapProjectBootstrapService {
         title: string;
         command: string;
         cwd: URI;
+        kind?: string;
         /** When false, skip `terminalService.open` (avoids mobile races during long installs). */
         reveal?: boolean;
     }): Promise<TerminalWidget> {
@@ -1558,6 +1665,7 @@ export class QaapProjectBootstrapService {
             shellPath,
             shellArgs,
             destroyTermOnClose: true,
+            kind: options.kind,
         });
         await terminal.start();
         if (options.reveal !== false) {
@@ -1565,6 +1673,154 @@ export class QaapProjectBootstrapService {
             this.terminalService.open(terminal, { mode: matchesMobileOneColumnLayout() ? 'open' : 'reveal' });
         }
         return terminal;
+    }
+
+    /** Disposes restored preview terminals whose port marker or backend claim is stale after reload. */
+    protected async reconcileRestoredPreviewTerminals(): Promise<void> {
+        const roots = await this.workspaceService.roots;
+        const workspaceRoots = roots.map(entry => entry.resource.toString());
+        if (workspaceRoots.length === 0) {
+            return;
+        }
+        const toDispose: TerminalWidget[] = [];
+        for (const terminal of [...this.terminalService.all]) {
+            if (terminal === this.devTerminal || terminal.isDisposed) {
+                continue;
+            }
+            let terminalCwd = terminal.lastCwd?.toString() ?? '';
+            try {
+                const resolved = await (terminal as TerminalWidget & { readonly cwd?: Promise<URI> }).cwd;
+                terminalCwd = resolved?.toString() || terminalCwd;
+            } catch {
+                // A restoring terminal may not have a backend id yet; use its last known cwd.
+            }
+            if (!isQaapBootRestoredPreviewTerminal({
+                kind: terminal.kind,
+                title: terminal.title.label,
+                cwd: terminalCwd,
+                disposed: terminal.isDisposed,
+            }, workspaceRoots)) {
+                continue;
+            }
+            let hasPortMarker = false;
+            let port: number | undefined;
+            try {
+                port = extractQaapPreviewTerminalPort((await terminal.processInfo).arguments);
+                hasPortMarker = port !== undefined;
+            } catch {
+                hasPortMarker = false;
+            }
+            let probeReady = false;
+            let probeOwned = false;
+            if (hasPortMarker && port !== undefined) {
+                const probe = await probeQaapDevPreviewPort(port);
+                probeReady = probe.ready;
+                probeOwned = isRestoredPreviewProbeOwned(probe);
+            }
+            if (shouldDisposeRestoredPreviewTerminal({ hasPortMarker, probeReady, probeOwned })) {
+                toDispose.push(terminal);
+            }
+        }
+        if (toDispose.length === 0) {
+            return;
+        }
+        for (const terminal of toDispose) {
+            this.disposeBootstrapTerminal(terminal);
+        }
+        await new Promise<void>(resolve => window.setTimeout(resolve, RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS));
+    }
+
+    /** Stops only stale preview terminals for the exact app root before a replacement is spawned. */
+    protected async disposeRestoredPreviewTerminals(
+        cwd: URI,
+        title: string,
+        keepPort?: number,
+    ): Promise<TerminalWidget | undefined> {
+        const expectedCwd = cwd.toString();
+        const matches: TerminalWidget[] = [];
+        let retained: TerminalWidget | undefined;
+        for (const terminal of [...this.terminalService.all]) {
+            if (terminal === this.devTerminal || terminal.isDisposed) {
+                continue;
+            }
+            let terminalCwd = terminal.lastCwd?.toString() ?? '';
+            try {
+                const resolved = await (terminal as TerminalWidget & { readonly cwd?: Promise<URI> }).cwd;
+                terminalCwd = resolved?.toString() || terminalCwd;
+            } catch {
+                // A restoring terminal may not have a backend id yet; use its last known cwd.
+            }
+            if (isQaapRestoredPreviewTerminal({
+                kind: terminal.kind,
+                title: terminal.title.label,
+                cwd: terminalCwd,
+                disposed: terminal.isDisposed,
+            }, title, expectedCwd)) {
+                if (keepPort !== undefined) {
+                    try {
+                        const terminalPort = extractQaapPreviewTerminalPort((await terminal.processInfo).arguments);
+                        // Keep the terminal serving the authoritative claim. Fail closed when a
+                        // restored command has no allocator marker: do not kill an unknown process.
+                        if (terminalPort === undefined) {
+                            continue;
+                        }
+                        if (terminalPort === keepPort && !retained) {
+                            retained = terminal;
+                            continue;
+                        }
+                    } catch {
+                        continue;
+                    }
+                }
+                matches.push(terminal);
+            }
+        }
+        if (matches.length === 0) {
+            return retained;
+        }
+        for (const terminal of matches) {
+            this.disposeBootstrapTerminal(terminal);
+        }
+        await new Promise<void>(resolve => window.setTimeout(resolve, RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS));
+        return retained;
+    }
+
+    /** Restores crash/error handling as well as the URL when a live terminal survives a reload. */
+    protected watchAttachedDevTerminal(
+        terminal: TerminalWidget,
+        plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
+    ): void {
+        if (terminal === this.devTerminal) {
+            return;
+        }
+        const runId = this.devRunGeneration;
+        this.devTerminal = terminal;
+        this.devTerminalConversationId = this.activePreviewConversationId;
+        this.devTerminalListener.dispose();
+        const onOutput = terminal.onOutput(data => this.appendDevOutput(data));
+        const onProcessExit = this.terminalWatcher.onTerminalExit(event => {
+            if (event.terminalId === terminal.terminalId && runId === this.devRunGeneration) {
+                void this.failDevRun(nls.localize(
+                    'qaap/projectBootstrap/devServerExited',
+                    'Dev server exited with code {0}.',
+                    String(event.code ?? '?'),
+                ), plan, runId);
+            }
+        });
+        const onWidgetClose = terminal.onTerminalDidClose(() => {
+            if (runId === this.devRunGeneration) {
+                void this.failDevRun(nls.localize(
+                    'qaap/projectBootstrap/devServerTabClosed',
+                    'Dev server tab closed.',
+                ), plan, runId);
+            }
+        });
+        this.devTerminalListener = new DisposableCollection(onOutput, onProcessExit, onWidgetClose);
+        this.toDispose.push(this.devTerminalListener);
+        const previewId = this.activePreviewClaim?.previewId;
+        if (previewId) {
+            this.monitorPreviewProcessLifetime(terminal, previewId);
+        }
     }
 
     /** Maps low-level terminal backend errors to actionable copy for the bootstrap banner. */
@@ -1629,16 +1885,20 @@ export class QaapProjectBootstrapService {
         this.devRunGeneration++;
         this.releaseActivePreview();
         this.cancelDevPreviewFallbacks();
-        this.cleanupDevTerminal();
+        if (this.devTerminalConversationId === this.activePreviewConversationId) {
+            this.cleanupDevTerminal();
+        }
     }
 
     protected releaseActivePreview(): void {
-        const previewId = this.activePreviewClaim?.previewId;
+        const scope = this.activePreviewConversationId;
+        const claim = this.previewClaimByConversation.get(scope);
+        this.previewClaimByConversation.delete(scope);
         this.activePreviewClaim = undefined;
-        this.activePreviewRunId = undefined;
-        if (previewId) {
-            void this.previewPortClaimService.release?.(previewId);
+        if (claim) {
+            void this.previewPortClaimService.release?.(claim.previewId);
         }
+        this.activePreviewRunId = this.previewRunIdByConversation.get(scope);
     }
 
     /** Full reset when switching workspace or reloading bootstrap state. */
@@ -1649,6 +1909,7 @@ export class QaapProjectBootstrapService {
         // previews impossible and turned every project switch into a race for the default port.
         this.devRunGeneration++;
         this.cancelDevPreviewFallbacks();
+        this.cancelDevPreviewHealthMonitor();
         this.devTerminalListener.dispose();
         this.devTerminalListener = Disposable.NULL;
         this.devTerminal = undefined;
@@ -1659,6 +1920,10 @@ export class QaapProjectBootstrapService {
         this.portRecoveryFrom = undefined;
         this.activeDevPortHint = undefined;
         this.activePreviewRunId = undefined;
+        this.activePreviewConversationId = QAAP_DEFAULT_PREVIEW_CONVERSATION_ID;
+        this.previewRunIdByConversation.clear();
+        this.previewClaimByConversation.clear();
+        this.devTerminalConversationId = undefined;
         this.disposeBootstrapTerminal(this.installTerminal);
         this.installTerminal = undefined;
     }
@@ -1696,10 +1961,65 @@ export class QaapProjectBootstrapService {
         }
     }
 
+    /**
+     * A restored iframe can keep displaying its last document after the process and claim are
+     * gone. Poll the owner-scoped probe so that terminal restoration order cannot leave a stale
+     * frame masquerading as a running preview.
+     */
+    protected startDevPreviewHealthMonitor(): void {
+        this.cancelDevPreviewHealthMonitor();
+        if (typeof window === 'undefined') {
+            return;
+        }
+        const runId = this.devRunGeneration;
+        const check = async (): Promise<void> => {
+            this.devPreviewHealthTimer = undefined;
+            if (this._phase !== 'running' || runId !== this.devRunGeneration) {
+                return;
+            }
+            const port = this.activePreviewClaim?.port ?? this._lastPort;
+            const plan = this.resolveDevPlan();
+            if (port === undefined || !plan) {
+                return;
+            }
+            const probe = await probeQaapDevPreviewPort(port);
+            if (this._phase !== 'running' || runId !== this.devRunGeneration) {
+                return;
+            }
+            if (probe.ready && this.probeBelongsToActiveProject(probe.projectId)) {
+                this.devPreviewHealthFailures = 0;
+            } else {
+                this.devPreviewHealthFailures++;
+                if (this.devPreviewHealthFailures >= DEV_PREVIEW_HEALTH_FAILURE_LIMIT) {
+                    await this.failDevRun(
+                        nls.localize(
+                            'qaap/projectBootstrap/devServerUnavailable',
+                            'The dev server stopped responding. Retry to start it again.',
+                        ),
+                        plan,
+                        runId,
+                    );
+                    return;
+                }
+            }
+            this.devPreviewHealthTimer = window.setTimeout(() => void check(), DEV_PREVIEW_HEALTH_INTERVAL_MS);
+        };
+        this.devPreviewHealthTimer = window.setTimeout(() => void check(), DEV_PREVIEW_HEALTH_INTERVAL_MS);
+    }
+
+    protected cancelDevPreviewHealthMonitor(): void {
+        if (typeof window !== 'undefined' && this.devPreviewHealthTimer !== undefined) {
+            window.clearTimeout(this.devPreviewHealthTimer);
+        }
+        this.devPreviewHealthTimer = undefined;
+        this.devPreviewHealthFailures = 0;
+    }
+
     protected async warmupDevPreview(): Promise<void> {
         if (this._phase !== 'ready-to-run' || this._previewUrl || this._lastPort === undefined) {
             return;
         }
+        await this.reconcileRestoredPreviewTerminals();
         if (await this.tryAttachToExistingServer([this._lastPort])) {
             return;
         }
@@ -1768,7 +2088,17 @@ export class QaapProjectBootstrapService {
     }
 
     protected setPhase(phase: QaapBootstrapPhase): void {
+        const previousPhase = this._phase;
         this._phase = phase;
+        if (phase === 'running') {
+            // Several preview surfaces can report the same ready URL concurrently. Do not keep
+            // postponing the health check every time a duplicate `running` state is published.
+            if (previousPhase !== 'running') {
+                this.startDevPreviewHealthMonitor();
+            }
+        } else {
+            this.cancelDevPreviewHealthMonitor();
+        }
         this.stateEmitter.fire(this.buildStateChange(phase));
         this.syncHubSession(phase);
     }

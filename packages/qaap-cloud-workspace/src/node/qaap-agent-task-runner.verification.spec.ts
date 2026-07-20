@@ -4,6 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { EventEmitter } from 'events';
+import { PassThrough } from 'stream';
+import type { ChildProcess } from 'child_process';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import type { QaapAgentTask, QaapAgentTaskVerification } from '../common/qaap-agent-task';
 
@@ -15,6 +18,10 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     }
     public runGate(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
         return this.finishSuccessfulTaskAfterVerification(task, exitCode);
+    }
+    public residualProcessGroupReaps = 0;
+    protected override reapAgentProcessGroupAfterExit(_child: ChildProcess): void {
+        this.residualProcessGroupReaps++;
     }
 }
 
@@ -129,6 +136,33 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         expect(result?.status).to.equal('failed');
         expect(result && 'summary' in result ? result.summary : '').to.contain('did not complete');
         expect(fixTurns()).to.equal(0);
+    });
+});
+
+describe('QaapAgentTaskRunner process lifecycle', () => {
+
+    it('reaps residual descendants after a bounded reviewer/helper command exits normally', async () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const child = new EventEmitter() as ChildProcess;
+        Object.assign(child, {
+            pid: 4242,
+            stdout: new PassThrough(),
+            stderr: new PassThrough(),
+        });
+        Object.assign(runner, {
+            residualProcessGroupReaps: 0,
+            processes: new Map(),
+            enforceAgentIsolationPolicy: () => undefined,
+            ensureAgentCwdOwnership: () => undefined,
+            spawnAgentCommand: () => child,
+        });
+
+        const resultPromise = runner.runGenericCommand('review', '/repo', {}, TASK.id, 1_000);
+        child.emit('exit', 0);
+        child.emit('close', 0);
+
+        expect(await resultPromise).to.deep.include({ exitCode: 0, timedOut: false });
+        expect(runner.residualProcessGroupReaps).to.equal(1);
     });
 });
 

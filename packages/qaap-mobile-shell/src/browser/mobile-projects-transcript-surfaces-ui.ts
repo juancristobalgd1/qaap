@@ -44,6 +44,7 @@ import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     buildQaapPreviewId,
+    normalizeQaapPreviewConversationId,
     qaapPreviewProjectIdMatches,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
@@ -82,7 +83,7 @@ interface TranscriptTerminalSliderState {
     activeIndex: number;
 }
 
-interface ProjectPreviewRuntimeState {
+interface ConversationPreviewRuntimeState {
     mountedUrl?: string;
     probeReadyUrl?: string;
     lastSyncedUrl?: string;
@@ -189,29 +190,34 @@ export class MobileProjectsTranscriptSurfacesUi {
     protected readonly transcriptPreviewEnsureRequests = new Set<string>();
     protected transcriptPreviewProbeTimer: number | undefined;
     protected transcriptPreviewIdentityWatchTimer: number | undefined;
-    protected readonly previewRuntimeByProjectId = new Map<string, ProjectPreviewRuntimeState>();
+    protected readonly previewRuntimeByConversationId = new Map<string, ConversationPreviewRuntimeState>();
     protected transcriptPreviewProjectId: string | undefined;
+    protected transcriptPreviewConversationScopeId: string | undefined;
 
     constructor(
         protected readonly host: MobileProjectsTranscriptSurfacesHost,
         protected readonly transcriptHistoryUi: MobileProjectsTranscriptHistoryUi,
     ) { }
 
-    protected previewRuntimeFor(projectId: string): ProjectPreviewRuntimeState {
-        let state = this.previewRuntimeByProjectId.get(projectId);
+    protected previewScopeId(summary?: Pick<QaapAgentConversationSummaryDTO, 'id'>): string {
+        return normalizeQaapPreviewConversationId(summary?.id ?? this.host.transcriptOpenSummaryId);
+    }
+
+    protected previewRuntimeFor(conversationScopeId: string): ConversationPreviewRuntimeState {
+        let state = this.previewRuntimeByConversationId.get(conversationScopeId);
         if (!state) {
             state = {};
-            this.previewRuntimeByProjectId.set(projectId, state);
+            this.previewRuntimeByConversationId.set(conversationScopeId, state);
         }
         return state;
     }
 
-    protected mountedPreviewUrl(projectId: string): string | undefined {
-        return this.previewRuntimeFor(projectId).mountedUrl;
+    protected mountedPreviewUrl(conversationScopeId: string): string | undefined {
+        return this.previewRuntimeFor(conversationScopeId).mountedUrl;
     }
 
-    protected setMountedPreviewUrl(projectId: string, url: string | undefined): void {
-        const state = this.previewRuntimeFor(projectId);
+    protected setMountedPreviewUrl(conversationScopeId: string, url: string | undefined): void {
+        const state = this.previewRuntimeFor(conversationScopeId);
         if (url === undefined) {
             delete state.mountedUrl;
         } else {
@@ -219,12 +225,12 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
     }
 
-    protected probeReadyPreviewUrl(projectId: string): string | undefined {
-        return this.previewRuntimeFor(projectId).probeReadyUrl;
+    protected probeReadyPreviewUrl(conversationScopeId: string): string | undefined {
+        return this.previewRuntimeFor(conversationScopeId).probeReadyUrl;
     }
 
-    protected setProbeReadyPreviewUrl(projectId: string, url: string | undefined): void {
-        const state = this.previewRuntimeFor(projectId);
+    protected setProbeReadyPreviewUrl(conversationScopeId: string, url: string | undefined): void {
+        const state = this.previewRuntimeFor(conversationScopeId);
         if (url === undefined) {
             delete state.probeReadyUrl;
         } else {
@@ -232,12 +238,12 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
     }
 
-    protected lastSyncedPreviewUrl(projectId: string): string | undefined {
-        return this.previewRuntimeFor(projectId).lastSyncedUrl;
+    protected lastSyncedPreviewUrl(conversationScopeId: string): string | undefined {
+        return this.previewRuntimeFor(conversationScopeId).lastSyncedUrl;
     }
 
-    protected setLastSyncedPreviewUrl(projectId: string, url: string | undefined): void {
-        const state = this.previewRuntimeFor(projectId);
+    protected setLastSyncedPreviewUrl(conversationScopeId: string, url: string | undefined): void {
+        const state = this.previewRuntimeFor(conversationScopeId);
         if (url === undefined) {
             delete state.lastSyncedUrl;
         } else {
@@ -245,8 +251,8 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
     }
 
-    protected clearPreviewRuntimeForProject(projectId: string): void {
-        this.previewRuntimeByProjectId.delete(projectId);
+    protected clearPreviewRuntimeForConversation(conversationScopeId: string): void {
+        this.previewRuntimeByConversationId.delete(conversationScopeId);
     }
 
     /** Hub expanded a different project card — tear down the shared iframe chrome. */
@@ -638,8 +644,8 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.stopTranscriptPreviewIdentityWatch();
         this.host.transcriptEmbeddedPreview?.dispose();
         this.host.transcriptEmbeddedPreview = undefined;
-        if (this.transcriptPreviewProjectId) {
-            this.setMountedPreviewUrl(this.transcriptPreviewProjectId, undefined);
+        if (this.transcriptPreviewConversationScopeId) {
+            this.setMountedPreviewUrl(this.transcriptPreviewConversationScopeId, undefined);
         }
     }
 
@@ -654,22 +660,22 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (!chrome) {
             return;
         }
-        const projectId = this.transcriptPreviewProjectId;
+        const conversationScopeId = this.transcriptPreviewConversationScopeId;
         const isEmptyPlaceholder = chrome.root.classList.contains('theia-mod-empty-preview');
-        const stagedUrl = (projectId ? this.mountedPreviewUrl(projectId) : undefined)
+        const stagedUrl = (conversationScopeId ? this.mountedPreviewUrl(conversationScopeId) : undefined)
             ?? this.getTranscriptEmbeddedPreviewUrl();
         chrome.dispose();
         this.host.transcriptEmbeddedPreview = undefined;
         this.executionPreviewHost()?.replaceChildren();
-        if (!projectId) {
+        if (!conversationScopeId) {
             return;
         }
         if (isEmptyPlaceholder) {
-            this.setMountedPreviewUrl(projectId, undefined);
+            this.setMountedPreviewUrl(conversationScopeId, undefined);
             return;
         }
         if (stagedUrl) {
-            this.setProbeReadyPreviewUrl(projectId, stagedUrl);
+            this.setProbeReadyPreviewUrl(conversationScopeId, stagedUrl);
         }
     }
 
@@ -692,9 +698,16 @@ export class MobileProjectsTranscriptSurfacesUi {
         return raw ? normalizePreviewUrlForSameOrigin(raw) : undefined;
     }
 
-    mountTranscriptEmbeddedPreview(host: HTMLElement, previewUrl: string, project: MobileProjectEntry): void {
+    mountTranscriptEmbeddedPreview(
+        host: HTMLElement,
+        previewUrl: string,
+        project: MobileProjectEntry,
+        summary?: QaapAgentConversationSummaryDTO,
+    ): void {
         const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
+        const conversationScopeId = this.previewScopeId(summary);
         this.transcriptPreviewProjectId = project.id;
+        this.transcriptPreviewConversationScopeId = conversationScopeId;
         this.scheduleTranscriptPreviewIdentityWatch(project);
         if (this.host.transcriptEmbeddedPreview) {
             this.clearTranscriptEmptyPreviewChrome();
@@ -705,7 +718,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 && root.isConnected
                 && host.contains(root)
                 && !root.classList.contains('theia-mod-empty-preview')) {
-                this.setMountedPreviewUrl(project.id, normalized);
+                this.setMountedPreviewUrl(conversationScopeId, normalized);
                 // Re-wire opener/scope even on same-URL remounts (controller may have been
                 // created before Work Hub comment composer was available).
                 this.wireTranscriptPreviewAnnotationScope(project, normalized);
@@ -713,7 +726,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             }
             this.host.transcriptEmbeddedPreview.setUrl(normalized);
             this.wireTranscriptPreviewAnnotationScope(project, normalized);
-            this.setMountedPreviewUrl(project.id, normalized);
+            this.setMountedPreviewUrl(conversationScopeId, normalized);
             if (!host.contains(root)) {
                 host.append(root);
             }
@@ -735,7 +748,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             composerSession: this.host.resolveAnnotationComposerSession(),
         });
         this.wireTranscriptPreviewAnnotationScope(project, normalized);
-        this.setMountedPreviewUrl(project.id, normalized);
+        this.setMountedPreviewUrl(conversationScopeId, normalized);
     }
 
     protected wireTranscriptPreviewAnnotationScope(project: MobileProjectEntry, previewUrl: string): void {
@@ -804,17 +817,18 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     protected async claimTranscriptPreviewExecution(
-        project: MobileProjectEntry,
-        _summary: QaapAgentConversationSummaryDTO,
+        _project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
         port: number,
         fallbackUrl: string,
     ): Promise<string | undefined> {
         const bootstrap = this.host.projectBootstrap;
-        const processId = bootstrap?.previewProcessId;
-        if (!bootstrap || !processId) {
+        if (!bootstrap) {
             return undefined;
         }
-        const claim = await bootstrap.claimPreviewExecution(port);
+        // claimPreviewExecution allocates a per-conversation processId; do not require the
+        // previous section's global process UUID or section B would never reserve its own preview.
+        const claim = await bootstrap.claimPreviewExecution(port, summary.id);
         return claim.kind === 'claimed' ? claim.previewUrl ?? fallbackUrl : undefined;
     }
 
@@ -831,7 +845,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 || !await this.previewUrlMatchesProject(candidateUrl, latestProject)) {
                 return;
             }
-            this.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject);
+            this.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject, summary);
             return;
         }
         const probe = await probeQaapDevPreviewPort(port);
@@ -874,6 +888,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             }
             return;
         }
+        const conversationScopeId = this.previewScopeId(summary);
         const executionUrl = await this.claimTranscriptPreviewExecution(project, summary, port, readyUrl);
         if (!executionUrl) {
             this.host.messageService?.warn(nls.localize(
@@ -883,7 +898,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
-            this.stageTranscriptPreviewReadyUrl(project.id, executionUrl);
+            this.stageTranscriptPreviewReadyUrl(conversationScopeId, executionUrl);
             if (latestProject.previewUrl !== executionUrl) {
                 const updatedProject = { ...latestProject, previewUrl: executionUrl };
                 this.host.projects = this.host.projects.map(candidate => candidate.id === updatedProject.id
@@ -896,7 +911,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             }
             return;
         }
-        if (this.mountedPreviewUrl(project.id) === executionUrl
+        if (this.mountedPreviewUrl(conversationScopeId) === executionUrl
             && this.transcriptPreviewProjectId === project.id
             && this.host.transcriptEmbeddedPreview?.root.isConnected === true
             && host.contains(this.host.transcriptEmbeddedPreview.root)
@@ -904,8 +919,8 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
 
-        this.setMountedPreviewUrl(project.id, executionUrl);
-        this.setProbeReadyPreviewUrl(project.id, executionUrl);
+        this.setMountedPreviewUrl(conversationScopeId, executionUrl);
+        this.setProbeReadyPreviewUrl(conversationScopeId, executionUrl);
         const allowBootstrap = this.host.transcriptPreviewRequestPending;
         this.host.transcriptPreviewRequestPending = false;
         this.host.transcriptPreviewRequestRunning = false;
@@ -929,7 +944,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             this.disposeTranscriptEmbeddedPreview();
             host.replaceChildren();
         }
-        this.mountTranscriptEmbeddedPreview(host, executionUrl, latestProject);
+        this.mountTranscriptEmbeddedPreview(host, executionUrl, latestProject, summary);
     }
 
     protected shouldKeepTranscriptPreviewTabProbe(
@@ -1047,7 +1062,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (this.host.transcriptOpenProject?.id === updated.id) {
             this.host.transcriptOpenProject = updated;
         }
-        this.setProbeReadyPreviewUrl(project.id, previewUrl);
+        this.setProbeReadyPreviewUrl(this.previewScopeId(), previewUrl);
         void this.host.projectsService.recordProjectPreviewUrl(updated, previewUrl).catch(() => undefined);
         return updated;
     }
@@ -1084,7 +1099,8 @@ export class MobileProjectsTranscriptSurfacesUi {
             this.scheduleTranscriptPreviewIdentityWatch(project);
             return;
         }
-        const mountedUrl = this.getTranscriptEmbeddedPreviewUrl() ?? this.mountedPreviewUrl(project.id);
+        const conversationScopeId = this.previewScopeId();
+        const mountedUrl = this.getTranscriptEmbeddedPreviewUrl() ?? this.mountedPreviewUrl(conversationScopeId);
         if (!mountedUrl) {
             return;
         }
@@ -1132,7 +1148,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (this.host.transcriptOpenProject?.id === cleared.id) {
             this.host.transcriptOpenProject = cleared;
         }
-        this.clearPreviewRuntimeForProject(project.id);
+        this.clearPreviewRuntimeForConversation(this.previewScopeId());
         return cleared;
     }
 
@@ -1169,7 +1185,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         const port = extractDevPreviewPortFromUrl(candidateUrl);
         if (port === undefined) {
             if (this.matchesActivePreviewSummary(summary)) {
-                this.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject);
+                this.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject, summary);
             }
             return;
         }
@@ -1208,8 +1224,9 @@ export class MobileProjectsTranscriptSurfacesUi {
             this.renderPreviewTab(refreshed, summary);
         });
 
-        this.setMountedPreviewUrl(project.id, undefined);
-        this.setLastSyncedPreviewUrl(project.id, undefined);
+        const conversationScopeId = this.previewScopeId(summary);
+        this.setMountedPreviewUrl(conversationScopeId, undefined);
+        this.setLastSyncedPreviewUrl(conversationScopeId, undefined);
 
         const waitingForPreview = this.isTranscriptPreviewWaiting(conv, project);
         if (waitingForPreview) {
@@ -1222,7 +1239,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             && this.host.transcriptEmbeddedPreview.root.classList.contains('theia-mod-empty-preview');
         if (canKeepEmptyPreview) {
             this.updateTranscriptPreviewRunButtonState(conv);
-            const probeReadyUrl = this.probeReadyPreviewUrl(project.id);
+            const probeReadyUrl = this.probeReadyPreviewUrl(conversationScopeId);
             if (probeReadyUrl) {
                 this.updateTranscriptPreviewReadyOverlay(probeReadyUrl);
             }
@@ -1267,6 +1284,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         try {
+            const conversationScopeId = this.previewScopeId(summary);
             const readyUrl = await resolveReadyTranscriptPreviewUrlFromProbe(
                 conv,
                 port => probeQaapDevPreviewPort(port),
@@ -1274,7 +1292,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             );
             const normalized = readyUrl ? normalizePreviewUrlForSameOrigin(readyUrl) : undefined;
             if (normalized && await this.previewUrlMatchesProject(normalized, project)) {
-                this.setProbeReadyPreviewUrl(project.id, normalized);
+                this.setProbeReadyPreviewUrl(conversationScopeId, normalized);
                 const latestProject = this.host.projects.find(candidate => candidate.id === project.id) ?? project;
                 const updatedProject = { ...latestProject, previewUrl: normalized };
                 this.host.projects = this.host.projects.map(candidate => candidate.id === updatedProject.id
@@ -1285,7 +1303,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                     : this.host.transcriptOpenProject;
                 void this.host.projectsService.recordProjectPreviewUrl(updatedProject, normalized).catch(() => undefined);
                 if (!conversationMayAutoOpenTranscriptPreview(conv)) {
-                    this.stageTranscriptPreviewReadyUrl(project.id, normalized);
+                    this.stageTranscriptPreviewReadyUrl(conversationScopeId, normalized);
                 } else if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
                     const host = this.executionPreviewHost();
                     if (host) {
@@ -1355,7 +1373,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         // its preview is actually mounted instead of falling back to the idle play button.
         if (this.isProjectBootstrapPreviewActive()
             && project
-            && !this.mountedPreviewUrl(project.id)) {
+            && !this.mountedPreviewUrl(this.previewScopeId())) {
             return true;
         }
         return conv?.status === 'streaming'
@@ -1450,6 +1468,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 conversation: this.host.transcriptLastConv?.id === summary.id
                     ? this.host.transcriptLastConv
                     : undefined,
+                conversationId: summary.id,
                 projectId: project.id,
                 workspaceRoot: this.host.projectsService.getProjectCwd(project) ?? summary.cwd,
             });
@@ -2211,14 +2230,15 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
         if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview'
             && (this.matchesActivePreviewSummary(summary) || this.host.projectDetailSurfaceTargets)) {
+            const conversationScopeId = this.previewScopeId(summary);
             const candidateUrl = this.resolveTranscriptPreviewUrl(latestProject, conv);
-            if (candidateUrl === this.lastSyncedPreviewUrl(project.id)
-                && this.mountedPreviewUrl(project.id) === candidateUrl
+            if (candidateUrl === this.lastSyncedPreviewUrl(conversationScopeId)
+                && this.mountedPreviewUrl(conversationScopeId) === candidateUrl
                 && conv.status === 'streaming') {
                 this.scheduleTranscriptPreviewTabProbe(latestProject, summary, conv);
                 return;
             }
-            this.setLastSyncedPreviewUrl(project.id, candidateUrl);
+            this.setLastSyncedPreviewUrl(conversationScopeId, candidateUrl);
             this.renderPreviewTab(latestProject, summary);
         } else if (awaitingPreview) {
             this.scheduleTranscriptPreviewTabProbe(latestProject, summary, conv);
@@ -2287,6 +2307,11 @@ export class MobileProjectsTranscriptSurfacesUi {
                 // Legacy identity links predate project coordinates in the probe response. Keep
                 // title matching only for that migration path, never as the primary identity.
             }
+            // Hosted multi-tenant origins must never accept a preview by HTML title — two Vite apps
+            // both titled "Vite App" would cross-mount across projects of the same user.
+            if (!isLocalQaapPreviewOrigin(resolveDevPreviewPublicOrigin())) {
+                return false;
+            }
             const response = await fetch(normalized, { cache: 'no-store' });
             if (!response.ok) {
                 return false;
@@ -2326,8 +2351,8 @@ export class MobileProjectsTranscriptSurfacesUi {
         return previewUrl;
     }
 
-    beginTranscriptDevPreviewRequest(project: MobileProjectEntry, _summary: QaapAgentConversationSummaryDTO): void {
-        this.clearPreviewRuntimeForProject(project.id);
+    beginTranscriptDevPreviewRequest(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
+        this.clearPreviewRuntimeForConversation(this.previewScopeId(summary));
         this.stopTranscriptPreviewTabProbe();
         const cleared = { ...project, previewUrl: undefined };
         this.host.projects = this.host.projects.map(candidate => candidate.id === cleared.id
@@ -2338,8 +2363,8 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
     }
 
-    stageTranscriptPreviewReadyUrl(projectId: string, readyUrl: string): void {
-        this.setProbeReadyPreviewUrl(projectId, readyUrl);
+    stageTranscriptPreviewReadyUrl(conversationScopeId: string, readyUrl: string): void {
+        this.setProbeReadyPreviewUrl(conversationScopeId, readyUrl);
     }
 
     /** Preview URL of the bootstrap-managed dev server, when it is up for this project. */
@@ -2357,6 +2382,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         project: MobileProjectEntry,
         conv: QaapAgentConversationDTO | undefined,
     ): string | undefined {
+        const conversationScopeId = this.previewScopeId(conv ? { id: conv.id } : undefined);
         const storedUrl = project.previewUrl ? normalizePreviewUrlForSameOrigin(project.previewUrl) : undefined;
         const bootstrapUrl = this.bootstrapRunningPreviewUrl(project);
         // On the hosted multi-project runtime, an identity-scoped URL is authoritative. Agent
@@ -2378,12 +2404,12 @@ export class MobileProjectsTranscriptSurfacesUi {
                 return normalizePreviewUrlForSameOrigin(fromConversation);
             }
             if (this.host.transcriptPreviewRequestPending && conv.status === 'streaming') {
-                return this.probeReadyPreviewUrl(project.id) ?? this.bootstrapRunningPreviewUrl(project);
+                return this.probeReadyPreviewUrl(conversationScopeId) ?? this.bootstrapRunningPreviewUrl(project);
             }
             if (conv.status === 'streaming' && conversationShouldWatchDevPreview(conv, window.location.origin)) {
                 return this.bootstrapRunningPreviewUrl(project)
-                    ?? this.probeReadyPreviewUrl(project.id)
-                    ?? this.mountedPreviewUrl(project.id)
+                    ?? this.probeReadyPreviewUrl(conversationScopeId)
+                    ?? this.mountedPreviewUrl(conversationScopeId)
                     ?? undefined;
             }
         }
@@ -2434,6 +2460,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 : undefined;
             void ensureTranscriptDevPreview(bootstrap, {
                 conversation,
+                conversationId: summary.id,
                 projectId: project.id,
                 workspaceRoot: projectRoot,
             }).then(readyUrl => {
@@ -2463,7 +2490,7 @@ export class MobileProjectsTranscriptSurfacesUi {
                 if (!this.matchesActivePreviewSummary(summary)) {
                     return;
                 }
-                this.stageTranscriptPreviewReadyUrl(project.id, readyUrl);
+                this.stageTranscriptPreviewReadyUrl(this.previewScopeId(summary), readyUrl);
                 if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
                     this.renderPreviewTab({ ...refreshed, previewUrl: readyUrl }, summary);
                 } else {

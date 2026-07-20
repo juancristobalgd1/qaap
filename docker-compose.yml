@@ -9,6 +9,9 @@
 
 services:
   theia:
+    # The backend is PID 1 and launches terminal/dev-server process trees for previews.
+    # Use Docker's tiny init so exited grandchildren are reaped after stop/restart/kill.
+    init: true
     # CI deploys set this to an immutable GHCR tag+digest. Local/VPS source builds keep the
     # explicit local tag and continue to use the build block below.
     image: ${QAAP_THEIA_IMAGE:-qaap-theia:local}

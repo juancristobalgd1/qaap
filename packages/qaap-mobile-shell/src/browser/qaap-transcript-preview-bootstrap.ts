@@ -28,8 +28,10 @@ export interface EnsureTranscriptDevPreviewOptions {
     readonly conversation?: QaapAgentConversationDTO;
     /** Visual verification uses project bootstrap only; transcript prose may mention another app's port. */
     readonly skipConversationPortProbe?: boolean;
-    /** Work Hub project identity; conversations/sections for the same project share it. */
+    /** Work Hub project identity for bootstrap root selection. */
     readonly projectId?: string;
+    /** Work Hub section / conversation id — each section keeps an independent preview claim. */
+    readonly conversationId?: string;
     /** Authoritative project root when it differs from the conversation cwd. */
     readonly workspaceRoot?: string;
 }
@@ -248,14 +250,12 @@ export async function ensureTranscriptDevPreview(
     const needsInstall = snapshot.needsInstall === true
         || !snapshot.descriptor.nodeModulesPresent
         || snapshot.phase === 'install-failed';
-    const canStartDev = snapshot.phase !== 'installing'
-        && snapshot.phase !== 'starting'
-        && snapshot.phase !== 'running';
+    const conversationId = options.conversationId ?? options.conversation?.id;
 
     if (needsInstall) {
         await bootstrap.runInstall();
-    } else if (canStartDev) {
-        await bootstrap.runDevServer();
+    } else {
+        await bootstrap.runDevServer({ conversationId });
     }
 
     const fromBootstrap = await waitForBootstrapPreviewUrl(bootstrap, BOOTSTRAP_PREVIEW_WAIT_MS);

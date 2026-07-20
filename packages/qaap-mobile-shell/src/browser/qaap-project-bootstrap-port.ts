@@ -132,7 +132,12 @@ export function wrapDevCommandForPort(command: string, port: number, kind: QaapP
         case 'node-astro':
         case 'node-svelte':
             // Vite reads `process.env.PORT` before CLI flags; Docker sets PORT to the IDE port (4873).
-            return appendCliPortFlag(prefixPortEnv(command, port, kind, isWindows), port, isWindows);
+            return appendCliPortFlag(
+                injectFrameworkPortIntoMultiProcessCommand(prefixPortEnv(command, port, kind, isWindows), port),
+                port,
+                isWindows,
+                true,
+            );
         case 'node-next':
             return appendNextDevPort(prefixPortEnv(command, port, kind, isWindows), port, isWindows);
         case 'node-remix':
@@ -153,8 +158,12 @@ const FORCE_NODE_PREVIEW_PORT_SOURCE = 'process.env.PORT=process.env.QAAP_PREVIE
 const FORCE_FRAMEWORK_PREVIEW_PORT_SOURCE = [
     'const p=process.env.QAAP_PREVIEW_PORT,a=process.argv,'
         + "e=(a[1]||'').replaceAll('\\\\','/').split('/').pop()||'',"
-        + "h=a.some(v=>v==='--port'||v==='-p'||v.startsWith('--port='))",
-    "if(p&&!h){if(/^(vite|vite\\.js|astro|astro\\.js)$/.test(e)){a.push('--port',p,'--strictPort')}else if(/^(next|next\\.js)$/.test(e)){a.push('-p',p)}else if(/^(remix|remix\\.js)$/.test(e)){a.push('--port',p)}}",
+        + "hasPort=a.some(v=>v==='--port'||v==='-p'||v.startsWith('--port=')),"
+        + "hasStrict=a.some(v=>v==='--strictPort'||v.startsWith('--strictPort=')),"
+        + 'isVite=/^(vite|vite\\.js|astro|astro\\.js)$/.test(e)',
+    'if(p){if(isVite){if(!hasPort){a.push(\'--port\',p)}if(!hasStrict){a.push(\'--strictPort\')}}'
+        + 'else if(!hasPort){if(/^(next|next\\.js)$/.test(e)){a.push(\'-p\',p)}'
+        + 'else if(/^(remix|remix\\.js)$/.test(e)){a.push(\'--port\',p)}}}',
 ].join(';');
 
 function forceNodePreviewPortImport(kind: QaapProjectKind): string {
@@ -192,11 +201,78 @@ export function wrapCommandForDevNodeEnv(command: string): string {
     return `NODE_ENV=development ${command}`;
 }
 
-function appendCliPortFlag(command: string, port: number, isWindows: boolean): string {
-    if (isWindows) {
-        return `${command} -- --port ${port}`;
+const CONCURRENTLY_OR_RUN_ALL_PATTERN = /\bconcurrently\b|\bnpm-run-all\b|\brun-p\b|\brun-s\b/;
+const QUOTED_FRAMEWORK_CHAIN_PATTERN = /["'][^"']*\b(?:vite|astro|svelte(?:-kit)?)\b/i;
+const FRAMEWORK_EXECUTABLE_PATTERN = /\b(?:vite(?:\.js)?|astro(?:\.js)?|svelte(?:-kit)?(?:\.js)?)\b/i;
+
+function needsMultiProcessPortRewrite(command: string): boolean {
+    return CONCURRENTLY_OR_RUN_ALL_PATTERN.test(command) || QUOTED_FRAMEWORK_CHAIN_PATTERN.test(command);
+}
+
+function segmentHasPortFlag(segment: string): boolean {
+    return /(?:^|\s)--port(?:=|\s|$)/.test(segment) || /(?:^|\s)-p(?:=|\s|$)/.test(segment);
+}
+
+function segmentHasStrictPort(segment: string): boolean {
+    return /(?:^|\s)--strictPort(?:=|\s|$)/.test(segment);
+}
+
+function injectPortIntoQuotedSegment(segment: string, port: number): string {
+    if (!FRAMEWORK_EXECUTABLE_PATTERN.test(segment)) {
+        return segment;
     }
-    return `${command} -- --port ${port}`;
+    let result = segment;
+    if (!segmentHasPortFlag(result)) {
+        result += ` --port ${port}`;
+    }
+    if (!segmentHasStrictPort(result)) {
+        result += ' --strictPort';
+    }
+    return result;
+}
+
+/**
+ * Rewrites quoted subcommands in concurrently / npm-run-all scripts so Vite/Astro receive explicit
+ * port flags even when npm's `--` separator forwards them to the wrapper instead of the child.
+ */
+export function injectFrameworkPortIntoMultiProcessCommand(command: string, port: number): string {
+    if (!needsMultiProcessPortRewrite(command)) {
+        return command;
+    }
+    let result = '';
+    let index = 0;
+    while (index < command.length) {
+        const char = command[index];
+        if (char === '"' || char === "'") {
+            const quote = char;
+            let end = index + 1;
+            while (end < command.length) {
+                if (command[end] === '\\' && end + 1 < command.length) {
+                    end += 2;
+                    continue;
+                }
+                if (command[end] === quote) {
+                    break;
+                }
+                end++;
+            }
+            const inner = command.slice(index + 1, end);
+            result += quote + injectPortIntoQuotedSegment(inner, port) + quote;
+            index = end + 1;
+            continue;
+        }
+        result += char;
+        index++;
+    }
+    return result;
+}
+
+function appendCliPortFlag(command: string, port: number, isWindows: boolean, strictPort?: boolean): string {
+    const strictSuffix = strictPort ? ' --strictPort' : '';
+    if (isWindows) {
+        return `${command} -- --port ${port}${strictSuffix}`;
+    }
+    return `${command} -- --port ${port}${strictSuffix}`;
 }
 
 /** Next.js reads `-p` / `--port` on `next dev`; keep explicit flags in addition to `PORT=`. */

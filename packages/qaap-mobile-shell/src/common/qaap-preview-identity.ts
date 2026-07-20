@@ -11,14 +11,23 @@ export interface QaapLegacyPreviewIdentity {
 }
 
 /**
+ * Sentinel section scope used by classic IDE / bootstrap paths that are not tied to a Work Hub
+ * conversation. Distinct conversations must never collapse onto this value.
+ */
+export const QAAP_DEFAULT_PREVIEW_CONVERSATION_ID = 'default';
+
+/**
  * Stable process coordinates for a multi-tenant preview. The authenticated backend supplies
- * `userId`; clients may never choose another user's namespace. Conversation/section state is
- * deliberately absent: two surfaces looking at the same live process must resolve the same URL.
+ * `userId`; clients may never choose another user's namespace.
+ *
+ * `conversationId` scopes the live preview to one Work Hub section (chat). Two sections of the
+ * same project keep independent claims, ports, and iframe URLs — matching Cursor/Codex.
  */
 export interface QaapProcessPreviewIdentity {
     readonly userId: string;
     readonly workspaceId: string;
     readonly projectId: string;
+    readonly conversationId: string;
     readonly processId: string;
 }
 
@@ -27,6 +36,8 @@ export interface QaapProcessPreviewClaimIdentity {
     readonly workspaceId: string;
     readonly projectId: string;
     readonly processId: string;
+    /** Work Hub section / conversation id. Omitted ⇒ {@link QAAP_DEFAULT_PREVIEW_CONVERSATION_ID}. */
+    readonly conversationId?: string;
 }
 
 export type QaapPreviewIdentity = QaapLegacyPreviewIdentity | QaapProcessPreviewIdentity;
@@ -65,13 +76,20 @@ function hashPreviewIdentity(value: string): string {
     return `${(left >>> 0).toString(36).padStart(7, '0').slice(-7)}${(right >>> 0).toString(36).padStart(7, '0').slice(-7)}`;
 }
 
+/** Normalizes a section scope; empty/missing values become the classic-IDE default. */
+export function normalizeQaapPreviewConversationId(value: string | undefined): string {
+    const trimmed = value?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : QAAP_DEFAULT_PREVIEW_CONVERSATION_ID;
+}
+
 /**
  * DNS-label-safe identity derived from project + conversation + run. The readable prefixes help
  * operators, while the suffix prevents truncated UUIDs from collapsing onto one preview.
  */
 export function buildQaapPreviewId(identity: QaapPreviewIdentity): string {
     if (isQaapProcessPreviewIdentity(identity)) {
-        const source = `${identity.userId}\0${identity.workspaceId}\0${identity.projectId}\0${identity.processId}`;
+        const conversationId = normalizeQaapPreviewConversationId(identity.conversationId);
+        const source = `${identity.userId}\0${identity.workspaceId}\0${identity.projectId}\0${conversationId}\0${identity.processId}`;
         return [
             'u', shortPreviewIdPart(identity.userId),
             'w', shortPreviewIdPart(identity.workspaceId),
@@ -90,6 +108,13 @@ export function buildQaapPreviewId(identity: QaapPreviewIdentity): string {
 }
 
 export function resolveQaapPreviewIdentity<T extends QaapPreviewIdentity>(identity: T): T & { readonly previewId: string } {
+    if (isQaapProcessPreviewIdentity(identity)) {
+        const normalized = {
+            ...identity,
+            conversationId: normalizeQaapPreviewConversationId(identity.conversationId),
+        };
+        return { ...normalized, previewId: buildQaapPreviewId(normalized) } as T & { readonly previewId: string };
+    }
     return { ...identity, previewId: buildQaapPreviewId(identity) };
 }
 
@@ -117,6 +142,8 @@ export function isQaapProcessPreviewClaimIdentity(value: unknown): value is Qaap
 
 export function isQaapProcessPreviewIdentity<T>(value: T): value is T & QaapProcessPreviewIdentity {
     const candidate = value as Partial<QaapProcessPreviewIdentity> | undefined;
+    // Pre-section registry rows omit conversationId; callers must normalize via
+    // {@link normalizeQaapPreviewConversationId} before comparing section scopes.
     return typeof candidate?.userId === 'string' && candidate.userId.trim().length > 0
         && isQaapProcessPreviewClaimIdentity(candidate);
 }

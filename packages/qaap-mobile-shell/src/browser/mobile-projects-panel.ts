@@ -43,6 +43,7 @@ import {
     isAgentsHubExecutionSurfacePainted,
     isAgentsHubIdleConversationSummary,
 } from '../common/qaap-agents-hub-landing';
+import { normalizeQaapPreviewConversationId } from '../common/qaap-preview-identity';
 import { resolvePreviewFeedbackSubmitTarget } from '../common/qaap-preview-feedback-submit-target';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
@@ -3240,12 +3241,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected stageTranscriptPreviewReadyUrl(readyUrl: string): void {
-        const projectId = this.transcriptController.state.transcriptOpenProject?.id
-            ?? this.expandedId;
-        if (!projectId) {
-            return;
-        }
-        this.transcriptSurfacesUi.stageTranscriptPreviewReadyUrl(projectId, readyUrl);
+        const conversationScopeId = normalizeQaapPreviewConversationId(
+            this.transcriptController.state.transcriptOpenSummaryId,
+        );
+        this.transcriptSurfacesUi.stageTranscriptPreviewReadyUrl(conversationScopeId, readyUrl);
     }
 
     protected ensureOverlayUi(): {

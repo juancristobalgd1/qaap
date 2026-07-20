@@ -128,6 +128,7 @@ export function buildAgentReviewPrompt(options: {
         '- Leftover debug code, temp files, or hardcoded values.',
         '- Security problems (injection, secrets, missing validation, tenant isolation).',
         'You may run read-only commands to inspect the repository. Do NOT edit any file, do NOT commit, do NOT fix anything — you only judge.',
+        'Do not start an application, dev server, watcher, or any other long-lived process. Use existing Preview evidence and bounded read-only checks instead.',
         '',
         'End your final message with exactly one line: the marker ' + QAAP_AGENT_REVIEW_VERDICT_MARKER
         + ' followed by a space, then the single word "pass" or "fail", then a short reason.'
