@@ -70,6 +70,7 @@ describe('QaapDevPreviewEndpoint', () => {
             'import React from "/node_modules/.vite/deps/react.js?v=123";',
             'export { value } from "/src/module.js";',
             'const worker = new URL("/src/worker.js", import.meta.url);',
+            'const data = fetch("/api/items");',
             'const model = "/models/iphone16promax.glb";',
             '.hero { background: url(/assets/bg.png); }',
         ].join('\n');
@@ -80,9 +81,19 @@ describe('QaapDevPreviewEndpoint', () => {
             'import React from "/qaap-dev/5184/node_modules/.vite/deps/react.js?v=123";',
             'export { value } from "/qaap-dev/5184/src/module.js";',
             'const worker = new URL("/qaap-dev/5184/src/worker.js", import.meta.url);',
-            'const model = "/qaap-dev/5184/models/iphone16promax.glb";',
+            'const data = fetch("/qaap-dev/5184/api/items");',
+            // Bare string literals are NOT URLs by construction — leave them alone.
+            'const model = "/models/iphone16promax.glb";',
             '.hero { background: url(/qaap-dev/5184/assets/bg.png); }',
         ].join('\n'));
+    });
+
+    it('never rewrites client-side router route tables', () => {
+        // Route paths are absolute-path string literals; prefixing them corrupts route ids
+        // (parent+child concatenation compounds the prefix once per tree level) and every routed
+        // SPA hydrates to a blank page. Regression for the live VPS failure.
+        const routeTree = 'const route = createFileRoute("/_authenticated/")({ path: "/settings" });';
+        expect(endpoint.exposeRewriteDevPreviewBody(routeTree, 5184)).to.equal(routeTree);
     });
 
     it('rewrites root-relative redirects through the qaap-dev proxy prefix', () => {
@@ -97,7 +108,7 @@ describe('QaapDevPreviewEndpoint', () => {
             '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234',
         )).to.equal(
             'import "/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/@vite/client"; '
-            + 'const socketPath = "/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/hmr";',
+            + 'const socketPath = "/hmr";',
         );
     });
 

@@ -879,13 +879,19 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         publicPrefix: string = `${QAAP_DEV_PREVIEW_PREFIX}/${targetPort}`,
     ): string {
         const prefix = publicPrefix;
+        // NEVER rewrite arbitrary JS string literals: a broad `"/..."` rule corrupted client-side
+        // route tables (TanStack/React-Router route paths are absolute-path strings, and route ids
+        // concatenate parent+child, compounding the prefix once per tree level — observed live as
+        // routeIds like `/qaap-preview/<id>/qaap-preview/<id>/…/_authenticated`, which made every
+        // routed SPA render blank under the proxy). Only rewrite positions that are URLs by
+        // construction: markup attributes, CSS url(), module specifiers, and fetch() calls.
         return body
             .replace(/\b(src|href|action)=("|')\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1=$2${prefix}/`)
             .replace(/\burl\(\s*(["']?)\/(?!\/|qaap-(?:dev|preview)\/)/g, `url($1${prefix}/`)
-            .replace(/(["'`])\/(?!\/|qaap-(?:dev|preview)\/)([^"'`\s]*)\1/g, `$1${prefix}/$2$1`)
             .replace(/(\bimport\s*(?:\(|[^"'`]*from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
             .replace(/(\bexport\s+[^"'`]*from\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
-            .replace(/(\bnew\s+URL\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`);
+            .replace(/(\bnew\s+URL\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
+            .replace(/(\bfetch\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`);
     }
 
     protected rewriteIsolatedPreviewCsp(raw: string | string[] | undefined, parentOrigin: string): string {
