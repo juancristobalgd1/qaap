@@ -24,12 +24,18 @@
   border: 0;
 }
 
-/* Mobile transcript — hidden by default; never rely on [hidden] alone (display was overridden). */
+/*
+ * Mobile transcript — hidden by default; never rely on [hidden] alone (display was overridden).
+ * Sticky composer is a flex sibling below the mount, so do not add --theia-mobile-projects-fab-lift
+ * (full composer height) — that floats the FAB mid-transcript.
+ * Lift by the composer lip overlap (--theia-mobile-transcript-composer-scroll-gap, −28/−34px)
+ * so the 40px circle clears the overlapping chrome instead of sitting under it.
+ */
 .theia-mobile-agent-transcript-scroll-to-bottom {
   position: absolute;
   left: 50%;
   right: auto;
-  bottom: calc(12px + var(--theia-mobile-projects-fab-lift, 0px));
+  bottom: calc(12px + max(0px, -1 * var(--theia-mobile-transcript-composer-scroll-gap, 0px)));
   z-index: 6;
   transform: translateX(-50%);
   display: none !important;
@@ -163,10 +169,10 @@
   transform: translateX(-50%) scale(0.96);
 }
 
-/* Full-screen transcript sheet: float above composer clearance. */
+/* Full-screen sheet + agents hub inline: sit just above the scrollport floor / composer lip. */
 .theia-mobile-agent-transcript-root .theia-mobile-agent-transcript-scroll-to-bottom,
 .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-scroll-to-bottom {
-  bottom: calc(12px + var(--theia-mobile-projects-fab-lift, 0px));
+  bottom: calc(12px + max(0px, -1 * var(--theia-mobile-transcript-composer-scroll-gap, 0px)));
 }
 
 /* Classic IDE chat panel — no composer lift token; beat upstream flat button styles. */

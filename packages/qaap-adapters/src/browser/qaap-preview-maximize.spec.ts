@@ -111,4 +111,31 @@ describe('qaap-preview-maximize chrome', () => {
         const restorePaths = [...button.querySelectorAll('path')].map(node => node.getAttribute('d'));
         expect(restorePaths).to.have.length(8);
     });
+
+    it('workbench controls host Maximize then Edit with no DOM separator between them', () => {
+        const previewRoot = document.createElement('div');
+        previewRoot.className = 'qaap-agent-preview-embedded';
+        const workbench = document.createElement('div');
+        workbench.className = 'theia-mini-browser-workbench-controls';
+        previewRoot.append(workbench);
+        document.body.append(previewRoot);
+
+        const toDispose = new DisposableCollection();
+        const { button: maximizeBtn } = createPreviewMaximizeControl({
+            getPreviewRoot: () => previewRoot,
+            toDispose,
+        });
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.classList.add('theia-mini-browser-workbench-button', 'qaap-preview-edit-button');
+        workbench.append(maximizeBtn, editBtn);
+
+        expect([...workbench.children].map(node => node.nodeName)).to.deep.equal(['BUTTON', 'BUTTON']);
+        expect(workbench.querySelectorAll('[role="separator"], hr, .separator, .divider').length).to.equal(0);
+        expect(maximizeBtn.nextElementSibling).to.equal(editBtn);
+        expect(maximizeBtn.classList.contains(Style.TOOLBAR_MAXIMIZE)).to.equal(true);
+        expect(editBtn.classList.contains('qaap-preview-edit-button')).to.equal(true);
+
+        toDispose.dispose();
+    });
 });

@@ -155,6 +155,7 @@ export interface MobileProjectsTranscriptSurfacesHost {
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     headerPreviewRunHost: HTMLElement;
+    headerFilesMoreHost: HTMLElement;
     root: HTMLElement;
 
     renderChecksSection(
@@ -1458,6 +1459,51 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.host.headerPreviewRunHost.hidden = true;
     }
 
+    /**
+     * Mounts Files ⋯ on the Work Hub header (left of the view selector) when the Files
+     * surface is active outside the transcript sheet overlay.
+     */
+    syncHeaderFilesMoreButton(
+        project: MobileProjectEntry | undefined = this.host.transcriptOpenProject,
+        summary: QaapAgentConversationSummaryDTO | undefined = this.host.transcriptOpenSummary,
+    ): void {
+        const host = this.host.headerFilesMoreHost;
+        const openProject = project ?? this.host.transcriptOpenProject;
+        const openSummary = summary ?? this.host.transcriptOpenSummary;
+        if (!openProject || !openSummary) {
+            this.hideHeaderFilesMoreButton();
+            return;
+        }
+        const onFilesTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject) === 'files';
+        const useHubHeader = !this.host.transcriptSheet
+            && (this.host.agentsHubShellActive || Boolean(this.host.projectDetailSurfaceTargets));
+        const workspaceKey = this.resolveTranscriptWorkspaceKey(openProject, openSummary);
+        const mount = workspaceKey
+            ? this.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey)
+            : undefined;
+        if (!onFilesTab || !useHubHeader || !mount?.attachMoreActionsHost) {
+            mount?.attachMoreActionsHost?.(undefined);
+            host.hidden = true;
+            return;
+        }
+        mount.attachMoreActionsHost(host);
+        host.hidden = false;
+    }
+
+    /** Hide / restore Files ⋯ when leaving Files or tearing down the shell. */
+    hideHeaderFilesMoreButton(): void {
+        const openProject = this.host.transcriptOpenProject;
+        const openSummary = this.host.transcriptOpenSummary;
+        if (openProject && openSummary) {
+            const workspaceKey = this.resolveTranscriptWorkspaceKey(openProject, openSummary);
+            const mount = workspaceKey
+                ? this.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey)
+                : undefined;
+            mount?.attachMoreActionsHost?.(undefined);
+        }
+        this.host.headerFilesMoreHost.hidden = true;
+    }
+
     protected createTranscriptPreviewRunButton(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -1896,6 +1942,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         if (this.host.transcriptFilesAttachedKey === workspaceKey && host.querySelector('.theia-mobile-transcript-files')) {
+            this.syncHeaderFilesMoreButton(project, summary);
             return;
         }
         this.detachTranscriptFilesFromHost();
@@ -1926,6 +1973,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         host.replaceChildren();
         host.append(mount.root);
         this.host.transcriptFilesAttachedKey = workspaceKey;
+        this.syncHeaderFilesMoreButton(project, summary);
         mount.root.querySelector<HTMLElement>('.theia-mobile-transcript-files-preview-body')
             ?.dispatchEvent(new Event('resize'));
         window.dispatchEvent(new Event('resize'));
@@ -2309,6 +2357,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     detachTranscriptFilesFromHost(): void {
+        this.hideHeaderFilesMoreButton();
         const host = this.executionFilesHost();
         if (host) {
             host.querySelector('.theia-mobile-transcript-files')?.remove();

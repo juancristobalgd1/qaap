@@ -44,11 +44,14 @@ const TRANSCRIPT_CONVERSATION_MESSAGE_SELECTOR = [
     '.theia-transcript-virtual-window > .theia-mobile-agent-transcript-msg.theia-mod-agent:not(.theia-mobile-agent-activity)',
 ].join(', ');
 
-function readComposerLiftPx(mountHost: HTMLElement): number {
-    const source = mountHost.closest('.theia-mobile-projects') ?? mountHost;
-    const raw = getComputedStyle(source).getPropertyValue('--theia-mobile-projects-fab-lift').trim();
-    const parsed = Number.parseFloat(raw);
-    return Number.isFinite(parsed) ? parsed : 0;
+/**
+ * Near-bottom clearance inside the transcript scroller.
+ * Sticky composer / Working pill live in a flex sibling below the mount — not overlaid
+ * inside it — so full `--theia-mobile-projects-fab-lift` must not inflate this band
+ * (that hid the FAB while the viewport was still mid-content).
+ */
+function readComposerLiftPx(_mountHost: HTMLElement): number {
+    return 0;
 }
 
 /** Scroll to the transcript tail; re-apply after layout settles (streaming / smooth scroll). */

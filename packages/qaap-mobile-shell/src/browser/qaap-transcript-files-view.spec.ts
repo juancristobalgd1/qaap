@@ -124,11 +124,27 @@ describe('qaap-transcript-files-view', () => {
 
         const createServices = (): TranscriptFilesViewServices => ({
             resolveRootUri: () => 'file:///repo',
-            resolveRootLabel: () => 'repo',
             listDirectory: async () => [],
             relativePathForResource: (_resourcePath, rootUri) => _resourcePath.slice(`${rootUri}/`.length),
             readFile: async () => '',
             localize: (_key, defaultValue) => defaultValue,
+        });
+
+        it('omits preview breadcrumb; keeps lock and toolbar actions left-aligned', () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            mountTranscriptFilesView(host, '/repo', createServices());
+
+            expect(host.querySelector('.theia-mobile-transcript-files-breadcrumb')).to.be.null;
+            const header = host.querySelector('.theia-mobile-transcript-files-preview-header');
+            const actions = host.querySelector('.theia-mobile-transcript-files-preview-actions');
+            expect(header).to.exist;
+            expect(actions).to.exist;
+            expect(header?.firstElementChild).to.equal(actions);
+            expect(host.querySelector('.theia-mobile-transcript-files-edit-toggle.codicon-lock')).to.exist;
+            expect(host.querySelector('.theia-mobile-transcript-files-tree-toggle')).to.exist;
+            // ⋯ defaults to preview actions until Work Hub relocates it via attachMoreActionsHost.
+            expect(host.querySelector('.theia-mobile-transcript-files-preview-actions .theia-mobile-transcript-files-more')).to.exist;
         });
 
         it('exposes file tree toggle in preview actions, not overflow menu', () => {
@@ -142,13 +158,36 @@ describe('qaap-transcript-files-view', () => {
             expect(treeToggle?.getAttribute('aria-pressed')).to.equal('true');
             expect(treeToggle?.getAttribute('aria-label')).to.equal('Hide file tree');
 
-            const moreBtn = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-preview-actions .codicon-ellipsis');
+            const moreBtn = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-more');
             moreBtn?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
             const overflowMenu = document.querySelector('.theia-mobile-transcript-files-menu:not(.theia-mod-create)');
             expect(overflowMenu).to.exist;
             expect(overflowMenu?.textContent ?? '').to.not.include('Show file tree');
             expect(overflowMenu?.textContent ?? '').to.not.include('Hide file tree');
             expect(overflowMenu?.querySelector('.codicon-list-tree')).to.be.null;
+        });
+
+        it('relocates more-actions button to an external Work Hub header host', () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            const headerHost = document.createElement('div');
+            document.body.append(headerHost);
+            const mount = mountTranscriptFilesView(host, '/repo', createServices());
+
+            expect(mount.attachMoreActionsHost).to.be.a('function');
+            mount.attachMoreActionsHost?.(headerHost);
+
+            expect(headerHost.querySelector('.theia-mobile-transcript-files-more')).to.exist;
+            expect(headerHost.querySelector('.theia-mobile-transcript-files-more--header')).to.exist;
+            expect(host.querySelector('.theia-mobile-transcript-files-preview-actions .theia-mobile-transcript-files-more')).to.be.null;
+
+            const moreBtn = headerHost.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-more');
+            moreBtn?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            expect(document.querySelector('.theia-mobile-transcript-files-menu:not(.theia-mod-create)')).to.exist;
+
+            mount.attachMoreActionsHost?.(undefined);
+            expect(host.querySelector('.theia-mobile-transcript-files-preview-actions .theia-mobile-transcript-files-more')).to.exist;
+            expect(headerHost.querySelector('.theia-mobile-transcript-files-more')).to.be.null;
         });
 
         it('toggles file tree visibility from the toolbar button', () => {

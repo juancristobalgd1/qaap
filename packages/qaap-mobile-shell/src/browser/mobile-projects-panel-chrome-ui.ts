@@ -28,6 +28,7 @@ export interface MobileProjectsPanelChromeHost {
     titleAttentionEl: HTMLSpanElement;
     headerExecutionCluster: HTMLElement;
     headerPreviewRunHost: HTMLElement;
+    headerFilesMoreHost: HTMLElement;
     headerExecutionTabsHost: HTMLElement;
     subtitleEl: HTMLElement;
     accountBtn: HTMLButtonElement;
@@ -134,6 +135,9 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerPreviewRunHost = document.createElement('div');
         this.host.headerPreviewRunHost.className = 'theia-mobile-projects-header-preview-run';
         this.host.headerPreviewRunHost.hidden = true;
+        this.host.headerFilesMoreHost = document.createElement('div');
+        this.host.headerFilesMoreHost.className = 'theia-mobile-projects-header-files-more';
+        this.host.headerFilesMoreHost.hidden = true;
         this.host.headerExecutionTabsHost = document.createElement('div');
         this.host.headerExecutionTabsHost.className = 'theia-mobile-projects-header-execution-tabs';
         this.host.headerExecutionTabsHost.hidden = true;
@@ -208,6 +212,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerExecutionCluster.append(
             this.host.headerOverflowMenuBtn,
             this.host.headerPreviewRunHost,
+            this.host.headerFilesMoreHost,
             this.host.headerExecutionTabsHost,
         );
         actions.append(

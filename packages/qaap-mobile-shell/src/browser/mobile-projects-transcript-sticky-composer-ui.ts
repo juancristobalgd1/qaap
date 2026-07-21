@@ -109,6 +109,10 @@ import {
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
+import {
+    parkWorkingControlFromAncestor,
+    transferWorkingControlToHost,
+} from './qaap-sticky-composer-working-agents-popover';
 import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
 import { extractTranscriptPreviewId } from './mobile-projects-transcript-messages-content-ui';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
@@ -254,6 +258,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
+    updateWorkingPillChrome(): void;
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     transcriptMessagesUi: import('./mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
@@ -1381,6 +1386,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const changesPill = renderStickyComposerChangesPill(activityOptions);
         const existingPill = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
         if (!changesPill) {
+            if (existingPill instanceof HTMLElement) {
+                parkWorkingControlFromAncestor(existingPill);
+            }
             existingPill?.remove();
             this.lastComposerChangesPillFingerprint = '';
         } else if (existingPill instanceof HTMLElement) {
@@ -1388,6 +1396,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 || patchStickyComposerChangesPillHost(existingPill, activityOptions)) {
                 this.lastComposerChangesPillFingerprint = pillFingerprint;
             } else {
+                if (changesPill instanceof HTMLElement) {
+                    transferWorkingControlToHost(existingPill, changesPill);
+                } else {
+                    parkWorkingControlFromAncestor(existingPill);
+                }
                 existingPill.replaceWith(changesPill);
                 this.lastComposerChangesPillFingerprint = pillFingerprint;
             }
@@ -1423,6 +1436,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             card.classList.add('theia-mod-has-activity');
         }
         this.syncComposerActivityFingerprint(summary, project, activityOptions);
+        this.host.updateWorkingPillChrome();
         this.host.composerHeaderUi.updateStickyComposerFabLift();
     }
 
@@ -1529,6 +1543,34 @@ export class MobileProjectsTranscriptStickyComposerUi {
             }
         }
         return false;
+    }
+
+    /**
+     * Same cancel path as the sticky-composer Stop button (`onStop` → {@link onCancelConversation}).
+     * Used by Working "Stop All" so the open inline session is aborted, not only UI chrome.
+     */
+    stopOpenComposerAgentLikeComposerStop(): boolean {
+        let project = this.host.transcriptComposerProject
+            ?? this.host.transcriptOpenProject;
+        let summary = this.host.transcriptComposerSummary
+            ?? this.host.transcriptOpenSummary;
+        if (!project || !summary) {
+            return false;
+        }
+        if (isAgentsHubIdleConversationSummary(summary)) {
+            project = this.workHub.resolveShellProject() ?? project;
+            summary = this.workHub.resolveShellSummary(project) ?? summary;
+            if (isAgentsHubIdleConversationSummary(summary)) {
+                return false;
+            }
+        }
+        // Mirror composer Stop: cancel even when status briefly lags behind the Stop affordance.
+        if (!this.isTranscriptStickyComposerAgentWorking() && summary.status !== 'streaming') {
+            return false;
+        }
+        this.host.onCancelConversation(project, summary);
+        this.host.transcriptComposerSendRefresh?.();
+        return true;
     }
 
     isTranscriptStickyComposerAgentBeamIdle(): boolean {
@@ -1783,6 +1825,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
         // The latches are updated naturally by selectComposerPillChanges once the fetch returns.
         this.composerActivityGitFilesByConversationId.delete(summary.id);
         this.host.stickyComposerContextUsageDispose.dispose();
+        // Park the Working expand shell before wipe so transcript remounts cannot destroy it.
+        parkWorkingControlFromAncestor(host);
         host.replaceChildren();
         this.syncTranscriptComposerQuickActionsVisibility(host, summary);
         const shell = document.createElement('div');
@@ -2015,6 +2059,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         shell.append(column);
         host.append(shell);
+        this.host.updateWorkingPillChrome();
         const isIdleComposer = isAgentsHubIdleConversationSummary(summary);
         this.agentsHubIdleComposerMounted = isIdleComposer;
         // Autofocus deterministically AFTER the frontend reaches 'ready' — the

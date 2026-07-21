@@ -109,6 +109,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             tasksHubUi: {} as MobileProjectsAgentsHubInlineHost['tasksHubUi'],
             headerExecutionTabsHost: document.createElement('div'),
             headerPreviewRunHost: document.createElement('div'),
+            headerFilesMoreHost: document.createElement('div'),
             preparedCwdByProjectId: new Map(),
             projectsService: {
                 resolveCurrentWorkspaceProject: () => undefined,
@@ -122,6 +123,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             transcriptSurfacesUi: {
                 syncHeaderPreviewRunButton: () => undefined,
                 hideHeaderPreviewRunButton: () => undefined,
+                syncHeaderFilesMoreButton: () => undefined,
+                hideHeaderFilesMoreButton: () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSurfacesUi'],
             transcriptLiveUi: {
                 clearTranscriptSemanticProgressClock: () => undefined,

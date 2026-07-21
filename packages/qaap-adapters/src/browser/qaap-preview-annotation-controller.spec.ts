@@ -879,7 +879,7 @@ describe('qaap-preview-annotation-controller', () => {
         expect(controller.getInteractionMode()).to.equal('browse');
     });
 
-    it('toolbar delete asks for confirmation then clears every annotation', async () => {
+    it('toolbar delete asks for confirmation then clears every annotation and exits annotate', async () => {
         const frame = createFrame();
         const slot = document.createElement('div');
         slot.append(frame);
@@ -940,7 +940,7 @@ describe('qaap-preview-annotation-controller', () => {
         await (controller as unknown as { confirmAndClearAllAnnotations(): Promise<void> }).confirmAndClearAllAnnotations();
         expect(confirmCalls).to.equal(2);
         expect(store.list()).to.have.length(0);
-        expect(controller.getInteractionMode()).to.equal('annotate');
+        expect(controller.getInteractionMode()).to.equal('browse');
     });
 
     it('Send commits a typed-but-unconfirmed popover draft instead of dropping it', async () => {

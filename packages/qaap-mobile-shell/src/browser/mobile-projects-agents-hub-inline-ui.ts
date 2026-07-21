@@ -87,6 +87,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     tasksHubUi: MobileProjectsTasksHubUi;
     headerExecutionTabsHost: HTMLElement;
     headerPreviewRunHost: HTMLElement;
+    headerFilesMoreHost: HTMLElement;
     preparedCwdByProjectId: Map<string, string>;
     projectsService: MobileProjectsService;
 
@@ -609,6 +610,8 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.headerExecutionTabsHost.replaceChildren();
         this.host.transcriptSurfacesUi.hideHeaderPreviewRunButton();
         this.host.headerPreviewRunHost.replaceChildren();
+        this.host.transcriptSurfacesUi.hideHeaderFilesMoreButton();
+        this.host.headerFilesMoreHost.replaceChildren();
         if (this.host.transcriptPlanHost) {
             this.host.transcriptPlanHost.remove();
             this.host.transcriptReviewHost?.remove();

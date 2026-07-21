@@ -6,6 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
+    isAgentsHubIdleConversationSummary,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
     QAAP_AGENTS_HUB_QUICK_ACTIONS,
     QAAP_AGENTS_HUB_RECENT_LIMIT,
@@ -13,10 +14,26 @@ import {
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 import { type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import { cancelConversation } from '../common/qaap-agent-conversation-client';
+import { cancelAgentTask } from '../common/qaap-agent-task-client';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
+import {
+    closeWorkingAgentsPopover,
+    dismissWorkingAgentsExpandForStopAll,
+    filterWorkingTeamMembers,
+    isWorkingAgentsExpandPinnedOpen,
+    isWorkingAgentsExpandSessionOpen,
+    isWorkingAgentsPopoverOpen,
+    isWorkingPillSuppressedAfterStopAll,
+    noteWorkingPillChromeCount,
+    openWorkingAgentsPopover,
+    restoreWorkingAgentsExpandIfNeeded,
+    syncWorkingAgentsExpandContent,
+} from './qaap-sticky-composer-working-agents-popover';
 
 /** Panel surface for Tasks hub list rendering and Agents Hub landing recents/quick actions. */
 export interface MobileProjectsTasksHubHost {
@@ -32,6 +49,11 @@ export interface MobileProjectsTasksHubHost {
     transcriptSheet: HTMLElement | undefined;
     transcriptComposerHost: HTMLElement | undefined;
     transcriptComposerDraft: string;
+    transcriptComposerProject?: MobileProjectEntry;
+    transcriptComposerSummary?: QaapAgentConversationSummaryDTO;
+    transcriptOpenProject?: MobileProjectEntry;
+    transcriptOpenSummary?: QaapAgentConversationSummaryDTO;
+    transcriptComposerSendRefresh?: (() => void) | undefined;
     stickyComposerDraft: string;
     stickyComposerHost: HTMLElement | undefined;
     titleAttentionEl: HTMLElement;
@@ -56,6 +78,11 @@ export interface MobileProjectsTasksHubHost {
         parentIds?: ReadonlySet<string>,
     ): HTMLElement;
     openWorkHubSessionsSidebar(): void;
+    collectTeamMembersForHub(): WorkHubTeamMember[];
+    onTeamMemberClick(member: WorkHubTeamMember): void;
+    onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
+    /** Optional toast surface for Stop All / Working chrome failures. */
+    messageService?: { error(message: string): void };
     collectChatHubGroups(
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }>;
@@ -281,6 +308,7 @@ export class MobileProjectsTasksHubUi {
     }
 
     updateTasksAttentionChrome(): void {
+        this.updateWorkingPillChrome();
         if (!this.host.homeMode || !this.host.hubQueryUi.isTasksHubView() || this.host.tasksHubSurface === 'chat' || this.host.shouldUseAgentsHubLanding()) {
             this.host.titleAttentionEl.hidden = true;
             this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
@@ -300,6 +328,192 @@ export class MobileProjectsTasksHubUi {
             '{0} tasks need your attention',
             String(needsYou),
         );
+    }
+
+    /**
+     * Cursor-style "N Working" pill above the sticky composer (Changes/Commit row).
+     * Visible when ≥1 agent is actively working; click expands the agents panel in place.
+     *
+     * Important: do NOT gate the count on `isTasksHubView()`. Transcript overlays leave the
+     * tasks-hub surface while the sticky composer (and open Working menu) stay mounted —
+     * forcing count=0 there was closing the expand panel on every transcript re-render.
+     */
+    updateWorkingPillChrome(): void {
+        const rawCount = this.countWorkingAgentsForPill();
+        noteWorkingPillChromeCount(rawCount);
+        // After Stop All, hide the pill until a new live working agent appears (attention
+        // count can lag behind cancel; reading-retain must not keep "1 Working").
+        const realCount = isWorkingPillSuppressedAfterStopAll() ? 0 : rawCount;
+        const reading = isWorkingAgentsExpandPinnedOpen() && !isWorkingPillSuppressedAfterStopAll();
+        // Never auto-collapse while the user is reading (list or detail). Summary/settled
+        // often drops the working count to 0 (streaming → idle); only ✕ / Escape / Stop All
+        // / pill toggle may close in that case.
+        if (realCount <= 0 && !reading) {
+            closeWorkingAgentsPopover(true);
+        }
+        // Keep chrome alive while home/transcript composers exist, or while an expand session
+        // is still open (pill may be briefly parked during remount).
+        const composerMounted = !!(
+            this.host.stickyComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner')
+            || this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner')
+        );
+        const count = (realCount > 0 || reading)
+            && (this.host.homeMode || composerMounted || reading)
+            ? Math.max(realCount, reading ? 1 : 0)
+            : 0;
+        syncStickyComposerWorkingPillInRoots(
+            [this.host.stickyComposerHost, this.host.transcriptComposerHost],
+            {
+                count,
+                forceHide: isWorkingPillSuppressedAfterStopAll(),
+                onOpen: anchor => this.openWorkingAgentsPopoverFromPill(anchor),
+            },
+        );
+        if (count > 0 || reading) {
+            const roots = [this.host.stickyComposerHost, this.host.transcriptComposerHost];
+            let pill: HTMLButtonElement | undefined;
+            for (const root of roots) {
+                const candidate = root?.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-working-pill');
+                if (candidate) {
+                    pill = candidate;
+                    break;
+                }
+            }
+            const members = this.host.collectTeamMembersForHub();
+            if (pill && (isWorkingAgentsPopoverOpen() || isWorkingAgentsExpandSessionOpen())) {
+                restoreWorkingAgentsExpandIfNeeded({
+                    anchor: pill,
+                    members,
+                    transcriptOverlay: !!pill.closest('.theia-mobile-agent-transcript-root'),
+                    onSelect: member => this.host.onTeamMemberClick(member),
+                    onStopAll: working => {
+                        void this.stopAllWorkingAgents(working);
+                    },
+                });
+            } else if (isWorkingAgentsPopoverOpen()) {
+                syncWorkingAgentsExpandContent(members);
+            }
+        }
+    }
+
+    openWorkingAgentsPopoverFromPill(anchor: HTMLButtonElement): void {
+        const members = this.host.collectTeamMembersForHub();
+        const transcriptOverlay = !!anchor.closest('.theia-mobile-agent-transcript-root');
+        openWorkingAgentsPopover({
+            anchor,
+            members,
+            transcriptOverlay,
+            onSelect: member => this.host.onTeamMemberClick(member),
+            onStopAll: working => {
+                void this.stopAllWorkingAgents(working);
+            },
+        });
+    }
+
+    /**
+     * Stop All = composer Stop for every working agent/session, then clear Working chrome.
+     * Uses {@link MobileProjectsTasksHubHost.onCancelConversation} (same as sticky-composer
+     * `onStop`) plus task cancel for running VPS subtasks without a conversation id.
+     */
+    async stopAllWorkingAgents(members: readonly WorkHubTeamMember[]): Promise<void> {
+        const errors: string[] = [];
+        const cancelledConversationIds = new Set<string>();
+        const cancelJobs: Promise<void>[] = [];
+
+        // 1) Always stop the open sticky-composer / transcript session first (composer Stop).
+        const stoppedOpen = this.host.transcriptStickyComposerUi.stopOpenComposerAgentLikeComposerStop();
+        const openComposerId = this.resolveOpenComposerConversationId();
+        if (stoppedOpen && openComposerId) {
+            cancelledConversationIds.add(openComposerId);
+        }
+
+        // 2) Live hub members + expand snapshot (prefer live — snapshot can be stale/idle-retained).
+        const liveWorking = filterWorkingTeamMembers(this.host.collectTeamMembersForHub());
+        const argWorking = filterWorkingTeamMembers(members);
+        const byKey = new Map<string, WorkHubTeamMember>();
+        for (const member of [...liveWorking, ...argWorking]) {
+            const key = member.conversationId
+                ? `c:${member.conversationId}`
+                : (member.taskId ? `t:${member.taskId}` : `id:${member.id}`);
+            byKey.set(key, member);
+        }
+
+        for (const member of byKey.values()) {
+            if (member.conversationId) {
+                if (cancelledConversationIds.has(member.conversationId)) {
+                    continue;
+                }
+                cancelledConversationIds.add(member.conversationId);
+                cancelJobs.push(this.cancelWorkingConversationLikeComposerStop(member.conversationId)
+                    .catch(err => {
+                        errors.push(err instanceof Error ? err.message : String(err));
+                    }));
+                continue;
+            }
+            if (member.taskId) {
+                const taskId = member.taskId;
+                cancelJobs.push(
+                    cancelAgentTask(taskId).catch(err => {
+                        errors.push(err instanceof Error ? err.message : String(err));
+                    }),
+                );
+            }
+        }
+
+        if (cancelJobs.length > 0) {
+            await Promise.all(cancelJobs);
+        }
+        if (errors.length > 0) {
+            const message = nls.localize(
+                'qaap/workHubChrome/workingStopAllFailed',
+                'Could not stop all agents: {0}',
+                errors[0],
+            );
+            this.host.messageService?.error(message);
+        }
+        // Stop All clears reading retain + pill immediately (do not keep "1 Working").
+        dismissWorkingAgentsExpandForStopAll();
+        this.host.transcriptComposerSendRefresh?.();
+        this.updateWorkingPillChrome();
+    }
+
+    /**
+     * Composer Stop for one conversation id: resolve summary via index, then
+     * {@link MobileProjectsTasksHubHost.onCancelConversation} (WS/HTTP cancel inside).
+     */
+    protected async cancelWorkingConversationLikeComposerStop(conversationId: string): Promise<void> {
+        const summary = this.host.conversationIndexUi.findSummaryById(conversationId);
+        const project = this.resolveProjectForConversationId(conversationId);
+        if (project && summary) {
+            this.host.onCancelConversation(project, summary);
+            return;
+        }
+        // Fallback: same transport as onCancelConversation's VPS branch (live WS → HTTP).
+        await cancelConversation(conversationId);
+    }
+
+    protected resolveProjectForConversationId(conversationId: string): MobileProjectEntry | undefined {
+        return this.host.projects.find(entry => this.host.conversationIndexUi.conversationsForProject(entry)
+            .some(summary => summary.id === conversationId));
+    }
+
+    protected resolveOpenComposerConversationId(): string | undefined {
+        const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
+        if (!summary || isAgentsHubIdleConversationSummary(summary)) {
+            return undefined;
+        }
+        return summary.id;
+    }
+
+    /** Running team members plus VPS streaming summaries (same max used by the tasks subtitle). */
+    countWorkingAgentsForPill(): number {
+        const { running } = this.host.countTasksAttention();
+        const streamingCount = this.host.projects.reduce(
+            (sum, project) => sum + this.host.conversationIndexUi.vpsTasksForProject(project)
+                .filter(conversation => conversation.status === 'streaming').length,
+            0,
+        );
+        return Math.max(running, streamingCount);
     }
 
     /** Flips the one-shot first-load flag once conversations arrive or the safety timeout fires. */

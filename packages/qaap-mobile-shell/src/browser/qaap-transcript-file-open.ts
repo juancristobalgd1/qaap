@@ -92,14 +92,6 @@ export function resolveTranscriptWorkspaceKey(cwd: string, workspaceService: Wor
     return normalized || undefined;
 }
 
-export function resolveTranscriptWorkspaceRootLabel(cwd: string, workspaceService: WorkspaceService): string {
-    const root = resolveTranscriptWorkspaceRootUri(cwd, workspaceService);
-    if (!root) {
-        return cwd.split('/').filter(Boolean).pop() ?? cwd;
-    }
-    return (root.path.base || root.path.name || cwd.split('/').filter(Boolean).pop()) ?? 'workspace';
-}
-
 /**
  * Wires transcript Files tab to the same IDE services as the workbench:
  * - {@link FileService} for list/read/write and file-change events
@@ -119,7 +111,6 @@ export function createTranscriptFilesViewServices(
 ): TranscriptFilesViewServices {
     return {
         resolveRootUri: cwd => resolveTranscriptWorkspaceRootUri(cwd, workspaceService)?.toString(),
-        resolveRootLabel: cwd => resolveTranscriptWorkspaceRootLabel(cwd, workspaceService),
         listDirectory: async resourcePath => {
             const stat = await fileService.resolve(new URI(resourcePath));
             return (stat.children ?? []).map(child => ({

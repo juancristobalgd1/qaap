@@ -48,6 +48,7 @@ export class MobileProjectsHubTeamDataUi {
             title: string;
             status: QaapAgentConversationSummaryDTO['status'];
             paused?: boolean;
+            forkedFromId?: string;
             activityLabel?: string;
             turnProgressCurrent?: number;
             turnProgressTotal?: number;
@@ -70,6 +71,7 @@ export class MobileProjectsHubTeamDataUi {
                     title: summary.title,
                     status: summary.status,
                     paused: summary.paused,
+                    forkedFromId: summary.forkedFromId,
                     activityLabel: summary.activityLabel,
                     turnProgressCurrent: summary.turnProgressCurrent,
                     turnProgressTotal: summary.turnProgressTotal,

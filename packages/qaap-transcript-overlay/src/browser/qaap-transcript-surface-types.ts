@@ -11,6 +11,12 @@ export interface TranscriptFilesMount {
     readonly dispose: Disposable;
     /** Selects a workspace file in the inline preview (relative or absolute path). */
     readonly revealFilePath?: (filePath: string) => Promise<void>;
+    /**
+     * Relocates the Files more-actions (⋯) control.
+     * Pass a Work Hub header host to mount it left of the view selector;
+     * pass `undefined` to restore it inside the preview header.
+     */
+    readonly attachMoreActionsHost?: (host: HTMLElement | undefined) => void;
 }
 
 export interface TranscriptTerminalSurface {

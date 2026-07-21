@@ -52,6 +52,8 @@ export interface WorkHubTeamConversationInput {
     readonly title: string;
     readonly status: 'idle' | 'streaming' | 'settled' | 'failed';
     readonly paused?: boolean;
+    /** When set, this conversation is a fork/subagent of another conversation. */
+    readonly forkedFromId?: string;
     readonly activityLabel?: string;
     readonly turnProgressCurrent?: number;
     readonly turnProgressTotal?: number;
@@ -93,6 +95,7 @@ export function collectAgentMembers(input: CollectAgentMembersInput): WorkHubTea
             cwd,
             agentId: conv.agentId,
             state: 'streaming',
+            parentId: conv.forkedFromId,
             childCount: 0,
             progressCurrent: conv.turnProgressCurrent,
             progressTotal: conv.turnProgressTotal,

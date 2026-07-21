@@ -73,6 +73,8 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 syncExecutionSurfaceChrome: () => undefined,
                 syncHeaderPreviewRunButton: () => undefined,
                 hideHeaderPreviewRunButton: () => undefined,
+                syncHeaderFilesMoreButton: () => undefined,
+                hideHeaderFilesMoreButton: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptSurfacesUi'],
             projectDetailUi: {} as MobileProjectsExecutionSurfaceTabsHost['projectDetailUi'],
             ensureAgentsHubExecutionShellRendered: () => undefined,

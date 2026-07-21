@@ -36,6 +36,7 @@ export interface MobileProjectsProjectNavigationHost {
     headerExecutionTabsProjectId: string | undefined;
     headerExecutionTabsHost: HTMLElement;
     headerPreviewRunHost: HTMLElement;
+    headerFilesMoreHost: HTMLElement;
     projects: MobileProjectEntry[];
     projectsService: MobileProjectsService;
     commands: CommandRegistry;
@@ -143,6 +144,8 @@ export class MobileProjectsProjectNavigationUi {
         this.host.headerExecutionTabsHost.replaceChildren();
         this.host.transcriptSurfacesUi.hideHeaderPreviewRunButton();
         this.host.headerPreviewRunHost.replaceChildren();
+        this.host.transcriptSurfacesUi.hideHeaderFilesMoreButton();
+        this.host.headerFilesMoreHost.replaceChildren();
     }
 
     resolveSelectedProject(

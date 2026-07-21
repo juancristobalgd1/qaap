@@ -170,7 +170,8 @@
   border-left: none;
 }
 
-.theia-mini-browser-workbench-controls .theia-mini-browser-workbench-button + .theia-mini-browser-workbench-button {
+.theia-mini-browser-workbench-controls > .theia-mini-browser-workbench-button + .theia-mini-browser-workbench-button,
+.theia-mini-browser-workbench-controls > .qaap-preview-maximize-button + .qaap-preview-edit-button {
   border-left: none;
   margin-left: 0;
   padding-left: 0;

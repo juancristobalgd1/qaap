@@ -236,6 +236,11 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         } else {
             this.host.transcriptSurfacesUi.hideHeaderPreviewRunButton();
         }
+        if (tab === 'files') {
+            this.host.transcriptSurfacesUi.syncHeaderFilesMoreButton(project, summary);
+        } else {
+            this.host.transcriptSurfacesUi.hideHeaderFilesMoreButton();
+        }
     }
 
     /** Hide all execution surfaces; reveal exactly one tab. */

@@ -73,6 +73,7 @@ import {
     reconcileModelCapabilityLevel,
 } from '../common/qaap-sticky-composer-model-capability';
 import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-model-capability';
+import { parkWorkingControlFromAncestor } from './qaap-sticky-composer-working-agents-popover';
 
 export interface MobileProjectsStickyComposerRenderHost {
 root: HTMLElement;
@@ -136,6 +137,7 @@ projectsService: MobileProjectsService;
 transcriptComposerSendRefresh: (() => void) | undefined;
 composerPromptImprover?: QaapComposerPromptImprover;
 handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
+updateWorkingPillChrome(): void;
 }
 
 export class MobileProjectsStickyComposerRenderUi {
@@ -177,6 +179,7 @@ export class MobileProjectsStickyComposerRenderUi {
         input.placeholder = nls.localize('qaap/mobileProjects/stickyComposerLoadingProject', 'Loading project…');
         inputPanel.append(input);
         column.append(inputPanel);
+        parkWorkingControlFromAncestor(this.host.stickyComposerHost);
         this.host.stickyComposerHost.replaceChildren(column);
         this.host.stickyComposerHost.hidden = false;
         this.host.root.classList.add('theia-mod-sticky-composer');
@@ -310,6 +313,7 @@ export class MobileProjectsStickyComposerRenderUi {
                     && this.host.transcriptComposerHost === this.host.stickyComposerHost
                     && this.host.stickyComposerHost.childElementCount > 0;
                 if (!composerStable) {
+                    parkWorkingControlFromAncestor(this.host.stickyComposerHost);
                     this.host.stickyComposerHost.replaceChildren();
                     if (this.host.transcriptComposerBackendAgents.length === 0) {
                         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(shellProject!);
@@ -320,6 +324,7 @@ export class MobileProjectsStickyComposerRenderUi {
                 }
             } else {
                 this.host.transcriptComposerMountKey = undefined;
+                parkWorkingControlFromAncestor(this.host.stickyComposerHost);
                 this.host.stickyComposerHost.replaceChildren();
             }
             this.host.composerHeaderUi.syncHeaderComposerSurfacePicker();
@@ -332,6 +337,7 @@ export class MobileProjectsStickyComposerRenderUi {
             || activeElementBeforeRender === document.body
             || (activeElementBeforeRender instanceof HTMLElement && activeElementBeforeRender.classList.contains('theia-mod-loading'));
         this.host.transcriptComposerMountKey = undefined;
+        parkWorkingControlFromAncestor(this.host.stickyComposerHost);
         this.host.stickyComposerHost.replaceChildren();
         const surfaceEligible = this.host.homeMode && !!this.host.conversations && this.host.hubView === 'repos';
         const showReposComposer = surfaceEligible && !!project;
@@ -569,6 +575,7 @@ export class MobileProjectsStickyComposerRenderUi {
             this.host.stickyComposerHost.append(modeBanner);
         }
         this.host.stickyComposerHost.append(column);
+        this.host.updateWorkingPillChrome();
         const becameMounted = showComposer && !this.reposComposerMounted;
         this.reposComposerMounted = showComposer;
         if (becameMounted && focusEligibleBeforeMount) {

@@ -51,6 +51,7 @@ export function isModelCapabilityPopoverAnchor(anchor?: HTMLElement): anchor is 
  * (narrow preview must not take over the Work Hub with a full-screen sheet),
  * when opening from the Work Hub header project button,
  * or when opening the model capability slider.
+ * Working agents expand in place on the pill (not via this floating popover path).
  */
 export function shouldUseStickyComposerPopover(anchor?: HTMLElement): anchor is HTMLElement {
     return shouldUseStickyComposerDesktopPopover(anchor)

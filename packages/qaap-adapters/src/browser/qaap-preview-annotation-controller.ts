@@ -395,7 +395,8 @@ export class QaapPreviewAnnotationController implements Disposable {
 
     /**
      * Toolbar delete — wipe every annotation of this preview conversation (any route),
-     * the open comment popover, and pending screenshots. Stays in Annotate after clearing.
+     * the open comment popover, and pending screenshots. Does not change interaction mode;
+     * {@link confirmAndClearAllAnnotations} exits Annotate after a successful confirm.
      */
     protected clearAllAnnotations(): void {
         const scope = this.options.getScope();
@@ -418,7 +419,10 @@ export class QaapPreviewAnnotationController implements Disposable {
         this.syncAnnotateToolbar();
     }
 
-    /** Confirm, then {@link clearAllAnnotations}. No-op when there is nothing to delete. */
+    /**
+     * Confirm, then {@link clearAllAnnotations} and leave Annotate via {@link exitAnnotateMode}
+     * (same path as the toolbar ×). No-op when there is nothing to delete or the user cancels.
+     */
     protected async confirmAndClearAllAnnotations(): Promise<void> {
         if (!this.hasClearableAnnotations()) {
             return;
@@ -428,6 +432,7 @@ export class QaapPreviewAnnotationController implements Disposable {
             return;
         }
         this.clearAllAnnotations();
+        this.exitAnnotateMode();
     }
 
     protected async askDeleteAllConfirmation(): Promise<boolean> {

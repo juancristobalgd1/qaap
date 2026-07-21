@@ -515,6 +515,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerSurfacePickerHost: HTMLElement;
     protected readonly headerExecutionCluster: HTMLElement;
     protected readonly headerPreviewRunHost: HTMLElement;
+    protected readonly headerFilesMoreHost: HTMLElement;
     protected readonly headerExecutionTabsHost: HTMLElement;
     protected headerSurfacePicker?: QaapSegmentedFieldController<MobileBottomButtonId>;
     protected headerIdeViewPickerBtn: HTMLButtonElement | undefined;
@@ -2682,6 +2683,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected updateTasksAttentionChrome(): void {
         this.tasksHubUi.updateTasksAttentionChrome();
+    }
+
+    protected updateWorkingPillChrome(): void {
+        this.tasksHubUi.updateWorkingPillChrome();
     }
 
     protected appendTasksHubTeamSection(container: HTMLElement): boolean {

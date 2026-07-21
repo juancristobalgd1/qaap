@@ -177,6 +177,30 @@ body.qaap-mod-history-resizing * {
   padding: 4px 8px;
   border-bottom: 1px solid var(--theia-widget-border, rgba(255, 255, 255, 0.08));
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 14px,
+    #000 calc(100% - 14px),
+    transparent 100%
+  );
+}
+
+.qaap-agent-preview-bookmark-bar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .qaap-agent-preview-bookmark-bar[hidden] {
@@ -652,8 +676,13 @@ body.qaap-mod-inspector-resizing.qaap-mod-inspector-resizing-vertical * {
   display: none;
 }
 
-/* Maximize + Edit: one icon group — no vertical divider between buttons. */
+/*
+ * Maximize + Edit: one icon group — no vertical divider.
+ * Also win over qaap-product-theme's workbench-controls border (loads later in the
+ * cascade) by matching its toolbar + media-query selectors.
+ */
 .theia-mini-browser-toolbar .theia-mini-browser-workbench-controls,
+.theia-mini-browser-toolbar-read-only .theia-mini-browser-workbench-controls,
 .qaap-agent-preview-embedded-toolbar .theia-mini-browser-workbench-controls {
   gap: 2px;
   margin-left: var(--q-space-2, 4px);
@@ -661,11 +690,22 @@ body.qaap-mod-inspector-resizing.qaap-mod-inspector-resizing-vertical * {
   border-left: none;
 }
 
-.theia-mini-browser-workbench-controls .theia-mini-browser-workbench-button + .theia-mini-browser-workbench-button {
+.theia-mini-browser-workbench-controls > .theia-mini-browser-workbench-button + .theia-mini-browser-workbench-button,
+.theia-mini-browser-workbench-controls > .qaap-preview-maximize-button + .qaap-preview-edit-button {
   border-left: none;
   margin-left: 0;
   padding-left: 0;
   box-shadow: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .theia-mini-browser-toolbar .theia-mini-browser-workbench-controls,
+  .theia-mini-browser-toolbar-read-only .theia-mini-browser-workbench-controls,
+  .qaap-agent-preview-embedded-toolbar .theia-mini-browser-workbench-controls {
+    gap: 2px;
+    padding-left: 0;
+    border-left: none;
+  }
 }
 
 /* Full-bleed preview: hide Work Hub chrome and expand the preview surface. */

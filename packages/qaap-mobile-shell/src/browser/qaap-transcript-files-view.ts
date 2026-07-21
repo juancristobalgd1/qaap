@@ -25,7 +25,6 @@ export interface TranscriptFileTreeEntry {
 
 export interface TranscriptFilesViewServices {
     resolveRootUri(cwd: string): string | undefined;
-    resolveRootLabel(cwd: string): string;
     listDirectory(resourcePath: string): Promise<readonly TranscriptFileTreeEntry[]>;
     relativePathForResource(resourcePath: string, rootUri: string): string;
     readFile(resourcePath: string): Promise<string>;
@@ -225,10 +224,8 @@ export function mountTranscriptFilesView(
         return { root, dispose: disposables };
     }
 
-    const rootLabel = services.resolveRootLabel(cwd);
     const state = {
         rootUri,
-        rootLabel,
         expanded: new Set<string>([rootUri]),
         selected: undefined as TranscriptFileTreeEntry | undefined,
         filter: '',
@@ -255,8 +252,6 @@ export function mountTranscriptFilesView(
     previewPane.className = 'theia-mobile-transcript-files-preview';
     const previewHeader = document.createElement('div');
     previewHeader.className = 'theia-mobile-transcript-files-preview-header';
-    const breadcrumb = document.createElement('div');
-    breadcrumb.className = 'theia-mobile-transcript-files-breadcrumb';
     const previewActions = document.createElement('div');
     previewActions.className = 'theia-mobile-transcript-files-preview-actions';
     const editToggleBtn = document.createElement('button');
@@ -274,13 +269,14 @@ export function mountTranscriptFilesView(
     treeToggleBtn.setAttribute('aria-pressed', 'true');
     const moreBtn = document.createElement('button');
     moreBtn.type = 'button';
-    moreBtn.className = 'theia-mobile-transcript-files-action codicon codicon-ellipsis';
+    moreBtn.className = 'theia-mobile-transcript-files-action theia-mobile-transcript-files-more codicon codicon-ellipsis';
     moreBtn.title = services.localize('qaap/mobileProjects/transcriptFilesMore', 'More actions');
     moreBtn.setAttribute('aria-label', moreBtn.title);
     moreBtn.setAttribute('aria-haspopup', 'menu');
     moreBtn.setAttribute('aria-expanded', 'false');
+    // Lock + tree stay in the preview header; ⋯ starts here and may relocate to the Work Hub header.
     previewActions.append(editToggleBtn, treeToggleBtn, moreBtn);
-    previewHeader.append(breadcrumb, previewActions);
+    previewHeader.append(previewActions);
     const previewBody = document.createElement('div');
     previewBody.className = 'theia-mobile-transcript-files-preview-body';
     previewPane.append(previewHeader, previewBody);
@@ -619,11 +615,6 @@ export function mountTranscriptFilesView(
 
     const renderEmptyPreview = (): void => {
         previewBody.replaceChildren();
-        breadcrumb.replaceChildren();
-        const rootCrumb = document.createElement('span');
-        rootCrumb.className = 'theia-mobile-transcript-files-crumb theia-mod-root';
-        rootCrumb.textContent = rootLabel;
-        breadcrumb.append(rootCrumb);
         const empty = document.createElement('div');
         empty.className = 'theia-mobile-transcript-files-empty';
         empty.textContent = services.localize(
@@ -631,33 +622,6 @@ export function mountTranscriptFilesView(
             'Select a file to preview its contents.',
         );
         previewBody.append(empty);
-    };
-
-    const renderPreviewHeader = (entry: TranscriptFileTreeEntry): void => {
-        breadcrumb.replaceChildren();
-        const rootCrumb = document.createElement('span');
-        rootCrumb.className = 'theia-mobile-transcript-files-crumb theia-mod-root';
-        rootCrumb.textContent = rootLabel;
-        breadcrumb.append(rootCrumb);
-        const parts = entry.relativePath.split('/').filter(Boolean);
-        const fileName = parts.pop() ?? entry.name;
-        if (parts.length > 0) {
-            const sep = document.createElement('span');
-            sep.className = 'theia-mobile-transcript-files-crumb-sep';
-            sep.textContent = '›';
-            breadcrumb.append(sep);
-            const dirCrumb = document.createElement('span');
-            dirCrumb.className = 'theia-mobile-transcript-files-crumb theia-mod-dir';
-            dirCrumb.textContent = parts.join(' › ');
-            breadcrumb.append(dirCrumb);
-        }
-        const sep = document.createElement('span');
-        sep.className = 'theia-mobile-transcript-files-crumb-sep';
-        sep.textContent = '›';
-        const fileCrumb = document.createElement('span');
-        fileCrumb.className = 'theia-mobile-transcript-files-crumb theia-mod-file';
-        fileCrumb.textContent = fileName;
-        breadcrumb.append(sep, fileCrumb);
     };
 
     const renderPreviewLoading = (): void => {
@@ -878,7 +842,6 @@ export function mountTranscriptFilesView(
         state.previewDirty = false;
         const requestId = ++state.previewRequestId;
         state.selected = entry;
-        renderPreviewHeader(entry);
         syncPreviewEditUi();
         if (!isTranscriptPreviewableTextFile(entry.relativePath)) {
             previewBody.replaceChildren();
@@ -1342,11 +1305,28 @@ export function mountTranscriptFilesView(
         }
     });
 
+    const attachMoreActionsHost = (host: HTMLElement | undefined): void => {
+        closeMoreMenu();
+        moreBtn.classList.toggle('theia-mobile-transcript-files-more--header', Boolean(host));
+        if (host) {
+            if (moreBtn.parentElement !== host) {
+                host.replaceChildren(moreBtn);
+            }
+            return;
+        }
+        if (moreBtn.parentElement !== previewActions) {
+            previewActions.append(moreBtn);
+        }
+    };
+
     disposables.push(Disposable.create(() => {
         clearPreviewSaveTimer();
         void savePreviewText();
         disposePreviewMonacoEditor();
         state.previewRequestId++;
+        if (moreBtn.parentElement && moreBtn.parentElement !== previewActions) {
+            moreBtn.remove();
+        }
         root.remove();
     }));
 
@@ -1392,5 +1372,5 @@ export function mountTranscriptFilesView(
         });
     };
 
-    return { root, dispose: disposables, revealFilePath };
+    return { root, dispose: disposables, revealFilePath, attachMoreActionsHost };
 }
