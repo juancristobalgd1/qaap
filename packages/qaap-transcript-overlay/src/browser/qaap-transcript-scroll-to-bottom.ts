@@ -18,6 +18,7 @@ import {
 } from '../common/qaap-transcript-active-step';
 import { resolveScrollBehavior, scrollElementToEnd } from '../common/qaap-prefers-reduced-motion';
 import { clearTranscriptUserScrollIntent } from './qaap-transcript-scroll-intent';
+import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
 
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_BUTTON_CLASS = 'theia-mobile-agent-transcript-scroll-to-bottom';
 export const TRANSCRIPT_SCROLL_TO_BOTTOM_ACTIVE_STEP_CLASS = 'theia-mod-active-step';
@@ -350,11 +351,14 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
             return;
         }
         const clickMode = fabMode;
+        const scrollController = ensureTranscriptScrollController(scroller);
         clearTranscriptUserScrollIntent(scroller);
         hideButtonImmediately();
         if (clickMode === 'active-step') {
             const streamingRow = findTranscriptStreamingAgentRow(scroller);
             if (streamingRow) {
+                scrollController.notifyUserDetach('active-step');
+                scrollController.markProgrammaticScroll(500);
                 scrollTranscriptElementIntoView(
                     scroller,
                     resolveTranscriptActiveStepScrollTarget(streamingRow),
@@ -367,6 +371,8 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
                 return;
             }
         }
+        scrollController.jumpToLatest();
+        scrollController.markProgrammaticScroll(600);
         scrollTranscriptToEnd(scroller);
         const resync = (): void => onScrollerScroll();
         if ('onscrollend' in scroller) {

@@ -7,10 +7,10 @@ import { nls } from '@theia/core/lib/common/nls';
 import { hashString } from './qaap-agent-task-client';
 
 export const CAPABILITY_LEVELS = [
-    { value: 0, id: 'light', label: nls.localize('qaap/mobileProjects/capabilityLight', 'Ligero') },
-    { value: 1, id: 'standard', label: nls.localize('qaap/mobileProjects/capabilityStandard', 'Estándar') },
-    { value: 2, id: 'deep', label: nls.localize('qaap/mobileProjects/capabilityDeep', 'Profundo') },
-    { value: 3, id: 'max', label: nls.localize('qaap/mobileProjects/capabilityMax', 'Máximo') },
+    { value: 0, id: 'light', label: nls.localize('qaap/mobileProjects/capabilityLight', 'Light') },
+    { value: 1, id: 'standard', label: nls.localize('qaap/mobileProjects/capabilityStandard', 'Standard') },
+    { value: 2, id: 'deep', label: nls.localize('qaap/mobileProjects/capabilityDeep', 'Deep') },
+    { value: 3, id: 'max', label: nls.localize('qaap/mobileProjects/capabilityMax', 'Max') },
 ] as const;
 
 export type ModelCapabilityLevelId = typeof CAPABILITY_LEVELS[number]['id'];

@@ -27,6 +27,7 @@ import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-t
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
 import { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
+import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 
@@ -378,6 +379,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         ]));
 
         expect(scrollToCalls).to.equal(1);
+        expect(ensureTranscriptScrollController(messageHost).phase).to.equal('following');
     });
 
     it('opens an existing conversation at the latest user turn instead of the absolute bottom', () => {
@@ -399,6 +401,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         ]));
 
         expect(scrollToCalls).to.equal(1);
+        expect(ensureTranscriptScrollController(messageHost).phase).to.equal('detached');
     });
 
     function settledConversation(

@@ -4,38 +4,45 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     clearTranscriptUserScrollIntent,
     markTranscriptUserScrollIntent,
     transcriptHasRecentUserScrollIntent,
 } from './qaap-transcript-scroll-intent';
+import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
 
 describe('qaap-transcript-scroll-intent', () => {
-    let attrs: Map<string, string>;
-    let scroller: HTMLElement;
+    let disableJSDOM: (() => void) | undefined;
 
-    beforeEach(() => {
-        attrs = new Map<string, string>();
-        scroller = ({
-            setAttribute: (name: string, value: string) => attrs.set(name, value),
-            getAttribute: (name: string) => attrs.get(name) ?? null,
-            removeAttribute: (name: string) => { attrs.delete(name); },
-        } as unknown) as HTMLElement;
+    before(() => {
+        disableJSDOM = enableJSDOM();
     });
 
-    it('pauses auto-follow for recent explicit user intent', () => {
+    after(() => {
+        disableJSDOM?.();
+    });
+
+    it('records recent explicit user intent and detaches the controller', () => {
+        const scroller = document.createElement('div');
+        const controller = ensureTranscriptScrollController(scroller);
+        expect(controller.phase).to.equal('idle');
+
         markTranscriptUserScrollIntent(scroller, 'wheel', 1_000);
 
         expect(transcriptHasRecentUserScrollIntent(scroller, 1_500)).to.equal(true);
+        expect(controller.phase).to.equal('detached');
     });
 
     it('does not pause auto-follow for stale intent', () => {
+        const scroller = document.createElement('div');
         markTranscriptUserScrollIntent(scroller, 'wheel', 1_000);
 
         expect(transcriptHasRecentUserScrollIntent(scroller, 3_000)).to.equal(false);
     });
 
     it('clears intent when the user explicitly jumps to latest', () => {
+        const scroller = document.createElement('div');
         markTranscriptUserScrollIntent(scroller, 'selection');
 
         clearTranscriptUserScrollIntent(scroller);

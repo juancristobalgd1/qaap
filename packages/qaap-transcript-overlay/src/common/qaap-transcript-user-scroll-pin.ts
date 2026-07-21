@@ -71,7 +71,7 @@ export function isTranscriptScrollNearBottom(
     scrollTop: number,
     clientHeight: number,
     scrollHeight: number,
-    thresholdPx = 24,
+    thresholdPx = 32,
 ): boolean {
     return scrollHeight - scrollTop - clientHeight <= thresholdPx;
 }

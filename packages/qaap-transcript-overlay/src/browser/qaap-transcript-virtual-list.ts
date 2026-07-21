@@ -9,6 +9,8 @@ import {
     buildVirtualListOffsets,
     resolveVirtualListVisibleRange,
 } from '../common/qaap-transcript-virtual-list-math';
+import { TRANSCRIPT_SCROLL_TO_BOTTOM_NEAR_BOTTOM_PX } from '../common/qaap-transcript-scroll-to-bottom';
+import { getTranscriptScrollController } from './qaap-transcript-scroll-controller';
 
 export {
     TRANSCRIPT_VIRTUAL_MIN_MESSAGES,
@@ -141,6 +143,7 @@ export class TranscriptVirtualList implements Disposable {
         if (estimatedHeight > 0) {
             this.spacer.style.height = `${estimatedHeight + this.footerHeight}px`;
         }
+        getTranscriptScrollController(this.scrollHost)?.markProgrammaticScroll();
         this.scrollHost.scrollTop = this.scrollHost.scrollHeight;
     }
 
@@ -151,11 +154,12 @@ export class TranscriptVirtualList implements Disposable {
         }
         const safeIndex = Math.max(0, Math.min(index, Math.max(0, this.itemCount - 1)));
         const estimatedTop = this.offsets[safeIndex] ?? safeIndex * this.defaultItemHeight;
+        getTranscriptScrollController(this.scrollHost)?.markProgrammaticScroll();
         this.scrollHost.scrollTop = Math.max(0, estimatedTop - contextPx);
         this.scheduleUpdate();
     }
 
-    isNearBottom(thresholdPx = 48): boolean {
+    isNearBottom(thresholdPx = TRANSCRIPT_SCROLL_TO_BOTTOM_NEAR_BOTTOM_PX): boolean {
         const distance = this.scrollHost.scrollHeight - this.scrollHost.scrollTop - this.scrollHost.clientHeight;
         return distance <= thresholdPx;
     }
@@ -382,6 +386,8 @@ export class TranscriptVirtualList implements Disposable {
             // Keep the content the user is looking at fixed in place: apply the
             // correction after update() so the spacer is already resized and the
             // new scrollTop cannot be clamped against a stale scrollHeight.
+            // Tag as programmatic so near-bottom after correction never re-enables follow.
+            getTranscriptScrollController(this.scrollHost)?.markProgrammaticScroll();
             this.scrollHost.scrollTop = scrollTop + deltaAboveViewport;
         }
     }

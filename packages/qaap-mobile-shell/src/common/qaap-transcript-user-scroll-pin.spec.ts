@@ -56,8 +56,8 @@ describe('qaap-transcript-user-scroll-pin', () => {
     });
 
     it('detects transcript bottom proximity for newest-response reading', () => {
-        expect(isTranscriptScrollNearBottom(776, 200, 1000)).to.equal(true);
-        expect(isTranscriptScrollNearBottom(740, 200, 1000)).to.equal(false);
+        expect(isTranscriptScrollNearBottom(768, 200, 1000)).to.equal(true);
+        expect(isTranscriptScrollNearBottom(767, 200, 1000)).to.equal(false);
     });
 
     it('allows the active user message to pin while the transcript is away from the newest bottom', () => {

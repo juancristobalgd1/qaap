@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { Disposable } from '@theia/core/lib/common';
+import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
 
 export const TRANSCRIPT_USER_SCROLL_INTENT_AT_ATTR = 'data-transcript-user-scroll-intent-at';
 export const TRANSCRIPT_USER_SCROLL_INTENT_REASON_ATTR = 'data-transcript-user-scroll-intent-reason';
@@ -37,6 +38,7 @@ function eventHasUserIntent(event: Event): boolean {
 export function markTranscriptUserScrollIntent(scroller: HTMLElement, reason: string, at = Date.now()): void {
     scroller.setAttribute(TRANSCRIPT_USER_SCROLL_INTENT_AT_ATTR, String(at));
     scroller.setAttribute(TRANSCRIPT_USER_SCROLL_INTENT_REASON_ATTR, reason);
+    ensureTranscriptScrollController(scroller).notifyUserDetach(reason);
 }
 
 export function clearTranscriptUserScrollIntent(scroller: HTMLElement): void {

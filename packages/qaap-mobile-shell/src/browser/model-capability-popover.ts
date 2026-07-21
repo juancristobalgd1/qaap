@@ -16,6 +16,14 @@ export interface ModelCapabilityPopoverPanelOptions {
     readonly onAdvancedClick?: () => void;
 }
 
+function formatModelCapabilityEffortLabel(level: ModelCapabilityLevelValue): string {
+    return nls.localize(
+        'qaap/mobileProjects/modelCapabilityEffort',
+        'Effort: {0}',
+        resolveCapabilityLevelLabel(level),
+    );
+}
+
 export function renderModelCapabilityPopoverPanel(options: ModelCapabilityPopoverPanelOptions): HTMLElement {
     const panel = document.createElement('div');
     panel.className = 'qaap-model-capability-popover-panel';
@@ -26,13 +34,14 @@ export function renderModelCapabilityPopoverPanel(options: ModelCapabilityPopove
     const advancedBtn = document.createElement('button');
     advancedBtn.type = 'button';
     advancedBtn.className = 'qaap-model-capability-popover-advanced';
-    advancedBtn.setAttribute(
-        'aria-label',
-        nls.localize('qaap/mobileProjects/modelCapabilityAdvanced', 'Avanzadas'),
-    );
     const advancedLabel = document.createElement('span');
     advancedLabel.className = 'qaap-model-capability-popover-advanced-label';
-    advancedLabel.textContent = nls.localize('qaap/mobileProjects/modelCapabilityAdvanced', 'Avanzadas');
+    const syncEffortLabel = (level: ModelCapabilityLevelValue): void => {
+        const label = formatModelCapabilityEffortLabel(level);
+        advancedLabel.textContent = label;
+        advancedBtn.setAttribute('aria-label', label);
+    };
+    syncEffortLabel(options.level);
     const advancedChevron = document.createElement('span');
     advancedChevron.className = 'codicon codicon-chevron-right qaap-model-capability-popover-advanced-chevron';
     advancedChevron.setAttribute('aria-hidden', 'true');
@@ -58,7 +67,11 @@ export function renderModelCapabilityPopoverPanel(options: ModelCapabilityPopove
 
     const slider = createModelCapabilitySlider({
         level: options.level,
-        onCommit: options.onCommit,
+        onPreview: syncEffortLabel,
+        onCommit: level => {
+            syncEffortLabel(level);
+            options.onCommit(level);
+        },
     });
     body.append(slider.root);
 

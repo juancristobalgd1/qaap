@@ -6,6 +6,7 @@
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { resolveScrollBehavior } from '../common/qaap-prefers-reduced-motion';
+import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
 import { markTranscriptUserScrollIntent } from './qaap-transcript-scroll-intent';
 
 const SEARCH_HOST_CLASS = 'theia-mobile-agent-transcript-search';
@@ -122,6 +123,7 @@ export function attachTranscriptInlineSearch(mountHost: HTMLElement, scroller: H
         updateCount();
         if (scroll) {
             markTranscriptUserScrollIntent(scroller, 'search');
+            ensureTranscriptScrollController(scroller).markProgrammaticScroll(600);
             row.scrollIntoView({ block: 'center', behavior: resolveScrollBehavior('smooth') });
         }
     };

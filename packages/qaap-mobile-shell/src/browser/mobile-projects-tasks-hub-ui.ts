@@ -505,15 +505,13 @@ export class MobileProjectsTasksHubUi {
         return summary.id;
     }
 
-    /** Running team members plus VPS streaming summaries (same max used by the tasks subtitle). */
+    /**
+     * Live working agents/subagents only — same filter as the Working expand list.
+     * Do not dual-count raw `status===streaming` summaries (paused/stale rows used to
+     * keep a ghost "1 Working" pill after the team member settled).
+     */
     countWorkingAgentsForPill(): number {
-        const { running } = this.host.countTasksAttention();
-        const streamingCount = this.host.projects.reduce(
-            (sum, project) => sum + this.host.conversationIndexUi.vpsTasksForProject(project)
-                .filter(conversation => conversation.status === 'streaming').length,
-            0,
-        );
-        return Math.max(running, streamingCount);
+        return filterWorkingTeamMembers(this.host.collectTeamMembersForHub()).length;
     }
 
     /** Flips the one-shot first-load flag once conversations arrive or the safety timeout fires. */

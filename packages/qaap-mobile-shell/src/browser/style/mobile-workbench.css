@@ -26157,6 +26157,7 @@ body.qaap-theme-dark .theia-mobile-sticky-composer-sheet.theia-mod-model-capabil
   font: inherit;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: default;
 }
 

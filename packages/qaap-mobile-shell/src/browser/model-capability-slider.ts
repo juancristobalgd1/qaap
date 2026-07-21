@@ -73,7 +73,7 @@ export function createModelCapabilitySlider(options: ModelCapabilitySliderOption
     const syncAria = (): void => {
         root.setAttribute('role', 'slider');
         root.setAttribute('tabindex', '0');
-        root.setAttribute('aria-label', nls.localize('qaap/mobileProjects/modelCapabilityAria', 'Capacidad del modelo'));
+        root.setAttribute('aria-label', nls.localize('qaap/mobileProjects/modelCapabilityAria', 'Model capability'));
         root.setAttribute('aria-valuemin', '0');
         root.setAttribute('aria-valuemax', String(CAPABILITY_LEVELS.length - 1));
         root.setAttribute('aria-valuenow', String(previewLevel));

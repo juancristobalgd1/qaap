@@ -103,12 +103,24 @@ export function isWorkingAgentsExpandSessionOpen(): boolean {
 }
 
 /**
- * True while the user has the Working expand open (list or detail) for reading.
+ * True while the user has a *visible* Working expand open (list or detail) for reading.
  * Auto-collapse from count=0 / idle / summary settled must NOT fire in this state.
+ *
+ * Session flag alone is not enough: an orphaned `workingExpandSession.open` after the
+ * shell disconnects would otherwise force a ghost "1 Working" pill forever.
  */
 export function isWorkingAgentsExpandPinnedOpen(): boolean {
-    return workingExpandSession.open
-        || !!activeWorkingAgentsExpand?.shell.classList.contains('theia-mod-expanded');
+    ensureWorkingExpandOrphanedIfDisconnected();
+    const active = activeWorkingAgentsExpand;
+    if (active?.shell.isConnected && active.shell.classList.contains('theia-mod-expanded')) {
+        return true;
+    }
+    // Parked control during sticky-composer remount — still pinned for reclaim/reading.
+    const park = document.getElementById(WORKING_CONTROL_PARK_ID);
+    return !!(
+        workingExpandSession.open
+        && park?.querySelector(`.${WORKING_CONTROL_CLASS}.theia-mod-expanded`)
+    );
 }
 
 /**
@@ -263,6 +275,9 @@ function orphanWorkingAgentsExpand(): void {
     }
     activeWorkingAgentsExpand.cleanup();
     activeWorkingAgentsExpand = undefined;
+    // Keep workingExpandSession.open so remount can restore via
+    // restoreWorkingAgentsExpandIfNeeded. Chrome must not treat session alone as
+    // pinned (see isWorkingAgentsExpandPinnedOpen) or a ghost pill appears.
 }
 
 function ensureWorkingExpandOrphanedIfDisconnected(): void {
@@ -847,6 +862,10 @@ function wireWorkingAgentsExpandDismiss(
 
 function tearDownWorkingAgentsExpand(immediate: boolean, clearSession = true): void {
     if (!activeWorkingAgentsExpand) {
+        // Active may already be orphaned while the session flag remains — still clear it.
+        if (clearSession) {
+            clearWorkingExpandSession();
+        }
         return;
     }
     const { shell, clip, cleanup, anchor } = activeWorkingAgentsExpand;
@@ -932,6 +951,18 @@ export function noteWorkingPillChromeCount(realCount: number): void {
 export function clearWorkingPillStopAllSuppression(): void {
     workingPillSuppressedAfterStopAll = false;
     workingPillSawZeroAfterStopAll = false;
+}
+
+/**
+ * Test helper — leave `workingExpandSession.open` without a live expand shell
+ * (reproduces the ghost "1 Working" retain after orphaning).
+ */
+export function forceOrphanedWorkingExpandSessionForTests(): void {
+    if (activeWorkingAgentsExpand) {
+        activeWorkingAgentsExpand.cleanup();
+        activeWorkingAgentsExpand = undefined;
+    }
+    workingExpandSession = { open: true, detailLarge: false };
 }
 
 export function isWorkingAgentsPopoverOpen(anchor?: HTMLElement): boolean {

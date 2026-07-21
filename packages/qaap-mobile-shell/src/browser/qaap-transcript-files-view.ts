@@ -269,12 +269,12 @@ export function mountTranscriptFilesView(
     treeToggleBtn.setAttribute('aria-pressed', 'true');
     const moreBtn = document.createElement('button');
     moreBtn.type = 'button';
-    moreBtn.className = 'theia-mobile-transcript-files-action theia-mobile-transcript-files-more codicon codicon-ellipsis';
+    moreBtn.className = 'theia-mobile-transcript-files-action theia-mobile-transcript-files-more codicon codicon-kebab-vertical';
     moreBtn.title = services.localize('qaap/mobileProjects/transcriptFilesMore', 'More actions');
     moreBtn.setAttribute('aria-label', moreBtn.title);
     moreBtn.setAttribute('aria-haspopup', 'menu');
     moreBtn.setAttribute('aria-expanded', 'false');
-    // Lock + tree stay in the preview header; ⋯ starts here and may relocate to the Work Hub header.
+    // Lock + tree stay in the preview header; ⋮ starts here and may relocate to the Work Hub header.
     previewActions.append(editToggleBtn, treeToggleBtn, moreBtn);
     previewHeader.append(previewActions);
     const previewBody = document.createElement('div');
