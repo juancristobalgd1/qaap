@@ -10,14 +10,36 @@ import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
 import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
-import { buildConversationTranscriptFingerprint, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
+import { buildConversationTranscriptFingerprint, fingerprintTranscriptMessage, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
+import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { hasMobileExecutionEventTimeline } from './qaap-execution-event-timeline';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
 } from '../common/qaap-transcript-turn-status';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { recordTranscriptRenderMetric, type QaapTranscriptRenderMetricKind } from '../common/qaap-transcript-render-metrics';
+
+/** Telemetry: attribute every patch-miss to the guard that rejected it. */
+const PATCH_NONE_REASON_METRIC: Record<QaapTranscriptStreamingPatchNoneReason, QaapTranscriptRenderMetricKind> = {
+    'not-streaming': 'render_patch_none_not_streaming',
+    'conversation-switched': 'render_patch_none_conversation_switched',
+    'prior-diverged': 'render_patch_none_prior_diverged',
+    'tail-empty': 'render_patch_none_tail_empty',
+    'tail-unchanged': 'render_patch_none_tail_unchanged',
+    'count-shrunk': 'render_patch_none_count_shrunk',
+    'tail-role-unknown': 'render_patch_none_tail_role',
+};
+
+type TranscriptAgentPatchRejectReason = 'no_prev' | 'predicates' | 'applier' | 'thinking';
+
+const AGENT_REPLACE_REASON_METRIC: Record<TranscriptAgentPatchRejectReason, QaapTranscriptRenderMetricKind> = {
+    no_prev: 'render_patch_last_agent_replace_no_prev',
+    predicates: 'render_patch_last_agent_replace_predicates',
+    applier: 'render_patch_last_agent_replace_applier',
+    thinking: 'render_patch_last_agent_replace_thinking',
+};
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
 import {
     attachTranscriptScrollIntentObserver,
@@ -220,6 +242,19 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             this.normalizedFailuresCache.set(conv, normalized);
         }
         return normalized;
+    }
+
+    /**
+     * Stable render key for full-rebuild row reuse. Undefined when the row must
+     * always rebuild: no id, failure rows (their retry affordance depends on
+     * conv.status), or rows containing live approval UI (checked at reuse time).
+     */
+    protected transcriptRowRenderKey(conv: QaapAgentConversationDTO, index: number): string | undefined {
+        const msg = conv.messages[index];
+        if (!msg?.id || msg.error?.trim()) {
+            return undefined;
+        }
+        return `${conv.id}|${msg.role}|${fingerprintTranscriptMessage(msg)}`;
     }
 
     createTranscriptMessageRowAtIndex(conv: QaapAgentConversationDTO, index: number): HTMLElement {
@@ -662,10 +697,44 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
         // Build off-DOM then swap once — avoids N reflows while appending rows
         // into a connected host (visible flicker during streaming rebuilds).
+        // Keyed reuse: a row whose stamped render key still matches its message
+        // snapshot is MOVED into the new fragment instead of rebuilt — markdown,
+        // timelines and <details> state survive untouched, so a settle/refetch
+        // full render only rebuilds the tail. Stamps are dropped whenever a
+        // patch path mutates a row, so a stamp always describes exactly what
+        // the row currently shows.
+        const reusableRows = new Map<string, HTMLElement>();
+        messageHost.querySelectorAll<HTMLElement>(`:scope > [${TRANSCRIPT_MESSAGE_ID_ATTR}]`).forEach(el => {
+            const key = el.dataset.qaapRowRenderKey;
+            if (key && !reusableRows.has(key)) {
+                reusableRows.set(key, el);
+            }
+        });
+        const normalizedForKeys = this.normalizeConversationFailuresCached(conv);
+        const seamIndex = this.transcriptContextCompactionBoundaryIndex(normalizedForKeys);
         const fragment = document.createDocumentFragment();
+        let reusedRowCount = 0;
         for (let index = 0; index < conv.messages.length; index++) {
-            fragment.append(this.createTranscriptMessageRowAtIndex(conv, index));
+            const isTail = index === conv.messages.length - 1;
+            const key = isTail || index === seamIndex
+                ? undefined
+                : this.transcriptRowRenderKey(normalizedForKeys, index);
+            const reused = key ? reusableRows.get(key) : undefined;
+            if (reused && !reused.querySelector(`.${TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS}, .${TRANSCRIPT_APPROVAL_CARD_CLASS}`)) {
+                reusableRows.delete(key!);
+                reused.classList.remove('theia-mod-streaming', 'theia-mod-new-message');
+                fragment.append(reused);
+                reusedRowCount++;
+                continue;
+            }
+            const row = this.createTranscriptMessageRowAtIndex(conv, index);
+            if (key && row.hasAttribute(TRANSCRIPT_MESSAGE_ID_ATTR)) {
+                row.dataset.qaapRowRenderKey = key;
+            }
+            fragment.append(row);
         }
+        recordTranscriptRenderMetric('render_full_rows_reused', reusedRowCount);
+        recordTranscriptRenderMetric('render_full_rows_rebuilt', conv.messages.length - reusedRowCount);
         messageHost.replaceChildren(fragment);
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
@@ -769,7 +838,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     tryPatchStreamingTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): boolean {
         const messageHost = this.resolveTranscriptMessageHost(host);
         this.clearTranscriptEmptyQuickActions(messageHost, conv);
-        const patchKind = resolveStreamingTranscriptPatchKind(this.host.transcriptLastConv, conv);
+        const decision = resolveStreamingTranscriptPatchDecision(this.host.transcriptLastConv, conv);
+        const patchKind = decision.kind;
         if (patchKind === 'none') {
             if (isStreamingTranscriptTailUnchanged(this.host.transcriptLastConv, conv)) {
                 recordTranscriptRenderMetric('render_skip_unchanged_tail');
@@ -777,6 +847,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 return true;
             }
             recordTranscriptRenderMetric('render_patch_none');
+            recordTranscriptRenderMetric(PATCH_NONE_REASON_METRIC[decision.noneReason ?? 'tail-role-unknown']);
             return false;
         }
         if (this.host.transcriptUi.shouldVirtualize(conv)) {
@@ -873,13 +944,18 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
         if (patchKind === 'last-agent') {
             recordTranscriptRenderMetric('render_patch_last_agent');
-            recordTranscriptRenderMetric('render_patch_last_agent_replace');
             const existing = messageHost.querySelector<HTMLElement>(
                 `[${TRANSCRIPT_MESSAGE_ID_ATTR}="${CSS.escape(lastAgent.id)}"]`,
             );
             if (existing) {
+                recordTranscriptRenderMetric('render_patch_last_agent_replace');
+                recordTranscriptRenderMetric(AGENT_REPLACE_REASON_METRIC[this.lastAgentPatchRejectReason ?? 'predicates']);
                 existing.replaceWith(row);
             } else {
+                // The row for this message id was never mounted (e.g. the
+                // placeholder tick was skipped) — this is an append, not a
+                // replace; keep the two apart in telemetry.
+                recordTranscriptRenderMetric('render_patch_last_agent_append_missing_row');
                 messageHost.append(row);
             }
         } else {
@@ -925,6 +1001,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         row.classList.remove('theia-mod-streaming');
         this.contentUi.settleTranscriptStreamingContent(row);
+        delete row.dataset.qaapRowRenderKey;
         const segments = this.resolveTranscriptAgentSegments(conv, lastAgent);
         if (segments?.length) {
             this.artifactsUi.finalizeStreamingAgentTrace(row, segments, conv);
@@ -980,13 +1057,15 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         const prevLast = this.host.transcriptLastConv?.messages[this.host.transcriptLastConv.messages.length - 1];
         const segments = this.resolveTranscriptAgentSegments(conv, lastAgent);
+        const existingVirtualRow = patchKind === 'last-agent'
+            ? list.findRowByAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, lastAgent.id)
+            : undefined;
 
         if (patchKind === 'last-agent') {
-            const existing = list.findRowByAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, lastAgent.id);
-            if (existing && this.tryPatchStreamingAgentTextContent(existing, prevLast, lastAgent, segments, conv)) {
+            if (existingVirtualRow && this.tryPatchStreamingAgentTextContent(existingVirtualRow, prevLast, lastAgent, segments, conv)) {
                 recordTranscriptRenderMetric('render_patch_last_agent');
                 recordTranscriptRenderMetric('render_patch_last_agent_in_place');
-                this.markTranscriptMessageRow(existing, lastAgent.id, isTranscriptAgentTailStreaming(conv));
+                this.markTranscriptMessageRow(existingVirtualRow, lastAgent.id, isTranscriptAgentTailStreaming(conv));
                 this.host.transcriptLastConv = conv;
                 list.setItemCount(conv.messages.length);
                 list.setFooter(this.buildTranscriptVirtualFooter(conv));
@@ -1007,7 +1086,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
         if (patchKind === 'last-agent') {
             recordTranscriptRenderMetric('render_patch_last_agent');
-            recordTranscriptRenderMetric('render_patch_last_agent_replace');
+            if (existingVirtualRow) {
+                recordTranscriptRenderMetric('render_patch_last_agent_replace');
+                recordTranscriptRenderMetric(AGENT_REPLACE_REASON_METRIC[this.lastAgentPatchRejectReason ?? 'predicates']);
+            } else {
+                recordTranscriptRenderMetric('render_patch_last_agent_append_missing_row');
+            }
             list.replaceRowByAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, lastAgent.id, row);
         } else {
             recordTranscriptRenderMetric('render_patch_append');
@@ -1029,7 +1113,14 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (wasStreaming && !streaming) {
             this.contentUi.settleTranscriptStreamingContent(row);
         }
+        // The row was just patched/replaced by a streaming path — its full-build
+        // render key no longer describes its DOM; drop it so the next full
+        // render rebuilds this row instead of reusing it.
+        delete row.dataset.qaapRowRenderKey;
     }
+
+    /** Why the last in-place patch attempt failed — read by the replace-site telemetry. */
+    protected lastAgentPatchRejectReason: TranscriptAgentPatchRejectReason | undefined;
 
     tryPatchStreamingAgentTextContent(
         existingRow: HTMLElement,
@@ -1038,11 +1129,13 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         resolvedSegments: QaapAgentMessageSegmentDTO[] | undefined,
         conv?: QaapAgentConversationDTO,
     ): boolean {
+        this.lastAgentPatchRejectReason = undefined;
         const prevComparable = prevMsg ? this.withDerivedTranscriptSegments(prevMsg) : undefined;
         const nextComparable = this.withDerivedTranscriptSegments(nextMsg);
         if (canStreamPatchStdoutAgentContentOnly(prevComparable, nextComparable)) {
             const contentEl = existingRow.querySelector<HTMLElement>('.theia-mobile-agent-transcript-content');
             if (!contentEl) {
+                this.lastAgentPatchRejectReason = 'applier';
                 return false;
             }
             this.toolUi.renderTranscriptRichContent(
@@ -1059,6 +1152,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 recordTranscriptRenderMetric('render_patch_last_agent_timeline_fallback');
                 return true;
             }
+            this.lastAgentPatchRejectReason = 'no_prev';
             return false;
         }
         const nextSegments = nextComparable.segments ?? [];
@@ -1083,6 +1177,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (!segmentsInPlace && !appendTool && !appendText && !appendThinking && !inPlaceWithAppend) {
             // Prefer refreshing the Codex timeline in place over remounting the
             // whole agent row (that remount restarts shimmer/spin and flashes).
+            this.lastAgentPatchRejectReason = 'predicates';
             return tryTimelineFallback();
         }
         // The DOM patchers iterate index-aligned prev/next pairs, so the
@@ -1092,6 +1187,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (segmentsInPlace || inPlaceWithAppend) {
             if (resolvedSegments?.length) {
                 if (!this.artifactsUi.patchStreamingAgentTextSegments(existingRow, prevSegments, nextShared, conv)) {
+                    this.lastAgentPatchRejectReason = 'applier';
                     return tryTimelineFallback();
                 }
             } else {
@@ -1110,6 +1206,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                     if (existingRow.classList.contains('theia-mod-streaming')) {
                         this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments, conv);
                     } else if (!tryTimelineFallback()) {
+                        this.lastAgentPatchRejectReason = 'applier';
                         return false;
                     }
                 }
@@ -1118,6 +1215,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const appendedTailType = inPlaceWithAppend ? nextSegments[nextSegments.length - 1]?.type : undefined;
         if (appendTool || appendedTailType === 'tool') {
             if (!this.artifactsUi.appendStreamingAgentToolSegment(existingRow, nextSegments, conv)) {
+                this.lastAgentPatchRejectReason = 'applier';
                 return tryTimelineFallback();
             }
         }
@@ -1125,10 +1223,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             // Thinking has no dedicated DOM append path; keep the Codex timeline
             // (or fall through to replace when tools have not mounted yet).
             if (!tryTimelineFallback()) {
+                this.lastAgentPatchRejectReason = 'thinking';
                 return false;
             }
         } else if (appendText || appendedTailType === 'text') {
             if (!this.artifactsUi.appendStreamingAgentTextSegment(existingRow, nextSegments, conv)) {
+                this.lastAgentPatchRejectReason = 'applier';
                 return tryTimelineFallback();
             }
         }

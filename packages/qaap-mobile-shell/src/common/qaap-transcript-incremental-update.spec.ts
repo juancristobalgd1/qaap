@@ -18,6 +18,7 @@ import {
     canStreamPatchStdoutAgentContentOnly,
     isStreamingTranscriptTailUnchanged,
     mergeConversationTranscriptFingerprint,
+    resolveStreamingTranscriptPatchDecision,
     resolveStreamingTranscriptPatchKind,
     shouldForceTranscriptRenderOnStatusSettle,
     transcriptFingerprintChanged,
@@ -687,6 +688,62 @@ describe('qaap-transcript-incremental-update', () => {
             ],
         };
         expect(canStreamPatchAgentSegmentsInPlaceWithAppend(prevMsg, doubleAppend)).to.equal(false);
+    });
+
+    it('resolveStreamingTranscriptPatchDecision attributes every none to its guard', () => {
+        const streamingTail = [
+            { id: 'u1', role: 'user' as const, content: 'hi', createdAt: 1 },
+            {
+                id: 'a1',
+                role: 'agent' as const,
+                content: '',
+                createdAt: 2,
+                segments: [{ type: 'text' as const, content: 'Hello' }],
+            },
+        ];
+        // Settled snapshot → not-streaming.
+        expect(resolveStreamingTranscriptPatchDecision(
+            conv({ messages: streamingTail }),
+            conv({ status: 'idle', messages: streamingTail }),
+        ).noneReason).to.equal('not-streaming');
+        // No prev / different conversation → conversation-switched.
+        expect(resolveStreamingTranscriptPatchDecision(
+            undefined,
+            conv({ messages: streamingTail }),
+        ).noneReason).to.equal('conversation-switched');
+        expect(resolveStreamingTranscriptPatchDecision(
+            conv({ id: 'other', messages: streamingTail }),
+            conv({ messages: streamingTail }),
+        ).noneReason).to.equal('conversation-switched');
+        // Historical prefix diverged → prior-diverged.
+        expect(resolveStreamingTranscriptPatchDecision(
+            conv({ messages: [{ id: 'uX', role: 'user', content: 'hi', createdAt: 1 }, streamingTail[1]] }),
+            conv({ messages: streamingTail }),
+        ).noneReason).to.equal('prior-diverged');
+        // Structured tail without renderable segments → tail-empty.
+        const emptyTail = [
+            { id: 'u1', role: 'user' as const, content: 'hi', createdAt: 1 },
+            { id: 'a1', role: 'agent' as const, content: '', createdAt: 2 },
+        ];
+        expect(resolveStreamingTranscriptPatchDecision(
+            conv({ messages: emptyTail }),
+            conv({ messages: emptyTail }),
+        ).noneReason).to.equal('tail-empty');
+        // Message list shrank → count-shrunk.
+        expect(resolveStreamingTranscriptPatchDecision(
+            conv({ messages: streamingTail }),
+            conv({ messages: [streamingTail[0]] }),
+        ).noneReason).to.equal('count-shrunk');
+        // Unchanged structured tail → tail-unchanged.
+        expect(resolveStreamingTranscriptPatchDecision(
+            conv({ messages: streamingTail }),
+            conv({ updatedAt: 9, messages: streamingTail }),
+        ).noneReason).to.equal('tail-unchanged');
+        // Patch kinds carry no reason.
+        expect(resolveStreamingTranscriptPatchDecision(
+            conv({ messages: [streamingTail[0]] }),
+            conv({ messages: streamingTail }),
+        )).to.deep.equal({ kind: 'append-agent' });
     });
 
     it('mergeConversationTranscriptFingerprint cache hit still matches the full build', () => {

@@ -35,7 +35,7 @@ function stdoutAgentContentChanged(prev: QaapAgentMessageDTO | undefined, next: 
  */
 const TRANSCRIPT_HASH_SAMPLE_WINDOW = 2048;
 
-function hashTranscriptText(value: string | undefined): string {
+export function hashTranscriptText(value: string | undefined): string {
     const text = value ?? '';
     let hash = 0x811c9dc5;
     const head = Math.min(text.length, TRANSCRIPT_HASH_SAMPLE_WINDOW);
@@ -120,7 +120,7 @@ function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapA
     }
 }
 
-function fingerprintTranscriptMessage(message: QaapAgentMessageDTO): string {
+export function fingerprintTranscriptMessage(message: QaapAgentMessageDTO): string {
     const parts: string[] = [];
     appendTranscriptMessageFingerprintParts(parts, message);
     return parts.join('|');
@@ -221,16 +221,39 @@ export function shouldForceTranscriptRenderOnStatusSettle(
     return prev?.status === 'streaming' && next.status !== 'streaming';
 }
 
+/** Why a streaming tick could not take any patch fast path (for telemetry). */
+export type QaapTranscriptStreamingPatchNoneReason =
+    | 'not-streaming'
+    | 'conversation-switched'
+    | 'prior-diverged'
+    | 'tail-empty'
+    | 'tail-unchanged'
+    | 'count-shrunk'
+    | 'tail-role-unknown';
+
+export interface QaapTranscriptStreamingPatchDecision {
+    readonly kind: QaapTranscriptStreamingPatchKind;
+    /** Set only when `kind === 'none'`. */
+    readonly noneReason?: QaapTranscriptStreamingPatchNoneReason;
+}
+
+const NONE = (noneReason: QaapTranscriptStreamingPatchNoneReason): QaapTranscriptStreamingPatchDecision =>
+    ({ kind: 'none', noneReason });
+
 /**
  * During QAIQ/OpenCode streaming, only the tail of the thread changes. Patching avoids
- * `replaceChildren()` so tool expand state and scroll position stay stable.
+ * `replaceChildren()` so tool expand state and scroll position stay stable. The decision
+ * carries the reject reason so telemetry can attribute every residual full rebuild.
  */
-export function resolveStreamingTranscriptPatchKind(
+export function resolveStreamingTranscriptPatchDecision(
     prev: QaapAgentConversationDTO | undefined,
     next: QaapAgentConversationDTO,
-): QaapTranscriptStreamingPatchKind {
-    if (!prev || prev.id !== next.id || next.status !== 'streaming') {
-        return 'none';
+): QaapTranscriptStreamingPatchDecision {
+    if (next.status !== 'streaming') {
+        return NONE('not-streaming');
+    }
+    if (!prev || prev.id !== next.id) {
+        return NONE('conversation-switched');
     }
 
     const prevMessages = prev.messages;
@@ -239,22 +262,24 @@ export function resolveStreamingTranscriptPatchKind(
     const structured = STRUCTURED_TRANSCRIPT_AGENTS(next.agentId);
 
     if (prevMessages.length === nextMessages.length && nextLast?.role === 'user') {
-        return priorMessagesMatch(prevMessages, nextMessages, nextMessages.length) ? 'activity-only' : 'none';
+        return priorMessagesMatch(prevMessages, nextMessages, nextMessages.length)
+            ? { kind: 'activity-only' }
+            : NONE('prior-diverged');
     }
 
     if (prevMessages.length === nextMessages.length && nextLast?.role === 'agent') {
         if (!priorMessagesMatch(prevMessages, nextMessages, nextMessages.length - 1)) {
-            return 'none';
+            return NONE('prior-diverged');
         }
         if (structured) {
             if (!hasRenderableSegments(nextLast)) {
-                return 'none';
+                return NONE('tail-empty');
             }
             const prevLast = prevMessages[prevMessages.length - 1];
-            return structuredAgentMessageChanged(prevLast, nextLast) ? 'last-agent' : 'none';
+            return structuredAgentMessageChanged(prevLast, nextLast) ? { kind: 'last-agent' } : NONE('tail-unchanged');
         }
         const prevLast = prevMessages[prevMessages.length - 1];
-        return stdoutAgentContentChanged(prevLast, nextLast) ? 'last-agent' : 'none';
+        return stdoutAgentContentChanged(prevLast, nextLast) ? { kind: 'last-agent' } : NONE('tail-unchanged');
     }
 
     // One or more rows appended at the tail: a new agent turn (possibly still
@@ -264,18 +289,28 @@ export function resolveStreamingTranscriptPatchKind(
     // never mutates existing DOM, so no content-growth gate is needed.
     if (nextMessages.length > prevMessages.length) {
         if (!priorMessagesMatch(prevMessages, nextMessages, prevMessages.length)) {
-            return 'none';
+            return NONE('prior-diverged');
         }
         if (nextLast?.role === 'agent') {
-            return 'append-agent';
+            return { kind: 'append-agent' };
         }
         if (nextLast?.role === 'user') {
-            return 'append-user';
+            return { kind: 'append-user' };
         }
-        return 'none';
+        return NONE('tail-role-unknown');
     }
 
-    return 'none';
+    if (nextMessages.length < prevMessages.length) {
+        return NONE('count-shrunk');
+    }
+    return NONE('tail-role-unknown');
+}
+
+export function resolveStreamingTranscriptPatchKind(
+    prev: QaapAgentConversationDTO | undefined,
+    next: QaapAgentConversationDTO,
+): QaapTranscriptStreamingPatchKind {
+    return resolveStreamingTranscriptPatchDecision(prev, next).kind;
 }
 
 function hasRenderableSegments(message: QaapAgentMessageDTO | undefined): boolean {

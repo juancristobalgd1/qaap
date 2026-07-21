@@ -18,9 +18,23 @@ export type QaapTranscriptRenderMetricKind =
     | 'render_patch_last_agent'
     | 'render_patch_last_agent_in_place'
     | 'render_patch_last_agent_replace'
+    | 'render_patch_last_agent_replace_no_prev'
+    | 'render_patch_last_agent_replace_predicates'
+    | 'render_patch_last_agent_replace_applier'
+    | 'render_patch_last_agent_replace_thinking'
+    | 'render_patch_last_agent_append_missing_row'
     | 'render_patch_last_agent_timeline_fallback'
     | 'render_patch_append'
     | 'render_patch_none'
+    | 'render_patch_none_not_streaming'
+    | 'render_patch_none_conversation_switched'
+    | 'render_patch_none_prior_diverged'
+    | 'render_patch_none_tail_empty'
+    | 'render_patch_none_tail_unchanged'
+    | 'render_patch_none_count_shrunk'
+    | 'render_patch_none_tail_role'
+    | 'render_full_rows_reused'
+    | 'render_full_rows_rebuilt'
     | 'render_skip_unchanged_tail'
     | 'render_skip_unchanged_settled'
     | 'timeline_sync'
@@ -60,9 +74,23 @@ const EMPTY_COUNTS = (): Record<QaapTranscriptRenderMetricKind, number> => ({
     render_patch_last_agent: 0,
     render_patch_last_agent_in_place: 0,
     render_patch_last_agent_replace: 0,
+    render_patch_last_agent_replace_no_prev: 0,
+    render_patch_last_agent_replace_predicates: 0,
+    render_patch_last_agent_replace_applier: 0,
+    render_patch_last_agent_replace_thinking: 0,
+    render_patch_last_agent_append_missing_row: 0,
     render_patch_last_agent_timeline_fallback: 0,
     render_patch_append: 0,
     render_patch_none: 0,
+    render_patch_none_not_streaming: 0,
+    render_patch_none_conversation_switched: 0,
+    render_patch_none_prior_diverged: 0,
+    render_patch_none_tail_empty: 0,
+    render_patch_none_tail_unchanged: 0,
+    render_patch_none_count_shrunk: 0,
+    render_patch_none_tail_role: 0,
+    render_full_rows_reused: 0,
+    render_full_rows_rebuilt: 0,
     render_skip_unchanged_tail: 0,
     render_skip_unchanged_settled: 0,
     timeline_sync: 0,
