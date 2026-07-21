@@ -311,7 +311,15 @@ export class MobileProjectsTranscriptMessagesContentUi {
             return;
         }
         const entry = this.streamSmoothEntries.get(host);
-        if (!entry || clean.length < entry.revealed) {
+        // A rewrite under the already-revealed prefix (same-length correction,
+        // reordered paragraphs) must repaint immediately: updating only
+        // `entry.target` would never re-render when `revealed` already covers
+        // the new length, silently freezing stale text on screen.
+        const revealedPrefixChanged = !!entry
+            && entry.revealed > 0
+            && clean.length >= entry.revealed
+            && !clean.startsWith(entry.target.slice(0, entry.revealed));
+        if (!entry || clean.length < entry.revealed || revealedPrefixChanged) {
             // First paint of this row (or replaced content): show everything received so far at
             // once — smoothing only paces the deltas that arrive while the row stays mounted.
             this.cancelStreamSmoothing(host);

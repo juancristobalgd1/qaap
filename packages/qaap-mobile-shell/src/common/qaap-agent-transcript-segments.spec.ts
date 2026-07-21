@@ -219,6 +219,18 @@ describe('resolveTranscriptToolPillDescriptors', () => {
             },
         }).map(pill => pill.label)).to.deep.equal(['Read foo.ts']);
     });
+
+    it('resolves Grep/Glob and Task/Agent pill labels from args', () => {
+        expect(resolveTranscriptToolPillDescriptors([
+            { type: 'tool', toolUseId: 't1', name: 'Grep', args: '{"pattern":"extractToolDetail"}', finished: true },
+            { type: 'tool', toolUseId: 't2', name: 'Glob', args: '{"glob_pattern":"**/*.tsx"}', finished: true },
+            { type: 'tool', toolUseId: 't3', name: 'Agent', args: '{"description":"Audit the working agents panel"}', finished: false },
+        ]).map(pill => pill.label)).to.deep.equal([
+            'Grep extractToolDetail',
+            'Search **/*.tsx',
+            'Started Audit the working agents panel',
+        ]);
+    });
 });
 
 describe('excerptTranscriptThought', () => {
@@ -287,6 +299,11 @@ describe('resolveTranscriptToolRowParts', () => {
             .to.deep.equal({ verb: 'Edited', detail: 'file' });
         expect(resolveTranscriptToolRowParts('tool', 'web_search'))
             .to.deep.equal({ verb: 'Searched', detail: 'the web' });
+        expect(resolveTranscriptToolRowParts('searching', 'Grep', { pattern: 'extractToolDetail' }))
+            .to.deep.equal({ verb: 'Searched', detail: 'extractToolDetail' });
+        expect(resolveTranscriptToolRowParts('tool', 'Agent', {
+            argsJson: JSON.stringify({ description: 'Inspect sticky composer detail' }),
+        })).to.deep.equal({ verb: 'Started', detail: 'Inspect sticky composer detail' });
     });
 
     it('excerpts long commands with collapsed whitespace', () => {

@@ -156,6 +156,18 @@ describe('QaapQaiqStreamAccumulator', () => {
         ]);
     });
 
+    it('keeps live Read args when the assistant snapshot arrives with empty input', () => {
+        const acc = new QaapQaiqStreamAccumulator();
+        acc.push([
+            '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu-read","name":"Read","input":{}}}}',
+            '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"file_path\\":\\"src/store.tsx\\"}"}}}',
+            '{"type":"assistant","timestamp_ms":1,"message":{"content":[{"type":"tool_use","id":"tu-read","name":"Read","input":{}}]}}',
+        ].join('\n') + '\n');
+        expect(acc.getSegments()).to.deep.equal([
+            { type: 'tool', toolUseId: 'tu-read', name: 'Read', args: '{"file_path":"src/store.tsx"}', finished: false },
+        ]);
+    });
+
     it('skips duplicate timestamped assistant snapshot after stream_event deltas', () => {
         const acc = new QaapQaiqStreamAccumulator();
         const reply = '¡Hola! Estoy bien, gracias por preguntar. ¿En qué puedo ayudarte hoy?';

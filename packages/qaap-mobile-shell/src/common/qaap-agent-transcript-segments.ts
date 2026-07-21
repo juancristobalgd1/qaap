@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isTranscriptSubagentToolName } from './qaap-transcript-activity-nesting';
+
 /** Minimal segment shape for transcript activity / inline-render decisions. */
 export interface QaapTranscriptActivitySegment {
     readonly type: 'thinking' | 'tool' | 'text';
@@ -367,21 +369,101 @@ export function excerptTranscriptToolCommand(command: string, maxChars = 64): st
     return collapsed.length > maxChars ? `${collapsed.slice(0, maxChars).trimEnd()}…` : collapsed;
 }
 
+function compactTranscriptToolArgDetail(value: string | undefined, max = 44): string | undefined {
+    const clean = value?.replace(/\s+/g, ' ').trim();
+    if (!clean) {
+        return undefined;
+    }
+    return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
+}
+
+/** Short description / prompt from Task·Agent tool args (JSON or XML wrappers). */
+export function extractTranscriptTaskSummary(argsJson: string): string | undefined {
+    const trimmed = argsJson.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    try {
+        const args = JSON.parse(trimmed) as Record<string, unknown>;
+        const value = [args.description, args.prompt, args.task, args.title]
+            .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0);
+        return compactTranscriptToolArgDetail(value);
+    } catch {
+        const match = trimmed.match(/<(?:description|prompt|task|title)>\s*([^<]+?)\s*<\/(?:description|prompt|task|title)>/i)
+            ?? trimmed.match(/<(?:description|prompt|task|title)>\s*([^\n\r<]+)/i)
+            ?? trimmed.match(/"(?:description|prompt|task|title)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (!match?.[1]) {
+            return undefined;
+        }
+        const decoded = match[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        return compactTranscriptToolArgDetail(decoded);
+    }
+}
+
+/** Search pattern from Grep·Glob args (JSON or partial streaming payloads). */
+export function extractTranscriptTracePattern(argsJson: string): string | undefined {
+    const trimmed = argsJson.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    const trivial = new Set(['*', '**', '**/*', '**/**', '.']);
+    const pick = (value: string | undefined): string | undefined => {
+        const clean = value?.trim();
+        if (!clean || trivial.has(clean)) {
+            return undefined;
+        }
+        return clean;
+    };
+    try {
+        const args = JSON.parse(trimmed) as Record<string, unknown>;
+        for (const key of ['pattern', 'query', 'glob_pattern', 'glob'] as const) {
+            const value = args[key];
+            if (typeof value === 'string') {
+                const picked = pick(value);
+                if (picked) {
+                    return picked;
+                }
+            }
+        }
+        return undefined;
+    } catch {
+        const match = trimmed.match(/"(?:pattern|glob_pattern|glob|query)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (!match?.[1]) {
+            return undefined;
+        }
+        return pick(match[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\'));
+    }
+}
+
 /** Claude-Code-style verb-first row label parts for a tool call. */
 export function resolveTranscriptToolRowParts(
     kind: string,
     toolName: string,
-    options?: { readonly path?: string; readonly command?: string },
+    options?: {
+        readonly path?: string;
+        readonly command?: string;
+        readonly pattern?: string;
+        readonly argsJson?: string;
+    },
 ): QaapTranscriptToolRowParts {
     if (isTranscriptTodoTool(toolName)) {
         return { verb: 'Updated', detail: 'todo list' };
+    }
+    if (isTranscriptSubagentToolName(toolName)) {
+        const summary = options?.argsJson
+            ? extractTranscriptTaskSummary(options.argsJson)
+            : undefined;
+        return { verb: 'Started', detail: summary ?? 'task' };
     }
     const file = options?.path ? options.path.split('/').pop() ?? options.path : undefined;
     switch (kind) {
         case 'reading':
             return { verb: 'Read', detail: file ?? 'file' };
-        case 'searching':
-            return { verb: 'Searched', detail: file ?? 'workspace' };
+        case 'searching': {
+            const pattern = options?.pattern?.trim()
+                || (options?.argsJson ? extractTranscriptTracePattern(options.argsJson) : undefined);
+            return { verb: 'Searched', detail: pattern || file || 'workspace' };
+        }
         case 'terminal':
             return { verb: 'Ran', detail: options?.command ? excerptTranscriptToolCommand(options.command) : 'command' };
         case 'mcp':
@@ -474,7 +556,10 @@ export function resolveTranscriptToolPillDescriptors(
     for (const segment of segments) {
         const kind = classifyTranscriptToolActivityKind(segment.name);
         const path = options?.resolvePath?.(segment.args);
-        const label = resolveTranscriptToolPillLabel(kind, segment.name, path);
+        const label = resolveTranscriptToolPillLabel(kind, segment.name, {
+            path,
+            argsJson: segment.args,
+        });
         const result = segment.result ?? '';
         const resultFailed = result.toLowerCase().includes('error') || result.toLowerCase().includes('failed');
         pills.push({
@@ -492,21 +577,33 @@ export function resolveTranscriptToolPillDescriptors(
 function resolveTranscriptToolPillLabel(
     kind: QaapTranscriptToolActivityKind,
     toolName: string,
-    path?: string,
+    options?: { readonly path?: string; readonly argsJson?: string },
 ): string {
-    const file = path ? path.split('/').pop() ?? path : undefined;
+    const file = options?.path ? options.path.split('/').pop() ?? options.path : undefined;
+    const argsJson = options?.argsJson ?? '';
     switch (kind) {
         case 'reading':
             return file ? `Read ${file}` : 'Read file';
-        case 'searching':
+        case 'searching': {
+            const pattern = extractTranscriptTracePattern(argsJson);
+            if (pattern) {
+                const compact = pattern.length > 36 ? `${pattern.slice(0, 33)}…` : pattern;
+                return toolName.toLowerCase().includes('grep') ? `Grep ${compact}` : `Search ${compact}`;
+            }
             return file ? `Search ${file}` : 'Search';
+        }
         case 'terminal':
             return 'Run command';
         case 'mcp':
             return 'MCP tool';
         case 'editing':
             return file ? `Edit ${file}` : 'Edit file';
-        default:
+        default: {
+            if (isTranscriptSubagentToolName(toolName)) {
+                const summary = extractTranscriptTaskSummary(argsJson);
+                return summary ? `Started ${summary}` : `Started ${toolName.trim() || 'task'}`;
+            }
             return (toolName ?? 'tool').replace(/_/g, ' ');
+        }
     }
 }

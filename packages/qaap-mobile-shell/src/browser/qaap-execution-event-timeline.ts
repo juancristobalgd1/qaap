@@ -25,7 +25,9 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { classifyTranscriptToolActivityKind } from '../common/qaap-agent-transcript-segments';
+import { extractToolArgFilePath, formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
+import { classifyTranscriptToolActivityKind, extractTranscriptTaskSummary } from '../common/qaap-agent-transcript-segments';
+import { isTranscriptSubagentToolName } from '../common/qaap-transcript-activity-nesting';
 import { isAgentToolResultFailure, stripAnsiEscapes } from '../common/qaap-transcript-content-display';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
@@ -168,7 +170,6 @@ export function buildMobileExecutionEvents(segments: readonly QaapAgentMessageSe
     // (or the closing narrative if no more tools follow).
     let pendingNarrative: string[] = [];
     let closingNarrative: string[] = [];
-    let eventIndex = 0;
 
     for (let i = 0; i < segments.length; i++) {
         const segment = segments[i];
@@ -198,8 +199,13 @@ export function buildMobileExecutionEvents(segments: readonly QaapAgentMessageSe
         const descriptor = describeMobileTool(segment);
         const lastEvent = events[events.length - 1];
 
-        // Merge into last event if no new narrative and same kind
-        if (lastEvent && pendingNarrative.length === 0 && lastEvent.kind === descriptor.kind) {
+        // Merge into last event if no new narrative and same kind.
+        // Never merge run/verification groups: incomplete Bash args often start
+        // as `run` and later flip to `verification`, which would collapse two
+        // events into one (`nextEvents.length < prev`) and force a full timeline
+        // rebuild (visible flicker) on every classification flip.
+        const canMergeKind = descriptor.kind !== 'run' && descriptor.kind !== 'verification';
+        if (lastEvent && pendingNarrative.length === 0 && lastEvent.kind === descriptor.kind && canMergeKind) {
             lastEvent.tools.push(toMobileTool(segment, i, descriptor));
             updateMobileEventState(lastEvent);
             continue;
@@ -217,8 +223,11 @@ export function buildMobileExecutionEvents(segments: readonly QaapAgentMessageSe
             narrativeSource = 'synthetic';
         }
 
+        // Stable id keyed by the lead toolUseId so remounts / open-state maps
+        // survive stream growth. Positional `m-event-N` broke whenever narrative
+        // inserted a new group ahead of existing ones.
         const event: MobileExecutionEvent = {
-            id: `m-event-${eventIndex++}`,
+            id: `m-event-${segment.toolUseId}`,
             narrative,
             narrativeSource,
             kind: descriptor.kind,
@@ -249,7 +258,7 @@ function toMobileTool(
         kind: descriptor.kind,
         verb: descriptor.verb,
         detail: extractToolDetail(segment, descriptor.kind),
-        filePath: extractToolFilePath(segment.args),
+        filePath: resolveToolFilePath(segment),
         isTerminal: descriptor.kind === 'run' || descriptor.kind === 'verification',
         isVerification: descriptor.kind === 'verification',
         isError: isToolError(segment),
@@ -313,6 +322,15 @@ function describeMobileTool(segment: Extract<QaapAgentMessageSegmentDTO, { type:
     if (matchesName(name, ['delete', 'remove', 'rm'])) {
         return { kind: 'delete', icon: 'codicon-trash', verb: 'Delete', narrative: "I'm removing obsolete pieces." };
     }
+    if (isTranscriptSubagentToolName(segment.name)) {
+        const verb = segment.name.trim().toLowerCase() === 'agent' ? 'Agent' : 'Task';
+        return {
+            kind: 'other',
+            icon: 'codicon-robot',
+            verb,
+            narrative: "I'm launching a subagent.",
+        };
+    }
     return { kind: 'other', icon: 'codicon-tools', verb: 'Use', narrative: "I'm applying the next step." };
 }
 
@@ -345,9 +363,36 @@ function extractToolDetail(segment: Extract<QaapAgentMessageSegmentDTO, { type: 
     if (kind === 'run' || kind === 'verification') {
         return extractCommand(segment.args) ?? segment.name;
     }
-    const filePath = extractToolFilePath(segment.args);
+    if (kind === 'read' || kind === 'write' || kind === 'edit' || kind === 'delete') {
+        // Prefer basename + optional line range (`auth.ts L10-40`) over the bare tool name.
+        const readDetail = formatReadToolDetailFromArgs(segment.args);
+        if (readDetail) {
+            return readDetail;
+        }
+        const filePath = resolveToolFilePath(segment);
+        if (filePath) {
+            return fileBasename(filePath);
+        }
+        // Never fall back to "Read" — that looks like a missing filename in the group rows.
+        return 'file';
+    }
+    if (kind === 'explore') {
+        const exploreDetail = extractExploreDetail(segment.args);
+        if (exploreDetail) {
+            return exploreDetail;
+        }
+        const filePath = resolveToolFilePath(segment);
+        if (filePath) {
+            return fileBasename(filePath);
+        }
+        return 'workspace';
+    }
+    if (isTranscriptSubagentToolName(segment.name)) {
+        return extractTranscriptTaskSummary(segment.args ?? '') ?? 'task';
+    }
+    const filePath = resolveToolFilePath(segment);
     if (filePath) {
-        return filePath.split('/').pop() ?? filePath;
+        return fileBasename(filePath);
     }
     return segment.name;
 }
@@ -370,20 +415,74 @@ function extractCommand(args: string | undefined): string | undefined {
     return undefined;
 }
 
-function extractToolFilePath(args: string | undefined): string | undefined {
-    if (!args) {
+/** Path from tool args, with `<path>` recovery from the result when args were wiped. */
+function resolveToolFilePath(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): string | undefined {
+    return extractToolArgFilePath(segment.args) ?? extractToolArgFilePath(segment.result);
+}
+
+function fileBasename(filePath: string): string {
+    const parts = filePath.replace(/\\/g, '/').split('/').filter(Boolean);
+    return parts.pop() ?? filePath;
+}
+
+/** Glob tokens that are not useful as a standalone Explore row label. */
+const TRIVIAL_EXPLORE_PATTERNS = new Set(['*', '**', '**/*', '**/**', '.']);
+
+function isMeaningfulExplorePattern(value: string): boolean {
+    const trimmed = value.trim();
+    return trimmed.length > 0 && !TRIVIAL_EXPLORE_PATTERNS.has(trimmed);
+}
+
+/** Pattern / directory for Glob·Grep rows so the group does not just repeat the tool name. */
+function extractExploreDetail(args: string | undefined): string | undefined {
+    if (!args?.trim()) {
         return undefined;
     }
+    const truncate = (value: string): string => (value.length > 48 ? `${value.slice(0, 45)}…` : value);
     try {
-        const parsed = JSON.parse(args);
-        if (typeof parsed === 'object' && parsed !== null) {
-            const path = parsed.file_path ?? parsed.path ?? parsed.filePath ?? parsed.filename;
-            if (typeof path === 'string') {
-                return path;
+        const parsed = JSON.parse(args) as Record<string, unknown>;
+        let pattern: string | undefined;
+        for (const key of ['pattern', 'glob_pattern', 'glob', 'query'] as const) {
+            const value = parsed[key];
+            if (typeof value === 'string' && isMeaningfulExplorePattern(value)) {
+                pattern = value.trim();
+                break;
             }
         }
+        let location: string | undefined;
+        for (const key of ['path', 'target_directory', 'target_file'] as const) {
+            const value = parsed[key];
+            if (typeof value === 'string' && value.trim()) {
+                location = value.trim();
+                break;
+            }
+        }
+        if (pattern && location) {
+            const shortLocation = fileBasename(location);
+            const combined = `${pattern} in ${shortLocation}`;
+            return truncate(combined.length <= 48 ? combined : pattern);
+        }
+        if (pattern) {
+            return truncate(pattern);
+        }
+        if (location) {
+            return truncate(location);
+        }
     } catch {
-        // Not JSON
+        const match = args.match(/"(?:pattern|glob_pattern|glob|query)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (match?.[1]) {
+            const decoded = match[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').trim();
+            if (isMeaningfulExplorePattern(decoded)) {
+                return truncate(decoded);
+            }
+        }
+        const pathMatch = args.match(/"(?:path|target_directory|target_file)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (pathMatch?.[1]) {
+            const decoded = pathMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\').trim();
+            if (decoded) {
+                return truncate(decoded);
+            }
+        }
     }
     return undefined;
 }
@@ -505,9 +604,11 @@ export function createMobileExecutionEventTimeline(
     const container = document.createElement('div');
     container.className = MOBILE_EXECUTION_TIMELINE_CLASS;
 
+    const fragment = document.createDocumentFragment();
     for (const event of timeline.events) {
-        container.append(createMobileExecutionEventElement(event));
+        fragment.append(createMobileExecutionEventElement(event));
     }
+    container.append(fragment);
 
     timelineEventCache.set(container, timeline.events);
     timelineEventSignatureCache.set(container, fingerprintMobileExecutionEvents(timeline.events));
@@ -618,7 +719,15 @@ export function wrapMobileProcessAccordion(
     if (settled === true && !isError && !isCancelled) {
         details.open = false;
     } else if (remembered) {
-        details.open = remembered.open;
+        // Keep mid-stream rebuilds expanded while the agent is active unless
+        // the user explicitly collapsed — a detach-fired toggle can poison
+        // remembered.open to false and flash the accordion closed.
+        const autoShouldOpen = isWorking || isError || !!isCancelled;
+        if (autoShouldOpen && !remembered.userToggled) {
+            details.open = true;
+        } else {
+            details.open = remembered.open;
+        }
         if (remembered.userToggled) {
             details.setAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR, '1');
         }
@@ -658,6 +767,12 @@ export function wrapMobileProcessAccordion(
     // accordion always starts from the freshest state.
     if (turnStartMs !== undefined) {
         details.addEventListener('toggle', () => {
+            // Detaching an open <details> can fire toggle(open=false) while
+            // disconnected — ignore that synthetic close so sticky state stays
+            // stable across remounts.
+            if (!details.isConnected && !details.open) {
+                return;
+            }
             recordProcessAccordionTurnState(turnStartMs, details);
         });
         recordProcessAccordionTurnState(turnStartMs, details);
@@ -711,6 +826,14 @@ function syncMobileProcessAccordionLabelTicker(
     turnStartMs: number | undefined,
     activityVerb: string | undefined,
 ): void {
+    const nextKey = isWorking && turnStartMs !== undefined
+        ? `${turnStartMs}:${activityVerb ?? ''}`
+        : '';
+    const prevKey = label.dataset.qaapProcessTickerKey ?? '';
+    if (nextKey === prevKey) {
+        return;
+    }
+    label.dataset.qaapProcessTickerKey = nextKey;
     sharedElapsedTicker.unregister(label);
     if (isWorking && turnStartMs !== undefined) {
         sharedElapsedTicker.register({
@@ -923,16 +1046,14 @@ export function tryPatchMobileExecutionEventTimeline(
         // node and visibly restarted the shimmer/spinner animations mid-edit.
         // patchMobileExecutionEventSection now patches the kind-derived chrome
         // (section class, group icon/verb, tool rows) and inserts/removes the
-        // narrative <p> in place instead.
+        // narrative <p> in place instead. Tool-row `kind` can flip the same way
+        // (run → verification); patchMobileToolDetail replaces that one row.
         if (nextEvent.tools.length < prevEvent.tools.length) {
             return false;
         }
         for (let j = 0; j < prevEvent.tools.length; j++) {
             const prevTool = prevEvent.tools[j];
             const nextTool = nextEvent.tools[j];
-            if (prevTool.kind !== nextTool.kind) {
-                return false;
-            }
             const p = prevTool.segment;
             const n = nextTool.segment;
             if (p.toolUseId !== n.toolUseId) {
@@ -975,8 +1096,12 @@ export function tryPatchMobileExecutionEventTimeline(
         }
         patchMobileExecutionEventSection(sections[i], prevEvents[i], nextEvents[i]);
     }
+    const fragment = document.createDocumentFragment();
     for (let i = prevEvents.length; i < nextEvents.length; i++) {
-        container.append(createMobileExecutionEventElement(nextEvents[i]));
+        fragment.append(createMobileExecutionEventElement(nextEvents[i]));
+    }
+    if (fragment.childNodes.length > 0) {
+        container.append(fragment);
     }
     return true;
 }
@@ -1019,7 +1144,10 @@ function patchMobileExecutionEventSection(
         // function is ever called.
         throw new Error('patchMobileExecutionEventSection: missing tool group despite passing validation');
     }
-    group.className = `theia-mobile-tool-group ${next.hasError ? 'failed' : ''} ${next.hasPending ? 'running' : 'finished'}`;
+    group.classList.toggle('failed', next.hasError);
+    group.classList.toggle('running', next.hasPending);
+    group.classList.toggle('finished', !next.hasPending);
+    // Preserve classes added at create time (e.g. theia-mod-web-search).
 
     const icon = group.querySelector<HTMLElement>('.theia-mobile-tool-group-icon');
     if (icon && prev.icon !== next.icon) {
@@ -1042,8 +1170,10 @@ function patchMobileExecutionEventSection(
     }
 
     const state = group.querySelector<HTMLElement>('.theia-mobile-tool-group-state');
-    if (state) {
-        state.className = `theia-mobile-tool-group-state ${next.hasError ? 'failed' : next.hasPending ? 'running' : 'complete'}`;
+    if (state && (prev.hasPending !== next.hasPending || prev.hasError !== next.hasError)) {
+        state.classList.toggle('failed', next.hasError);
+        state.classList.toggle('running', next.hasPending && !next.hasError);
+        state.classList.toggle('complete', !next.hasPending && !next.hasError);
         const stateIcon = state.querySelector<HTMLElement>('.codicon');
         if (stateIcon) {
             stateIcon.className = `codicon ${next.hasError ? 'codicon-error' : next.hasPending ? 'codicon-loading theia-animation-spin' : 'codicon-check'}`;
@@ -1139,12 +1269,16 @@ function patchMobileToolDetail(
     index: number,
 ): void {
     if (el instanceof HTMLDetailsElement && el.classList.contains('theia-mobile-terminal-output')) {
-        el.className = `theia-mobile-terminal-output ${nextTool.isError ? 'failed' : nextTool.isFinished ? 'complete' : 'running'}`;
+        el.classList.toggle('failed', nextTool.isError);
+        el.classList.toggle('complete', nextTool.isFinished && !nextTool.isError);
+        el.classList.toggle('running', !nextTool.isFinished);
 
-        const stateIcon = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-state');
-        if (stateIcon) {
-            stateIcon.className =
-                `codicon ${nextTool.isError ? 'codicon-error' : nextTool.isFinished ? 'codicon-check' : 'codicon-loading theia-animation-spin'} theia-mobile-terminal-output-state`;
+        if (prevTool.isError !== nextTool.isError || prevTool.isFinished !== nextTool.isFinished) {
+            const stateIcon = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-state');
+            if (stateIcon) {
+                stateIcon.className =
+                    `codicon ${nextTool.isError ? 'codicon-error' : nextTool.isFinished ? 'codicon-check' : 'codicon-loading theia-animation-spin'} theia-mobile-terminal-output-state`;
+            }
         }
 
         if (prevTool.detail !== nextTool.detail) {
@@ -1204,7 +1338,9 @@ function patchMobileToolDetail(
     // Structural transitions (error flip adds an error icon, a kind flip
     // changes icon/link semantics) are rare one-shot changes and plain rows
     // carry no animations, so a targeted row replace is safe there.
-    if (prevTool.isError !== nextTool.isError || prevEvent.kind !== event.kind) {
+    if (prevTool.isError !== nextTool.isError
+        || prevEvent.kind !== event.kind
+        || prevTool.kind !== nextTool.kind) {
         el.replaceWith(createMobileToolDetailElement(event, nextTool, index));
         return;
     }
@@ -1497,6 +1633,11 @@ function createMobileToolGroupElement(
             details.open = true;
             return;
         }
+        // Detaching an open group fires toggle(open=false) while disconnected —
+        // don't poison sticky open state (that would collapse on remount).
+        if (!details.isConnected && !details.open) {
+            return;
+        }
         recordTimelineDetailsOpenState(groupStateKey, details.open);
     });
 
@@ -1623,6 +1764,11 @@ function createMobileTerminalOutputElement(
         details.open = true;
     }
     details.addEventListener('toggle', () => {
+        // Same detach guard as tool groups — synthetic close must not wipe
+        // a user-opened terminal card across rematerialization.
+        if (!details.isConnected && !details.open) {
+            return;
+        }
         recordTimelineDetailsOpenState(terminalStateKey, details.open);
     });
 

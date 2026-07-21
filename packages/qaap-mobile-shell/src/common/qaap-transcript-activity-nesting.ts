@@ -10,7 +10,8 @@ import type { TranscriptActivityNavigationItem } from './qaap-transcript-activit
 export const TRANSCRIPT_SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
 
 export function isTranscriptSubagentToolName(toolName: string): boolean {
-    return TRANSCRIPT_SUBAGENT_TOOL_NAMES.has(toolName.trim());
+    const key = toolName.trim().toLowerCase();
+    return key === 'agent' || key === 'task';
 }
 
 /** Map each toolUseId to its parent toolUseId (when emitted by stream-json). */

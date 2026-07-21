@@ -10,7 +10,8 @@ import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
 import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
-import { buildConversationTranscriptFingerprint, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
+import { buildConversationTranscriptFingerprint, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
+import { hasMobileExecutionEventTimeline } from './qaap-execution-event-timeline';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
@@ -204,8 +205,25 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         return segments.length ? { ...msg, segments } : msg;
     }
 
+    /**
+     * Failure normalization is O(messages); memoized per snapshot so the full
+     * rebuild loop (which calls {@link createTranscriptMessageRowAtIndex} once
+     * per row) stays O(N) instead of O(N²). Snapshots are immutable per tick,
+     * so keying by object identity is safe.
+     */
+    private readonly normalizedFailuresCache = new WeakMap<QaapAgentConversationDTO, QaapAgentConversationDTO>();
+
+    protected normalizeConversationFailuresCached(conv: QaapAgentConversationDTO): QaapAgentConversationDTO {
+        let normalized = this.normalizedFailuresCache.get(conv);
+        if (!normalized) {
+            normalized = normalizeAgentConversationFailures(conv);
+            this.normalizedFailuresCache.set(conv, normalized);
+        }
+        return normalized;
+    }
+
     createTranscriptMessageRowAtIndex(conv: QaapAgentConversationDTO, index: number): HTMLElement {
-        const normalized = normalizeAgentConversationFailures(conv);
+        const normalized = this.normalizeConversationFailuresCached(conv);
         const msg = normalized.messages[index];
         const sameConversation = this.host.transcriptLastRenderedConversationId === normalized.id;
         const previousLastMessageId = this.host.transcriptLastRenderedMessageId;
@@ -448,7 +466,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         conv: QaapAgentConversationDTO,
         options?: { readonly openingConversation?: boolean; readonly newTurnStarted?: boolean },
     ): void {
-        const normalized = normalizeAgentConversationFailures(conv);
+        const normalized = this.normalizeConversationFailuresCached(conv);
         this.host.transcriptLastConv = normalized;
         const messageHost = this.resolveTranscriptMessageHost(host);
         messageHost.classList.remove('theia-mod-empty-chat');
@@ -640,12 +658,15 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const anchor = shouldFollowTail || newTurnStarted || openingConversation
             ? undefined
             : this.captureTranscriptScrollAnchor(messageHost);
-        messageHost.replaceChildren();
         messageHost.classList.toggle('theia-mod-empty-chat', false);
         this.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
+        // Build off-DOM then swap once — avoids N reflows while appending rows
+        // into a connected host (visible flicker during streaming rebuilds).
+        const fragment = document.createDocumentFragment();
         for (let index = 0; index < conv.messages.length; index++) {
-            messageHost.append(this.createTranscriptMessageRowAtIndex(conv, index));
+            fragment.append(this.createTranscriptMessageRowAtIndex(conv, index));
         }
+        messageHost.replaceChildren(fragment);
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
         const last = conv.messages[conv.messages.length - 1];
@@ -782,6 +803,33 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return true;
         }
 
+        if (patchKind === 'append-user') {
+            // A queued user message landed mid-stream: append the new row(s)
+            // instead of rebuilding the whole list. Mirrors the full-render
+            // output for a user tail — prior streaming rows settle, the
+            // activity row moves below the new user turn.
+            recordTranscriptRenderMetric('render_patch_append');
+            const prevCount = this.host.transcriptLastConv?.messages.length ?? Math.max(0, conv.messages.length - 1);
+            this.removeTranscriptActivityRow(messageHost);
+            messageHost.querySelectorAll('.theia-mod-streaming').forEach(element => {
+                if (element instanceof HTMLElement) {
+                    this.contentUi.settleTranscriptStreamingContent(element);
+                }
+                element.classList.remove('theia-mod-streaming');
+            });
+            const fragment = document.createDocumentFragment();
+            for (let index = prevCount; index < conv.messages.length; index++) {
+                fragment.append(this.createTranscriptMessageRowAtIndex(conv, index));
+            }
+            messageHost.append(fragment);
+            this.host.transcriptLastConv = conv;
+            this.host.transcriptLastRenderedConversationId = conv.id;
+            this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
+            this.syncTranscriptActivityRow(messageHost, conv);
+            this.scrollTranscriptToLastUserTurn(messageHost, { asPositionTurn: true });
+            return true;
+        }
+
         const lastAgent = conv.messages[conv.messages.length - 1];
         if (!lastAgent || !lastAgent.id || lastAgent.role !== 'agent') {
             return false;
@@ -838,6 +886,16 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             recordTranscriptRenderMetric('render_patch_append');
             if (!shouldFollowTail) {
                 row.classList.add('theia-mod-new-message');
+            }
+            // A coalesced tick can deliver several rows at once — append every
+            // intermediate row (user or agent) before the streaming tail.
+            const prevCount = this.host.transcriptLastConv?.messages.length ?? Math.max(0, conv.messages.length - 1);
+            if (conv.messages.length - prevCount > 1) {
+                const fragment = document.createDocumentFragment();
+                for (let index = prevCount; index < conv.messages.length - 1; index++) {
+                    fragment.append(this.createTranscriptMessageRowAtIndex(conv, index));
+                }
+                messageHost.append(fragment);
             }
             messageHost.append(row);
         }
@@ -896,6 +954,23 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             if (wasFollowingTail) {
                 this.scrollTranscriptFollowTail(messageHost);
             }
+            return true;
+        }
+
+        if (patchKind === 'append-user') {
+            recordTranscriptRenderMetric('render_patch_append');
+            messageHost.querySelectorAll('.theia-mod-streaming').forEach(element => {
+                element.classList.remove('theia-mod-streaming');
+                if (element instanceof HTMLElement) {
+                    this.contentUi.settleTranscriptStreamingContent(element);
+                }
+            });
+            this.host.transcriptLastConv = conv;
+            list.setItemCount(conv.messages.length);
+            list.setFooter(this.buildTranscriptVirtualFooter(conv));
+            this.host.transcriptLastRenderedConversationId = conv.id;
+            this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
+            this.scrollTranscriptToLastUserTurn(messageHost, { asPositionTurn: true });
             return true;
         }
 
@@ -978,6 +1053,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return true;
         }
         if (!prevComparable) {
+            if (hasMobileExecutionEventTimeline(existingRow)) {
+                const nextOnly = nextComparable?.segments ?? resolvedSegments ?? [];
+                this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextOnly, conv);
+                recordTranscriptRenderMetric('render_patch_last_agent_timeline_fallback');
+                return true;
+            }
             return false;
         }
         const nextSegments = nextComparable.segments ?? [];
@@ -985,17 +1066,37 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const segmentsInPlace = canStreamPatchAgentSegmentsInPlace(prevComparable, nextComparable);
         const appendTool = canStreamPatchAgentAppendToolSegment(prevComparable, nextComparable);
         const appendText = canStreamPatchAgentAppendTextSegment(prevComparable, nextComparable);
-        if (!segmentsInPlace && !appendTool && !appendText) {
-            return false;
+        const appendThinking = canStreamPatchAgentAppendThinkingSegment(prevComparable, nextComparable);
+        // Combined tick: the shared prefix changed patchably AND one segment was
+        // appended in the same coalesced frame (tool finishing + next block
+        // starting). Patch the prefix in place, then append the tail.
+        const inPlaceWithAppend = !segmentsInPlace && !appendTool && !appendText && !appendThinking
+            && canStreamPatchAgentSegmentsInPlaceWithAppend(prevComparable, nextComparable);
+        const tryTimelineFallback = (): boolean => {
+            if (!hasMobileExecutionEventTimeline(existingRow)) {
+                return false;
+            }
+            this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments, conv);
+            recordTranscriptRenderMetric('render_patch_last_agent_timeline_fallback');
+            return true;
+        };
+        if (!segmentsInPlace && !appendTool && !appendText && !appendThinking && !inPlaceWithAppend) {
+            // Prefer refreshing the Codex timeline in place over remounting the
+            // whole agent row (that remount restarts shimmer/spin and flashes).
+            return tryTimelineFallback();
         }
-        if (segmentsInPlace) {
+        // The DOM patchers iterate index-aligned prev/next pairs, so the
+        // combined tick hands them the equal-length shared prefix only — the
+        // appended tail is handled by the append helpers below.
+        const nextShared = inPlaceWithAppend ? nextSegments.slice(0, prevSegments.length) : nextSegments;
+        if (segmentsInPlace || inPlaceWithAppend) {
             if (resolvedSegments?.length) {
-                if (!this.artifactsUi.patchStreamingAgentTextSegments(existingRow, prevSegments, nextSegments, conv)) {
-                    return false;
+                if (!this.artifactsUi.patchStreamingAgentTextSegments(existingRow, prevSegments, nextShared, conv)) {
+                    return tryTimelineFallback();
                 }
             } else {
                 const contentEl = existingRow.querySelector<HTMLElement>('.theia-mobile-agent-transcript-content');
-                const lastText = [...nextSegments].reverse().find(segment => segment.type === 'text');
+                const lastText = [...nextShared].reverse().find(segment => segment.type === 'text');
                 if (contentEl && lastText?.type === 'text') {
                     this.toolUi.renderTranscriptRichContent(
                         contentEl,
@@ -1004,24 +1105,31 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                     );
                 }
             }
-            if (prevSegments.length === nextSegments.length) {
-                if (!this.artifactsUi.patchStreamingAgentToolSegments(existingRow, prevSegments, nextSegments, conv)) {
+            if (prevSegments.length === nextShared.length) {
+                if (!this.artifactsUi.patchStreamingAgentToolSegments(existingRow, prevSegments, nextShared, conv)) {
                     if (existingRow.classList.contains('theia-mod-streaming')) {
                         this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments, conv);
-                    } else {
+                    } else if (!tryTimelineFallback()) {
                         return false;
                     }
                 }
             }
         }
-        if (appendTool) {
+        const appendedTailType = inPlaceWithAppend ? nextSegments[nextSegments.length - 1]?.type : undefined;
+        if (appendTool || appendedTailType === 'tool') {
             if (!this.artifactsUi.appendStreamingAgentToolSegment(existingRow, nextSegments, conv)) {
-                return false;
+                return tryTimelineFallback();
             }
         }
-        if (appendText) {
-            if (!this.artifactsUi.appendStreamingAgentTextSegment(existingRow, nextSegments, conv)) {
+        if (appendThinking || appendedTailType === 'thinking') {
+            // Thinking has no dedicated DOM append path; keep the Codex timeline
+            // (or fall through to replace when tools have not mounted yet).
+            if (!tryTimelineFallback()) {
                 return false;
+            }
+        } else if (appendText || appendedTailType === 'text') {
+            if (!this.artifactsUi.appendStreamingAgentTextSegment(existingRow, nextSegments, conv)) {
+                return tryTimelineFallback();
             }
         }
         this.artifactsUi.patchStreamingActivityTimeline(existingRow, nextSegments, conv);

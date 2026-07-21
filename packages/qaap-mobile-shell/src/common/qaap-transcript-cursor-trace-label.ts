@@ -5,11 +5,14 @@
 
 import {
     classifyTranscriptToolActivityKind,
+    extractTranscriptTaskSummary,
+    extractTranscriptTracePattern,
     humanizeTranscriptToolDisplayName,
     resolveSpecialTranscriptToolTraceLabel,
     resolveTranscriptToolRowParts,
     type QaapTranscriptToolActivityKind,
 } from './qaap-agent-transcript-segments';
+import { isTranscriptSubagentToolName } from './qaap-transcript-activity-nesting';
 
 export interface QaapTranscriptCursorTraceLabel {
     readonly verb: string;
@@ -35,7 +38,7 @@ function formatTranscriptSearchPattern(pattern: string): string {
     if (!clean) {
         return 'workspace';
     }
-    return compactTraceDetail(clean, 52) ?? clean;
+    return clean.length > 52 ? `${clean.slice(0, 51).trimEnd()}…` : clean;
 }
 
 /** Cursor-style verb / detail / muted-tail parts for a timeline step row. */
@@ -48,16 +51,20 @@ export function resolveTranscriptCursorTraceLabel(
     if (normalizedToolName.includes('todo')) {
         return { verb: 'Updated', detail: 'todo list' };
     }
-    if (normalizedToolName === 'task' || normalizedToolName.includes('task')) {
+    if (isTranscriptSubagentToolName(toolName)) {
         return { verb: 'Started', detail: extractTranscriptTaskSummary(argsJson) ?? 'task' };
     }
     const kind = classifyTranscriptToolActivityKind(toolName);
-    const rowParts = resolveTranscriptToolRowParts(kind, toolName, options);
+    const pattern = kind === 'searching' ? extractTranscriptTracePattern(argsJson) : undefined;
+    const rowParts = resolveTranscriptToolRowParts(kind, toolName, {
+        ...options,
+        pattern,
+        argsJson,
+    });
     const name = toolName.toLowerCase();
     const fileName = options?.path ? options.path.replace(/\\/g, '/').split('/').filter(Boolean).pop() : undefined;
     switch (kind) {
         case 'searching': {
-            const pattern = extractTranscriptTracePattern(argsJson);
             const verb = name.includes('grep') ? 'Grepped' : 'Searched';
             const detail = pattern
                 ? formatTranscriptSearchPattern(pattern)
@@ -89,42 +96,6 @@ export function resolveTranscriptCursorTraceLabel(
             }
             return { verb: 'Used', detail: humanizeTranscriptToolDisplayName(toolName || 'tool') };
         }
-    }
-}
-
-function extractTranscriptTaskSummary(argsJson: string): string | undefined {
-    const trimmed = argsJson.trim();
-    if (!trimmed) {
-        return undefined;
-    }
-    try {
-        const args = JSON.parse(trimmed) as Record<string, unknown>;
-        const value = [args.description, args.prompt, args.task, args.title]
-            .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0);
-        return compactTraceDetail(value);
-    } catch {
-        const match = trimmed.match(/<(?:description|prompt|task|title)>\s*([^<]+?)\s*<\/(?:description|prompt|task|title)>/i)
-            ?? trimmed.match(/<(?:description|prompt|task|title)>\s*([^\n\r<]+)/i);
-        return compactTraceDetail(match?.[1]);
-    }
-}
-
-function compactTraceDetail(value: string | undefined, max = 44): string | undefined {
-    const clean = value?.replace(/\s+/g, ' ').trim();
-    if (!clean) {
-        return undefined;
-    }
-    return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
-}
-
-function extractTranscriptTracePattern(argsJson: string): string | undefined {
-    try {
-        const args = JSON.parse(argsJson) as Record<string, unknown>;
-        const pattern = [args.pattern, args.query, args.glob_pattern, args.glob]
-            .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
-        return pattern?.trim();
-    } catch {
-        return undefined;
     }
 }
 

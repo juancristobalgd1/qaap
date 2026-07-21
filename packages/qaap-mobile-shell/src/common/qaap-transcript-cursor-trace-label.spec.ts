@@ -68,6 +68,17 @@ describe('resolveTranscriptCursorTraceLabel', () => {
             detail: 'Polish the agent trace UI',
         });
     });
+
+    it('formats Agent tools with the same summary treatment as Task', () => {
+        expect(resolveTranscriptCursorTraceLabel(
+            'Agent',
+            JSON.stringify({ description: 'Inspect the sticky composer working panel' }),
+            {},
+        )).to.deep.equal({
+            verb: 'Started',
+            detail: 'Inspect the sticky composer working panel',
+        });
+    });
 });
 
 describe('extractTranscriptCommandTail', () => {

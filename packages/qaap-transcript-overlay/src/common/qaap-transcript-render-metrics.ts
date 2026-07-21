@@ -18,6 +18,7 @@ export type QaapTranscriptRenderMetricKind =
     | 'render_patch_last_agent'
     | 'render_patch_last_agent_in_place'
     | 'render_patch_last_agent_replace'
+    | 'render_patch_last_agent_timeline_fallback'
     | 'render_patch_append'
     | 'render_patch_none'
     | 'render_skip_unchanged_tail'
@@ -59,6 +60,7 @@ const EMPTY_COUNTS = (): Record<QaapTranscriptRenderMetricKind, number> => ({
     render_patch_last_agent: 0,
     render_patch_last_agent_in_place: 0,
     render_patch_last_agent_replace: 0,
+    render_patch_last_agent_timeline_fallback: 0,
     render_patch_append: 0,
     render_patch_none: 0,
     render_skip_unchanged_tail: 0,

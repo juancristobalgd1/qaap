@@ -9,8 +9,10 @@ import {
     buildConversationTranscriptFingerprint,
     canPatchToolSegmentGrowth,
     canStreamPatchAgentAppendTextSegment,
+    canStreamPatchAgentAppendThinkingSegment,
     canStreamPatchAgentAppendToolSegment,
     canStreamPatchAgentSegmentsInPlace,
+    canStreamPatchAgentSegmentsInPlaceWithAppend,
     canStreamPatchAgentTextContentOnly,
     canStreamPatchAgentToolsOnly,
     canStreamPatchStdoutAgentContentOnly,
@@ -379,6 +381,62 @@ describe('qaap-transcript-incremental-update', () => {
         expect(canPatchToolSegmentGrowth(prev, next)).to.equal(false);
     });
 
+    it('canPatchToolSegmentGrowth allows mid-stream args rewrites for the same tool', () => {
+        const prev = {
+            type: 'tool' as const,
+            toolUseId: 't1',
+            name: 'Bash',
+            args: '{"command":"npm run"}',
+            finished: false,
+        };
+        const next = {
+            type: 'tool' as const,
+            toolUseId: 't1',
+            name: 'Bash',
+            args: '{"command":"npm run test"}',
+            finished: false,
+        };
+        expect(canPatchToolSegmentGrowth(prev, next)).to.equal(true);
+        expect(canStreamPatchAgentSegmentsInPlace(
+            { id: 'a1', role: 'agent', content: '', createdAt: 1, segments: [prev] },
+            { id: 'a1', role: 'agent', content: '', createdAt: 1, segments: [next] },
+        )).to.equal(true);
+    });
+
+    it('canStreamPatchAgentSegmentsInPlace allows thinking rewrites', () => {
+        const prevMsg = {
+            id: 'a1',
+            role: 'agent' as const,
+            content: '',
+            createdAt: 1,
+            segments: [{ type: 'thinking' as const, content: 'Plan A then B' }],
+        };
+        const nextMsg = {
+            ...prevMsg,
+            segments: [{ type: 'thinking' as const, content: 'Plan B only' }],
+        };
+        expect(canStreamPatchAgentSegmentsInPlace(prevMsg, nextMsg)).to.equal(true);
+    });
+
+    it('canStreamPatchAgentAppendThinkingSegment detects a new thinking tail', () => {
+        const prevMsg = {
+            id: 'a1',
+            role: 'agent' as const,
+            content: '',
+            createdAt: 1,
+            segments: [{ type: 'tool' as const, toolUseId: 't1', name: 'Read', args: '{}', finished: true, result: 'ok' }],
+        };
+        const nextMsg = {
+            ...prevMsg,
+            segments: [
+                ...prevMsg.segments,
+                { type: 'thinking' as const, content: 'Now synthesize' },
+            ],
+        };
+        expect(canStreamPatchAgentAppendThinkingSegment(prevMsg, nextMsg)).to.equal(true);
+        expect(canStreamPatchAgentAppendTextSegment(prevMsg, nextMsg)).to.equal(false);
+    });
+
     it('canStreamPatchAgentSegmentsInPlace allows text and tool growth in one tick', () => {
         const prevMsg = {
             id: 'a1',
@@ -434,6 +492,222 @@ describe('qaap-transcript-incremental-update', () => {
         );
         expect(mergeConversationTranscriptFingerprint(prev, next)).to.not.equal(
             buildConversationTranscriptFingerprint(prev),
+        );
+    });
+
+    it('resolveStreamingTranscriptPatchKind returns append-agent for the empty placeholder tick', () => {
+        // The full rebuild paints the empty placeholder row too, so appending it
+        // keeps parity — previously this tick forced a whole-list render_full on
+        // every new agent turn.
+        const prev = conv({
+            messages: [{ id: 'u1', role: 'user', content: 'hi', createdAt: 1 }],
+        });
+        const next = conv({
+            messages: [
+                { id: 'u1', role: 'user', content: 'hi', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: '', createdAt: 2 },
+            ],
+        });
+        expect(resolveStreamingTranscriptPatchKind(prev, next)).to.equal('append-agent');
+    });
+
+    it('resolveStreamingTranscriptPatchKind returns append-user for a queued user message', () => {
+        const prev = conv({
+            messages: [
+                { id: 'u1', role: 'user', content: 'hi', createdAt: 1 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: '',
+                    createdAt: 2,
+                    segments: [{ type: 'text', content: 'Working on it' }],
+                },
+            ],
+        });
+        const next = conv({
+            messages: [
+                ...prev.messages,
+                { id: 'u2', role: 'user', content: 'also do this', createdAt: 3 },
+            ],
+        });
+        expect(resolveStreamingTranscriptPatchKind(prev, next)).to.equal('append-user');
+    });
+
+    it('resolveStreamingTranscriptPatchKind appends multiple trailing rows in one coalesced tick', () => {
+        const prev = conv({
+            messages: [{ id: 'u1', role: 'user', content: 'hi', createdAt: 1 }],
+        });
+        const next = conv({
+            messages: [
+                { id: 'u1', role: 'user', content: 'hi', createdAt: 1 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: '',
+                    createdAt: 2,
+                    segments: [{ type: 'text', content: 'done' }],
+                },
+                {
+                    id: 'a2',
+                    role: 'agent',
+                    content: '',
+                    createdAt: 3,
+                    segments: [{ type: 'thinking', content: 'next' }],
+                },
+            ],
+        });
+        expect(resolveStreamingTranscriptPatchKind(prev, next)).to.equal('append-agent');
+    });
+
+    it('resolveStreamingTranscriptPatchKind returns none when prior messages diverge on append', () => {
+        const prev = conv({
+            messages: [{ id: 'u1', role: 'user', content: 'hi', createdAt: 1 }],
+        });
+        const next = conv({
+            messages: [
+                { id: 'uX', role: 'user', content: 'hi', createdAt: 1 },
+                { id: 'a1', role: 'agent', content: '', createdAt: 2, segments: [{ type: 'text', content: 'x' }] },
+            ],
+        });
+        expect(resolveStreamingTranscriptPatchKind(prev, next)).to.equal('none');
+    });
+
+    it('canPatchToolSegmentGrowth allows non-monotonic result rewrites (placeholder → final)', () => {
+        const prev = {
+            type: 'tool' as const,
+            toolUseId: 't1',
+            name: 'Bash',
+            args: '{}',
+            finished: false,
+            result: 'Processing screenshot…',
+        };
+        const next = {
+            type: 'tool' as const,
+            toolUseId: 't1',
+            name: 'Bash',
+            args: '{}',
+            finished: true,
+            result: '<img src="evidence.png">',
+        };
+        expect(canPatchToolSegmentGrowth(prev, next)).to.equal(true);
+    });
+
+    it('canPatchToolSegmentGrowth still rejects a finished → unfinished regression', () => {
+        const prev = { type: 'tool' as const, toolUseId: 't1', name: 'Bash', args: '{}', finished: true, result: 'ok' };
+        const next = { type: 'tool' as const, toolUseId: 't1', name: 'Bash', args: '{}', finished: false, result: 'ok' };
+        expect(canPatchToolSegmentGrowth(prev, next)).to.equal(false);
+    });
+
+    it('canStreamPatchAgentSegmentsInPlace allows corrective text rewrites, not only prefix growth', () => {
+        const prevMsg = {
+            id: 'a1',
+            role: 'agent' as const,
+            content: '',
+            createdAt: 1,
+            segments: [{ type: 'text' as const, content: 'Hello wrold' }],
+        };
+        const nextMsg = {
+            ...prevMsg,
+            segments: [{ type: 'text' as const, content: 'Hello world' }],
+        };
+        expect(canStreamPatchAgentSegmentsInPlace(prevMsg, nextMsg)).to.equal(true);
+    });
+
+    it('canStreamPatchStdoutAgentContentOnly allows corrective rewrites', () => {
+        const prevMsg = { id: 'a1', role: 'agent' as const, content: 'Hello wrold', createdAt: 1 };
+        const nextMsg = { id: 'a1', role: 'agent' as const, content: 'Hello world', createdAt: 1 };
+        expect(canStreamPatchStdoutAgentContentOnly(prevMsg, nextMsg)).to.equal(true);
+    });
+
+    it('same-length tool result rewrites are detected as changes (no silent freeze)', () => {
+        const messagesOf = (result: string) => [
+            { id: 'u1', role: 'user' as const, content: 'hi', createdAt: 1 },
+            {
+                id: 'a1',
+                role: 'agent' as const,
+                content: '',
+                createdAt: 2,
+                segments: [{ type: 'tool' as const, toolUseId: 't1', name: 'Bash', args: '{}', finished: false, result }],
+            },
+        ];
+        const prev = conv({ messages: messagesOf('status: RUNNING') });
+        const next = conv({ messages: messagesOf('status: STOPPED') });
+        expect(resolveStreamingTranscriptPatchKind(prev, next)).to.equal('last-agent');
+        expect(isStreamingTranscriptTailUnchanged(prev, next)).to.equal(false);
+        expect(buildConversationTranscriptFingerprint(prev)).to.not.equal(
+            buildConversationTranscriptFingerprint(next),
+        );
+    });
+
+    it('canStreamPatchAgentSegmentsInPlaceWithAppend patches a grown prefix plus an appended tail', () => {
+        const prevMsg = {
+            id: 'a1',
+            role: 'agent' as const,
+            content: '',
+            createdAt: 1,
+            segments: [
+                { type: 'tool' as const, toolUseId: 't1', name: 'Bash', args: '{}', finished: false, result: 'a' },
+            ],
+        };
+        const nextMsg = {
+            ...prevMsg,
+            segments: [
+                { type: 'tool' as const, toolUseId: 't1', name: 'Bash', args: '{}', finished: true, result: 'ab' },
+                { type: 'text' as const, content: 'Now the answer' },
+            ],
+        };
+        expect(canStreamPatchAgentSegmentsInPlaceWithAppend(prevMsg, nextMsg)).to.equal(true);
+        // Plain append predicates reject it (prior segment changed) — the
+        // combined predicate is what keeps this off the row-replace path.
+        expect(canStreamPatchAgentAppendTextSegment(prevMsg, nextMsg)).to.equal(false);
+    });
+
+    it('canStreamPatchAgentSegmentsInPlaceWithAppend rejects an unchanged prefix or larger deltas', () => {
+        const prevMsg = {
+            id: 'a1',
+            role: 'agent' as const,
+            content: '',
+            createdAt: 1,
+            segments: [{ type: 'text' as const, content: 'same' }],
+        };
+        const unchangedPrefix = {
+            ...prevMsg,
+            segments: [
+                { type: 'text' as const, content: 'same' },
+                { type: 'tool' as const, toolUseId: 't1', name: 'Read', args: '{}', finished: false },
+            ],
+        };
+        expect(canStreamPatchAgentSegmentsInPlaceWithAppend(prevMsg, unchangedPrefix)).to.equal(false);
+        const doubleAppend = {
+            ...prevMsg,
+            segments: [
+                { type: 'text' as const, content: 'same+more' },
+                { type: 'tool' as const, toolUseId: 't1', name: 'Read', args: '{}', finished: false },
+                { type: 'text' as const, content: 'tail' },
+            ],
+        };
+        expect(canStreamPatchAgentSegmentsInPlaceWithAppend(prevMsg, doubleAppend)).to.equal(false);
+    });
+
+    it('mergeConversationTranscriptFingerprint cache hit still matches the full build', () => {
+        const messagesWithTail = (tail: string) => [
+            { id: 'u1', role: 'user' as const, content: 'hi', createdAt: 1 },
+            {
+                id: 'a1',
+                role: 'agent' as const,
+                content: '',
+                createdAt: 2,
+                segments: [{ type: 'text' as const, content: tail }],
+            },
+        ];
+        const first = conv({ id: 'c-cache', messages: messagesWithTail('He') });
+        const second = conv({ id: 'c-cache', messages: messagesWithTail('Hell') });
+        const third = conv({ id: 'c-cache', messages: messagesWithTail('Hello') });
+        // First merge primes the historical-prefix cache; the second exercises
+        // the cache-hit path (same count, same historical ids).
+        mergeConversationTranscriptFingerprint(first, second);
+        expect(mergeConversationTranscriptFingerprint(second, third)).to.equal(
+            buildConversationTranscriptFingerprint(third),
         );
     });
 });

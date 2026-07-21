@@ -1408,10 +1408,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                     // visible change. Keep patching in place instead.
                     continue;
                 } else {
-                    // Genuinely missing: the block should be visible but doesn't
-                    // exist yet (e.g. content grew enough to no longer be
-                    // process prose, or to become a distinct error card).
-                    // Trigger a one-off full re-render to materialize it.
+                    // Genuinely missing closing-narrative host. Prefer refreshing
+                    // the Codex timeline in place over forcing a full agent-row
+                    // remount (which restarts shimmer/spin mid-stream).
+                    if (hasMobileExecutionEventTimeline(row)) {
+                        this.queueExecutionTimelineRefresh(row, nextSegments);
+                        return true;
+                    }
                     return false;
                 }
             }
@@ -3295,6 +3298,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return resolveTranscriptToolRowParts(kind, segment.name, {
             path: this.resolversUi.extractTranscriptToolFullPath(segment.args),
             command: this.resolversUi.extractTranscriptToolCommand(segment.args),
+            argsJson: segment.args,
         });
     }
 

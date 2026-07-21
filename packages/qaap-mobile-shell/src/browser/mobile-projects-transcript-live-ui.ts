@@ -501,7 +501,15 @@ export class MobileProjectsTranscriptLiveUi {
                 if (!document || document.id !== conversationId || !this.isActiveTranscriptConversation(conversationId)) {
                     return;
                 }
-                const fingerprint = this.conversationTranscriptFingerprint(document);
+                // Self-echo of the SSE flush that just cached this exact snapshot — it
+                // already rendered and published the fingerprint. Skip without paying
+                // any fingerprint work at all.
+                if (document === this.host.transcriptLastConv && this.host.transcriptLastFingerprint !== undefined) {
+                    return;
+                }
+                // Tail-only merge (prefix cache) instead of the O(messages × segments)
+                // full build — this subscriber fires on the streaming hot path.
+                const fingerprint = mergeConversationTranscriptFingerprint(this.host.transcriptLastConv, document);
                 if (this.host.transcriptLastFingerprint === fingerprint) {
                     this.host.transcriptLastConv = document;
                     return;
@@ -551,18 +559,28 @@ export class MobileProjectsTranscriptLiveUi {
             && next.status === 'streaming'
             ? { ...next, status: openStatus }
             : next;
-        // Always keep memory/cache in sync — even if the chat host is briefly detached
-        // during Agents Hub remount — so the next paint / final visual poll sees evidence.
-        this.host.transcriptLastConv = renderConv;
-        this.cacheTranscriptConversation(renderConv);
-        this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, renderConv);
         if (!chatHost) {
+            // Keep memory/cache in sync even while the chat host is briefly detached
+            // during Agents Hub remount — so the next paint / final visual poll sees evidence.
+            this.host.transcriptLastConv = renderConv;
+            this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, renderConv);
+            this.cacheTranscriptConversation(renderConv);
             if (agentMessageHasVisualVerificationMarker(eventMessage)) {
                 void this.refreshOpenTranscriptConversation({ forcePoll: true });
             }
             return;
         }
+        // Paint BEFORE publishing the snapshot: the streaming patcher diffs the incoming
+        // conv against `transcriptLastConv`, so publishing first makes prev === next and
+        // turns every coalesced flush into a skipped no-op — streaming then only reaches
+        // the DOM through the uncoalesced summary/poll paths (the flicker-heavy ones).
         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, renderConv);
+        this.host.transcriptLastConv = renderConv;
+        // Publish the fingerprint BEFORE caching: `cacheTranscriptConversation` re-enters
+        // the thread-store document subscriber synchronously, and with the fingerprint
+        // already current its self-echo guard exits without duplicate render/timer work.
+        this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, renderConv);
+        this.cacheTranscriptConversation(renderConv);
         this.host.conversations?.recordSubmitLatencyMark(renderConv.id, 'first_transcript_delta_rendered');
         this.host.executionSurfaceTabsUi.syncPlanTabDuringStreaming();
         if (renderConv.status === 'streaming') {
@@ -988,6 +1006,19 @@ export class MobileProjectsTranscriptLiveUi {
                 findSummaryById: id => this.host.conversations?.findSummaryById(id),
                 refreshConversation: options => this.refreshOpenTranscriptConversation(options),
                 renderConversation: conv => {
+                    if (conv.status === 'streaming' && TRANSCRIPT_SSE_COALESCE_RAF) {
+                        // Boundary summary renders arrive synchronously on the raw SSE
+                        // stack — merge them into the same coalescer as token deltas so
+                        // a message boundary paints once per frame instead of racing the
+                        // coalesced flush. A pending delta-built snapshot is newer than
+                        // this summary-merged one (its status still flows in through
+                        // transcriptOpenSummary at flush time), so never overwrite it.
+                        if (!this.pendingSseRenderConv) {
+                            this.pendingSseRenderConv = conv;
+                        }
+                        this.schedulePendingSseRender();
+                        return;
+                    }
                     const chatHost = this.resolveActiveTranscriptChatHost();
                     if (chatHost) {
                         this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);

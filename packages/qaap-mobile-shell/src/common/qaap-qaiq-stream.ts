@@ -86,6 +86,11 @@ export class QaapQaiqStreamAccumulator {
     protected activeEnvelopeParentToolUseId: string | undefined;
     /** In-flight tool_use blocks keyed by stream index — args grow via input_json_delta. */
     protected readonly liveToolsByIndex = new Map<number, { readonly id: string; readonly name: string; args: string }>();
+    /**
+     * Fallback args for tool ids when an assistant snapshot upserts a tool_use with empty
+     * `input` after live `input_json_delta` already accumulated a richer payload.
+     */
+    protected readonly preservedToolArgsById = new Map<string, string>();
     /** Latest usage reported for the in-flight turn (assistant snapshot or final result). */
     protected turnUsage: QaapAgentContextUsage | undefined;
 
@@ -378,21 +383,39 @@ export class QaapQaiqStreamAccumulator {
     }
 
     protected upsertTranscriptToolBlock(block: ContentBlock): void {
+        let resolved: ContentBlock = block;
         if (block.id) {
             for (const [index, live] of this.liveToolsByIndex) {
                 if (live.id === block.id) {
+                    const liveArgs = live.args.trim();
+                    const incomingEmpty = !block.input || Object.keys(block.input).length === 0;
+                    if (incomingEmpty && liveArgs && liveArgs !== '{}') {
+                        try {
+                            const parsed = JSON.parse(liveArgs) as Record<string, unknown>;
+                            if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+                                resolved = { ...block, input: parsed };
+                            } else {
+                                this.preservedToolArgsById.set(block.id, liveArgs);
+                            }
+                        } catch {
+                            // Keep partial streaming JSON so rebuildSegments can still extract paths.
+                            this.preservedToolArgsById.set(block.id, liveArgs);
+                        }
+                    } else if (!incomingEmpty) {
+                        this.preservedToolArgsById.delete(block.id);
+                    }
                     this.liveToolsByIndex.delete(index);
                     break;
                 }
             }
         }
         const index = this.transcriptBlocks.findIndex(entry =>
-            (entry.type === 'tool_use' || entry.type === 'server_tool_use') && entry.id === block.id);
+            (entry.type === 'tool_use' || entry.type === 'server_tool_use') && entry.id === resolved.id);
         if (index >= 0) {
-            this.transcriptBlocks[index] = block;
+            this.transcriptBlocks[index] = resolved;
             return;
         }
-        this.transcriptBlocks.push(block);
+        this.transcriptBlocks.push(resolved);
     }
 
     protected consolidateTranscriptText(text: string): void {
@@ -461,7 +484,11 @@ export class QaapQaiqStreamAccumulator {
                     flushText();
                     flushThinking();
                     if (block.id && block.name) {
-                        segments.push(this.buildToolSegment(block.id, block.name, JSON.stringify(block.input ?? {})));
+                        segments.push(this.buildToolSegment(
+                            block.id,
+                            block.name,
+                            this.resolveToolArgsJson(block.id, block.input),
+                        ));
                     }
                     break;
                 default:
@@ -512,6 +539,18 @@ export class QaapQaiqStreamAccumulator {
                 this.toolsById.set(segment.toolUseId, index);
             }
         }
+    }
+
+    protected resolveToolArgsJson(toolUseId: string, input: Record<string, unknown> | undefined): string {
+        if (input && Object.keys(input).length > 0) {
+            this.preservedToolArgsById.delete(toolUseId);
+            return JSON.stringify(input);
+        }
+        const preserved = this.preservedToolArgsById.get(toolUseId);
+        if (preserved?.trim()) {
+            return preserved.trim();
+        }
+        return '{}';
     }
 
     protected buildToolSegment(toolUseId: string, name: string, args: string): QaapAgentMessageSegment {

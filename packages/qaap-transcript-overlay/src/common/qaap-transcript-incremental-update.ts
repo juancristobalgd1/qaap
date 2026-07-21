@@ -11,16 +11,44 @@ import type {
 import { usesStructuredAgentTranscript } from './qaap-structured-transcript-agents';
 
 /** How a live SSE update may patch the transcript DOM without a full rebuild. */
-export type QaapTranscriptStreamingPatchKind = 'none' | 'activity-only' | 'last-agent' | 'append-agent';
+export type QaapTranscriptStreamingPatchKind = 'none' | 'activity-only' | 'last-agent' | 'append-agent' | 'append-user';
 
 const STRUCTURED_TRANSCRIPT_AGENTS = (agentId: string | undefined): boolean =>
     usesStructuredAgentTranscript(agentId);
 
-function stdoutAgentContentGrew(prev: QaapAgentMessageDTO | undefined, next: QaapAgentMessageDTO | undefined): boolean {
+function stdoutAgentContentChanged(prev: QaapAgentMessageDTO | undefined, next: QaapAgentMessageDTO | undefined): boolean {
     if (!prev || !next || prev.id !== next.id) {
         return false;
     }
-    return (next.content?.length ?? 0) > (prev.content?.length ?? 0);
+    // Any content edit qualifies — the DOM applier rewrites the row from the
+    // full next content, so corrective re-emits (not just suffix growth) can
+    // still take the single-row path instead of a whole-list rebuild.
+    return (next.content ?? '') !== (prev.content ?? '');
+}
+
+/**
+ * Content-sensitive sample hash so fingerprints notice same-length rewrites
+ * (a length-only fingerprint silently freezes the transcript when a segment is
+ * rewritten to a string of identical length). Hashes the first and last 2048
+ * chars plus the length — O(1) per segment regardless of payload size; only a
+ * middle-only same-length rewrite beyond both windows can still alias.
+ */
+const TRANSCRIPT_HASH_SAMPLE_WINDOW = 2048;
+
+function hashTranscriptText(value: string | undefined): string {
+    const text = value ?? '';
+    let hash = 0x811c9dc5;
+    const head = Math.min(text.length, TRANSCRIPT_HASH_SAMPLE_WINDOW);
+    for (let i = 0; i < head; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    const tailStart = Math.max(head, text.length - TRANSCRIPT_HASH_SAMPLE_WINDOW);
+    for (let i = tailStart; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return `${text.length}.${(hash >>> 0).toString(36)}`;
 }
 
 function structuredAgentMessageChanged(
@@ -65,13 +93,13 @@ function fingerprintConversationHeader(conv: QaapAgentConversationDTO): string {
 }
 
 function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapAgentMessageDTO): void {
-    parts.push(message.id ?? '', String(message.content?.length ?? 0));
+    parts.push(message.id ?? '', hashTranscriptText(message.content));
     if (message.traceEvents?.length) {
         for (const event of message.traceEvents) {
             if (event.type === 'tool_call') {
-                parts.push(`e:t:${event.id}:${event.status}:${event.args?.length ?? 0}:${event.result?.length ?? 0}`);
+                parts.push(`e:t:${event.id}:${event.status}:${hashTranscriptText(event.args)}:${hashTranscriptText(event.result)}`);
             } else if (event.type === 'thought' || event.type === 'assistant_text') {
-                parts.push(`e:${event.type}:${event.id}:${event.status}:${event.content?.length ?? 0}`);
+                parts.push(`e:${event.type}:${event.id}:${event.status}:${hashTranscriptText(event.content)}`);
             } else if (event.type === 'error' || event.type === 'run_cancelled') {
                 parts.push(`e:${event.type}:${event.id}:${event.message.length}`);
             } else if (event.type === 'checkpoint') {
@@ -83,10 +111,10 @@ function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapA
         for (const segment of message.segments) {
             if (segment.type === 'tool') {
                 parts.push(
-                    `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}`,
+                    `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${hashTranscriptText(segment.args)}:${hashTranscriptText(segment.result)}`,
                 );
             } else {
-                parts.push(`${segment.type}:${segment.content?.length ?? 0}`);
+                parts.push(`${segment.type}:${hashTranscriptText(segment.content)}`);
             }
         }
     }
@@ -109,29 +137,62 @@ export function buildConversationTranscriptFingerprint(conv: QaapAgentConversati
 /**
  * Recompute the transcript fingerprint when only the tail message grew during SSE —
  * avoids scanning every historical message on each animation frame.
+ *
+ * Caches the historical-prefix fingerprint per conversation id so steady-state
+ * streaming ticks only re-hash the last message (+ header).
  */
+const transcriptFingerprintPrefixCache = new Map<string, {
+    readonly messageCount: number;
+    readonly historicalIds: string;
+    readonly prefix: string;
+}>();
+
 export function mergeConversationTranscriptFingerprint(
     prevConv: QaapAgentConversationDTO | undefined,
     next: QaapAgentConversationDTO,
 ): string {
     if (!prevConv || prevConv.id !== next.id) {
+        transcriptFingerprintPrefixCache.delete(next.id);
         return buildConversationTranscriptFingerprint(next);
     }
     if (prevConv.messages.length !== next.messages.length) {
+        transcriptFingerprintPrefixCache.delete(next.id);
         return buildConversationTranscriptFingerprint(next);
     }
     const messageCount = next.messages.length;
     if (messageCount === 0) {
         return fingerprintConversationHeader(next);
     }
-    for (let index = 0; index < messageCount - 1; index++) {
-        if (fingerprintTranscriptMessage(prevConv.messages[index]) !== fingerprintTranscriptMessage(next.messages[index])) {
-            return buildConversationTranscriptFingerprint(next);
+    const historicalIds = next.messages
+        .slice(0, Math.max(0, messageCount - 1))
+        .map(message => message.id)
+        .join('\u001f');
+    const cached = transcriptFingerprintPrefixCache.get(next.id);
+    let prefix = cached?.prefix;
+    const cacheHit = !!cached
+        && cached.messageCount === messageCount
+        && cached.historicalIds === historicalIds;
+    if (!cacheHit) {
+        for (let index = 0; index < messageCount - 1; index++) {
+            if (fingerprintTranscriptMessage(prevConv.messages[index]) !== fingerprintTranscriptMessage(next.messages[index])) {
+                transcriptFingerprintPrefixCache.delete(next.id);
+                return buildConversationTranscriptFingerprint(next);
+            }
         }
+        const parts: string[] = [];
+        for (let index = 0; index < messageCount - 1; index++) {
+            appendTranscriptMessageFingerprintParts(parts, next.messages[index]);
+        }
+        prefix = parts.join('|');
+        transcriptFingerprintPrefixCache.set(next.id, {
+            messageCount,
+            historicalIds,
+            prefix: prefix ?? '',
+        });
     }
     const parts: string[] = [fingerprintConversationHeader(next)];
-    for (let index = 0; index < messageCount - 1; index++) {
-        appendTranscriptMessageFingerprintParts(parts, next.messages[index]);
+    if (prefix) {
+        parts.push(prefix);
     }
     appendTranscriptMessageFingerprintParts(parts, next.messages[messageCount - 1]);
     return parts.join('|');
@@ -193,17 +254,25 @@ export function resolveStreamingTranscriptPatchKind(
             return structuredAgentMessageChanged(prevLast, nextLast) ? 'last-agent' : 'none';
         }
         const prevLast = prevMessages[prevMessages.length - 1];
-        return stdoutAgentContentGrew(prevLast, nextLast) ? 'last-agent' : 'none';
+        return stdoutAgentContentChanged(prevLast, nextLast) ? 'last-agent' : 'none';
     }
 
-    if (nextMessages.length === prevMessages.length + 1 && nextLast?.role === 'agent') {
+    // One or more rows appended at the tail: a new agent turn (possibly still
+    // the empty placeholder tick — the full rebuild paints that placeholder row
+    // too, so appending it keeps parity), a queued user message sent mid-stream,
+    // or a coalesced tick delivering several rows at once. Appending fresh rows
+    // never mutates existing DOM, so no content-growth gate is needed.
+    if (nextMessages.length > prevMessages.length) {
         if (!priorMessagesMatch(prevMessages, nextMessages, prevMessages.length)) {
             return 'none';
         }
-        if (structured) {
-            return hasRenderableSegments(nextLast) ? 'append-agent' : 'none';
+        if (nextLast?.role === 'agent') {
+            return 'append-agent';
         }
-        return !!nextLast.content?.trim() ? 'append-agent' : 'none';
+        if (nextLast?.role === 'user') {
+            return 'append-user';
+        }
+        return 'none';
     }
 
     return 'none';
@@ -257,24 +326,32 @@ export const TRANSCRIPT_ACTIVITY_ACTIVE_ATTR = 'data-transcript-activity-active'
 export const TRANSCRIPT_THOUGHT_BRIEF_ATTR = 'data-transcript-thought-brief';
 
 function segmentToolFingerprint(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): string {
-    return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}:${segment.name}`;
-}
-
-function segmentContentFingerprint(segment: QaapAgentMessageSegmentDTO): string {
-    if (segment.type === 'tool') {
-        return segmentToolFingerprint(segment);
-    }
-    return `${segment.type}:${segment.content?.length ?? 0}:${segment.content ?? ''}`;
+    return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${hashTranscriptText(segment.args)}:${hashTranscriptText(segment.result)}:${segment.name}`;
 }
 
 function segmentsExactlyEqual(
     prev: QaapAgentMessageSegmentDTO,
     next: QaapAgentMessageSegmentDTO,
 ): boolean {
-    return segmentContentFingerprint(prev) === segmentContentFingerprint(next);
+    // Direct field comparison — content-exact for tools too, so a same-length
+    // args/result rewrite is seen as a change (a length-based fingerprint made
+    // those rewrites invisible and froze the row).
+    if (prev.type !== next.type) {
+        return false;
+    }
+    if (prev.type === 'tool' && next.type === 'tool') {
+        return prev.toolUseId === next.toolUseId
+            && prev.name === next.name
+            && prev.finished === next.finished
+            && (prev.args ?? '') === (next.args ?? '')
+            && (prev.result ?? '') === (next.result ?? '');
+    }
+    const prevContent = 'content' in prev ? (prev.content ?? '') : '';
+    const nextContent = 'content' in next ? (next.content ?? '') : '';
+    return prevContent === nextContent;
 }
 
-/** Tool segment grew (streaming result/args) or finished — safe to patch the existing pill. */
+/** Tool segment changed (streaming result/args or finish) — safe to patch the existing pill. */
 export function canPatchToolSegmentGrowth(
     prev: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
     next: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
@@ -285,18 +362,15 @@ export function canPatchToolSegmentGrowth(
     if (prev.finished && !next.finished) {
         return false;
     }
-    const previousArgs = prev.args ?? '';
-    const incomingArgs = next.args ?? '';
-    if (incomingArgs !== previousArgs && !(incomingArgs.startsWith(previousArgs) && incomingArgs.length >= previousArgs.length)) {
-        return false;
-    }
-    const previousResult = prev.result ?? '';
-    const incomingResult = next.result ?? '';
-    if (incomingResult !== previousResult
-        && !(incomingResult.startsWith(previousResult) && incomingResult.length >= previousResult.length)) {
-        return false;
-    }
-    return segmentToolFingerprint(prev) !== segmentToolFingerprint(next);
+    // Args AND result may rewrite mid-stream, not just grow (JSON reparse,
+    // placeholder → final swap once verification completes, terminal output
+    // re-cleaned by the backend). Every DOM applier re-renders the row from
+    // the full `next` segment (patchTranscriptToolPill, patchMobileToolDetail →
+    // patchTranscriptCodeView handles rewrite + shrink per line), so a
+    // non-monotonic change is still a safe single-row patch.
+    return prev.finished !== next.finished
+        || (prev.args ?? '') !== (next.args ?? '')
+        || (prev.result ?? '') !== (next.result ?? '');
 }
 
 /**
@@ -353,7 +427,7 @@ export function canStreamPatchAgentTextContentOnly(
     return sawTextGrowth;
 }
 
-/** Stdout-style agents without structured segments — grow plain content only. */
+/** Stdout-style agents without structured segments — plain content changed. */
 export function canStreamPatchStdoutAgentContentOnly(
     prev: QaapAgentMessageDTO | undefined,
     next: QaapAgentMessageDTO | undefined,
@@ -364,9 +438,9 @@ export function canStreamPatchStdoutAgentContentOnly(
     if ((prev.segments?.length ?? 0) > 0 || (next.segments?.length ?? 0) > 0) {
         return false;
     }
-    const previous = prev.content ?? '';
-    const incoming = next.content ?? '';
-    return incoming.startsWith(previous) && incoming.length > previous.length;
+    // Any edit qualifies — the applier rewrites the content element from the
+    // full next content, so corrective re-emits patch in place too.
+    return (next.content ?? '') !== (prev.content ?? '');
 }
 
 /**
@@ -430,22 +504,21 @@ export function canStreamPatchAgentSegmentsInPlace(
             continue;
         }
         if (p.type === 'text' && n.type === 'text') {
-            const previous = p.content ?? '';
-            const incoming = n.content ?? '';
-            if (incoming.startsWith(previous) && incoming.length > previous.length) {
+            // Any rewrite qualifies, not just prefix growth — the applier
+            // re-renders markdown from the full next content (and the stream
+            // smoother repaints when the revealed prefix no longer matches).
+            if ((n.content ?? '') !== (p.content ?? '')) {
                 sawChange = true;
-                continue;
             }
-            return false;
+            continue;
         }
         if (p.type === 'thinking' && n.type === 'thinking') {
-            const previous = p.content ?? '';
-            const incoming = n.content ?? '';
-            if (incoming.startsWith(previous) && incoming.length > previous.length) {
+            // Thinking may rewrite mid-stream (collapse / reorder paragraphs),
+            // same tool-args rewrite case — keep the row and patch narrative.
+            if ((n.content ?? '') !== (p.content ?? '')) {
                 sawChange = true;
-                continue;
             }
-            return false;
+            continue;
         }
         if (p.type === 'tool' && n.type === 'tool') {
             if (canPatchToolSegmentGrowth(p, n)) {
@@ -457,6 +530,31 @@ export function canStreamPatchAgentSegmentsInPlace(
         return false;
     }
     return sawChange;
+}
+
+/**
+ * Combined tick: existing segments changed patchably AND exactly one new
+ * segment appeared at the tail (e.g. a tool finishing and the next text block
+ * starting inside one coalesced frame). The prefix patches in place; the tail
+ * appends fresh — neither requires a row rebuild.
+ */
+export function canStreamPatchAgentSegmentsInPlaceWithAppend(
+    prev: QaapAgentMessageDTO | undefined,
+    next: QaapAgentMessageDTO | undefined,
+): boolean {
+    if (!prev || !next || prev.id !== next.id) {
+        return false;
+    }
+    const prevSegments = prev.segments ?? [];
+    const nextSegments = next.segments ?? [];
+    if (prevSegments.length === 0 || nextSegments.length !== prevSegments.length + 1) {
+        return false;
+    }
+    const tail = nextSegments[nextSegments.length - 1];
+    if (!tail || (tail.type !== 'text' && tail.type !== 'tool' && tail.type !== 'thinking')) {
+        return false;
+    }
+    return canStreamPatchAgentSegmentsInPlace(prev, { ...next, segments: nextSegments.slice(0, prevSegments.length) });
 }
 
 /** A new tool segment appeared at the tail — prior segments are unchanged. */
@@ -501,11 +599,32 @@ export function canStreamPatchAgentAppendTextSegment(
     return nextSegments[nextSegments.length - 1]?.type === 'text';
 }
 
+/** A new thinking segment appeared at the tail — prior segments are unchanged. */
+export function canStreamPatchAgentAppendThinkingSegment(
+    prev: QaapAgentMessageDTO | undefined,
+    next: QaapAgentMessageDTO | undefined,
+): boolean {
+    if (!prev || !next || prev.id !== next.id) {
+        return false;
+    }
+    const prevSegments = prev.segments ?? [];
+    const nextSegments = next.segments ?? [];
+    if (nextSegments.length !== prevSegments.length + 1) {
+        return false;
+    }
+    for (let i = 0; i < prevSegments.length; i++) {
+        if (!segmentsExactlyEqual(prevSegments[i], nextSegments[i])) {
+            return false;
+        }
+    }
+    return nextSegments[nextSegments.length - 1]?.type === 'thinking';
+}
+
 export function fingerprintAgentSegments(segments: readonly QaapAgentMessageSegmentDTO[]): string {
     return segments.map(segment => {
         if (segment.type === 'tool') {
-            return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}`;
+            return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${hashTranscriptText(segment.args)}:${hashTranscriptText(segment.result)}`;
         }
-        return `${segment.type}:${segment.content?.length ?? 0}`;
+        return `${segment.type}:${hashTranscriptText(segment.content)}`;
     }).join('|');
 }
