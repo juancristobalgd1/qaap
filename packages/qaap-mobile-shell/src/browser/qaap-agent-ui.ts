@@ -9,6 +9,7 @@ import type { MobileProjectTaskVerification } from './mobile-projects-active-tas
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
 import { formatQaiqModelIdShortLabel } from '../common/qaap-qaiq-model-catalog';
 import type { QaapAgentApprovalPolicyOption } from '../common/qaap-sticky-composer-approval-policy';
+import type { QaapComposerInteractionModeId } from '../common/qaap-sticky-composer-mode';
 
 export type QaapAgentUiSize = 'sm' | 'md';
 
@@ -286,7 +287,7 @@ export function createToolApprovalRuleToggle(options: {
     return row;
 }
 
-/** Sticky composer approval trigger — icon + chevron. */
+/** Sticky composer approval trigger — icon + label + chevron. */
 export function populateApprovalPolicyToolbarButton(
     button: HTMLButtonElement,
     policy: QaapAgentApprovalPolicyOption,
@@ -295,10 +296,13 @@ export function populateApprovalPolicyToolbarButton(
     const icon = document.createElement('span');
     icon.className = `codicon ${policy.toolbarIconClass} theia-qaap-approval-policy-toolbar-icon`;
     icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.className = 'theia-mobile-projects-sticky-composer-approval-policy-label';
+    label.textContent = policy.label;
     const chevron = document.createElement('span');
     chevron.className = 'codicon codicon-chevron-down';
     chevron.setAttribute('aria-hidden', 'true');
-    button.append(icon, chevron);
+    button.append(icon, label, chevron);
 }
 
 /** Picker row for model lists (optional LLM provider icon). */
@@ -350,6 +354,116 @@ export function createPickerSheetOptionButton(options: {
     btn.append(content);
     btn.addEventListener('click', options.onSelect);
     return btn;
+}
+
+const STICKY_COMPOSER_MODE_ICON_PATHS: Readonly<Record<QaapComposerInteractionModeId, readonly string[]>> = {
+    agent: ['M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8'],
+    plan: [
+        'M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4',
+        'M2 6h4',
+        'M2 10h4',
+        'M2 14h4',
+        'M2 18h4',
+        'M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z',
+    ],
+    ask: [
+        'M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
+        'M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1',
+    ],
+};
+
+function isQaapComposerInteractionModeId(modeId: string): modeId is QaapComposerInteractionModeId {
+    return modeId === 'agent' || modeId === 'plan' || modeId === 'ask';
+}
+
+function appendStickyComposerModeIconSvg(host: HTMLElement, paths: readonly string[]): void {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('focusable', 'false');
+    for (const d of paths) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        svg.append(path);
+    }
+    host.append(svg);
+}
+
+/** Lucide mode glyphs for Agent / Plan / Ask (`currentColor`, 16×16). */
+export function createStickyComposerModeIcon(modeId: string): HTMLElement | undefined {
+    if (!isQaapComposerInteractionModeId(modeId)) {
+        return undefined;
+    }
+    const host = document.createElement('span');
+    host.className = 'theia-qaap-mode-sheet-icon';
+    host.setAttribute('aria-hidden', 'true');
+    appendStickyComposerModeIconSvg(host, STICKY_COMPOSER_MODE_ICON_PATHS[modeId]);
+    return host;
+}
+
+/** Bottom-sheet row for interaction mode pickers (icon + label + optional check). */
+export function createModeSheetOptionButton(options: {
+    readonly modeId: string;
+    readonly label: string;
+    readonly selected?: boolean;
+    readonly onSelect: () => void;
+}): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'theia-mobile-sticky-composer-sheet-option theia-qaap-mode-sheet-option';
+    if (options.selected) {
+        btn.classList.add('theia-mod-selected');
+    }
+    const content = document.createElement('span');
+    content.className = 'theia-mobile-sticky-composer-sheet-option-content';
+    const icon = createStickyComposerModeIcon(options.modeId);
+    if (icon) {
+        content.append(icon);
+    }
+    const labelEl = document.createElement('span');
+    labelEl.className = 'theia-mobile-sticky-composer-sheet-option-label';
+    labelEl.textContent = options.label;
+    content.append(labelEl);
+    if (options.selected) {
+        const check = document.createElement('span');
+        check.className = 'codicon codicon-check theia-mobile-sticky-composer-sheet-option-check';
+        check.setAttribute('aria-hidden', 'true');
+        content.append(check);
+    }
+    btn.append(content);
+    btn.addEventListener('click', event => {
+        event.stopPropagation();
+        options.onSelect();
+    });
+    return btn;
+}
+
+/** Sticky composer toolbar mode button — Lucide icon + label + chevron. */
+export function populateModeToolbarButton(
+    button: HTMLButtonElement,
+    options: {
+        readonly modeId: string;
+        readonly label: string;
+    },
+): void {
+    button.replaceChildren();
+    const icon = createStickyComposerModeIcon(options.modeId);
+    if (icon) {
+        button.append(icon);
+    }
+    const label = document.createElement('span');
+    label.className = 'theia-mobile-projects-sticky-composer-mode-label';
+    label.textContent = options.label;
+    const chevron = document.createElement('span');
+    chevron.className = 'codicon codicon-chevron-down';
+    chevron.setAttribute('aria-hidden', 'true');
+    button.append(label, chevron);
 }
 
 /** Sticky composer toolbar agent button — brand icon + provider badge + short model name (agent name is aria/title only). */

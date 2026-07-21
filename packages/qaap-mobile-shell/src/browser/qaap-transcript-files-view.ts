@@ -266,6 +266,12 @@ export function mountTranscriptFilesView(
     editToggleBtn.setAttribute('aria-label', editToggleBtn.title);
     editToggleBtn.setAttribute('aria-pressed', 'false');
     editToggleBtn.disabled = true;
+    const treeToggleBtn = document.createElement('button');
+    treeToggleBtn.type = 'button';
+    treeToggleBtn.className = 'theia-mobile-transcript-files-action theia-mobile-transcript-files-tree-toggle codicon codicon-list-tree';
+    treeToggleBtn.title = services.localize('qaap/mobileProjects/filesTreeShow', 'Show file tree');
+    treeToggleBtn.setAttribute('aria-label', treeToggleBtn.title);
+    treeToggleBtn.setAttribute('aria-pressed', 'true');
     const moreBtn = document.createElement('button');
     moreBtn.type = 'button';
     moreBtn.className = 'theia-mobile-transcript-files-action codicon codicon-ellipsis';
@@ -273,7 +279,7 @@ export function mountTranscriptFilesView(
     moreBtn.setAttribute('aria-label', moreBtn.title);
     moreBtn.setAttribute('aria-haspopup', 'menu');
     moreBtn.setAttribute('aria-expanded', 'false');
-    previewActions.append(editToggleBtn, moreBtn);
+    previewActions.append(editToggleBtn, treeToggleBtn, moreBtn);
     previewHeader.append(breadcrumb, previewActions);
     const previewBody = document.createElement('div');
     previewBody.className = 'theia-mobile-transcript-files-preview-body';
@@ -341,16 +347,7 @@ export function mountTranscriptFilesView(
     treeBottomBtn.setAttribute('role', 'menuitemradio');
     treeBottomBtn.innerHTML = '<span class="codicon codicon-split-vertical" aria-hidden="true"></span>'
         + `<span>${services.localize('qaap/mobileProjects/filesTreeBelow', 'Below preview')}</span>`;
-    const treeVisibilitySep = document.createElement('div');
-    treeVisibilitySep.className = 'theia-mobile-transcript-files-menu-separator';
-    treeVisibilitySep.setAttribute('role', 'separator');
-    const treeShowBtn = document.createElement('button');
-    treeShowBtn.type = 'button';
-    treeShowBtn.className = 'theia-mobile-transcript-files-menu-item';
-    treeShowBtn.setAttribute('role', 'menuitemcheckbox');
-    treeShowBtn.innerHTML = '<span class="codicon codicon-list-tree" aria-hidden="true"></span>'
-        + `<span>${services.localize('qaap/mobileProjects/filesTreeShow', 'Show file tree')}</span>`;
-    moreMenu.append(editFileBtn, previewActionsSep, moreMenuLabel, treeSideBtn, treeBottomBtn, treeVisibilitySep, treeShowBtn);
+    moreMenu.append(editFileBtn, previewActionsSep, moreMenuLabel, treeSideBtn, treeBottomBtn);
 
     const newMenu = document.createElement('div');
     newMenu.className = 'theia-mobile-transcript-files-menu theia-mod-create';
@@ -437,8 +434,12 @@ export function mountTranscriptFilesView(
         treeBottomBtn.classList.toggle('theia-mod-checked', state.treePosition === 'bottom');
         treeSideBtn.setAttribute('aria-checked', String(state.treePosition === 'side'));
         treeBottomBtn.setAttribute('aria-checked', String(state.treePosition === 'bottom'));
-        treeShowBtn.classList.toggle('theia-mod-checked', state.treeVisible);
-        treeShowBtn.setAttribute('aria-checked', String(state.treeVisible));
+        treeToggleBtn.classList.toggle('theia-mod-active', state.treeVisible);
+        treeToggleBtn.setAttribute('aria-pressed', String(state.treeVisible));
+        treeToggleBtn.title = state.treeVisible
+            ? services.localize('qaap/mobileProjects/filesTreeHide', 'Hide file tree')
+            : services.localize('qaap/mobileProjects/filesTreeShow', 'Show file tree');
+        treeToggleBtn.setAttribute('aria-label', treeToggleBtn.title);
         splitHandle.hidden = !state.treeVisible;
         syncPreviewEditUi();
         updateSplitHandleAria();
@@ -1296,11 +1297,13 @@ export function mountTranscriptFilesView(
     treeBottomBtn.addEventListener('pointerdown', onTreeBottomPointerDown);
     disposables.push(Disposable.create(() => treeBottomBtn.removeEventListener('pointerdown', onTreeBottomPointerDown)));
 
-    const onTreeShowPointerDown = (event: PointerEvent): void => {
-        onMenuItemActivate(event, () => setTreeVisible(!state.treeVisible));
+    const onTreeTogglePointerDown = (event: PointerEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        setTreeVisible(!state.treeVisible);
     };
-    treeShowBtn.addEventListener('pointerdown', onTreeShowPointerDown);
-    disposables.push(Disposable.create(() => treeShowBtn.removeEventListener('pointerdown', onTreeShowPointerDown)));
+    treeToggleBtn.addEventListener('pointerdown', onTreeTogglePointerDown);
+    disposables.push(Disposable.create(() => treeToggleBtn.removeEventListener('pointerdown', onTreeTogglePointerDown)));
 
     disposables.push(Disposable.create(() => {
         closeAllMenus();

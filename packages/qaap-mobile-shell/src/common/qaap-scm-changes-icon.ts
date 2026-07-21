@@ -3,6 +3,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+/** Lucide message-circle — Chat / messages execution-surface tab. */
+export const QAAP_MESSAGE_CIRCLE_ICON_CLASS = 'qaap-icon-message-circle';
+
+/** Lucide message-circle SVG (`currentColor`, 24×24 viewBox). */
+export const QAAP_MESSAGE_CIRCLE_SVG_MARKUP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/>'
+    + '</svg>';
+
 /** VS Code / Cursor Changes tab glyph (rounded square, + above −). */
 export const QAAP_SCM_CHANGES_ICON_CLASS = 'qaap-icon-scm-changes';
 
@@ -17,9 +25,26 @@ export function isQaapScmChangesIcon(icon: string): boolean {
     return icon === QAAP_SCM_CHANGES_ICON_CLASS;
 }
 
+export function isQaapMessageCircleIcon(icon: string): boolean {
+    return icon === QAAP_MESSAGE_CIRCLE_ICON_CLASS;
+}
+
+export function isExecutionSurfaceIconElement(symbol: HTMLElement, icon: string): boolean {
+    if (isQaapScmChangesIcon(icon)) {
+        return symbol.classList.contains(QAAP_SCM_CHANGES_ICON_CLASS);
+    }
+    if (isQaapMessageCircleIcon(icon)) {
+        return symbol.classList.contains(QAAP_MESSAGE_CIRCLE_ICON_CLASS);
+    }
+    return symbol.classList.contains('codicon') && symbol.classList.contains(icon);
+}
+
 export function createExecutionSurfaceIconElement(icon: string, baseClassName: string): HTMLSpanElement {
     if (isQaapScmChangesIcon(icon)) {
         return createQaapScmChangesIconElement(baseClassName);
+    }
+    if (isQaapMessageCircleIcon(icon)) {
+        return createQaapMessageCircleIconElement(baseClassName);
     }
     const glyph = document.createElement('span');
     glyph.className = baseClassName ? `${baseClassName} codicon ${icon}` : `codicon ${icon}`;
@@ -32,6 +57,14 @@ function createQaapScmChangesIconElement(baseClassName: string): HTMLSpanElement
     icon.className = baseClassName ? `${baseClassName} ${QAAP_SCM_CHANGES_ICON_CLASS}` : QAAP_SCM_CHANGES_ICON_CLASS;
     icon.setAttribute('aria-hidden', 'true');
     icon.innerHTML = QAAP_SCM_CHANGES_SVG_MARKUP;
+    return icon;
+}
+
+function createQaapMessageCircleIconElement(baseClassName: string): HTMLSpanElement {
+    const icon = document.createElement('span');
+    icon.className = baseClassName ? `${baseClassName} ${QAAP_MESSAGE_CIRCLE_ICON_CLASS}` : QAAP_MESSAGE_CIRCLE_ICON_CLASS;
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = QAAP_MESSAGE_CIRCLE_SVG_MARKUP;
     return icon;
 }
 

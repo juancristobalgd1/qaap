@@ -30,6 +30,7 @@ import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
 import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
+import { createWorkHubMoreActionsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
@@ -364,11 +365,12 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
 
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'theia-workbench-nav-btn qaap-work-hub-toolbar-menu-button codicon codicon-ellipsis';
+        button.className = 'theia-workbench-nav-btn qaap-work-hub-toolbar-menu-button';
         button.title = 'More actions';
         button.setAttribute('aria-label', button.title);
         button.setAttribute('aria-haspopup', 'menu');
         button.setAttribute('aria-expanded', 'false');
+        button.append(createWorkHubMoreActionsIcon());
         button.addEventListener('click', this.onToolbarMenuButtonClick);
         if (tabHost && tabHost.parentElement === cluster) {
             cluster.insertBefore(button, tabHost);

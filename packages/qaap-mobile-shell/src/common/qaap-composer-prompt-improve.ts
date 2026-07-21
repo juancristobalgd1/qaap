@@ -91,6 +91,16 @@ export function extractImprovedComposerPromptFromAgentStdout(
     return sanitizeImprovedComposerPrompt(extracted);
 }
 
+/** Collapse 3+ consecutive newlines to a paragraph break; trim trailing spaces per line. */
+export function normalizeImprovedComposerPromptText(text: string): string {
+    const collapsed = text.replace(/\n{3,}/g, '\n\n');
+    return collapsed
+        .split('\n')
+        .map(line => line.replace(/\s+$/, ''))
+        .join('\n')
+        .trim();
+}
+
 /** Strip fences and common preambles from model output. */
 export function sanitizeImprovedComposerPrompt(raw: string): string {
     const withoutFences = raw.replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
@@ -108,7 +118,7 @@ export function sanitizeImprovedComposerPrompt(raw: string): string {
         }
         break;
     }
-    return lines.slice(start).join('\n').trim();
+    return normalizeImprovedComposerPromptText(lines.slice(start).join('\n'));
 }
 
 /** User message sent to the language model for prompt refinement. */

@@ -4,16 +4,19 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     defaultTranscriptFilesTreePosition,
     filterTranscriptFileTreeEntries,
     findTranscriptReadmeEntry,
     isTranscriptFilesTreeStacked,
     isTranscriptPreviewableTextFile,
+    mountTranscriptFilesView,
     resolveTranscriptFilesTreeVisible,
     shouldSkipTranscriptFilesDirectory,
     transcriptFileIconClass,
     type TranscriptFileTreeEntry,
+    type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
 
 describe('qaap-transcript-files-view', () => {
@@ -85,5 +88,87 @@ describe('qaap-transcript-files-view', () => {
     it('ignores directories when searching for README', () => {
         const entries = [entry('readme', 'readme', true)];
         expect(findTranscriptReadmeEntry(entries)).to.be.undefined;
+    });
+
+    describe('mountTranscriptFilesView tree toggle', () => {
+        let disableJSDOM: (() => void) | undefined;
+
+        before(() => {
+            disableJSDOM = enableJSDOM();
+        });
+
+        after(() => {
+            disableJSDOM?.();
+            disableJSDOM = undefined;
+        });
+
+        beforeEach(() => {
+            disableJSDOM?.();
+            disableJSDOM = enableJSDOM();
+            if (typeof PointerEvent === 'undefined') {
+                class PointerEventPolyfill extends MouseEvent {
+                    constructor(type: string, params: MouseEventInit = {}) {
+                        super(type, params);
+                    }
+                }
+                (globalThis as typeof globalThis & { PointerEvent: typeof PointerEvent }).PointerEvent =
+                    PointerEventPolyfill as unknown as typeof PointerEvent;
+            }
+            document.body.innerHTML = '';
+            try {
+                window.localStorage.removeItem('qaap.transcriptFiles.treeVisible');
+            } catch {
+                /* session-only */
+            }
+        });
+
+        const createServices = (): TranscriptFilesViewServices => ({
+            resolveRootUri: () => 'file:///repo',
+            resolveRootLabel: () => 'repo',
+            listDirectory: async () => [],
+            relativePathForResource: (_resourcePath, rootUri) => _resourcePath.slice(`${rootUri}/`.length),
+            readFile: async () => '',
+            localize: (_key, defaultValue) => defaultValue,
+        });
+
+        it('exposes file tree toggle in preview actions, not overflow menu', () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            mountTranscriptFilesView(host, '/repo', createServices());
+
+            const treeToggle = host.querySelector('.theia-mobile-transcript-files-tree-toggle');
+            expect(treeToggle).to.exist;
+            expect(treeToggle?.classList.contains('codicon-list-tree')).to.be.true;
+            expect(treeToggle?.getAttribute('aria-pressed')).to.equal('true');
+            expect(treeToggle?.getAttribute('aria-label')).to.equal('Hide file tree');
+
+            const moreBtn = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-preview-actions .codicon-ellipsis');
+            moreBtn?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            const overflowMenu = document.querySelector('.theia-mobile-transcript-files-menu:not(.theia-mod-create)');
+            expect(overflowMenu).to.exist;
+            expect(overflowMenu?.textContent ?? '').to.not.include('Show file tree');
+            expect(overflowMenu?.textContent ?? '').to.not.include('Hide file tree');
+            expect(overflowMenu?.querySelector('.codicon-list-tree')).to.be.null;
+        });
+
+        it('toggles file tree visibility from the toolbar button', () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            mountTranscriptFilesView(host, '/repo', createServices());
+
+            const layout = host.querySelector('.theia-mobile-transcript-files-layout');
+            const treeToggle = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-tree-toggle');
+            expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.false;
+
+            treeToggle?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.true;
+            expect(treeToggle?.getAttribute('aria-pressed')).to.equal('false');
+            expect(treeToggle?.getAttribute('aria-label')).to.equal('Show file tree');
+
+            treeToggle?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.false;
+            expect(treeToggle?.getAttribute('aria-pressed')).to.equal('true');
+            expect(treeToggle?.getAttribute('aria-label')).to.equal('Hide file tree');
+        });
     });
 });

@@ -6,7 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentModelSelection } from '../common/qaap-agent-model-selection';
 import { isComposerPromptImproveCancelled } from '../common/qaap-composer-prompt-improve';
-import { animateComposerPromptReplace } from './qaap-composer-prompt-reveal';
+import { animateComposerPromptReplace, finalizeComposerPromptReplace } from './qaap-composer-prompt-reveal';
 import type { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import {
     clearComposerImproveFeedback,
@@ -59,8 +59,7 @@ function restoreComposerPromptAfterCancel(
     context: StickyComposerImprovePromptContext,
     promptSnapshot: string,
 ): void {
-    context.input.value = promptSnapshot;
-    context.setDraft(promptSnapshot);
+    finalizeComposerPromptReplace(context.input, promptSnapshot, context.setDraft);
 }
 
 export function createStickyComposerImprovePromptHandler(
@@ -165,7 +164,6 @@ async function runStickyComposerImprovePrompt(
             restoreComposerPromptAfterCancel(context, promptSnapshot);
             return;
         }
-        context.setDraft(improved);
         context.refreshControls();
     } catch (error) {
         if (isComposerPromptImproveCancelled(error) || isRunCancelled() || animationAbort.signal.aborted) {

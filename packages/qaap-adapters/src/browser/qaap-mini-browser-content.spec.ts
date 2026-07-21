@@ -5,12 +5,22 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+let disableJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { getQaapPreviewFrameSlot } from './qaap-mini-browser-frame-lifecycle';
 
+disableJSDOM();
+
 describe('Qaap mini-browser frame lifecycle', () => {
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM();
+    });
 
     it('defers annotation mounting while the base constructor has not assigned the frame', () => {
         expect(getQaapPreviewFrameSlot(undefined)).to.equal(undefined);

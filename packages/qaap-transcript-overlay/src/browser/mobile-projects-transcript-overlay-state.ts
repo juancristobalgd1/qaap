@@ -71,6 +71,7 @@ export const TRANSCRIPT_OVERLAY_STATE_KEYS = [
     'transcriptComposerModeSheet',
     'transcriptComposerApprovalSheet',
     'transcriptComposerModeId',
+    'transcriptComposerCapabilityLevel',
     'transcriptComposerApprovalPolicyId',
     'transcriptComposerToolApprovalRules',
     'transcriptComposerPrefsConvId',
@@ -177,6 +178,7 @@ export class TranscriptOverlayState {
     transcriptComposerModeSheet: HTMLElement | undefined;
     transcriptComposerApprovalSheet: HTMLElement | undefined;
     transcriptComposerModeId: string | undefined;
+    transcriptComposerCapabilityLevel: 0 | 1 | 2 | 3 | undefined;
     transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     transcriptComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     transcriptComposerPrefsConvId: string | undefined;

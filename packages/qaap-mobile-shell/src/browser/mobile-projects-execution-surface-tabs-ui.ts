@@ -16,7 +16,8 @@ import {
 import {
     appendExecutionSurfaceTabIcon,
     createExecutionSurfaceIconElement,
-    isQaapScmChangesIcon,
+    isExecutionSurfaceIconElement,
+    QAAP_MESSAGE_CIRCLE_ICON_CLASS,
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '../common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome } from './qaap-execution-surface-header-chrome';
@@ -512,7 +513,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         const displayTabId = this.resolveExecutionSurfaceIconSelectDisplayTab(activeTab);
         const spec = this.executionSurfaceTabSpecs().find(entry => entry.id === displayTabId)
             ?? (displayTabId === 'messages'
-                ? { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: 'codicon-comment-discussion' }
+                ? { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: QAAP_MESSAGE_CIRCLE_ICON_CLASS }
                 : undefined);
         if (!spec) {
             return;
@@ -520,9 +521,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         selectBtn.dataset.tab = spec.id;
         selectBtn.title = spec.label;
         selectBtn.setAttribute('aria-label', `${spec.label}, ${nls.localize('qaap/mobileProjects/tabOverflow', 'Change view')}`);
-        const iconUnchanged = isQaapScmChangesIcon(spec.icon)
-            ? symbol.classList.contains(QAAP_SCM_CHANGES_ICON_CLASS)
-            : symbol.classList.contains('codicon') && symbol.classList.contains(spec.icon);
+        const iconUnchanged = isExecutionSurfaceIconElement(symbol, spec.icon);
         if (!iconUnchanged) {
             symbol.replaceWith(createExecutionSurfaceIconElement(spec.icon, 'theia-mobile-transcript-tab-icon-select-symbol'));
         }
@@ -587,7 +586,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
 
         const displaySpec = tabSpecs.find(entry => entry.id === displayTabId)
             ?? (displayTabId === 'messages'
-                ? { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: 'codicon-comment-discussion' }
+                ? { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: QAAP_MESSAGE_CIRCLE_ICON_CLASS }
                 : tabSpecs[0]);
         const menuLabel = nls.localize('qaap/mobileProjects/tabOverflow', 'Change view');
         const menuOptions = this.executionSurfaceTabSpecs();
@@ -630,7 +629,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             this.openExecutionTabOverflowMenu(trigger, menu);
         });
 
-        const chatSpec = { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: 'codicon-comment-discussion' };
+        const chatSpec = { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: QAAP_MESSAGE_CIRCLE_ICON_CLASS };
         const allOptions = [chatSpec, ...menuOptions];
 
         for (const spec of allOptions) {

@@ -28,6 +28,25 @@ describe('qaap-sticky-composer-popover', () => {
         disableJSDOM();
     });
 
+    it('forces popover mode for model capability anchors on narrow viewports', () => {
+        const anchor = document.createElement('button');
+        anchor.className = 'theia-mobile-projects-sticky-composer-model-capability';
+        const matchMedia = window.matchMedia;
+        window.matchMedia = ((query: string) => ({
+            matches: String(query).includes('max-width'),
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        })) as typeof window.matchMedia;
+        expect(shouldUseStickyComposerPopover(document.createElement('button'))).to.equal(false);
+        expect(shouldUseStickyComposerPopover(anchor)).to.equal(true);
+        window.matchMedia = matchMedia;
+    });
+
     it('forces popover mode for Work Hub header project anchors on narrow viewports', () => {
         const anchor = document.createElement('button');
         anchor.className = 'theia-mobile-projects-header-project';

@@ -259,6 +259,11 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(labels).to.include.members(['Chat', 'Plan', 'Changes', 'Preview', 'Files', 'Terminal']);
         expect(labels).to.not.include('Editor');
         expect(labels[0]).to.equal('Chat');
+
+        const chatOption = strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-option[data-tab="messages"]');
+        expect(chatOption?.querySelector('.qaap-icon-message-circle')).to.exist;
+        const trigger = strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-symbol');
+        expect(trigger?.classList.contains('qaap-icon-message-circle')).to.equal(true);
     });
 
     it('flushes the composer draft before clearing the composer when leaving Messages', () => {

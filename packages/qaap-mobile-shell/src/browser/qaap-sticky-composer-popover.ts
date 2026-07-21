@@ -39,16 +39,24 @@ export function isWorkHubHeaderProjectPopoverAnchor(anchor?: HTMLElement): ancho
         && anchor.classList.contains('theia-mobile-projects-header-project');
 }
 
+/** Codex-style model capability control — always open as a small anchored popover. */
+export function isModelCapabilityPopoverAnchor(anchor?: HTMLElement): anchor is HTMLElement {
+    return anchor instanceof HTMLElement
+        && anchor.classList.contains('theia-mobile-projects-sticky-composer-model-capability');
+}
+
 /**
  * Prefer an anchored sheet popover when the viewport is wide enough for desktop
  * chrome, when the control lives inside the annotation comment popover
  * (narrow preview must not take over the Work Hub with a full-screen sheet),
- * or when opening from the Work Hub header project button.
+ * when opening from the Work Hub header project button,
+ * or when opening the model capability slider.
  */
 export function shouldUseStickyComposerPopover(anchor?: HTMLElement): anchor is HTMLElement {
     return shouldUseStickyComposerDesktopPopover(anchor)
         || isStickyComposerAnnotationPopoverAnchor(anchor)
-        || isWorkHubHeaderProjectPopoverAnchor(anchor);
+        || isWorkHubHeaderProjectPopoverAnchor(anchor)
+        || isModelCapabilityPopoverAnchor(anchor);
 }
 
 function getStickyComposerViewportBounds(): StickyComposerViewportBounds {
@@ -238,8 +246,10 @@ export function wireStickyComposerPopoverDismiss(
     };
     document.addEventListener('pointerdown', onPointerDown, { capture: true, signal });
     document.addEventListener('keydown', onKeyDown, { capture: true, signal });
+    const minimumWidth = popover.classList.contains('theia-mod-model-capability') ? 260 : 280;
     const stopPositioning = wireStickyComposerPopoverPosition(popover, anchor, {
         align,
+        minimumWidth,
         onAnchorUnavailable: onClose,
     });
     return () => {

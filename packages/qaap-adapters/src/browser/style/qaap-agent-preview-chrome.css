@@ -212,6 +212,8 @@ body.qaap-mod-history-resizing * {
 }
 
 .qaap-agent-preview-toolbar-history,
+.qaap-agent-preview-toolbar-back,
+.qaap-agent-preview-toolbar-forward,
 .qaap-agent-preview-toolbar-overflow,
 .qaap-agent-preview-toolbar-refresh {
   appearance: none;
@@ -234,6 +236,8 @@ body.qaap-mod-history-resizing * {
 }
 
 .qaap-agent-preview-toolbar-history:hover,
+.qaap-agent-preview-toolbar-back:hover:not(:disabled),
+.qaap-agent-preview-toolbar-forward:hover:not(:disabled),
 .qaap-agent-preview-toolbar-overflow:hover,
 .qaap-agent-preview-toolbar-refresh:hover {
   background: var(--theia-toolbar-hoverBackground);
@@ -241,13 +245,23 @@ body.qaap-mod-history-resizing * {
 }
 
 .qaap-agent-preview-toolbar-history:focus-visible,
+.qaap-agent-preview-toolbar-back:focus-visible,
+.qaap-agent-preview-toolbar-forward:focus-visible,
 .qaap-agent-preview-toolbar-overflow:focus-visible,
 .qaap-agent-preview-toolbar-refresh:focus-visible {
   outline: 1px solid var(--theia-focusBorder);
   outline-offset: 1px;
 }
 
+.qaap-agent-preview-toolbar-back:disabled,
+.qaap-agent-preview-toolbar-forward:disabled {
+  opacity: var(--theia-mod-disabled-opacity, 0.4);
+  cursor: default;
+}
+
 .qaap-agent-preview-toolbar-history::before,
+.qaap-agent-preview-toolbar-back::before,
+.qaap-agent-preview-toolbar-forward::before,
 .qaap-agent-preview-toolbar-overflow::before,
 .qaap-agent-preview-toolbar-refresh::before {
   font-size: 16px;
@@ -601,6 +615,8 @@ body.qaap-mod-inspector-resizing.qaap-mod-inspector-resizing-vertical * {
 
 @media (max-width: 767px), (pointer: coarse) {
   .qaap-agent-preview-toolbar-history,
+  .qaap-agent-preview-toolbar-back,
+  .qaap-agent-preview-toolbar-forward,
   .qaap-agent-preview-toolbar-overflow,
   .qaap-agent-preview-toolbar-refresh {
     width: 32px;
@@ -608,8 +624,85 @@ body.qaap-mod-inspector-resizing.qaap-mod-inspector-resizing-vertical * {
   }
 
   .qaap-agent-preview-toolbar-history::before,
+  .qaap-agent-preview-toolbar-back::before,
+  .qaap-agent-preview-toolbar-forward::before,
   .qaap-agent-preview-toolbar-overflow::before,
   .qaap-agent-preview-toolbar-refresh::before {
     font-size: 18px;
+  }
+}
+
+/* Maximize / restore — workbench control left of Edit. */
+.qaap-preview-maximize-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+.qaap-preview-maximize-button-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.qaap-preview-maximize-button::before {
+  display: none;
+}
+
+/* Full-bleed preview: hide Work Hub chrome and expand the preview surface. */
+body.qaap-mod-preview-maximized .theia-mobile-projects-header,
+body.qaap-mod-preview-maximized .theia-mobile-projects-sticky-composer-column,
+body.qaap-mod-preview-maximized .theia-mobile-projects-sticky-composer,
+body.qaap-mod-preview-maximized .theia-mobile-transcript-tabs.theia-mod-header-inline,
+body.qaap-mod-preview-maximized .theia-mobile-projects-header-execution-tabs,
+body.qaap-mod-preview-maximized .theia-mobile-agent-log-sheet > .theia-mobile-transcript-tabs {
+  display: none !important;
+}
+
+body.qaap-mod-preview-maximized .theia-mobile-projects-scroll,
+body.qaap-mod-preview-maximized .theia-mobile-agents-hub-inline-execution,
+body.qaap-mod-preview-maximized .theia-mobile-agent-log-sheet.theia-mod-transcript {
+  padding: 0 !important;
+}
+
+body.qaap-mod-preview-maximized .theia-mobile-agents-hub-inline-execution,
+body.qaap-mod-preview-maximized .theia-mobile-agent-log-sheet.theia-mod-transcript {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+
+body.qaap-mod-preview-maximized .theia-mobile-transcript-preview,
+body.qaap-mod-preview-maximized .theia-mobile-project-detail-panel.theia-mobile-transcript-preview {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+body.qaap-mod-preview-maximized .qaap-agent-preview-embedded.qaap-mod-preview-maximized,
+body.qaap-mod-preview-maximized .theia-mini-browser.qaap-mod-preview-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 2400;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  background: var(--theia-editor-background);
+}
+
+body.qaap-mod-preview-maximized #theia-main-content-panel.qaap-mod-preview-maximized {
+  overflow: hidden !important;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .qaap-preview-maximize-button {
+    min-width: 32px;
+    min-height: 32px;
   }
 }

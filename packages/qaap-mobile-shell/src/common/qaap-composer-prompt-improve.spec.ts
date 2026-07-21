@@ -9,6 +9,7 @@ import {
     extractImprovedComposerPromptFromAgentStdout,
     formatAgentModelLanguageModelId,
     looksLikeAgentNdjsonStream,
+    normalizeImprovedComposerPromptText,
     sanitizeImprovedComposerPrompt,
 } from '../common/qaap-composer-prompt-improve';
 
@@ -30,6 +31,12 @@ describe('qaap-composer-prompt-improve', () => {
     it('sanitizeImprovedComposerPrompt strips fences and preambles', () => {
         expect(sanitizeImprovedComposerPrompt('```markdown\nFix login bug\n```')).to.equal('Fix login bug');
         expect(sanitizeImprovedComposerPrompt("Here's the improved prompt:\n\nRefactor auth module")).to.equal('Refactor auth module');
+    });
+
+    it('normalizeImprovedComposerPromptText trims ends and collapses excess blank lines', () => {
+        expect(normalizeImprovedComposerPromptText('  hello  \n\nworld  ')).to.equal('hello\n\nworld');
+        expect(normalizeImprovedComposerPromptText('a\n\n\n\nb')).to.equal('a\n\nb');
+        expect(normalizeImprovedComposerPromptText('line one   \n  indented')).to.equal('line one\n  indented');
     });
 
     it('buildImproveComposerPromptRequest preserves the original prompt', () => {

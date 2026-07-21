@@ -2064,7 +2064,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         addBtn.addEventListener('click', () => {
             void this.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary, true);
         });
-        toolbar.append(switcher, addBtn);
+        toolbar.append(addBtn, switcher);
 
         const slider = document.createElement('div');
         slider.className = 'theia-mobile-transcript-terminal-slider';

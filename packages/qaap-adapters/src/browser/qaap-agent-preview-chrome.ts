@@ -6,6 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { addEventListener, codiconArray } from '@theia/core/lib/browser/widgets/widget';
+import { createLucideArrowUpRightIcon } from './qaap-lucide-icons';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { MiniBrowserProps } from '@theia/mini-browser/lib/browser/mini-browser-content';
@@ -40,6 +41,8 @@ import {
     type QaapPreviewHistoryEntry,
 } from './qaap-preview-browsing-history';
 import { createPreviewEditButton } from './qaap-preview-edit-menu';
+import { createPreviewMaximizeControl } from './qaap-preview-maximize';
+import { QaapPreviewFrameHistory } from './qaap-preview-frame-history';
 import {
     mountPreviewOverflowMenu,
     previewNotify,
@@ -543,6 +546,15 @@ export function mountEmbeddedAgentPreviewChrome(
     const toolbar = document.createElement('div');
     toolbar.className = 'qaap-agent-preview-embedded-toolbar theia-mini-browser-toolbar';
 
+    const backLabel = nls.localize('qaap/preview/showPreviousPage', 'Show the previous page');
+    const forwardLabel = nls.localize('qaap/preview/showNextPage', 'Show the next page');
+    const backBtn = createQaapPreviewToolbarIconButton(backLabel, 'arrow-left', Style.TOOLBAR_BACK);
+    backBtn.setAttribute('aria-label', backLabel);
+    backBtn.disabled = true;
+    const forwardBtn = createQaapPreviewToolbarIconButton(forwardLabel, 'arrow-right', Style.TOOLBAR_FORWARD);
+    forwardBtn.setAttribute('aria-label', forwardLabel);
+    forwardBtn.disabled = true;
+
     const urlField = document.createElement('div');
     urlField.className = 'theia-mini-browser-url-field';
 
@@ -560,13 +572,18 @@ export function mountEmbeddedAgentPreviewChrome(
     urlInput.readOnly = !!options.readOnlyUrl;
     urlField.append(urlInput);
 
-    const goBtn = document.createElement('button');
-    goBtn.type = 'button';
-    goBtn.className = 'theia-mini-browser-url-field-go';
-    goBtn.textContent = nls.localize('theia/mini-browser/go', 'Go');
-    if (!options.readOnlyUrl) {
-        urlField.append(goBtn);
-    }
+    const openExternalLabel = nls.localize('theia/mini-browser/openInNewBrowserTab', 'Open in New Browser Tab');
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.title = openExternalLabel;
+    openBtn.setAttribute('aria-label', openExternalLabel);
+    openBtn.classList.add(
+        'theia-mini-browser-url-field-go',
+        'theia-mini-browser-workbench-button',
+        'theia-mini-browser-open',
+    );
+    openBtn.append(createLucideArrowUpRightIcon());
+    urlField.append(openBtn);
 
     const body = document.createElement('div');
     body.className = 'theia-mini-browser-content-area qaap-agent-preview-embedded-body qaap-preview-content-area';
@@ -595,11 +612,6 @@ export function mountEmbeddedAgentPreviewChrome(
 
     const workbench = document.createElement('div');
     workbench.className = 'theia-mini-browser-workbench-controls';
-    const openBtn = document.createElement('button');
-    openBtn.type = 'button';
-    openBtn.title = nls.localize('theia/mini-browser/openInNewBrowserTab', 'Open in New Browser Tab');
-    openBtn.classList.add('theia-mini-browser-workbench-button', 'theia-mini-browser-open', ...codiconArray('link-external'));
-    workbench.append(openBtn);
 
     const pickHandler = (): void => {
         if (surfaceHandle) {
@@ -639,11 +651,16 @@ export function mountEmbeddedAgentPreviewChrome(
         onSelectAnnotate: annotateHandler,
         toDispose: disposables,
     });
-    workbench.append(editBtn);
+    const maximizeControl = createPreviewMaximizeControl({
+        getPreviewRoot: () => root,
+        toDispose: disposables,
+    });
+    workbench.append(maximizeControl.button, editBtn);
 
     // Parent workbench under chrome before mounting annotate toolbar — otherwise
     // ensureAnnotateToolbar cannot resolve `.qaap-agent-preview-embedded-toolbar`.
-    toolbar.append(urlField, workbench);
+    // Order: Back, Forward, [history inserted before URL], URL field, Edit, Overflow.
+    toolbar.append(backBtn, forwardBtn, urlField, workbench);
     root.append(toolbar, body);
 
     if (surfaceHandle) {
@@ -659,6 +676,7 @@ export function mountEmbeddedAgentPreviewChrome(
 
     let currentUrl = normalizePreviewNavigateUrl(options.url);
     let previewController: QaapAgentPreviewChromeController | undefined;
+    const frameHistory = new QaapPreviewFrameHistory();
 
     // The dev-server holding page reloads itself every couple of seconds, and each iframe load
     // used to rewrite the URL field — wiping whatever the user was typing mid-load. Never touch
@@ -668,6 +686,11 @@ export function mountEmbeddedAgentPreviewChrome(
             return;
         }
         urlInput.value = value;
+    };
+
+    const syncHistoryButtons = (): void => {
+        backBtn.disabled = !frameHistory.canGoBack();
+        forwardBtn.disabled = !frameHistory.canGoForward();
     };
 
     const adapter: QaapAgentPreviewChromeHost = {
@@ -684,6 +707,10 @@ export function mountEmbeddedAgentPreviewChrome(
         navigate: (url, navOptions) => {
             const next = normalizePreviewNavigateUrl(url);
             if (isQaapIdeShellUrl(next)) {
+                if (frameHistory.isApplyingHistoryNav) {
+                    frameHistory.finishHistoryNav();
+                    syncHistoryButtons();
+                }
                 previewNotify(
                     { messageService: options.messageService, notify: options.notify },
                     nls.localize(
@@ -696,6 +723,10 @@ export function mountEmbeddedAgentPreviewChrome(
             }
             currentUrl = next;
             syncUrlInput(sanitizePreviewDisplayUrl(next));
+            if (!frameHistory.isApplyingHistoryNav) {
+                frameHistory.record(sanitizePreviewDisplayUrl(next));
+                syncHistoryButtons();
+            }
             if (navOptions?.hard) {
                 const bust = next.includes('?') ? `${next}&_qaap_cache_bust=${Date.now()}` : `${next}?_qaap_cache_bust=${Date.now()}`;
                 frame.src = bust;
@@ -761,6 +792,26 @@ export function mountEmbeddedAgentPreviewChrome(
     controller.attachToolbarControls(toolbar, urlField);
     disposables.push(controller);
 
+    disposables.push(addEventListener(backBtn, 'click', (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = frameHistory.back();
+        syncHistoryButtons();
+        if (!target) {
+            return;
+        }
+        void adapter.navigate(target);
+    }));
+    disposables.push(addEventListener(forwardBtn, 'click', (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = frameHistory.forward();
+        syncHistoryButtons();
+        if (!target) {
+            return;
+        }
+        void adapter.navigate(target);
+    }));
     disposables.push(addEventListener(refreshBtn, 'click', (e: MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -770,11 +821,6 @@ export function mountEmbeddedAgentPreviewChrome(
         e.preventDefault();
         e.stopPropagation();
         adapter.openExternal();
-    }));
-    disposables.push(addEventListener(goBtn, 'click', (e: MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void adapter.navigate(urlInput.value);
     }));
     disposables.push(addEventListener(urlInput, 'keydown', (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
@@ -794,6 +840,12 @@ export function mountEmbeddedAgentPreviewChrome(
             currentUrl = sanitizePreviewDisplayUrl(currentUrl);
             syncUrlInput(currentUrl);
         }
+        if (frameHistory.isApplyingHistoryNav) {
+            frameHistory.finishHistoryNav();
+        } else if (currentUrl) {
+            frameHistory.record(sanitizePreviewDisplayUrl(currentUrl));
+        }
+        syncHistoryButtons();
         surfaceHandle?.picker.onFrameLoad();
         controller.recordVisit();
     }));

@@ -69,6 +69,10 @@ import {
     removeMcpServer,
 } from '../common/qaap-mcp-plugin-install';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
+import {
+    reconcileModelCapabilityLevel,
+} from '../common/qaap-sticky-composer-model-capability';
+import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-model-capability';
 
 export interface MobileProjectsStickyComposerRenderHost {
 root: HTMLElement;
@@ -98,6 +102,7 @@ stickyComposerFilesExpanded: boolean;
 stickyComposerDraft: string;
 stickyComposerSurface: QaapComposerSurface;
 stickyComposerModeId: string | undefined;
+stickyComposerCapabilityLevel: ModelCapabilityLevelValue | undefined;
 stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
 stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
             stickyComposerBackendAgents: import('../common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
@@ -359,7 +364,12 @@ export class MobileProjectsStickyComposerRenderUi {
             modes,
             cwd,
         );
+        this.host.stickyComposerCapabilityLevel = reconcileModelCapabilityLevel(
+            this.host.stickyComposerCapabilityLevel,
+            cwd,
+        );
         const showApprovalPolicy = agentSupportsApprovalPolicy(pinnedId);
+        let capabilityTriggerRefresh: (() => void) | undefined;
         if (showApprovalPolicy) {
             this.host.stickyComposerApprovalPolicyId = reconcileAgentApprovalPolicyId(
                 this.host.stickyComposerApprovalPolicyId,
@@ -402,6 +412,7 @@ export class MobileProjectsStickyComposerRenderUi {
             resolveAgentId: () => this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
             modes,
             resolveModeLabel: () => resolveComposerModeLabel(modes, this.host.stickyComposerModeId),
+            resolveModeId: () => this.host.stickyComposerModeId,
             onOpenModeSheet: modes.length > 1
                 ? anchor => { this.host.stickyComposerSheetsUi.openStickyComposerModeSheet(project, modes, anchor); }
                 : undefined,
@@ -509,6 +520,19 @@ export class MobileProjectsStickyComposerRenderUi {
             sendLabel: isChatSurface
                 ? nls.localize('qaap/mobileProjects/chatSend', 'Send')
                 : nls.localize('qaap/mobileProjects/taskCreate', 'Create'),
+            resolveCapabilityLevel: () => this.host.stickyComposerCapabilityLevel
+                ?? reconcileModelCapabilityLevel(undefined, cwd),
+            onOpenCapabilityPopover: anchor => {
+                this.host.stickyComposerSheetsUi.openStickyComposerModelCapabilityPopover({
+                    anchor,
+                    cwd,
+                    resolveLevel: () => this.host.stickyComposerCapabilityLevel
+                        ?? reconcileModelCapabilityLevel(undefined, cwd),
+                    assignLevel: level => { this.host.stickyComposerCapabilityLevel = level; },
+                    onCommit: () => capabilityTriggerRefresh?.(),
+                });
+            },
+            onCapabilityTriggerMounted: refresh => { capabilityTriggerRefresh = refresh; },
             onContextUsageBadgeMounted: badge => {
                 this.host.stickyComposerContextUsageDispose = this.mountStickyComposerContextUsage(
                     badge,

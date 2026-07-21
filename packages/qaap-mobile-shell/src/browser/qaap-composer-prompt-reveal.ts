@@ -19,6 +19,19 @@ function throwIfPromptReplaceAborted(signal: AbortSignal | undefined): void {
 
 const DEFAULT_DURATION_MS = 480;
 
+/** Set textarea value, caret at end, and notify listeners (draft sync is via onProgress). */
+export function finalizeComposerPromptReplace(
+    input: HTMLTextAreaElement,
+    value: string,
+    onProgress?: (value: string) => void,
+): void {
+    input.value = value;
+    onProgress?.(value);
+    const end = value.length;
+    input.setSelectionRange(end, end);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function nextFrame(): Promise<void> {
     return new Promise(resolve => {
         window.requestAnimationFrame(() => resolve());
@@ -41,18 +54,13 @@ export async function animateComposerPromptReplace(
     const fadeMs = Math.round(durationMs * 0.35);
     const typeMs = Math.max(durationMs - fadeMs, 120);
     const scrollTop = input.scrollTop;
-    const selectionStart = input.selectionStart;
-    const selectionEnd = input.selectionEnd;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const signal = options?.signal;
 
     throwIfPromptReplaceAborted(signal);
 
     if (reducedMotion || nextText === input.value) {
-        input.value = nextText;
-        options?.onProgress?.(nextText);
-        input.selectionStart = nextText.length;
-        input.selectionEnd = nextText.length;
+        finalizeComposerPromptReplace(input, nextText, options?.onProgress);
         input.scrollTop = scrollTop;
         throwIfPromptReplaceAborted(signal);
         return;
@@ -80,10 +88,7 @@ export async function animateComposerPromptReplace(
         }
 
         throwIfPromptReplaceAborted(signal);
-        input.value = nextText;
-        options?.onProgress?.(nextText);
-        input.selectionStart = Math.min(selectionStart, nextText.length);
-        input.selectionEnd = Math.min(selectionEnd, nextText.length);
+        finalizeComposerPromptReplace(input, nextText, options?.onProgress);
         input.scrollTop = scrollTop;
     } finally {
         input.classList.remove('qaap-composer-prompt-morphing');

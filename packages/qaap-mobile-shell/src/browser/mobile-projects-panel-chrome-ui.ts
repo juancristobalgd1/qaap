@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { createWorkHubMoreActionsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
@@ -182,13 +183,14 @@ export class MobileProjectsPanelChromeUi {
         });
         this.host.headerOverflowMenuBtn = document.createElement('button');
         this.host.headerOverflowMenuBtn.type = 'button';
-        this.host.headerOverflowMenuBtn.className = 'theia-workbench-nav-btn qaap-work-hub-toolbar-menu-button codicon codicon-ellipsis';
+        this.host.headerOverflowMenuBtn.className = 'theia-workbench-nav-btn qaap-work-hub-toolbar-menu-button';
         this.host.headerOverflowMenuBtn.hidden = true;
         this.host.headerOverflowMenuBtn.setAttribute('aria-hidden', 'true');
         this.host.headerOverflowMenuBtn.title = nls.localize('qaap/workHubToolbar/moreActions', 'More actions');
         this.host.headerOverflowMenuBtn.setAttribute('aria-label', this.host.headerOverflowMenuBtn.title);
         this.host.headerOverflowMenuBtn.setAttribute('aria-haspopup', 'menu');
         this.host.headerOverflowMenuBtn.setAttribute('aria-expanded', 'false');
+        this.host.headerOverflowMenuBtn.append(createWorkHubMoreActionsIcon());
         this.host.headerOverflowMenuBtn.addEventListener('click', event => this.host.onHeaderOverflowMenuClick(event));
 
         this.host.searchToggleBtn = document.createElement('button');

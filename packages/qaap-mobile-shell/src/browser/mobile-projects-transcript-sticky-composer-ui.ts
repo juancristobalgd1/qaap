@@ -57,6 +57,9 @@ import {
     resolveStickyComposerModes,
 } from '../common/qaap-sticky-composer-mode';
 import {
+    reconcileModelCapabilityLevel,
+} from '../common/qaap-sticky-composer-model-capability';
+import {
     agentSupportsApprovalPolicy,
     reconcileAgentApprovalPolicyId,
     resolveComposerAutoApprove,
@@ -135,6 +138,7 @@ export interface TranscriptStickyComposerColumnOptions {
     resolveAgentId: () => string;
     modes?: readonly ChatMode[];
     resolveModeLabel?: () => string;
+    resolveModeId?: () => string | undefined;
     onOpenModeSheet?: (anchor: HTMLButtonElement) => void;
     approvalPolicyId?: QaapAgentApprovalPolicyId;
     onOpenApprovalPolicySheet?: (anchor: HTMLButtonElement) => void;
@@ -187,6 +191,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptComposerSendRefresh: (() => void) | undefined;
     stickyComposerContextUsageDispose: Disposable;
     transcriptComposerModeId: string | undefined;
+    transcriptComposerCapabilityLevel: import('../common/qaap-sticky-composer-model-capability').ModelCapabilityLevelValue | undefined;
     transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     transcriptComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     transcriptComposerPinnedAgentId: string | undefined;
@@ -1791,7 +1796,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
             modes,
             cwd,
         );
+        this.host.transcriptComposerCapabilityLevel = reconcileModelCapabilityLevel(
+            this.host.transcriptComposerCapabilityLevel,
+            cwd,
+        );
         const showApprovalPolicy = !isLegacyTheiaChat && agentSupportsApprovalPolicy(pinnedId);
+        let capabilityTriggerRefresh: (() => void) | undefined;
         if (showApprovalPolicy) {
             this.host.transcriptComposerApprovalPolicyId = reconcileAgentApprovalPolicyId(
                 this.host.transcriptComposerApprovalPolicyId,
@@ -1848,6 +1858,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             ),
             modes,
             resolveModeLabel: () => resolveComposerModeLabel(modes, this.host.transcriptComposerModeId),
+            resolveModeId: () => this.host.transcriptComposerModeId,
             onOpenModeSheet: modes.length > 1
                 ? anchor => { this.host.transcriptComposerUi.openTranscriptComposerModeSheet(project, summary, modes, anchor); }
                 : undefined,
@@ -1947,6 +1958,24 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 : isLegacyTheiaChat
                     ? nls.localize('qaap/mobileProjects/transcriptLegacyTheiaPlaceholder', 'Start a new QAIQ session…')
                     : nls.localize('qaap/mobileProjects/transcriptTaskPlaceholder', 'Follow up on this task…'),
+            resolveCapabilityLevel: () => this.host.transcriptComposerCapabilityLevel
+                ?? reconcileModelCapabilityLevel(undefined, cwd),
+            onOpenCapabilityPopover: !isLegacyTheiaChat
+                ? anchor => {
+                    this.host.stickyComposerSheetsUi.openStickyComposerModelCapabilityPopover({
+                        anchor,
+                        cwd,
+                        transcriptOverlay: !this.host.agentsHubShellActive,
+                        resolveLevel: () => this.host.transcriptComposerCapabilityLevel
+                            ?? reconcileModelCapabilityLevel(undefined, cwd),
+                        assignLevel: level => { this.host.transcriptComposerCapabilityLevel = level; },
+                        onCommit: () => capabilityTriggerRefresh?.(),
+                    });
+                }
+                : undefined,
+            onCapabilityTriggerMounted: !isLegacyTheiaChat
+                ? refresh => { capabilityTriggerRefresh = refresh; }
+                : undefined,
             onContextUsageBadgeMounted: badge => {
                 this.host.stickyComposerContextUsageDispose = this.host.stickyComposerRenderUi.mountStickyComposerContextUsage(
                     badge,

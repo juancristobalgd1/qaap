@@ -39,9 +39,25 @@
     pointer-events: none;
 }
 
-.qaap-composer-improve-btn .codicon {
+.qaap-composer-improve-btn .theia-mobile-projects-sticky-composer-improve-icon {
     position: relative;
     z-index: 4;
+}
+
+.theia-mobile-projects-sticky-composer-improve-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: currentColor;
+    pointer-events: none;
+}
+
+.theia-mobile-projects-sticky-composer-improve-icon svg {
+    display: block;
+    width: 16px;
+    height: 16px;
 }
 
 .qaap-composer-improve-btn.theia-mod-has-text:not(:disabled):not(.theia-mod-busy) {

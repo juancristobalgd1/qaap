@@ -54,6 +54,12 @@ export interface MobileProjectsTranscriptVerifyHost {
 /** Verify checks UI, run loop, and auto-verify after agent turns. */
 export class MobileProjectsTranscriptVerifyUi {
 
+    /**
+     * Nested `refreshTranscriptChecksViews` from `loadVerifyChecks` must not append a second
+     * compact control while the outer `renderChecksSection` is still building the same host.
+     */
+    protected checksRenderDepth = 0;
+
     constructor(protected readonly host: MobileProjectsTranscriptVerifyHost) { }
 
     // ========================================================================
@@ -119,6 +125,9 @@ export class MobileProjectsTranscriptVerifyUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): void {
+        if (this.checksRenderDepth > 0) {
+            return;
+        }
         if (this.host.transcriptReviewChecksHost) {
             this.renderChecksSection(this.host.transcriptReviewChecksHost, project, summary, { embedded: true });
         }
@@ -174,137 +183,142 @@ export class MobileProjectsTranscriptVerifyUi {
             host.append(note);
             return;
         }
-        if (this.host.verifyChecksCwd !== summary.cwd && !this.host.verifyChecksLoading) {
-            void this.loadVerifyChecks(summary.cwd, project, summary);
-        }
-        const failed = this.host.verifyResults.filter(r => r.state === 'fail').length;
-        const checksReady = this.host.verifyChecksCwd === summary.cwd && !this.host.verifyChecksLoading;
-        const checksAvailable = checksReady && this.host.verifyResults.length > 0;
-
-        const contentHost = document.createElement('div');
-        contentHost.className = 'theia-mobile-transcript-review-checks-body';
-
-        const list = document.createElement('div');
-        list.className = 'theia-mobile-transcript-verify-list';
-        for (const result of this.host.verifyResults) {
-            list.append(this.createVerifyCheckRow(result));
-        }
-        contentHost.append(list);
-
-        if (checksReady && !checksAvailable) {
-            const note = document.createElement('div');
-            note.className = 'theia-mobile-transcript-verify-note';
-            note.textContent = nls.localize(
-                'qaap/mobileProjects/verifyNoScripts',
-                'No compile, build, test, typecheck, or lint script found in package.json.',
-            );
-            contentHost.append(note);
-        }
-
-        if (!options.embedded) {
-            const runRow = document.createElement('div');
-            runRow.className = 'theia-mobile-transcript-review-checks-run-row';
-            const runBtn = document.createElement('button');
-            runBtn.type = 'button';
-            runBtn.className = 'theia-mobile-transcript-verify-run theia-mod-embedded';
-            runBtn.disabled = this.host.verifyRunning || this.host.verifyChecksLoading || !checksAvailable;
-            runBtn.textContent = this.host.verifyRunning
-                ? nls.localize('qaap/mobileProjects/verifyRunningShort', 'Running…')
-                : nls.localize('qaap/mobileProjects/verifyRun', 'Run checks');
-            runBtn.addEventListener('click', () => { void this.runVerifyChecks(project, summary); });
-            runRow.append(runBtn);
-            contentHost.append(runRow);
-        }
-
-        if (failed > 0 && !this.host.verifyRunning) {
-            const sendBtn = document.createElement('button');
-            sendBtn.type = 'button';
-            sendBtn.className = 'theia-mobile-transcript-verify-send theia-mod-embedded';
-            sendBtn.textContent = nls.localize('qaap/mobileProjects/verifySendFailure', 'Send failure to agent');
-            sendBtn.addEventListener('click', () => { void this.sendVerifyFailureToAgent(project, summary); });
-            contentHost.append(sendBtn);
-        }
-
-        const toggle = document.createElement('label');
-        toggle.className = 'theia-mobile-transcript-verify-toggle';
-        const toggleText = document.createElement('span');
-        toggleText.textContent = nls.localize('qaap/mobileProjects/verifyAutoFix', 'Auto-verify & fix after each turn');
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = this.isAutoVerifyEnabled(summary.cwd);
-        cb.addEventListener('change', () => this.setAutoVerifyEnabled(summary.cwd, cb.checked));
-        toggle.append(toggleText, cb);
-        contentHost.append(toggle);
-
-        if (options.embedded) {
-            if (failed > 0) {
-                this.host.transcriptChecksPanelOpen = true;
+        this.checksRenderDepth += 1;
+        try {
+            if (this.host.verifyChecksCwd !== summary.cwd && !this.host.verifyChecksLoading) {
+                void this.loadVerifyChecks(summary.cwd, project, summary);
             }
-            host.classList.add('theia-mod-compact');
-            const control = document.createElement('div');
-            control.className = 'theia-mobile-transcript-checks-control';
+            const failed = this.host.verifyResults.filter(r => r.state === 'fail').length;
+            const checksReady = this.host.verifyChecksCwd === summary.cwd && !this.host.verifyChecksLoading;
+            const checksAvailable = checksReady && this.host.verifyResults.length > 0;
 
-            const chipLabel = this.transcriptChecksChipLabel(failed, checksReady, checksAvailable);
-            const runChip = document.createElement('button');
-            runChip.type = 'button';
-            runChip.className = 'theia-mobile-transcript-checks-run-chip';
-            runChip.classList.toggle('theia-mod-fail', chipLabel.fail);
-            runChip.classList.toggle('theia-mod-running', this.host.verifyRunning);
-            runChip.disabled = this.host.verifyRunning || this.host.verifyChecksLoading
-                || (checksReady && !checksAvailable);
-            const runIcon = document.createElement('i');
-            runIcon.className = this.host.verifyRunning
-                ? 'codicon codicon-loading codicon-mod-spin'
-                : 'codicon codicon-play';
-            runIcon.setAttribute('aria-hidden', 'true');
-            const runText = document.createElement('span');
-            runText.textContent = chipLabel.text;
-            runChip.append(runIcon, runText);
-            runChip.addEventListener('click', () => { void this.runVerifyChecks(project, summary); });
+            const contentHost = document.createElement('div');
+            contentHost.className = 'theia-mobile-transcript-review-checks-body';
 
-            const panel = document.createElement('div');
-            panel.className = 'theia-mobile-transcript-checks-panel';
-            panel.hidden = !this.host.transcriptChecksPanelOpen;
-            panel.append(contentHost);
+            const list = document.createElement('div');
+            list.className = 'theia-mobile-transcript-verify-list';
+            for (const result of this.host.verifyResults) {
+                list.append(this.createVerifyCheckRow(result));
+            }
+            contentHost.append(list);
 
-            const toggleBtn = document.createElement('button');
-            toggleBtn.type = 'button';
-            toggleBtn.className = 'theia-mobile-transcript-checks-chevron codicon codicon-chevron-down';
-            toggleBtn.title = nls.localize('qaap/mobileProjects/checksMore', 'Checks options');
-            toggleBtn.setAttribute('aria-label', toggleBtn.title);
-            toggleBtn.setAttribute('aria-expanded', this.host.transcriptChecksPanelOpen ? 'true' : 'false');
-            toggleBtn.classList.toggle('theia-mod-open', this.host.transcriptChecksPanelOpen);
-            toggleBtn.addEventListener('click', () => {
-                this.host.transcriptChecksPanelOpen = !this.host.transcriptChecksPanelOpen;
+            if (checksReady && !checksAvailable) {
+                const note = document.createElement('div');
+                note.className = 'theia-mobile-transcript-verify-note';
+                note.textContent = nls.localize(
+                    'qaap/mobileProjects/verifyNoScripts',
+                    'No compile, build, test, typecheck, or lint script found in package.json.',
+                );
+                contentHost.append(note);
+            }
+
+            if (!options.embedded) {
+                const runRow = document.createElement('div');
+                runRow.className = 'theia-mobile-transcript-review-checks-run-row';
+                const runBtn = document.createElement('button');
+                runBtn.type = 'button';
+                runBtn.className = 'theia-mobile-transcript-verify-run theia-mod-embedded';
+                runBtn.disabled = this.host.verifyRunning || this.host.verifyChecksLoading || !checksAvailable;
+                runBtn.textContent = this.host.verifyRunning
+                    ? nls.localize('qaap/mobileProjects/verifyRunningShort', 'Running…')
+                    : nls.localize('qaap/mobileProjects/verifyRun', 'Run checks');
+                runBtn.addEventListener('click', () => { void this.runVerifyChecks(project, summary); });
+                runRow.append(runBtn);
+                contentHost.append(runRow);
+            }
+
+            if (failed > 0 && !this.host.verifyRunning) {
+                const sendBtn = document.createElement('button');
+                sendBtn.type = 'button';
+                sendBtn.className = 'theia-mobile-transcript-verify-send theia-mod-embedded';
+                sendBtn.textContent = nls.localize('qaap/mobileProjects/verifySendFailure', 'Send failure to agent');
+                sendBtn.addEventListener('click', () => { void this.sendVerifyFailureToAgent(project, summary); });
+                contentHost.append(sendBtn);
+            }
+
+            const toggle = document.createElement('label');
+            toggle.className = 'theia-mobile-transcript-verify-toggle';
+            const toggleText = document.createElement('span');
+            toggleText.textContent = nls.localize('qaap/mobileProjects/verifyAutoFix', 'Auto-verify & fix after each turn');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = this.isAutoVerifyEnabled(summary.cwd);
+            cb.addEventListener('change', () => this.setAutoVerifyEnabled(summary.cwd, cb.checked));
+            toggle.append(toggleText, cb);
+            contentHost.append(toggle);
+
+            if (options.embedded) {
+                if (failed > 0) {
+                    this.host.transcriptChecksPanelOpen = true;
+                }
+                host.classList.add('theia-mod-compact');
+                const control = document.createElement('div');
+                control.className = 'theia-mobile-transcript-checks-control';
+
+                const chipLabel = this.transcriptChecksChipLabel(failed, checksReady, checksAvailable);
+                const runChip = document.createElement('button');
+                runChip.type = 'button';
+                runChip.className = 'theia-mobile-transcript-checks-run-chip';
+                runChip.classList.toggle('theia-mod-fail', chipLabel.fail);
+                runChip.classList.toggle('theia-mod-running', this.host.verifyRunning);
+                runChip.disabled = this.host.verifyRunning || this.host.verifyChecksLoading
+                    || (checksReady && !checksAvailable);
+                const runIcon = document.createElement('i');
+                runIcon.className = this.host.verifyRunning
+                    ? 'codicon codicon-loading codicon-mod-spin'
+                    : 'codicon codicon-play';
+                runIcon.setAttribute('aria-hidden', 'true');
+                const runText = document.createElement('span');
+                runText.textContent = chipLabel.text;
+                runChip.append(runIcon, runText);
+                runChip.addEventListener('click', () => { void this.runVerifyChecks(project, summary); });
+
+                const panel = document.createElement('div');
+                panel.className = 'theia-mobile-transcript-checks-panel';
+                panel.hidden = !this.host.transcriptChecksPanelOpen;
+                panel.append(contentHost);
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.type = 'button';
+                toggleBtn.className = 'theia-mobile-transcript-checks-chevron codicon codicon-chevron-down';
+                toggleBtn.title = nls.localize('qaap/mobileProjects/checksMore', 'Checks options');
+                toggleBtn.setAttribute('aria-label', toggleBtn.title);
                 toggleBtn.setAttribute('aria-expanded', this.host.transcriptChecksPanelOpen ? 'true' : 'false');
                 toggleBtn.classList.toggle('theia-mod-open', this.host.transcriptChecksPanelOpen);
-                panel.hidden = !this.host.transcriptChecksPanelOpen;
-            });
+                toggleBtn.addEventListener('click', () => {
+                    this.host.transcriptChecksPanelOpen = !this.host.transcriptChecksPanelOpen;
+                    toggleBtn.setAttribute('aria-expanded', this.host.transcriptChecksPanelOpen ? 'true' : 'false');
+                    toggleBtn.classList.toggle('theia-mod-open', this.host.transcriptChecksPanelOpen);
+                    panel.hidden = !this.host.transcriptChecksPanelOpen;
+                });
 
-            control.append(runChip, toggleBtn);
-            host.append(control, panel);
-            return;
-        }
+                control.append(runChip, toggleBtn);
+                host.append(control, panel);
+                return;
+            }
 
-        const between = document.createElement('div');
-        between.className = 'theia-mobile-transcript-review-checks-between';
-        const checksLabel = document.createElement('span');
-        checksLabel.className = 'theia-mobile-transcript-review-checks-title';
-        checksLabel.textContent = nls.localize('qaap/mobileProjects/tabChecks', 'Checks');
-        const checksStat = document.createElement('span');
-        checksStat.className = 'theia-mobile-transcript-review-checks-stat';
-        if (this.host.verifyRunning) {
-            checksStat.textContent = nls.localize('qaap/mobileProjects/verifyRunningShort', 'Running…');
-        } else if (this.host.verifyChecksLoading) {
-            checksStat.textContent = nls.localize('qaap/mobileProjects/verifyLoadingChecks', 'Loading checks…');
-        } else if (failed > 0) {
-            checksStat.classList.add('theia-mod-fail');
-            checksStat.textContent = nls.localize('qaap/mobileProjects/verifyFailing', '{0} failing', String(failed));
-        } else {
-            checksStat.textContent = nls.localize('qaap/mobileProjects/verifyChecks', 'Checks');
+            const between = document.createElement('div');
+            between.className = 'theia-mobile-transcript-review-checks-between';
+            const checksLabel = document.createElement('span');
+            checksLabel.className = 'theia-mobile-transcript-review-checks-title';
+            checksLabel.textContent = nls.localize('qaap/mobileProjects/tabChecks', 'Checks');
+            const checksStat = document.createElement('span');
+            checksStat.className = 'theia-mobile-transcript-review-checks-stat';
+            if (this.host.verifyRunning) {
+                checksStat.textContent = nls.localize('qaap/mobileProjects/verifyRunningShort', 'Running…');
+            } else if (this.host.verifyChecksLoading) {
+                checksStat.textContent = nls.localize('qaap/mobileProjects/verifyLoadingChecks', 'Loading checks…');
+            } else if (failed > 0) {
+                checksStat.classList.add('theia-mod-fail');
+                checksStat.textContent = nls.localize('qaap/mobileProjects/verifyFailing', '{0} failing', String(failed));
+            } else {
+                checksStat.textContent = nls.localize('qaap/mobileProjects/verifyChecks', 'Checks');
+            }
+            between.append(checksLabel, checksStat);
+            host.append(between, contentHost);
+        } finally {
+            this.checksRenderDepth -= 1;
         }
-        between.append(checksLabel, checksStat);
-        host.append(between, contentHost);
     }
 
 

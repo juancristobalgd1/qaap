@@ -33,6 +33,13 @@ export namespace QaapAgentPreviewChromeStyle {
     export const OVERFLOW_TOGGLE_SWITCH = 'qaap-agent-preview-overflow-toggle-switch';
 
     export const TOOLBAR_HISTORY = 'qaap-agent-preview-toolbar-history';
+    export const TOOLBAR_BACK = 'qaap-agent-preview-toolbar-back';
+    export const TOOLBAR_FORWARD = 'qaap-agent-preview-toolbar-forward';
     export const TOOLBAR_OVERFLOW = 'qaap-agent-preview-toolbar-overflow';
     export const TOOLBAR_REFRESH = 'qaap-agent-preview-toolbar-refresh';
+    export const TOOLBAR_MAXIMIZE = 'qaap-preview-maximize-button';
+    export const TOOLBAR_MAXIMIZE_ICON = 'qaap-preview-maximize-button-icon';
+
+    /** Full-bleed preview within the app surface (Work Hub chrome hidden). */
+    export const PREVIEW_MAXIMIZED = 'qaap-mod-preview-maximized';
 }

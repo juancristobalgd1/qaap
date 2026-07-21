@@ -887,9 +887,6 @@ export class MobileProjectsSessionsSidebarUi {
         });
         const actions = document.createElement('div');
         actions.className = 'theia-mobile-work-hub-sessions-sidebar-project-actions';
-        if (project.isCurrent) {
-            actions.append(this.createSessionsSidebarIdeOpenBadge());
-        }
         actions.append(this.createSessionsSidebarIdeOpenControl(project));
         const menu = this.host.cardMenuUi.buildProjectOptionsMenu(project);
         const menuBtn = document.createElement('button');
@@ -916,10 +913,13 @@ export class MobileProjectsSessionsSidebarUi {
         const openLabel = nls.localize('qaap/mobileProjects/openInIde', 'Open in IDE');
         openBtn.setAttribute('aria-label', openLabel);
         openBtn.title = openLabel;
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-work-hub-sessions-sidebar-project-open-label';
+        label.textContent = nls.localize('qaap/mobileProjects/ideLabel', 'IDE:');
         const openIcon = document.createElement('span');
-        openIcon.className = 'codicon codicon-link-external';
+        openIcon.className = 'codicon codicon-link-external theia-mobile-work-hub-sessions-sidebar-project-open-icon';
         openIcon.setAttribute('aria-hidden', 'true');
-        openBtn.append(openIcon);
+        openBtn.append(label, openIcon);
         openBtn.addEventListener('click', ev => {
             ev.stopPropagation();
             this.host.sessionsSidebar?.hide();
@@ -927,26 +927,6 @@ export class MobileProjectsSessionsSidebarUi {
         });
         openBtn.addEventListener('keydown', ev => ev.stopPropagation());
         return openBtn;
-    }
-    createSessionsSidebarIdeOpenBadge(): HTMLSpanElement {
-        const badge = document.createElement('span');
-        badge.className = 'theia-mobile-work-hub-sessions-sidebar-ide-badge';
-        const label = document.createElement('span');
-        label.className = 'theia-mobile-work-hub-sessions-sidebar-ide-badge-label';
-        label.textContent = nls.localize('qaap/mobileProjects/ideOpen', 'IDE open');
-        const close = document.createElement('button');
-        close.type = 'button';
-        close.className = 'theia-mobile-work-hub-sessions-sidebar-ide-badge-close';
-        close.setAttribute('aria-label', nls.localize('qaap/mobileProjects/closeWorkspace', 'Close workspace'));
-        close.title = close.getAttribute('aria-label') ?? '';
-        close.textContent = '×';
-        close.addEventListener('click', ev => {
-            ev.stopPropagation();
-            void this.host.closeCurrentWorkspace();
-        });
-        close.addEventListener('keydown', ev => ev.stopPropagation());
-        badge.append(label, close);
-        return badge;
     }
     async onWorkHubSessionsSidebarNewChat(): Promise<void> {
         const project = this.resolveWorkHubSessionsSidebarProject();

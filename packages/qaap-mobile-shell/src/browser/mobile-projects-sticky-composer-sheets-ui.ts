@@ -37,6 +37,7 @@ import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
     createApprovalPolicySheetOptionButton,
+    createModeSheetOptionButton,
     createPickerSheetOptionButton,
     createToolApprovalRuleToggle,
 } from './qaap-agent-ui';
@@ -57,6 +58,12 @@ import {
     mergeQaiqModelOptions,
 } from '../common/qaap-qaiq-model-catalog';
 import { THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
+import {
+    reconcileModelCapabilityLevel,
+    writeStoredModelCapabilityLevel,
+    type ModelCapabilityLevelValue,
+} from '../common/qaap-sticky-composer-model-capability';
+import { renderModelCapabilityPopoverPanel } from './model-capability-popover';
 import {
     renderContextUsagePopover,
     renderContextUsageSheet,
@@ -107,6 +114,7 @@ export interface MobileProjectsStickyComposerSheetsHost {
     stickyComposerApprovalSheet: HTMLElement | undefined;
     stickyComposerWorkspaceSheet: HTMLElement | undefined;
     stickyComposerContextUsageSheet: HTMLElement | undefined;
+    stickyComposerCapabilitySheet: HTMLElement | undefined;
     stickyComposerSurface: QaapComposerSurface;
     stickyComposerPinnedAgentId: string | undefined;
     stickyComposerModeId: string | undefined;
@@ -145,6 +153,9 @@ export class MobileProjectsStickyComposerSheetsUi {
     private approvalPolicySheetAnchor: HTMLElement | undefined;
     private approvalPolicyPopoverCleanup: (() => void) | undefined;
     private approvalPolicyPopoverAlign: StickyComposerPopoverAlign = 'start';
+    private capabilitySheetAnchor: HTMLElement | undefined;
+    private capabilityPopoverCleanup: (() => void) | undefined;
+    private capabilityPopoverAlign: StickyComposerPopoverAlign = 'end';
 
     constructor(protected readonly host: MobileProjectsStickyComposerSheetsHost) { }
 
@@ -172,6 +183,20 @@ export class MobileProjectsStickyComposerSheetsUi {
         }
         this.host.stickyComposerWorkspaceUi.closeComposerWorkspaceSheet();
         this.teardownContextUsagePresentation();
+        this.teardownCapabilityPresentation();
+    }
+
+    protected teardownCapabilityPresentation(): void {
+        this.capabilityPopoverCleanup?.();
+        this.capabilityPopoverCleanup = undefined;
+        if (this.capabilitySheetAnchor) {
+            markStickyComposerPopoverAnchor(this.capabilitySheetAnchor, false);
+            this.capabilitySheetAnchor = undefined;
+        }
+        if (this.host.stickyComposerCapabilitySheet) {
+            this.host.stickyComposerCapabilitySheet.remove();
+            this.host.stickyComposerCapabilitySheet = undefined;
+        }
     }
 
     protected teardownContextUsagePresentation(): void {
@@ -228,6 +253,63 @@ export class MobileProjectsStickyComposerSheetsUi {
         });
         document.body.append(sheet);
         this.host.stickyComposerContextUsageSheet = sheet;
+    }
+
+    openStickyComposerModelCapabilityPopover(options: {
+        readonly anchor: HTMLButtonElement;
+        readonly cwd: string | undefined;
+        readonly transcriptOverlay?: boolean;
+        readonly resolveLevel: () => ModelCapabilityLevelValue;
+        readonly assignLevel: (level: ModelCapabilityLevelValue) => void;
+        readonly onCommit?: () => void;
+    }): void {
+        const usePopover = shouldUseStickyComposerPopover(options.anchor);
+        if (usePopover
+            && this.capabilitySheetAnchor === options.anchor
+            && this.host.stickyComposerCapabilitySheet) {
+            this.closeAllComposerSheets();
+            return;
+        }
+        this.closeAllComposerSheets();
+        const level = reconcileModelCapabilityLevel(options.resolveLevel(), options.cwd);
+        const overlay = options.transcriptOverlay ?? this.shouldElevateComposerSheets();
+        const onClose = (): void => { this.closeAllComposerSheets(); };
+        const panel = renderModelCapabilityPopoverPanel({
+            level,
+            onCommit: next => {
+                options.assignLevel(next);
+                if (options.cwd) {
+                    writeStoredModelCapabilityLevel(options.cwd, next);
+                }
+                options.onCommit?.();
+            },
+        });
+        if (usePopover) {
+            const mounted = mountStickyComposerSheetPopover(panel, {
+                anchor: options.anchor,
+                onClose,
+                align: 'end',
+                transcriptOverlay: overlay,
+                modifierClasses: ['theia-mod-model-capability'],
+            });
+            document.body.append(mounted.root);
+            this.host.stickyComposerCapabilitySheet = mounted.root;
+            this.capabilitySheetAnchor = options.anchor;
+            this.capabilityPopoverAlign = 'end';
+            this.capabilityPopoverCleanup = mounted.cleanup;
+            scheduleStickyComposerPopoverPosition(mounted.root, options.anchor, this.capabilityPopoverAlign);
+            return;
+        }
+        const sheet = mountStickyComposerBottomSheet(panel, {
+            sheetClassName: overlay
+                ? 'theia-mobile-sticky-composer-sheet theia-mod-model-capability theia-mod-transcript-overlay'
+                : 'theia-mobile-sticky-composer-sheet theia-mod-model-capability',
+            onClose,
+        });
+        document.body.append(sheet);
+        this.host.stickyComposerCapabilitySheet = sheet;
+        this.capabilitySheetAnchor = options.anchor;
+        markStickyComposerPopoverAnchor(options.anchor, true);
     }
 
     teardownAgentPickerPopover(): void {
@@ -769,7 +851,8 @@ export class MobileProjectsStickyComposerSheetsUi {
         selectedModeId: string | undefined,
         onSelect: (modeId: string) => void,
     ): HTMLElement {
-        return createPickerSheetOptionButton({
+        return createModeSheetOptionButton({
+            modeId,
             label,
             selected: selectedModeId === modeId,
             onSelect: () => {

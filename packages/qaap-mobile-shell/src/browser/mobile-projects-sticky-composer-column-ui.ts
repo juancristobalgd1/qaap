@@ -17,10 +17,13 @@ import {
     type QaapAgentApprovalPolicyId,
 } from '../common/qaap-sticky-composer-approval-policy';
 import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
+import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-model-capability';
 import {
     populateAgentToolbarButton,
     populateApprovalPolicyToolbarButton,
+    populateModeToolbarButton,
 } from './qaap-agent-ui';
+import { populateModelCapabilityToolbarButton } from './model-capability-popover';
 import {
     renderStickyComposerContextStrip,
     type StickyComposerContextChipView,
@@ -70,6 +73,7 @@ export class MobileProjectsStickyComposerColumnUi {
         composerCwd?: string;
         modes?: readonly ChatMode[];
         resolveModeLabel?: () => string;
+        resolveModeId?: () => string | undefined;
         onOpenModeSheet?: (anchor: HTMLButtonElement) => void;
         approvalPolicyId?: QaapAgentApprovalPolicyId;
         onOpenApprovalPolicySheet?: (anchor: HTMLButtonElement) => void;
@@ -99,6 +103,9 @@ export class MobileProjectsStickyComposerColumnUi {
         getSkillNames?: () => readonly string[];
         onContextUsageBadgeMounted?: (badge: HTMLButtonElement) => void;
         onOpenContextUsageSheet?: (anchor: HTMLButtonElement) => void;
+        resolveCapabilityLevel?: () => ModelCapabilityLevelValue;
+        onOpenCapabilityPopover?: (anchor: HTMLButtonElement) => void;
+        onCapabilityTriggerMounted?: (refresh: () => void) => void;
         transcriptOverlay?: boolean;
     }): HTMLElement {
         const column = document.createElement('div');
@@ -188,15 +195,15 @@ export class MobileProjectsStickyComposerColumnUi {
 
         const modes = options.modes ?? [];
         let modeBtn: HTMLButtonElement | undefined;
-        if (modes.length > 1 && options.onOpenModeSheet && options.resolveModeLabel) {
+        if (modes.length > 1 && options.onOpenModeSheet && options.resolveModeLabel && options.resolveModeId) {
             modeBtn = document.createElement('button');
             modeBtn.type = 'button';
             modeBtn.className = 'theia-mobile-projects-sticky-composer-mode';
             const modeLabel = options.resolveModeLabel();
+            const modeId = options.resolveModeId() ?? modes[0]?.id ?? 'agent';
             modeBtn.title = nls.localize('qaap/mobileProjects/stickyComposerMode', 'Mode: {0}', modeLabel);
             modeBtn.setAttribute('aria-label', modeBtn.title);
-            modeBtn.innerHTML = `<span class="theia-mobile-projects-sticky-composer-mode-label">${modeLabel}</span>`
-                + '<span class="codicon codicon-chevron-down" aria-hidden="true"></span>';
+            populateModeToolbarButton(modeBtn, { modeId, label: modeLabel });
             const modeButton = modeBtn;
             bindStickyComposerControlClick(modeBtn, ev => {
                 this.openComposerControlSheet(ev, input, () => options.onOpenModeSheet!(modeButton));
@@ -216,6 +223,28 @@ export class MobileProjectsStickyComposerColumnUi {
         usageBadge.classList.add('theia-mobile-projects-sticky-composer-context-usage');
         const trayRight = document.createElement('div');
         trayRight.className = 'theia-mobile-projects-sticky-composer-tray-right';
+
+        let capabilityBtn: HTMLButtonElement | undefined;
+        if (options.resolveCapabilityLevel && options.onOpenCapabilityPopover) {
+            capabilityBtn = document.createElement('button');
+            capabilityBtn.type = 'button';
+            capabilityBtn.className = 'theia-mobile-projects-sticky-composer-model-capability';
+            capabilityBtn.setAttribute('aria-haspopup', 'dialog');
+            capabilityBtn.setAttribute('aria-expanded', 'false');
+            const refreshCapabilityTrigger = (): void => {
+                populateModelCapabilityToolbarButton(capabilityBtn!, {
+                    level: options.resolveCapabilityLevel!(),
+                });
+            };
+            refreshCapabilityTrigger();
+            options.onCapabilityTriggerMounted?.(refreshCapabilityTrigger);
+            const capabilityButton = capabilityBtn;
+            bindStickyComposerControlClick(capabilityBtn, ev => {
+                this.openComposerControlSheet(ev, input, () => options.onOpenCapabilityPopover!(capabilityButton));
+            });
+            trayRight.append(capabilityBtn);
+        }
+
         trayRight.append(usageBadge);
         toolbar.append(trayRight);
 
@@ -259,13 +288,10 @@ export class MobileProjectsStickyComposerColumnUi {
         const cancelImproveLabel = nls.localize('qaap/composer/cancelImprovePrompt', 'Cancel prompt improvement');
         improveBtn.title = improveLabel;
         improveBtn.setAttribute('aria-label', improveLabel);
-        const improveIcon = document.createElement('span');
-        improveIcon.className = 'codicon codicon-sparkle';
-        improveIcon.setAttribute('aria-hidden', 'true');
         const improveBloom = document.createElement('div');
         improveBloom.className = 'qaap-border-beam-bloom';
         improveBloom.setAttribute('aria-hidden', 'true');
-        improveBtn.append(improveIcon, improveBloom);
+        improveBtn.append(createStickyComposerImproveIcon(), improveBloom);
 
         let lastSendIcon: 'send' | 'stop' | undefined;
         const updateSend = (): void => {
@@ -550,6 +576,40 @@ export class MobileProjectsStickyComposerColumnUi {
             expandFromTextarea();
         });
     }
+}
+
+/** Lucide `pencil-sparkles` — improve-prompt glyph (`currentColor`). */
+function createStickyComposerImproveIcon(): HTMLElement {
+    const host = document.createElement('span');
+    host.className = 'theia-mobile-projects-sticky-composer-improve-icon';
+    host.setAttribute('aria-hidden', 'true');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('focusable', 'false');
+    const paths = [
+        'M10 3H8',
+        'm15.007 5.008 3.987 3.986',
+        'M20 15v4',
+        'M21.174 6.813a2.82 2.82 0 0 0-3.986-3.987L3.842 16.175a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z',
+        'M22 17h-4',
+        'M4 5v4',
+        'M6 7H2',
+        'M9 2v2',
+    ];
+    for (const d of paths) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        svg.append(path);
+    }
+    host.append(svg);
+    return host;
 }
 
 /** Lucide `send` — sticky composer submit glyph (`currentColor`). */

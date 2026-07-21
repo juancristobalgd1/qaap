@@ -566,9 +566,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected stickyComposerApprovalSheet: HTMLElement | undefined;
     protected stickyComposerWorkspaceSheet: HTMLElement | undefined;
     protected stickyComposerContextUsageSheet: HTMLElement | undefined;
+    protected stickyComposerCapabilitySheet: HTMLElement | undefined;
     protected agentsHubSelectedProjectId: string | undefined;
     protected readonly composerWorkspaceBranchByProjectId = new Map<string, string>();
     protected stickyComposerModeId: string | undefined;
+    protected stickyComposerCapabilityLevel: import('../common/qaap-sticky-composer-model-capability').ModelCapabilityLevelValue | undefined;
     protected stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     protected stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     protected stickyComposerSurface: QaapComposerSurface = 'task';
@@ -1696,10 +1698,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected createSessionsSidebarIdeOpenControl(project: MobileProjectEntry): HTMLButtonElement {
         return this.sessionsSidebarUi.createSessionsSidebarIdeOpenControl(project);
-    }
-
-    protected createSessionsSidebarIdeOpenBadge(): HTMLSpanElement {
-        return this.sessionsSidebarUi.createSessionsSidebarIdeOpenBadge();
     }
 
     protected async onWorkHubSessionsSidebarNewChat(): Promise<void> {

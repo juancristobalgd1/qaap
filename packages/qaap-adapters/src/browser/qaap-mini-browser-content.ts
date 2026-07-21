@@ -17,6 +17,7 @@ import { MiniBrowserContent } from '@theia/mini-browser/lib/browser/mini-browser
 import { MiniBrowserContentStyle } from '@theia/mini-browser/lib/browser/mini-browser-content-style';
 import { normalizeMiniBrowserOpenUrl } from '@theia/mini-browser/lib/browser/mini-browser-url-utils';
 import { QaapMiniBrowserContentStyle } from './qaap-mini-browser-content-style';
+import { createLucideArrowUpRightIcon } from './qaap-lucide-icons';
 import { isMiniBrowserPreviewPlaceholderUrl, QAAP_DEFAULT_PREVIEW_INPUT_URL } from './qaap-mini-browser-defaults';
 import {
     QaapAgentPreviewChromeController,
@@ -34,6 +35,7 @@ import {
     wirePreviewInspectorResize,
 } from './qaap-preview-inline-inspector';
 import { createPreviewEditButton } from './qaap-preview-edit-menu';
+import { createPreviewMaximizeControl } from './qaap-preview-maximize';
 import {
     navigateExplicitPreviewUrl,
     QaapPreviewPortClaimService,
@@ -279,15 +281,8 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         parent.appendChild(field);
         this.createRefresh(field);
         const input = super.createInput(field);
-        if (this.getToolbarProps() === 'show') {
-            const goButton = document.createElement('button');
-            goButton.type = 'button';
-            goButton.classList.add(QaapMiniBrowserContentStyle.GO_BUTTON);
-            goButton.textContent = nls.localize('theia/mini-browser/go', 'Go');
-            goButton.title = nls.localize('theia/mini-browser/goToUrl', 'Go to URL');
-            this.toDispose.push(addEventListener(goButton, 'click', () => this.navigateFromUrlBar()));
-            field.appendChild(goButton);
-        }
+        // Open-external icon replaces the former text "Go" button; navigate via Enter.
+        this.createOpen(field).classList.add(QaapMiniBrowserContentStyle.GO_BUTTON);
         return input;
     }
 
@@ -488,12 +483,17 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         const controls = document.createElement('div');
         controls.classList.add(QaapMiniBrowserContentStyle.WORKBENCH_CONTROLS);
         parent.appendChild(controls);
-        this.createOpen(controls);
+        // Open-external lives at the end of the URL field (see createInput); keep Edit here.
         this.createInspectButton(controls);
         return controls;
     }
 
     protected createInspectButton(parent: HTMLElement): HTMLElement {
+        const maximizeControl = createPreviewMaximizeControl({
+            getPreviewRoot: () => this.node,
+            toDispose: this.toDispose,
+        });
+        parent.appendChild(maximizeControl.button);
         const button = createPreviewEditButton({
             onSelectSelection: () => this.startElementPicker(),
             onSelectAnnotate: () => this.startAnnotateMode(),
@@ -526,12 +526,14 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
     }
 
     protected override createOpen(parent: HTMLElement): HTMLElement {
-        const button = this.createWorkbenchButton(
-            parent,
-            nls.localize('theia/mini-browser/openInNewBrowserTab', 'Open in New Browser Tab'),
-            'link-external'
-        );
-        button.classList.add(QaapMiniBrowserContentStyle.OPEN);
+        const title = nls.localize('theia/mini-browser/openInNewBrowserTab', 'Open in New Browser Tab');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.title = title;
+        button.setAttribute('aria-label', title);
+        button.classList.add(QaapMiniBrowserContentStyle.WORKBENCH_BUTTON, QaapMiniBrowserContentStyle.OPEN);
+        button.append(createLucideArrowUpRightIcon());
+        parent.appendChild(button);
         this.toDispose.push(addEventListener(button, 'click', (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
