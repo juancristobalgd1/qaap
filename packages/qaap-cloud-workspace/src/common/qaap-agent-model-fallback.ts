@@ -14,6 +14,11 @@ import {
     type QaapQaiqByokProviderDescriptor,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
 import { detectAgentFailureKind } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import {
+    agentTurnLooksLikeToolCallEmittedAsText,
+    looksLikeToolCallJsonText,
+    qaiqModelSupportsToolCalls,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 
 /** Max alternate models to try after the first pick fails (inclusive of the original). */
 export const MAX_AGENT_MODEL_FALLBACK_ATTEMPTS = 4;
@@ -76,6 +81,10 @@ export function buildAgentModelFallbackChain(
     };
     push(current);
     for (const model of candidates) {
+        // Confirmed tool-less models can never carry an agent turn — skip them as fallbacks.
+        if (qaiqModelSupportsToolCalls(model.modelId) === false) {
+            continue;
+        }
         push(model);
     }
     return chain.slice(0, MAX_AGENT_MODEL_FALLBACK_ATTEMPTS);
@@ -170,4 +179,32 @@ export function agentTurnHasRetryableModelFailure(
         return false;
     }
     return detectAgentFailureKind(collectAgentMessageDetails(agentMessage)) === 'model_unavailable';
+}
+
+/**
+ * True when the turn shows the selected model cannot drive tools: either the provider said so
+ * explicitly ("No endpoints found that support tool use"), or the turn "succeeded" by emitting
+ * tool-call-shaped JSON as plain text without running a single tool (models without native
+ * function calling). Retrying the SAME model cannot help — only a tool-capable fallback can.
+ */
+export function agentTurnHasRetryableToolSupportFailure(
+    agentMessage: {
+        readonly content?: string;
+        readonly segments?: readonly {
+            readonly type: string;
+            readonly content?: string;
+            readonly result?: string;
+        }[];
+    } | undefined,
+): boolean {
+    if (!agentMessage) {
+        return false;
+    }
+    if (detectAgentFailureKind(collectAgentMessageDetails(agentMessage)) === 'tool_unsupported') {
+        return true;
+    }
+    if (agentMessage.segments?.length) {
+        return agentTurnLooksLikeToolCallEmittedAsText(agentMessage.segments);
+    }
+    return looksLikeToolCallJsonText(agentMessage.content);
 }

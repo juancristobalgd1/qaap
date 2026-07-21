@@ -9,6 +9,7 @@ import {
     agentTurnHasRetryableEmptyOutput,
     agentTurnHasRetryableModelFailure,
     agentTurnHasRetryableQuotaFailure,
+    agentTurnHasRetryableToolSupportFailure,
     buildAgentModelFallbackChain,
     resolveNextFallbackAgentModel,
 } from './qaap-agent-model-fallback';
@@ -65,6 +66,55 @@ describe('qaap-agent-model-fallback', () => {
     it('does not switch models for ordinary implementation errors', () => {
         expect(agentTurnHasRetryableQuotaFailure({ content: 'TypeError: build failed' })).to.be.false;
         expect(agentTurnHasRetryableQuotaFailure(undefined)).to.be.false;
+    });
+
+    it('retries when the model emitted its tool call as plain text on a clean exit', () => {
+        // tencent/hy3:free (no native function calling): exit 0, no tool segments, JSON-as-text.
+        expect(agentTurnHasRetryableToolSupportFailure({
+            segments: [
+                { type: 'text', content: '{ "command": "ls -la", "description": "List all files in the current directory" }' },
+            ],
+        })).to.be.true;
+        expect(agentTurnHasRetryableToolSupportFailure({
+            content: '{"command": "npm test"}',
+        })).to.be.true;
+    });
+
+    it('retries when the provider says the model has no tool-capable endpoint', () => {
+        expect(agentTurnHasRetryableToolSupportFailure({
+            segments: [{ type: 'text', content: '404 No endpoints found that support tool use.' }],
+        })).to.be.true;
+    });
+
+    it('does not switch models when a turn with real tool runs mentions JSON', () => {
+        expect(agentTurnHasRetryableToolSupportFailure({
+            segments: [
+                { type: 'tool', content: undefined, result: 'ok' },
+                { type: 'text', content: '{ "command": "ls -la", "description": "List all files in the current directory" }' },
+            ],
+        })).to.be.false;
+        expect(agentTurnHasRetryableToolSupportFailure({
+            content: 'Done. The build passes.',
+        })).to.be.false;
+        expect(agentTurnHasRetryableToolSupportFailure(undefined)).to.be.false;
+    });
+
+    it('never offers a confirmed tool-less model as a fallback candidate', () => {
+        const current = {
+            provider: 'openai' as const,
+            vendor: 'openrouter',
+            modelId: 'tencent/hy3:free',
+        };
+        const chain = buildAgentModelFallbackChain('qaiq', current);
+        // The tool-less current pick stays first (it is the "tried" anchor), but every
+        // fallback candidate after it must be tool-capable.
+        expect(agentModelKey(chain[0])).to.equal('openrouter/tencent/hy3:free');
+        for (const candidate of chain.slice(1)) {
+            expect(candidate.modelId).to.not.match(/^tencent\/hy/i);
+        }
+        const next = resolveNextFallbackAgentModel('qaiq', current, new Set(['openrouter/tencent/hy3:free']));
+        expect(next).to.not.be.undefined;
+        expect(next!.modelId).to.not.match(/^tencent\/hy/i);
     });
 
     it('retries a decommissioned model even when the turn already produced work', () => {

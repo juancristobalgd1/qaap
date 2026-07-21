@@ -16,4 +16,13 @@ describe('openrouter-models', () => {
             'nvidia/nemotron-3-super-120b-a12b:free',
         ])).to.deep.equal(['nvidia/nemotron-3-super-120b-a12b:free']);
     });
+
+    it('excludes Hunyuan free/tool-less slugs from the agent catalog', () => {
+        expect(isExcludedOpenRouterModelSlug('tencent/hy3:free')).to.be.true;
+        expect(isExcludedOpenRouterModelSlug('tencent/hy3')).to.be.true;
+        expect(filterOpenRouterModelSlugs([
+            'tencent/hy3:free',
+            'moonshotai/kimi-k2.6:free',
+        ])).to.deep.equal(['moonshotai/kimi-k2.6:free']);
+    });
 });

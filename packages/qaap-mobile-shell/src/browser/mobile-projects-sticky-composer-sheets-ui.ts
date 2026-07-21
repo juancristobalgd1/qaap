@@ -48,6 +48,7 @@ import {
     MODEL_TURN_STATS_SLOW_THRESHOLD_MS,
     resolveModelTurnStats,
 } from '../common/qaap-model-latency-stats';
+import { qaiqModelSupportsToolCalls } from '../common/qaap-agent-tool-support';
 import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
 import {
     formatQaiqModelSelectionLabel,
@@ -875,6 +876,8 @@ export class MobileProjectsStickyComposerSheetsUi {
         });
     }
     async resolveModelsForAgentPicker(agentId: string): Promise<QaapQaiqModelOption[]> {
+        const withoutToolLess = (models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] =>
+            models.filter(model => qaiqModelSupportsToolCalls(model.modelId) !== false);
         if (agentUsesSettingsModelCatalog(agentId)) {
             const readPref = this.host.readPreference;
             const fromWorkspace = this.host.stickyComposerQaiqModels ?? [];
@@ -888,12 +891,13 @@ export class MobileProjectsStickyComposerSheetsUi {
                 )
                 : [];
             const merged = mergeQaiqModelOptions(registered, fromWorkspace, fromPreferences);
-            return readPref
+            const credentialed = readPref
                 ? filterQaiqModelsWithConfiguredCredentials(merged, readPref)
                 : merged;
+            return withoutToolLess(credentialed);
         }
         try {
-            return await fetchAgentModelsForAgent(agentId);
+            return withoutToolLess(await fetchAgentModelsForAgent(agentId));
         } catch {
             throw new Error('agent-model-catalog-fetch-failed');
         }
@@ -1326,7 +1330,10 @@ export class MobileProjectsStickyComposerSheetsUi {
             list.append(error);
             return;
         }
-        if (models.length === 0) {
+        // Hide confirmed tool-less families from Agent mode — they accept `tools` but emit
+        // arguments as plain text, so picking them only produces a dead turn.
+        const agentCapableModels = models.filter(model => qaiqModelSupportsToolCalls(model.modelId) !== false);
+        if (agentCapableModels.length === 0) {
             const hint = document.createElement('p');
             hint.className = 'theia-qaap-agent-sheet-empty-models';
             hint.textContent = agentUsesSettingsModelCatalog(agentId)
@@ -1341,7 +1348,7 @@ export class MobileProjectsStickyComposerSheetsUi {
             list.append(hint);
             return;
         }
-        for (const [vendor, providerModels] of groupQaiqModelsByProvider(models)) {
+        for (const [vendor, providerModels] of groupQaiqModelsByProvider(agentCapableModels)) {
             const section = document.createElement('div');
             section.className = 'theia-qaap-agent-sheet-provider';
             const label = document.createElement('div');

@@ -12,6 +12,7 @@ export type QaapAgentFailureKind =
     | 'quota'
     | 'rate_limit'
     | 'model_unavailable'
+    | 'tool_unsupported'
     | 'auth'
     | 'timeout'
     | 'network';
@@ -46,6 +47,14 @@ const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
     /\bno\s+such\s+model\b/i,
     /\bunknown\s+model\b/i,
     /\bmodel\s+not\s+supported\b/i,
+];
+
+const TOOL_UNSUPPORTED_PATTERNS: readonly RegExp[] = [
+    // OpenRouter 404 when `tools` is sent to a model without a tool-capable endpoint.
+    /\bno\s+endpoints\s+found\s+that\s+support\s+tool\s+use\b/i,
+    /\bdoes\s+not\s+support\s+(?:tools?|tool\s+use|tool\s+calls?|function\s+calling)\b/i,
+    /\btool[_\s-]?(?:use|calls?|calling)\s+(?:is\s+|are\s+)?not\s+supported\b/i,
+    /\bfunction[_\s-]?calling\s+(?:is\s+)?not\s+supported\b/i,
 ];
 
 const AUTH_PATTERNS: readonly RegExp[] = [
@@ -162,6 +171,10 @@ export function detectAgentFailureKind(log: string | undefined): QaapAgentFailur
     if (matchesAny(sample, RATE_LIMIT_PATTERNS)) {
         return 'rate_limit';
     }
+    // Before model_unavailable: "does not support tool use" must not read as a missing model.
+    if (matchesAny(sample, TOOL_UNSUPPORTED_PATTERNS)) {
+        return 'tool_unsupported';
+    }
     if (matchesAny(sample, MODEL_UNAVAILABLE_PATTERNS)) {
         return 'model_unavailable';
     }
@@ -193,6 +206,11 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind): string 
             return nls.localize(
                 'qaap/agentFailure/modelUnavailable',
                 'This model is unavailable. Try OpenCode or another model in the composer.',
+            );
+        case 'tool_unsupported':
+            return nls.localize(
+                'qaap/agentFailure/toolUnsupported',
+                'This model can\'t use tools (function calling), which the coding agent needs. Pick another model in the composer.',
             );
         case 'auth':
             return nls.localize(

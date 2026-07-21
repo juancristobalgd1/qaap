@@ -60,6 +60,14 @@ describe('qaap-agent-model-selection', () => {
         expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)).to.be.undefined;
     });
 
+    it('rejects confirmed tool-less models and clears stale localStorage', () => {
+        const cwd = '/repo/tool-less';
+        const bad = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'tencent/hy3:free' };
+        expect(isStoredAgentModelUsable(bad)).to.be.false;
+        writeStoredAgentModel(cwd, QAIQ_AGENT_ID, bad);
+        expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)).to.be.undefined;
+    });
+
     it('stores models per agent within the same cwd', () => {
         const cwd = '/repo/a';
         const qaiqModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'a/b' };

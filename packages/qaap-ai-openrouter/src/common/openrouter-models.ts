@@ -24,6 +24,9 @@ export const OPENROUTER_FREE_SUFFIX = ':free';
  */
 export const OPENROUTER_EXCLUDED_MODEL_SLUGS: ReadonlySet<string> = new Set([
     'deepseek/deepseek-v4-flash:free',
+    // Hunyuan free endpoint accepts `tools` but emits tool-call args as plain text — unusable for Agent.
+    'tencent/hy3:free',
+    'tencent/hy3',
 ]);
 
 export const OPENROUTER_DEFAULT_FREE_MODELS: readonly string[] = [

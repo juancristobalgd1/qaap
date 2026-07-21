@@ -40,7 +40,8 @@ import {
     estimateConversationTokensFromMessages,
     totalTokensFromContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
-import { resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 import {
     createAgentStreamAccumulator,
     parseAgentLogForTranscript,
@@ -111,6 +112,7 @@ import {
     agentTurnHasRetryableEmptyOutput,
     agentTurnHasRetryableModelFailure,
     agentTurnHasRetryableQuotaFailure,
+    agentTurnHasRetryableToolSupportFailure,
     resolveNextFallbackAgentModel,
 } from '../common/qaap-agent-model-fallback';
 import {
@@ -449,26 +451,18 @@ export class QaapAgentConversationStore {
             this.fire({ type: 'updated', conversation: toConversationSummary(next) });
         }
 
+        // Pre-spawn gate: models confirmed to lack function calling cannot drive the coding
+        // agent — fail the turn typed instead of burning a doomed CLI run.
+        const turnModel = next.agentModel ?? next.qaiqModel;
+        if (agentSupportsModelPicker(turnAgentId) && qaiqModelSupportsToolCalls(turnModel?.modelId) === false) {
+            return this.failTurnBeforeSpawn(id, next, userMessage.id, localizeAgentFailureMessage('tool_unsupported'));
+        }
         let task: QaapAgentTask | undefined;
         try {
             task = this.taskRunner.create(this.buildTaskCreateRequest(next, turnAgentId, latencyMarks));
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            const failed = this.markTurnFailed(next, {
-                userMessageId: userMessage.id,
-                reason: message,
-            });
-            next = failed.conv;
-            this.conversations.set(id, next);
-            const agentMessage = failed.agentMessageId
-                ? next.messages.find(entry => entry.id === failed.agentMessageId)
-                : undefined;
-            if (agentMessage) {
-                this.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: agentMessage });
-            }
-            this.fire({ type: 'updated', conversation: toConversationSummary(next) });
-            void this.persist();
-            return next;
+            return this.failTurnBeforeSpawn(id, next, userMessage.id, message);
         }
         this.streamMetrics.recordLatencyMark(id, 'task_created');
 
@@ -1692,6 +1686,36 @@ export class QaapAgentConversationStore {
                 withReply = reply;
             }
         }
+        // A "successful" turn that ran no tools but answered with tool-call-shaped JSON is the
+        // silent signature of a model without native function calling: the CLI exits 0, so the
+        // failure branch above never sees it. Reroute into the model fallback, or fail it typed.
+        const settledAgentMessage = agentMessageId
+            ? withReply.messages.find(message => message.id === agentMessageId && message.role === 'agent')
+            : [...withReply.messages].reverse().find(message => message.role === 'agent');
+        if (settledAgentMessage && agentTurnHasRetryableToolSupportFailure(settledAgentMessage)) {
+            if (this.maybeRetryTurnWithFallbackModel(
+                conversationId,
+                userMessageId,
+                settledAgentMessage.id,
+                task,
+                withReply,
+                settledAgentMessage,
+                startSha,
+            )) {
+                return;
+            }
+            const reason = localizeAgentFailureMessage('tool_unsupported');
+            const failed = this.markTurnFailed(withReply, {
+                userMessageId,
+                agentMessageId: settledAgentMessage.id,
+                reason,
+            });
+            const resolvedAgentMessageId = failed.agentMessageId ?? settledAgentMessage.id;
+            const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
+            this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId);
+            this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, finalized);
+            return;
+        }
         const gitStats = this.computeGitDiffStats(conv.cwd, startSha);
         if (gitStats) {
             withReply = { ...withReply, gitDiffAdded: gitStats.added, gitDiffRemoved: gitStats.removed };
@@ -1783,12 +1807,17 @@ export class QaapAgentConversationStore {
         agentMessage: QaapAgentMessage | undefined,
         startSha?: string,
     ): boolean {
-        if (task.state !== 'failed' || !agentSupportsModelPicker(conv.agentId)) {
+        if (!agentSupportsModelPicker(conv.agentId)) {
             return false;
         }
-        if (!agentTurnHasRetryableEmptyOutput(agentMessage)
-            && !agentTurnHasRetryableQuotaFailure(agentMessage)
-            && !agentTurnHasRetryableModelFailure(agentMessage)) {
+        // Tool-support failures also arrive on clean exits (state 'completed'): the model
+        // emitted its tool call as text and the CLI finished "successfully" with exit 0.
+        const toolSupportFailure = agentTurnHasRetryableToolSupportFailure(agentMessage);
+        const retryableFailedState = task.state === 'failed'
+            && (agentTurnHasRetryableEmptyOutput(agentMessage)
+                || agentTurnHasRetryableQuotaFailure(agentMessage)
+                || agentTurnHasRetryableModelFailure(agentMessage));
+        if (!toolSupportFailure && !retryableFailedState) {
             return false;
         }
         const loopBudgetKey = this.resolveLoopBudgetKey(conv, userMessageId);
@@ -1970,6 +1999,30 @@ export class QaapAgentConversationStore {
             updatedAt: message.createdAt,
             messages: [...conv.messages, message],
         };
+    }
+
+    /** Fail a just-posted turn synchronously (no task spawned) and publish the failed message. */
+    protected failTurnBeforeSpawn(
+        id: string,
+        conv: QaapAgentConversation,
+        userMessageId: string,
+        reason: string,
+    ): QaapAgentConversation {
+        const failed = this.markTurnFailed(conv, {
+            userMessageId,
+            reason,
+        });
+        const next = failed.conv;
+        this.conversations.set(id, next);
+        const agentMessage = failed.agentMessageId
+            ? next.messages.find(entry => entry.id === failed.agentMessageId)
+            : undefined;
+        if (agentMessage) {
+            this.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: agentMessage });
+        }
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        void this.persist();
+        return next;
     }
 
     protected markTurnFailed(

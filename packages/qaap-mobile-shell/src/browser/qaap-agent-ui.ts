@@ -315,6 +315,10 @@ export function createPickerSheetOptionButton(options: {
     readonly statsLabel?: string;
     /** Renders {@link statsLabel} in the warning color to flag models with a slow observed median. */
     readonly statsSlow?: boolean;
+    /** Capability pill after the label, e.g. `No tools` for models without function calling. */
+    readonly badgeLabel?: string;
+    /** Renders {@link badgeLabel} in the warning treatment. */
+    readonly badgeWarning?: boolean;
     readonly menuItem?: boolean;
     readonly onSelect: () => void;
 }): HTMLButtonElement {
@@ -336,6 +340,15 @@ export function createPickerSheetOptionButton(options: {
     labelEl.className = 'theia-mobile-sticky-composer-sheet-option-label';
     labelEl.textContent = options.label;
     content.append(labelEl);
+    if (options.badgeLabel) {
+        const badge = document.createElement('span');
+        badge.className = 'theia-qaap-picker-sheet-option-badge';
+        if (options.badgeWarning) {
+            badge.classList.add('theia-mod-warning');
+        }
+        badge.textContent = options.badgeLabel;
+        content.append(badge);
+    }
     if (options.statsLabel) {
         const stats = document.createElement('span');
         stats.className = 'theia-qaap-picker-sheet-option-stats';

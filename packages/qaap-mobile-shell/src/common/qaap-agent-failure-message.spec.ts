@@ -43,6 +43,19 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('model_unavailable');
     });
 
+    it('detectAgentFailureKind recognizes tool-support errors before model availability', () => {
+        // OpenRouter's 404 when `tools` is sent to a model without a tool-capable endpoint.
+        expect(detectAgentFailureKind('404 No endpoints found that support tool use.'))
+            .to.equal('tool_unsupported');
+        expect(detectAgentFailureKind('The model tencent/hy3:free does not support tools.'))
+            .to.equal('tool_unsupported');
+        expect(detectAgentFailureKind('Error: function calling is not supported by this model'))
+            .to.equal('tool_unsupported');
+        // Must win over model_unavailable when both could plausibly match the sentence.
+        expect(detectAgentFailureKind('The selected model does not support tool use.'))
+            .to.equal('tool_unsupported');
+    });
+
     it('detectAgentFailureKind recognizes auth, timeout, and network failures', () => {
         expect(detectAgentFailureKind('invalid_api_key'))
             .to.equal('auth');

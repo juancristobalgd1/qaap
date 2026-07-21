@@ -10863,6 +10863,30 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet.theia-mo
   color: var(--theia-editorWarning-foreground, #cca700);
 }
 
+.theia-qaap-picker-sheet-option-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid var(--theia-contrastBorder, transparent);
+  color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.55));
+  background: var(--theia-badge-background, rgba(255, 255, 255, 0.08));
+}
+
+.theia-qaap-picker-sheet-option-badge.theia-mod-warning {
+  color: var(--theia-editorWarning-foreground, #cca700);
+  border-color: var(--theia-editorWarning-foreground, #cca700);
+  background: transparent;
+}
+
+/* The badge takes the auto-margin slot; stats that follow it keep only their gap. */
+.theia-qaap-picker-sheet-option-badge + .theia-qaap-picker-sheet-option-stats {
+  margin-left: 0;
+}
+
 .theia-qaap-llm-provider-icon.theia-mod-tone-light {
   color: var(--theia-foreground, #e5e5e5);
 }

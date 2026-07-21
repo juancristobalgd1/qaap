@@ -15,6 +15,7 @@ import {
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
 } from './qaap-agent-task-client';
+import { qaiqModelSupportsToolCalls } from './qaap-agent-tool-support';
 
 export type QaapAgentModelSelection = QaapCreateAgentTaskQaiqModel;
 
@@ -77,6 +78,10 @@ function parseStoredModel(raw: string | null | undefined): QaapAgentModelSelecti
 /** Drop models removed from the catalog (e.g. offline OpenRouter :free slugs). */
 export function isStoredAgentModelUsable(model: QaapAgentModelSelection | undefined): boolean {
     if (!model?.modelId?.trim()) {
+        return false;
+    }
+    // Confirmed tool-less families cannot drive Agent mode — clear stale localStorage picks.
+    if (qaiqModelSupportsToolCalls(model.modelId) === false) {
         return false;
     }
     if (model.vendor === 'openrouter') {
