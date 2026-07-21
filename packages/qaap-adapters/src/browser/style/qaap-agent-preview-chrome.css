@@ -652,6 +652,22 @@ body.qaap-mod-inspector-resizing.qaap-mod-inspector-resizing-vertical * {
   display: none;
 }
 
+/* Maximize + Edit: one icon group — no vertical divider between buttons. */
+.theia-mini-browser-toolbar .theia-mini-browser-workbench-controls,
+.qaap-agent-preview-embedded-toolbar .theia-mini-browser-workbench-controls {
+  gap: 2px;
+  margin-left: var(--q-space-2, 4px);
+  padding-left: 0;
+  border-left: none;
+}
+
+.theia-mini-browser-workbench-controls .theia-mini-browser-workbench-button + .theia-mini-browser-workbench-button {
+  border-left: none;
+  margin-left: 0;
+  padding-left: 0;
+  box-shadow: none;
+}
+
 /* Full-bleed preview: hide Work Hub chrome and expand the preview surface. */
 body.qaap-mod-preview-maximized .theia-mobile-projects-header,
 body.qaap-mod-preview-maximized .theia-mobile-projects-sticky-composer-column,

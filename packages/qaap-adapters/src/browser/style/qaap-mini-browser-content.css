@@ -165,6 +165,16 @@
   flex-shrink: 0;
   align-items: center;
   gap: 2px;
+  margin-left: var(--q-space-2, 4px);
+  padding-left: 0;
+  border-left: none;
+}
+
+.theia-mini-browser-workbench-controls .theia-mini-browser-workbench-button + .theia-mini-browser-workbench-button {
+  border-left: none;
+  margin-left: 0;
+  padding-left: 0;
+  box-shadow: none;
 }
 
 .theia-mini-browser-workbench-button {
