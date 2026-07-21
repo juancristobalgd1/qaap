@@ -71,7 +71,13 @@ import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { scheduleTranscriptIdleWork, type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import {
+    recordTranscriptRenderMetric,
+    // QAAP-METRICS-DEBUG (temporary, gated by ?qaapRenderMetrics=1) — revert with this block.
+    enableTranscriptRenderMetrics,
+    resetTranscriptRenderMetrics,
+    getTranscriptRenderMetricsSnapshot,
+} from '../common/qaap-transcript-render-metrics';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import {
@@ -837,6 +843,36 @@ export class MobileProjectsTranscriptLiveUi {
         }
     }
 
+    // QAAP-METRICS-DEBUG start (temporary; gated by ?qaapRenderMetrics=1). Revert this block.
+    protected qaapRenderMetricsArmed = false;
+
+    protected qaapRenderMetricsDebugEnabled(): boolean {
+        return typeof window !== 'undefined'
+            && new URLSearchParams(window.location.search).get('qaapRenderMetrics') === '1';
+    }
+
+    protected armQaapRenderMetricsDebug(): void {
+        if (this.qaapRenderMetricsArmed || !this.qaapRenderMetricsDebugEnabled()) {
+            return;
+        }
+        enableTranscriptRenderMetrics(true);
+        resetTranscriptRenderMetrics();
+        this.qaapRenderMetricsArmed = true;
+        // eslint-disable-next-line no-console
+        console.log('[QAAP render metrics] armed — counters reset for this turn');
+    }
+
+    protected dumpQaapRenderMetricsDebug(label: string): void {
+        if (!this.qaapRenderMetricsArmed) {
+            return;
+        }
+        this.qaapRenderMetricsArmed = false;
+        const { enabled, ...counts } = getTranscriptRenderMetricsSnapshot();
+        // eslint-disable-next-line no-console
+        console.log(`[QAAP render metrics] ${label} ${JSON.stringify(counts)}`);
+    }
+    // QAAP-METRICS-DEBUG end.
+
     onTranscriptUserMessageSubmitted(content: string, conv: QaapAgentConversationDTO): void {
         this.transcriptPreviewSettlePollUntil = Date.now() + 120_000;
         this.transcriptDevPreviewBootstrapConversationId = undefined;
@@ -862,6 +898,7 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         if (conv.status === 'streaming') {
+            this.armQaapRenderMetricsDebug(); // QAAP-METRICS-DEBUG
             if (conv.messages.at(-1)?.role !== 'agent' || !isConversationTurnVisuallySettled(conv)) {
                 this.transcriptTurnVisuallySettledActive = false;
                 return;
@@ -877,6 +914,7 @@ export class MobileProjectsTranscriptLiveUi {
                 if (this.host.transcriptOpenSummary?.id === conv.id) {
                     this.host.transcriptOpenSummary = this.reconcileConversationListSummary(conv);
                 }
+                this.dumpQaapRenderMetricsDebug('turn visually settled'); // QAAP-METRICS-DEBUG
             }
             this.host.transcriptStickyComposerUi.refreshComposerActivityStack();
             this.host.transcriptComposerSendRefresh?.();
@@ -891,6 +929,7 @@ export class MobileProjectsTranscriptLiveUi {
             return;
         }
         this.transcriptTurnVisuallySettledActive = true;
+        this.dumpQaapRenderMetricsDebug('turn settled'); // QAAP-METRICS-DEBUG
         this.syncTranscriptConversationSettledChrome();
     }
 
