@@ -462,12 +462,12 @@
   transition: background-color 240ms ease;
 }
 
-.theia-mobile-agent-stream-line:has(.theia-mobile-agent-stream-label.theia-mod-shimmer) .theia-mobile-agent-stream-dot {
+.theia-mobile-agent-stream-line:has(.theia-mobile-agent-stream-label.theia-mod-shimmer) .theia-mobile-agent-stream-dot:not(.qaap-thinking-orb-indicator) {
   animation: qaap-trace-bullet-pulse 1.4s ease-in-out infinite;
 }
 
-/* Thinking state: blue dot */
-.theia-mobile-agent-stream-line.theia-mod-thinking .theia-mobile-agent-stream-dot {
+/* Thinking state: blue dot (legacy CSS bullet only) */
+.theia-mobile-agent-stream-line.theia-mod-thinking .theia-mobile-agent-stream-dot:not(.qaap-thinking-orb-indicator) {
   background: var(--theia-focusBorder, #4c9aff);
 }
 
@@ -789,10 +789,15 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  background-size: 14px 14px;
+  width: 20px;
+  height: 20px;
+  line-height: 0;
+}
+
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-timeline-summary-spinner.qaap-thinking-orb-indicator canvas {
+  display: block;
+  width: 20px !important;
+  height: 20px !important;
 }
 
 /* Brand logo inside activity item icons (active steps during streaming) */

@@ -5,15 +5,28 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     createTranscriptLiveStatusElement,
     formatTranscriptLiveStatusText,
     syncTranscriptLiveStatusElement,
     TRANSCRIPT_LIVE_STATUS_CLASS,
+    TRANSCRIPT_LIVE_STATUS_LOGO_CLASS,
 } from './qaap-transcript-live-status';
 import { QAAP_BRAND_LOGO_INDICATOR_CLASS } from './qaap-agent-setup-phrases';
 
 describe('qaap-transcript-live-status', () => {
+    let disableJSDOM: (() => void) | undefined;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM?.();
+        disableJSDOM = undefined;
+    });
+
     it('formats Claude-style live status text', () => {
         expect(formatTranscriptLiveStatusText({
             elapsedMs: 13_000,
@@ -25,13 +38,25 @@ describe('qaap-transcript-live-status', () => {
     it('createTranscriptLiveStatusElement renders logo, activity, then meta', () => {
         const el = createTranscriptLiveStatusElement();
         expect(el.classList.contains(TRANSCRIPT_LIVE_STATUS_CLASS)).to.equal(true);
-        expect(el.querySelector(`.${QAAP_BRAND_LOGO_INDICATOR_CLASS}.qaap-transcript-live-status-logo`)).to.not.equal(null);
+        expect(el.querySelector(`.${QAAP_BRAND_LOGO_INDICATOR_CLASS}.${TRANSCRIPT_LIVE_STATUS_LOGO_CLASS}`)).to.not.equal(null);
         expect(el.querySelector('.qaap-transcript-live-status-activity')).to.not.equal(null);
         expect(el.querySelector('.qaap-transcript-live-status-meta')).to.not.equal(null);
         const children = [...el.children].map(child => child.className);
-        expect(children[0]).to.contain('qaap-transcript-live-status-logo');
+        expect(children[0]).to.contain(TRANSCRIPT_LIVE_STATUS_LOGO_CLASS);
         expect(children[1]).to.contain('qaap-transcript-live-status-activity');
         expect(children[2]).to.equal('qaap-transcript-live-status-meta');
+    });
+
+    it('accepts a custom working indicator factory', () => {
+        const el = createTranscriptLiveStatusElement({
+            createIndicator: () => {
+                const host = document.createElement('span');
+                host.className = 'qaap-thinking-orb-indicator';
+                return host;
+            },
+        });
+        expect(el.querySelector(`.qaap-thinking-orb-indicator.${TRANSCRIPT_LIVE_STATUS_LOGO_CLASS}`)).to.not.equal(null);
+        expect(el.querySelector(`.${QAAP_BRAND_LOGO_INDICATOR_CLASS}`)).to.equal(null);
     });
 
     it('syncTranscriptLiveStatusElement updates text and stall class', () => {

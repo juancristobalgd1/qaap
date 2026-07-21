@@ -4,13 +4,19 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { createWorkHubWorkingAgentsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import {
     WORKING_CONTROL_CLASS,
     ensureWorkingControlShell,
     isWorkingAgentsExpandPinnedOpen,
     reclaimParkedWorkingControlIntoRow,
 } from './qaap-sticky-composer-working-agents-popover';
+import {
+    createThinkingOrbIndicator,
+    destroyThinkingOrbIndicator,
+    QAAP_THINKING_ORB_COMPACT_SIZE,
+    QAAP_THINKING_ORB_INDICATOR_CLASS,
+    syncThinkingOrbIndicator,
+} from './qaap-thinking-orb-indicator';
 
 export interface StickyComposerWorkingPillOptions {
     readonly count: number;
@@ -23,6 +29,7 @@ export interface StickyComposerWorkingPillOptions {
 }
 
 const WORKING_PILL_CLASS = 'theia-mobile-sticky-composer-working-pill';
+const WORKING_PILL_ICON_CLASS = 'theia-mobile-projects-working-pill-icon';
 const WORKING_ONLY_HOST_CLASS = 'theia-mod-working-only';
 
 /**
@@ -54,6 +61,7 @@ export function syncStickyComposerWorkingPill(
             return;
         }
         wrap.querySelectorAll(`.${WORKING_CONTROL_CLASS}, .${WORKING_PILL_CLASS}`).forEach(node => {
+            destroyThinkingOrbHosts(node);
             if (node.classList.contains(WORKING_CONTROL_CLASS)) {
                 node.remove();
                 return;
@@ -62,7 +70,10 @@ export function syncStickyComposerWorkingPill(
                 node.remove();
             }
         });
-        workingOnlyHost?.remove();
+        if (workingOnlyHost) {
+            destroyThinkingOrbHosts(workingOnlyHost);
+            workingOnlyHost.remove();
+        }
         return;
     }
 
@@ -154,10 +165,51 @@ function createWorkingPillButton(options: StickyComposerWorkingPillOptions): HTM
     pill.setAttribute('aria-expanded', 'false');
     const label = document.createElement('span');
     label.className = 'theia-mobile-sticky-composer-working-pill-label';
-    pill.append(createWorkHubWorkingAgentsIcon(), label);
+    pill.append(createWorkingPillOrb(), label);
     bindWorkingPillClick(pill, options.onOpen);
     applyWorkingPillContent(pill, options);
     return pill;
+}
+
+function createWorkingPillOrb(): HTMLElement {
+    return createThinkingOrbIndicator({
+        state: 'working',
+        isWorking: true,
+        size: QAAP_THINKING_ORB_COMPACT_SIZE,
+        speed: 1.25,
+        className: WORKING_PILL_ICON_CLASS,
+    });
+}
+
+function ensureWorkingPillOrb(pill: HTMLButtonElement): HTMLElement {
+    const existing = pill.querySelector<HTMLElement>(
+        `:scope > .${WORKING_PILL_ICON_CLASS}.${QAAP_THINKING_ORB_INDICATOR_CLASS}`,
+    );
+    if (existing) {
+        syncThinkingOrbIndicator(existing, {
+            state: 'working',
+            isWorking: true,
+            size: QAAP_THINKING_ORB_COMPACT_SIZE,
+            speed: 1.25,
+        });
+        if (pill.firstElementChild !== existing) {
+            pill.prepend(existing);
+        }
+        return existing;
+    }
+    // Drop legacy SVG dots / brand logo if a remount left them behind.
+    pill.querySelectorAll(
+        `:scope > .${WORKING_PILL_ICON_CLASS}:not(.${QAAP_THINKING_ORB_INDICATOR_CLASS})`,
+    ).forEach(node => node.remove());
+    const orb = createWorkingPillOrb();
+    pill.prepend(orb);
+    return orb;
+}
+
+function destroyThinkingOrbHosts(root: ParentNode): void {
+    for (const host of root.querySelectorAll<HTMLElement>(`.${QAAP_THINKING_ORB_INDICATOR_CLASS}`)) {
+        destroyThinkingOrbIndicator(host);
+    }
 }
 
 function bindWorkingPillClick(
@@ -173,6 +225,7 @@ function bindWorkingPillClick(
 }
 
 function applyWorkingPillContent(pill: HTMLButtonElement, options: StickyComposerWorkingPillOptions): void {
+    ensureWorkingPillOrb(pill);
     const labelEl = pill.querySelector('.theia-mobile-sticky-composer-working-pill-label');
     const label = nls.localize('qaap/workHubChrome/workingPill', '{0} Working', String(options.count));
     const aria = nls.localize(

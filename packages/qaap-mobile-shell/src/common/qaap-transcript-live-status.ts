@@ -10,25 +10,37 @@ import { QAAP_BRAND_LOGO_INDICATOR_CLASS, syncShimmerTextElement } from './qaap-
 /** Footer row shown while a turn streams; hidden once the diff summary mounts. */
 export const TRANSCRIPT_LIVE_STATUS_ATTR = 'data-transcript-live-status';
 export const TRANSCRIPT_LIVE_STATUS_CLASS = 'theia-mobile-agent-live-status';
+export const TRANSCRIPT_LIVE_STATUS_LOGO_CLASS = 'qaap-transcript-live-status-logo';
 
 export interface TranscriptLiveStatusSnapshot {
     readonly elapsedMs: number;
     readonly streamChars: number;
     readonly activityTitle: string;
+    readonly activityKind?: string;
     readonly stalled?: boolean;
     readonly timedOut?: boolean;
 }
 
-export function createTranscriptLiveStatusElement(): HTMLElement {
+export interface CreateTranscriptLiveStatusElementOptions {
+    /** Override the default brand-logo host (e.g. ThinkingOrb). */
+    readonly createIndicator?: () => HTMLElement;
+}
+
+export function createTranscriptLiveStatusElement(
+    options?: CreateTranscriptLiveStatusElementOptions,
+): HTMLElement {
     const root = document.createElement('div');
     root.className = TRANSCRIPT_LIVE_STATUS_CLASS;
     root.setAttribute(TRANSCRIPT_LIVE_STATUS_ATTR, 'true');
     root.setAttribute('aria-live', 'polite');
     root.setAttribute('aria-busy', 'true');
 
-    const logo = document.createElement('span');
-    logo.className = `${QAAP_BRAND_LOGO_INDICATOR_CLASS} qaap-transcript-live-status-logo`;
-    logo.setAttribute('aria-hidden', 'true');
+    const logo = options?.createIndicator?.() ?? document.createElement('span');
+    if (!options?.createIndicator) {
+        logo.className = QAAP_BRAND_LOGO_INDICATOR_CLASS;
+        logo.setAttribute('aria-hidden', 'true');
+    }
+    logo.classList.add(TRANSCRIPT_LIVE_STATUS_LOGO_CLASS);
 
     const activity = document.createElement('span');
     activity.className = 'qaap-agent-setup-text qaap-transcript-live-status-activity';
@@ -78,8 +90,16 @@ export function syncTranscriptLiveStatusElement(
     element.classList.toggle('theia-mod-stalled', !!snapshot.stalled || !!snapshot.timedOut);
 }
 
-export function removeTranscriptLiveStatusElement(root: ParentNode): void {
-    root.querySelector(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`)?.remove();
+export function removeTranscriptLiveStatusElement(
+    root: ParentNode,
+    options?: { readonly beforeRemove?: (element: HTMLElement) => void },
+): void {
+    const element = root.querySelector<HTMLElement>(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`);
+    if (!element) {
+        return;
+    }
+    options?.beforeRemove?.(element);
+    element.remove();
 }
 
 /** Insertion anchor for closing narrative blocks: before diff summary or live footer. */

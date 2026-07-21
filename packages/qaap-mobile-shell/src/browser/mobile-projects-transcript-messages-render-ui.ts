@@ -339,7 +339,10 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         return boundary;
     }
 
-    buildTranscriptVirtualFooter(conv: QaapAgentConversationDTO): HTMLElement[] {
+    buildTranscriptVirtualFooter(
+        conv: QaapAgentConversationDTO,
+        options?: { readonly existingActivityRow?: HTMLElement | null },
+    ): HTMLElement[] {
         const footers: HTMLElement[] = [];
         // Only the live shimmer belongs in the footer; the completed seam is rendered inline at the
         // compaction boundary (see createTranscriptMessageRowAtIndex).
@@ -350,12 +353,26 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
         }
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming' && conv.messages.at(-1)?.role === 'user') {
-            const row = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
-            if (row) {
-                footers.push(row);
+            const existing = options?.existingActivityRow ?? undefined;
+            // Reuse the mounted setup/stream row across activity-only footer refreshes.
+            // Recreating it (replaceChildren) unmounts `.qaap-agent-setup` and causes a visible
+            // hide→show flicker of the logo + shimmer phrase + elapsed meta while the agent works.
+            if (existing && this.artifactsUi.syncTranscriptStreamingActivityRow(existing, conv)) {
+                existing.hidden = false;
+                footers.push(existing);
+            } else {
+                const row = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
+                if (row) {
+                    footers.push(row);
+                }
             }
         }
         return footers;
+    }
+
+    /** Activity row currently mounted in the transcript host or virtual footer. */
+    protected findTranscriptStreamingActivityRow(messageHost: HTMLElement): HTMLElement | undefined {
+        return messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`) ?? undefined;
     }
 
     protected createTranscriptContextCompactionRow(conv: QaapAgentConversationDTO): HTMLElement | undefined {
@@ -519,7 +536,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const scroll = this.resolveTranscriptScrollController(messageHost);
         const wasFollowingTail = this.shouldFollowTranscriptTail(messageHost);
         list.setItemCount(normalized.messages.length);
-        list.setFooter(this.buildTranscriptVirtualFooter(normalized));
+        list.setFooter(this.buildTranscriptVirtualFooter(normalized, {
+            existingActivityRow: this.findTranscriptStreamingActivityRow(messageHost),
+        }));
         this.host.transcriptLastRenderedConversationId = normalized.id;
         this.host.transcriptLastRenderedMessageId = normalized.messages.at(-1)?.id;
         if (options?.newTurnStarted) {
@@ -710,6 +729,13 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 reusableRows.set(key, el);
             }
         });
+        // Detach the live setup/stream activity row before replaceChildren so a same-conversation
+        // full rebuild can remount the same DOM (logo + phrase timers + elapsed meta) without a
+        // flicker. Never reuse across conversation switches — that would leak the previous turn.
+        const preservedActivityRow = !conversationSwitched
+            ? this.findTranscriptStreamingActivityRow(messageHost)
+            : undefined;
+        preservedActivityRow?.remove();
         const normalizedForKeys = this.normalizeConversationFailuresCached(conv);
         const seamIndex = this.transcriptContextCompactionBoundaryIndex(normalizedForKeys);
         const fragment = document.createDocumentFragment();
@@ -754,9 +780,15 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 if (runningCompaction) {
                     messageHost.append(runningCompaction);
                 }
-                const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
-                if (activityRow) {
-                    messageHost.append(activityRow);
+                if (preservedActivityRow
+                    && this.artifactsUi.syncTranscriptStreamingActivityRow(preservedActivityRow, conv)) {
+                    preservedActivityRow.hidden = false;
+                    messageHost.append(preservedActivityRow);
+                } else {
+                    const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
+                    if (activityRow) {
+                        messageHost.append(activityRow);
+                    }
                 }
             }
         } else if (runningCompaction) {
@@ -916,6 +948,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 recordTranscriptRenderMetric('render_patch_last_agent');
                 recordTranscriptRenderMetric('render_patch_last_agent_in_place');
                 this.markTranscriptMessageRow(existing, lastAgent.id, isTranscriptAgentTailStreaming(conv));
+                this.artifactsUi.ensureTranscriptLiveStatusForStreamingRow(existing, conv);
                 this.removeTranscriptActivityRow(messageHost);
                 this.host.transcriptLastConv = conv;
                 this.host.transcriptLastRenderedConversationId = conv.id;
@@ -1025,7 +1058,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             recordTranscriptRenderMetric('render_patch_activity_in_place');
             this.host.transcriptLastConv = conv;
             list.setItemCount(conv.messages.length);
-            list.setFooter(this.buildTranscriptVirtualFooter(conv));
+            list.setFooter(this.buildTranscriptVirtualFooter(conv, {
+                existingActivityRow: this.findTranscriptStreamingActivityRow(messageHost),
+            }));
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
             if (wasFollowingTail) {
@@ -1044,6 +1079,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             });
             this.host.transcriptLastConv = conv;
             list.setItemCount(conv.messages.length);
+            // New user turn owns a fresh activity row below the appended message.
             list.setFooter(this.buildTranscriptVirtualFooter(conv));
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
@@ -1066,6 +1102,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 recordTranscriptRenderMetric('render_patch_last_agent');
                 recordTranscriptRenderMetric('render_patch_last_agent_in_place');
                 this.markTranscriptMessageRow(existingVirtualRow, lastAgent.id, isTranscriptAgentTailStreaming(conv));
+                this.artifactsUi.ensureTranscriptLiveStatusForStreamingRow(existingVirtualRow, conv);
                 this.host.transcriptLastConv = conv;
                 list.setItemCount(conv.messages.length);
                 list.setFooter(this.buildTranscriptVirtualFooter(conv));
@@ -1262,6 +1299,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         });
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming' && conv.messages.at(-1)?.role === 'user') {
             if (existingActivityRow && this.artifactsUi.syncTranscriptStreamingActivityRow(existingActivityRow, conv)) {
+                existingActivityRow.hidden = false;
                 recordTranscriptRenderMetric('render_patch_activity_in_place');
                 return;
             }
@@ -1273,7 +1311,27 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             return;
         }
+        if (resolveTranscriptEffectiveStatus(conv) === 'streaming' && existingActivityRow) {
+            this.ensureLiveStatusBeforeRemovingActivityRow(messageHost, conv);
+        }
         this.removeTranscriptActivityRow(messageHost);
+    }
+
+    /** Mount live footer on the streaming agent row before tearing down the setup activity row. */
+    protected ensureLiveStatusBeforeRemovingActivityRow(
+        messageHost: HTMLElement,
+        conv: QaapAgentConversationDTO,
+    ): void {
+        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
+        if (!lastAgent?.id) {
+            return;
+        }
+        const agentRow = messageHost.querySelector<HTMLElement>(
+            `[${TRANSCRIPT_MESSAGE_ID_ATTR}="${CSS.escape(lastAgent.id)}"]`,
+        );
+        if (agentRow) {
+            this.artifactsUi.ensureTranscriptLiveStatusForStreamingRow(agentRow, conv);
+        }
     }
 
     createTranscriptAgentFailureRow(

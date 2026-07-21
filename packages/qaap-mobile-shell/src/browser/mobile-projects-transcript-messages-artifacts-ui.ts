@@ -88,7 +88,13 @@ import {
 } from '../common/qaap-transcript-activity-expand-core';
 import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
 import { canRestoreConversationCheckpoint, annotateTranscriptActivityCheckpointIds } from '../common/qaap-transcript-checkpoint-restore';
-import { createAgentSetupElement, syncAgentSetupElement, destroyAgentSetupElement, createBrandLogoIndicator } from '../common/qaap-agent-setup-phrases';
+import { createAgentSetupElement, syncAgentSetupElement, destroyAgentSetupElement } from '../common/qaap-agent-setup-phrases';
+import {
+    createThinkingOrbIndicator,
+    destroyThinkingOrbIndicator,
+    QAAP_THINKING_ORB_INDICATOR_CLASS,
+    syncThinkingOrbIndicator,
+} from './qaap-thinking-orb-indicator';
 import {
     coalesceToolSegments,
     bundleToolSegmentsByUmbrella,
@@ -118,6 +124,7 @@ import {
     resolveTranscriptSegmentsFooterAnchor,
     syncTranscriptLiveStatusElement,
     TRANSCRIPT_LIVE_STATUS_CLASS,
+    TRANSCRIPT_LIVE_STATUS_LOGO_CLASS,
 } from '../common/qaap-transcript-live-status';
 
 const TRANSCRIPT_TRACE_STATUS_ATTR = 'data-transcript-trace-status';
@@ -318,6 +325,22 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         protected readonly toolUi: MobileProjectsTranscriptMessagesToolUi,
         protected readonly onConversationMutation?: (conv: QaapAgentConversationDTO) => void,
     ) { }
+
+    protected removeTranscriptLiveStatusWithOrb(root: ParentNode): void {
+        removeTranscriptLiveStatusElement(root, {
+            beforeRemove: element => {
+                for (const host of element.querySelectorAll<HTMLElement>(`.${QAAP_THINKING_ORB_INDICATOR_CLASS}`)) {
+                    destroyThinkingOrbIndicator(host);
+                }
+            },
+        });
+    }
+
+    protected destroyThinkingOrbHosts(root: ParentNode): void {
+        for (const host of root.querySelectorAll<HTMLElement>(`.${QAAP_THINKING_ORB_INDICATOR_CLASS}`)) {
+            destroyThinkingOrbIndicator(host);
+        }
+    }
 
     protected queueExecutionTimelineRefresh(row: HTMLElement, segments: readonly QaapAgentMessageSegmentDTO[]): void {
         pendingExecutionTimelineRefreshSegments.set(row, segments);
@@ -908,7 +931,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         ).forEach(el => el.remove());
         // Remove any leftover trace status / live footer (re-added by the helper if streaming)
         segmentsBody.querySelector('.theia-mobile-agent-trace-status')?.remove();
-        removeTranscriptLiveStatusElement(segmentsBody);
+        this.removeTranscriptLiveStatusWithOrb(segmentsBody);
         // Render the Codex-style timeline + closing narrative + diff summary.
         // Neither `error` nor the specific message are part of `options` here
         // (callers only have `conv`) — resolve the message `row` represents
@@ -1031,7 +1054,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     ): void {
         // Remove any existing diff summary or live footer so re-calling this is idempotent.
         segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
-        removeTranscriptLiveStatusElement(segmentsBody);
+        this.removeTranscriptLiveStatusWithOrb(segmentsBody);
         const mutableSegments = [...segments];
         const changedFiles = this.resolversUi.resolveTranscriptChangedFiles(mutableSegments);
         if (changedFiles.length > 0) {
@@ -1946,10 +1969,14 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             awaitingFirstAgentOutput: isAwaitingFirstTranscriptAgentOutput(conv),
         });
         const host = line.closest<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`) ?? line.parentElement;
+        // While the backend turn is still streaming, keep the setup/stream indicator mounted
+        // and visible. Toggling `hidden` here caused a hide→show flicker (logo + shimmer phrase
+        // + elapsed meta) whenever `shouldShow` briefly flipped during live work.
+        const keepVisibleWhileStreaming = resolveTranscriptEffectiveStatus(conv) === 'streaming';
         if (host instanceof HTMLElement) {
-            host.hidden = !show;
+            host.hidden = keepVisibleWhileStreaming ? false : !show;
         }
-        if (!show) {
+        if (!show && !keepVisibleWhileStreaming) {
             return;
         }
         const state = this.resolveTranscriptStreamingActivity(conv, { stalled, timedOut });
@@ -2012,20 +2039,23 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
         if (segmentsBody && hasMobileExecutionEventTimeline(row)) {
             const queuedRefreshSegments = this.consumeExecutionTimelineRefresh(row);
-            if (!queuedRefreshSegments && this.consumeSkippedExecutionTimelineRefresh(row)) {
-                return true;
-            }
+            const skippedOnly = !queuedRefreshSegments && this.consumeSkippedExecutionTimelineRefresh(row);
             const refreshSegments = queuedRefreshSegments ?? nextSegments;
-            const hasTools = refreshSegments.some(s => s.type === 'tool');
-            if (hasTools) {
-                recordTranscriptRenderMetric('timeline_sync');
-                refreshMobileExecutionEventTimeline(segmentsBody, refreshSegments);
+            if (!skippedOnly) {
+                const hasTools = refreshSegments.some(s => s.type === 'tool');
+                if (hasTools) {
+                    recordTranscriptRenderMetric('timeline_sync');
+                    refreshMobileExecutionEventTimeline(segmentsBody, refreshSegments);
+                }
             }
             // Sync the accordion label here too: this path handles the
             // tool-START frame (a new tool appended to a streaming row), and a
             // long quiet tool produces no further frames — without this sync
             // the live label would keep the verb captured before the tool
             // began (usually none, i.e. plain 'Processing…').
+            // Always re-assert brand logo + live footer even when the timeline
+            // refresh itself was skipped — otherwise mid-stream patches can
+            // leave Processing… without the working indicator.
             this.syncRowProcessAccordion(row, refreshSegments, conv, true);
             if (conv) {
                 const stalled = this.resolveTranscriptStreamStalled(conv);
@@ -2056,6 +2086,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!shouldShowTranscriptInlineTimeline(nextSegments, streaming)) {
             segmentsBody?.querySelector(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`)?.remove();
             this.patchStreamingThoughtBrief(row, nextSegments, conv, true);
+            if (streaming && conv && segmentsBody) {
+                this.ensureAndSyncTranscriptLiveStatusFooter(segmentsBody, nextSegments, conv, {
+                    streaming: true,
+                    stalled,
+                    timedOut,
+                });
+            }
             return true;
         }
         const items = this.resolveTranscriptActivityItemsForDisplay([...nextSegments], {
@@ -2067,6 +2104,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         });
         if (items.length === 0) {
             this.patchStreamingThoughtBrief(row, nextSegments, conv, true);
+            if (streaming && conv && segmentsBody) {
+                this.ensureAndSyncTranscriptLiveStatusFooter(segmentsBody, nextSegments, conv, {
+                    streaming: true,
+                    stalled,
+                    timedOut,
+                });
+            }
             return true;
         }
         if (!segmentsBody) {
@@ -2105,7 +2149,34 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (thoughtBrief) {
             thoughtBrief.hidden = true;
         }
+        if (streaming && conv) {
+            this.ensureAndSyncTranscriptLiveStatusFooter(segmentsBody, nextSegments, conv, {
+                streaming: true,
+                stalled,
+                timedOut,
+            });
+        }
         return true;
+    }
+
+    /**
+     * Public handoff helper: keep a Claude-style live footer on the agent row before the
+     * standalone setup activity row is removed, so logo + activity + elapsed never blink out
+     * while the turn is still streaming.
+     */
+    ensureTranscriptLiveStatusForStreamingRow(row: HTMLElement, conv: QaapAgentConversationDTO): void {
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        if (!(segmentsBody instanceof HTMLElement)) {
+            return;
+        }
+        const segments = this.resolveTranscriptRowSegments(conv, row);
+        const stalled = this.resolveTranscriptStreamStalled(conv);
+        const timedOut = this.resolveTranscriptStreamTimedOut(conv);
+        this.ensureAndSyncTranscriptLiveStatusFooter(segmentsBody, segments, conv, {
+            streaming: true,
+            stalled,
+            timedOut,
+        });
     }
 
     patchStreamingThoughtBrief(
@@ -2537,15 +2608,18 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             const existingSpinner = transcriptSummarySpinners.get(icon);
             if (streaming) {
                 if (!existingSpinner) {
-                    const spinner = createBrandLogoIndicator();
-                    spinner.classList.add('theia-mobile-agent-activity-timeline-summary-spinner');
-                    spinner.setAttribute('aria-hidden', 'true');
+                    const spinner = createThinkingOrbIndicator({
+                        activityKind: 'planning',
+                        isWorking: true,
+                        className: 'theia-mobile-agent-activity-timeline-summary-spinner',
+                    });
                     icon.classList.add('theia-mod-spinner-active');
                     icon.append(spinner);
                     transcriptSummarySpinners.set(icon, spinner);
                 }
             } else {
                 if (existingSpinner) {
+                    destroyThinkingOrbIndicator(existingSpinner);
                     existingSpinner.remove();
                     transcriptSummarySpinners.delete(icon);
                     icon.classList.remove('theia-mod-spinner-active');
@@ -2638,17 +2712,22 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         options?: { readonly streaming?: boolean; readonly stalled?: boolean; readonly timedOut?: boolean },
     ): void {
         if (!options?.streaming || !conv) {
-            removeTranscriptLiveStatusElement(segmentsBody);
+            this.removeTranscriptLiveStatusWithOrb(segmentsBody);
             return;
         }
         const turnStart = resolveTranscriptTurnStartMs(conv.messages) ?? conv.createdAt;
         if (turnStart === undefined) {
-            removeTranscriptLiveStatusElement(segmentsBody);
+            this.removeTranscriptLiveStatusWithOrb(segmentsBody);
             return;
         }
         let footer = segmentsBody.querySelector<HTMLElement>(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`);
         if (!footer) {
-            footer = createTranscriptLiveStatusElement();
+            footer = createTranscriptLiveStatusElement({
+                createIndicator: () => createThinkingOrbIndicator({
+                    setup: true,
+                    isWorking: true,
+                }),
+            });
         }
         // Keep the live footer anchored at the end of the segment column.
         segmentsBody.append(footer);
@@ -2668,9 +2747,21 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 elapsedMs: Date.now() - turnStart,
                 streamChars: resolveTranscriptTurnStreamChars(latestConv.messages),
                 activityTitle: activity.title,
+                activityKind: activity.kind,
                 stalled,
                 timedOut,
             });
+            const orbHost = footer.querySelector<HTMLElement>(
+                `.${TRANSCRIPT_LIVE_STATUS_LOGO_CLASS}.${QAAP_THINKING_ORB_INDICATOR_CLASS}`,
+            );
+            if (orbHost) {
+                syncThinkingOrbIndicator(orbHost, {
+                    activityKind: activity.kind,
+                    isWorking: true,
+                    stalled,
+                    timedOut,
+                });
+            }
         };
         renderFooter();
         if (transcriptLiveStatusTickerBound.has(footer)) {
@@ -2683,12 +2774,17 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 if (!footer.isConnected) {
                     return;
                 }
+                const latestConv = this.host.transcriptLastConv?.id === conv.id ? this.host.transcriptLastConv : conv;
                 const ownerRow = footer.closest<HTMLElement>('.theia-mobile-agent-transcript-msg');
-                const rowStreaming = ownerRow?.classList.contains('theia-mod-streaming')
-                    ?? resolveTranscriptEffectiveStatus(conv) === 'streaming';
-                if (ownerRow && !rowStreaming) {
+                // Prefer backend/effective status over a fleeting CSS class toggle —
+                // mid-stream patches briefly drop `theia-mod-streaming`, and removing
+                // the footer on that flicker hid the brand logo until the next ensure.
+                const stillStreaming = resolveTranscriptEffectiveStatus(latestConv) === 'streaming'
+                    || !!ownerRow?.classList.contains('theia-mod-streaming');
+                if (!stillStreaming) {
                     sharedSecondTicker.unregister(footer);
                     transcriptLiveStatusTickerBound.delete(footer);
+                    this.destroyThinkingOrbHosts(footer);
                     footer.remove();
                     return;
                 }
@@ -2713,7 +2809,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             return;
         }
         if (!options?.streaming) {
-            removeTranscriptLiveStatusElement(segmentsBody);
+            this.removeTranscriptLiveStatusWithOrb(segmentsBody);
             const status = row.querySelector<HTMLElement>(`[${TRANSCRIPT_TRACE_STATUS_ATTR}]`);
             if (status) {
                 status.hidden = true;
@@ -4777,8 +4873,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const kindIconClass = toolKind ? this.activityToolKindIconMap[toolKind] : undefined;
         if (state === 'thinking' || toolKind === 'thinking') {
             if (active && isTranscriptActivityLiveState(state) && streaming) {
-                const spinner = createBrandLogoIndicator();
-                spinner.classList.add('theia-mobile-agent-activity-icon-spinner', 'theia-mod-compact');
+                const spinner = createThinkingOrbIndicator({
+                    activityKind: toolKind ?? 'thinking',
+                    isWorking: true,
+                    className: 'theia-mobile-agent-activity-icon-spinner theia-mod-compact',
+                });
                 icon.append(spinner);
                 icon.classList.add('theia-mod-active');
                 return icon;
@@ -4791,8 +4890,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         if (active && isTranscriptActivityLiveState(state)) {
             if (streaming) {
-                const spinner = createBrandLogoIndicator();
-                spinner.classList.add('theia-mobile-agent-activity-icon-spinner', 'theia-mod-compact');
+                const spinner = createThinkingOrbIndicator({
+                    activityKind: toolKind ?? state,
+                    isWorking: true,
+                    className: 'theia-mobile-agent-activity-icon-spinner theia-mod-compact',
+                });
                 icon.append(spinner);
                 icon.classList.add('theia-mod-active');
                 return icon;
@@ -5214,14 +5316,20 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         row.setAttribute('aria-busy', 'true');
         const state = this.resolveTranscriptStreamingActivity(conv, { stalled, timedOut });
 
-        // CloudCode-style setup animation: show whimsical phrases + brand logo
+        // CloudCode-style setup animation: whimsical phrases + ThinkingOrb
         // + per-letter shimmer while the agent is in its initial setup or thinking
         // phase (no tool calls or answer text yet). Once the agent starts producing
         // output, fall back to the stream line with the real status.
         const phase = resolveTranscriptTraceDisplayPhase(segments, !stalled && !timedOut);
         const useSetupAnimation = (awaitingFirstAgentOutput || phase === 'thinking') && !stalled && !timedOut;
         if (useSetupAnimation) {
-            const setupEl = createAgentSetupElement(state.title);
+            const setupEl = createAgentSetupElement(state.title, {
+                createIndicator: () => createThinkingOrbIndicator({
+                    setup: phase !== 'thinking',
+                    activityKind: phase === 'thinking' ? 'thinking' : 'planning',
+                    isWorking: true,
+                }),
+            });
             const meta = this.createTranscriptStreamMeta(conv);
             if (meta) {
                 setupEl.append(meta);
@@ -5229,6 +5337,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             row.append(setupEl);
             const cleanupObserver = new MutationObserver(() => {
                 if (!setupEl.isConnected) {
+                    this.destroyThinkingOrbHosts(setupEl);
                     destroyAgentSetupElement(setupEl);
                     cleanupObserver.disconnect();
                 }
@@ -5237,8 +5346,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         } else {
             const line = document.createElement('div');
             line.className = `theia-mobile-agent-stream-line theia-mod-${state.kind}`;
-            const spinner = createBrandLogoIndicator();
-            spinner.classList.add('theia-mobile-agent-stream-dot');
+            const spinner = createThinkingOrbIndicator({
+                activityKind: state.kind,
+                isWorking: true,
+                stalled,
+                timedOut,
+                className: 'theia-mobile-agent-stream-dot',
+            });
             const label = document.createElement('span');
             label.className = 'theia-mobile-agent-stream-label';
             label.textContent = timedOut ? state.title : `${state.title}…`;

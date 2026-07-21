@@ -187,8 +187,8 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
         const card = wrap?.querySelector('.theia-mobile-projects-sticky-composer-card');
         expect(pill?.textContent).to.contain('1 Working');
         expect(pill?.compareDocumentPosition(card!)).to.equal(Node.DOCUMENT_POSITION_FOLLOWING);
-        expect(pill?.querySelector('.theia-mobile-projects-working-pill-icon.theia-mod-working-loader')).to.not.equal(null);
-        expect(pill?.querySelectorAll('.qaap-working-loader-dot')).to.have.length(6);
+        expect(pill?.querySelector('.theia-mobile-projects-working-pill-icon.qaap-thinking-orb-indicator')).to.not.equal(null);
+        expect(pill?.querySelector('.theia-mod-working-loader')).to.equal(null);
         expect(document.querySelector('.theia-mobile-projects-header-execution-cluster .theia-mobile-sticky-composer-working-pill'))
             .to.equal(null);
     });

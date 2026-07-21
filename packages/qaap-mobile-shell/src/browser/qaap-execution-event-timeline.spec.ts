@@ -10,6 +10,7 @@ import {
     buildMobileExecutionEvents,
     createMobileClosingErrorCardElement,
     createMobileDiffSummaryElement,
+    resolveMobileDiffFileLanguageBadge,
     createMobileExecutionEventTimeline,
     createMobileLineDiffSummaryElement,
     createMobileProcessAccordion,
@@ -606,6 +607,24 @@ describe('qaap-execution-event-timeline', () => {
             expect(el.querySelector('.theia-mobile-diff-summary-file-type')).to.equal(null);
         });
 
+        it('renders language badges and a right-aligned Review control for the files card', () => {
+            expect(resolveMobileDiffFileLanguageBadge('qaap-execution-event-timeline.ts')).to.equal('TS');
+            expect(resolveMobileDiffFileLanguageBadge('mobile-workbench.css')).to.equal('#');
+
+            const el = createMobileDiffSummaryElement(2, 0, 2, 0, [
+                { name: 'qaap-execution-event-timeline.ts', type: 'modify', added: 36 },
+                { name: 'mobile-workbench.css', type: 'modify', added: 10, removed: 1 },
+            ], () => undefined);
+
+            expect(el.classList.contains('theia-mod-files')).to.equal(true);
+            const badges = [...el.querySelectorAll('.theia-mobile-diff-summary-file-badge')]
+                .map(node => node.textContent);
+            expect(badges).to.deep.equal(['TS', '#']);
+            expect(el.querySelector('.theia-mobile-diff-summary-header .theia-mobile-diff-summary-review')?.textContent)
+                .to.equal('Review');
+            expect(el.querySelector('.theia-mobile-diff-summary-file-icon')).to.equal(null);
+        });
+
         it('uses a discreet file status only when stats are unavailable', () => {
             const el = createMobileDiffSummaryElement(1, 0, 1, 0, [
                 { name: 'unknown.ts', type: 'modify' },
@@ -709,6 +728,25 @@ describe('qaap-execution-event-timeline', () => {
             const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
             const label = accordion.querySelector('.theia-mobile-process-accordion-label');
             expect(label?.textContent).to.equal('Processing…');
+        });
+
+        it('keeps the ThinkingOrb in the header while the agent is working', () => {
+            const segments = [toolSegment('read', 't1', '{}', false)];
+            const accordion = createMobileProcessAccordion(segments, {
+                isWorking: true, isError: false, elapsedMs: 21_000, activityVerb: 'Read',
+            });
+            const header = accordion.querySelector('.theia-mobile-process-accordion-header');
+            const logo = header?.querySelector('.theia-mobile-process-accordion-logo.qaap-thinking-orb-indicator');
+            expect(logo).to.not.equal(null);
+            expect(header?.firstElementChild).to.equal(logo);
+
+            syncMobileProcessAccordionState(accordion, {
+                isWorking: true, isError: false, elapsedMs: 22_000, activityVerb: 'Read',
+            });
+            expect(header?.querySelector('.theia-mobile-process-accordion-logo')).to.equal(logo);
+
+            syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, settled: true, elapsedMs: 22_000 });
+            expect(header?.querySelector('.theia-mobile-process-accordion-logo')).to.equal(null);
         });
 
         it('shows "Processed in Xs" label when complete with elapsed', () => {

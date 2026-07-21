@@ -293,6 +293,52 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         }
     });
 
+    it('keeps the setup indicator DOM mounted across activity refreshes and full rebuilds', () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const streaming = streamingIdleConv();
+        host.transcriptLastConv = streaming;
+        renderUi.renderTranscriptMessages(chatHost, streaming);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const activityRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        const setup = activityRow?.querySelector<HTMLElement>('.qaap-agent-setup');
+        expect(activityRow).to.not.equal(null);
+        expect(setup).to.not.equal(null);
+        expect(activityRow?.hidden).to.equal(false);
+
+        renderUi.renderTranscriptMessages(chatHost, {
+            ...streaming,
+            updatedAt: streaming.updatedAt + 1,
+        });
+        const patchedRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        expect(patchedRow).to.equal(activityRow);
+        expect(patchedRow?.querySelector('.qaap-agent-setup')).to.equal(setup);
+        expect(patchedRow?.hidden).to.equal(false);
+
+        // Same conversation, but no previous snapshot → patch misses → full rebuild must remount
+        // the same activity/setup DOM instead of destroying the shimmer indicator.
+        host.transcriptLastConv = undefined;
+        host.transcriptLastRenderedConversationId = streaming.id;
+        renderUi.renderTranscriptMessages(chatHost, {
+            ...streaming,
+            updatedAt: streaming.updatedAt + 2,
+        });
+        const rebuiltRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        expect(rebuiltRow).to.equal(activityRow);
+        expect(rebuiltRow?.querySelector('.qaap-agent-setup')).to.equal(setup);
+        expect(rebuiltRow?.hidden).to.equal(false);
+        expect(rebuiltRow?.querySelector('.theia-mobile-agent-stream-meta')).to.not.equal(null);
+
+        const reusedFooter = renderUi.buildTranscriptVirtualFooter(streaming, {
+            existingActivityRow: rebuiltRow,
+        });
+        expect(reusedFooter).to.include(rebuiltRow!);
+        expect(rebuiltRow?.querySelector('.qaap-agent-setup')).to.equal(setup);
+    });
+
     it('renders optimistic image previews in pending user rows', () => {
         const { renderUi } = createRenderUi();
         const chatHost = document.createElement('div');

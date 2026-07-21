@@ -25,6 +25,11 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import {
+    createThinkingOrbIndicator,
+    destroyThinkingOrbIndicator,
+    syncThinkingOrbIndicator,
+} from './qaap-thinking-orb-indicator';
 import { extractToolArgFilePath, formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, extractTranscriptTaskSummary } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptSubagentToolName } from '../common/qaap-transcript-activity-nesting';
@@ -586,6 +591,9 @@ export const MOBILE_EXECUTION_TIMELINE_CLASS = 'theia-mobile-execution-timeline'
 /** CSS class on the process accordion that wraps the timeline. */
 export const MOBILE_PROCESS_ACCORDION_CLASS = 'theia-mobile-process-accordion';
 
+/** ThinkingOrb host in the process accordion header while the agent is working. */
+export const MOBILE_PROCESS_ACCORDION_LOGO_CLASS = 'theia-mobile-process-accordion-logo';
+
 /** Data attribute: whether the user manually toggled the accordion. */
 const PROCESS_ACCORDION_USER_TOGGLED_ATTR = 'data-user-toggled';
 
@@ -748,6 +756,14 @@ export function wrapMobileProcessAccordion(
     chevron.setAttribute('aria-hidden', 'true');
 
     header.append(label, chevron);
+    // ThinkingOrb is the durable "agent is working" signal — keep it in the header
+    // for the whole active turn so timeline rebuilds never leave Processing… without it.
+    syncMobileProcessAccordionBrandLogo(header, isWorking || isError || !!isCancelled, {
+        activityVerb,
+        isWorking,
+        isError,
+        isCancelled,
+    });
     details.append(header);
 
     // Content wrapper — children are only rendered when open (lazy).
@@ -804,6 +820,49 @@ function recordProcessAccordionTurnState(turnStartMs: number, details: HTMLDetai
         }
         processAccordionTurnState.delete(oldest);
     }
+}
+
+/**
+ * Ensures the ThinkingOrb stays as the first child of the process accordion
+ * header while the agent turn is unfinished. Rebuilds of the timeline must
+ * never leave "Processing…" without this durable working signal.
+ */
+export function syncMobileProcessAccordionBrandLogo(
+    header: HTMLElement,
+    show: boolean,
+    activity?: {
+        readonly activityVerb?: string;
+        readonly isWorking?: boolean;
+        readonly isError?: boolean;
+        readonly isCancelled?: boolean;
+    },
+): void {
+    const existing = header.querySelector<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_LOGO_CLASS}`);
+    if (!show) {
+        if (existing) {
+            destroyThinkingOrbIndicator(existing);
+            existing.remove();
+        }
+        return;
+    }
+    const orbOptions = {
+        activityVerb: activity?.activityVerb,
+        isWorking: activity?.isWorking ?? true,
+        isError: activity?.isError,
+        isCancelled: activity?.isCancelled,
+        size: 20 as const,
+        speed: 1.25,
+        className: `${MOBILE_PROCESS_ACCORDION_LOGO_CLASS} theia-mod-compact`,
+    };
+    if (existing) {
+        syncThinkingOrbIndicator(existing, orbOptions);
+        if (header.firstElementChild !== existing) {
+            header.prepend(existing);
+        }
+        return;
+    }
+    const orb = createThinkingOrbIndicator(orbOptions);
+    header.prepend(orb);
 }
 
 /**
@@ -881,6 +940,18 @@ export function syncMobileProcessAccordionState(
             label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options), activityVerb);
         }
         syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs, activityVerb);
+    }
+
+    const header = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-header');
+    if (header) {
+        // Keep the ThinkingOrb mounted while the turn is active, failed, or stopped.
+        // A successful settle is the only state that drops it.
+        syncMobileProcessAccordionBrandLogo(header, isWorking || isError || !!isCancelled, {
+            activityVerb,
+            isWorking,
+            isError,
+            isCancelled,
+        });
     }
 
     // Update modifier classes.
@@ -1888,6 +1959,47 @@ export interface MobileDiffFileEntry {
     removed?: number;
 }
 
+/** Short language/type badge shown beside filenames in the files-changed card. */
+export function resolveMobileDiffFileLanguageBadge(fileName: string): string | undefined {
+    const base = fileName.includes('/') ? fileName.slice(fileName.lastIndexOf('/') + 1) : fileName;
+    const dot = base.lastIndexOf('.');
+    if (dot <= 0) {
+        return undefined;
+    }
+    switch (base.slice(dot + 1).toLowerCase()) {
+        case 'ts':
+        case 'tsx':
+            return 'TS';
+        case 'js':
+        case 'jsx':
+        case 'mjs':
+        case 'cjs':
+            return 'JS';
+        case 'css':
+        case 'scss':
+        case 'sass':
+        case 'less':
+            return '#';
+        case 'json':
+        case 'jsonc':
+            return '{}';
+        case 'md':
+        case 'mdx':
+            return 'MD';
+        case 'html':
+        case 'htm':
+            return '<>';
+        case 'py':
+            return 'PY';
+        case 'go':
+            return 'GO';
+        case 'rs':
+            return 'RS';
+        default:
+            return undefined;
+    }
+}
+
 export function createMobileDiffSummaryElement(
     fileCount: number,
     _added: number,
@@ -1928,8 +2040,14 @@ export function createMobileDiffSummaryElement(
             row.className = 'theia-mobile-diff-summary-file';
             const main = document.createElement('span');
             main.className = 'theia-mobile-diff-summary-file-main';
+            const badgeLabel = resolveMobileDiffFileLanguageBadge(file.name);
             const fileIcon = document.createElement('span');
-            fileIcon.className = `codicon ${getFileIconClass(file.name)} theia-mobile-diff-summary-file-icon`;
+            if (badgeLabel) {
+                fileIcon.className = 'theia-mobile-diff-summary-file-badge';
+                fileIcon.textContent = badgeLabel;
+            } else {
+                fileIcon.className = `codicon ${getFileIconClass(file.name)} theia-mobile-diff-summary-file-icon`;
+            }
             fileIcon.setAttribute('aria-hidden', 'true');
             const name = document.createElement('span');
             name.className = 'theia-mobile-diff-summary-file-name';

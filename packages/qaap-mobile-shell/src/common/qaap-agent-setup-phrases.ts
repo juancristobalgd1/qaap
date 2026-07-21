@@ -10,8 +10,10 @@
    - SETUP_PHRASES: whimsical stand-in phrases shown while the agent prepares.
    - createBrandLogoIndicator(): animated Qaap brand logo (CSS background).
    - createAgentSetupElement(): creates a self-updating DOM element with
-     brand logo + per-letter shimmer text that rotates phrases and surfaces
-     real informative status messages with a dwell timer.
+     working indicator + per-letter shimmer text that rotates phrases and
+     surfaces real informative status messages with a dwell timer.
+     Callers may pass `createIndicator` to mount ThinkingOrb instead of the
+     brand logo.
    - syncAgentSetupElement(): updates the element with a new real status or
      streaming state. */
 
@@ -215,17 +217,25 @@ function startPhraseRotation(
     scheduleNext();
 }
 
+export interface CreateAgentSetupElementOptions {
+    /** Override the default brand-logo indicator (e.g. ThinkingOrb host). */
+    readonly createIndicator?: () => HTMLElement;
+}
+
 /**
  * Creates a self-contained agent setup animation element.
  * The element updates itself via internal timers — call
  * {@link syncAgentSetupElement} to push real status messages, and
  * {@link destroyAgentSetupElement} when the element is removed.
  */
-export function createAgentSetupElement(initialStatus?: string | null): HTMLElement {
+export function createAgentSetupElement(
+    initialStatus?: string | null,
+    options?: CreateAgentSetupElementOptions,
+): HTMLElement {
     const element = document.createElement('div');
     element.className = 'qaap-agent-setup';
 
-    const logo = createBrandLogoIndicator();
+    const logo = options?.createIndicator?.() ?? createBrandLogoIndicator();
     logo.classList.add('qaap-agent-setup-logo');
 
     const textContainer = document.createElement('span');

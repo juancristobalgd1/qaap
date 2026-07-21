@@ -7492,8 +7492,20 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-sticky-composer-working-pill .theia-mobile-projects-working-pill-icon {
   flex: 0 0 auto;
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  line-height: 0;
   opacity: 0.95;
+  overflow: hidden;
+}
+
+.theia-mobile-sticky-composer-working-pill .theia-mobile-projects-working-pill-icon.qaap-thinking-orb-indicator canvas {
+  display: block;
+  width: 20px !important;
+  height: 20px !important;
 }
 
 /*
@@ -29655,7 +29667,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 .theia-mobile-process-accordion-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 28px;
   padding: 0 0 8px 0;
   list-style: none;
@@ -29665,6 +29677,24 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 .theia-mobile-process-accordion-header::-webkit-details-marker {
   display: none;
+}
+
+/* Durable working signal next to "Processing… Xs" — must survive timeline rebuilds. */
+.theia-mobile-process-accordion-header .theia-mobile-process-accordion-logo.qaap-thinking-orb-indicator {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.theia-mobile-process-accordion-header .theia-mobile-process-accordion-logo.qaap-thinking-orb-indicator canvas {
+  display: block;
+  width: 20px !important;
+  height: 20px !important;
 }
 
 .theia-mobile-process-accordion-label {
@@ -30239,12 +30269,31 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
 }
 
+/* Files-changed card — matches the Codex-style “N Files Changed / Review” panel. */
+.theia-mobile-diff-summary.theia-mod-files {
+  box-sizing: border-box;
+  margin-top: 20px;
+  padding: 16px 16px 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.35)) 85%, transparent);
+  border-radius: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.35)) 85%, transparent);
+  background: color-mix(in srgb, var(--theia-editorWidget-background, #1e1e1e) 92%, #000);
+}
+
 .theia-mobile-diff-summary-header {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 28px;
   flex-wrap: wrap;
+}
+
+.theia-mobile-diff-summary.theia-mod-files .theia-mobile-diff-summary-header {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 12px;
+  min-height: 22px;
+  margin-bottom: 10px;
 }
 
 .theia-mobile-diff-summary-icon {
@@ -30255,6 +30304,35 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
 .theia-mobile-diff-summary-title {
   font-weight: 500;
   font-size: 13px;
+}
+
+.theia-mobile-diff-summary.theia-mod-files .theia-mobile-diff-summary-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 88%, var(--theia-foreground));
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.theia-mobile-diff-summary-review {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 78%, transparent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-diff-summary-review:hover,
+.theia-mobile-diff-summary-review:focus-visible {
+  color: var(--theia-foreground);
 }
 
 .theia-mobile-diff-summary-stat {
@@ -30277,6 +30355,11 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   margin-top: 8px;
 }
 
+.theia-mobile-diff-summary.theia-mod-files .theia-mobile-diff-summary-files {
+  gap: 2px;
+  margin-top: 0;
+}
+
 .theia-mobile-diff-summary-file {
   display: flex;
   align-items: center;
@@ -30285,6 +30368,11 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   min-height: 24px;
   color: var(--theia-descriptionForeground);
   font-size: 12px;
+}
+
+.theia-mobile-diff-summary.theia-mod-files .theia-mobile-diff-summary-file {
+  min-height: 28px;
+  gap: 10px;
 }
 
 .theia-mobile-diff-summary-file-main {
@@ -30296,11 +30384,22 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   overflow: hidden;
 }
 
+.theia-mobile-diff-summary.theia-mod-files .theia-mobile-diff-summary-file-main {
+  gap: 8px;
+}
+
 .theia-mobile-diff-summary-file-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+.theia-mobile-diff-summary.theia-mod-files .theia-mobile-diff-summary-file-name {
+  color: color-mix(in srgb, var(--theia-foreground) 92%, var(--theia-descriptionForeground));
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
 }
 
 .theia-mobile-diff-summary-file-icon {
@@ -30309,17 +30408,44 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   flex-shrink: 0;
 }
 
+.theia-mobile-diff-summary-file-badge {
+  flex: none;
+  min-width: 1.4em;
+  color: color-mix(in srgb, #6b8cae 82%, var(--theia-descriptionForeground));
+  font-family: var(--theia-ui-font-family, system-ui, sans-serif);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-align: center;
+}
+
+.theia-mobile-diff-summary-file-tail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: none;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .theia-mobile-diff-summary-file-stat {
   font-size: 11px;
   flex-shrink: 0;
 }
 
+.theia-mobile-diff-summary.theia-mod-files .theia-mobile-diff-summary-file-stat {
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .theia-mobile-diff-summary-file-stat.theia-mod-added {
-  color: var(--theia-charts-green);
+  color: color-mix(in srgb, var(--theia-charts-green, #73c991) 88%, #9ccc65);
 }
 
 .theia-mobile-diff-summary-file-stat.theia-mod-deleted {
-  color: var(--theia-errorForeground);
+  color: color-mix(in srgb, var(--theia-errorForeground, #f48771) 85%, #e57373);
 }
 
 .theia-mobile-diff-summary-file-type,
@@ -30337,7 +30463,6 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   color: var(--theia-errorForeground);
 }
 
-/* 
 /* ---- Transcript images: chat-style thumbnails + full-page lightbox ---------------------- */
 
 /* Images inside transcript messages (visual evidence, pasted screenshots) render as bounded

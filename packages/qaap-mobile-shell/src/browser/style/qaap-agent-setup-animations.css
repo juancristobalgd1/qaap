@@ -142,7 +142,42 @@ body[data-theia-theme-mode='light'] .qaap-brand-logo-indicator::before {
 }
 
 .qaap-agent-setup-logo {
-  /* Alias hook; inherits .qaap-brand-logo-indicator */
+  /* Alias hook for setup indicator (brand logo or ThinkingOrb host). */
+}
+
+.qaap-thinking-orb-indicator {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.qaap-thinking-orb-indicator canvas {
+  display: block;
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.qaap-thinking-orb-indicator.theia-mod-compact {
+  width: 20px;
+  height: 20px;
+}
+
+.qaap-agent-setup-logo.qaap-thinking-orb-indicator,
+.qaap-transcript-live-status-logo.qaap-thinking-orb-indicator {
+  width: 20px;
+  height: 20px;
+}
+
+.theia-mobile-agent-stream-line .qaap-thinking-orb-indicator.theia-mobile-agent-stream-dot {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
 }
 
 /* ---------------------------------------------------------------------------
@@ -185,7 +220,7 @@ body[data-theia-theme-mode='light'] .qaap-brand-logo-indicator::before {
   padding: 0 !important;
 }
 
-/* Brand logo inside the stream line (acting/writing phases) */
+/* Brand logo / ThinkingOrb inside the stream line (acting/writing phases) */
 .theia-mobile-agent-stream-line .qaap-brand-logo-indicator.theia-mobile-agent-stream-dot {
   width: 20px;
   height: 20px;
@@ -193,8 +228,8 @@ body[data-theia-theme-mode='light'] .qaap-brand-logo-indicator::before {
   background-size: 16px 16px;
 }
 
-/* Override the old CSS dot animation — the brand logo replaces it */
-.theia-mobile-agent-stream-line .theia-mobile-agent-stream-dot:not(.qaap-brand-logo-indicator) {
+/* Override the old CSS dot animation — ThinkingOrb / brand logo replace it */
+.theia-mobile-agent-stream-line .theia-mobile-agent-stream-dot:not(.qaap-brand-logo-indicator):not(.qaap-thinking-orb-indicator) {
   display: none;
 }
 
