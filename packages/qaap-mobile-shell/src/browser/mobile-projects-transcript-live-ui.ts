@@ -56,6 +56,7 @@ import {
     toTranscriptPreviewBootstrapSnapshot,
 } from '../common/qaap-transcript-preview-bootstrap-failure';
 import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
+import { agentMessageHasVisualVerificationMarker } from '../common/qaap-visual-verification';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
@@ -541,40 +542,56 @@ export class MobileProjectsTranscriptLiveUi {
         eventMessage: QaapAgentMessageDTO,
     ): void {
         const chatHost = this.resolveActiveTranscriptChatHost();
+        const prevConv = this.host.transcriptLastConv;
+        // Prefer the open summary's settled status so post-settle visual evidence rebuilds
+        // the agent row (pending chip → img/video) instead of a streaming text patch.
+        const openStatus = this.host.transcriptOpenSummary?.status;
+        const renderConv = openStatus
+            && openStatus !== 'streaming'
+            && next.status === 'streaming'
+            ? { ...next, status: openStatus }
+            : next;
+        // Always keep memory/cache in sync — even if the chat host is briefly detached
+        // during Agents Hub remount — so the next paint / final visual poll sees evidence.
+        this.host.transcriptLastConv = renderConv;
+        this.cacheTranscriptConversation(renderConv);
+        this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, renderConv);
         if (!chatHost) {
+            if (agentMessageHasVisualVerificationMarker(eventMessage)) {
+                void this.refreshOpenTranscriptConversation({ forcePoll: true });
+            }
             return;
         }
-        const prevConv = this.host.transcriptLastConv;
-        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, next);
-        this.host.conversations?.recordSubmitLatencyMark(next.id, 'first_transcript_delta_rendered');
+        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, renderConv);
+        this.host.conversations?.recordSubmitLatencyMark(renderConv.id, 'first_transcript_delta_rendered');
         this.host.executionSurfaceTabsUi.syncPlanTabDuringStreaming();
-        this.host.transcriptLastConv = next;
-        this.cacheTranscriptConversation(next);
-        this.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, next);
-        if (next.status === 'streaming') {
-            this.touchTranscriptSemanticProgressFromConversation(next);
+        if (renderConv.status === 'streaming') {
+            this.touchTranscriptSemanticProgressFromConversation(renderConv);
         } else {
             this.clearTranscriptSemanticProgressClock();
         }
-        if (conversationUsesInteractiveApprovals(next) && this.host.transcriptApprovalRefreshTimer === undefined) {
-            this.syncTranscriptPendingApproval(next);
+        if (conversationUsesInteractiveApprovals(renderConv) && this.host.transcriptApprovalRefreshTimer === undefined) {
+            this.syncTranscriptPendingApproval(renderConv);
         }
-        this.ensureTranscriptDevPreviewWatch(next);
-        this.maybeSyncTranscriptVisuallySettledChrome(next);
+        this.ensureTranscriptDevPreviewWatch(renderConv);
+        this.maybeSyncTranscriptVisuallySettledChrome(renderConv);
         if (this.host.transcriptOpenSummary) {
             this.host.transcriptOpenSummary = {
                 ...this.host.transcriptOpenSummary,
-                status: next.status,
-                updatedAt: next.updatedAt,
+                status: renderConv.status,
+                updatedAt: renderConv.updatedAt,
                 lastMessageRole: eventMessage.role,
                 lastMessagePreview: excerptTranscriptThought(
                     resolveMessagePreviewText(eventMessage),
                     160,
                 ),
+                ...(agentMessageHasVisualVerificationMarker(eventMessage)
+                    ? { visualVerificationPending: undefined }
+                    : {}),
             };
         }
-        if (next.status === 'streaming') {
-            this.scheduleTranscriptComposerActivityRefresh(next);
+        if (renderConv.status === 'streaming') {
+            this.scheduleTranscriptComposerActivityRefresh(renderConv);
         }
     }
 
@@ -1245,10 +1262,16 @@ export class MobileProjectsTranscriptLiveUi {
             this.stopTranscriptVisualVerificationPoll();
             return;
         }
+        const wasPolling = this.transcriptVisualVerificationPollTimer !== undefined
+            || this.transcriptVisualVerificationPollUntil !== undefined;
         if (context.summary.visualVerificationPending) {
             this.scheduleTranscriptVisualVerificationPoll(context.summary.id);
         } else {
             this.stopTranscriptVisualVerificationPoll();
+            // Pending cleared while we were watching — paint evidence in place immediately.
+            if (wasPolling) {
+                void this.refreshOpenTranscriptConversation({ forcePoll: true });
+            }
         }
         if (!this.host.transcriptScheduleRefresh) {
             this.scheduleTranscriptConversationRefresh(context.project, context.summary, context.chatHost);
@@ -1276,11 +1299,15 @@ export class MobileProjectsTranscriptLiveUi {
             }
             const summary = this.host.transcriptOpenSummary;
             if (!summary || summary.id !== conversationId || !summary.visualVerificationPending) {
+                // Capture completed (or summary dropped) — one final forcePoll so the open
+                // transcript swaps "Processing…" for the real screenshot/video without a remount.
                 this.stopTranscriptVisualVerificationPoll();
+                void this.refreshOpenTranscriptConversation({ forcePoll: true });
                 return;
             }
             if ((this.transcriptVisualVerificationPollUntil ?? 0) <= Date.now()) {
                 this.stopTranscriptVisualVerificationPoll();
+                void this.refreshOpenTranscriptConversation({ forcePoll: true });
                 return;
             }
             void this.refreshOpenTranscriptConversation({ forcePoll: true });

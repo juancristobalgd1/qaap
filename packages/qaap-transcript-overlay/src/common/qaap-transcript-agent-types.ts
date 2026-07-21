@@ -103,6 +103,11 @@ export interface QaapAgentConversationSummaryDTO {
     readonly contextWindowSize?: number;
     readonly contextUsageEstimated?: boolean;
     readonly estimatedContextTokens?: number;
+    /**
+     * True while a post-settle screenshot/video capture is still in flight.
+     * Cleared once evidence is attached to the agent message.
+     */
+    readonly visualVerificationPending?: boolean;
 }
 
 export type QaapAgentMessageSegmentDTO =

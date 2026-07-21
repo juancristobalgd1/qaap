@@ -145,6 +145,43 @@ describe('QaapTranscriptLiveController', () => {
         changeEmitter.dispose();
     });
 
+    it('handleSummaryUpdated force-polls when visual verification pending clears while idle', async () => {
+        let forcePollCalls = 0;
+        let openSummary = summary({ status: 'idle', visualVerificationPending: true });
+        let lastConv = conv({ status: 'idle' });
+        const changeEmitter = new Emitter<void>();
+        const controller = new QaapTranscriptLiveController({
+            isDocumentVisible: () => true,
+            isWatching: () => true,
+            getOpenSummary: () => openSummary,
+            setOpenSummary: next => { openSummary = next; },
+            getLastConv: () => lastConv,
+            setLastConv: next => { if (next) { lastConv = next; } },
+            getLastSseDeltaAt: () => Date.now(),
+            setLastSseDeltaAt: () => undefined,
+            findSummaryById: () => openSummary,
+            refreshConversation: async options => {
+                if (options?.forcePoll) {
+                    forcePollCalls += 1;
+                }
+            },
+            renderConversation: () => undefined,
+            onApprovalRefresh: () => undefined,
+            conversationsOnDidChange: changeEmitter.event,
+        });
+        (controller as unknown as { watchedConversationId: string }).watchedConversationId = 'conv-1';
+        controller.handleSummaryUpdated(summary({
+            status: 'idle',
+            visualVerificationPending: undefined,
+            updatedAt: 20,
+        }));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(forcePollCalls).to.be.greaterThan(0);
+        expect(openSummary.visualVerificationPending).to.equal(undefined);
+        controller.dispose();
+        changeEmitter.dispose();
+    });
+
     it('streaming fallback poll refetches when SSE is silent', async function (): Promise<void> {
         this.timeout(6_000);
         let refreshCalls = 0;

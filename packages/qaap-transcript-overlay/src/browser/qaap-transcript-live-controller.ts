@@ -144,7 +144,11 @@ export class QaapTranscriptLiveController implements Disposable {
         if (!last || last.id !== summary.id) {
             return;
         }
+        const previousSummary = this.deps.getOpenSummary();
         const wasStreaming = last.status === 'streaming';
+        const visualVerificationCleared = previousSummary?.id === summary.id
+            && previousSummary.visualVerificationPending === true
+            && !summary.visualVerificationPending;
         const next = applyConversationSummaryDelta(last, summary);
         this.deps.setLastConv(next);
         this.deps.setOpenSummary(summary);
@@ -153,6 +157,13 @@ export class QaapTranscriptLiveController implements Disposable {
             this.deps.onApprovalRefresh();
             this.deps.onStatusSettled?.();
             void this.refreshNow({ forceStatusSettle: true });
+            return;
+        }
+        // Capture finished while already idle — poll/SSE cleared the pending flag but the
+        // open transcript may still show the "Processing screenshot…" chip until a GET.
+        if (visualVerificationCleared) {
+            this.deps.setLastSseDeltaAt(undefined);
+            void this.refreshNow({ forcePoll: true });
             return;
         }
         if (next.status === 'streaming' && shouldSkipStreamingTranscriptRefetch(next, this.deps.getLastSseDeltaAt())) {

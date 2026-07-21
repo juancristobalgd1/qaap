@@ -165,4 +165,84 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         expect(tool.querySelector(`.${TRANSCRIPT_APPROVAL_CARD_CLASS}`)).to.equal(existingCard);
         expect(composerHost.querySelector(`.${TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS}`)).to.equal(mountedBar);
     });
+
+    it('visual verification poll force-refreshes once pending clears', async () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        const host = createHost(chatHost, composerHost);
+        host.transcriptOpenSummaryId = 'conv-visual';
+        host.transcriptOpenSummary = {
+            id: 'conv-visual',
+            cwd: '/repo',
+            agentId: 'codex',
+            title: 'Visual',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 10,
+            messageCount: 1,
+            visualVerificationPending: true,
+        };
+        host.transcriptLastConv = {
+            id: 'conv-visual',
+            cwd: '/repo',
+            agentId: 'codex',
+            title: 'Visual',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 10,
+            messages: [{
+                id: 'agent-1',
+                role: 'agent',
+                content: 'Done.\n\n[QAAP capture]',
+                createdAt: 5,
+            }],
+        };
+
+        let forcePollCalls = 0;
+        const liveUi = new MobileProjectsTranscriptLiveUi(host);
+        const liveUiAny = liveUi as unknown as {
+            refreshOpenTranscriptConversation: (options?: { forcePoll?: boolean }) => Promise<void>;
+            isWatchingOpenTranscript: (id: string) => boolean;
+            scheduleTranscriptVisualVerificationPoll: (id: string) => void;
+            stopTranscriptVisualVerificationPoll: () => void;
+        };
+        liveUiAny.refreshOpenTranscriptConversation = async options => {
+            if (options?.forcePoll) {
+                forcePollCalls += 1;
+            }
+        };
+        liveUiAny.isWatchingOpenTranscript = () => true;
+
+        const queued: Array<() => void> = [];
+        const realSetTimeout = window.setTimeout.bind(window);
+        const realClearTimeout = window.clearTimeout.bind(window);
+        window.setTimeout = ((handler: TimerHandler) => {
+            if (typeof handler === 'function') {
+                queued.push(handler as () => void);
+            }
+            return 99 as unknown as number;
+        }) as typeof setTimeout;
+        window.clearTimeout = (() => undefined) as typeof clearTimeout;
+
+        try {
+            liveUiAny.scheduleTranscriptVisualVerificationPoll('conv-visual');
+            expect(queued).to.have.length(1);
+
+            host.transcriptOpenSummary = {
+                ...host.transcriptOpenSummary!,
+                visualVerificationPending: undefined,
+                updatedAt: 11,
+            };
+            queued[0]!();
+            await Promise.resolve();
+            expect(forcePollCalls).to.equal(1);
+        } finally {
+            window.setTimeout = realSetTimeout as typeof setTimeout;
+            window.clearTimeout = realClearTimeout as typeof clearTimeout;
+            liveUiAny.stopTranscriptVisualVerificationPoll();
+            chatHost.remove();
+            composerHost.remove();
+        }
+    });
 });
