@@ -39,6 +39,17 @@ class TestActiveTasks extends MobileProjectsActiveTasks {
             createdAt: Date.now(),
         });
     }
+
+    fireCompleted(id: string): void {
+        this.applyEvent('completed', {
+            id,
+            cwd: '/repo/mobile',
+            state: 'completed',
+            title: id,
+            createdAt: Date.now(),
+            finishedAt: Date.now(),
+        });
+    }
 }
 
 describe('normalizeCwd', () => {
@@ -181,5 +192,58 @@ describe('MobileProjectsActiveTasks', () => {
         activeTasks.flushChanges();
 
         expect(changeCount).to.equal(1);
+    });
+
+    it('buffers WS output chunks and exposes a live log tail', () => {
+        const activeTasks = new TestActiveTasks();
+        const tails: string[] = [];
+        activeTasks.onDidTaskOutput(tail => tails.push(tail.text));
+
+        activeTasks.applyOutput(
+            { id: 'task-log', cwd: '/repo/mobile', state: 'running' },
+            'line 1\n',
+        );
+        activeTasks.applyOutput(
+            { id: 'task-log', cwd: '/repo/mobile', state: 'running' },
+            'line 2\n',
+        );
+
+        expect(activeTasks.getTaskLogTail('task-log')?.text).to.equal('line 1\nline 2\n');
+        expect(tails).to.deep.equal(['line 1\n', 'line 1\nline 2\n']);
+    });
+
+    it('seeds HTTP log without shrinking a longer live buffer', () => {
+        const activeTasks = new TestActiveTasks();
+        activeTasks.applyOutput(
+            { id: 'task-seed', cwd: '/repo/mobile', state: 'running' },
+            'live-a\nlive-b\nlive-c\n',
+        );
+        const kept = activeTasks.seedTaskLog('task-seed', 'live-a\n');
+        expect(kept.text).to.equal('live-a\nlive-b\nlive-c\n');
+
+        const replaced = activeTasks.seedTaskLog('task-seed-2', 'from-server\n');
+        expect(replaced.text).to.equal('from-server\n');
+        expect(activeTasks.getTaskLogTail('task-seed-2')?.text).to.equal('from-server\n');
+    });
+
+    it('drops cancelled task log buffers but keeps completed ones', () => {
+        const activeTasks = new TestActiveTasks();
+        activeTasks.applyOutput(
+            { id: 'keep', cwd: '/repo/mobile', state: 'running' },
+            'done\n',
+        );
+        activeTasks.applyOutput(
+            { id: 'drop', cwd: '/repo/mobile', state: 'running' },
+            'cancel-me\n',
+        );
+        activeTasks.recordTaskEnded({
+            id: 'drop',
+            cwd: '/repo/mobile',
+            state: 'cancelled',
+        });
+        activeTasks.fireCompleted('keep');
+
+        expect(activeTasks.getTaskLogTail('drop')).to.equal(undefined);
+        expect(activeTasks.getTaskLogTail('keep')?.text).to.equal('done\n');
     });
 });

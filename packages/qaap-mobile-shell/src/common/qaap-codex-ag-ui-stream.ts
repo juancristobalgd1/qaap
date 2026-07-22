@@ -16,6 +16,8 @@ interface CodexStreamItem {
     readonly tool?: string;
     readonly status?: string;
     readonly output?: string;
+    /** Codex command_execution primary stdout/stderr payload (ThreadItem API). */
+    readonly aggregated_output?: string;
     readonly stdout?: string;
     readonly stderr?: string;
     readonly parent_id?: string;
@@ -278,6 +280,9 @@ function buildCodexToolArgs(itemType: string, item: CodexStreamItem): string {
 }
 
 function extractCodexToolResult(item: CodexStreamItem): string | undefined {
-    const output = item.output ?? item.stdout ?? item.stderr;
+    // Codex ThreadItem `command_execution` stores stdout/stderr in
+    // `aggregated_output` (see @theia/ai-codex CommandExecutionItem). Older /
+    // alternate envelopes may still use output|stdout|stderr.
+    const output = item.aggregated_output ?? item.output ?? item.stdout ?? item.stderr;
     return typeof output === 'string' && output.trim() ? output.trim() : undefined;
 }

@@ -398,6 +398,83 @@ describe('qaap-execution-event-timeline', () => {
             }
         });
 
+        it('expands and renders output when clicking the command summary detail', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment(
+                    'Bash',
+                    'tool-click',
+                    JSON.stringify({ command: '/bin/zsh -lc "sed -n \'1,180p\' tests/proxy-csp.test.ts"' }),
+                    true,
+                    false,
+                    'export const proxy = {}\n',
+                ),
+            ]);
+
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            const detail = el.querySelector<HTMLElement>('.theia-mobile-terminal-output-detail');
+            const group = el.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            expect(terminal).to.not.equal(null);
+            expect(detail).to.not.equal(null);
+            expect(terminal!.open).to.equal(false);
+            expect(terminal!.querySelector('.theia-mobile-terminal-output-code-view')).to.equal(null);
+
+            // Open the parent group so the terminal card is visible (mirrors UI).
+            if (group) {
+                group.open = true;
+            }
+            detail!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(terminal!.open).to.equal(true);
+            expect(group?.open).to.equal(true);
+            const codeView = terminal!.querySelector<HTMLElement>('.theia-mobile-terminal-output-code-view');
+            expect(codeView).to.not.equal(null);
+            expect(codeView?.textContent).to.include('export const proxy');
+        });
+
+        it('shows stored stdout in the body when a complete terminal card is opened', () => {
+            const el = createMobileExecutionEventTimeline([
+                toolSegment(
+                    'Bash',
+                    'item_34',
+                    JSON.stringify({ command: "/bin/zsh -lc 'PORTLESS_STATE_DIR=... pnpm run dev'" }),
+                    true,
+                    false,
+                    'VITE v6 ready\n  ➜  Local: http://localhost:5173/\n',
+                ),
+            ]);
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            expect(terminal?.classList.contains('complete')).to.equal(true);
+            expect(terminal!.open).to.equal(false);
+
+            const summary = terminal!.querySelector<HTMLElement>('.theia-mobile-terminal-output-summary');
+            summary!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(terminal!.open).to.equal(true);
+            const body = terminal!.querySelector<HTMLElement>('.theia-mobile-terminal-output-content');
+            expect(body?.textContent).to.include('Local: http://localhost:5173/');
+            expect(body?.querySelector('.theia-mobile-terminal-output-code-view')).to.not.equal(null);
+            expect(body?.querySelector('.theia-mobile-terminal-output-empty')).to.equal(null);
+        });
+
+        it('shows an explicit empty state when a complete terminal has no result', () => {
+            const el = createMobileExecutionEventTimeline([
+                {
+                    type: 'tool',
+                    name: 'Bash',
+                    toolUseId: 'item-empty',
+                    args: JSON.stringify({ command: 'true' }),
+                    finished: true,
+                },
+            ]);
+            const terminal = el.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            const summary = terminal!.querySelector<HTMLElement>('.theia-mobile-terminal-output-summary');
+            summary!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+            expect(terminal!.open).to.equal(true);
+            const empty = terminal!.querySelector('.theia-mobile-terminal-output-empty');
+            expect(empty?.textContent).to.equal('No output');
+        });
+
         it('renders log terminal output as highlighted code view and strips ANSI escape sequences', () => {
             const rawOutput = '\u001b[32mPASS\u001b[0m src/foo.test.ts 12ms';
             const el = createMobileExecutionEventTimeline([

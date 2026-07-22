@@ -272,6 +272,73 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(panel.textContent).to.not.match(/\bWorkspace\b/);
     });
 
+    it('renders a command-output card for VPS tasks without conversationId', () => {
+        const panel = renderWorkingAgentsDetailPanel({
+            member: member({
+                id: 'task:vps-1',
+                kind: 'leader-task',
+                title: 'npm run test',
+                command: 'npm run test',
+                taskId: 'vps-1',
+                state: 'running',
+                conversationId: undefined,
+            }),
+            children: [],
+            commandLogText: 'PASS src/foo.spec.ts\n',
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onToggleLarge: () => undefined,
+            onSelectChild: () => undefined,
+        });
+        const log = panel.querySelector('.qaap-working-agents-detail-command-log');
+        expect(log).to.not.equal(null);
+        expect(log?.getAttribute('data-task-id')).to.equal('vps-1');
+        expect(log?.getAttribute('data-state')).to.equal('running');
+        expect(panel.textContent).to.contain('PASS src/foo.spec.ts');
+        expect(panel.textContent).to.match(/Command output/i);
+        expect(panel.querySelector('.qaap-working-agents-detail-command-log-live')).to.not.equal(null);
+        expect(panel.querySelector('.qaap-working-agents-detail-command-log-output')?.textContent)
+            .to.contain('PASS src/foo.spec.ts');
+    });
+
+    it('renders a waiting command-output state before the first chunk', () => {
+        const panel = renderWorkingAgentsDetailPanel({
+            member: member({
+                id: 'task:vps-wait',
+                kind: 'leader-task',
+                title: 'npm run build',
+                command: 'npm run build',
+                taskId: 'vps-wait',
+                state: 'running',
+                conversationId: undefined,
+            }),
+            children: [],
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onToggleLarge: () => undefined,
+            onSelectChild: () => undefined,
+        });
+        const output = panel.querySelector('.qaap-working-agents-detail-command-log-output');
+        expect(output?.textContent).to.match(/Waiting for output/i);
+        expect(output?.classList.contains('theia-mod-waiting')).to.equal(true);
+    });
+    it('omits command-output card for conversation agents', () => {
+        const panel = renderWorkingAgentsDetailPanel({
+            member: member({
+                id: 'c1',
+                conversationId: 'c1',
+                title: 'Agent chat',
+                state: 'streaming',
+            }),
+            children: [],
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onToggleLarge: () => undefined,
+            onSelectChild: () => undefined,
+        });
+        expect(panel.querySelector('.qaap-working-agents-detail-command-log')).to.equal(null);
+    });
+
     it('notifies detail member changes and refreshes activity feed after hydration', () => {
         const rowHost = document.createElement('div');
         rowHost.className = 'theia-mobile-sticky-composer-changes-pill-row';

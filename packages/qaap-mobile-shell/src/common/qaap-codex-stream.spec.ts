@@ -27,6 +27,23 @@ describe('QaapCodexStreamAccumulator', () => {
         ]);
     });
 
+    it('maps command_execution aggregated_output into the tool segment result', () => {
+        const acc = new QaapCodexStreamAccumulator();
+        acc.push(
+            '{"type":"item.completed","item":{"id":"item_34","type":"command_execution","command":"pnpm run dev","status":"completed","exit_code":0,"aggregated_output":"ready on :5173\\n"}}\n',
+        );
+        expect(acc.getSegments()).to.deep.equal([
+            {
+                type: 'tool',
+                toolUseId: 'item_34',
+                name: 'Bash',
+                args: '{"command":"pnpm run dev"}',
+                finished: true,
+                result: 'ready on :5173',
+            },
+        ]);
+    });
+
     it('parseCodexLog returns segments for JSON logs', () => {
         const parsed = parseCodexLog('{"type":"item.completed","item":{"id":"a1","type":"assistant_message","text":"Hi"}}\n');
         expect(parsed.segments).to.deep.equal([{ type: 'text', content: 'Hi' }]);

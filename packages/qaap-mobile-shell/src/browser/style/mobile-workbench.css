@@ -7773,6 +7773,10 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 /* Richer agent/subagent detail inside the same expand surface. */
 .qaap-working-agents-popover-panel.qaap-working-agents-detail-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: min(520px, 62vh);
 }
 
@@ -7897,6 +7901,155 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   gap: 2px;
   min-width: 0;
   min-height: 0;
+}
+
+/* Live VPS command output — premium terminal card under the activity feed. */
+.qaap-working-agents-detail-command-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 11px 11px;
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, #121820 92%, transparent) 0%,
+      color-mix(in srgb, #070b10 94%, var(--theia-editor-background, #1e1e1e)) 100%
+    );
+  border: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.28)) 62%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 8px 20px color-mix(in srgb, #000 18%, transparent);
+}
+
+.qaap-working-agents-detail-command-log[data-state='running'] {
+  border-color: color-mix(in srgb, var(--q-accent, #E58E40) 28%, var(--theia-panel-border, rgba(128, 128, 128, 0.28)));
+}
+
+.qaap-working-agents-detail-command-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.qaap-working-agents-detail-command-log-label {
+  color: color-mix(in srgb, #9aa4b2 90%, transparent);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.qaap-working-agents-detail-command-log-live {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--q-accent, #E58E40) 88%, #fff);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.qaap-working-agents-detail-command-log-live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--q-accent, #E58E40);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-accent, #E58E40) 55%, transparent);
+  animation: qaap-working-detail-command-log-pulse 1.6s ease-out infinite;
+}
+
+.qaap-working-agents-detail-command-log[data-state='running'] .qaap-working-agents-detail-command-log-live {
+  display: inline-flex;
+}
+
+@keyframes qaap-working-detail-command-log-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-accent, #E58E40) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.qaap-working-agents-detail-command-log-output {
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 84px;
+  max-height: min(30vh, 260px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, #000 42%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 7%, transparent);
+  color: color-mix(in srgb, #dce3ec 94%, #9aa4b2);
+  font-family: var(--theia-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 11.5px;
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.qaap-working-agents-detail-command-log-output.theia-mod-empty {
+  color: color-mix(in srgb, #9aa4b2 82%, transparent);
+  font-style: italic;
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.qaap-working-agents-detail-command-log-output.theia-mod-waiting {
+  background-image: linear-gradient(
+    100deg,
+    transparent 0%,
+    color-mix(in srgb, #fff 4%, transparent) 46%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: qaap-working-agents-status-shimmer 2.1s linear infinite;
+}
+
+.theia-mobile-sticky-composer-working-control.theia-mod-detail-large
+  .qaap-working-agents-detail-command-log {
+  flex: 1 1 auto;
+}
+
+.theia-mobile-sticky-composer-working-control.theia-mod-detail-large
+  .qaap-working-agents-detail-command-log-output {
+  max-height: min(44vh, 380px);
+  min-height: 132px;
+}
+
+@media (max-width: 767px) {
+  .qaap-working-agents-detail-command-log-output {
+    max-height: min(26vh, 220px);
+    min-height: 72px;
+    font-size: 11px;
+  }
+
+  .theia-mobile-sticky-composer-working-control.theia-mod-detail-large
+    .qaap-working-agents-detail-command-log-output {
+    max-height: min(38vh, 320px);
+    min-height: 112px;
+  }
 }
 
 .qaap-working-agents-detail-activity-row {
@@ -8427,12 +8580,15 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   margin-left: 0;
 }
 
-/* Changes pill: diff-stat numbers run without badge background/border — only text color is kept */
+/* Changes pill: diff-stat numbers run without badge background/border — only text color is kept.
+ * Slightly larger than the "Changes" label (pill font-size 12px) so +N / −N read first. */
 .theia-mobile-sticky-composer-changes-pill .theia-mobile-sticky-composer-activity-inline-stats .theia-mobile-agent-diff-stat {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
   padding-inline: 2px;
+  font-size: 1.12em;
+  font-weight: 600;
 }
 
 .theia-mobile-sticky-composer-changes-pill .theia-mobile-sticky-composer-activity-inline-stats .theia-mobile-agent-diff-stat.theia-mod-added {
@@ -9439,7 +9595,12 @@ body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
   inset: 0;
   pointer-events: none;
   overflow: hidden;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
   word-break: break-word;
   color: var(--theia-foreground);
   font: inherit;
@@ -9481,12 +9642,32 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-highlight .th
     0 0 12px color-mix(in srgb, #D8953A 18%, transparent);
 }
 
+/*
+ * Mirror paints the draft; the textarea stays caret-only.
+ * Must beat Codex `.card.theia-mod-codex .input { color: foreground }` (0,3,0)
+ * or both layers show `/skill` text and the pill looks ghosted/doubled.
+ */
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input,
 .theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input {
   position: relative;
   z-index: 1;
-  color: transparent;
+  color: transparent !important;
   caret-color: var(--theia-foreground);
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: none !important;
+}
+
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input::placeholder,
+.theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input::placeholder {
+  color: var(--theia-descriptionForeground);
+  -webkit-text-fill-color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input::selection,
+.theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input::selection {
+  color: transparent;
   -webkit-text-fill-color: transparent;
+  background: color-mix(in srgb, var(--theia-focusBorder) 35%, transparent);
 }
 
 .theia-mobile-projects-sticky-composer-attach-menu-empty {
@@ -15778,6 +15959,8 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
 | Single live region used by gestures with otherwise invisible side-effects
 | (two-finger swipe between editor tabs, pull-to-refresh on sheets, …). Sits
 | above the bottom activity bar / keyboard accessory so it stays readable.
+| Solid backgrounds are the baseline; frosted glass applies when
+| `backdrop-filter` is supported (and reduced-transparency is off).
 |-----------------------------------------------------------------------------*/
 
 .theia-mobile-snackbar {
@@ -15793,9 +15976,12 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   max-width: min(92vw, 540px);
   padding: 10px 16px;
   border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
   background: var(--theia-notifications-background, var(--theia-editorWidget-background, #202020));
   color: var(--theia-notifications-foreground, var(--theia-foreground));
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.34);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.30),
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -15812,17 +15998,73 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
 
 .theia-mobile-snackbar.theia-mod-kind-success {
   background: var(--theia-debugConsole-infoForeground, #2c844a);
+  border-color: color-mix(in srgb, var(--theia-debugConsole-infoForeground, #2c844a) 55%, #fff 20%);
   color: #fff;
 }
 
 .theia-mobile-snackbar.theia-mod-kind-warning {
   background: var(--theia-editorWarning-foreground, #cca700);
+  border-color: color-mix(in srgb, var(--theia-editorWarning-foreground, #cca700) 55%, #1f1f1f 18%);
   color: #1f1f1f;
 }
 
 .theia-mobile-snackbar.theia-mod-kind-loading {
   background: var(--theia-notifications-background, var(--theia-editorWidget-background, #202020));
   color: var(--theia-notifications-foreground, var(--theia-foreground));
+}
+
+/* Frosted glass — same language as composer pills / bottom activity bar. */
+@supports (backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px)) {
+  .theia-mobile-snackbar,
+  .theia-mobile-snackbar.theia-mod-kind-loading {
+    background: color-mix(in srgb,
+        var(--theia-notifications-background, var(--theia-editorWidget-background, #202020)) 58%,
+        transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+  }
+
+  .theia-mobile-snackbar.theia-mod-kind-success {
+    background: color-mix(in srgb, var(--theia-debugConsole-infoForeground, #2c844a) 58%, transparent);
+    border-color: color-mix(in srgb, var(--theia-debugConsole-infoForeground, #2c844a) 48%, transparent);
+    color: #fff;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.28);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+  }
+
+  .theia-mobile-snackbar.theia-mod-kind-warning {
+    background: color-mix(in srgb, var(--theia-editorWarning-foreground, #cca700) 62%, transparent);
+    border-color: color-mix(in srgb, var(--theia-editorWarning-foreground, #cca700) 50%, transparent);
+    color: #1f1f1f;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.22);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .theia-mobile-snackbar,
+  .theia-mobile-snackbar.theia-mod-kind-success,
+  .theia-mobile-snackbar.theia-mod-kind-warning,
+  .theia-mobile-snackbar.theia-mod-kind-loading {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    text-shadow: none;
+  }
+
+  .theia-mobile-snackbar,
+  .theia-mobile-snackbar.theia-mod-kind-loading {
+    background: var(--theia-notifications-background, var(--theia-editorWidget-background, #202020));
+  }
+
+  .theia-mobile-snackbar.theia-mod-kind-success {
+    background: var(--theia-debugConsole-infoForeground, #2c844a);
+  }
+
+  .theia-mobile-snackbar.theia-mod-kind-warning {
+    background: var(--theia-editorWarning-foreground, #cca700);
+  }
 }
 
 .theia-mobile-snackbar-spinner {
@@ -29628,23 +29870,32 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   }
 
   /* Turn-failure keeps a compact label row on narrow viewports (not the bulky card head). */
-  .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-head {
+  .theia-mobile-agent-shell-window.theia-mod-turn-failure:not([open]) .theia-mobile-agent-shell-head {
     min-height: 28px !important;
     padding: 2px 0 !important;
+  }
+
+  .theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-head {
+    min-height: 28px !important;
+    padding: 6px 8px !important;
   }
 
   .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-body {
     margin-left: 0;
     padding-left: 0;
   }
+
+  .theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-body {
+    padding: 8px 10px 10px;
+  }
 }
 
 /*
-|| Turn-failure ("Task failed"): blend into the transcript — no charcoal card,
-|| no reddish border, compact label + chevron instead of a full-bleed bar.
+|| Turn-failure ("Task failed"): blend into the transcript when collapsed —
+|| no charcoal card, compact label + chevron. Expanded: light border + copy
+|| pinned to the far-right of the header row.
 */
 .theia-mobile-agent-shell-window.theia-mod-turn-failure,
-.theia-mobile-agent-shell-window.theia-mod-turn-failure[open],
 .theia-mobile-agent-shell-window.theia-mod-turn-failure.theia-mod-failed {
   display: block;
   width: 100%;
@@ -29659,8 +29910,17 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   color: inherit;
 }
 
-.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-head,
-.theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-head {
+.theia-mobile-agent-shell-window.theia-mod-turn-failure[open],
+.theia-mobile-agent-shell-window.theia-mod-turn-failure.theia-mod-failed[open] {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground, #fff) 14%, transparent) !important;
+  border-color: color-mix(in srgb, var(--theia-foreground, #fff) 14%, transparent) !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-head {
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -29675,6 +29935,14 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   box-shadow: none !important;
 }
 
+.theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-head {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  padding: 6px 8px !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground, #fff) 8%, transparent) !important;
+}
+
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-head:hover,
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-head:active,
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-head:focus-visible {
@@ -29682,7 +29950,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   box-shadow: none !important;
 }
 
-/* Keep title + chevron as a tight content cluster (no full-row stretch via tail). */
+/* Keep title + chevron as a tight content cluster (no full-row stretch via title). */
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-title-wrap {
   flex: 0 1 auto;
   min-width: 0;
@@ -29710,6 +29978,10 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   gap: 2px;
 }
 
+.theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-tail {
+  margin-left: auto;
+}
+
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-state {
   display: none;
 }
@@ -29719,6 +29991,10 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   padding: 4px 0 6px;
   background: transparent;
   border: none;
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-body {
+  padding: 8px 10px 10px;
 }
 
 /* IDE chat panel: execution surfaces must fill and stay centered after view changes. */
@@ -30473,6 +30749,8 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   width: 100%;
   box-sizing: border-box;
   min-width: 0;
+  /* Prefer tap→click over delayed gesture recognition on the summary chrome */
+  touch-action: manipulation;
 }
 
 .theia-mobile-terminal-output-summary::-webkit-details-marker {
@@ -30582,6 +30860,13 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
 }
 
 .theia-mobile-terminal-output-pending {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.theia-mobile-terminal-output-empty {
   color: var(--theia-descriptionForeground);
   font-size: 12px;
   font-style: italic;

@@ -74,4 +74,25 @@ describe('qaap-sticky-composer-syntax-highlight', () => {
         expect(highlight?.innerHTML).to.contain('theia-mod-token-slash-command');
         expect(highlight?.innerHTML).not.to.contain('theia-mod-token-skill');
     });
+
+    it('keeps the textarea caret-only and disables spellcheck while attached', () => {
+        const inputEditor = document.createElement('div');
+        const input = document.createElement('textarea');
+        input.spellcheck = true;
+        inputEditor.append(input);
+        document.body.append(inputEditor);
+
+        const ui = attachStickyComposerSyntaxHighlight({
+            inputEditor,
+            input,
+            getSkillNames: () => ['karpathy-skills'],
+        });
+
+        expect(input.classList.contains('theia-mod-highlight-input')).to.equal(true);
+        expect(input.spellcheck).to.equal(false);
+
+        ui.dispose();
+        expect(input.classList.contains('theia-mod-highlight-input')).to.equal(false);
+        expect(input.spellcheck).to.equal(true);
+    });
 });

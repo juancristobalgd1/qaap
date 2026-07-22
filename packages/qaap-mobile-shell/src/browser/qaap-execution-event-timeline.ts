@@ -1315,6 +1315,40 @@ function createMobileTerminalCodeView(output: string, language: MobileTerminalOu
 }
 
 /**
+ * Renders deferred terminal stdout/stderr when a card opens. Programmatic
+ * `details.open = …` does not reliably fire `toggle`, so callers that flip
+ * `open` themselves must invoke this (summary click handler, restore paths).
+ * When no result is available for a finished card, paints an explicit empty
+ * state so the expanded body is never a blank void.
+ */
+function flushMobileTerminalOutputIfPending(details: HTMLDetailsElement, content: HTMLElement): void {
+    const latest = pendingTerminalOutputResult.get(details);
+    if (latest !== undefined && latest.trim()) {
+        renderMobileTerminalOutput(content, latest);
+        return;
+    }
+    // Only paint empty-state when the card is finished (complete/failed).
+    // While running, keep the existing "Running…" placeholder.
+    if (details.classList.contains('complete') || details.classList.contains('failed')) {
+        ensureMobileTerminalEmptyOutputState(content);
+    }
+}
+
+/** Explicit empty body for a completed terminal card with no stdout/stderr. */
+function ensureMobileTerminalEmptyOutputState(content: HTMLElement): void {
+    content.querySelector('.theia-mobile-terminal-output-pending')?.remove();
+    if (content.querySelector(
+        '.theia-mobile-terminal-output-code-view, .theia-mobile-terminal-output-pre, .theia-mobile-terminal-output-empty',
+    )) {
+        return;
+    }
+    const empty = document.createElement('span');
+    empty.className = 'theia-mobile-terminal-output-empty';
+    empty.textContent = nls.localize('qaap/mobileProjects/terminalOutputEmpty', 'No output');
+    content.append(empty);
+}
+
+/**
  * Defers building terminal output until the `<details>` is first opened,
  * so collapsed terminal cards never pay the stripAnsiEscapes + DOM cost while
  * streaming. Reads whatever the latest result is from
@@ -1327,10 +1361,7 @@ function attachMobileTerminalLazyOpenHandler(details: HTMLDetailsElement, conten
             return;
         }
         details.removeEventListener('toggle', onFirstOpen);
-        const latest = pendingTerminalOutputResult.get(details);
-        if (latest !== undefined) {
-            renderMobileTerminalOutput(content, latest);
-        }
+        flushMobileTerminalOutputIfPending(details, content);
     });
 }
 
@@ -1387,13 +1418,7 @@ function patchMobileToolDetail(
             } else if (nextResult) {
                 renderMobileTerminalOutput(content, nextResult);
             } else if (nextTool.isFinished) {
-                // Mirrors the builder: a finished tool with no result renders
-                // neither the pending placeholder nor output — don't leave a
-                // stale "Running…" placeholder behind once it finishes empty.
-                const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
-                if (placeholder) {
-                    placeholder.remove();
-                }
+                ensureMobileTerminalEmptyOutputState(content);
             }
         }
         return;
@@ -1535,9 +1560,8 @@ function restoreTimelineOpenStateById(fresh: HTMLElement, captured: MobileTimeli
             // lazy first-open handler will not run here — render the deferred
             // output eagerly to avoid an open-but-empty terminal card.
             const content = details.querySelector<HTMLElement>('.theia-mobile-terminal-output-content');
-            const result = pendingTerminalOutputResult.get(details);
-            if (content && result !== undefined && result !== '') {
-                renderMobileTerminalOutput(content, result);
+            if (content) {
+                flushMobileTerminalOutputIfPending(details, content);
             }
         }
     });
@@ -1883,11 +1907,29 @@ function createMobileTerminalOutputElement(
         // Created already open (rare) — render eagerly as before.
         if (result) {
             renderMobileTerminalOutput(content, result);
+        } else if (tool.isFinished) {
+            ensureMobileTerminalEmptyOutputState(content);
         }
     } else {
         attachMobileTerminalLazyOpenHandler(details, content);
     }
     details.append(content);
+
+    // The command detail inside <summary> uses overflow-x:auto + touch-action:pan-x
+    // so long commands can scroll. Chromium/WebKit skip the native <details>
+    // toggle when the click lands on that scroller — own the toggle so a tap on
+    // the command always expands and reveals stdout/stderr. stopPropagation
+    // also keeps nested process-accordion / tool-group parents from reacting.
+    summary.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const nextOpen = !details.open;
+        details.open = nextOpen;
+        recordTimelineDetailsOpenState(terminalStateKey, nextOpen);
+        if (nextOpen) {
+            flushMobileTerminalOutputIfPending(details, content);
+        }
+    });
 
     return details;
 }

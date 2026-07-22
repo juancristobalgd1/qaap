@@ -769,7 +769,8 @@
 /* Cursor charcoal surface for the transcript Changes embed. */
 .qaap-diff-review--transcript-agent .qaap-agent-changes,
 .qaap-diff-review--transcript-agent .qaap-agent-changes-toolbar,
-.qaap-diff-review--transcript-agent .qaap-agent-changes-scroll {
+.qaap-diff-review--transcript-agent .qaap-agent-changes-scroll,
+.qaap-diff-review--transcript-agent .qaap-agent-changes-filehdr {
     background: #1e1e1e;
 }
 
@@ -1113,11 +1114,12 @@
     align-items: center;
     gap: 6px;
     padding: 6px 10px 6px 20px;
-    background: transparent;
+    /* Opaque so sticky headers stay readable over scrolling diff lines. */
+    background: var(--theia-editor-background);
     position: sticky;
     top: 0;
     z-index: 2;
-    border-bottom: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
 }
 
 .qaap-agent-changes-filehdr-toggle {

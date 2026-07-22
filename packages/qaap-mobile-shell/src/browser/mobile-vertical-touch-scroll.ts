@@ -154,6 +154,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-sticky-composer-activity-body',
     '.qaap-working-agents-detail-body',
     '.qaap-working-agents-detail-activity-feed',
+    '.qaap-working-agents-detail-command-log-output',
     '.qaap-working-agents-popover-list',
     '.theia-mobile-routine-sheet-form',
     '.theia-mobile-parallel-body',

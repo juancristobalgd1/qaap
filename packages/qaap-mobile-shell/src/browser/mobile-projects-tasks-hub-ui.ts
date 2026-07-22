@@ -16,7 +16,7 @@ import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-c
 import { type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
 import { cancelConversation } from '../common/qaap-agent-conversation-client';
-import { cancelAgentTask } from '../common/qaap-agent-task-client';
+import { cancelAgentTask, fetchAgentTaskDetail } from '../common/qaap-agent-task-client';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
@@ -26,6 +26,7 @@ import {
     closeWorkingAgentsPopover,
     dismissWorkingAgentsExpandForStopAll,
     filterWorkingTeamMembers,
+    getWorkingAgentsDetailMember,
     getWorkingAgentsDetailMemberId,
     isWorkingAgentsExpandPinnedOpen,
     isWorkingAgentsExpandSessionOpen,
@@ -34,12 +35,14 @@ import {
     noteWorkingPillChromeCount,
     openWorkingAgentsPopover,
     refreshWorkingAgentsDetailActivityFeed,
+    refreshWorkingAgentsDetailCommandLog,
     restoreWorkingAgentsExpandIfNeeded,
     syncWorkingAgentsExpandContent,
 } from './qaap-sticky-composer-working-agents-popover';
 import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
 } from './qaap-sticky-composer-working-detail-activity';
+import { shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
 import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 
@@ -91,6 +94,8 @@ export interface MobileProjectsTasksHubHost {
     onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
     /** Optional — hydrates Working DETAIL activity feed from cached transcripts. */
     conversations?: MobileProjectsConversations;
+    /** Optional — live VPS task WS + command-output tails for Working DETAIL. */
+    activeTasks?: MobileProjectsActiveTasks;
     /** Optional toast surface for Stop All / Working chrome failures. */
     messageService?: { error(message: string): void };
     collectChatHubGroups(
@@ -135,6 +140,9 @@ export class MobileProjectsTasksHubUi {
 
     protected workingDetailActivityDispose: Disposable = Disposable.NULL;
     protected workingDetailActivityConversationId: string | undefined;
+    protected workingDetailTaskLogDispose: Disposable = Disposable.NULL;
+    protected workingDetailTaskLogTaskId: string | undefined;
+    protected workingDetailTaskLogSeedToken = 0;
 
     constructor(protected readonly host: MobileProjectsTasksHubHost) { }
 
@@ -429,10 +437,15 @@ export class MobileProjectsTasksHubUi {
     }
 
     /**
-     * Subscribe to threadStore for the DETAIL member so prefetch / live deltas repaint
-     * the Cursor-style activity feed (avoids a stuck static "Working" fallback).
+     * Subscribe to threadStore / VPS task output for the DETAIL member so prefetch,
+     * live deltas, and command log chunks repaint the Cursor-style DETAIL body.
      */
     protected bindWorkingDetailActivitySubscription(member: WorkHubTeamMember | undefined): void {
+        this.bindWorkingDetailConversationSubscription(member);
+        this.bindWorkingDetailTaskLogSubscription(member);
+    }
+
+    protected bindWorkingDetailConversationSubscription(member: WorkHubTeamMember | undefined): void {
         const conversationId = member?.conversationId?.trim();
         if (!conversationId || !member) {
             this.workingDetailActivityDispose.dispose();
@@ -466,6 +479,121 @@ export class MobileProjectsTasksHubUi {
             snapshot => snapshot.document,
             conversationId,
         );
+    }
+
+    /**
+     * Live VPS command output for DETAIL members without a conversationId.
+     * Seeds from HTTP detail when opening mid-run, then appends WS `output` chunks.
+     */
+    protected bindWorkingDetailTaskLogSubscription(member: WorkHubTeamMember | undefined): void {
+        const taskId = shouldShowWorkingDetailTaskLog(member ?? {})
+            ? member?.taskId?.trim()
+            : undefined;
+        if (!taskId || !member) {
+            this.workingDetailTaskLogDispose.dispose();
+            this.workingDetailTaskLogDispose = Disposable.NULL;
+            this.workingDetailTaskLogTaskId = undefined;
+            this.workingDetailTaskLogSeedToken++;
+            return;
+        }
+        if (this.workingDetailTaskLogTaskId === taskId
+            && this.workingDetailTaskLogDispose !== Disposable.NULL) {
+            this.paintWorkingDetailTaskLog(member, taskId);
+            return;
+        }
+        this.workingDetailTaskLogDispose.dispose();
+        this.workingDetailTaskLogTaskId = taskId;
+        const activeTasks = this.host.activeTasks;
+        const memberId = member.id;
+        const disposables: Disposable[] = [];
+
+        const paint = (): void => {
+            if (getWorkingAgentsDetailMemberId() !== memberId) {
+                return;
+            }
+            this.paintWorkingDetailTaskLog(member, taskId);
+        };
+
+        paint();
+        if (activeTasks) {
+            disposables.push(activeTasks.onDidTaskOutput(tail => {
+                if (tail.taskId !== taskId) {
+                    return;
+                }
+                paint();
+            }));
+            disposables.push(activeTasks.onDidChange(() => {
+                // Task completed/failed — drop the live shimmer while keeping the log.
+                paint();
+            }));
+        }
+        this.workingDetailTaskLogDispose = Disposable.create(() => {
+            for (const disposable of disposables) {
+                disposable.dispose();
+            }
+        });
+        void this.seedWorkingDetailTaskLogFromServer(memberId, taskId);
+    }
+
+    protected paintWorkingDetailTaskLog(
+        member: WorkHubTeamMember,
+        taskId: string,
+        options?: { readonly loading?: boolean },
+    ): void {
+        const live = getWorkingAgentsDetailMember()
+            ?? this.host.collectTeamMembersForHub().find(entry => entry.id === member.id)
+            ?? member;
+        const tail = this.host.activeTasks?.getTaskLogTail(taskId);
+        const running = live.state === 'running' || live.state === 'streaming';
+        const hasText = !!tail?.text?.trim();
+        refreshWorkingAgentsDetailCommandLog({
+            taskId,
+            text: tail?.text ?? '',
+            truncated: tail?.truncated === true,
+            running,
+            loading: options?.loading === true && !hasText && running,
+        });
+    }
+
+    protected async seedWorkingDetailTaskLogFromServer(memberId: string, taskId: string): Promise<void> {
+        const token = ++this.workingDetailTaskLogSeedToken;
+        const activeTasks = this.host.activeTasks;
+        const memberForLoading = this.host.collectTeamMembersForHub()
+            .find(entry => entry.id === memberId);
+        const existingTail = activeTasks?.getTaskLogTail(taskId);
+        if (!existingTail?.text?.trim() && memberForLoading) {
+            this.paintWorkingDetailTaskLog(memberForLoading, taskId, { loading: true });
+        }
+        try {
+            const detail = await fetchAgentTaskDetail(taskId);
+            if (token !== this.workingDetailTaskLogSeedToken
+                || getWorkingAgentsDetailMemberId() !== memberId
+                || this.workingDetailTaskLogTaskId !== taskId) {
+                return;
+            }
+            const seeded = activeTasks
+                ? activeTasks.seedTaskLog(taskId, detail.log ?? '')
+                : { taskId, text: detail.log ?? '', truncated: false };
+            const member = this.host.collectTeamMembersForHub()
+                .find(entry => entry.id === memberId);
+            refreshWorkingAgentsDetailCommandLog({
+                taskId,
+                text: seeded.text,
+                truncated: seeded.truncated,
+                running: member
+                    ? (member.state === 'running' || member.state === 'streaming')
+                    : detail.state === 'running',
+                loading: false,
+                forceScrollToBottom: true,
+            });
+        } catch {
+            /* DETAIL still shows whatever live WS chunks arrived */
+            if (token === this.workingDetailTaskLogSeedToken
+                && getWorkingAgentsDetailMemberId() === memberId
+                && memberForLoading) {
+                this.paintWorkingDetailTaskLog(memberForLoading, taskId, { loading: false });
+            }
+        }
     }
 
     protected resolveWorkingDetailActivityFeed(member: WorkHubTeamMember): ReturnType<

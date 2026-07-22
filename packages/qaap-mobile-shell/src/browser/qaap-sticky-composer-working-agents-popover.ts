@@ -18,6 +18,13 @@ import {
     resolveWorkingMemberCommand,
     type WorkingAgentDetailActivityFeed,
 } from './qaap-sticky-composer-working-detail-activity';
+import {
+    findWorkingDetailTaskLog,
+    renderWorkingDetailTaskLog,
+    shouldShowWorkingDetailTaskLog,
+    updateWorkingDetailTaskLog,
+    WORKING_DETAIL_TASK_LOG_CLASS,
+} from './qaap-sticky-composer-working-detail-task-log';
 
 export const WORKING_CONTROL_CLASS = 'theia-mobile-sticky-composer-working-control';
 export const WORKING_EXPAND_CLIP_CLASS = 'qaap-working-agents-expand-clip';
@@ -470,6 +477,8 @@ export function renderWorkingAgentsDetailPanel(options: {
     readonly parent?: WorkHubTeamMember;
     readonly detailLarge?: boolean;
     readonly activityFeed?: WorkingAgentDetailActivityFeed;
+    readonly commandLogText?: string;
+    readonly commandLogTruncated?: boolean;
     readonly onBack: () => void;
     readonly onClose: () => void;
     readonly onToggleLarge: () => void;
@@ -554,6 +563,16 @@ export function renderWorkingAgentsDetailPanel(options: {
         liveLabel: resolveWorkingAgentStatusLabel(options.member),
     };
     body.append(renderWorkingAgentDetailActivityFeed(feed));
+
+    if (shouldShowWorkingDetailTaskLog(options.member) && options.member.taskId) {
+        const running = isWorkingAgentStatusLive(options.member);
+        body.append(renderWorkingDetailTaskLog({
+            taskId: options.member.taskId,
+            text: options.commandLogText,
+            truncated: options.commandLogTruncated,
+            running,
+        }));
+    }
 
     if (options.children.length > 0) {
         const section = document.createElement('div');
@@ -749,8 +768,6 @@ function showWorkingAgentsDetailView(memberId: string): void {
         showWorkingAgentsListView();
         return;
     }
-    const detailChanged = active.detailMemberId !== memberId
-        || workingExpandSession.detailMemberId !== memberId;
     active.detailMemberId = memberId;
     workingExpandSession.detailMemberId = memberId;
     const parent = member.parentId
@@ -787,9 +804,8 @@ function showWorkingAgentsDetailView(memberId: string): void {
         || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task'));
     active.shell.classList.add('theia-mod-detail');
     active.shell.classList.toggle('theia-mod-detail-large', detailLarge);
-    if (detailChanged) {
-        notifyDetailMemberChange(member);
-    }
+    // Always re-bind so remounts (expand toggle) re-seed activity + command log into the new DOM.
+    notifyDetailMemberChange(member);
 }
 
 function wireWorkingAgentsExpandDismiss(
@@ -990,14 +1006,72 @@ export function refreshWorkingAgentsDetailActivityFeed(): boolean {
     if (existing instanceof HTMLElement) {
         existing.replaceWith(next);
     } else {
-        // Prefer inserting before subagents section when present.
-        const section = body.querySelector('.qaap-working-agents-detail-section');
-        if (section) {
-            body.insertBefore(next, section);
+        // Prefer inserting before command log / subagents section when present.
+        const before = body.querySelector(`.${WORKING_DETAIL_TASK_LOG_CLASS}, .qaap-working-agents-detail-section`);
+        if (before) {
+            body.insertBefore(next, before);
         } else {
             body.append(next);
         }
     }
+    return true;
+}
+
+/**
+ * Patch (or mount) the live VPS command-output card in Working DETAIL.
+ * Keeps scroll stickiness when the user is near the bottom.
+ */
+export function refreshWorkingAgentsDetailCommandLog(options: {
+    readonly taskId: string;
+    readonly text: string;
+    readonly truncated?: boolean;
+    readonly running?: boolean;
+    readonly loading?: boolean;
+    readonly forceScrollToBottom?: boolean;
+}): boolean {
+    const active = activeWorkingAgentsExpand;
+    const detailId = active?.detailMemberId ?? workingExpandSession.detailMemberId;
+    if (!active?.shell.isConnected || !detailId) {
+        return false;
+    }
+    const member = active.members.find(entry => entry.id === detailId);
+    if (!member || !shouldShowWorkingDetailTaskLog(member) || member.taskId !== options.taskId) {
+        return false;
+    }
+    const body = active.inner.querySelector('.qaap-working-agents-detail-body');
+    if (!(body instanceof HTMLElement)) {
+        return false;
+    }
+    let log = findWorkingDetailTaskLog(body);
+    if (!log) {
+        log = renderWorkingDetailTaskLog({
+            taskId: options.taskId,
+            text: options.text,
+            truncated: options.truncated,
+            running: options.running,
+            loading: options.loading,
+        });
+        const section = body.querySelector('.qaap-working-agents-detail-section');
+        if (section) {
+            body.insertBefore(log, section);
+        } else {
+            body.append(log);
+        }
+        if (options.forceScrollToBottom !== false) {
+            const output = log.querySelector('.qaap-working-agents-detail-command-log-output');
+            if (output instanceof HTMLElement) {
+                output.scrollTop = output.scrollHeight;
+            }
+        }
+        return true;
+    }
+    updateWorkingDetailTaskLog(log, {
+        text: options.text,
+        truncated: options.truncated,
+        running: options.running,
+        loading: options.loading,
+        forceScrollToBottom: options.forceScrollToBottom,
+    });
     return true;
 }
 
@@ -1256,12 +1330,28 @@ export function syncWorkingAgentsExpandContent(members: readonly WorkHubTeamMemb
 
     if (active.detailMemberId || workingExpandSession.detailMemberId) {
         const detailId = active.detailMemberId ?? workingExpandSession.detailMemberId!;
-        if (!expandMembers.some(member => member.id === detailId)) {
+        const detailMember = expandMembers.find(member => member.id === detailId);
+        if (!detailMember) {
             // Only leave detail when the pinned agent disappeared from the retained set.
             showWorkingAgentsListView();
             return;
         }
-        showWorkingAgentsDetailView(detailId);
+        // Patch in place — remounting DETAIL would reset command-log scroll and fight live tails.
+        active.detailMemberId = detailId;
+        workingExpandSession.detailMemberId = detailId;
+        if (!refreshWorkingAgentsDetailActivityFeed()) {
+            showWorkingAgentsDetailView(detailId);
+            return;
+        }
+        const title = active.inner.querySelector('.qaap-working-agents-popover-title');
+        if (title) {
+            title.textContent = detailMember.title?.trim()
+                || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task');
+        }
+        active.clip.setAttribute('aria-label', detailMember.title?.trim()
+            || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task'));
+        // Re-paint command log / activity subscriptions without destroying the card DOM.
+        notifyDetailMemberChange(detailMember);
         return;
     }
 

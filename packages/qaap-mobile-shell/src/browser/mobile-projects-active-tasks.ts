@@ -10,6 +10,11 @@ import {
     QaapChatViewStreamUpdateScheduler,
     type QaapChatViewStreamUpdateClocks,
 } from '../common/qaap-chat-view-stream-update-scheduler';
+import {
+    appendWorkingDetailTaskLogChunk,
+    seedWorkingDetailTaskLog,
+    WORKING_DETAIL_TASK_LOG_MAX_BYTES,
+} from './qaap-sticky-composer-working-detail-task-log';
 
 /**
  * HTTP contract with `@theia/qaap-cloud-workspace`. The string is duplicated here on purpose:
@@ -92,6 +97,13 @@ export interface MobileProjectActiveTaskInfo {
     readonly title?: string;
 }
 
+/** Live stdout/stderr tail for a VPS task (Working DETAIL command log). */
+export interface MobileProjectTaskLogTail {
+    readonly taskId: string;
+    readonly text: string;
+    readonly truncated: boolean;
+}
+
 /**
  * Listens to the cross-project agent-task WebSocket and exposes a live view of what is running on
  * the VPS, keyed by absolute working directory. The projects panel consults this to flip cards
@@ -108,6 +120,8 @@ export class MobileProjectsActiveTasks {
     protected readonly activeByCwd = new Map<string, MobileProjectActiveTaskInfo>();
     /** Full task lists per cwd (newest first), for the expanded project task block. */
     protected readonly tasksByCwd = new Map<string, MobileProjectTaskView[]>();
+    /** Live stdout/stderr tails keyed by task id (WS `output` chunks + HTTP seed). */
+    protected readonly logByTaskId = new Map<string, MobileProjectTaskLogTail>();
     protected socket: WebSocket | undefined;
     protected reconnectHandle: number | undefined;
     protected reconnectAttempt = 0;
@@ -124,6 +138,10 @@ export class MobileProjectsActiveTasks {
     protected readonly onDidChangeEmitter = new Emitter<void>();
     /** Fires whenever the set of active tasks changes (task created, completed, or cancelled). */
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
+
+    protected readonly onDidTaskOutputEmitter = new Emitter<MobileProjectTaskLogTail>();
+    /** Fires when a task's live log tail changes (WS chunk or HTTP seed). */
+    readonly onDidTaskOutput: Event<MobileProjectTaskLogTail> = this.onDidTaskOutputEmitter.event;
 
     constructor(@unmanaged() protected readonly updateClocks: QaapChatViewStreamUpdateClocks = defaultQaapChatViewStreamUpdateClocks) { }
 
@@ -206,6 +224,34 @@ export class MobileProjectsActiveTasks {
         this.applyEvent('cancelled', task);
     }
 
+    /** Current live log tail for a task, if any chunks/seeds have been received. */
+    getTaskLogTail(taskId: string): MobileProjectTaskLogTail | undefined {
+        const id = taskId.trim();
+        return id ? this.logByTaskId.get(id) : undefined;
+    }
+
+    /**
+     * Seed / replace the live log from `GET /agent-tasks/:id` when DETAIL opens mid-run.
+     * Keeps an already-longer live buffer when the WebSocket raced ahead of the HTTP fetch.
+     */
+    seedTaskLog(taskId: string, log: string): MobileProjectTaskLogTail {
+        const id = taskId.trim();
+        const seeded = seedWorkingDetailTaskLog(log, WORKING_DETAIL_TASK_LOG_MAX_BYTES);
+        const existing = this.logByTaskId.get(id);
+        if (existing && existing.text.length >= seeded.text.length) {
+            // Live WS already has at least as much as the HTTP snapshot.
+            return existing;
+        }
+        const next: MobileProjectTaskLogTail = {
+            taskId: id,
+            text: seeded.text,
+            truncated: seeded.truncated || (existing?.truncated === true),
+        };
+        this.logByTaskId.set(id, next);
+        this.onDidTaskOutputEmitter.fire(next);
+        return next;
+    }
+
     protected openSocket(): void {
         if (typeof WebSocket === 'undefined') {
             return;
@@ -224,7 +270,9 @@ export class MobileProjectsActiveTasks {
                     const msg = JSON.parse(String(ev.data)) as WsServerMessage;
                     if (msg.type === 'snapshot') {
                         this.applySnapshot(msg);
-                    } else if (msg.type !== 'output') {
+                    } else if (msg.type === 'output') {
+                        this.applyOutput(msg.task, msg.chunk);
+                    } else {
                         this.applyEvent(msg.type, msg.task);
                     }
                 } catch {
@@ -237,6 +285,27 @@ export class MobileProjectsActiveTasks {
         } catch {
             this.scheduleReconnect();
         }
+    }
+
+    /** @internal Exported path for tests — append a live `output` chunk. */
+    applyOutput(task: TaskEventPayload, chunk: string): void {
+        const taskId = task.id?.trim();
+        if (!taskId || !chunk) {
+            return;
+        }
+        const previous = this.logByTaskId.get(taskId)?.text ?? '';
+        const nextState = appendWorkingDetailTaskLogChunk(
+            previous,
+            chunk,
+            WORKING_DETAIL_TASK_LOG_MAX_BYTES,
+        );
+        const next: MobileProjectTaskLogTail = {
+            taskId,
+            text: nextState.text,
+            truncated: nextState.truncated || (this.logByTaskId.get(taskId)?.truncated === true),
+        };
+        this.logByTaskId.set(taskId, next);
+        this.onDidTaskOutputEmitter.fire(next);
     }
 
     protected scheduleReconnect(): void {
@@ -308,6 +377,10 @@ export class MobileProjectsActiveTasks {
                     taskId: running?.id,
                     title: running?.title ?? current?.title,
                 });
+            }
+            // Drop cancelled buffers; keep completed tails so DETAIL can still show the final log.
+            if (type === 'cancelled' && task.id) {
+                this.logByTaskId.delete(task.id);
             }
         }
         this.scheduleDidChange();

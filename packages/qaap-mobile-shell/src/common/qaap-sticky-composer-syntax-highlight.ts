@@ -65,6 +65,9 @@ export function attachStickyComposerSyntaxHighlight(options: {
     highlight.setAttribute('aria-hidden', 'true');
     inputEditor.insertBefore(highlight, input);
     input.classList.add('theia-mod-highlight-input');
+    // Spellcheck underlines still paint on transparent textarea text and look like red ghosts.
+    const previousSpellcheck = input.spellcheck;
+    input.spellcheck = false;
 
     const refresh = (): void => {
         const skillNames = new Set(getSkillNames?.() ?? []);
@@ -88,6 +91,7 @@ export function attachStickyComposerSyntaxHighlight(options: {
             input.removeEventListener('scroll', onScroll);
             highlight.remove();
             input.classList.remove('theia-mod-highlight-input');
+            input.spellcheck = previousSpellcheck;
             inputEditor.classList.remove('theia-mod-syntax-highlight-host');
         },
     };

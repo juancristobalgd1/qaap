@@ -1,0 +1,230 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { nls } from '@theia/core/lib/common/nls';
+
+/** Match server `MAX_LOG_BYTES` — keep a bounded live tail in the Working DETAIL panel. */
+export const WORKING_DETAIL_TASK_LOG_MAX_BYTES = 512 * 1024;
+
+/** Stay pinned to the bottom when the user is within this distance of the end. */
+export const WORKING_DETAIL_TASK_LOG_AUTO_SCROLL_THRESHOLD_PX = 48;
+
+export const WORKING_DETAIL_TASK_LOG_CLASS = 'qaap-working-agents-detail-command-log';
+export const WORKING_DETAIL_TASK_LOG_OUTPUT_CLASS = 'qaap-working-agents-detail-command-log-output';
+
+export interface WorkingDetailTaskLogBufferState {
+    readonly text: string;
+    readonly truncated: boolean;
+}
+
+/**
+ * Append a stdout/stderr chunk and keep only the trailing {@link maxBytes}.
+ * Uses UTF-16 code units as a practical byte budget for UI buffering.
+ */
+export function appendWorkingDetailTaskLogChunk(
+    previous: string,
+    chunk: string,
+    maxBytes: number = WORKING_DETAIL_TASK_LOG_MAX_BYTES,
+): WorkingDetailTaskLogBufferState {
+    if (!chunk) {
+        return { text: previous, truncated: previous.length > maxBytes };
+    }
+    const merged = previous ? previous + chunk : chunk;
+    if (merged.length <= maxBytes) {
+        return { text: merged, truncated: false };
+    }
+    return {
+        text: merged.slice(merged.length - maxBytes),
+        truncated: true,
+    };
+}
+
+/** Replace the buffer with a seeded server log tail (open DETAIL mid-run). */
+export function seedWorkingDetailTaskLog(
+    log: string,
+    maxBytes: number = WORKING_DETAIL_TASK_LOG_MAX_BYTES,
+): WorkingDetailTaskLogBufferState {
+    if (!log) {
+        return { text: '', truncated: false };
+    }
+    if (log.length <= maxBytes) {
+        return { text: log, truncated: false };
+    }
+    return {
+        text: log.slice(log.length - maxBytes),
+        truncated: true,
+    };
+}
+
+/** True when the scroll host is near the bottom (or has no overflow yet). */
+export function isWorkingDetailTaskLogNearBottom(
+    host: HTMLElement,
+    thresholdPx: number = WORKING_DETAIL_TASK_LOG_AUTO_SCROLL_THRESHOLD_PX,
+): boolean {
+    const remaining = host.scrollHeight - host.scrollTop - host.clientHeight;
+    return remaining <= thresholdPx;
+}
+
+export function scrollWorkingDetailTaskLogToBottom(host: HTMLElement): void {
+    host.scrollTop = host.scrollHeight;
+}
+
+export interface RenderWorkingDetailTaskLogOptions {
+    readonly taskId: string;
+    readonly text?: string;
+    readonly running?: boolean;
+    readonly truncated?: boolean;
+    /** True while HTTP seed is in flight and no chunks have arrived yet. */
+    readonly loading?: boolean;
+}
+
+/** Cursor-style terminal card for VPS command output inside Working DETAIL. */
+export function renderWorkingDetailTaskLog(options: RenderWorkingDetailTaskLogOptions): HTMLElement {
+    const root = document.createElement('div');
+    root.className = WORKING_DETAIL_TASK_LOG_CLASS;
+    root.dataset.taskId = options.taskId;
+    applyWorkingDetailTaskLogMeta(root, options);
+
+    const header = document.createElement('div');
+    header.className = 'qaap-working-agents-detail-command-log-header';
+
+    const label = document.createElement('div');
+    label.className = 'qaap-working-agents-detail-command-log-label';
+    label.textContent = nls.localize(
+        'qaap/workHubChrome/workingDetailCommandOutput',
+        'Command output',
+    );
+
+    const live = document.createElement('span');
+    live.className = 'qaap-working-agents-detail-command-log-live';
+    live.setAttribute('aria-hidden', 'true');
+    live.textContent = nls.localize('qaap/workHubChrome/workingDetailCommandOutputLive', 'Live');
+
+    header.append(label, live);
+
+    const output = document.createElement('pre');
+    output.className = WORKING_DETAIL_TASK_LOG_OUTPUT_CLASS;
+    output.setAttribute('role', 'log');
+    output.setAttribute('aria-live', options.running === false ? 'off' : 'polite');
+    output.setAttribute('aria-relevant', 'additions');
+    applyWorkingDetailTaskLogText(output, {
+        text: options.text ?? '',
+        truncated: options.truncated === true,
+        running: options.running !== false,
+        loading: options.loading === true,
+    });
+
+    root.append(header, output);
+    return root;
+}
+
+export function findWorkingDetailTaskLog(root: ParentNode): HTMLElement | undefined {
+    const el = root.querySelector(`.${WORKING_DETAIL_TASK_LOG_CLASS}`);
+    return el instanceof HTMLElement ? el : undefined;
+}
+
+export function findWorkingDetailTaskLogOutput(root: ParentNode): HTMLElement | undefined {
+    const el = root.querySelector(`.${WORKING_DETAIL_TASK_LOG_OUTPUT_CLASS}`);
+    return el instanceof HTMLElement ? el : undefined;
+}
+
+/**
+ * Patch an existing DETAIL command-log card. Preserves scroll position unless the
+ * user was already near the bottom (or the log was empty).
+ */
+export function updateWorkingDetailTaskLog(
+    root: HTMLElement,
+    options: {
+        readonly text: string;
+        readonly running?: boolean;
+        readonly truncated?: boolean;
+        readonly loading?: boolean;
+        readonly forceScrollToBottom?: boolean;
+    },
+): void {
+    applyWorkingDetailTaskLogMeta(root, options);
+    const output = findWorkingDetailTaskLogOutput(root);
+    if (!output) {
+        return;
+    }
+    const stick = options.forceScrollToBottom === true || isWorkingDetailTaskLogNearBottom(output);
+    applyWorkingDetailTaskLogText(output, {
+        text: options.text,
+        truncated: options.truncated === true,
+        running: options.running !== false,
+        loading: options.loading === true,
+    });
+    output.setAttribute('aria-live', options.running === false ? 'off' : 'polite');
+    if (stick) {
+        scrollWorkingDetailTaskLogToBottom(output);
+    }
+}
+
+function applyWorkingDetailTaskLogMeta(
+    root: HTMLElement,
+    options: {
+        readonly running?: boolean;
+        readonly truncated?: boolean;
+        readonly loading?: boolean;
+    },
+): void {
+    const running = options.running !== false;
+    root.dataset.state = running ? 'running' : 'idle';
+    if (options.loading === true && running) {
+        root.dataset.loading = 'true';
+    } else {
+        delete root.dataset.loading;
+    }
+    if (options.truncated) {
+        root.dataset.truncated = 'true';
+    } else {
+        delete root.dataset.truncated;
+    }
+}
+
+function applyWorkingDetailTaskLogText(
+    output: HTMLElement,
+    options: {
+        readonly text: string;
+        readonly truncated: boolean;
+        readonly running: boolean;
+        readonly loading: boolean;
+    },
+): void {
+    const trimmed = options.text.replace(/\s+$/u, '');
+    if (!trimmed) {
+        const waiting = options.loading || options.running;
+        output.textContent = waiting
+            ? nls.localize(
+                'qaap/workHubChrome/workingDetailCommandOutputWaiting',
+                'Waiting for output…',
+            )
+            : nls.localize(
+                'qaap/workHubChrome/workingDetailCommandOutputEmpty',
+                'No output',
+            );
+        output.classList.add('theia-mod-empty');
+        output.classList.toggle('theia-mod-waiting', waiting);
+        return;
+    }
+    output.classList.remove('theia-mod-empty', 'theia-mod-waiting');
+    if (options.truncated) {
+        const notice = nls.localize(
+            'qaap/workHubChrome/workingDetailCommandOutputTruncated',
+            '… earlier output truncated',
+        );
+        output.textContent = `${notice}\n${trimmed}`;
+        return;
+    }
+    output.textContent = trimmed;
+}
+
+/** VPS DETAIL members without a conversation stream command output here. */
+export function shouldShowWorkingDetailTaskLog(member: {
+    readonly taskId?: string;
+    readonly conversationId?: string;
+}): boolean {
+    return !!member.taskId?.trim() && !member.conversationId?.trim();
+}
