@@ -71,6 +71,8 @@ services:
       QAAP_JOB_LOOP_MAX_JOBS: ${QAAP_JOB_LOOP_MAX_JOBS:-512}
       QAAP_JOB_LOOP_MAX_ACTIVE_PER_USER: ${QAAP_JOB_LOOP_MAX_ACTIVE_PER_USER:-4}
       QAAP_JOB_LOOP_TRIGGER_LEASE_TTL_MS: ${QAAP_JOB_LOOP_TRIGGER_LEASE_TTL_MS:-600000}
+      QAAP_JOB_LOOP_MANAGEMENT_LOCK_TTL_MS: ${QAAP_JOB_LOOP_MANAGEMENT_LOCK_TTL_MS:-30000}
+      QAAP_JOB_LOOP_MANAGEMENT_LOCK_TIMEOUT_MS: ${QAAP_JOB_LOOP_MANAGEMENT_LOCK_TIMEOUT_MS:-5000}
       # Bundled Qaap slash skills (global). Custom user skills: ~/.qaap/users/{login}/skills
       QAAP_SYSTEM_SKILLS_DIR: ${QAAP_SYSTEM_SKILLS_DIR:-/opt/qaap/system-skills}
       # Default-on backend self-verification: after an agent task edits files, run the project's

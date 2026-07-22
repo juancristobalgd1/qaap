@@ -21,6 +21,10 @@ import {
     QaapJobLoopTemplateExport,
     QaapUpdateJobLoopTemplateRequest,
 } from '../common/qaap-job-loop-template';
+import {
+    defaultQaapJobLoopManagementLockPath,
+    withQaapJobLoopManagementLock,
+} from './qaap-job-loop-management-lock';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
 
 const STORE_MODE = 0o700;
@@ -150,18 +154,21 @@ export class QaapJobLoopTemplateStore {
     }
 
     protected async mutate<T>(operation: (templates: Map<string, QaapJobLoopTemplate>) => Promise<T>): Promise<T> {
-        const run = this.mutationChain.catch(() => undefined).then(async () => {
-            this.refreshFromDisk();
-            const proposed = new Map([...this.templates].map(([id, template]) => [id, this.clone(template)]));
-            const result = await operation(proposed);
-            await this.persist(proposed);
-            this.templates.clear();
-            for (const [id, template] of proposed) {
-                this.templates.set(id, template);
-            }
-            this.onDidChangeEmitter.fire();
-            return this.cloneResult(result);
-        });
+        const run = this.mutationChain.catch(() => undefined).then(() => withQaapJobLoopManagementLock(
+            this.managementLockPath(),
+            async () => {
+                this.refreshFromDisk();
+                const proposed = new Map([...this.templates].map(([id, template]) => [id, this.clone(template)]));
+                const result = await operation(proposed);
+                await this.persist(proposed);
+                this.templates.clear();
+                for (const [id, template] of proposed) {
+                    this.templates.set(id, template);
+                }
+                this.onDidChangeEmitter.fire();
+                return this.cloneResult(result);
+            },
+        ));
         this.mutationChain = run.then(() => undefined, () => undefined);
         return run;
     }
@@ -287,7 +294,8 @@ export class QaapJobLoopTemplateStore {
     }
 
     protected indexPath(): string { return path.join(this.storeDirectory(), 'index.json'); }
+    protected managementLockPath(): string { return defaultQaapJobLoopManagementLockPath(); }
     protected normalizeOwner(ownerLogin?: string): string | undefined { return ownerLogin?.trim() || undefined; }
-    protected clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
+    protected clone<T>(value: T): T { return structuredClone(value); }
     protected cloneResult<T>(value: T): T { return value === undefined ? value : this.clone(value); }
 }

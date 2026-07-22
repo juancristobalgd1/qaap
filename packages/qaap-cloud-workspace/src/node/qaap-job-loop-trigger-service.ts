@@ -55,7 +55,7 @@ export class QaapJobLoopTriggerService {
     async fireWebhook(id: string, deliveryId?: string): Promise<'missing' | 'duplicate' | 'accepted'> {
         const trigger = this.store.getAny(id);
         if (!trigger || trigger.type !== 'webhook' || !trigger.enabled) { return 'missing'; }
-        if (!this.store.claimDelivery(id, deliveryId)) { return 'duplicate'; }
+        if (!await this.store.claimDelivery(id, deliveryId)) { return 'duplicate'; }
         await this.enqueue(id, () => this.run(trigger, 'webhook', deliveryId?.trim() || randomUUID()));
         return 'accepted';
     }
@@ -104,8 +104,8 @@ export class QaapJobLoopTriggerService {
         if (this.stopping || !trigger.enabled) { return; }
         const lease = this.leases.acquire(trigger.id, slot);
         if (!lease) { return; }
-        this.store.markRun(trigger.id, undefined, 'running');
         try {
+            await this.store.markRun(trigger.id, undefined, 'running');
             const template = this.templates.get(trigger.ownerLogin, trigger.templateId);
             if (!template?.definition) { throw new Error('Job loop template not found.'); }
             const definition = this.canonicalizeDefinition(trigger.ownerLogin, template.definition);
@@ -113,9 +113,10 @@ export class QaapJobLoopTriggerService {
                 ...definition,
                 idempotencyKey: this.idempotencyKey(trigger.id, source, slot),
             }, trigger.ownerLogin);
-            this.store.markRun(trigger.id, result.loop.id, 'completed');
+            await this.store.markRun(trigger.id, result.loop.id, 'completed');
         } catch (error) {
-            this.store.markRun(trigger.id, undefined, 'failed');
+            await this.store.markRun(trigger.id, undefined, 'failed').catch(markError =>
+                console.warn(`[qaap-job-loop-triggers] failed to persist trigger ${trigger.id} failure:`, markError));
             console.warn(`[qaap-job-loop-triggers] trigger ${trigger.id} failed:`, error);
         } finally {
             if (source === 'manual' || source === 'webhook') {

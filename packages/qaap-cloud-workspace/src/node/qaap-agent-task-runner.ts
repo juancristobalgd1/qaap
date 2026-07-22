@@ -7,7 +7,7 @@ import { Emitter, Event } from '@theia/core/lib/common/event';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { ChildProcess, spawnSync } from 'child_process';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
@@ -103,6 +103,10 @@ import {
     resolveTaskReviewRisk,
 } from '../common/qaap-agent-review';
 import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
+
+const WORKTREE_FINGERPRINT_MAX_BUFFER = 64 * 1024 * 1024;
+const WORKTREE_FINGERPRINT_MAX_UNTRACKED_BYTES = 512 * 1024 * 1024;
+const WORKTREE_FINGERPRINT_HASH_BATCH_SIZE = 128;
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 interface AgentCandidate {
@@ -1889,6 +1893,13 @@ export class QaapAgentTaskRunner {
         if (this.preferenceService) {
             await this.preferenceService.ready;
         }
+        const markedTask = this.tasks.get(task.id) ?? task;
+        task = {
+            ...markedTask,
+            worktreeBaselineFingerprint: this.captureWorktreeFingerprint(task.cwd),
+        };
+        this.tasks.set(task.id, task);
+        void this.persist();
         const prompt = (request.prompt ?? '').trim();
         if (prompt) {
             try {
@@ -1911,9 +1922,9 @@ export class QaapAgentTaskRunner {
                 if (stdinPrompt) {
                     this.stdinPrompts.set(task.id, stdinPrompt);
                 }
-                const markedTask = this.tasks.get(task.id) ?? task;
+                const commandTask = this.tasks.get(task.id) ?? task;
                 const next: QaapAgentTask = {
-                    ...markedTask,
+                    ...commandTask,
                     command,
                     agentId,
                     ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
@@ -2338,6 +2349,12 @@ export class QaapAgentTaskRunner {
     }
 
     protected async hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean> {
+        if (task.worktreeBaselineFingerprint) {
+            const currentFingerprint = this.captureWorktreeFingerprint(task.cwd);
+            if (currentFingerprint) {
+                return currentFingerprint !== task.worktreeBaselineFingerprint;
+            }
+        }
         const result = await this.runGenericCommand(
             `git -C ${this.shellQuote(task.cwd)} status --porcelain`,
             task.cwd,
@@ -2346,6 +2363,75 @@ export class QaapAgentTaskRunner {
             10_000,
         );
         return result.exitCode === 0 && result.stdout.trim().length > 0;
+    }
+
+    /**
+     * Hash the complete tracked diff plus the identity and contents of untracked files without
+     * changing the index. Git streams untracked contents in bounded path batches; repositories
+     * above the explicit byte budget fail closed to the conservative legacy `git status` probe.
+     */
+    protected captureWorktreeFingerprint(cwd: string): string | undefined {
+        const runGit = (args: readonly string[]): string | undefined => {
+            const result = spawnSync('git', ['-C', cwd, ...args], {
+                cwd,
+                encoding: 'utf8',
+                maxBuffer: WORKTREE_FINGERPRINT_MAX_BUFFER,
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            return result.status === 0 && !result.error && typeof result.stdout === 'string'
+                ? result.stdout
+                : undefined;
+        };
+        const head = runGit(['rev-parse', '--verify', 'HEAD']);
+        const diff = runGit(['diff', '--no-ext-diff', '--binary', 'HEAD', '--']);
+        const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z']);
+        if (head === undefined || diff === undefined || untracked === undefined) {
+            return undefined;
+        }
+        const root = path.resolve(cwd);
+        const hash = createHash('sha256');
+        hash.update('head\0').update(head).update('\0diff\0').update(diff).update('\0untracked\0');
+        const regularUntrackedFiles: string[] = [];
+        let untrackedBytes = 0n;
+        try {
+            for (const relativePath of untracked.split('\0')) {
+                if (!relativePath) {
+                    continue;
+                }
+                const absolutePath = path.resolve(root, relativePath);
+                const relativeToRoot = path.relative(root, absolutePath);
+                if (relativeToRoot === '..' || relativeToRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeToRoot)) {
+                    return undefined;
+                }
+                const stat = fs.lstatSync(absolutePath, { bigint: true });
+                hash.update(relativePath).update('\0');
+                hash.update(`${stat.mode}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`).update('\0');
+                if (stat.isFile()) {
+                    untrackedBytes += stat.size;
+                    if (untrackedBytes > BigInt(WORKTREE_FINGERPRINT_MAX_UNTRACKED_BYTES)) {
+                        return undefined;
+                    }
+                    regularUntrackedFiles.push(relativePath);
+                } else if (stat.isSymbolicLink()) {
+                    hash.update(fs.readlinkSync(absolutePath)).update('\0');
+                }
+            }
+        } catch {
+            return undefined;
+        }
+        for (let offset = 0; offset < regularUntrackedFiles.length; offset += WORKTREE_FINGERPRINT_HASH_BATCH_SIZE) {
+            const contentHashes = runGit([
+                'hash-object',
+                '--no-filters',
+                '--',
+                ...regularUntrackedFiles.slice(offset, offset + WORKTREE_FINGERPRINT_HASH_BATCH_SIZE),
+            ]);
+            if (contentHashes === undefined) {
+                return undefined;
+            }
+            hash.update('content\0').update(contentHashes).update('\0');
+        }
+        return hash.digest('hex');
     }
 
     protected async resolveVerificationScriptsForCwd(cwd: string): Promise<string[]> {

@@ -39,7 +39,7 @@ describe('QaapJobLoopTriggerService', () => {
         const calls: Array<{ owner?: string; key?: string }> = [];
         let leaseReleased = false;
         Object.assign(service, {
-            store: { markRun: () => undefined },
+            store: { markRun: () => Promise.resolve() },
             leases: { acquire: () => ({ expiresAt: Date.now() + 60_000, release: () => leaseReleased = true }) },
             auth: { resolveOwnedRepositoryCwdForLogin: (_owner: string, cwd: string) => ({ kind: 'ok', cwd }) },
             templates: { get: (owner: string, id: string) => owner === 'alice' && id === 'template'
@@ -61,7 +61,7 @@ describe('QaapJobLoopTriggerService', () => {
         const service = Object.create(QaapJobLoopTriggerService.prototype) as QaapJobLoopTriggerService;
         let marked = false;
         Object.assign(service, {
-            store: { markRun: () => marked = true },
+            store: { markRun: () => { marked = true; return Promise.resolve(); } },
             leases: { acquire: () => undefined },
         });
         await (service as unknown as { run(trigger: unknown, source: 'interval', slot: string): Promise<void> }).run({
@@ -74,7 +74,7 @@ describe('QaapJobLoopTriggerService', () => {
         const service = Object.create(QaapJobLoopTriggerService.prototype) as QaapJobLoopTriggerService;
         let leaseReleased = false;
         Object.assign(service, {
-            store: { markRun: () => undefined },
+            store: { markRun: () => Promise.resolve() },
             leases: { acquire: () => ({ expiresAt: Date.now() + 60_000, release: () => leaseReleased = true }) },
             auth: { resolveOwnedRepositoryCwdForLogin: (_owner: string, cwd: string) => ({ kind: 'ok', cwd }) },
             templates: { get: () => ({ definition: { graph: { nodes: [{ key: 'one', request: { command: 'true', cwd: '/repo' } }] }, until: { nodeKey: 'one', operator: 'truthy' } } }) },

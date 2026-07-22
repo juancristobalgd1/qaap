@@ -235,12 +235,18 @@ leases use unique event slots and are released after admission; deterministic en
 still retained as defense in depth.
 
 Warm replicas read templates and triggers through from their shared atomic indexes before scheduler
-ticks, lookups and mutations, so a failover observes definitions created by another process. For
-multi-replica operation, the template, trigger, lease, loop and job state directories must all reside
-on the same POSIX-compatible shared volume. The slot lease prevents duplicate scheduler admission;
-installations that allow simultaneous management writes through several replicas should use sticky
-management routing or replace the JSON indexes with a transactional database-backed store. The
-provided Docker Compose remains a single-backend deployment and needs no shared-volume setup.
+ticks, lookups and mutations, so a failover observes definitions created by another process. Every
+template or trigger mutation also acquires the shared, exclusive, expiring `management.lock` before
+it reloads and atomically replaces an index. This serializes simultaneous replica writes and makes webhook
+delivery claims cross-replica atomic instead of relying on sticky routing. Lock acquisition waits for
+a bounded timeout and returns HTTP 503 on sustained contention rather than losing an update.
+
+For multi-replica operation, the template, trigger, lease, loop and job state directories must all
+reside on the same POSIX-compatible shared volume, and replica clocks must remain synchronized within
+the configured lock and lease TTLs. The slot lease prevents duplicate scheduler admission. A
+transactional database-backed store remains an optional scaling path for installations that outgrow
+the bounded JSON control plane. The provided Docker Compose remains a single-backend deployment and
+needs no shared-volume setup.
 
 ## Graph and concurrency semantics
 
@@ -296,3 +302,6 @@ rejects traversal or symlink escapes before a function reads workspace files.
 | `QAAP_JOB_LOOP_TRIGGER_STATE_DIR` | `~/.qaap/job-loop-triggers` |
 | `QAAP_JOB_LOOP_TRIGGER_LEASE_DIR` | `<trigger-state-dir>/leases` |
 | `QAAP_JOB_LOOP_TRIGGER_LEASE_TTL_MS` | `600000` |
+| `QAAP_JOB_LOOP_MANAGEMENT_LOCK_DIR` | `<trigger-state-dir>` |
+| `QAAP_JOB_LOOP_MANAGEMENT_LOCK_TTL_MS` | `30000` |
+| `QAAP_JOB_LOOP_MANAGEMENT_LOCK_TIMEOUT_MS` | `5000` |

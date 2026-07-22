@@ -6,7 +6,10 @@
 import { expect } from 'chai';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
-import type { ChildProcess } from 'child_process';
+import { spawnSync, type ChildProcess } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import type { QaapAgentTask, QaapAgentTaskVerification } from '../common/qaap-agent-task';
 
@@ -21,6 +24,12 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     }
     public releaseGateSlot(): void {
         this.releaseVerificationPass();
+    }
+    public worktreeFingerprint(cwd: string): string | undefined {
+        return this.captureWorktreeFingerprint(cwd);
+    }
+    public hasTaskEdits(task: QaapAgentTask): Promise<boolean> {
+        return this.hasEditedFilesForVerification(task, {});
     }
     public residualProcessGroupReaps = 0;
     protected override reapAgentProcessGroupAfterExit(_child: ChildProcess): void {
@@ -139,6 +148,93 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         expect(result?.status).to.equal('failed');
         expect(result && 'summary' in result ? result.summary : '').to.contain('did not complete');
         expect(fixTurns()).to.equal(0);
+    });
+});
+
+describe('QaapAgentTaskRunner worktree baseline', () => {
+
+    const runGit = (cwd: string, ...args: string[]): void => {
+        const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+        if (result.status !== 0) {
+            throw new Error(result.stderr || `git ${args.join(' ')} failed`);
+        }
+    };
+
+    it('does not attribute unchanged pre-existing dirty files to the agent task', async () => {
+        const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
+        try {
+            runGit(cwd, 'init');
+            runGit(cwd, 'config', 'user.email', 'qaap@example.test');
+            runGit(cwd, 'config', 'user.name', 'Qaap Test');
+            const tracked = path.join(cwd, 'tracked.txt');
+            fs.writeFileSync(tracked, 'committed\n', 'utf8');
+            runGit(cwd, 'add', 'tracked.txt');
+            runGit(cwd, 'commit', '-m', 'initial');
+            fs.writeFileSync(tracked, 'dirty before task\n', 'utf8');
+
+            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const baseline = runner.worktreeFingerprint(cwd);
+            if (!baseline) {
+                throw new Error('Expected a worktree fingerprint.');
+            }
+            const task: QaapAgentTask = { ...TASK, cwd, worktreeBaselineFingerprint: baseline };
+            expect(await runner.hasTaskEdits(task)).to.equal(false);
+
+            fs.writeFileSync(tracked, 'changed by task\n', 'utf8');
+            expect(await runner.hasTaskEdits(task)).to.equal(true);
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true });
+        }
+    });
+
+    it('detects an untracked file created after the task starts', async () => {
+        const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
+        try {
+            runGit(cwd, 'init');
+            runGit(cwd, 'config', 'user.email', 'qaap@example.test');
+            runGit(cwd, 'config', 'user.name', 'Qaap Test');
+            fs.writeFileSync(path.join(cwd, 'tracked.txt'), 'committed\n', 'utf8');
+            runGit(cwd, 'add', 'tracked.txt');
+            runGit(cwd, 'commit', '-m', 'initial');
+
+            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const baseline = runner.worktreeFingerprint(cwd);
+            if (!baseline) {
+                throw new Error('Expected a worktree fingerprint.');
+            }
+            const task: QaapAgentTask = { ...TASK, cwd, worktreeBaselineFingerprint: baseline };
+            fs.writeFileSync(path.join(cwd, 'created.txt'), 'new\n', 'utf8');
+            expect(await runner.hasTaskEdits(task)).to.equal(true);
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true });
+        }
+    });
+
+    it('detects content changes to an untracked file that existed before the task', async () => {
+        const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
+        try {
+            runGit(cwd, 'init');
+            runGit(cwd, 'config', 'user.email', 'qaap@example.test');
+            runGit(cwd, 'config', 'user.name', 'Qaap Test');
+            fs.writeFileSync(path.join(cwd, 'tracked.txt'), 'committed\n', 'utf8');
+            runGit(cwd, 'add', 'tracked.txt');
+            runGit(cwd, 'commit', '-m', 'initial');
+            const untracked = path.join(cwd, 'untracked.txt');
+            fs.writeFileSync(untracked, 'before\n', 'utf8');
+
+            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const baseline = runner.worktreeFingerprint(cwd);
+            if (!baseline) {
+                throw new Error('Expected a worktree fingerprint.');
+            }
+            const task: QaapAgentTask = { ...TASK, cwd, worktreeBaselineFingerprint: baseline };
+            expect(await runner.hasTaskEdits(task)).to.equal(false);
+
+            fs.writeFileSync(untracked, 'after!\n', 'utf8');
+            expect(await runner.hasTaskEdits(task)).to.equal(true);
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true });
+        }
     });
 });
 

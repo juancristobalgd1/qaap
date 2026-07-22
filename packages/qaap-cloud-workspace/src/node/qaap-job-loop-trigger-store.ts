@@ -6,6 +6,7 @@
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
@@ -19,7 +20,11 @@ import {
     QaapJobLoopTrigger,
     QaapUpdateJobLoopTriggerBody,
 } from '../common/qaap-job-loop-trigger';
-import { writeJsonAtomicSync } from './qaap-write-json-atomic';
+import {
+    defaultQaapJobLoopManagementLockPath,
+    withQaapJobLoopManagementLock,
+} from './qaap-job-loop-management-lock';
+import { writeJsonAtomic } from './qaap-write-json-atomic';
 
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -36,14 +41,20 @@ interface PersistedIndex { readonly version: 1; readonly triggers: readonly Pers
 export class QaapJobLoopTriggerStore {
 
     protected readonly triggers = new Map<string, PersistedTrigger>();
+    protected mutationChain: Promise<void> = Promise.resolve();
 
     @postConstruct()
     protected init(): void { this.load(); }
 
     list(ownerLogin: string): QaapJobLoopTrigger[] {
         this.load();
-        return [...this.triggers.values()].filter(trigger => trigger.ownerLogin === ownerLogin)
-            .map(trigger => this.publicTrigger(trigger)).sort((a, b) => b.updatedAt - a.updatedAt);
+        const owned: QaapJobLoopTrigger[] = [];
+        for (const trigger of this.triggers.values()) {
+            if (trigger.ownerLogin === ownerLogin) {
+                owned.push(this.publicTrigger(trigger));
+            }
+        }
+        return owned.sort((a, b) => b.updatedAt - a.updatedAt);
     }
 
     listAll(): QaapJobLoopTrigger[] { this.load(); return [...this.triggers.values()].map(trigger => this.publicTrigger(trigger)); }
@@ -60,46 +71,61 @@ export class QaapJobLoopTriggerStore {
         return trigger ? this.publicTrigger(trigger) : undefined;
     }
 
-    create(ownerLogin: string, body: QaapCreateJobLoopTriggerBody): { trigger: QaapJobLoopTrigger; webhookSecret?: string } {
-        this.load();
-        if (this.list(ownerLogin).length >= MAX_TRIGGERS_PER_OWNER) {
-            throw new Error('trigger_limit');
-        }
-        if (!body.title?.trim() || body.title.trim().length > 120 || !body.templateId?.trim()) { throw new Error('invalid_trigger'); }
-        const now = Date.now();
-        const type = this.typeOf(body.type);
-        const secret = type === 'webhook' ? randomBytes(32).toString('base64url') : undefined;
-        const trigger: PersistedTrigger = {
-            id: randomUUID(), ownerLogin, templateId: body.templateId.trim(), title: body.title.trim(), type,
-            enabled: body.enabled !== false, ...this.scheduleFields(type, body),
-            ...(secret ? { webhookSecretDigest: this.digest(secret) } : {}), createdAt: now, updatedAt: now,
-        };
-        this.triggers.set(trigger.id, trigger); this.persist();
-        return { trigger: this.publicTrigger(trigger), ...(secret ? { webhookSecret: secret } : {}) };
+    create(ownerLogin: string, body: QaapCreateJobLoopTriggerBody): Promise<{ trigger: QaapJobLoopTrigger; webhookSecret?: string }> {
+        return this.mutate(triggers => {
+            let ownerTriggerCount = 0;
+            for (const trigger of triggers.values()) {
+                if (trigger.ownerLogin === ownerLogin) { ownerTriggerCount++; }
+            }
+            if (ownerTriggerCount >= MAX_TRIGGERS_PER_OWNER) {
+                throw new Error('trigger_limit');
+            }
+            const title = typeof body.title === 'string' ? body.title.trim() : '';
+            const templateId = typeof body.templateId === 'string' ? body.templateId.trim() : '';
+            if (!title || title.length > 120 || !templateId || !this.validOptionalFields(body)) { throw new Error('invalid_trigger'); }
+            const now = Date.now();
+            const type = this.typeOf(body.type);
+            const secret = type === 'webhook' ? randomBytes(32).toString('base64url') : undefined;
+            const trigger: PersistedTrigger = {
+                id: randomUUID(), ownerLogin, templateId, title, type,
+                enabled: body.enabled !== false, ...this.scheduleFields(type, body),
+                ...(secret ? { webhookSecretDigest: this.digest(secret) } : {}), createdAt: now, updatedAt: now,
+            };
+            triggers.set(trigger.id, trigger);
+            return { trigger: this.publicTrigger(trigger), ...(secret ? { webhookSecret: secret } : {}) };
+        });
     }
 
-    update(ownerLogin: string, id: string, patch: QaapUpdateJobLoopTriggerBody): QaapJobLoopTrigger | undefined {
-        this.load();
-        const previous = this.triggers.get(id);
-        if (!previous || previous.ownerLogin !== ownerLogin) { return undefined; }
-        if (patch.title !== undefined && (!patch.title.trim() || patch.title.trim().length > 120)) { throw new Error('invalid_trigger'); }
-        if (patch.templateId !== undefined && !patch.templateId.trim()) { throw new Error('invalid_trigger'); }
-        if (patch.type !== undefined && patch.type !== previous.type) {
-            // Webhook credentials are intentionally returned only on creation. Keeping the kind
-            // immutable prevents an unreachable webhook or a scheduled trigger retaining a secret.
-            throw new Error('immutable_trigger_type');
-        }
-        const type = previous.type;
-        const candidate = { ...previous, type, title: patch.title === undefined ? previous.title : patch.title.trim(),
-            templateId: patch.templateId === undefined ? previous.templateId : patch.templateId.trim(),
-            enabled: patch.enabled ?? previous.enabled, ...this.scheduleFields(type, { ...previous, ...patch }), updatedAt: Date.now() };
-        this.triggers.set(id, candidate); this.persist(); return this.publicTrigger(candidate);
+    update(ownerLogin: string, id: string, patch: QaapUpdateJobLoopTriggerBody): Promise<QaapJobLoopTrigger | undefined> {
+        return this.mutate(triggers => {
+            const previous = triggers.get(id);
+            if (!previous || previous.ownerLogin !== ownerLogin) { return undefined; }
+            if (!this.validOptionalFields(patch)
+                || (patch.title !== undefined && (typeof patch.title !== 'string' || !patch.title.trim() || patch.title.trim().length > 120))
+                || (patch.templateId !== undefined && (typeof patch.templateId !== 'string' || !patch.templateId.trim()))) {
+                throw new Error('invalid_trigger');
+            }
+            if (patch.type !== undefined && patch.type !== previous.type) {
+                // Webhook credentials are intentionally returned only on creation. Keeping the kind
+                // immutable prevents an unreachable webhook or a scheduled trigger retaining a secret.
+                throw new Error('immutable_trigger_type');
+            }
+            const type = previous.type;
+            const candidate = { ...previous, type, title: patch.title === undefined ? previous.title : patch.title.trim(),
+                templateId: patch.templateId === undefined ? previous.templateId : patch.templateId.trim(),
+                enabled: patch.enabled ?? previous.enabled, ...this.scheduleFields(type, { ...previous, ...patch }), updatedAt: Date.now() };
+            triggers.set(id, candidate);
+            return this.publicTrigger(candidate);
+        });
     }
 
-    delete(ownerLogin: string, id: string): boolean {
-        this.load();
-        if (!this.get(ownerLogin, id)) { return false; }
-        this.triggers.delete(id); this.persist(); return true;
+    delete(ownerLogin: string, id: string): Promise<boolean> {
+        return this.mutate(triggers => {
+            const trigger = triggers.get(id);
+            if (!trigger || trigger.ownerLogin !== ownerLogin) { return false; }
+            triggers.delete(id);
+            return true;
+        });
     }
 
     verifyWebhookSecret(id: string, secret: string): boolean {
@@ -111,33 +137,63 @@ export class QaapJobLoopTriggerStore {
         return supplied.length === expected.length && timingSafeEqual(supplied, expected);
     }
 
-    claimDelivery(id: string, deliveryId: string | undefined): boolean {
+    async claimDelivery(id: string, deliveryId: string | undefined): Promise<boolean> {
         if (!deliveryId) { return true; }
-        this.load();
-        const trigger = this.triggers.get(id);
-        if (!trigger) { return false; }
-        const ids = trigger.deliveryIds ?? [];
-        if (ids.includes(deliveryId)) { return false; }
-        this.triggers.set(id, { ...trigger, deliveryIds: [...ids, deliveryId].slice(-MAX_DELIVERIES), updatedAt: Date.now() });
-        this.persist(); return true;
+        return this.mutate(triggers => {
+            const trigger = triggers.get(id);
+            if (!trigger) { return false; }
+            const ids = trigger.deliveryIds ?? [];
+            if (ids.includes(deliveryId)) { return false; }
+            triggers.set(id, { ...trigger, deliveryIds: [...ids, deliveryId].slice(-MAX_DELIVERIES), updatedAt: Date.now() });
+            return true;
+        });
     }
 
-    markRun(id: string, loopId: string | undefined, state: QaapJobLoopTrigger['lastRunState']): void {
-        this.load();
-        const trigger = this.triggers.get(id); if (!trigger) { return; }
-        this.triggers.set(id, { ...trigger, lastRunAt: Date.now(), lastLoopId: loopId, lastRunState: state,
-            ...(trigger.oneShot && state === 'completed' ? { enabled: false } : {}), updatedAt: Date.now() }); this.persist();
+    markRun(id: string, loopId: string | undefined, state: QaapJobLoopTrigger['lastRunState']): Promise<void> {
+        return this.mutate(triggers => {
+            const trigger = triggers.get(id); if (!trigger) { return; }
+            triggers.set(id, { ...trigger, lastRunAt: Date.now(), lastLoopId: loopId, lastRunState: state,
+                ...(trigger.oneShot && state === 'completed' ? { enabled: false } : {}), updatedAt: Date.now() });
+        });
+    }
+
+    protected async mutate<T>(operation: (triggers: Map<string, PersistedTrigger>) => T | Promise<T>): Promise<T> {
+        const run = this.mutationChain.catch(() => undefined).then(() => withQaapJobLoopManagementLock(
+            this.managementLockPath(),
+            async () => {
+                this.load();
+                const proposed = new Map([...this.triggers]
+                    .map(([id, trigger]) => [id, structuredClone(trigger)] as const));
+                const result = await operation(proposed);
+                await this.persist(proposed);
+                this.triggers.clear();
+                for (const [id, trigger] of proposed) {
+                    this.triggers.set(id, trigger);
+                }
+                return structuredClone(result);
+            },
+        ));
+        this.mutationChain = run.then(() => undefined, () => undefined);
+        return run;
     }
 
     protected typeOf(value: unknown): QaapJobLoopTrigger['type'] {
         if (value === 'interval' || value === 'cron' || value === 'webhook') { return value; }
         throw new Error('invalid_trigger');
     }
+    protected validOptionalFields(body: Partial<QaapCreateJobLoopTriggerBody>): boolean {
+        return (body.enabled === undefined || typeof body.enabled === 'boolean')
+            && (body.intervalMinutes === undefined
+                || (typeof body.intervalMinutes === 'number' && Number.isFinite(body.intervalMinutes)))
+            && (body.cronExpression === undefined || typeof body.cronExpression === 'string')
+            && (body.timezone === undefined || typeof body.timezone === 'string')
+            && (body.oneShot === undefined || typeof body.oneShot === 'boolean');
+    }
     protected scheduleFields(type: QaapJobLoopTrigger['type'], body: Partial<QaapCreateJobLoopTriggerBody>): Partial<PersistedTrigger> {
         if (type === 'interval') { return { intervalMinutes: normalizeJobLoopTriggerInterval(body.intervalMinutes), cronExpression: undefined, timezone: undefined, oneShot: undefined }; }
         if (type === 'cron') {
-            const expression = body.cronExpression?.trim();
-            const timezone = body.timezone?.trim();
+            const expression = typeof body.cronExpression === 'string' ? body.cronExpression.trim() : undefined;
+            const timezone = typeof body.timezone === 'string' ? body.timezone.trim() : undefined;
             if (!expression || !isValidCronExpression(expression)
                 || (timezone && normalizeRoutineTimezone(timezone) !== timezone)) {
                 throw new Error('invalid_cron_schedule');
@@ -160,6 +216,7 @@ export class QaapJobLoopTriggerStore {
             || path.join(os.homedir(), '.qaap', 'job-loop-triggers');
     }
     protected indexPath(): string { return path.join(this.directory(), 'index.json'); }
+    protected managementLockPath(): string { return defaultQaapJobLoopManagementLockPath(); }
     protected load(): void {
         try { const parsed = JSON.parse(fs.readFileSync(this.indexPath(), 'utf8')) as PersistedIndex;
             if (parsed.version !== 1 || !Array.isArray(parsed.triggers)) { throw new Error('Invalid persisted job loop trigger index.'); }
@@ -169,9 +226,9 @@ export class QaapJobLoopTriggerStore {
             for (const [id, trigger] of restored) { this.triggers.set(id, trigger); }
         } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { console.warn('[qaap-job-loop-triggers] failed to load:', error); } }
     }
-    protected persist(): void {
-        try { fs.mkdirSync(this.directory(), { recursive: true, mode: DIRECTORY_MODE }); fs.chmodSync(this.directory(), DIRECTORY_MODE);
-            writeJsonAtomicSync(this.indexPath(), { version: 1, triggers: [...this.triggers.values()] } satisfies PersistedIndex, { mode: FILE_MODE });
-        } catch (error) { console.warn('[qaap-job-loop-triggers] failed to persist:', error); }
+    protected async persist(triggers: Map<string, PersistedTrigger>): Promise<void> {
+        await fsp.mkdir(this.directory(), { recursive: true, mode: DIRECTORY_MODE });
+        await fsp.chmod(this.directory(), DIRECTORY_MODE).catch(() => undefined);
+        await writeJsonAtomic(this.indexPath(), { version: 1, triggers: [...triggers.values()] } satisfies PersistedIndex, { mode: FILE_MODE });
     }
 }

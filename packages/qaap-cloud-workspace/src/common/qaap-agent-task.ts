@@ -66,6 +66,12 @@ export interface QaapAgentTask {
     readonly ownerLogin?: string;
     /** Opt-in latency marks for submit → first output diagnostics. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
+    /**
+     * Internal snapshot captured immediately before the agent process starts. It lets the runner
+     * distinguish changes made by this task from dirty files that already belonged to the user.
+     * Absent on legacy tasks and when the working directory is not a readable Git repository.
+     */
+    readonly worktreeBaselineFingerprint?: string;
     /** Backend self-verification result for QAIQ tasks that edited files. */
     readonly verification?: QaapAgentTaskVerification;
     /** Independent adversarial review verdict for high-risk tasks (second agent, clean context). */

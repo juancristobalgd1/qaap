@@ -611,7 +611,7 @@ export class QaapJobLoopsWidget extends ReactWidget {
                     <span>{this.terminationLabel(loop)}</span>
                     <span>{nls.localize('qaap/jobLoops/jobsScheduled', '{0} jobs scheduled', String(loop.jobsScheduled))}</span>
                 </div>
-                <div className='qaap-job-loops-rounds' role='list'>
+                <div className='qaap-job-loops-rounds'>
                     {loop.rounds.map(round => this.renderRoundButton(loop, round))}
                 </div>
                 {selected && selected.loopId === loop.id
@@ -630,7 +630,6 @@ export class QaapJobLoopsWidget extends ReactWidget {
         return (
             <button
                 type='button'
-                role='listitem'
                 key={key}
                 className={`qaap-job-loops-round qaap-mod-${outcome}${selected ? ' qaap-mod-selected' : ''}`}
                 onClick={() => void this.selectRound(loop.id, round.iteration)}

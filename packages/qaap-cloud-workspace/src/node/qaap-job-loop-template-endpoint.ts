@@ -22,6 +22,7 @@ import {
     QaapUpdateJobLoopTemplateRequest,
 } from '../common/qaap-job-loop-template';
 import { QaapJobLoopConflictError, QaapJobLoopEngine, QaapJobLoopRequestError } from './qaap-job-loop-engine';
+import { QaapJobLoopManagementLock, QaapJobLoopManagementLockTimeoutError } from './qaap-job-loop-management-lock';
 import {
     QaapJobLoopTemplateConflictError,
     QaapJobLoopTemplateRequestError,
@@ -43,6 +44,9 @@ export class QaapJobLoopTemplateEndpoint implements BackendApplicationContributi
 
     @inject(QaapJobLoopTriggerStore)
     protected readonly triggers: QaapJobLoopTriggerStore;
+
+    @inject(QaapJobLoopManagementLock)
+    protected readonly managementLock: QaapJobLoopManagementLock;
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
@@ -119,13 +123,15 @@ export class QaapJobLoopTemplateEndpoint implements BackendApplicationContributi
         }
         try {
             const owner = this.ownerLogin(context);
-            if (owner && this.triggers.list(owner).some(trigger => trigger.templateId === req.params.id)) {
-                throw new QaapJobLoopTemplateConflictError(nls.localize(
-                    'qaap/jobLoopTemplates/inUse',
-                    'Delete this template\'s triggers before deleting the template.',
-                ));
-            }
-            const deleted = await this.store.delete(req.params.id, (req.body as QaapDeleteJobLoopTemplateRequest)?.revision, owner);
+            const deleted = await this.managementLock.runExclusive(async () => {
+                if (owner && this.triggers.list(owner).some(trigger => trigger.templateId === req.params.id)) {
+                    throw new QaapJobLoopTemplateConflictError(nls.localize(
+                        'qaap/jobLoopTemplates/inUse',
+                        'Delete this template\'s triggers before deleting the template.',
+                    ));
+                }
+                return this.store.delete(req.params.id, (req.body as QaapDeleteJobLoopTemplateRequest)?.revision, owner);
+            });
             if (!deleted) {
                 this.notFound(res);
                 return;
@@ -282,6 +288,12 @@ export class QaapJobLoopTemplateEndpoint implements BackendApplicationContributi
     }
 
     protected sendError(res: Response, error: unknown): void {
+        if (error instanceof QaapJobLoopManagementLockTimeoutError) {
+            res.status(503).json({ error: nls.localize(
+                'qaap/jobLoopTemplates/busy', 'Job loop template storage is busy. Try again in a moment.',
+            ) });
+            return;
+        }
         const conflict = error instanceof QaapJobLoopTemplateConflictError || error instanceof QaapJobLoopConflictError;
         const forbidden = error instanceof QaapJobLoopTemplateForbiddenError;
         const badRequest = error instanceof QaapJobLoopTemplateRequestError || error instanceof QaapJobLoopRequestError;

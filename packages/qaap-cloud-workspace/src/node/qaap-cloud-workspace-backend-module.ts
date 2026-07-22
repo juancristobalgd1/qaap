@@ -55,6 +55,7 @@ import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contributio
 import { QaapJobEndpoint } from './qaap-job-endpoint';
 import { QaapJobLoopEndpoint } from './qaap-job-loop-endpoint';
 import { QaapJobLoopEngine } from './qaap-job-loop-engine';
+import { QaapJobLoopManagementLock } from './qaap-job-loop-management-lock';
 import { QaapJobLoopTemplateEndpoint } from './qaap-job-loop-template-endpoint';
 import { QaapJobLoopTemplateStore } from './qaap-job-loop-template-store';
 import { QaapJobLoopTriggerEndpoint } from './qaap-job-loop-trigger-endpoint';
@@ -102,6 +103,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapJobLoopEngine).toSelf().inSingletonScope();
     bind(QaapJobLoopEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapJobLoopEndpoint);
+    bind(QaapJobLoopManagementLock).toSelf().inSingletonScope();
     bind(QaapJobLoopTemplateStore).toSelf().inSingletonScope();
     bind(QaapJobLoopTemplateEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapJobLoopTemplateEndpoint);

@@ -28,6 +28,7 @@ class TestStore extends QaapJobLoopTemplateStore {
     constructor(protected readonly testDirectory: string) { super(); }
     initialize(): void { this.init(); }
     protected override storeDirectory(): string { return this.testDirectory; }
+    protected override managementLockPath(): string { return path.join(this.testDirectory, 'management.lock'); }
 }
 
 describe('QaapJobLoopTemplateStore', () => {
@@ -85,5 +86,21 @@ describe('QaapJobLoopTemplateStore', () => {
         const created = await store.create(request('Shared template'), 'alice');
 
         expect(warmReplica.get('alice', created.id)?.name).to.equal('Shared template');
+    });
+
+    it('preserves simultaneous writes from warm replicas sharing one index', async () => {
+        const second = new TestStore(directory);
+        second.initialize();
+
+        await Promise.all([
+            store.create(request('First concurrent template'), 'alice'),
+            second.create(request('Second concurrent template'), 'alice'),
+        ]);
+
+        const restored = new TestStore(directory);
+        restored.initialize();
+        expect(restored.list('alice').map(template => template.name).sort()).to.deep.equal([
+            'First concurrent template', 'Second concurrent template',
+        ]);
     });
 });
