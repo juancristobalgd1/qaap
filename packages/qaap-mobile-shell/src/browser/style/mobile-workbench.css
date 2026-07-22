@@ -7462,7 +7462,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-changes-pill,
-.theia-mobile-sticky-composer-working-pill {
+.theia-mobile-sticky-composer-working-pill,
+.theia-mobile-sticky-composer-step-pill {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -7553,6 +7554,189 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-sticky-composer-working-pill-label {
   min-width: 0;
   white-space: nowrap;
+}
+
+.theia-mobile-sticky-composer-step-pill {
+  color: color-mix(in srgb, var(--theia-foreground) 86%, var(--theia-descriptionForeground));
+}
+
+.theia-mobile-sticky-composer-step-pill-label {
+  min-width: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-mobile-sticky-composer-step-pill.theia-mod-active,
+.theia-mobile-sticky-composer-step-pill[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--theia-foreground) 10%, var(--theia-editor-background));
+  border-color: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+}
+
+/* Dark plan to-do menu for the Step pill (ported from TodoList reference). */
+.theia-mobile-sticky-composer-step-menu {
+  position: fixed;
+  z-index: 10050;
+  box-sizing: border-box;
+  min-width: 260px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: min(420px, calc(100vh - 24px));
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #1a1a1a;
+  color: #f5f5f5;
+  box-shadow:
+    0 0 0 1px #303030,
+    0 12px 28px color-mix(in srgb, #000 42%, transparent);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.theia-mobile-sticky-composer-step-menu-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  max-height: min(380px, calc(100vh - 48px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
+.theia-mobile-sticky-composer-step-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #737373;
+  animation: qaap-step-todo-item-in 360ms ease backwards;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+
+.theia-mobile-sticky-composer-step-menu-icon {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.theia-mobile-sticky-composer-step-menu-glyph {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 16px;
+  color: #737373;
+  opacity: 0;
+  transition: opacity 320ms ease;
+}
+
+.theia-mobile-sticky-composer-step-menu-glyph.theia-mod-on {
+  opacity: 1;
+}
+
+.theia-mobile-sticky-composer-step-menu-label {
+  position: relative;
+  min-width: 0;
+  font-weight: 400;
+  color: #737373;
+  transition: color 360ms ease;
+}
+
+.theia-mobile-sticky-composer-step-menu-label::before {
+  content: attr(data-label);
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    #f5f5f5 0%,
+    #f5f5f5 30%,
+    rgba(245, 245, 245, 0.45) 45%,
+    rgba(245, 245, 245, 0.45) 55%,
+    #f5f5f5 70%,
+    #f5f5f5 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  opacity: 0;
+  transition: opacity 360ms ease;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+.theia-mobile-sticky-composer-step-menu-item.theia-mod-completed .theia-mobile-sticky-composer-step-menu-label {
+  color: #737373;
+}
+
+.theia-mobile-sticky-composer-step-menu-item.theia-mod-pending .theia-mobile-sticky-composer-step-menu-label {
+  color: #737373;
+}
+
+.theia-mobile-sticky-composer-step-menu-item.theia-mod-in-progress .theia-mobile-sticky-composer-step-menu-label {
+  color: transparent;
+}
+
+.theia-mobile-sticky-composer-step-menu-item.theia-mod-in-progress .theia-mobile-sticky-composer-step-menu-label::before {
+  opacity: 1;
+  animation: qaap-step-todo-shine 2.25s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+}
+
+.theia-mobile-sticky-composer-step-menu-item.theia-mod-in-progress .theia-mobile-sticky-composer-step-menu-glyph.theia-mod-on {
+  color: #f5f5f5;
+}
+
+@keyframes qaap-step-todo-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes qaap-step-todo-shine {
+  0%,
+  18% {
+    background-position: 100% 0;
+  }
+
+  82%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-sticky-composer-step-menu-item {
+    animation: none;
+  }
+
+  .theia-mobile-sticky-composer-step-menu-glyph,
+  .theia-mobile-sticky-composer-step-menu-label,
+  .theia-mobile-sticky-composer-step-menu-label::before {
+    transition: none;
+  }
+
+  .theia-mobile-sticky-composer-step-menu-item.theia-mod-in-progress .theia-mobile-sticky-composer-step-menu-label::before {
+    animation: none;
+    opacity: 1;
+    -webkit-text-fill-color: #f5f5f5;
+    color: #f5f5f5;
+    background: none;
+  }
+
+  .theia-mobile-sticky-composer-step-menu-item.theia-mod-in-progress .theia-mobile-sticky-composer-step-menu-label {
+    color: #f5f5f5;
+  }
 }
 
 /*
@@ -8276,7 +8460,9 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 .theia-mobile-sticky-composer-changes-pill:hover,
 .theia-mobile-sticky-composer-changes-pill:focus-visible,
 .theia-mobile-sticky-composer-working-pill:hover,
-.theia-mobile-sticky-composer-working-pill:focus-visible {
+.theia-mobile-sticky-composer-working-pill:focus-visible,
+.theia-mobile-sticky-composer-step-pill:hover,
+.theia-mobile-sticky-composer-step-pill:focus-visible {
   background: color-mix(in srgb, var(--theia-foreground) 10%, var(--theia-editor-background));
   border-color: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
 }
@@ -8284,7 +8470,8 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 /* Frosted-glass pill: translucent so the transcript shows through; solid background above is the fallback. */
 @supports (backdrop-filter: blur(14px)) or (-webkit-backdrop-filter: blur(14px)) {
   .theia-mobile-sticky-composer-changes-pill,
-  .theia-mobile-sticky-composer-working-pill {
+  .theia-mobile-sticky-composer-working-pill,
+  .theia-mobile-sticky-composer-step-pill {
     background: color-mix(in srgb, var(--theia-editor-background) 58%, transparent);
     border-color: color-mix(in srgb, var(--theia-foreground) 16%, transparent);
     -webkit-backdrop-filter: blur(14px) saturate(150%);
@@ -8294,7 +8481,9 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   .theia-mobile-sticky-composer-changes-pill:hover,
   .theia-mobile-sticky-composer-changes-pill:focus-visible,
   .theia-mobile-sticky-composer-working-pill:hover,
-  .theia-mobile-sticky-composer-working-pill:focus-visible {
+  .theia-mobile-sticky-composer-working-pill:focus-visible,
+  .theia-mobile-sticky-composer-step-pill:hover,
+  .theia-mobile-sticky-composer-step-pill:focus-visible {
     background: color-mix(in srgb,
         color-mix(in srgb, var(--theia-foreground) 10%, var(--theia-editor-background)) 68%,
         transparent);

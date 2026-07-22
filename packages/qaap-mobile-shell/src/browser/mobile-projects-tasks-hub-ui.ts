@@ -43,6 +43,11 @@ import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
 } from './qaap-sticky-composer-working-detail-activity';
 import { shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
+import { syncStickyComposerStepPillInRoots } from './qaap-sticky-composer-step-pill';
+import {
+    resolveLatestTranscriptTodos,
+    resolveTodoStepProgress,
+} from '../common/qaap-transcript-todo-step';
 import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 
@@ -390,6 +395,7 @@ export class MobileProjectsTasksHubUi {
                 onOpen: anchor => this.openWorkingAgentsPopoverFromPill(anchor),
             },
         );
+        this.updateStepPillChrome();
         if (count > 0 || reading) {
             const roots = [this.host.stickyComposerHost, this.host.transcriptComposerHost];
             let pill: HTMLButtonElement | undefined;
@@ -434,6 +440,34 @@ export class MobileProjectsTasksHubUi {
             resolveDetailActivityFeed: member => this.resolveWorkingDetailActivityFeed(member),
             onDetailMemberChange: member => this.bindWorkingDetailActivitySubscription(member),
         });
+    }
+
+    /**
+     * "Step X/Y" pill to the right of Working when the active conversation has a
+     * parseable TodoWrite checklist. Hover/click opens the plan to-do menu.
+     */
+    updateStepPillChrome(): void {
+        const progress = this.resolveActiveConversationTodoStepProgress();
+        syncStickyComposerStepPillInRoots(
+            [this.host.stickyComposerHost, this.host.transcriptComposerHost],
+            { progress },
+        );
+    }
+
+    protected resolveActiveConversationTodoStepProgress(): ReturnType<typeof resolveTodoStepProgress> {
+        const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
+        const conversationId = summary?.id?.trim();
+        if (!conversationId) {
+            return undefined;
+        }
+        const document = this.host.conversations?.threadStore.getDocument(conversationId);
+        if (!document?.messages?.length) {
+            // Best-effort warm: live/chrome refresh will re-sync once the doc lands.
+            this.host.conversations?.prefetchDocument(conversationId);
+            return undefined;
+        }
+        const items = resolveLatestTranscriptTodos(document.messages);
+        return items ? resolveTodoStepProgress(items) : undefined;
     }
 
     /**

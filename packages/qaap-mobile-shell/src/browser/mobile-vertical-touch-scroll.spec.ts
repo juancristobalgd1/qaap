@@ -26,6 +26,8 @@ const OVERLAY_SCROLL_HOSTS = [
     '.theia-mobile-terminal-output-content',
     // Working DETAIL live VPS command output (mounted outside #theia-app-shell).
     '.qaap-working-agents-detail-command-log-output',
+    // Step plan to-do menu (portaled to body from sticky composer pill).
+    '.theia-mobile-sticky-composer-step-menu-list',
 ] as const;
 
 /**

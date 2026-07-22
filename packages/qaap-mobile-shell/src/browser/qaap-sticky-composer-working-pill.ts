@@ -72,7 +72,11 @@ export function syncStickyComposerWorkingPill(
         });
         if (workingOnlyHost) {
             destroyThinkingOrbHosts(workingOnlyHost);
-            workingOnlyHost.remove();
+            // Keep the shared pills-only host when the Step plan pill is still mounted.
+            const keepsStepPill = !!workingOnlyHost.querySelector('.theia-mobile-sticky-composer-step-pill');
+            if (!keepsStepPill) {
+                workingOnlyHost.remove();
+            }
         }
         return;
     }
