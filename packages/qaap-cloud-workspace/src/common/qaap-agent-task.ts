@@ -72,6 +72,12 @@ export interface QaapAgentTask {
      * Absent on legacy tasks and when the working directory is not a readable Git repository.
      */
     readonly worktreeBaselineFingerprint?: string;
+    /**
+     * Normalized `git status --porcelain` captured with {@link worktreeBaselineFingerprint}. Used as
+     * a fail-closed fallback when the content fingerprint cannot be re-computed (budget exceeded,
+     * git error) so pre-existing dirty files are still not attributed to the task.
+     */
+    readonly worktreeBaselineStatus?: string;
     /** Backend self-verification result for QAIQ tasks that edited files. */
     readonly verification?: QaapAgentTaskVerification;
     /** Independent adversarial review verdict for high-risk tasks (second agent, clean context). */

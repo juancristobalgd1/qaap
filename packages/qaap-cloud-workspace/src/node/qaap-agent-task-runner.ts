@@ -1896,7 +1896,7 @@ export class QaapAgentTaskRunner {
         const markedTask = this.tasks.get(task.id) ?? task;
         task = {
             ...markedTask,
-            worktreeBaselineFingerprint: this.captureWorktreeFingerprint(task.cwd),
+            ...this.captureWorktreeBaseline(task.cwd),
         };
         this.tasks.set(task.id, task);
         void this.persist();
@@ -2349,11 +2349,22 @@ export class QaapAgentTaskRunner {
     }
 
     protected async hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean> {
+        // Prefer the content fingerprint when both snapshots exist — it sees untracked content edits
+        // that porcelain cannot. Never fall back to "any dirty path" once a baseline was captured:
+        // that re-attributes the user's pre-existing dirty files to the agent.
         if (task.worktreeBaselineFingerprint) {
             const currentFingerprint = this.captureWorktreeFingerprint(task.cwd);
             if (currentFingerprint) {
                 return currentFingerprint !== task.worktreeBaselineFingerprint;
             }
+        }
+        if (task.worktreeBaselineStatus !== undefined) {
+            const currentStatus = this.captureWorktreeStatus(task.cwd);
+            if (currentStatus !== undefined) {
+                return currentStatus !== task.worktreeBaselineStatus;
+            }
+            // Baseline existed but git status is unreadable now — do not guess via a bare dirty check.
+            return false;
         }
         const result = await this.runGenericCommand(
             `git -C ${this.shellQuote(task.cwd)} status --porcelain`,
@@ -2366,9 +2377,45 @@ export class QaapAgentTaskRunner {
     }
 
     /**
+     * Capture both the content fingerprint and a normalized porcelain snapshot before the agent
+     * starts. Either field may be absent when git is unavailable; callers persist whatever is set.
+     */
+    protected captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus'> {
+        const worktreeBaselineFingerprint = this.captureWorktreeFingerprint(cwd);
+        const worktreeBaselineStatus = this.captureWorktreeStatus(cwd);
+        return {
+            ...(worktreeBaselineFingerprint ? { worktreeBaselineFingerprint } : {}),
+            ...(worktreeBaselineStatus !== undefined ? { worktreeBaselineStatus } : {}),
+        };
+    }
+
+    /**
+     * Normalized porcelain status used as a path-level baseline. Line order is sorted so two
+     * equivalent dirty trees compare equal even when git emits paths in different orders.
+     */
+    protected captureWorktreeStatus(cwd: string): string | undefined {
+        const result = spawnSync('git', ['-C', cwd, 'status', '--porcelain', '--untracked-files=all'], {
+            cwd,
+            encoding: 'utf8',
+            maxBuffer: WORKTREE_FINGERPRINT_MAX_BUFFER,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        if (result.status !== 0 || result.error || typeof result.stdout !== 'string') {
+            return undefined;
+        }
+        return result.stdout
+            .split('\n')
+            .map(line => line.trimEnd())
+            .filter(Boolean)
+            .sort()
+            .join('\n');
+    }
+
+    /**
      * Hash the complete tracked diff plus the identity and contents of untracked files without
      * changing the index. Git streams untracked contents in bounded path batches; repositories
-     * above the explicit byte budget fail closed to the conservative legacy `git status` probe.
+     * above the explicit byte budget return undefined so callers can use the porcelain baseline
+     * instead of a bare "any dirty path" probe.
      */
     protected captureWorktreeFingerprint(cwd: string): string | undefined {
         const runGit = (args: readonly string[]): string | undefined => {

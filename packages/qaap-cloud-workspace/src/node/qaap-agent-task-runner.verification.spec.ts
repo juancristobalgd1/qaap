@@ -28,6 +28,12 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     public worktreeFingerprint(cwd: string): string | undefined {
         return this.captureWorktreeFingerprint(cwd);
     }
+    public worktreeStatus(cwd: string): string | undefined {
+        return this.captureWorktreeStatus(cwd);
+    }
+    public worktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus'> {
+        return this.captureWorktreeBaseline(cwd);
+    }
     public hasTaskEdits(task: QaapAgentTask): Promise<boolean> {
         return this.hasEditedFilesForVerification(task, {});
     }
@@ -160,12 +166,16 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
         }
     };
 
+    const initRepo = (cwd: string): void => {
+        runGit(cwd, 'init');
+        runGit(cwd, 'config', 'user.email', 'qaap@example.test');
+        runGit(cwd, 'config', 'user.name', 'Qaap Test');
+    };
+
     it('does not attribute unchanged pre-existing dirty files to the agent task', async () => {
         const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
         try {
-            runGit(cwd, 'init');
-            runGit(cwd, 'config', 'user.email', 'qaap@example.test');
-            runGit(cwd, 'config', 'user.name', 'Qaap Test');
+            initRepo(cwd);
             const tracked = path.join(cwd, 'tracked.txt');
             fs.writeFileSync(tracked, 'committed\n', 'utf8');
             runGit(cwd, 'add', 'tracked.txt');
@@ -173,11 +183,11 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
             fs.writeFileSync(tracked, 'dirty before task\n', 'utf8');
 
             const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
-            const baseline = runner.worktreeFingerprint(cwd);
-            if (!baseline) {
-                throw new Error('Expected a worktree fingerprint.');
+            const baseline = runner.worktreeBaseline(cwd);
+            if (!baseline.worktreeBaselineFingerprint || baseline.worktreeBaselineStatus === undefined) {
+                throw new Error('Expected a worktree baseline.');
             }
-            const task: QaapAgentTask = { ...TASK, cwd, worktreeBaselineFingerprint: baseline };
+            const task: QaapAgentTask = { ...TASK, cwd, ...baseline };
             expect(await runner.hasTaskEdits(task)).to.equal(false);
 
             fs.writeFileSync(tracked, 'changed by task\n', 'utf8');
@@ -190,19 +200,17 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
     it('detects an untracked file created after the task starts', async () => {
         const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
         try {
-            runGit(cwd, 'init');
-            runGit(cwd, 'config', 'user.email', 'qaap@example.test');
-            runGit(cwd, 'config', 'user.name', 'Qaap Test');
+            initRepo(cwd);
             fs.writeFileSync(path.join(cwd, 'tracked.txt'), 'committed\n', 'utf8');
             runGit(cwd, 'add', 'tracked.txt');
             runGit(cwd, 'commit', '-m', 'initial');
 
             const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
-            const baseline = runner.worktreeFingerprint(cwd);
-            if (!baseline) {
+            const baseline = runner.worktreeBaseline(cwd);
+            if (!baseline.worktreeBaselineFingerprint) {
                 throw new Error('Expected a worktree fingerprint.');
             }
-            const task: QaapAgentTask = { ...TASK, cwd, worktreeBaselineFingerprint: baseline };
+            const task: QaapAgentTask = { ...TASK, cwd, ...baseline };
             fs.writeFileSync(path.join(cwd, 'created.txt'), 'new\n', 'utf8');
             expect(await runner.hasTaskEdits(task)).to.equal(true);
         } finally {
@@ -213,9 +221,7 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
     it('detects content changes to an untracked file that existed before the task', async () => {
         const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
         try {
-            runGit(cwd, 'init');
-            runGit(cwd, 'config', 'user.email', 'qaap@example.test');
-            runGit(cwd, 'config', 'user.name', 'Qaap Test');
+            initRepo(cwd);
             fs.writeFileSync(path.join(cwd, 'tracked.txt'), 'committed\n', 'utf8');
             runGit(cwd, 'add', 'tracked.txt');
             runGit(cwd, 'commit', '-m', 'initial');
@@ -223,15 +229,99 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
             fs.writeFileSync(untracked, 'before\n', 'utf8');
 
             const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
-            const baseline = runner.worktreeFingerprint(cwd);
-            if (!baseline) {
+            const baseline = runner.worktreeBaseline(cwd);
+            if (!baseline.worktreeBaselineFingerprint) {
                 throw new Error('Expected a worktree fingerprint.');
             }
-            const task: QaapAgentTask = { ...TASK, cwd, worktreeBaselineFingerprint: baseline };
+            const task: QaapAgentTask = { ...TASK, cwd, ...baseline };
             expect(await runner.hasTaskEdits(task)).to.equal(false);
 
             fs.writeFileSync(untracked, 'after!\n', 'utf8');
             expect(await runner.hasTaskEdits(task)).to.equal(true);
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true });
+        }
+    });
+
+    it('fail-closed: when fingerprint cannot be re-read, porcelain baseline still ignores pre-existing dirty files', async () => {
+        const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
+        try {
+            initRepo(cwd);
+            const tracked = path.join(cwd, 'tracked.txt');
+            fs.writeFileSync(tracked, 'committed\n', 'utf8');
+            runGit(cwd, 'add', 'tracked.txt');
+            runGit(cwd, 'commit', '-m', 'initial');
+            fs.writeFileSync(tracked, 'dirty before task\n', 'utf8');
+
+            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const baseline = runner.worktreeBaseline(cwd);
+            if (baseline.worktreeBaselineStatus === undefined) {
+                throw new Error('Expected a porcelain baseline.');
+            }
+            // Simulate budget/git failure on the content fingerprint after the task started.
+            Object.assign(runner, {
+                captureWorktreeFingerprint: () => undefined,
+            });
+
+            const task: QaapAgentTask = { ...TASK, cwd, ...baseline };
+            expect(await runner.hasTaskEdits(task)).to.equal(false);
+
+            // Porcelain has no content hash: further edits to an already-dirty path stay invisible.
+            // Path-level changes (new/deleted paths) are still detected — that is the degraded contract.
+            fs.writeFileSync(tracked, 'changed by task\n', 'utf8');
+            expect(await runner.hasTaskEdits(task)).to.equal(false);
+
+            fs.writeFileSync(path.join(cwd, 'created-by-task.txt'), 'new\n', 'utf8');
+            expect(await runner.hasTaskEdits(task)).to.equal(true);
+        } finally {
+            fs.rmSync(cwd, { recursive: true, force: true });
+        }
+    });
+
+    it('fail-closed: never falls back to bare dirty-check when a baseline status exists but git status dies', async () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        let porcelainProbes = 0;
+        Object.assign(runner, {
+            captureWorktreeFingerprint: () => undefined,
+            captureWorktreeStatus: () => undefined,
+            runGenericCommand: async () => {
+                porcelainProbes++;
+                return { exitCode: 0, stdout: ' M tracked.txt\n', stderr: '', timedOut: false };
+            },
+        });
+        const task: QaapAgentTask = {
+            ...TASK,
+            worktreeBaselineFingerprint: 'deadbeef',
+            worktreeBaselineStatus: ' M tracked.txt',
+        };
+        // A bare porcelain probe would return true; with a baseline we must not guess.
+        expect(await runner.hasTaskEdits(task)).to.equal(false);
+        expect(porcelainProbes).to.equal(0);
+    });
+
+    it('keeps independent baselines for parallel tasks in the same cwd', async () => {
+        const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
+        try {
+            initRepo(cwd);
+            fs.writeFileSync(path.join(cwd, 'tracked.txt'), 'committed\n', 'utf8');
+            runGit(cwd, 'add', 'tracked.txt');
+            runGit(cwd, 'commit', '-m', 'initial');
+
+            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const baselineA = runner.worktreeBaseline(cwd);
+            const baselineB = runner.worktreeBaseline(cwd);
+            expect(baselineA.worktreeBaselineFingerprint).to.equal(baselineB.worktreeBaselineFingerprint);
+            expect(baselineA.worktreeBaselineStatus).to.equal(baselineB.worktreeBaselineStatus);
+
+            const taskA: QaapAgentTask = { ...TASK, id: 'a', cwd, ...baselineA };
+            const taskB: QaapAgentTask = { ...TASK, id: 'b', cwd, ...baselineB };
+            expect(await runner.hasTaskEdits(taskA)).to.equal(false);
+            expect(await runner.hasTaskEdits(taskB)).to.equal(false);
+
+            // Sibling edits in a shared cwd are visible to both baselines — documented contract.
+            fs.writeFileSync(path.join(cwd, 'from-a.txt'), 'a\n', 'utf8');
+            expect(await runner.hasTaskEdits(taskA)).to.equal(true);
+            expect(await runner.hasTaskEdits(taskB)).to.equal(true);
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true });
         }
