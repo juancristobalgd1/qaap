@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { normalizeResearchGoal, type ResearchGoal, type ResearchMetricSpec } from './qaap-research-goal';
 import {
+    bestPrimaryValue,
     configFingerprint,
     evaluateVerdict,
     parseExperimentProposal,
@@ -324,6 +325,17 @@ describe('qaap-research-ledger', () => {
         it('reports cancelled immediately when the goal status is cancelled, regardless of records', () => {
             const cancelledGoal: ResearchGoal = { ...goal, status: 'cancelled' };
             expect(resolveTerminationReason(cancelledGoal, [], 0)).to.equal('cancelled');
+        });
+    });
+
+    describe('bestPrimaryValue', () => {
+        it('returns the best value for a max primary metric', () => {
+            const primary: ResearchMetricSpec = { name: 'acc', direction: 'max', metricCommand: 'echo 1' };
+            const records = [
+                record({ round: 1, metrics: [{ name: 'acc', value: 0.7, direction: 'max' }] }),
+                record({ round: 2, metrics: [{ name: 'acc', value: 0.9, direction: 'max' }] }),
+            ];
+            expect(bestPrimaryValue(records, primary)).to.equal(0.9);
         });
     });
 });

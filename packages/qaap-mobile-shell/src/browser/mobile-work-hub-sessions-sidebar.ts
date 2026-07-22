@@ -39,6 +39,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onSearch?: () => void;
     onExtensions?: () => void;
     onAutomations?: () => void;
+    onResearch?: () => void;
     onStartNewProject?: () => void;
     isEmbedded?: () => boolean;
     /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
@@ -162,6 +163,11 @@ export class MobileWorkHubSessionsSidebar {
                 'codicon-zap',
                 nls.localize('qaap/mobileBottomBar/hubRoutines', 'Routines'),
                 () => this.delegate.onAutomations?.(),
+            ),
+            this.createNavButton(
+                'codicon-beaker',
+                nls.localize('qaap/mobileBottomBar/hubResearch', 'Research'),
+                () => this.delegate.onResearch?.(),
             ),
         );
         this.scrollHost = document.createElement('div');

@@ -287,7 +287,7 @@ function trailingStagnationCount(records: readonly ResearchExperimentRecord[]): 
     return countTrailingConsecutive(withoutInfraFailures, record => record.verdict !== 'improved');
 }
 
-function bestPrimaryValue(records: readonly ResearchExperimentRecord[], primary: ResearchMetricSpec): number | undefined {
+export function bestPrimaryValue(records: readonly ResearchExperimentRecord[], primary: ResearchMetricSpec): number | undefined {
     const values = records
         .map(record => record.metrics.find(metric => metric.name === primary.name)?.value)
         .filter((value): value is number => value !== undefined);

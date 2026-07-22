@@ -49,6 +49,7 @@ export interface MobileProjectsHubLandingHost {
     subscribeToInboxStream(): void;
     refreshInboxPullRequests(projects?: import('./mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
     refreshWorkHubRoutines(force?: boolean): Promise<void>;
+    refreshResearchGoals(force?: boolean): Promise<void>;
     refreshDiffHubView(): Promise<void>;
     detachDiffReviewWidget(): void;
 }
@@ -119,6 +120,12 @@ export class MobileProjectsHubLandingUi {
             this.host.delegate.onHubLandingViewChanged?.();
             return;
         }
+        if (!force && this.host.hubView === view && view === 'research') {
+            void this.host.refreshResearchGoals(true);
+            this.host.syncLandingHubListChrome();
+            this.host.delegate.onHubLandingViewChanged?.();
+            return;
+        }
         this.host.hubView = view;
         if (view !== 'home') {
             this.host.projectsService.setHubView(view);
@@ -130,6 +137,9 @@ export class MobileProjectsHubLandingUi {
         }
         if (view === 'routines') {
             void this.host.refreshWorkHubRoutines(true);
+        }
+        if (view === 'research') {
+            void this.host.refreshResearchGoals(true);
         }
         if (view === 'chat') {
             this.host.scheduleChatHubListRefreshAfterSummaries();

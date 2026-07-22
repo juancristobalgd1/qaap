@@ -137,6 +137,10 @@ export class MobileProjectsHubHeaderUi {
             this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/routinesTitle', 'Routines');
             return;
         }
+        if (this.host.hubView === 'research') {
+            this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/researchTitle', 'Research');
+            return;
+        }
         if (this.host.homeMode && this.host.hubView === 'home') {
             this.host.titleEl.textContent = this.host.buildHomeGreeting();
             this.host.titleAttentionEl.hidden = true;

@@ -116,6 +116,7 @@ import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } fro
 import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHost } from './mobile-projects-theia-chat-session-ui';
 import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from './mobile-projects-hub-catalog-ui';
 import { MobileProjectsHubRoutinesUi, type MobileProjectsHubRoutinesHost } from './mobile-projects-hub-routines-ui';
+import { MobileProjectsHubResearchUi, type MobileProjectsHubResearchHost } from './mobile-projects-hub-research-ui';
 import { MobileProjectsHubRoutineEditorUi, type MobileProjectsHubRoutineEditorHost } from './mobile-projects-hub-routine-editor-ui';
 import { MobileProjectsReposHubUi, type MobileProjectsReposHubHost } from './mobile-projects-repos-hub-ui';
 import { MobileProjectsProjectActionsUi, type MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
@@ -318,6 +319,8 @@ export interface MobileProjectsPanelDelegate {
     onShowAgentsHub?(): void | Promise<void>;
     /** Show Work Hub Routines from the sessions sidebar. */
     onShowRoutinesHub?(): void | Promise<void>;
+    /** Show Work Hub Research from the sessions sidebar. */
+    onShowResearchHub?(): void | Promise<void>;
     /** Shell bottom bar active state after in-panel hub tab changes. */
     onHubLandingViewChanged?(): void;
     /** Transcript sheet on body: leave Work Hub landing overlay while chat is active. */
@@ -656,6 +659,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly projectRowsUi = new MobileProjectsProjectRowsUi(this as unknown as MobileProjectsProjectRowsHost);
     protected readonly hubRoutineEditorUi = new MobileProjectsHubRoutineEditorUi(this as unknown as MobileProjectsHubRoutineEditorHost);
     protected readonly hubRoutinesUi = new MobileProjectsHubRoutinesUi(this as unknown as MobileProjectsHubRoutinesHost);
+    protected readonly hubResearchUi = new MobileProjectsHubResearchUi(this as unknown as MobileProjectsHubResearchHost);
     protected readonly hubTeamDataUi = new MobileProjectsHubTeamDataUi(this as unknown as MobileProjectsHubTeamDataHost);
     protected readonly conversationActionsUi = new MobileProjectsConversationActionsUi(this as unknown as MobileProjectsConversationActionsHost);
     protected readonly projectActionsUi = new MobileProjectsProjectActionsUi(this as unknown as MobileProjectsProjectActionsHost);
@@ -698,6 +702,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected editingRoutineId: string | undefined;
     protected routinesRefreshTimer: number | undefined;
     protected routineInteractionLock = false;
+    protected researchGoals: import('../common/qaap-research-goal').ResearchGoal[] = [];
+    protected researchGoalDetails = new Map<string, import('./mobile-projects-hub-research-ui').ResearchGoalDetailCache>();
+    protected researchGoalsLoading = false;
+    protected researchGoalsLoaded = false;
+    protected researchRefreshTimer: number | undefined;
     protected readonly chatServiceSessionSummariesByProjectId = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected executionTabOverflowMenu: HTMLElement | undefined;
     protected executionTabOverflowAnchor: HTMLElement | undefined;
@@ -2739,6 +2748,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.hubRoutineEditorUi.refreshWorkHubRoutines(force);
     }
 
+    protected async refreshResearchGoals(force = false): Promise<void> {
+        return this.hubResearchUi.refreshResearchGoals(force);
+    }
+
     protected openRoutineEditor(routine?: QaapWorkHubRoutine): void {
         this.hubRoutineEditorUi.openRoutineEditor(routine);
     }
@@ -2749,6 +2762,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected renderRoutinesHubView(): void {
         this.hubRoutinesUi.renderRoutinesHubView();
+    }
+
+    protected renderResearchHubView(): void {
+        this.hubResearchUi.renderResearchHubView();
     }
 
     protected sortRoutinesForDisplay(routines: readonly QaapWorkHubRoutine[]): QaapWorkHubRoutine[] {

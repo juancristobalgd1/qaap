@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 /**
- * REST contract for the auto-researcher v1 (no frontend yet — driven with curl). Kept separate
+ * REST contract for the auto-researcher v1. Work Hub lists goals; create still via curl. Kept separate
  * from {@link ./qaap-research-goal} and {@link ./qaap-research-ledger} (already tested, pure data
  * model) so this file can evolve with the endpoint shape without touching them.
  */

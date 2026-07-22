@@ -95,6 +95,23 @@ export const DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT = 3;
  * one, this throws rather than silently guessing which one the agent's termination logic should
  * follow.
  */
+export function researchGoalCwdBasename(cwd: string): string {
+    const parts = cwd.split(/[/\\]/).filter(Boolean);
+    return parts[parts.length - 1] ?? cwd;
+}
+
+export function filterResearchGoalsByQuery(goals: readonly ResearchGoal[], query: string): ResearchGoal[] {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) {
+        return [...goals];
+    }
+    return goals.filter(goal =>
+        goal.description.toLowerCase().includes(normalized)
+        || goal.cwd.toLowerCase().includes(normalized)
+        || researchGoalCwdBasename(goal.cwd).toLowerCase().includes(normalized),
+    );
+}
+
 export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoal {
     if (!input.id) {
         throw new Error('ResearchGoal requires an id.');

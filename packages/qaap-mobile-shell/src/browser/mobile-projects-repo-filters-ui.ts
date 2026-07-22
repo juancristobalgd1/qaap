@@ -131,6 +131,9 @@ export class MobileProjectsRepoFiltersUi {
         if (this.host.hubView === 'routines') {
             return nls.localize('qaap/mobileProjects/searchRoutinesPlaceholder', 'Search routines and automations');
         }
+        if (this.host.hubView === 'research') {
+            return nls.localize('qaap/mobileProjects/searchResearchPlaceholder', 'Search research goals');
+        }
         if (this.host.isProjectDetailView()) {
             const project = this.host.projectNavigationUi.resolveSelectedProject();
             const surface = project ? this.host.projectRowsUi.detailComposerSurfaceForProject(project) : 'task';

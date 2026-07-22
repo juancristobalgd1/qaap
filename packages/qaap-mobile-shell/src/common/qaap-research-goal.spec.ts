@@ -8,7 +8,9 @@ import {
     DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT,
     DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
     DEFAULT_RESEARCH_STAGNATION_ROUNDS,
+    filterResearchGoalsByQuery,
     normalizeResearchGoal,
+    researchGoalCwdBasename,
 } from './qaap-research-goal';
 
 describe('qaap-research-goal', () => {
@@ -114,5 +116,20 @@ describe('qaap-research-goal', () => {
         expect(goal.runCommand).to.equal('python train.py');
         expect(goal.metrics[0].metricCommand).to.equal('python eval.py');
         expect(goal.runCommand).to.not.equal(goal.metrics[0].metricCommand);
+    });
+
+    it('researchGoalCwdBasename returns the last path segment', () => {
+        expect(researchGoalCwdBasename('/tmp/my-repo')).to.equal('my-repo');
+        expect(researchGoalCwdBasename('C:\\work\\qaap')).to.equal('qaap');
+        expect(researchGoalCwdBasename('single')).to.equal('single');
+    });
+
+    it('filterResearchGoalsByQuery matches description and cwd', () => {
+        const goals = [
+            normalizeResearchGoal({ id: 'g1', cwd: '/tmp/alpha', description: 'Tune learning rate', metrics: [baseMetric] }),
+            normalizeResearchGoal({ id: 'g2', cwd: '/tmp/beta', description: 'Reduce drift', metrics: [baseMetric] }),
+        ];
+        expect(filterResearchGoalsByQuery(goals, 'drift')).to.have.lengthOf(1);
+        expect(filterResearchGoalsByQuery(goals, 'beta')).to.have.lengthOf(1);
     });
 });

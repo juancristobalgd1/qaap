@@ -68,6 +68,7 @@ export interface MobileProjectsPanelFactoryDelegate {
     onOpenPullRequest(pullRequest: QaapGithubPullRequestSummary): void;
     onShowAgentsHub(): void;
     onShowRoutinesHub(): void;
+    onShowResearchHub(): void;
     onHubLandingViewChanged(): void;
     onEnterActiveTranscript(): void;
     onEnterWorkHubConversation(): void;
@@ -166,6 +167,7 @@ export class MobileProjectsPanelFactory {
                 onOpenPullRequest: pullRequest => delegate.onOpenPullRequest(pullRequest),
                 onShowAgentsHub: () => delegate.onShowAgentsHub(),
                 onShowRoutinesHub: () => delegate.onShowRoutinesHub(),
+                onShowResearchHub: () => delegate.onShowResearchHub(),
                 onHubLandingViewChanged: () => delegate.onHubLandingViewChanged(),
                 onEnterActiveTranscript: () => delegate.onEnterActiveTranscript(),
                 onEnterWorkHubConversation: () => delegate.onEnterWorkHubConversation(),

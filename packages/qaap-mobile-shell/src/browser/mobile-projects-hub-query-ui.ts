@@ -87,7 +87,7 @@ export class MobileProjectsHubQueryUi {
     isSidebarSecondaryHubView(): boolean {
         return QAAP_AGENTS_HUB_LANDING_ENABLED
             && this.host.homeMode
-            && (this.host.hubView === 'routines' || this.host.hubView === 'home' || this.host.hubView === 'workflows');
+            && (this.host.hubView === 'routines' || this.host.hubView === 'research' || this.host.hubView === 'home' || this.host.hubView === 'workflows');
     }
 
     navigateBackFromSidebarSecondaryHub(): void {

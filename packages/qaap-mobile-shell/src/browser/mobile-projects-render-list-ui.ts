@@ -34,6 +34,7 @@ export interface MobileProjectsRenderListHost {
     renderReviewHubView(projects: MobileProjectEntry[]): void;
     renderCatalogHubView(): void;
     renderRoutinesHubView(): void;
+    renderResearchHubView(): void;
     createEmptyState(): HTMLElement;
     createProjectDetailView(project: MobileProjectEntry): HTMLElement;
     createRow(project: MobileProjectEntry): HTMLElement;
@@ -113,6 +114,10 @@ export class MobileProjectsRenderListUi {
             }
             if (this.host.hubView === 'routines') {
                 this.host.renderRoutinesHubView();
+                return;
+            }
+            if (this.host.hubView === 'research') {
+                this.host.renderResearchHubView();
                 return;
             }
 
