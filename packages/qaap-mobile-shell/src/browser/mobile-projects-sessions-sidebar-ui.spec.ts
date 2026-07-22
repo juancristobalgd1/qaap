@@ -216,4 +216,81 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(icon?.querySelectorAll('path')).to.have.lengthOf(2);
     });
 
+    it('openEmptyMobileChatSheet activates the card project on Agents hub landing', async () => {
+        const cardProject = { id: 'card-proj', name: 'Card Repo', status: 'idle' } as MobileProjectEntry;
+        const activated: string[] = [];
+        const resetFor: string[] = [];
+        let composerProjectId: string | undefined;
+        let surfaceProjectId: string | undefined;
+        const host = {
+            sessionsSidebar: { hide: () => undefined },
+            shouldUseAgentsHubLanding: () => true,
+            isProjectDetailView: () => false,
+            agentsHubInlineActive: true,
+            agentsHubSelectedProjectId: 'other-workspace',
+            visible: true,
+            activateAgentsHubProject: async (entry: MobileProjectEntry) => {
+                activated.push(entry.id);
+                host.agentsHubSelectedProjectId = entry.id;
+            },
+            resetAgentsHubIdleTranscriptShell: (entry: MobileProjectEntry) => {
+                resetFor.push(entry.id);
+            },
+            projectsService: {
+                getProjectCwd: () => '/tmp/card-repo',
+            },
+            activeTasks: { getDefaultAgent: () => 'codex' },
+            transcriptStickyComposerUi: {
+                resetToProjectComposerDefaults: (entry: MobileProjectEntry) => {
+                    composerProjectId = entry.id;
+                },
+            },
+            executionSurfaceTabsUi: {
+                setExecutionSurfaceTab: (entry: MobileProjectEntry) => {
+                    surfaceProjectId = entry.id;
+                },
+            },
+            renderHeader: () => undefined,
+            renderSubtitle: () => undefined,
+            stickyComposerRenderUi: { renderStickyComposer: () => undefined },
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+
+        await ui.openEmptyMobileChatSheet(cardProject);
+
+        expect(activated).to.deep.equal(['card-proj']);
+        expect(resetFor).to.deep.equal(['card-proj']);
+        expect(host.agentsHubSelectedProjectId).to.equal('card-proj');
+        expect(composerProjectId).to.equal('card-proj');
+        expect(surfaceProjectId).to.equal('card-proj');
+    });
+
+    it('openEmptyMobileChatSheet scopes pending transcript sheets to the card project', async () => {
+        const cardProject = { id: 'sheet-proj', name: 'Sheet Repo', status: 'idle' } as MobileProjectEntry;
+        let opened: { projectId: string; summaryId: string; cwd: string } | undefined;
+        const host = {
+            sessionsSidebar: { hide: () => undefined },
+            shouldUseAgentsHubLanding: () => false,
+            isProjectDetailView: () => false,
+            agentsHubSelectedProjectId: undefined as string | undefined,
+            projectsService: {
+                getProjectCwd: () => '/tmp/sheet-repo',
+            },
+            activeTasks: { getDefaultAgent: () => 'codex' },
+            transcriptSheetUi: {
+                openTranscriptSheet: async (entry: MobileProjectEntry, summary: { id: string; cwd: string }) => {
+                    opened = { projectId: entry.id, summaryId: summary.id, cwd: summary.cwd };
+                },
+            },
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+
+        await ui.openEmptyMobileChatSheet(cardProject);
+
+        expect(host.agentsHubSelectedProjectId).to.equal('sheet-proj');
+        expect(opened?.projectId).to.equal('sheet-proj');
+        expect(opened?.cwd).to.equal('/tmp/sheet-repo');
+        expect(opened?.summaryId.startsWith('pending-new-chat-sheet-proj-')).to.equal(true);
+    });
+
 });

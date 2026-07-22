@@ -89,6 +89,8 @@ export interface MobileProjectsSessionsSidebarHost {
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
     closeAgentsHubSession(): void;
     resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void;
+    /** Select a project and land on its Agents idle shell (scoped; not the ambiguous workspace default). */
+    activateAgentsHubProject(project: MobileProjectEntry): Promise<void>;
     renderHeader(): void;
     renderSubtitle(): void;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
@@ -972,14 +974,11 @@ export class MobileProjectsSessionsSidebarUi {
     async openEmptyMobileChatSheet(project: MobileProjectEntry): Promise<void> {
         this.host.sessionsSidebar?.hide();
         if (this.host.shouldUseAgentsHubLanding() && !this.host.isProjectDetailView()) {
-            if (this.host.transcriptSheet) {
-                this.host.transcriptSheetUi.closeTranscriptSheet();
-            }
-            if (this.host.agentsHubInlineActive) {
-                this.host.closeAgentsHubSession();
-            } else {
-                this.host.resetAgentsHubIdleTranscriptShell(project);
-            }
+            // Card-menu / sidebar "New agent" must scope the idle Agents shell to THIS project.
+            // Without activateAgentsHubProject, closeAgentsHubSession falls back to the workspace /
+            // pinned project and the new section appears under the wrong repo.
+            await this.host.activateAgentsHubProject(project);
+            this.host.resetAgentsHubIdleTranscriptShell(project);
             const cwd = this.host.projectsService.getProjectCwd(project);
             const defaultAgent = (cwd ? readStoredAgent(cwd) : undefined)
                 ?? this.host.activeTasks?.getDefaultAgent()
@@ -993,6 +992,8 @@ export class MobileProjectsSessionsSidebarUi {
             this.host.stickyComposerRenderUi.renderStickyComposer();
             return;
         }
+        // Non–Agents-hub path: open a pending empty transcript scoped to the card project.
+        this.host.agentsHubSelectedProjectId = project.id;
         const cwd = this.host.projectsService.getProjectCwd(project);
         const agentId = (cwd ? readStoredAgent(cwd) : undefined)
             ?? this.host.activeTasks?.getDefaultAgent()
