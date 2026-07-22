@@ -47,11 +47,35 @@ services:
       QAAP_AGENT_COMMAND: ${QAAP_AGENT_COMMAND:-}
       QAAP_AGENT_COMMANDS: ${QAAP_AGENT_COMMANDS:-}
       QAAP_DEFAULT_AGENT: ${QAAP_DEFAULT_AGENT:-qaiq}
+      # Agent CLI update toast: set QAAP_AGENT_CLI_UPDATE_CHECK=0 to disable boot probes / npm lookups.
+      QAAP_AGENT_CLI_UPDATE_CHECK: ${QAAP_AGENT_CLI_UPDATE_CHECK:-}
+      # Optional min-version fallback when npm registry is unreachable (Codex pin is also a build arg).
+      CODEX_CLI_VERSION: ${CODEX_CLI_VERSION:-}
+      CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
+      OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-}
+      COPILOT_CLI_VERSION: ${COPILOT_CLI_VERSION:-}
+      ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-}
+      QAAP_QAIQ_MIN_VERSION: ${QAAP_QAIQ_MIN_VERSION:-}
+      # Hard backend cap for distinct variants in a parallel run.
+      QAAP_MAX_PARALLEL_VARIANTS: ${QAAP_MAX_PARALLEL_VARIANTS:-4}
+      # Agent-independent job scheduler: global/per-user caps and isolated resource lanes.
+      QAAP_JOB_MAX_CONCURRENT: ${QAAP_JOB_MAX_CONCURRENT:-8}
+      QAAP_JOB_MAX_CONCURRENT_PER_USER: ${QAAP_JOB_MAX_CONCURRENT_PER_USER:-4}
+      QAAP_JOB_LIMIT_CPU: ${QAAP_JOB_LIMIT_CPU:-2}
+      QAAP_JOB_LIMIT_IO: ${QAAP_JOB_LIMIT_IO:-8}
+      QAAP_JOB_LIMIT_NETWORK: ${QAAP_JOB_LIMIT_NETWORK:-4}
+      QAAP_JOB_LIMIT_WORKSPACE: ${QAAP_JOB_LIMIT_WORKSPACE:-4}
+      QAAP_JOB_LIMIT_DEPLOYMENT: ${QAAP_JOB_LIMIT_DEPLOYMENT:-1}
+      QAAP_JOB_MAX_TIMEOUT_MS: ${QAAP_JOB_MAX_TIMEOUT_MS:-7200000}
+      QAAP_JOB_MAX_LOG_CHARS: ${QAAP_JOB_MAX_LOG_CHARS:-524288}
+      QAAP_JOB_LOOP_MAX_JOBS: ${QAAP_JOB_LOOP_MAX_JOBS:-512}
+      QAAP_JOB_LOOP_MAX_ACTIVE_PER_USER: ${QAAP_JOB_LOOP_MAX_ACTIVE_PER_USER:-4}
+      QAAP_JOB_LOOP_TRIGGER_LEASE_TTL_MS: ${QAAP_JOB_LOOP_TRIGGER_LEASE_TTL_MS:-600000}
       # Bundled Qaap slash skills (global). Custom user skills: ~/.qaap/users/{login}/skills
       QAAP_SYSTEM_SKILLS_DIR: ${QAAP_SYSTEM_SKILLS_DIR:-/opt/qaap/system-skills}
-      # Opt-in backend self-verification: after a QAIQ task edits files, run the project's
+      # Default-on backend self-verification: after an agent task edits files, run the project's
       # typecheck/build/test scripts and, on failure, spawn up to 2 fix turns (5-min cap).
-      # Default off; set QAAP_AGENT_VERIFY=1 in the VPS env to enable.
+      # Set QAAP_AGENT_VERIFY=0 (or false/off) in the VPS env to disable it explicitly.
       QAAP_AGENT_VERIFY: ${QAAP_AGENT_VERIFY:-}
       # Strict mode: set QAAP_AGENT_AUTO_CONTINUE=0 to stop the agent from auto-continuing after a
       # turn — it does only what the user asked and stops. Default on.

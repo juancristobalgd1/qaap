@@ -3,14 +3,18 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { Disposable, nls } from '@theia/core';
+import { Disposable, Emitter, Event, nls } from '@theia/core';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { isValidQaapJsonPointer, resolveQaapJsonPointer } from '../common/qaap-json-pointer';
+import {
+    isValidQaapJsonPointer,
+    replaceQaapJsonPointer,
+    resolveQaapJsonPointer,
+} from '../common/qaap-json-pointer';
 import {
     didQaapJobSucceed,
     isQaapJobFinished,
@@ -19,12 +23,18 @@ import {
 import {
     isQaapJobLoopFinished,
     QAAP_JOB_LOOP_CONDITION_OPERATORS,
+    QaapCreateJobLoopGraphNode,
     QaapCreateJobLoopRequest,
     QaapCreateJobLoopResult,
     QaapJobLoop,
     QaapJobLoopCondition,
     QaapJobLoopConditionOperator,
+    QaapJobLoopEvent,
+    QaapJobLoopEventType,
+    QaapJobLoopInputBinding,
+    QaapJobLoopMetrics,
     QaapJobLoopRound,
+    QaapJobLoopRoundDetail,
     QaapJobLoopTerminationReason,
 } from '../common/qaap-job-loop';
 import { QaapJobRuntime } from './qaap-job-runtime';
@@ -41,15 +51,29 @@ const DEFAULT_MAX_JOBS = 512;
 const DEFAULT_MAX_ACTIVE_PER_USER = 4;
 const MAX_GRAPH_NODES = 128;
 const MAX_CONDITION_CHARS = 64 * 1024;
+const MAX_BINDINGS_PER_NODE = 32;
+const MAX_DURABLE_EVENTS = 512;
 
 interface NormalizedLoopCondition extends QaapJobLoopCondition {
     readonly source: 'result' | 'job';
     readonly pointer: string;
 }
 
+interface NormalizedLoopInputBinding extends QaapJobLoopInputBinding {
+    readonly from: {
+        readonly nodeKey: string;
+        readonly source: 'result' | 'job';
+        readonly pointer: string;
+    };
+}
+
+interface NormalizedLoopGraphNode extends QaapCreateJobLoopGraphNode {
+    readonly bindings: readonly NormalizedLoopInputBinding[];
+}
+
 interface NormalizedLoopRequest {
     readonly title: string;
-    readonly graph: { readonly nodes: readonly QaapCreateJobGraphNode[] };
+    readonly graph: { readonly nodes: readonly NormalizedLoopGraphNode[] };
     readonly until: NormalizedLoopCondition;
     readonly maxIterations: number;
     readonly maxDurationMs: number;
@@ -63,12 +87,19 @@ interface PersistedLoopRecord {
 }
 
 interface PersistedLoopIndex {
-    readonly version: 1;
+    readonly version: 2;
     readonly loops: readonly PersistedLoopRecord[];
+    readonly eventSequence: number;
+    readonly events: readonly QaapJobLoopEvent[];
+}
+
+interface LegacyPersistedLoopIndex extends Pick<PersistedLoopIndex, 'loops'> {
+    readonly version: 1;
 }
 
 export class QaapJobLoopRequestError extends Error { }
 export class QaapJobLoopConflictError extends Error { }
+export class QaapJobLoopBindingError extends Error { }
 
 /**
  * Durable loop controller over QaapJobRuntime graphs.
@@ -87,10 +118,15 @@ export class QaapJobLoopEngine {
     protected readonly idempotencyIndex = new Map<string, string>();
     protected readonly deadlineTimers = new Map<string, NodeJS.Timeout>();
     protected readonly loopChains = new Map<string, Promise<unknown>>();
+    protected events: QaapJobLoopEvent[] = [];
+    protected eventSequence = 0;
     protected persistChain: Promise<void> = Promise.resolve();
     protected createChain: Promise<void> = Promise.resolve();
     protected jobListener: Disposable | undefined;
     protected stopping = false;
+
+    protected readonly onDidChangeLoopEmitter = new Emitter<QaapJobLoopEvent>();
+    readonly onDidChangeLoop: Event<QaapJobLoopEvent> = this.onDidChangeLoopEmitter.event;
 
     @postConstruct()
     protected init(): void {
@@ -131,16 +167,86 @@ export class QaapJobLoopEngine {
         return operation;
     }
 
+    /**
+     * Validate a reusable definition without creating durable state or scheduling work.
+     *
+     * Template endpoints use the same authority as live loop creation so graph limits,
+     * conditions, bindings and job budgets cannot drift between save and run paths.
+     */
+    validate(request: QaapCreateJobLoopRequest): void {
+        this.normalizeRequest(request);
+    }
+
     list(ownerLogin?: string): QaapJobLoop[] {
         const owner = ownerLogin?.trim() || undefined;
-        return [...this.records.values()]
-            .map(record => record.loop)
-            .filter(loop => loop.ownerLogin === owner)
-            .sort((left, right) => right.createdAt - left.createdAt);
+        const loops: QaapJobLoop[] = [];
+        for (const record of this.records.values()) {
+            if (record.loop.ownerLogin === owner) {
+                loops.push(record.loop);
+            }
+        }
+        return loops.sort((left, right) => right.createdAt - left.createdAt);
     }
 
     get(id: string): QaapJobLoop | undefined {
         return this.records.get(id)?.loop;
+    }
+
+    getMetrics(ownerLogin?: string): QaapJobLoopMetrics {
+        const loops = this.list(ownerLogin);
+        let active = 0;
+        let succeeded = 0;
+        let failed = 0;
+        let cancelled = 0;
+        let budgetExhausted = 0;
+        let roundsScheduled = 0;
+        let jobsScheduled = 0;
+        for (const loop of loops) {
+            roundsScheduled += loop.iteration;
+            jobsScheduled += loop.jobsScheduled;
+            switch (loop.state) {
+                case 'running': active++; break;
+                case 'succeeded': succeeded++; break;
+                case 'failed': failed++; break;
+                case 'cancelled': cancelled++; break;
+                case 'budget_exhausted': budgetExhausted++; break;
+            }
+        }
+        return {
+            generatedAt: Date.now(),
+            total: loops.length,
+            active,
+            succeeded,
+            failed,
+            cancelled,
+            budgetExhausted,
+            roundsScheduled,
+            jobsScheduled,
+        };
+    }
+
+    getRoundDetail(id: string, iteration: number): QaapJobLoopRoundDetail | undefined {
+        const record = this.records.get(id);
+        const round = record?.loop.rounds.find(candidate => candidate.iteration === iteration);
+        if (!record || !round) {
+            return undefined;
+        }
+        const detail = this.runtime.getGraph(round.graphId);
+        return {
+            loopId: id,
+            round,
+            graph: detail?.graph,
+            jobs: detail?.jobs ?? {},
+        };
+    }
+
+    eventsSince(ownerLogin: string | undefined, afterSequence = 0): QaapJobLoopEvent[] {
+        const owner = ownerLogin?.trim() || undefined;
+        return this.events.filter(event => event.ownerLogin === owner && event.sequence > afterSequence);
+    }
+
+    currentSequence(): number {
+        return this.eventSequence;
     }
 
     async cancel(id: string, ownerLogin?: string): Promise<QaapJobLoop | undefined> {
@@ -172,6 +278,7 @@ export class QaapJobLoopEngine {
         await this.createChain.catch(() => undefined);
         await Promise.all([...this.loopChains.values()].map(chain => chain.catch(() => undefined)));
         await this.persist();
+        this.onDidChangeLoopEmitter.dispose();
     }
 
     protected async createInternal(request: QaapCreateJobLoopRequest, ownerLogin?: string): Promise<QaapCreateJobLoopResult> {
@@ -227,6 +334,7 @@ export class QaapJobLoopEngine {
         if (normalized.idempotencyKey) {
             this.idempotencyIndex.set(this.ownerIdempotencyKey(ownerLogin, normalized.idempotencyKey), id);
         }
+        this.fireLoopEvent(record, 'created');
         await this.persist();
         try {
             await this.startNextRound(record);
@@ -236,6 +344,7 @@ export class QaapJobLoopEngine {
             if (normalized.idempotencyKey) {
                 this.idempotencyIndex.delete(this.ownerIdempotencyKey(ownerLogin, normalized.idempotencyKey));
             }
+            this.events = this.events.filter(event => event.loopId !== id);
             await this.persist();
             throw error;
         }
@@ -243,10 +352,14 @@ export class QaapJobLoopEngine {
             await this.enqueueLoop(record.loop.id, () => this.reconcile(record.loop.id));
         } catch (error) {
             if (record.loop.state === 'running') {
-                this.finishLoop(record, 'failed', 'graph_creation_failed');
+                this.finishLoop(record, 'failed', error instanceof QaapJobLoopBindingError
+                    ? 'binding_missing'
+                    : 'graph_creation_failed');
                 await this.persist();
             }
-            console.warn('[qaap-job-loops] failed to reconcile newly created loop:', error);
+            if (!(error instanceof QaapJobLoopBindingError)) {
+                console.warn('[qaap-job-loops] failed to reconcile newly created loop:', error);
+            }
         }
         return { loop: record.loop, created: true };
     }
@@ -294,6 +407,7 @@ export class QaapJobLoopEngine {
             key: node.key,
             request: { ...node.request },
             dependsOn: node.dependsOn ? [...node.dependsOn] : undefined,
+            bindings: this.normalizeBindings(node, nodeKeys),
         }));
         return {
             title: (requestedTitle || nls.localize('qaap/jobLoops/defaultTitle', 'Job loop')).slice(0, 200),
@@ -341,6 +455,49 @@ export class QaapJobLoopEngine {
         return { nodeKey, source, pointer, operator, ...(hasExpected ? { expected: value.expected } : {}) };
     }
 
+    protected normalizeBindings(
+        node: QaapCreateJobLoopGraphNode,
+        nodeKeys: ReadonlySet<string>,
+    ): NormalizedLoopInputBinding[] {
+        const bindings = node.bindings ?? [];
+        if (!Array.isArray(bindings) || bindings.length > MAX_BINDINGS_PER_NODE) {
+            throw new QaapJobLoopRequestError(nls.localize(
+                'qaap/jobLoops/invalidBindings',
+                'A loop node supports at most {0} valid input bindings.',
+                String(MAX_BINDINGS_PER_NODE),
+            ));
+        }
+        if (bindings.length > 0 && node.request.kind !== 'function') {
+            throw new QaapJobLoopRequestError(nls.localize(
+                'qaap/jobLoops/functionBindingsOnly',
+                'Loop input bindings are supported only on function jobs.',
+            ));
+        }
+        const templateInput = node.request.kind === 'function' ? node.request.input : undefined;
+        const targets = new Set<string>();
+        return bindings.map(binding => {
+            const from = binding?.from;
+            const nodeKey = typeof from?.nodeKey === 'string' ? from.nodeKey.trim() : '';
+            const source = from?.source ?? 'result';
+            const pointer = from?.pointer ?? '';
+            const targetPointer = binding?.targetPointer;
+            const targetExists = targetPointer === ''
+                || (typeof targetPointer === 'string' && resolveQaapJsonPointer(templateInput, targetPointer).found);
+            if (
+                !nodeKey || !nodeKeys.has(nodeKey) || (source !== 'result' && source !== 'job')
+                || !isValidQaapJsonPointer(pointer) || !isValidQaapJsonPointer(targetPointer)
+                || !targetExists || targets.has(targetPointer)
+            ) {
+                throw new QaapJobLoopRequestError(nls.localize(
+                    'qaap/jobLoops/invalidBinding',
+                    'Loop bindings must use valid source nodes and existing JSON input targets.',
+                ));
+            }
+            targets.add(targetPointer);
+            return { from: { nodeKey, source, pointer }, targetPointer };
+        });
+    }
+
     protected async startNextRound(record: PersistedLoopRecord): Promise<void> {
         if (record.loop.state !== 'running') {
             return;
@@ -363,7 +520,7 @@ export class QaapJobLoopEngine {
             return;
         }
         const result = this.runtime.createGraph({
-            nodes: record.request.graph.nodes,
+            nodes: this.materializeGraphNodes(record),
             idempotencyKey: `qaap-loop:${record.loop.id}:${nextIteration}`,
         }, record.loop.ownerLogin);
         const round: QaapJobLoopRound = {
@@ -378,8 +535,47 @@ export class QaapJobLoopEngine {
             rounds: [...record.loop.rounds, round],
             currentGraphId: result.graph.id,
         };
+        this.fireLoopEvent(record, 'round_started');
         this.scheduleDeadline(record);
         await this.persist();
+    }
+
+    protected materializeGraphNodes(record: PersistedLoopRecord): QaapCreateJobGraphNode[] {
+        const previousRound = record.loop.rounds[record.loop.rounds.length - 1];
+        const previousGraph = previousRound ? this.runtime.getGraph(previousRound.graphId) : undefined;
+        return record.request.graph.nodes.map(node => {
+            if (node.request.kind !== 'function') {
+                return { key: node.key, request: { ...node.request }, dependsOn: node.dependsOn };
+            }
+            let input = node.request.input;
+            if (previousGraph && node.bindings.length > 0) {
+                for (const binding of node.bindings) {
+                    const sourceId = previousGraph.graph.jobsByKey[binding.from.nodeKey];
+                    const sourceJob = sourceId ? this.runtime.get(sourceId) : undefined;
+                    const root = binding.from.source === 'job' ? sourceJob : sourceJob?.result;
+                    const source = resolveQaapJsonPointer(root, binding.from.pointer);
+                    if (!source.found) {
+                        throw new QaapJobLoopBindingError(nls.localize(
+                            'qaap/jobLoops/bindingSourceMissing',
+                            'A previous-round binding source was not found.',
+                        ));
+                    }
+                    const replaced = replaceQaapJsonPointer(input, binding.targetPointer, source.value);
+                    if (!replaced.found) {
+                        throw new QaapJobLoopBindingError(nls.localize(
+                            'qaap/jobLoops/bindingTargetMissing',
+                            'A loop input binding target was not found.',
+                        ));
+                    }
+                    input = replaced.value;
+                }
+            }
+            return {
+                key: node.key,
+                request: { ...node.request, input },
+                dependsOn: node.dependsOn,
+            };
+        });
     }
 
     protected async reconcile(id: string): Promise<void> {
@@ -413,6 +609,7 @@ export class QaapJobLoopEngine {
         const finishedAt = Date.now();
         if (!jobs.every(job => didQaapJobSucceed(job.state))) {
             this.replaceCurrentRound(record, { finishedAt, conditionMatched: false });
+            this.fireLoopEvent(record, 'round_finished');
             this.finishLoop(record, 'failed', 'graph_failed', finishedAt);
             await this.persist();
             return;
@@ -420,6 +617,7 @@ export class QaapJobLoopEngine {
         const conditionMatched = this.evaluateCondition(record);
         this.replaceCurrentRound(record, { finishedAt, conditionMatched });
         record.loop = { ...record.loop, currentGraphId: undefined };
+        this.fireLoopEvent(record, 'round_finished');
         if (conditionMatched) {
             this.finishLoop(record, 'succeeded', 'goal_reached', finishedAt);
             await this.persist();
@@ -482,6 +680,7 @@ export class QaapJobLoopEngine {
     ): void {
         record.loop = { ...record.loop, state, terminationReason, finishedAt, currentGraphId: undefined };
         this.clearDeadline(record.loop.id);
+        this.fireLoopEvent(record, 'changed');
     }
 
     protected async exhaustBudget(
@@ -513,18 +712,27 @@ export class QaapJobLoopEngine {
                 continue;
             }
             const graph = this.runtime.getGraph(record.loop.currentGraphId);
-            if (graph && Object.values(graph.graph.jobsByKey).includes(jobId)) {
-                this.scheduleReconcile(record.loop.id);
+            if (graph) {
+                for (const graphJobId of Object.values(graph.graph.jobsByKey)) {
+                    if (graphJobId === jobId) {
+                        this.scheduleReconcile(record.loop.id);
+                        break;
+                    }
+                }
             }
         }
     }
 
     protected scheduleReconcile(id: string): void {
         void this.enqueueLoop(id, () => this.reconcile(id)).catch(error => {
-            console.warn('[qaap-job-loops] failed to reconcile loop:', error);
+            if (!(error instanceof QaapJobLoopBindingError)) {
+                console.warn('[qaap-job-loops] failed to reconcile loop:', error);
+            }
             const record = this.records.get(id);
             if (record?.loop.state === 'running') {
-                this.finishLoop(record, 'failed', 'graph_creation_failed');
+                this.finishLoop(record, 'failed', error instanceof QaapJobLoopBindingError
+                    ? 'binding_missing'
+                    : 'graph_creation_failed');
                 void this.persist();
             }
         });
@@ -574,19 +782,30 @@ export class QaapJobLoopEngine {
     }
 
     protected restorePersistedIndex(stored: unknown): void {
-        const index = stored as Partial<PersistedLoopIndex> | undefined;
-        if (index?.version !== 1 || !Array.isArray(index.loops)) {
+        const index = stored as Partial<PersistedLoopIndex | LegacyPersistedLoopIndex> | undefined;
+        if ((index?.version !== 1 && index?.version !== 2) || !Array.isArray(index.loops)) {
             throw new Error('Invalid persisted job loop index.');
         }
+        if (index.version === 2) {
+            this.eventSequence = Number.isSafeInteger(index.eventSequence) && index.eventSequence! >= 0
+                ? index.eventSequence!
+                : 0;
+            this.events = Array.isArray(index.events)
+                ? index.events.filter(event => event?.sequence > 0).slice(-MAX_DURABLE_EVENTS)
+                : [];
+        }
         for (const record of index.loops) {
-            if (!record?.loop?.id || !record.request || typeof record.fingerprint !== 'string') {
+            const loop = record?.loop;
+            const request = record?.request;
+            const fingerprint = record?.fingerprint;
+            if (!loop?.id || !request || typeof fingerprint !== 'string') {
                 continue;
             }
-            this.records.set(record.loop.id, record);
-            if (record.loop.idempotencyKey) {
+            this.records.set(loop.id, record);
+            if (loop.idempotencyKey) {
                 this.idempotencyIndex.set(
-                    this.ownerIdempotencyKey(record.loop.ownerLogin, record.loop.idempotencyKey),
-                    record.loop.id,
+                    this.ownerIdempotencyKey(loop.ownerLogin, loop.idempotencyKey),
+                    loop.id,
                 );
             }
         }
@@ -594,8 +813,10 @@ export class QaapJobLoopEngine {
 
     protected persist(): Promise<void> {
         const snapshot: PersistedLoopIndex = {
-            version: 1,
+            version: 2,
             loops: [...this.records.values()],
+            eventSequence: this.eventSequence,
+            events: this.events,
         };
         const previous = this.persistChain ?? Promise.resolve();
         this.persistChain = previous
@@ -640,6 +861,26 @@ export class QaapJobLoopEngine {
 
     protected ownerIdempotencyKey(ownerLogin: string | undefined, idempotencyKey: string): string {
         return `${ownerLogin ?? ''}\u0000${idempotencyKey}`;
+    }
+
+    protected fireLoopEvent(record: PersistedLoopRecord, type: QaapJobLoopEventType): void {
+        const loop = record.loop;
+        const event: QaapJobLoopEvent = {
+            sequence: ++this.eventSequence,
+            type,
+            at: Date.now(),
+            loopId: loop.id,
+            ownerLogin: loop.ownerLogin,
+            state: loop.state,
+            iteration: loop.iteration,
+            currentGraphId: loop.currentGraphId,
+            terminationReason: loop.terminationReason,
+        };
+        this.events.push(event);
+        if (this.events.length > MAX_DURABLE_EVENTS) {
+            this.events.splice(0, this.events.length - MAX_DURABLE_EVENTS);
+        }
+        this.onDidChangeLoopEmitter.fire(event);
     }
 
     protected isNumericOperator(operator: QaapJobLoopConditionOperator): boolean {

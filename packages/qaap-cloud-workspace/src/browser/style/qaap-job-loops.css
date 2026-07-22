@@ -1,0 +1,512 @@
+/* Durable job-loop control plane. */
+
+.qaap-job-loops {
+    overflow: hidden;
+}
+
+.qaap-job-loops-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    color: var(--theia-foreground);
+    background: var(--theia-editor-background);
+}
+
+.qaap-job-loops-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(100px, 1fr)) auto;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--theia-editorWidget-border);
+}
+
+.qaap-job-loops-metric {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--theia-editorWidget-background);
+}
+
+.qaap-job-loops-metric-value {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.qaap-job-loops-metric-label,
+.qaap-job-loops-iteration,
+.qaap-job-loops-summary,
+.qaap-job-loops-node-body span,
+.qaap-job-loops-node-body small,
+.qaap-job-loops-node-meta {
+    color: var(--theia-descriptionForeground);
+    font-size: 11px;
+}
+
+.qaap-job-loops-refresh,
+.qaap-job-loops-cancel,
+.qaap-job-loops-create {
+    align-self: center;
+    border: none;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.qaap-job-loops-create {
+    padding: 6px 10px;
+    border: 1px solid var(--theia-button-background);
+    border-radius: 5px;
+    background: var(--theia-button-background);
+    color: var(--theia-button-foreground);
+    font-size: 12px;
+}
+
+.qaap-job-loop-builder {
+    display: grid;
+    gap: 12px;
+    max-height: min(72vh, 860px);
+    overflow: auto;
+    padding: 14px;
+    border-bottom: 1px solid var(--theia-editorWidget-border);
+    background: var(--theia-editorWidget-background);
+}
+
+.qaap-job-loop-builder-head,
+.qaap-job-loop-builder-node-head,
+.qaap-job-loop-builder-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.qaap-job-loop-builder h2,
+.qaap-job-loop-builder h3 {
+    margin: 0;
+    font-size: 13px;
+}
+
+.qaap-job-loop-builder fieldset {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 9px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--theia-editorWidget-border);
+    border-radius: 6px;
+}
+
+.qaap-job-loop-builder legend { padding: 0 4px; font-size: 12px; }
+.qaap-job-loop-builder-field { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.qaap-job-loop-builder input,
+.qaap-job-loop-builder select,
+.qaap-job-loop-builder textarea {
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--theia-input-border);
+    border-radius: 4px;
+    background: var(--theia-input-background);
+    color: var(--theia-input-foreground);
+    padding: 5px 7px;
+}
+.qaap-job-loop-builder-node { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--theia-editorWidget-border); border-radius: 6px; }
+.qaap-job-loop-builder-dependencies { grid-column: 1 / -1; display: flex !important; flex-wrap: wrap; }
+.qaap-job-loop-builder-dependencies label { display: flex; gap: 4px; align-items: center; }
+.qaap-job-loop-builder-bindings { grid-column: 1 / -1; }
+.qaap-job-loop-builder-binding { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)) auto; gap: 6px; align-items: center; }
+.qaap-job-loop-builder-error, .qaap-job-loop-builder-alert { color: var(--theia-errorForeground); font-size: 12px; }
+.qaap-job-loop-builder-alert { padding: 8px; border: 1px solid var(--theia-errorForeground); border-radius: 4px; }
+
+.qaap-job-loops-navigation {
+    display: flex;
+    gap: 4px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--theia-editorWidget-border);
+}
+
+.qaap-job-loops-navigation button {
+    padding: 8px 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+}
+
+.qaap-job-loops-navigation button[aria-selected='true'] {
+    border-bottom-color: var(--theia-focusBorder);
+    color: var(--theia-foreground);
+}
+
+.qaap-job-loop-management {
+    display: grid;
+    min-height: 0;
+    gap: 16px;
+    overflow: auto;
+    padding: 14px;
+}
+
+.qaap-job-loop-management h2,
+.qaap-job-loop-management h3,
+.qaap-job-loop-management h4,
+.qaap-job-loop-management p {
+    margin: 0;
+}
+
+.qaap-job-loop-management-header,
+.qaap-job-loop-management-section-heading,
+.qaap-job-loop-management-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.qaap-job-loop-management-templates,
+.qaap-job-loop-management-triggers {
+    display: grid;
+    gap: 10px;
+}
+
+.qaap-job-loop-management-template-list,
+.qaap-job-loop-management-trigger-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.qaap-job-loop-management-template,
+.qaap-job-loop-management-trigger {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid var(--theia-editorWidget-border);
+    border-radius: 6px;
+    background: var(--theia-editorWidget-background);
+    content-visibility: auto;
+    contain-intrinsic-size: 0 68px;
+}
+
+.qaap-job-loop-management-template p,
+.qaap-job-loop-management-trigger p,
+.qaap-job-loop-management-help,
+.qaap-job-loop-management-empty {
+    color: var(--theia-descriptionForeground);
+    font-size: 12px;
+}
+
+.qaap-job-loop-management-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.qaap-job-loop-management button,
+.qaap-job-loop-builder button {
+    border: 1px solid var(--theia-button-border, transparent);
+    border-radius: 4px;
+    background: var(--theia-button-secondaryBackground, var(--theia-button-background));
+    color: var(--theia-button-secondaryForeground, var(--theia-button-foreground));
+    cursor: pointer;
+    padding: 5px 8px;
+}
+
+.qaap-job-loop-management button:disabled,
+.qaap-job-loop-builder button:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.qaap-job-loop-management-trigger-form fieldset,
+.qaap-job-loop-management-cron-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 9px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--theia-editorWidget-border);
+    border-radius: 6px;
+}
+
+.qaap-job-loop-management-cron-fields,
+.qaap-job-loop-management-help {
+    grid-column: 1 / -1;
+}
+
+.qaap-job-loop-management-field {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.qaap-job-loop-management-field input,
+.qaap-job-loop-management-field select {
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 5px 7px;
+    border: 1px solid var(--theia-input-border);
+    border-radius: 4px;
+    background: var(--theia-input-background);
+    color: var(--theia-input-foreground);
+}
+
+.qaap-job-loop-management-checkbox {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    gap: 6px;
+}
+
+.qaap-job-loop-management-alert,
+.qaap-job-loop-management-webhook-secret {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--theia-errorForeground);
+    border-radius: 5px;
+}
+
+.qaap-job-loop-management-webhook-secret code {
+    overflow-wrap: anywhere;
+    user-select: all;
+}
+
+.qaap-job-loop-management-error,
+.qaap-job-loop-management-alert {
+    color: var(--theia-errorForeground);
+    font-size: 12px;
+}
+
+.qaap-job-loops-list {
+    min-height: 0;
+    overflow: auto;
+}
+
+.qaap-job-loops-empty {
+    margin: auto;
+    padding: 32px;
+    color: var(--theia-descriptionForeground);
+    text-align: center;
+}
+
+.qaap-job-loops-item {
+    border-bottom: 1px solid var(--theia-editorWidget-border);
+    content-visibility: auto;
+    contain-intrinsic-size: 0 54px;
+}
+
+.qaap-job-loops-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+}
+
+.qaap-job-loops-row:hover {
+    background: var(--theia-list-hoverBackground);
+}
+
+.qaap-job-loops-toggle {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 0 9px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.qaap-job-loops-state {
+    flex: none;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--theia-badge-background);
+    color: var(--theia-badge-foreground);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.qaap-job-loops-state--running {
+    background: var(--theia-progressBar-background, var(--theia-focusBorder));
+    color: var(--theia-editor-background);
+}
+
+.qaap-job-loops-state--succeeded {
+    background: var(--theia-gitDecoration-untrackedResourceForeground);
+    color: var(--theia-editor-background);
+}
+
+.qaap-job-loops-state--failed {
+    background: var(--theia-errorForeground);
+    color: var(--theia-editor-background);
+}
+
+.qaap-job-loops-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.qaap-job-loops-progress {
+    height: 2px;
+    background: color-mix(in srgb, var(--theia-progressBar-background) 18%, transparent);
+}
+
+.qaap-job-loops-progress span {
+    display: block;
+    height: 100%;
+    background: var(--theia-progressBar-background);
+}
+
+.qaap-job-loops-expanded {
+    padding: 8px 14px 14px;
+    background: var(--theia-editorWidget-background);
+}
+
+.qaap-job-loops-summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.qaap-job-loops-rounds {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+}
+
+.qaap-job-loops-round {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    padding: 5px 8px;
+    border: 1px solid var(--theia-editorWidget-border);
+    border-radius: 6px;
+    background: var(--theia-editor-background);
+    color: var(--theia-foreground);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.qaap-job-loops-round.qaap-mod-selected {
+    border-color: var(--theia-focusBorder);
+}
+
+.qaap-job-loops-round.qaap-mod-matched {
+    color: var(--theia-gitDecoration-untrackedResourceForeground);
+}
+
+.qaap-job-loops-graph {
+    display: grid;
+    gap: 6px;
+}
+
+.qaap-job-loops-node {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    background: var(--theia-editor-background);
+}
+
+.qaap-job-loops-node-state {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--theia-descriptionForeground);
+}
+
+.qaap-job-loops-node-state.qaap-mod-succeeded {
+    background: var(--theia-gitDecoration-untrackedResourceForeground);
+}
+
+.qaap-job-loops-node-state.qaap-mod-running {
+    background: var(--theia-progressBar-background);
+}
+
+.qaap-job-loops-node-state.qaap-mod-failed,
+.qaap-job-loops-node-state.qaap-mod-timed_out,
+.qaap-job-loops-node-state.qaap-mod-dependency_failed {
+    background: var(--theia-errorForeground);
+}
+
+.qaap-job-loops-node-body {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.qaap-job-loops-node-body strong,
+.qaap-job-loops-node-body span,
+.qaap-job-loops-node-body small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qaap-job-loops-detail-placeholder {
+    padding: 16px;
+    color: var(--theia-descriptionForeground);
+    text-align: center;
+    font-size: 12px;
+}
+
+@media (max-width: 700px) {
+    .qaap-job-loops-metrics {
+        grid-template-columns: repeat(2, minmax(90px, 1fr)) auto;
+    }
+
+    .qaap-job-loops-iteration {
+        display: none;
+    }
+
+    .qaap-job-loops-summary {
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .qaap-job-loop-builder fieldset {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .qaap-job-loop-builder-binding {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .qaap-job-loop-management-template,
+    .qaap-job-loop-management-trigger {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .qaap-job-loop-management-actions {
+        justify-content: flex-start;
+    }
+
+    .qaap-job-loop-management-trigger-form fieldset,
+    .qaap-job-loop-management-cron-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

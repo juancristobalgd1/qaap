@@ -17,6 +17,7 @@ import {
 } from '../common/qaap-agent-task';
 import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -40,6 +41,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     @inject(QaapAgentTaskRunner)
     protected readonly runner: QaapAgentTaskRunner;
 
+    @inject(QaapAgentCliUpdateService)
+    protected readonly cliUpdates: QaapAgentCliUpdateService;
+
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
@@ -54,6 +58,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 return;
             }
             res.json({ agent, models: this.runner.listModelsForAgent(agent) });
+        });
+        // Static `/cli-updates` segments must register before `/:id` below.
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, (req, res) => {
+            void this.handleListCliUpdates(req, res);
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/cli-updates/:agentId`, (req, res) => {
+            void this.handleInstallCliUpdate(req, res);
         });
         app.get(QAAP_AGENT_TASK_API_PATH, (req, res) => {
             const ctx = this.requireAuth(req, res);
@@ -226,6 +237,39 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             client.on('close', cleanup);
             client.on('error', cleanup);
         });
+    }
+
+    protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
+        if (!this.requireAuth(req, res)) {
+            return;
+        }
+        try {
+            const payload = await this.cliUpdates.listOutdated();
+            res.json(payload);
+        } catch (error) {
+            res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    protected async handleInstallCliUpdate(req: Request, res: Response): Promise<void> {
+        if (!this.requireAuth(req, res)) {
+            return;
+        }
+        const agentId = typeof req.params.agentId === 'string' ? req.params.agentId.trim() : '';
+        if (!agentId) {
+            res.status(400).json({ error: '"agentId" is required.' });
+            return;
+        }
+        try {
+            const result = await this.cliUpdates.installUpdate(agentId);
+            res.status(result.ok ? 200 : 400).json(result);
+        } catch (error) {
+            res.status(500).json({
+                ok: false,
+                id: agentId,
+                message: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 
     protected async handleImprovePrompt(req: Request, res: Response): Promise<void> {

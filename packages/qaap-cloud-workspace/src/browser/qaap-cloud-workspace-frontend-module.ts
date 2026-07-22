@@ -6,6 +6,7 @@
 import '../../src/browser/style/qaap-cloud.css';
 import '../../src/browser/style/qaap-agent-tasks.css';
 import '../../src/browser/style/qaap-agent-chat.css';
+import '../../src/browser/style/qaap-job-loops.css';
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { CommandContribution } from '@theia/core/lib/common/command';
@@ -16,6 +17,8 @@ import { QaapAgentChatContribution } from './qaap-agent-chat-contribution';
 import { QaapAgentChatWidget } from './qaap-agent-chat-widget';
 import { QaapAgentTasksContribution } from './qaap-agent-tasks-contribution';
 import { QaapAgentTasksWidget } from './qaap-agent-tasks-widget';
+import { QaapJobLoopsContribution } from './qaap-job-loops-contribution';
+import { QaapJobLoopsWidget } from './qaap-job-loops-widget';
 import { QaapCloudBootstrapUiContribution } from './qaap-cloud-bootstrap-ui-contribution';
 import { QaapAgentRunnerWarmContribution } from './qaap-agent-runner-warm-contribution';
 import { QaapDeployCloudflareTool, QaapDeployVercelTool } from './qaap-deploy-tool-providers';
@@ -69,6 +72,14 @@ export default new ContainerModule(bind => {
     })).inSingletonScope();
     bind(QaapAgentChatContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapAgentChatContribution);
+
+    bind(QaapJobLoopsWidget).toSelf();
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: QaapJobLoopsWidget.ID,
+        createWidget: () => ctx.container.get(QaapJobLoopsWidget),
+    })).inSingletonScope();
+    bind(QaapJobLoopsContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(QaapJobLoopsContribution);
 
     bindToolProvider(QaapDeployVercelTool, bind);
     bindToolProvider(QaapDeployCloudflareTool, bind);

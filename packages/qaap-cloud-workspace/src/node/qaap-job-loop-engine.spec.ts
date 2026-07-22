@@ -229,6 +229,60 @@ describe('QaapJobLoopEngine', () => {
         expect(loop.jobsScheduled).to.equal(2);
     });
 
+    it('binds a previous-round result into an existing typed function input', async () => {
+        const request: QaapCreateJobLoopRequest = {
+            ...loopRequest(2),
+            graph: {
+                nodes: [
+                    loopRequest().graph.nodes[0],
+                    {
+                        key: 'consumer',
+                        request: {
+                            kind: 'function',
+                            functionId: 'qaap.test.consumer',
+                            input: { previous: 0 },
+                            cwd: '/workspace/alice/repo',
+                        },
+                        bindings: [{
+                            from: { nodeKey: 'measure', pointer: '/value' },
+                            targetPointer: '/previous',
+                        }],
+                    },
+                ],
+            },
+        };
+        const created = await engine.create(request, 'alice');
+        runtime.finishGraph(created.loop.currentGraphId!, { measure: { value: 4 }, consumer: {} });
+
+        await engine.reconcileNow(created.loop.id);
+
+        const second = engine.get(created.loop.id)!.currentGraphId!;
+        const consumerId = runtime.getGraph(second)!.graph.jobsByKey.consumer;
+        expect(runtime.get(consumerId)!.input).to.deep.equal({ previous: 4 });
+    });
+
+    it('fails safely when a previous-round binding source is absent', async () => {
+        const request: QaapCreateJobLoopRequest = {
+            ...loopRequest(2),
+            graph: {
+                nodes: [{
+                    ...loopRequest().graph.nodes[0],
+                    bindings: [{ from: { nodeKey: 'measure', pointer: '/missing' }, targetPointer: '' }],
+                }],
+            },
+        };
+        const created = await engine.create(request, 'alice');
+        runtime.finishGraph(created.loop.currentGraphId!, { measure: { value: 4 } }, undefined, true);
+
+        const deadline = Date.now() + 1_000;
+        while (engine.get(created.loop.id)?.state === 'running' && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+        }
+
+        expect(engine.get(created.loop.id)).to.include({ state: 'failed', terminationReason: 'binding_missing' });
+        expect(runtime.graphSequence).to.equal(1);
+    });
+
     it('fails the loop when any graph node does not succeed', async () => {
         const created = await engine.create(loopRequest(), 'alice');
         runtime.finishGraph(created.loop.currentGraphId!, {}, 'measure');
@@ -275,6 +329,26 @@ describe('QaapJobLoopEngine', () => {
         expect(conflict).to.be.instanceOf(QaapJobLoopConflictError);
     });
 
+    it('reports owner-scoped metrics, round detail and ordered durable events', async () => {
+        const created = await engine.create(loopRequest(), 'alice');
+        await engine.create(loopRequest(), 'bob');
+        runtime.finishGraph(created.loop.currentGraphId!, { measure: { value: 12 } });
+        await engine.reconcileNow(created.loop.id);
+
+        const metrics = engine.getMetrics('alice');
+        const events = engine.eventsSince('alice');
+        const detail = engine.getRoundDetail(created.loop.id, 1)!;
+
+        expect(metrics).to.include({ total: 1, active: 0, succeeded: 1, roundsScheduled: 1, jobsScheduled: 1 });
+        expect(events.map(event => event.type)).to.deep.equal([
+            'created', 'round_started', 'round_finished', 'changed',
+        ]);
+        expect(events.map(event => event.sequence)).to.deep.equal([...events.map(event => event.sequence)].sort((a, b) => a - b));
+        expect(engine.eventsSince('bob').every(event => event.ownerLogin === 'bob')).to.equal(true);
+        expect(detail.graph?.id).to.equal(created.loop.rounds[0].graphId);
+        expect(detail.jobs.measure.state).to.equal('succeeded');
+    });
+
     it('restores a running loop and reconciles a graph completed before restart', async () => {
         const created = await engine.create(loopRequest(), 'alice');
         runtime.finishGraph(created.loop.currentGraphId!, { measure: { value: 10 } });
@@ -286,6 +360,7 @@ describe('QaapJobLoopEngine', () => {
 
         expect(engine.get(created.loop.id)).to.include({ state: 'succeeded', terminationReason: 'goal_reached' });
         expect(runtime.graphSequence).to.equal(1);
+        expect(engine.eventsSince('alice').at(-1)?.type).to.equal('changed');
     });
 
     it('rejects a loop whose graph multiplied by iterations exceeds the job budget', async () => {

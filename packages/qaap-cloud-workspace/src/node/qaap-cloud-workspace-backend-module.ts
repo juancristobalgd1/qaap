@@ -21,6 +21,7 @@ import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
+import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
 import { QaapCloudOrchestrator } from './qaap-cloud-orchestrator';
@@ -54,6 +55,12 @@ import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contributio
 import { QaapJobEndpoint } from './qaap-job-endpoint';
 import { QaapJobLoopEndpoint } from './qaap-job-loop-endpoint';
 import { QaapJobLoopEngine } from './qaap-job-loop-engine';
+import { QaapJobLoopTemplateEndpoint } from './qaap-job-loop-template-endpoint';
+import { QaapJobLoopTemplateStore } from './qaap-job-loop-template-store';
+import { QaapJobLoopTriggerEndpoint } from './qaap-job-loop-trigger-endpoint';
+import { QaapJobLoopTriggerLeaseManager } from './qaap-job-loop-trigger-lease';
+import { QaapJobLoopTriggerService } from './qaap-job-loop-trigger-service';
+import { QaapJobLoopTriggerStore } from './qaap-job-loop-trigger-store';
 import { QaapJobRuntime } from './qaap-job-runtime';
 import {
     QaapBuiltinJobFunctions,
@@ -95,6 +102,14 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapJobLoopEngine).toSelf().inSingletonScope();
     bind(QaapJobLoopEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapJobLoopEndpoint);
+    bind(QaapJobLoopTemplateStore).toSelf().inSingletonScope();
+    bind(QaapJobLoopTemplateEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapJobLoopTemplateEndpoint);
+    bind(QaapJobLoopTriggerStore).toSelf().inSingletonScope();
+    bind(QaapJobLoopTriggerLeaseManager).toSelf().inSingletonScope();
+    bind(QaapJobLoopTriggerService).toSelf().inSingletonScope();
+    bind(QaapJobLoopTriggerEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapJobLoopTriggerEndpoint);
     bind(QaapPreviewSupervisor).toSelf().inSingletonScope();
     bind(QaapTerminalSessionStore).toSelf().inSingletonScope();
     bind(QaapPreviewShareProxyContribution).toSelf().inSingletonScope();
@@ -102,6 +117,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapCloudWorkspaceEndpoint);
     bind(BackendApplicationContribution).toService(QaapPreviewShareProxyContribution);
     bind(QaapAgentTaskRunner).toSelf().inSingletonScope();
+    bind(QaapAgentCliUpdateService).toSelf().inSingletonScope();
     bind(QaapWorktreeGcContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorktreeGcContribution);
     bind(QaapAgentTaskEndpoint).toSelf().inSingletonScope();

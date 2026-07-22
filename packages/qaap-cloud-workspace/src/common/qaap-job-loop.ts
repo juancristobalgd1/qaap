@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { QaapCreateJobGraphNode } from './qaap-job';
+import { QaapCreateJobGraphNode, QaapJob, QaapJobGraph } from './qaap-job';
 
 /** HTTP base path for durable, bounded loops over job graphs. */
 export const QAAP_JOB_LOOP_API_PATH = '/qaap/api/job-loops';
@@ -33,10 +33,26 @@ export interface QaapJobLoopCondition {
     readonly expected?: unknown;
 }
 
+/** Copy one structured value from the previous round into a function job's existing input field. */
+export interface QaapJobLoopInputBinding {
+    readonly from: {
+        readonly nodeKey: string;
+        readonly source?: QaapJobLoopConditionSource;
+        readonly pointer?: string;
+    };
+    /** Existing RFC 6901 target in `request.input`; empty replaces the complete input. */
+    readonly targetPointer: string;
+}
+
+export interface QaapCreateJobLoopGraphNode extends QaapCreateJobGraphNode {
+    /** Applied from round 2 onward. Only valid for function jobs. */
+    readonly bindings?: readonly QaapJobLoopInputBinding[];
+}
+
 export interface QaapCreateJobLoopRequest {
     readonly title?: string;
     readonly graph: {
-        readonly nodes: readonly QaapCreateJobGraphNode[];
+        readonly nodes: readonly QaapCreateJobLoopGraphNode[];
     };
     readonly until: QaapJobLoopCondition;
     readonly maxIterations?: number;
@@ -60,6 +76,7 @@ export type QaapJobLoopTerminationReason =
     | 'graph_failed'
     | 'graph_missing'
     | 'graph_creation_failed'
+    | 'binding_missing'
     | 'cancelled';
 
 export interface QaapJobLoopRound {
@@ -100,6 +117,46 @@ export interface QaapCreateJobLoopResult {
 
 export interface QaapJobLoopListResponse {
     readonly loops: readonly QaapJobLoop[];
+}
+
+export type QaapJobLoopEventType = 'created' | 'changed' | 'round_started' | 'round_finished';
+
+/** Bounded durable event used for SSE reconnection without exposing graph inputs or logs. */
+export interface QaapJobLoopEvent {
+    readonly sequence: number;
+    readonly type: QaapJobLoopEventType;
+    readonly at: number;
+    readonly loopId: string;
+    readonly ownerLogin?: string;
+    readonly state: QaapJobLoopState;
+    readonly iteration: number;
+    readonly currentGraphId?: string;
+    readonly terminationReason?: QaapJobLoopTerminationReason;
+}
+
+export interface QaapJobLoopMetrics {
+    readonly generatedAt: number;
+    readonly total: number;
+    readonly active: number;
+    readonly succeeded: number;
+    readonly failed: number;
+    readonly cancelled: number;
+    readonly budgetExhausted: number;
+    readonly roundsScheduled: number;
+    readonly jobsScheduled: number;
+}
+
+export interface QaapJobLoopRoundDetail {
+    readonly loopId: string;
+    readonly round: QaapJobLoopRound;
+    readonly graph?: QaapJobGraph;
+    readonly jobs: Readonly<Record<string, QaapJob>>;
+}
+
+export interface QaapJobLoopStreamSnapshot {
+    readonly sequence: number;
+    readonly loops: readonly QaapJobLoop[];
+    readonly metrics: QaapJobLoopMetrics;
 }
 
 export function isQaapJobLoopFinished(state: QaapJobLoopState): boolean {
