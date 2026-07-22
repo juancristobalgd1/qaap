@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { resolveQaapJsonPointer } from '../common/qaap-json-pointer';
+import { isValidQaapJsonPointer, resolveQaapJsonPointer } from '../common/qaap-json-pointer';
 import {
     didQaapJobSucceed,
     isQaapJobFinished,
@@ -317,7 +317,7 @@ export class QaapJobLoopEngine {
         if (
             !nodeKey || !nodeKeys.has(nodeKey)
             || (source !== 'result' && source !== 'job')
-            || typeof pointer !== 'string' || pointer.length > 1_024 || (pointer !== '' && !pointer.startsWith('/'))
+            || !isValidQaapJsonPointer(pointer)
             || !(QAAP_JOB_LOOP_CONDITION_OPERATORS as readonly unknown[]).includes(operator)
         ) {
             throw new QaapJobLoopRequestError(nls.localize('qaap/jobLoops/invalidCondition', 'Invalid loop condition.'));
@@ -669,7 +669,7 @@ export class QaapJobLoopEngine {
             }
             if (entry !== null && typeof entry === 'object') {
                 const record = entry as Record<string, unknown>;
-                const result: Record<string, unknown> = {};
+                const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
                 for (const key of Object.keys(record).sort()) {
                     result[key] = normalize(record[key]);
                 }
@@ -677,6 +677,6 @@ export class QaapJobLoopEngine {
             }
             return entry;
         };
-        return JSON.stringify(normalize(value));
+        return JSON.stringify(normalize(value)) ?? 'undefined';
     }
 }

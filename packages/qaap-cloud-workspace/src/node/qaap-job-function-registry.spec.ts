@@ -87,6 +87,8 @@ describe('QaapJobFunctionRegistry', () => {
         new QaapBuiltinJobFunctions().registerFunctions(registry);
         const definition = registry.get('qaap.workspace.read-json')!;
         expect(() => definition.normalizeInput({ path: '/etc/passwd' })).to.throw('Invalid workspace JSON input');
+        expect(() => definition.normalizeInput({ path: 'metrics.json', pointer: '/bad~2escape' }))
+            .to.throw('Invalid workspace JSON input');
 
         const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-job-function-'));
         try {

@@ -1079,7 +1079,7 @@ export class QaapJobRuntime {
                 return candidate.map(normalize);
             }
             if (candidate && typeof candidate === 'object') {
-                const result: Record<string, unknown> = {};
+                const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
                 for (const key of Object.keys(candidate as Record<string, unknown>).sort()) {
                     const nested = (candidate as Record<string, unknown>)[key];
                     if (nested !== undefined) {

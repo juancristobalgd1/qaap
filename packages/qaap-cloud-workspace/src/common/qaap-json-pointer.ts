@@ -8,8 +8,16 @@ export interface QaapJsonPointerResult {
     readonly value?: unknown;
 }
 
+export function isValidQaapJsonPointer(pointer: unknown, maxLength = 1_024): pointer is string {
+    return typeof pointer === 'string' && pointer.length <= maxLength
+        && (pointer === '' || (pointer.startsWith('/') && !/~(?:[^01]|$)/.test(pointer)));
+}
+
 /** Resolve an RFC 6901 JSON Pointer without following inherited object properties. */
 export function resolveQaapJsonPointer(root: unknown, pointer: string): QaapJsonPointerResult {
+    if (!isValidQaapJsonPointer(pointer)) {
+        return { found: false };
+    }
     if (pointer === '') {
         return { found: root !== undefined, value: root };
     }

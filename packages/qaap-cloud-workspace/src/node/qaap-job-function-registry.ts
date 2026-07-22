@@ -7,7 +7,7 @@ import { ContributionProvider, nls } from '@theia/core';
 import { inject, injectable, named, postConstruct } from '@theia/core/shared/inversify';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { resolveQaapJsonPointer } from '../common/qaap-json-pointer';
+import { isValidQaapJsonPointer, resolveQaapJsonPointer } from '../common/qaap-json-pointer';
 import { QaapJobFunctionDescriptor } from '../common/qaap-job';
 
 export const QaapJobFunctionContribution = Symbol('QaapJobFunctionContribution');
@@ -174,8 +174,7 @@ export class QaapBuiltinJobFunctions implements QaapJobFunctionContribution {
                 const pointer = record.pointer === undefined ? '' : record.pointer;
                 if (
                     unknownKeys.length > 0 || !filePath || filePath.length > 4_096 || path.isAbsolute(filePath)
-                    || filePath.includes('\0') || typeof pointer !== 'string' || pointer.length > 1_024
-                    || (pointer !== '' && !pointer.startsWith('/'))
+                    || filePath.includes('\0') || !isValidQaapJsonPointer(pointer)
                 ) {
                     throw new Error(nls.localize('qaap/jobs/functions/invalidReadJsonInput', 'Invalid workspace JSON input.'));
                 }
@@ -194,6 +193,12 @@ export class QaapBuiltinJobFunctions implements QaapJobFunctionContribution {
                     ));
                 }
                 const raw = await fsp.readFile(filePath, 'utf8');
+                if (Buffer.byteLength(raw, 'utf8') > 512 * 1024) {
+                    throw new Error(nls.localize(
+                        'qaap/jobs/functions/jsonFileTooLarge',
+                        'The JSON file must be a regular file no larger than 512 KiB.',
+                    ));
+                }
                 if (context.signal.aborted) {
                     throw context.signal.reason ?? new Error('Aborted');
                 }
