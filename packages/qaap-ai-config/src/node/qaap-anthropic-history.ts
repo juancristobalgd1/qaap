@@ -102,7 +102,7 @@ export function pruneOldHistoryTurns(
             continue;
         }
         const isHumanTurn = typeof m.content === 'string'
-            || !m.content.some((block: Anthropic.Messages.ContentBlockParam) => block.type === 'tool_result');
+            || m.content.some((block: Anthropic.Messages.ContentBlockParam) => block.type !== 'tool_result');
         if (isHumanTurn) {
             humanTurnIndices.push(i);
         }

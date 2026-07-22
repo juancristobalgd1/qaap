@@ -20,6 +20,7 @@ import { PluginViewWelcomePolicy } from '@theia/plugin-ext/lib/main/browser/view
 import { QaapGettingStartedWidget } from './qaap-getting-started-widget';
 import { QaapPluginViewWelcomePolicy } from './qaap-plugin-view-welcome-policy';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
+import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapBuiltinThemeBrandingContribution).toSelf().inSingletonScope();
@@ -30,6 +31,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
 
     bind(QaapCopilotDefaultsContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapCopilotDefaultsContribution);
+
+    bind(QaapWorkspaceSafetyDefaultsContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapWorkspaceSafetyDefaultsContribution);
 
     bind(QaapPluginCompatibilityPreferenceContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapPluginCompatibilityPreferenceContribution);

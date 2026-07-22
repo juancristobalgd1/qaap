@@ -9,8 +9,10 @@ import { LocalizationContribution } from '@theia/core/lib/node/i18n/localization
 import { QaapBackendStartupLogFilterContribution } from './qaap-backend-startup-log-filter';
 import { QaapLocalizationContribution } from './qaap-localization-contribution';
 import { QaapFrontendStaticServer } from './qaap-immutable-chunk-cache-contribution';
+import { SocketWriteBuffer } from '@theia/core/lib/common/messaging/socket-write-buffer';
+import { QaapSocketWriteBuffer } from './qaap-socket-write-buffer';
 
-export default new ContainerModule(bind => {
+export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapLocalizationContribution).toSelf().inSingletonScope();
     bind(LocalizationContribution).toService(QaapLocalizationContribution);
     bind(QaapBackendStartupLogFilterContribution).toSelf().inSingletonScope();
@@ -19,4 +21,10 @@ export default new ContainerModule(bind => {
     // adds immutable caching for hashed esbuild chunks.
     bind(QaapFrontendStaticServer).toSelf().inSingletonScope();
     bind(BackendApplicationServer).toService(QaapFrontendStaticServer);
+
+    if (isBound(SocketWriteBuffer)) {
+        rebind(SocketWriteBuffer).to(QaapSocketWriteBuffer);
+    } else {
+        bind(SocketWriteBuffer).to(QaapSocketWriteBuffer);
+    }
 });

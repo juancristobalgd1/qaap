@@ -51,6 +51,30 @@ describe('qaap-anthropic-history', () => {
             expect((result[1].content as { text: string }[])[0].text).to.equal('a2');
         });
 
+        it('counts a mixed text and tool_result user message as a human turn', () => {
+            const messages: Anthropic.Messages.MessageParam[] = [
+                userText('t1'),
+                assistantText('r1'),
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'tool_result', tool_use_id: 'tool_1', content: 'result_1' },
+                        { type: 'text', text: 't2' }
+                    ]
+                },
+                assistantText('r2'),
+                userText('t3'),
+                assistantText('r3')
+            ];
+
+            const result = pruneOldHistoryTurns(messages, 2);
+
+            expect(result).to.have.lengthOf(4);
+            expect((result[0].content as Anthropic.Messages.ContentBlockParam[])[1])
+                .to.deep.include({ type: 'text', text: 't2' });
+            expect((result[3].content as { text: string }[])[0].text).to.equal('r3');
+        });
+
         it('handles string content as a human turn', () => {
             const messages: Anthropic.Messages.MessageParam[] = [
                 { role: 'user', content: 't1' },
