@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import { formatTranscriptActivityStepDuration } from './qaap-transcript-activity-step-state';
 
@@ -175,6 +176,14 @@ export function formatTranscriptActivityStepMeta(
     return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
+/** Cursor-trace duration suffix: `· 1.2s` (omit when no duration). */
+export function formatTranscriptActivityStepDurationSuffix(durationMs: number | undefined): string | undefined {
+    if (durationMs === undefined || !Number.isFinite(durationMs)) {
+        return undefined;
+    }
+    return `· ${formatTranscriptActivityStepDuration(durationMs)}`;
+}
+
 /** Compact relative stamp for settled steps — "just now", "2m ago". */
 export function formatTranscriptActivityStepRelativeTime(
     timestampMs: number | undefined,
@@ -185,12 +194,12 @@ export function formatTranscriptActivityStepRelativeTime(
     }
     const delta = Math.max(0, now - timestampMs);
     if (delta < 45_000) {
-        return 'just now';
+        return nls.localize('qaap/mobileProjects/transcriptActivityRelativeJustNow', 'just now');
     }
     if (delta < 3_600_000) {
         const minutes = Math.max(1, Math.round(delta / 60_000));
-        return `${minutes}m ago`;
+        return nls.localize('qaap/mobileProjects/transcriptActivityRelativeMinutes', '{0}m ago', minutes);
     }
     const hours = Math.max(1, Math.round(delta / 3_600_000));
-    return `${hours}h ago`;
+    return nls.localize('qaap/mobileProjects/transcriptActivityRelativeHours', '{0}h ago', hours);
 }

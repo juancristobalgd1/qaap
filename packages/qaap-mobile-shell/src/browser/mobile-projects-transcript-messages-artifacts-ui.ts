@@ -26,8 +26,10 @@ import {
     resolveTranscriptBootstrapDiagnosticActivityItems,
     toTranscriptPreviewBootstrapSnapshot,
 } from '../common/qaap-transcript-preview-bootstrap-failure';
-import { formatTranscriptActivityStepDuration, isTranscriptActivityLiveState, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
-import { formatTranscriptActivityStepMeta, TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
+import { formatTranscriptActivityStepDuration, isTranscriptActivityLiveState, shouldApplyTranscriptActivitySettleMotion, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
+import { formatTranscriptActivityStepDurationSuffix, formatTranscriptActivityStepMeta, TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
+import { resolveTranscriptActivityDiffPeek } from '../common/qaap-transcript-activity-diff-peek';
+import { resolveTranscriptSubagentCardModels, transcriptActivitySubagentCardClassName } from '../common/qaap-transcript-activity-subagent-card';
 import {
     resolveTranscriptTimelineItemTier,
     transcriptTimelineTierClassName,
@@ -95,6 +97,10 @@ import {
     QAAP_THINKING_ORB_INDICATOR_CLASS,
     syncThinkingOrbIndicator,
 } from './qaap-thinking-orb-indicator';
+import {
+    resolveActivityToolIconMotionKind,
+    syncActivityToolIconMotion,
+} from './qaap-activity-tool-icon-motion';
 import {
     coalesceToolSegments,
     bundleToolSegmentsByUmbrella,
@@ -494,9 +500,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     /**
      * Renders the Codex-style execution event timeline into `body`:
      *   1. The execution event timeline (events with narrative + collapsed tool groups)
-     *   2. A trace status element (when streaming)
+     *   2. A live status footer (when streaming)
      *   3. Closing narrative text segments (the agent's final answer, after the last tool)
-     *   4. The diff summary (when not streaming)
+     *   4. The Files Changed / diff summary (only after the final response is committed)
      *
      * Used both for initial render and for upgrading a row that was created
      * during the thinking phase (no tools) and later received tool segments.
@@ -591,13 +597,33 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
             body.append(textBlock);
         }
-        // Diff summary as the natural closing of the execution story
-        if (!streaming) {
+        // Files Changed card only after the backend commits the final response
+        // (idle/failed/cancelled) — never while streaming, working, or finalizing
+        // (status still `streaming`/`settled` even when the turn looks complete).
+        if (this.shouldShowMobileDiffSummary(conv, streaming)) {
             this.appendMobileDiffSummary(body, segments);
+        } else {
+            // Drop any premature card from an earlier paint; keep the live footer
+            // only for true streaming renders.
+            body.querySelector('.theia-mobile-diff-summary')?.remove();
+            if (streaming && conv) {
+                this.ensureAndSyncTranscriptLiveStatusFooter(body, segments, conv, { streaming: true });
+            } else {
+                this.removeTranscriptLiveStatusWithOrb(body);
+            }
         }
-        if (streaming && conv) {
-            this.ensureAndSyncTranscriptLiveStatusFooter(body, segments, conv, { streaming: true });
-        }
+    }
+
+    /**
+     * True when the Files Changed / line-diff card may mount. Requires the turn
+     * to be fully finished — not merely visually settled while the VPS task is
+     * still attached (`streaming` / `settled`).
+     */
+    protected shouldShowMobileDiffSummary(
+        conv: QaapAgentConversationDTO | undefined,
+        renderStreaming: boolean,
+    ): boolean {
+        return this.isConversationFinalResponseCommitted(conv, renderStreaming);
     }
 
     protected bindMobileExecutionEventTimelineFileOpen(root: HTMLElement): void {
@@ -1044,8 +1070,58 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     /**
+     * When tool results omit parseable diffs, fill per-file +/- from the same
+     * git changes snapshot the sticky composer Changes pill uses.
+     */
+    protected enrichChangedFilesWithComposerGitStats(
+        files: ReadonlyArray<{
+            readonly path: string;
+            readonly kind: 'edited' | 'created';
+            readonly added?: number;
+            readonly removed?: number;
+        }>,
+    ): Array<{
+        readonly path: string;
+        readonly kind: 'edited' | 'created';
+        readonly added?: number;
+        readonly removed?: number;
+    }> {
+        const summaryId = this.host.transcriptComposerSummary?.id;
+        const gitFiles = summaryId
+            ? this.host.transcriptStickyComposerUi.peekComposerGitChangedFiles(summaryId)
+            : undefined;
+        if (!gitFiles?.length) {
+            return [...files];
+        }
+        return files.map(file => {
+            if ((file.added ?? 0) > 0 || (file.removed ?? 0) > 0) {
+                return file;
+            }
+            const match = gitFiles.find(git => {
+                const gitPath = git.path.replace(/\\/g, '/');
+                const filePath = file.path.replace(/\\/g, '/');
+                return gitPath === filePath
+                    || gitPath.endsWith(`/${filePath}`)
+                    || filePath.endsWith(`/${gitPath}`)
+                    || (gitPath.split('/').pop() === filePath.split('/').pop()
+                        && !!filePath.split('/').pop());
+            });
+            if (!match || ((match.added ?? 0) <= 0 && (match.removed ?? 0) <= 0)) {
+                return file;
+            }
+            return {
+                ...file,
+                added: match.added,
+                removed: match.removed,
+            };
+        });
+    }
+
+    /**
      * Append the Codex-style diff summary (the natural closing of the execution
      * story) to `segmentsBody`, removing any previously-rendered one first.
+     * Always mounts as the last child so the card sits below the process
+     * accordion ("Processed in …") and any closing summary narrative.
      * Extracted so both initial render and streaming finalization can share it.
      */
     protected appendMobileDiffSummary(
@@ -1056,7 +1132,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
         this.removeTranscriptLiveStatusWithOrb(segmentsBody);
         const mutableSegments = [...segments];
-        const changedFiles = this.resolversUi.resolveTranscriptChangedFiles(mutableSegments);
+        const changedFiles = this.enrichChangedFilesWithComposerGitStats(
+            this.resolversUi.resolveTranscriptChangedFiles(mutableSegments),
+        );
         if (changedFiles.length > 0) {
             const diffSummary = createMobileDiffSummaryElement(
                 changedFiles.length,
@@ -1077,6 +1155,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                     }
                 },
             );
+            // Last child = below process accordion + closing narrative summary.
             segmentsBody.append(diffSummary);
         } else {
             // No per-file change set — fall back to aggregate line stats
@@ -1115,10 +1194,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             // race between the final SSE frame and settle), the blocks could
             // have stale content. This ensures the final answer is complete.
             this.refreshMobileClosingNarrativeBlocks(segmentsBody, segments);
-            // Append the diff summary as the natural closing of the execution
-            // story. During streaming the row was created without it; now that
-            // the turn has settled we add it. The helper is idempotent.
-            this.appendMobileDiffSummary(segmentsBody, segments);
+            // Mount Files Changed only once the backend has committed the final
+            // response. Visual settle while status is still `streaming`/`settled`
+            // must not show the card yet (agent still finalizing / VPS attached).
+            if (this.shouldShowMobileDiffSummary(conv, false)) {
+                this.appendMobileDiffSummary(segmentsBody, segments);
+            } else {
+                segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
+                this.removeTranscriptLiveStatusWithOrb(segmentsBody);
+            }
             // Sync the process accordion: collapse on success, stay open on error.
             this.syncRowProcessAccordion(row, segments, conv, false);
             row.classList.remove('theia-mod-stream-stalled');
@@ -2057,6 +2141,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             // refresh itself was skipped — otherwise mid-stream patches can
             // leave Processing… without the working indicator.
             this.syncRowProcessAccordion(row, refreshSegments, conv, true);
+            // Streaming patches must never leave a Files Changed card mounted.
+            segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
             if (conv) {
                 const stalled = this.resolveTranscriptStreamStalled(conv);
                 const timedOut = this.resolveTranscriptStreamTimedOut(conv);
@@ -2481,6 +2567,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 readonly kind: 'item';
                 readonly item: TranscriptActivityTimelineItem;
                 readonly isActive: boolean;
+                readonly absoluteIndex: number;
                 readonly tier: ReturnType<typeof resolveTranscriptTimelineItemTier>;
             }
         > = [];
@@ -2493,21 +2580,26 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 kind: 'item',
                 item,
                 isActive: index === renderedActiveIndex,
+                absoluteIndex,
                 tier: resolveTranscriptTimelineItemTier(absoluteIndex, focusIndex, visibleItems.length),
             });
         });
         if (renderWindow.hiddenAfter > 0) {
             slots.push({ kind: 'gap', count: renderWindow.hiddenAfter, position: 'after' });
         }
+        const subagentCardChildIndexes = new Set<number>();
+        for (const model of resolveTranscriptSubagentCardModels(visibleItems)) {
+            for (const childIndex of model.childIndexes) {
+                subagentCardChildIndexes.add(childIndex);
+            }
+        }
         const existing = [...list.querySelectorAll<HTMLElement>(':scope > li')];
         slots.forEach((slot, index) => {
             let li = existing[index];
             if (!li) {
                 li = document.createElement('li');
-                if (!options?.streaming) {
-                    li.classList.add('theia-mod-enter');
-                    li.addEventListener('animationend', () => li.classList.remove('theia-mod-enter'), { once: true });
-                }
+                li.classList.add('theia-mod-enter');
+                li.addEventListener('animationend', () => li.classList.remove('theia-mod-enter'), { once: true });
                 list.append(li);
             }
             if (slot.kind === 'gap') {
@@ -2520,6 +2612,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 slot.isActive,
                 timelineOptionsWithTrace,
                 cursorTrace ? 'recent' : slot.tier,
+                subagentCardChildIndexes.has(slot.absoluteIndex),
             );
             if (ownerRow) {
                 this.attachTranscriptActivityItemAction(li, slot.item, ownerRow);
@@ -3770,6 +3863,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         isActive: boolean,
         options?: TranscriptActivityTimelineOptions,
         tier: ReturnType<typeof resolveTranscriptTimelineItemTier> = isActive ? 'current' : 'recent',
+        subagentCardChild = false,
     ): void {
         if (isTranscriptExecutionTimelineNarrative(item)) {
             this.syncTranscriptExecutionNarrativeItemElement(li, item, tier);
@@ -3799,7 +3893,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         const previousContentFingerprint = li.getAttribute(TRANSCRIPT_ACTIVITY_ITEM_CONTENT_FP_ATTR);
         if (previousContentFingerprint === contentFingerprint && li.querySelector('.theia-mobile-agent-activity-copy')) {
-            this.applyTranscriptActivityItemChrome(li, item, isActive, options, tierClass, shimmerActive);
+            this.applyTranscriptActivityItemChrome(li, item, isActive, options, tierClass, shimmerActive, subagentCardChild);
             li.setAttribute(TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR, itemFingerprint);
             li.setAttribute(TRANSCRIPT_ACTIVITY_ITEM_CONTENT_FP_ATTR, contentFingerprint);
             recordTranscriptRenderMetric('timeline_item_sync_light');
@@ -3808,11 +3902,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         li.setAttribute(TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR, itemFingerprint);
         li.setAttribute(TRANSCRIPT_ACTIVITY_ITEM_CONTENT_FP_ATTR, contentFingerprint);
         recordTranscriptRenderMetric('timeline_item_sync');
-        const nestClass = transcriptActivityNestDepthClassName(item.nestDepth ?? 0) ?? '';
-        const expandableThinking = item.thinkingContent || item.navigate === 'thought';
+        const expandableThinking = !!(item.thinkingContent || item.navigate === 'thought');
         const expandableStep = !expandableThinking && this.shouldShowTranscriptActivityItemExpand(item, options);
-        const roleClass = item.timelineRole ? ` theia-mod-${item.timelineRole}` : '';
-        li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${roleClass}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}${item.subagentRoot ? ' theia-mod-subagent-root' : ''}${expandableThinking ? ' theia-mod-expandable-thinking' : ''}${expandableStep ? ' theia-mod-expandable-step' : ''}${nestClass ? ` ${nestClass}` : ''} ${tierClass}`;
+        this.applyTranscriptActivityItemClassName(li, item, isActive, tierClass, {
+            expandableThinking,
+            expandableStep,
+            subagentCardChild,
+        });
         if (isActive) {
             li.setAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, 'true');
             li.setAttribute('aria-current', 'step');
@@ -3825,6 +3921,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             isActive,
             item.thinkingContent || item.navigate === 'thought' ? 'thinking' : item.toolKind,
             !!options?.streaming || (!!options?.conv && options.conv.status === 'streaming'),
+            { subagentRoot: !!item.subagentRoot },
         );
         const icon = li.querySelector('.theia-mobile-agent-activity-icon');
         if (newIcon) {
@@ -4032,6 +4129,35 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
     }
 
+    protected applyTranscriptActivityItemClassName(
+        li: HTMLElement,
+        item: TranscriptActivityTimelineItem,
+        isActive: boolean,
+        tierClass: string,
+        chrome: {
+            readonly expandableThinking: boolean;
+            readonly expandableStep: boolean;
+            readonly subagentCardChild?: boolean;
+        },
+    ): void {
+        const previousState = li.dataset.transcriptActivityState as TranscriptActivityStepState | undefined;
+        const keepEnter = li.classList.contains('theia-mod-enter');
+        const nestClass = transcriptActivityNestDepthClassName(item.nestDepth ?? 0) ?? '';
+        const roleClass = item.timelineRole ? ` theia-mod-${item.timelineRole}` : '';
+        const subagentCardClass = item.subagentRoot ? ` ${transcriptActivitySubagentCardClassName}` : '';
+        const isSubagentChild = chrome.subagentCardChild ?? ((item.nestDepth ?? 0) > 0 && !item.subagentRoot);
+        const subagentChildClass = isSubagentChild ? ' theia-mod-subagent-card-child' : '';
+        li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${roleClass}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}${item.subagentRoot ? ' theia-mod-subagent-root' : ''}${subagentCardClass}${subagentChildClass}${chrome.expandableThinking ? ' theia-mod-expandable-thinking' : ''}${chrome.expandableStep ? ' theia-mod-expandable-step' : ''}${nestClass ? ` ${nestClass}` : ''} ${tierClass}`;
+        if (keepEnter) {
+            li.classList.add('theia-mod-enter');
+        }
+        if (shouldApplyTranscriptActivitySettleMotion(previousState, item.state)) {
+            li.classList.add('theia-mod-settle');
+            li.addEventListener('animationend', () => li.classList.remove('theia-mod-settle'), { once: true });
+        }
+        li.dataset.transcriptActivityState = item.state;
+    }
+
     protected applyTranscriptActivityItemChrome(
         li: HTMLElement,
         item: TranscriptActivityTimelineItem,
@@ -4039,12 +4165,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         options: TranscriptActivityTimelineOptions | undefined,
         tierClass: string,
         shimmerActive: boolean,
+        subagentCardChild = false,
     ): void {
-        const nestClass = transcriptActivityNestDepthClassName(item.nestDepth ?? 0) ?? '';
-        const expandableThinking = item.thinkingContent || item.navigate === 'thought';
+        const expandableThinking = !!(item.thinkingContent || item.navigate === 'thought');
         const expandableStep = !expandableThinking && this.shouldShowTranscriptActivityItemExpand(item, options);
-        const roleClass = item.timelineRole ? ` theia-mod-${item.timelineRole}` : '';
-        li.className = `theia-mobile-agent-activity-item theia-mod-${item.state}${roleClass}${isActive ? ' theia-mod-active' : ''}${item.grouped ? ' theia-mod-grouped' : ''}${item.subagentRoot ? ' theia-mod-subagent-root' : ''}${expandableThinking ? ' theia-mod-expandable-thinking' : ''}${expandableStep ? ' theia-mod-expandable-step' : ''}${nestClass ? ` ${nestClass}` : ''} ${tierClass}`;
+        this.applyTranscriptActivityItemClassName(li, item, isActive, tierClass, {
+            expandableThinking,
+            expandableStep,
+            subagentCardChild,
+        });
         if (isActive) {
             li.setAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, 'true');
             li.setAttribute('aria-current', 'step');
@@ -4145,7 +4274,40 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             }
         }
         this.ensureTranscriptActivityVerbDetailSpacing(rowEl);
+        if (item.filePath) {
+            detailEl.title = item.filePath;
+        } else {
+            detailEl.removeAttribute('title');
+        }
         return true;
+    }
+
+    protected syncTranscriptActivityDiffPeek(
+        copy: HTMLElement,
+        item: TranscriptActivityTimelineItem,
+        options?: TranscriptActivityTimelineOptions,
+    ): void {
+        const peek = resolveTranscriptActivityDiffPeek(item, options?.segments, 3);
+        let peekEl = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-diff-peek');
+        if (!peek || !options?.cursorTrace) {
+            peekEl?.remove();
+            return;
+        }
+        if (!peekEl) {
+            peekEl = document.createElement('div');
+            peekEl.className = 'theia-mobile-agent-activity-diff-peek';
+            peekEl.setAttribute('aria-hidden', 'true');
+            (copy.querySelector('.theia-mobile-agent-activity-meta')
+                ?? copy.querySelector('.theia-mobile-agent-activity-row')
+                ?? copy.firstElementChild)?.after(peekEl);
+        }
+        peekEl.replaceChildren();
+        for (const line of peek.lines) {
+            const lineEl = document.createElement('div');
+            lineEl.className = `theia-mobile-agent-activity-diff-peek-line theia-mod-${line.kind}`;
+            lineEl.textContent = line.text;
+            peekEl.append(lineEl);
+        }
     }
 
     protected ensureTranscriptActivityVerbDetailSpacing(rowEl: HTMLElement): void {
@@ -4691,9 +4853,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 detail.classList.toggle('theia-mod-command', item.toolKind === 'terminal' && !detailAsPill);
                 detail.classList.toggle('theia-mod-edit-file', item.toolKind === 'editing' && detailAsPill);
                 if (detailAsPill && item.detail) {
-                    detail.append(this.createTranscriptActivityFileChip(item.detail, item.toolKind));
+                    detail.append(this.createTranscriptActivityFileChip(item.detail, item.toolKind, item.filePath));
                 } else {
                     detail.textContent = item.detail ?? '';
+                }
+                if (item.filePath) {
+                    detail.title = item.filePath;
                 }
                 rowEl.append(verb, document.createTextNode(' '), detail);
                 if (item.editAdded !== undefined || item.editRemoved !== undefined) {
@@ -4738,7 +4903,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             mcpBadge?.remove();
         }
 
-        const metaText = formatTranscriptActivityStepMeta(item.durationMs, item.timestamp);
+        const metaText = options?.cursorTrace
+            ? (() => {
+                const durationSuffix = formatTranscriptActivityStepDurationSuffix(item.durationMs);
+                if (durationSuffix) {
+                    return durationSuffix;
+                }
+                return formatTranscriptActivityStepMeta(item.durationMs, item.timestamp);
+            })()
+            : formatTranscriptActivityStepMeta(item.durationMs, item.timestamp);
         let meta = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-meta');
         if (metaText) {
             if (!meta) {
@@ -4754,6 +4927,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         } else {
             meta?.remove();
         }
+
+        this.syncTranscriptActivityDiffPeek(copy, item, options);
 
         let errorDetail = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-error-detail');
         if (item.errorSummary && item.state === 'error') {
@@ -4827,7 +5002,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return true;
     }
 
-    protected createTranscriptActivityFileChip(detail: string, toolKind?: string): HTMLElement {
+    protected createTranscriptActivityFileChip(detail: string, toolKind?: string, fullPath?: string): HTMLElement {
         const chip = document.createElement('span');
         chip.className = 'theia-mobile-agent-activity-file-chip';
         if (toolKind === 'editing') {
@@ -4835,6 +5010,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         chip.setAttribute('role', 'button');
         chip.tabIndex = 0;
+        if (fullPath) {
+            chip.title = fullPath;
+        }
         const icon = document.createElement('span');
         icon.className = `codicon ${this.transcriptFileIconClass(detail)}`;
         icon.setAttribute('aria-hidden', 'true');
@@ -4866,11 +5044,24 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         active: boolean,
         toolKind?: string,
         streaming?: boolean,
+        options?: { readonly subagentRoot?: boolean },
     ): HTMLElement {
         const icon = document.createElement('span');
         icon.className = 'theia-mobile-agent-activity-icon';
         icon.setAttribute('aria-hidden', 'true');
         const kindIconClass = toolKind ? this.activityToolKindIconMap[toolKind] : undefined;
+        const motionKind = resolveActivityToolIconMotionKind(toolKind)
+            ?? (state === 'retrying' ? 'update' : undefined);
+        if (options?.subagentRoot && active && isTranscriptActivityLiveState(state) && streaming) {
+            const spinner = createThinkingOrbIndicator({
+                activityKind: toolKind ?? state,
+                isWorking: true,
+                className: 'theia-mobile-agent-activity-icon-spinner theia-mod-compact',
+            });
+            icon.append(spinner);
+            icon.classList.add('theia-mod-active');
+            return icon;
+        }
         if (state === 'thinking' || toolKind === 'thinking') {
             if (active && isTranscriptActivityLiveState(state) && streaming) {
                 const spinner = createThinkingOrbIndicator({
@@ -4886,6 +5077,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (active && isTranscriptActivityLiveState(state)) {
                 icon.classList.add('theia-mod-active', 'theia-mod-pulse');
             }
+            return icon;
+        }
+        // Live tool rows keep the kind glyph visible and animate it (lucide-animated spirit)
+        // instead of swapping to the generic orb / arrow bullet.
+        if (active && isTranscriptActivityLiveState(state) && kindIconClass && motionKind) {
+            icon.classList.add('theia-mod-kind', 'theia-mod-running', 'codicon', kindIconClass);
+            syncActivityToolIconMotion(icon, true, toolKind);
             return icon;
         }
         if (active && isTranscriptActivityLiveState(state)) {
@@ -4912,6 +5110,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 break;
             case 'streaming':
                 icon.classList.add('theia-mod-streaming', 'codicon', kindIconClass ?? 'codicon-loading');
+                if (kindIconClass && motionKind) {
+                    syncActivityToolIconMotion(icon, true, toolKind);
+                }
                 break;
             case 'success':
                 if (toolKind && kindIconClass) {
@@ -4931,13 +5132,16 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 break;
             case 'retrying':
                 icon.classList.add('theia-mod-retrying', 'codicon', 'codicon-refresh');
+                syncActivityToolIconMotion(icon, true, 'retrying');
                 break;
             case 'running':
             default:
                 if (toolKind && kindIconClass) {
                     icon.classList.add('theia-mod-kind', 'theia-mod-running', 'codicon', kindIconClass);
+                    syncActivityToolIconMotion(icon, true, toolKind);
                 } else {
                     icon.classList.add('theia-mod-running', 'codicon', 'codicon-sync');
+                    syncActivityToolIconMotion(icon, true, 'other');
                 }
                 break;
         }

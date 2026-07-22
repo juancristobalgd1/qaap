@@ -365,6 +365,39 @@ describe('qaap-execution-event-timeline', () => {
             expect(group?.querySelector('.theia-mobile-tool-group-meta')?.classList.contains('theia-mod-shimmer')).to.equal(true);
         });
 
+        it('animates tool group kind icons while running and settles when finished', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            const pending = [
+                toolSegment('Edit', 'tool-edit', JSON.stringify({ path: 'a.ts' }), false),
+                toolSegment('Write', 'tool-write', JSON.stringify({ path: 'b.ts' }), false),
+                toolSegment('Grep', 'tool-search', JSON.stringify({ pattern: 'foo' }), false),
+                toolSegment('Read', 'tool-read', JSON.stringify({ path: 'c.ts' }), false),
+            ];
+            segmentsBody.append(createMobileExecutionEventTimeline(pending));
+
+            const icons = Array.from(segmentsBody.querySelectorAll<HTMLElement>('.theia-mobile-tool-group-icon'));
+            expect(icons.length).to.be.at.least(4);
+            for (const icon of icons) {
+                expect(icon.classList.contains('theia-mod-tool-motion')).to.equal(true);
+            }
+            expect(icons.some(icon => icon.classList.contains('theia-mod-tool-motion-edit'))).to.equal(true);
+            expect(icons.some(icon => icon.classList.contains('theia-mod-tool-motion-write'))).to.equal(true);
+            expect(icons.some(icon => icon.classList.contains('theia-mod-tool-motion-search'))).to.equal(true);
+            expect(icons.some(icon => icon.classList.contains('theia-mod-tool-motion-read'))).to.equal(true);
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Edit', 'tool-edit', JSON.stringify({ path: 'a.ts' }), true),
+                toolSegment('Write', 'tool-write', JSON.stringify({ path: 'b.ts' }), true),
+                toolSegment('Grep', 'tool-search', JSON.stringify({ pattern: 'foo' }), true),
+                toolSegment('Read', 'tool-read', JSON.stringify({ path: 'c.ts' }), true),
+            ]);
+            const settled = segmentsBody.querySelectorAll<HTMLElement>('.theia-mobile-tool-group-icon');
+            for (const icon of Array.from(settled)) {
+                expect(icon.classList.contains('theia-mod-tool-motion')).to.equal(false);
+            }
+        });
+
         it('renders log terminal output as highlighted code view and strips ANSI escape sequences', () => {
             const rawOutput = '\u001b[32mPASS\u001b[0m src/foo.test.ts 12ms';
             const el = createMobileExecutionEventTimeline([
@@ -603,7 +636,13 @@ describe('qaap-execution-event-timeline', () => {
             const tails = el.querySelectorAll('.theia-mobile-diff-summary-file-tail');
 
             expect(tails[0]?.textContent).to.equal('+67');
-            expect(tails[1]?.textContent).to.equal('+130-21');
+            expect(tails[1]?.textContent).to.equal('+130−21');
+            expect(tails[0]?.querySelector('.theia-mobile-diff-summary-file-stat.theia-mod-added')?.textContent)
+                .to.equal('+67');
+            expect(tails[1]?.querySelector('.theia-mobile-diff-summary-file-stat.theia-mod-added')?.textContent)
+                .to.equal('+130');
+            expect(tails[1]?.querySelector('.theia-mobile-diff-summary-file-stat.theia-mod-deleted')?.textContent)
+                .to.equal('−21');
             expect(el.querySelector('.theia-mobile-diff-summary-file-type')).to.equal(null);
         });
 
@@ -666,13 +705,13 @@ describe('qaap-execution-event-timeline', () => {
             expect(title?.textContent).to.not.match(/file/i);
             // Stats show the actual line counts
             expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-added')?.textContent).to.equal('+50');
-            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-deleted')?.textContent).to.equal('-12');
+            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-deleted')?.textContent).to.equal('−12');
         });
 
         it('omits the added stat when linesAdded is zero', () => {
             const el = createMobileLineDiffSummaryElement(0, 5);
             expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-added')).to.equal(null);
-            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-deleted')?.textContent).to.equal('-5');
+            expect(el.querySelector('.theia-mobile-diff-summary-stat.theia-mod-deleted')?.textContent).to.equal('−5');
         });
 
         it('omits the removed stat when linesRemoved is zero', () => {

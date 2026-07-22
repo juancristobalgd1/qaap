@@ -802,11 +802,11 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   height: 24px;
   min-width: 0;
   min-height: 24px;
-  padding: 0 6px 0 7px;
+  padding: 0 2px;
   opacity: 0.72;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
-  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+  border-radius: 0;
+  border: none;
+  background: transparent;
   color: var(--theia-descriptionForeground, var(--qaap-muted, #8a847c));
   font-family: var(--theia-ui-font-family, sans-serif);
   font-size: 10px;
@@ -824,25 +824,28 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
 
 .theia-mobile-work-hub-sessions-sidebar-project-open-icon {
   flex-shrink: 0;
-  font-size: 12px;
-  line-height: 1;
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
+.theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-projects-row-meta-open:hover,
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-projects-row-meta-open:active,
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-projects-row-meta-open:focus-visible,
+.theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-work-hub-sessions-sidebar-project-open:hover,
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-work-hub-sessions-sidebar-project-open:active,
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-work-hub-sessions-sidebar-project-open:focus-visible {
   opacity: 1;
   color: var(--theia-foreground);
-  border-color: color-mix(in srgb, var(--theia-foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  border: none;
+  background: transparent;
   outline: none;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-project-row-wrap.theia-mod-current .theia-mobile-work-hub-sessions-sidebar-project-open {
   color: var(--theia-foreground);
-  border-color: color-mix(in srgb, var(--theia-foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  border: none;
+  background: transparent;
 }
 
 /* Keep generic hover quiet; current conversation keeps a stronger selected state. */

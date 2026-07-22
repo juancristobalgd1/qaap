@@ -196,6 +196,12 @@ function looksLikeGrepOutput(text: string): boolean {
     return matches >= Math.min(2, sample.length);
 }
 
+/** Tokenize a single source line into `host` (for React/diff hosts that manage their own layout). */
+export function highlightTranscriptCodeInto(host: HTMLElement, line: string, language: TranscriptCodeLanguage): void {
+    host.replaceChildren();
+    appendHighlightedLine(host, line || ' ', language);
+}
+
 function appendHighlightedLine(host: HTMLElement, line: string, language: TranscriptCodeLanguage): void {
     switch (language) {
         case 'grep':

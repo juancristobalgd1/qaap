@@ -48,6 +48,26 @@ describe('collectAgentMembers', () => {
         expect(members[0].kind).to.equal('leader-task');
     });
 
+    it('exposes command + activityLabel for VPS tasks so Working DETAIL is not a bare Working', () => {
+        const members = collectAgentMembers({
+            conversations: [],
+            tasks: [
+                {
+                    id: 'test-task',
+                    title: 'npm run test',
+                    command: 'npm run test',
+                    cwd: '/srv/app',
+                    state: 'running',
+                    createdAt: 1000,
+                },
+            ],
+        });
+        expect(members).to.have.length(1);
+        expect(members[0].command).to.equal('npm run test');
+        expect(members[0].activityLabel).to.equal('npm run test');
+        expect(members[0].conversationId).to.equal(undefined);
+    });
+
     it('counts subtasks on the visible conversation leader', () => {
         const members = collectAgentMembers({
             conversations: [{

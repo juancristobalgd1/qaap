@@ -6,7 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
-import { parseDiffStatsFromText } from './qaap-agent-conversation-list-metrics';
+import { estimateToolArgFileDiffStats, parseDiffStatsFromText } from './qaap-agent-conversation-list-metrics';
 import {
     classifyTranscriptToolActivityKind,
     excerptTranscriptReadResultPreview,
@@ -99,16 +99,19 @@ function resolveEditDiffStats(
     segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
 ): Pick<TranscriptActivityNavigationItem, 'editAdded' | 'editRemoved'> {
     const result = segment.result?.trim();
-    if (!result) {
-        return {};
+    if (result) {
+        const card = extractTranscriptDiffCard(result);
+        if (card) {
+            return { editAdded: card.added, editRemoved: card.removed };
+        }
+        const parsed = parseDiffStatsFromText(result);
+        if (parsed) {
+            return { editAdded: parsed.added, editRemoved: parsed.removed };
+        }
     }
-    const card = extractTranscriptDiffCard(result);
-    if (card) {
-        return { editAdded: card.added, editRemoved: card.removed };
-    }
-    const parsed = parseDiffStatsFromText(result);
-    if (parsed) {
-        return { editAdded: parsed.added, editRemoved: parsed.removed };
+    const fromArgs = estimateToolArgFileDiffStats(segment.args);
+    if (fromArgs) {
+        return { editAdded: fromArgs.added, editRemoved: fromArgs.removed };
     }
     return {};
 }

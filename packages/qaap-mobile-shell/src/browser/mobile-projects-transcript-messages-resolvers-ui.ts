@@ -4,8 +4,12 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { extractToolArgFilePath } from '../common/qaap-agent-conversation-list-metrics';
-import { formatToolActivityLabel, parseDiffStatsFromText } from '../common/qaap-agent-conversation-list-metrics';
+import {
+    estimateToolArgFileDiffStats,
+    extractToolArgFilePath,
+    formatToolActivityLabel,
+    parseDiffStatsFromText,
+} from '../common/qaap-agent-conversation-list-metrics';
 import { resolveTranscriptActivityNavigationItems, type TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment, extractTranscriptDiffCard } from '../common/qaap-agent-transcript-segments';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
@@ -132,6 +136,9 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         segments: readonly QaapAgentMessageSegmentDTO[],
         filePath: string,
     ): { readonly added?: number; readonly removed?: number } {
+        let added = 0;
+        let removed = 0;
+        let found = false;
         for (const segment of segments) {
             if (segment.type !== 'tool') {
                 continue;
@@ -140,22 +147,38 @@ export class MobileProjectsTranscriptMessagesResolversUi {
             if (path !== filePath) {
                 continue;
             }
-            for (const text of [segment.result ?? '', segment.args]) {
-                const clean = this.contentUi.cleanTranscriptDisplayText(text);
-                const card = extractTranscriptDiffCard(clean);
+            let segmentStats: { readonly added?: number; readonly removed?: number } | undefined;
+            if (segment.result?.trim()) {
+                const cleanResult = this.contentUi.cleanTranscriptDisplayText(segment.result);
+                const card = extractTranscriptDiffCard(cleanResult);
                 if (card) {
-                    return { added: card.added, removed: card.removed };
-                }
-                const parsed = parseDiffStatsFromText(clean);
-                if (parsed) {
-                    return parsed;
+                    segmentStats = { added: card.added, removed: card.removed };
+                } else {
+                    segmentStats = parseDiffStatsFromText(cleanResult);
                 }
             }
-            if (this.resolveTranscriptFileChangeKind(segment.name) === 'created') {
-                return { added: 1, removed: 0 };
+            if (!segmentStats) {
+                segmentStats = estimateToolArgFileDiffStats(segment.args);
+            }
+            if (!segmentStats) {
+                const cleanArgs = this.contentUi.cleanTranscriptDisplayText(segment.args);
+                const card = extractTranscriptDiffCard(cleanArgs);
+                if (card) {
+                    segmentStats = { added: card.added, removed: card.removed };
+                } else {
+                    segmentStats = parseDiffStatsFromText(cleanArgs);
+                }
+            }
+            if (!segmentStats && this.resolveTranscriptFileChangeKind(segment.name) === 'created') {
+                segmentStats = { added: 1, removed: 0 };
+            }
+            if (segmentStats && ((segmentStats.added ?? 0) > 0 || (segmentStats.removed ?? 0) > 0)) {
+                added += segmentStats.added ?? 0;
+                removed += segmentStats.removed ?? 0;
+                found = true;
             }
         }
-        return {};
+        return found ? { added, removed } : {};
     }
 
 

@@ -214,11 +214,26 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         this.host.stickyComposerWorkspaceSheet = sheet;
     }
 
-    protected createComposerWorkspaceSheetHeader(titleText: string, onClose: () => void): HTMLElement {
+    protected createComposerWorkspaceSheetHeader(
+        titleText: string,
+        onClose: () => void,
+        valueText?: string,
+    ): HTMLElement {
         const header = document.createElement('header');
         header.className = 'theia-mobile-sticky-composer-sheet-header';
         const title = document.createElement('h2');
-        title.textContent = titleText;
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-sticky-composer-sheet-header-label';
+        label.textContent = titleText;
+        title.append(label);
+        const trimmedValue = valueText?.trim();
+        if (trimmedValue) {
+            const value = document.createElement('span');
+            value.className = 'theia-mobile-sticky-composer-sheet-header-value';
+            value.textContent = trimmedValue;
+            title.append(value);
+            title.setAttribute('aria-label', `${titleText} ${trimmedValue}`);
+        }
         const close = document.createElement('button');
         close.type = 'button';
         close.className = 'theia-mobile-sticky-composer-sheet-close codicon codicon-close';
@@ -334,6 +349,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         panel.append(this.createComposerWorkspaceSheetHeader(
             nls.localize('qaap/composerWorkspace/projectSheetTitle', 'Project'),
             onClose,
+            project.name,
         ));
         this.appendComposerWorkspaceSheetNavIfHeader(panel, project, 'project', transcriptOverlay, anchor);
 
@@ -421,6 +437,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         panel.append(this.createComposerWorkspaceSheetHeader(
             nls.localize('qaap/composerWorkspace/destinationSheetTitle', 'Run in'),
             onClose,
+            this.resolveComposerWorkspaceDestinationLabel(project),
         ));
         this.appendComposerWorkspaceSheetNavIfHeader(panel, project, 'destination', transcriptOverlay, anchor);
 
@@ -554,6 +571,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         panel.append(this.createComposerWorkspaceSheetHeader(
             nls.localize('qaap/composerWorkspace/branchSheetTitle', 'Branch'),
             onClose,
+            this.resolveComposerWorkspaceBranch(project),
         ));
         this.appendComposerWorkspaceSheetNavIfHeader(panel, project, 'branch', transcriptOverlay, anchor);
 

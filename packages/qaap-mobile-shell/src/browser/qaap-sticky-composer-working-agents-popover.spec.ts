@@ -19,12 +19,15 @@ import {
     isWorkingAgentsPopoverOpen,
     openWorkingAgentsPopover,
     parkWorkingControlFromAncestor,
+    refreshWorkingAgentsDetailActivityFeed,
+    renderWorkingAgentsDetailPanel,
     renderWorkingAgentsPopoverPanel,
     resolveWorkingAgentStatusLabel,
     restoreWorkingAgentsExpandIfNeeded,
     syncWorkingAgentsExpandContent,
     transferWorkingControlToHost,
 } from './qaap-sticky-composer-working-agents-popover';
+import { buildWorkingAgentDetailActivityFeed } from './qaap-sticky-composer-working-detail-activity';
 
 describe('qaap-sticky-composer-working-agents-popover', () => {
     let disableJSDOM: () => void;
@@ -196,6 +199,13 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             members: [parent, child],
             onSelect: m => { openedSession = m.id; },
             onStopAll: () => undefined,
+            resolveDetailActivityFeed: m => ({
+                items: [],
+                thoughtTitle: 'Thought briefly',
+                thoughtText: 'Summarize the pull request changes.',
+                exploredSummary: 'Explored 2 files, 1 search',
+                liveLabel: m.activityLabel,
+            }),
         });
         const shell = anchor.parentElement;
         expect(shell?.classList.contains('theia-mod-expanded')).to.equal(true);
@@ -210,15 +220,115 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         const detail = document.querySelector(`.${WORKING_DETAIL_PANEL_CLASS}`);
         expect(detail).to.not.equal(null);
         expect(detail?.textContent).to.contain('Review the latest pull request');
+        expect(detail?.textContent).to.contain('Thought briefly');
+        expect(detail?.textContent).to.contain('Summarize the pull request changes.');
+        expect(detail?.textContent).to.contain('Explored 2 files, 1 search');
         expect(detail?.textContent).to.contain('Summarizing diff');
         expect(detail?.textContent).to.contain('1 Subagents');
         expect(detail?.textContent).to.contain('Explore PR files');
+        expect(detail?.textContent).to.not.contain('Project');
+        expect(detail?.textContent).to.not.contain('Workspace');
         expect(openedSession).to.equal(undefined);
         detail?.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-back')?.click();
         expect(getWorkingAgentsDetailMemberId()).to.equal(undefined);
         expect(document.querySelector(`.${WORKING_DETAIL_PANEL_CLASS}`)).to.equal(null);
         expect(shell?.classList.contains('theia-mod-expanded')).to.equal(true);
         expect(document.querySelector('.qaap-working-agents-popover-title')?.textContent).to.equal('2 Working');
+    });
+
+    it('renders DETAIL activity feed instead of project/workspace metadata', () => {
+        const feed = buildWorkingAgentDetailActivityFeed([
+            { type: 'thinking', content: 'Inspect detail chrome.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                args: JSON.stringify({ path: 'popover.ts' }),
+                toolUseId: 'r1',
+                finished: true,
+                result: 'ok',
+            },
+        ], { streaming: true });
+        const panel = renderWorkingAgentsDetailPanel({
+            member: member({
+                id: 'parent',
+                title: 'Detail activity feed',
+                activityLabel: 'Reading files',
+                projectName: 'ShouldNotShowAsPrimary',
+                cwd: '/tmp/should-not-show',
+            }),
+            children: [],
+            activityFeed: feed,
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onToggleLarge: () => undefined,
+            onSelectChild: () => undefined,
+        });
+        expect(panel.querySelector('.qaap-working-agents-detail-activity')).to.not.equal(null);
+        expect(panel.textContent).to.contain('Thought briefly');
+        expect(panel.textContent).to.contain('Explored');
+        expect(panel.textContent).to.not.contain('ShouldNotShowAsPrimary');
+        expect(panel.textContent).to.not.contain('/tmp/should-not-show');
+        expect(panel.textContent).to.not.match(/\bProject\b/);
+        expect(panel.textContent).to.not.match(/\bWorkspace\b/);
+    });
+
+    it('notifies detail member changes and refreshes activity feed after hydration', () => {
+        const rowHost = document.createElement('div');
+        rowHost.className = 'theia-mobile-sticky-composer-changes-pill-row';
+        const anchor = document.createElement('button');
+        anchor.className = 'theia-mobile-sticky-composer-working-pill';
+        rowHost.append(anchor);
+        document.body.append(rowHost);
+
+        const agent = member({
+            id: 'agent-live',
+            title: 'Hydrate working detail activity',
+            activityLabel: 'Working',
+        });
+        let feedVersion = 0;
+        const detailMembers: Array<string | undefined> = [];
+        openWorkingAgentsPopover({
+            anchor,
+            members: [agent],
+            onSelect: () => undefined,
+            onStopAll: () => undefined,
+            onDetailMemberChange: m => detailMembers.push(m?.id),
+            resolveDetailActivityFeed: () => {
+                if (feedVersion === 0) {
+                    return {
+                        items: [],
+                        liveLabel: 'Working',
+                    };
+                }
+                return {
+                    items: [],
+                    thoughtTitle: 'Thought briefly',
+                    thoughtText: 'Inspect the hydrated transcript segments.',
+                    exploredSummary: 'Explored 2 files, 1 search',
+                    liveLabel: 'Reading files',
+                };
+            },
+        });
+
+        document.querySelector<HTMLButtonElement>(
+            '.qaap-working-agents-popover-row[data-member-id="agent-live"]',
+        )!.click();
+        expect(getWorkingAgentsDetailMemberId()).to.equal('agent-live');
+        expect(detailMembers).to.deep.equal(['agent-live']);
+        expect(document.querySelector('.qaap-working-agents-detail-body')?.textContent)
+            .to.equal('Working');
+
+        feedVersion = 1;
+        expect(refreshWorkingAgentsDetailActivityFeed()).to.equal(true);
+        const bodyText = document.querySelector('.qaap-working-agents-detail-body')?.textContent ?? '';
+        expect(bodyText).to.contain('Thought briefly');
+        expect(bodyText).to.contain('Inspect the hydrated transcript segments.');
+        expect(bodyText).to.contain('Explored 2 files, 1 search');
+        expect(bodyText).to.contain('Reading files');
+
+        document.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-back')?.click();
+        expect(detailMembers).to.deep.equal(['agent-live', undefined]);
+        expect(getWorkingAgentsDetailMemberId()).to.equal(undefined);
     });
 
     it('falls back status label to Working when activity is empty', () => {

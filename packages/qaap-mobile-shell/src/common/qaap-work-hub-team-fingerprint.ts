@@ -18,6 +18,7 @@ export function buildWorkHubTeamRowFingerprint(member: WorkHubTeamMember): strin
         member.progressCurrent ?? '',
         member.progressTotal ?? '',
         member.activityLabel ?? '',
+        member.command ?? '',
         member.linesAdded ?? '',
         member.linesRemoved ?? '',
         member.childCount,

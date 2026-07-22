@@ -43,6 +43,10 @@ import {
     estimateQaapAgentTask,
     formatQaapAgentTaskEstimate,
 } from '../common/qaap-agent-task-estimate';
+import {
+    createStickyComposerSendIcon,
+    playStickyComposerSendFly,
+} from './mobile-projects-sticky-composer-send-icon';
 
 export interface MobileProjectsStickyComposerColumnHost {
 stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
@@ -427,6 +431,7 @@ export class MobileProjectsStickyComposerColumnUi {
             submitInFlight = true;
             lastSubmitAt = now;
             lastSubmitDraft = draft;
+            playStickyComposerSendFly(sendBtn);
             recordStickyComposerPromptSubmission(input, draft);
             input.value = '';
             options.setDraft('');
@@ -608,33 +613,6 @@ function createStickyComposerImproveIcon(): HTMLElement {
         path.setAttribute('d', d);
         svg.append(path);
     }
-    host.append(svg);
-    return host;
-}
-
-/** Lucide `send` — sticky composer submit glyph (`currentColor`). */
-function createStickyComposerSendIcon(): HTMLElement {
-    const host = document.createElement('span');
-    host.className = 'theia-mobile-projects-sticky-composer-send-icon';
-    host.setAttribute('aria-hidden', 'true');
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '16');
-    svg.setAttribute('height', '16');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    svg.setAttribute('focusable', 'false');
-    const body = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    body.setAttribute(
-        'd',
-        'M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z',
-    );
-    const seam = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    seam.setAttribute('d', 'm21.854 2.147-10.94 10.939');
-    svg.append(body, seam);
     host.append(svg);
     return host;
 }

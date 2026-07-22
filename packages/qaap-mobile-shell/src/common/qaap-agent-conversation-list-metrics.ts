@@ -126,6 +126,86 @@ export function parseDiffStatsFromText(text: string): { readonly added: number; 
     return undefined;
 }
 
+function pickToolArgString(args: Record<string, unknown>, keys: readonly string[]): string | undefined {
+    for (const key of keys) {
+        const value = args[key];
+        if (typeof value === 'string') {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+/** Line count for Edit/Write string payloads (trailing newline does not add an empty line). */
+export function countToolArgTextLines(text: string): number {
+    if (!text) {
+        return 0;
+    }
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const parts = normalized.split('\n');
+    if (parts.length > 1 && parts[parts.length - 1] === '') {
+        return parts.length - 1;
+    }
+    return parts.length;
+}
+
+/**
+ * Best-effort per-file +/- from Edit/Write tool args when the tool result has no
+ * unified diff or git summary (common for Claude-style old_string/new_string edits).
+ */
+export function estimateToolArgFileDiffStats(
+    argsJson: string | undefined,
+): { readonly added: number; readonly removed: number } | undefined {
+    const trimmed = argsJson?.trim();
+    if (!trimmed || trimmed === '{}') {
+        return undefined;
+    }
+    try {
+        const args = JSON.parse(trimmed) as Record<string, unknown>;
+        if (Array.isArray(args.edits)) {
+            let added = 0;
+            let removed = 0;
+            let found = false;
+            for (const entry of args.edits) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const edit = entry as Record<string, unknown>;
+                const oldText = pickToolArgString(edit, ['old_string', 'oldString', 'oldText', 'old_text']);
+                const newText = pickToolArgString(edit, ['new_string', 'newString', 'newText', 'new_text']);
+                if (oldText === undefined && newText === undefined) {
+                    continue;
+                }
+                removed += countToolArgTextLines(oldText ?? '');
+                added += countToolArgTextLines(newText ?? '');
+                found = true;
+            }
+            if (found && (added > 0 || removed > 0)) {
+                return { added, removed };
+            }
+        }
+        const oldText = pickToolArgString(args, ['old_string', 'oldString', 'oldText', 'old_text']);
+        const newText = pickToolArgString(args, ['new_string', 'newString', 'newText', 'new_text']);
+        if (oldText !== undefined || newText !== undefined) {
+            const added = countToolArgTextLines(newText ?? '');
+            const removed = countToolArgTextLines(oldText ?? '');
+            if (added > 0 || removed > 0) {
+                return { added, removed };
+            }
+        }
+        const content = pickToolArgString(args, ['content', 'contents', 'text', 'code']);
+        if (content !== undefined) {
+            const added = countToolArgTextLines(content);
+            if (added > 0) {
+                return { added, removed: 0 };
+            }
+        }
+        return undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 function parseToolArgNumber(value: unknown): number | undefined {
     if (typeof value === 'number' && Number.isFinite(value)) {
         return value;

@@ -8,6 +8,7 @@ import {
     buildConversationListMetrics,
     conversationMessagesHaveGitOperation,
     conversationTurnProgressRatio,
+    estimateToolArgFileDiffStats,
     extractToolArgFilePath,
     formatReadToolDetailFromArgs,
     formatToolActivityLabel,
@@ -91,6 +92,41 @@ describe('parseDiffStatsFromText', () => {
     it('returns undefined for empty or non-diff text', () => {
         expect(parseDiffStatsFromText('')).to.be.undefined;
         expect(parseDiffStatsFromText('no changes')).to.be.undefined;
+    });
+});
+
+describe('estimateToolArgFileDiffStats', () => {
+    it('counts old_string / new_string replace lines', () => {
+        const args = JSON.stringify({
+            path: 'en.ts',
+            old_string: 'a\nb\nc',
+            new_string: 'a\nx\ny\nz',
+        });
+        expect(estimateToolArgFileDiffStats(args)).to.deep.equal({ added: 4, removed: 3 });
+    });
+
+    it('counts Write content lines as additions', () => {
+        const args = JSON.stringify({
+            file_path: 'new.ts',
+            content: 'line1\nline2\nline3\n',
+        });
+        expect(estimateToolArgFileDiffStats(args)).to.deep.equal({ added: 3, removed: 0 });
+    });
+
+    it('sums multi-edit payloads', () => {
+        const args = JSON.stringify({
+            path: 'a.ts',
+            edits: [
+                { old_string: 'one', new_string: 'one\ntwo' },
+                { oldString: 'x\ny', newString: 'z' },
+            ],
+        });
+        expect(estimateToolArgFileDiffStats(args)).to.deep.equal({ added: 3, removed: 3 });
+    });
+
+    it('returns undefined without editable payloads', () => {
+        expect(estimateToolArgFileDiffStats('{"path":"a.ts"}')).to.be.undefined;
+        expect(estimateToolArgFileDiffStats('')).to.be.undefined;
     });
 });
 

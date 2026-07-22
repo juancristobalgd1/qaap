@@ -13,6 +13,11 @@ import {
     countRunningTeamMembers,
     type WorkHubTeamMember,
 } from '../common/qaap-work-hub-team';
+import {
+    renderWorkingAgentDetailActivityFeed,
+    resolveWorkingMemberCommand,
+    type WorkingAgentDetailActivityFeed,
+} from './qaap-sticky-composer-working-detail-activity';
 
 export const WORKING_CONTROL_CLASS = 'theia-mobile-sticky-composer-working-control';
 export const WORKING_EXPAND_CLIP_CLASS = 'qaap-working-agents-expand-clip';
@@ -36,6 +41,18 @@ export interface OpenWorkingAgentsPopoverOptions {
     readonly onSelect: (member: WorkHubTeamMember) => void;
     readonly onStopAll: (members: readonly WorkHubTeamMember[]) => void;
     readonly onClose?: () => void;
+    /**
+     * Cursor-style live activity feed for the DETAIL panel.
+     * Prefer transcript segments from threadStore; fallback to activityLabel.
+     */
+    readonly resolveDetailActivityFeed?: (
+        member: WorkHubTeamMember,
+    ) => WorkingAgentDetailActivityFeed | undefined;
+    /**
+     * Fired when the DETAIL member changes (row → detail, back → list, close).
+     * Hosts use this to subscribe/unsubscribe live transcript activity.
+     */
+    readonly onDetailMemberChange?: (member: WorkHubTeamMember | undefined) => void;
 }
 
 interface ActiveWorkingAgentsExpand {
@@ -47,6 +64,10 @@ interface ActiveWorkingAgentsExpand {
     onSelect: (member: WorkHubTeamMember) => void;
     onStopAll: (members: readonly WorkHubTeamMember[]) => void;
     onClose: () => void;
+    resolveDetailActivityFeed?: (
+        member: WorkHubTeamMember,
+    ) => WorkingAgentDetailActivityFeed | undefined;
+    onDetailMemberChange?: (member: WorkHubTeamMember | undefined) => void;
     members: WorkHubTeamMember[];
     detailMemberId: string | undefined;
 }
@@ -63,6 +84,10 @@ interface WorkingExpandSession {
     onSelect?: (member: WorkHubTeamMember) => void;
     onStopAll?: (members: readonly WorkHubTeamMember[]) => void;
     onCloseExtra?: () => void;
+    resolveDetailActivityFeed?: (
+        member: WorkHubTeamMember,
+    ) => WorkingAgentDetailActivityFeed | undefined;
+    onDetailMemberChange?: (member: WorkHubTeamMember | undefined) => void;
 }
 
 let workingExpandSession: WorkingExpandSession = { open: false };
@@ -71,6 +96,26 @@ function bindSessionHandlers(options: OpenWorkingAgentsPopoverOptions): void {
     workingExpandSession.onSelect = options.onSelect;
     workingExpandSession.onStopAll = options.onStopAll;
     workingExpandSession.onCloseExtra = options.onClose;
+    if (options.resolveDetailActivityFeed) {
+        workingExpandSession.resolveDetailActivityFeed = options.resolveDetailActivityFeed;
+    }
+    if (options.onDetailMemberChange) {
+        workingExpandSession.onDetailMemberChange = options.onDetailMemberChange;
+    }
+}
+
+function notifyDetailMemberChange(member: WorkHubTeamMember | undefined): void {
+    const handler = workingExpandSession.onDetailMemberChange
+        ?? activeWorkingAgentsExpand?.onDetailMemberChange;
+    handler?.(member);
+}
+
+function resolveSessionDetailActivityFeed(
+    member: WorkHubTeamMember,
+): WorkingAgentDetailActivityFeed | undefined {
+    const resolve = workingExpandSession.resolveDetailActivityFeed
+        ?? activeWorkingAgentsExpand?.resolveDetailActivityFeed;
+    return resolve?.(member);
 }
 
 function resolveSessionOnSelect(): (member: WorkHubTeamMember) => void {
@@ -95,7 +140,12 @@ function invokeSessionOnClose(): void {
 const WORKING_CONTROL_PARK_ID = 'qaap-working-control-park-root';
 
 function clearWorkingExpandSession(): void {
+    const hadDetail = !!workingExpandSession.detailMemberId;
+    const onDetailMemberChange = workingExpandSession.onDetailMemberChange;
     workingExpandSession = { open: false, detailLarge: false };
+    if (hadDetail) {
+        onDetailMemberChange?.(undefined);
+    }
 }
 
 export function isWorkingAgentsExpandSessionOpen(): boolean {
@@ -260,6 +310,8 @@ export function reclaimParkedWorkingControlIntoRow(
                 onSelect: resolveSessionOnSelect(),
                 onStopAll: resolveSessionOnStopAll(),
                 onClose,
+                resolveDetailActivityFeed: workingExpandSession.resolveDetailActivityFeed
+                    ?? activeWorkingAgentsExpand?.resolveDetailActivityFeed,
                 members: activeWorkingAgentsExpand?.members ?? [],
                 detailMemberId: workingExpandSession.detailMemberId,
             };
@@ -412,31 +464,15 @@ export function renderWorkingAgentsPopoverPanel(options: {
     return panel;
 }
 
-function renderWorkingAgentsDetailBlock(label: string, value: string): HTMLElement {
-    const block = document.createElement('div');
-    block.className = 'qaap-working-agents-detail-block';
-
-    const blockLabel = document.createElement('div');
-    blockLabel.className = 'qaap-working-agents-detail-block-label';
-    blockLabel.textContent = label;
-
-    const blockValue = document.createElement('div');
-    blockValue.className = 'qaap-working-agents-detail-block-value';
-    blockValue.textContent = value;
-
-    block.append(blockLabel, blockValue);
-    return block;
-}
-
 export function renderWorkingAgentsDetailPanel(options: {
     readonly member: WorkHubTeamMember;
     readonly children: readonly WorkHubTeamMember[];
     readonly parent?: WorkHubTeamMember;
     readonly detailLarge?: boolean;
+    readonly activityFeed?: WorkingAgentDetailActivityFeed;
     readonly onBack: () => void;
     readonly onClose: () => void;
     readonly onToggleLarge: () => void;
-    readonly onOpenSession: (member: WorkHubTeamMember) => void;
     readonly onSelectChild: (member: WorkHubTeamMember) => void;
 }): HTMLElement {
     const panel = document.createElement('div');
@@ -501,22 +537,23 @@ export function renderWorkingAgentsDetailPanel(options: {
     const body = document.createElement('div');
     body.className = 'qaap-working-agents-detail-body';
 
-    body.append(renderWorkingAgentDetailFocus(options.member, options.parent));
+    if (options.parent) {
+        const parentLine = document.createElement('div');
+        parentLine.className = 'qaap-working-agents-detail-parent';
+        parentLine.textContent = nls.localize(
+            'qaap/workHubChrome/workingParentOf',
+            'Under {0}',
+            options.parent.title?.trim()
+                || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task'),
+        );
+        body.append(parentLine);
+    }
 
-    const projectName = options.member.projectName?.trim();
-    if (projectName) {
-        body.append(renderWorkingAgentsDetailBlock(
-            nls.localize('qaap/workHubChrome/workingDetailProject', 'Project'),
-            projectName,
-        ));
-    }
-    const cwd = options.member.cwd?.trim();
-    if (cwd) {
-        body.append(renderWorkingAgentsDetailBlock(
-            nls.localize('qaap/workHubChrome/workingDetailWorkspace', 'Workspace'),
-            cwd,
-        ));
-    }
+    const feed = options.activityFeed ?? {
+        items: [],
+        liveLabel: resolveWorkingAgentStatusLabel(options.member),
+    };
+    body.append(renderWorkingAgentDetailActivityFeed(feed));
 
     if (options.children.length > 0) {
         const section = document.createElement('div');
@@ -544,75 +581,8 @@ export function renderWorkingAgentsDetailPanel(options: {
         body.append(section);
     }
 
-    const openBtn = document.createElement('button');
-    openBtn.type = 'button';
-    openBtn.className = 'qaap-working-agents-detail-open';
-    openBtn.textContent = nls.localize('qaap/workHubChrome/workingOpenSession', 'Open session');
-    openBtn.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        options.onOpenSession(options.member);
-    });
-    body.append(openBtn);
-
     panel.append(header, body);
     return panel;
-}
-
-function renderWorkingAgentDetailFocus(
-    member: WorkHubTeamMember,
-    parent: WorkHubTeamMember | undefined,
-): HTMLElement {
-    const focus = document.createElement('div');
-    focus.className = 'qaap-working-agents-detail-focus';
-
-    const head = document.createElement('div');
-    head.className = 'qaap-working-agents-detail-focus-head';
-
-    const icon = member.parentId || member.kind === 'subtask'
-        ? createWorkHubWorkingChildIcon()
-        : createWorkHubWorkingParentIcon();
-    icon.classList.add('qaap-working-agents-popover-row-icon');
-    icon.classList.add(member.parentId || member.kind === 'subtask'
-        ? 'theia-mod-child-icon'
-        : 'theia-mod-parent-icon');
-
-    const title = document.createElement('div');
-    title.className = 'qaap-working-agents-detail-focus-title';
-    title.textContent = member.title?.trim()
-        || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task');
-
-    head.append(icon, title);
-
-    const status = document.createElement('div');
-    status.className = 'qaap-working-agents-detail-focus-status qaap-working-agents-popover-row-status';
-    status.dataset.memberId = member.id;
-    applyWorkingAgentStatusLoader(status, member);
-
-    const meta = document.createElement('div');
-    meta.className = 'qaap-working-agents-detail-focus-meta';
-    const bits = [
-        resolveWorkingAgentKindLabel(member),
-        member.agentId?.trim(),
-        member.projectName?.trim(),
-    ].filter((bit): bit is string => !!bit);
-    meta.textContent = bits.join(' · ');
-
-    focus.append(head, status, meta);
-
-    if (parent) {
-        const parentLine = document.createElement('div');
-        parentLine.className = 'qaap-working-agents-detail-parent';
-        parentLine.textContent = nls.localize(
-            'qaap/workHubChrome/workingParentOf',
-            'Under {0}',
-            parent.title?.trim()
-                || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task'),
-        );
-        focus.append(parentLine);
-    }
-
-    return focus;
 }
 
 export function resolveWorkingAgentKindLabel(member: WorkHubTeamMember): string {
@@ -674,11 +644,16 @@ export function isWorkingAgentStatusLive(member: WorkHubTeamMember): boolean {
 
 /**
  * Live loader label: prefer concrete activity/process text; fall back to localized "Working".
+ * VPS tasks expose `command` / command-like titles — never hide those behind a generic label.
  */
 export function resolveWorkingAgentStatusLabel(member: WorkHubTeamMember): string {
     const activity = member.activityLabel?.trim();
-    if (activity) {
+    if (activity && !/^working\.?$/i.test(activity.replace(/[.…]+$/u, ''))) {
         return activity;
+    }
+    const command = resolveWorkingMemberCommand(member);
+    if (command) {
+        return command;
     }
     if (isWorkingAgentStatusLive(member)) {
         return nls.localize('qaap/mobileProjects/status/working', 'Working');
@@ -708,8 +683,12 @@ function showWorkingAgentsListView(): void {
     if (!active) {
         return;
     }
+    const leavingDetail = !!(active.detailMemberId ?? workingExpandSession.detailMemberId);
     active.detailMemberId = undefined;
     workingExpandSession.detailMemberId = undefined;
+    if (leavingDetail) {
+        notifyDetailMemberChange(undefined);
+    }
     const liveWorking = filterWorkingTeamMembers(active.members);
     const working = liveWorking.length > 0 ? liveWorking : active.members;
     const entries = flattenWorkingAgentsTree(working);
@@ -770,6 +749,8 @@ function showWorkingAgentsDetailView(memberId: string): void {
         showWorkingAgentsListView();
         return;
     }
+    const detailChanged = active.detailMemberId !== memberId
+        || workingExpandSession.detailMemberId !== memberId;
     active.detailMemberId = memberId;
     workingExpandSession.detailMemberId = memberId;
     const parent = member.parentId
@@ -777,11 +758,13 @@ function showWorkingAgentsDetailView(memberId: string): void {
         : undefined;
     const children = working.filter(entry => entry.parentId === member.id);
     const detailLarge = !!workingExpandSession.detailLarge;
+    const activityFeed = resolveSessionDetailActivityFeed(member);
     const panel = renderWorkingAgentsDetailPanel({
         member,
         children,
         parent,
         detailLarge,
+        activityFeed,
         onBack: () => showWorkingAgentsListView(),
         onClose: () => {
             const current = activeWorkingAgentsExpand;
@@ -797,15 +780,6 @@ function showWorkingAgentsDetailView(memberId: string): void {
             current?.shell.classList.toggle('theia-mod-detail-large', !!workingExpandSession.detailLarge);
             showWorkingAgentsDetailView(memberId);
         },
-        onOpenSession: selected => {
-            resolveSessionOnSelect()(selected);
-            const current = activeWorkingAgentsExpand;
-            if (current) {
-                current.onClose();
-            } else {
-                invokeSessionOnClose();
-            }
-        },
         onSelectChild: child => showWorkingAgentsDetailView(child.id),
     });
     mountActivePanel(panel);
@@ -813,6 +787,9 @@ function showWorkingAgentsDetailView(memberId: string): void {
         || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task'));
     active.shell.classList.add('theia-mod-detail');
     active.shell.classList.toggle('theia-mod-detail-large', detailLarge);
+    if (detailChanged) {
+        notifyDetailMemberChange(member);
+    }
 }
 
 function wireWorkingAgentsExpandDismiss(
@@ -976,6 +953,54 @@ export function getWorkingAgentsDetailMemberId(): string | undefined {
     return activeWorkingAgentsExpand?.detailMemberId ?? workingExpandSession.detailMemberId;
 }
 
+/** Member currently shown in the Working DETAIL panel (if any). */
+export function getWorkingAgentsDetailMember(): WorkHubTeamMember | undefined {
+    const detailId = getWorkingAgentsDetailMemberId();
+    if (!detailId) {
+        return undefined;
+    }
+    return activeWorkingAgentsExpand?.members.find(entry => entry.id === detailId);
+}
+
+/**
+ * Re-resolve and patch only the DETAIL activity feed (no header/list remount).
+ * Used when threadStore hydrates or streams segments after the panel opened.
+ */
+export function refreshWorkingAgentsDetailActivityFeed(): boolean {
+    const active = activeWorkingAgentsExpand;
+    const detailId = active?.detailMemberId ?? workingExpandSession.detailMemberId;
+    if (!active?.shell.isConnected || !detailId) {
+        return false;
+    }
+    const member = active.members.find(entry => entry.id === detailId);
+    if (!member) {
+        return false;
+    }
+    const body = active.inner.querySelector('.qaap-working-agents-detail-body');
+    const existing = body?.querySelector('.qaap-working-agents-detail-activity');
+    if (!(body instanceof HTMLElement)) {
+        showWorkingAgentsDetailView(detailId);
+        return true;
+    }
+    const feed = resolveSessionDetailActivityFeed(member) ?? {
+        items: [],
+        liveLabel: resolveWorkingAgentStatusLabel(member),
+    };
+    const next = renderWorkingAgentDetailActivityFeed(feed);
+    if (existing instanceof HTMLElement) {
+        existing.replaceWith(next);
+    } else {
+        // Prefer inserting before subagents section when present.
+        const section = body.querySelector('.qaap-working-agents-detail-section');
+        if (section) {
+            body.insertBefore(next, section);
+        } else {
+            body.append(next);
+        }
+    }
+    return true;
+}
+
 function mountWorkingAgentsExpand(
     options: OpenWorkingAgentsPopoverOptions,
     working: WorkHubTeamMember[],
@@ -1027,6 +1052,10 @@ function mountWorkingAgentsExpand(
         onSelect: options.onSelect,
         onStopAll: options.onStopAll,
         onClose,
+        resolveDetailActivityFeed: options.resolveDetailActivityFeed
+            ?? workingExpandSession.resolveDetailActivityFeed,
+        onDetailMemberChange: options.onDetailMemberChange
+            ?? workingExpandSession.onDetailMemberChange,
         members: [...working],
         detailMemberId: restoreDetailMemberId,
     };
@@ -1086,6 +1115,12 @@ export function restoreWorkingAgentsExpandIfNeeded(options: OpenWorkingAgentsPop
             activeWorkingAgentsExpand.onClose = (): void => {
                 invokeSessionOnClose();
             };
+            if (options.resolveDetailActivityFeed) {
+                activeWorkingAgentsExpand.resolveDetailActivityFeed = options.resolveDetailActivityFeed;
+            }
+            if (options.onDetailMemberChange) {
+                activeWorkingAgentsExpand.onDetailMemberChange = options.onDetailMemberChange;
+            }
             activeWorkingAgentsExpand.members = [...expandMembers];
             workingExpandSession.transcriptOverlay = options.transcriptOverlay ?? workingExpandSession.transcriptOverlay;
             // Ensure the pill button used as restore target is the live one inside the shell.
@@ -1116,6 +1151,12 @@ export function restoreWorkingAgentsExpandIfNeeded(options: OpenWorkingAgentsPop
             active.onClose = (): void => {
                 invokeSessionOnClose();
             };
+            if (options.resolveDetailActivityFeed) {
+                active.resolveDetailActivityFeed = options.resolveDetailActivityFeed;
+            }
+            if (options.onDetailMemberChange) {
+                active.onDetailMemberChange = options.onDetailMemberChange;
+            }
             active.members = [...expandMembers];
             workingExpandSession.transcriptOverlay = options.transcriptOverlay ?? workingExpandSession.transcriptOverlay;
             syncWorkingAgentsExpandContent(options.members);

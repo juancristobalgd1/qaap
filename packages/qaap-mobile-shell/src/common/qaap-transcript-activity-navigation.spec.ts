@@ -237,6 +237,25 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(items[0]?.verb).to.equal('Edited');
     });
 
+    it('estimates edit stats from old_string / new_string args when result has no diff', () => {
+        const items = resolveTranscriptActivityNavigationItems([
+            {
+                type: 'tool',
+                name: 'edit_file',
+                args: JSON.stringify({
+                    path: 'en.ts',
+                    old_string: 'hello',
+                    new_string: 'hello\nworld',
+                }),
+                finished: true,
+                toolUseId: '1',
+                result: 'ok',
+            },
+        ], deps, false);
+        expect(items[0]?.editAdded).to.equal(2);
+        expect(items[0]?.editRemoved).to.equal(1);
+    });
+
     it('uses streaming state for the writing step while the turn is live', () => {
         const items = resolveTranscriptActivityNavigationItems([
             { type: 'tool', name: 'read_file', args: '{"path":"src/a.ts"}', finished: true, toolUseId: '1' },

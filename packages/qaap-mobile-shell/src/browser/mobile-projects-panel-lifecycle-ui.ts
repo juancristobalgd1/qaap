@@ -13,6 +13,7 @@ import {
     setMobileLandingHubListChrome,
     setMobileWorkHubComposerHeaderChrome,
 } from './mobile-projects-open';
+import { isWorkingAgentsExpandPinnedOpen } from './qaap-sticky-composer-working-agents-popover';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -340,7 +341,12 @@ export class MobileProjectsPanelLifecycleUi {
                         if (this.host.transcriptOpenSummaryId === change.conversationId) {
                             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
                         }
-                        if (this.host.visible && this.host.hubQueryUi.isTasksHubView()) {
+                        // Working DETAIL (and pill chrome) stay mounted over transcript overlays
+                        // where isTasksHubView() is false — still refresh when the expand is open.
+                        if (this.host.visible && (
+                            this.host.hubQueryUi.isTasksHubView()
+                            || isWorkingAgentsExpandPinnedOpen()
+                        )) {
                             this.host.refreshWorkHubConversationChrome();
                         }
                         return;
@@ -357,6 +363,9 @@ export class MobileProjectsPanelLifecycleUi {
                         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummaryId) {
                             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
                         }
+                    } else if (this.host.visible && isWorkingAgentsExpandPinnedOpen()) {
+                        // Transcript overlay / non-tasks surface: keep Working DETAIL activity live.
+                        this.host.updateTasksAttentionChrome();
                     } else if (this.host.visible && this.host.hubQueryUi.isHomeHubView()) {
                         this.host.scheduleRenderList();
                     } else if (this.host.visible && !this.host.transcriptSheet) {

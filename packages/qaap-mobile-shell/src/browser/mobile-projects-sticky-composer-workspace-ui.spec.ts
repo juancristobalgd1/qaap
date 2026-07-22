@@ -246,10 +246,51 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
 
         expect(openedBranch).to.equal(1);
         expect(openedDestination).to.equal(1);
-        expect(host.stickyComposerWorkspaceSheet?.querySelector('.theia-mobile-sticky-composer-sheet-header h2')?.textContent?.trim())
+        const runInHeader = host.stickyComposerWorkspaceSheet?.querySelector('.theia-mobile-sticky-composer-sheet-header h2');
+        expect(runInHeader?.querySelector('.theia-mobile-sticky-composer-sheet-header-label')?.textContent?.trim())
             .to.equal('Run in');
+        expect(runInHeader?.querySelector('.theia-mobile-sticky-composer-sheet-header-value')?.textContent?.trim())
+            .to.equal('Local');
         window.matchMedia = matchMedia;
         anchor.remove();
+    });
+
+    it('shows the active selection name beside each workspace sheet header title', () => {
+        const projects = [project('current', 'cloud-ws-demo', true)];
+        projects[0].branch = 'feature/sheet-header';
+        const host = createHost(projects);
+        host.composerWorkspaceBranchByProjectId.set(projects[0].id, 'feature/sheet-header');
+        host.stickyComposerSheetsUi = {
+            closeStickyComposerSheets: () => {
+                host.stickyComposerWorkspaceSheet?.remove();
+                host.stickyComposerWorkspaceSheet = undefined;
+            },
+        } as unknown as MobileProjectsStickyComposerWorkspaceHost['stickyComposerSheetsUi'];
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+
+        ui.openComposerWorkspaceProjectSheet(projects[0]);
+        let header = document.body.querySelector('.theia-mobile-sticky-composer-sheet-header h2');
+        expect(header?.querySelector('.theia-mobile-sticky-composer-sheet-header-label')?.textContent?.trim())
+            .to.equal('Project');
+        expect(header?.querySelector('.theia-mobile-sticky-composer-sheet-header-value')?.textContent?.trim())
+            .to.equal('cloud-ws-demo');
+        expect(header?.getAttribute('aria-label')).to.equal('Project cloud-ws-demo');
+
+        ui.openComposerWorkspaceBranchSheet(projects[0]);
+        header = document.body.querySelector('.theia-mobile-sticky-composer-sheet-header h2');
+        expect(header?.querySelector('.theia-mobile-sticky-composer-sheet-header-label')?.textContent?.trim())
+            .to.equal('Branch');
+        expect(header?.querySelector('.theia-mobile-sticky-composer-sheet-header-value')?.textContent?.trim())
+            .to.equal('feature/sheet-header');
+        expect(header?.getAttribute('aria-label')).to.equal('Branch feature/sheet-header');
+
+        ui.openComposerWorkspaceDestinationSheet(projects[0]);
+        header = document.body.querySelector('.theia-mobile-sticky-composer-sheet-header h2');
+        expect(header?.querySelector('.theia-mobile-sticky-composer-sheet-header-label')?.textContent?.trim())
+            .to.equal('Run in');
+        expect(header?.querySelector('.theia-mobile-sticky-composer-sheet-header-value')?.textContent?.trim())
+            .to.equal('Local');
+        expect(header?.getAttribute('aria-label')).to.equal('Run in Local');
     });
 
     it('does not render header workspace nav for bottom-sheet project picker', () => {

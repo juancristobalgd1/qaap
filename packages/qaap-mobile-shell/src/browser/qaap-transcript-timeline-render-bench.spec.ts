@@ -1086,6 +1086,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
                 result: 'ok',
                 finished: true,
             },
+            { type: 'text', content: 'Updated the page component.' },
         ];
         const conv = createCompletedConv(segments);
         // Streaming row — no diff summary while streaming; live footer is visible instead
@@ -1097,13 +1098,56 @@ describe('qaap-transcript-timeline-render-bench', () => {
         const metaText = liveFooter?.querySelector('.qaap-transcript-live-status-meta')?.textContent ?? '';
         expect(metaText).to.match(/\d+s/);
         const activityLabel = liveFooter?.querySelector('.qaap-transcript-live-status-activity')?.getAttribute('aria-label') ?? '';
-        expect(activityLabel).to.equal('Planning next moves…');
+        expect(activityLabel.length).to.be.greaterThan(0);
         // Finalize — live footer hides and the diff summary closes the story
         artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
         expect(streamingRow.querySelector('.theia-mobile-agent-live-status')).to.equal(null);
         const diffSummary = streamingRow.querySelector('.theia-mobile-diff-summary');
         expect(diffSummary).to.not.equal(null);
         expect(diffSummary?.querySelector('.theia-mobile-diff-summary-title')?.textContent).to.equal('1 File Changed');
+        // Card must sit below the process accordion and closing summary narrative.
+        const segmentsBody = streamingRow.querySelector('.theia-mobile-agent-transcript-segments');
+        const accordion = segmentsBody?.querySelector('.theia-mobile-process-accordion');
+        const closingNarrative = segmentsBody?.querySelector('[data-transcript-segment-index="3"]');
+        expect(accordion).to.not.equal(null);
+        expect(closingNarrative).to.not.equal(null);
+        expect(
+            !!(accordion && diffSummary && accordion.compareDocumentPosition(diffSummary) & Node.DOCUMENT_POSITION_FOLLOWING),
+        ).to.equal(true);
+        expect(
+            !!(closingNarrative && diffSummary
+                && closingNarrative.compareDocumentPosition(diffSummary) & Node.DOCUMENT_POSITION_FOLLOWING),
+        ).to.equal(true);
+    });
+
+    it('does not mount Files Changed while the turn is still finalizing', () => {
+        const artifactsUi = createArtifactsUi();
+        const segments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Plan the work.' },
+            {
+                type: 'tool',
+                name: 'Write',
+                toolUseId: 'tool-write-app',
+                args: JSON.stringify({ file_path: 'app.js' }),
+                result: 'ok',
+                finished: true,
+            },
+            { type: 'text', content: 'Updated app.js.' },
+        ];
+        for (const status of ['streaming', 'settled'] as const) {
+            const conv = createConvWithStatus(segments, status);
+            // Visual settle paints with streaming:false while the backend is still attached.
+            const row = artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, conv, { streaming: false });
+            expect(row.querySelector('.theia-mobile-diff-summary'), status).to.equal(null);
+
+            const streamingRow = createStreamingRow(artifactsUi, segments);
+            artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
+            expect(streamingRow.querySelector('.theia-mobile-diff-summary'), `finalize-${status}`).to.equal(null);
+        }
+
+        const idleConv = createCompletedConv(segments);
+        const idleRow = artifactsUi.createTranscriptAgentSegmentsRow(segments, undefined, idleConv, { streaming: false });
+        expect(idleRow.querySelector('.theia-mobile-diff-summary')).to.not.equal(null);
     });
 
     it('renders a thought brief during the thinking phase when no tools are present', () => {

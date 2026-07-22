@@ -13,6 +13,7 @@ import {
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
@@ -126,8 +127,13 @@ export class MobileProjectsSessionsSidebarUi {
 
     openWorkHubSessionsSidebar(): void {
         const sidebar = this.ensureWorkHubSessionsSidebar();
+        // Seed before the first paint: loadProjects() omits composer-targetable
+        // workspaces (local monorepos, ephemeral folders) that Working still uses.
+        this.seedSessionsSidebarProjectsForPaint();
         if (!sidebar.isVisible()) {
             sidebar.show();
+        } else {
+            sidebar.refreshList({ force: true });
         }
         void this.prepareSessionsSidebarData().then(() => {
             sidebar.refreshList({ force: true });
@@ -139,6 +145,7 @@ export class MobileProjectsSessionsSidebarUi {
             sidebar.hide();
             return;
         }
+        this.seedSessionsSidebarProjectsForPaint();
         sidebar.show();
         void this.prepareSessionsSidebarData().then(() => {
             sidebar.refreshList({ force: true });
@@ -152,8 +159,38 @@ export class MobileProjectsSessionsSidebarUi {
         } catch {
             /* keep in-memory list */
         }
+        this.host.projects = this.mergeSessionsSidebarProjects(this.host.projects);
         await this.host.conversations?.refreshTheiaChatSessionsForProjects(this.host.projects);
         await this.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries();
+    }
+
+    /**
+     * Hub browse list (`loadProjects`) hides non-repo paths; the sticky composer
+     * still targets them via {@link MobileProjectsService.resolveCurrentWorkspaceProject}.
+     * Merge that project so the sessions sidebar stays consistent with Working.
+     */
+    protected mergeSessionsSidebarProjects(projects: readonly MobileProjectEntry[]): MobileProjectEntry[] {
+        const current = this.host.projectsService.resolveCurrentWorkspaceProject(projects);
+        if (!current) {
+            return [...projects];
+        }
+        const currentUri = current.uri?.toString();
+        if (projects.some(project => project.id === current.id
+            || (!!currentUri && project.uri?.toString() === currentUri))) {
+            return [...projects];
+        }
+        return [current, ...projects];
+    }
+
+    /** Synchronous seed so `show()` → `refreshList()` does not flash the empty state. */
+    protected seedSessionsSidebarProjectsForPaint(): void {
+        if (this.host.projects.length === 0) {
+            const cached = this.host.projectsService.peekCachedProjects();
+            if (cached.length > 0) {
+                this.host.projects = cached;
+            }
+        }
+        this.host.projects = this.mergeSessionsSidebarProjects(this.host.projects);
     }
     isWorkHubSessionsSidebarVisible(): boolean {
         return this.host.sessionsSidebar?.isVisible() === true;
@@ -278,9 +315,8 @@ export class MobileProjectsSessionsSidebarUi {
                 if (conversations.length === 0) {
                     continue;
                 }
-            } else if (conversations.length === 0) {
-                continue;
             }
+            // Without a search query, always include the project group (even with 0 sessions).
             visibleProjectGroupIds.push(project.id);
         }
         const visibleSlots = this.collectSessionsSidebarConversationEntries().map(entry => ({
@@ -526,19 +562,17 @@ export class MobileProjectsSessionsSidebarUi {
                 if (conversations.length === 0) {
                     continue;
                 }
-            } else if (conversations.length === 0) {
-                continue;
             }
+            // Always list the project (accordion) even when it has no sessions yet.
             list.append(this.createSessionsSidebarProjectGroup(project, conversations, onActivate, bypassConversationLimit));
             visibleCount++;
         }
         if (visibleCount === 0 && pinnedGroups.length === 0) {
             const empty = document.createElement('p');
             empty.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
-            empty.textContent = nls.localize(
-                'qaap/sessionsSidebar/noSearchResults',
-                'No sessions match your search.',
-            );
+            empty.textContent = query
+                ? nls.localize('qaap/sessionsSidebar/noSearchResults', 'No sessions match your search.')
+                : nls.localize('qaap/sessionsSidebar/noSessions', 'No agent sessions yet. Start one from Agents.');
             host.append(empty);
             return;
         }
@@ -915,10 +949,9 @@ export class MobileProjectsSessionsSidebarUi {
         openBtn.title = openLabel;
         const label = document.createElement('span');
         label.className = 'theia-mobile-work-hub-sessions-sidebar-project-open-label';
-        label.textContent = nls.localize('qaap/mobileProjects/ideLabel', 'IDE:');
-        const openIcon = document.createElement('span');
-        openIcon.className = 'codicon codicon-link-external theia-mobile-work-hub-sessions-sidebar-project-open-icon';
-        openIcon.setAttribute('aria-hidden', 'true');
+        label.textContent = nls.localize('qaap/mobileProjects/ideLabel', 'IDE');
+        const openIcon = createLucideArrowUpRightIcon();
+        openIcon.classList.add('theia-mobile-work-hub-sessions-sidebar-project-open-icon');
         openBtn.append(label, openIcon);
         openBtn.addEventListener('click', ev => {
             ev.stopPropagation();

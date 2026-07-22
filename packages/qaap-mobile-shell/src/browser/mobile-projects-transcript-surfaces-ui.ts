@@ -381,6 +381,18 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.host.diffReviewWidget.enableTranscriptEmbed({ externalChrome: true });
         this.host.diffReviewWidget.node.classList.add('theia-mobile-transcript-diff-embed');
         this.host.diffReviewWidget.setTranscriptAgentFeedbackHandler(async () => { /* project-level — use composer below */ });
+        this.host.diffReviewWidget.setTranscriptCloseHandler(() => {
+            const summary = this.host.transcriptOpenSummary;
+            if (summary) {
+                this.host.selectTranscriptTab('messages', project, summary);
+                return;
+            }
+            this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
+            this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
+            this.host.executionSurfaceTabsUi.syncExecutionSurfaceChrome(project);
+            this.host.root.classList.toggle('theia-mod-project-surface-chat', true);
+            this.host.root.classList.toggle('theia-mod-project-surface-tools', false);
+        });
         this.host.attachDiffReviewWidget(diffHost);
         this.host.diffReviewWidget.setRepositoryContext({
             rootUri,
@@ -599,6 +611,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.host.diffReviewWidget.setTranscriptAgentFeedbackHandler(async message => {
             await this.submitTranscriptReviewFeedback(project, summary, message);
         });
+        this.host.diffReviewWidget.setTranscriptCloseHandler(() => {
+            this.host.executionSurfaceTabsUi.selectTranscriptTab('messages', project, summary);
+        });
         this.host.attachDiffReviewWidget(diffHost);
         this.host.diffReviewWidget.setRepositoryContext({
             rootUri,
@@ -642,6 +657,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             this.host.detachDiffReviewWidgetFromHost();
             this.host.diffReviewWidget.node.classList.remove('theia-mobile-transcript-diff-embed');
             this.host.diffReviewWidget.setTranscriptAgentFeedbackHandler(undefined);
+            this.host.diffReviewWidget.setTranscriptCloseHandler(undefined);
             this.host.diffReviewWidget.setReviewStatsChangeHandler(undefined);
         }
         this.host.transcriptReviewDiffHost = undefined;

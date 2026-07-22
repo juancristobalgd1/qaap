@@ -245,6 +245,7 @@ export class MobileProjectsDiffHubUi {
         }
         this.host.diffReviewWidget.enableWorkHubEmbed();
         this.host.diffReviewWidget.setTranscriptAgentFeedbackHandler(undefined);
+        this.host.diffReviewWidget.setTranscriptCloseHandler(undefined);
         this.host.diffReviewWidget.setReviewStatsChangeHandler(undefined);
         this.attachDiffReviewWidget(this.host.diffWidgetHost);
         await this.applyDiffTabToWidget(tab);

@@ -47,6 +47,7 @@ export interface MobileProjectsCardMenuHost {
     onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
     onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void>;
     openAgentComposer(project: MobileProjectEntry): Promise<void>;
+    openEmptyMobileChatSheet(project: MobileProjectEntry): Promise<void>;
     showTaskLog(project: MobileProjectEntry, taskId: string): Promise<void>;
     cancelActiveTask(taskId: string): Promise<void>;
     onTogglePin(project: MobileProjectEntry): Promise<void>;
@@ -100,6 +101,16 @@ export class MobileProjectsCardMenuUi {
         menu.className = 'theia-mobile-projects-card-menu';
         menu.setAttribute('role', 'menu');
         menu.hidden = true;
+
+        this.appendCardMenuItem(menu, {
+            label: nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
+            iconClass: 'codicon-add',
+            title: nls.localize('qaap/mobileProjects/newChatTitle', 'New agent'),
+            onSelect: () => {
+                this.closeCardMenu();
+                void this.host.openEmptyMobileChatSheet(project);
+            },
+        });
 
         this.appendCardMenuItem(menu, {
             label: project.pinned

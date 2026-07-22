@@ -817,6 +817,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return files;
     }
 
+    /** Cached git changes for a conversation (used by Files Changed rows when tool diffs are missing). */
+    peekComposerGitChangedFiles(conversationId: string): readonly StickyComposerChangedFileView[] | undefined {
+        return this.composerActivityGitFilesByConversationId.get(conversationId);
+    }
+
     protected async undoAllComposerChangedFiles(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,

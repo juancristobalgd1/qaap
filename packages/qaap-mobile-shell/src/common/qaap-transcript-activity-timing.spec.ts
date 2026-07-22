@@ -8,7 +8,12 @@ import {
     formatTranscriptActivityStepDuration,
     excerptTranscriptToolError,
 } from './qaap-transcript-activity-step-state';
-import { TranscriptActivityTimingStore, formatTranscriptActivityStepMeta, formatTranscriptActivityStepRelativeTime } from './qaap-transcript-activity-timing';
+import {
+    TranscriptActivityTimingStore,
+    formatTranscriptActivityStepDurationSuffix,
+    formatTranscriptActivityStepMeta,
+    formatTranscriptActivityStepRelativeTime,
+} from './qaap-transcript-activity-timing';
 
 describe('qaap-transcript-activity-step-state', () => {
 
@@ -105,5 +110,10 @@ describe('qaap-transcript-activity-timing', () => {
         expect(formatTranscriptActivityStepMeta(2400, 570_000, now)).to.equal('2.4s · just now');
         expect(formatTranscriptActivityStepRelativeTime(570_000, now)).to.equal('just now');
         expect(formatTranscriptActivityStepRelativeTime(420_000, now)).to.equal('3m ago');
+    });
+
+    it('formats cursor-trace duration suffix', () => {
+        expect(formatTranscriptActivityStepDurationSuffix(undefined)).to.equal(undefined);
+        expect(formatTranscriptActivityStepDurationSuffix(1200)).to.equal('· 1.2s');
     });
 });

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
 import {
     classifyTranscriptToolActivityKind,
     extractTranscriptTaskSummary,
@@ -13,6 +14,7 @@ import {
     type QaapTranscriptToolActivityKind,
 } from './qaap-agent-transcript-segments';
 import { isTranscriptSubagentToolName } from './qaap-transcript-activity-nesting';
+import { formatTranscriptTraceCommandDetail, formatTranscriptTraceMonoPath } from './qaap-transcript-trace-path';
 
 export interface QaapTranscriptCursorTraceLabel {
     readonly verb: string;
@@ -33,12 +35,59 @@ export function formatTranscriptCursorTraceRowText(
     return suffix ? `${core} ${suffix}`.trim() : core;
 }
 
+function localizeTranscriptCursorVerbRead(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbRead', 'Read');
+}
+
+function localizeTranscriptCursorVerbEdited(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbEdited', 'Edited');
+}
+
+function localizeTranscriptCursorVerbRan(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbRan', 'Ran');
+}
+
+function localizeTranscriptCursorVerbSearched(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbSearched', 'Searched');
+}
+
+function localizeTranscriptCursorVerbGrepped(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbGrepped', 'Grepped');
+}
+
+function localizeTranscriptCursorVerbStarted(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbStarted', 'Started');
+}
+
+function localizeTranscriptCursorVerbUpdated(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbUpdated', 'Updated');
+}
+
+function localizeTranscriptCursorVerbCalled(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbCalled', 'Called');
+}
+
+function localizeTranscriptCursorVerbUsed(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbUsed', 'Used');
+}
+
+function localizeTranscriptCursorVerbPlanning(): string {
+    return nls.localize('qaap/mobileProjects/transcriptCursorVerbPlanning', 'Planning');
+}
+
 function formatTranscriptSearchPattern(pattern: string): string {
     const clean = pattern.replace(/\s+/g, ' ').trim();
     if (!clean) {
         return 'workspace';
     }
     return clean.length > 52 ? `${clean.slice(0, 51).trimEnd()}…` : clean;
+}
+
+function resolveTranscriptTracePathDetail(path: string | undefined, fallback: string): string {
+    if (path?.trim()) {
+        return formatTranscriptTraceMonoPath(path);
+    }
+    return fallback;
 }
 
 /** Cursor-style verb / detail / muted-tail parts for a timeline step row. */
@@ -49,10 +98,13 @@ export function resolveTranscriptCursorTraceLabel(
 ): QaapTranscriptCursorTraceLabel {
     const normalizedToolName = toolName.toLowerCase().replace(/[_-]+/g, ' ').trim();
     if (normalizedToolName.includes('todo')) {
-        return { verb: 'Updated', detail: 'todo list' };
+        return { verb: localizeTranscriptCursorVerbUpdated(), detail: 'todo list' };
     }
     if (isTranscriptSubagentToolName(toolName)) {
-        return { verb: 'Started', detail: extractTranscriptTaskSummary(argsJson) ?? 'task' };
+        return {
+            verb: localizeTranscriptCursorVerbStarted(),
+            detail: extractTranscriptTaskSummary(argsJson) ?? 'task',
+        };
     }
     const kind = classifyTranscriptToolActivityKind(toolName);
     const pattern = kind === 'searching' ? extractTranscriptTracePattern(argsJson) : undefined;
@@ -62,10 +114,11 @@ export function resolveTranscriptCursorTraceLabel(
         argsJson,
     });
     const name = toolName.toLowerCase();
-    const fileName = options?.path ? options.path.replace(/\\/g, '/').split('/').filter(Boolean).pop() : undefined;
     switch (kind) {
         case 'searching': {
-            const verb = name.includes('grep') ? 'Grepped' : 'Searched';
+            const verb = name.includes('grep')
+                ? localizeTranscriptCursorVerbGrepped()
+                : localizeTranscriptCursorVerbSearched();
             const detail = pattern
                 ? formatTranscriptSearchPattern(pattern)
                 : rowParts.detail;
@@ -73,28 +126,32 @@ export function resolveTranscriptCursorTraceLabel(
         }
         case 'reading':
             return {
-                verb: 'Read',
-                detail: fileName ?? rowParts.detail,
+                verb: localizeTranscriptCursorVerbRead(),
+                detail: resolveTranscriptTracePathDetail(options?.path, rowParts.detail),
                 tail: resolveTranscriptTraceLocationTail(toolName, argsJson),
             };
         case 'terminal':
             return {
-                verb: 'Ran',
+                verb: localizeTranscriptCursorVerbRan(),
                 detail: humanizeTranscriptTerminalDetail(options?.command ?? rowParts.detail),
                 tail: extractTranscriptCommandTail(options?.command),
             };
-        case 'editing': {
-            const file = fileName ?? rowParts.detail;
-            return { verb: 'Edited', detail: file };
-        }
+        case 'editing':
+            return {
+                verb: localizeTranscriptCursorVerbEdited(),
+                detail: resolveTranscriptTracePathDetail(options?.path, rowParts.detail),
+            };
         case 'mcp':
-            return { verb: 'Called', detail: rowParts.detail, tail: 'MCP' };
+            return { verb: localizeTranscriptCursorVerbCalled(), detail: rowParts.detail, tail: 'MCP' };
         default: {
             const special = resolveSpecialTranscriptToolTraceLabel(toolName);
             if (special) {
                 return special;
             }
-            return { verb: 'Used', detail: humanizeTranscriptToolDisplayName(toolName || 'tool') };
+            return {
+                verb: localizeTranscriptCursorVerbUsed(),
+                detail: humanizeTranscriptToolDisplayName(toolName || 'tool'),
+            };
         }
     }
 }
@@ -116,11 +173,11 @@ function humanizeTranscriptTerminalDetail(command: string): string {
     if (clean.startsWith('npm ')) {
         const rest = clean.slice(4).trim();
         if (rest.startsWith('run ')) {
-            return `npm run ${rest.slice(4).trim()}`;
+            return formatTranscriptTraceCommandDetail(`npm run ${rest.slice(4).trim()}`, 56);
         }
-        return clean.length > 56 ? `${clean.slice(0, 53)}…` : clean;
+        return formatTranscriptTraceCommandDetail(clean, 56);
     }
-    return clean.length > 64 ? `${clean.slice(0, 61)}…` : clean;
+    return formatTranscriptTraceCommandDetail(clean, 64);
 }
 
 /** Muted suffix tags such as `cd, npm` on finished shell rows. */
@@ -152,14 +209,43 @@ export function splitTranscriptCursorGroupedLabel(
 ): QaapTranscriptCursorTraceLabel {
     switch (kind) {
         case 'reading':
-            return { verb: 'Read', detail: count === 1 ? '1 file' : `${count} files` };
+            return {
+                verb: localizeTranscriptCursorVerbRead(),
+                detail: count === 1
+                    ? nls.localize('qaap/mobileProjects/transcriptCursorGroupedReadOne', '1 file')
+                    : nls.localize('qaap/mobileProjects/transcriptCursorGroupedReadMany', '{0} files', count),
+            };
         case 'searching':
-            return { verb: 'Searched', detail: count === 1 ? 'once' : `${count} times` };
+            return {
+                verb: localizeTranscriptCursorVerbSearched(),
+                detail: count === 1
+                    ? nls.localize('qaap/mobileProjects/transcriptCursorGroupedSearchOne', 'once')
+                    : nls.localize('qaap/mobileProjects/transcriptCursorGroupedSearchMany', '{0} times', count),
+            };
         case 'terminal':
-            return { verb: 'Ran', detail: count === 1 ? '1 command' : `${count} commands` };
+            return {
+                verb: localizeTranscriptCursorVerbRan(),
+                detail: count === 1
+                    ? nls.localize('qaap/mobileProjects/transcriptCursorGroupedTerminalOne', '1 command')
+                    : nls.localize('qaap/mobileProjects/transcriptCursorGroupedTerminalMany', '{0} commands', count),
+            };
         case 'editing':
-            return { verb: 'Edited', detail: count === 1 ? '1 file' : `${count} files` };
+            return {
+                verb: localizeTranscriptCursorVerbEdited(),
+                detail: count === 1
+                    ? nls.localize('qaap/mobileProjects/transcriptCursorGroupedEditOne', '1 file')
+                    : nls.localize('qaap/mobileProjects/transcriptCursorGroupedEditMany', '{0} files', count),
+            };
         default:
-            return { verb: 'Used', detail: count === 1 ? '1 tool' : `${count} tools` };
+            return {
+                verb: localizeTranscriptCursorVerbUsed(),
+                detail: count === 1
+                    ? nls.localize('qaap/mobileProjects/transcriptCursorGroupedToolOne', '1 tool')
+                    : nls.localize('qaap/mobileProjects/transcriptCursorGroupedToolMany', '{0} tools', count),
+            };
     }
 }
+
+export {
+    localizeTranscriptCursorVerbPlanning,
+};

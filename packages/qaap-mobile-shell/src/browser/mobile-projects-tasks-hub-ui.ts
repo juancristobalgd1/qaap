@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
@@ -25,15 +26,22 @@ import {
     closeWorkingAgentsPopover,
     dismissWorkingAgentsExpandForStopAll,
     filterWorkingTeamMembers,
+    getWorkingAgentsDetailMemberId,
     isWorkingAgentsExpandPinnedOpen,
     isWorkingAgentsExpandSessionOpen,
     isWorkingAgentsPopoverOpen,
     isWorkingPillSuppressedAfterStopAll,
     noteWorkingPillChromeCount,
     openWorkingAgentsPopover,
+    refreshWorkingAgentsDetailActivityFeed,
     restoreWorkingAgentsExpandIfNeeded,
     syncWorkingAgentsExpandContent,
 } from './qaap-sticky-composer-working-agents-popover';
+import {
+    resolveWorkingAgentDetailActivityFeedFromConversation,
+} from './qaap-sticky-composer-working-detail-activity';
+import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
+import type { MobileProjectsConversations } from './mobile-projects-conversations';
 
 /** Panel surface for Tasks hub list rendering and Agents Hub landing recents/quick actions. */
 export interface MobileProjectsTasksHubHost {
@@ -81,6 +89,8 @@ export interface MobileProjectsTasksHubHost {
     collectTeamMembersForHub(): WorkHubTeamMember[];
     onTeamMemberClick(member: WorkHubTeamMember): void;
     onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
+    /** Optional — hydrates Working DETAIL activity feed from cached transcripts. */
+    conversations?: MobileProjectsConversations;
     /** Optional toast surface for Stop All / Working chrome failures. */
     messageService?: { error(message: string): void };
     collectChatHubGroups(
@@ -122,6 +132,9 @@ export interface MobileProjectsTasksHubHost {
 
 /** Tasks hub inbox rendering and Agents Hub landing recents / quick-action prompts. */
 export class MobileProjectsTasksHubUi {
+
+    protected workingDetailActivityDispose: Disposable = Disposable.NULL;
+    protected workingDetailActivityConversationId: string | undefined;
 
     constructor(protected readonly host: MobileProjectsTasksHubHost) { }
 
@@ -389,6 +402,8 @@ export class MobileProjectsTasksHubUi {
                     onStopAll: working => {
                         void this.stopAllWorkingAgents(working);
                     },
+                    resolveDetailActivityFeed: member => this.resolveWorkingDetailActivityFeed(member),
+                    onDetailMemberChange: member => this.bindWorkingDetailActivitySubscription(member),
                 });
             } else if (isWorkingAgentsPopoverOpen()) {
                 syncWorkingAgentsExpandContent(members);
@@ -399,6 +414,7 @@ export class MobileProjectsTasksHubUi {
     openWorkingAgentsPopoverFromPill(anchor: HTMLButtonElement): void {
         const members = this.host.collectTeamMembersForHub();
         const transcriptOverlay = !!anchor.closest('.theia-mobile-agent-transcript-root');
+        this.prefetchWorkingDetailDocuments(members);
         openWorkingAgentsPopover({
             anchor,
             members,
@@ -407,7 +423,86 @@ export class MobileProjectsTasksHubUi {
             onStopAll: working => {
                 void this.stopAllWorkingAgents(working);
             },
+            resolveDetailActivityFeed: member => this.resolveWorkingDetailActivityFeed(member),
+            onDetailMemberChange: member => this.bindWorkingDetailActivitySubscription(member),
         });
+    }
+
+    /**
+     * Subscribe to threadStore for the DETAIL member so prefetch / live deltas repaint
+     * the Cursor-style activity feed (avoids a stuck static "Working" fallback).
+     */
+    protected bindWorkingDetailActivitySubscription(member: WorkHubTeamMember | undefined): void {
+        const conversationId = member?.conversationId?.trim();
+        if (!conversationId || !member) {
+            this.workingDetailActivityDispose.dispose();
+            this.workingDetailActivityDispose = Disposable.NULL;
+            this.workingDetailActivityConversationId = undefined;
+            return;
+        }
+        if (this.workingDetailActivityConversationId === conversationId
+            && this.workingDetailActivityDispose !== Disposable.NULL) {
+            // Same live thread — keep the existing subscription; still warm the cache.
+            this.host.conversations?.prefetchDocument(conversationId);
+            refreshWorkingAgentsDetailActivityFeed();
+            return;
+        }
+        this.workingDetailActivityDispose.dispose();
+        this.workingDetailActivityConversationId = conversationId;
+        const conversations = this.host.conversations;
+        if (!conversations) {
+            this.workingDetailActivityDispose = Disposable.NULL;
+            return;
+        }
+        const memberId = member.id;
+        conversations.prefetchDocument(conversationId);
+        this.workingDetailActivityDispose = conversations.threadStore.subscribe(
+            () => {
+                if (getWorkingAgentsDetailMemberId() !== memberId) {
+                    return;
+                }
+                refreshWorkingAgentsDetailActivityFeed();
+            },
+            snapshot => snapshot.document,
+            conversationId,
+        );
+    }
+
+    protected resolveWorkingDetailActivityFeed(member: WorkHubTeamMember): ReturnType<
+        typeof resolveWorkingAgentDetailActivityFeedFromConversation
+    > {
+        const conversationId = member.conversationId?.trim();
+        if (conversationId) {
+            this.host.conversations?.prefetchDocument(conversationId);
+        }
+        const conversations = this.host.conversations;
+        const document = conversationId
+            ? conversations?.threadStore.getDocument(conversationId)
+            : undefined;
+        const liveReducer = conversationId
+            ? conversations?.threadStore.getLiveReducer(conversationId)
+            : undefined;
+        const liveSegments = liveReducer && liveReducer.traceEvents.length > 0
+            ? [...resolveAgentMessageSegments({
+                role: 'agent',
+                content: '',
+                traceEvents: [...liveReducer.traceEvents],
+            })]
+            : undefined;
+        return resolveWorkingAgentDetailActivityFeedFromConversation(document, member, {
+            liveSegments,
+        });
+    }
+
+    protected prefetchWorkingDetailDocuments(members: readonly WorkHubTeamMember[]): void {
+        const conversations = this.host.conversations;
+        if (!conversations) {
+            return;
+        }
+        const ids = filterWorkingTeamMembers(members)
+            .map(member => member.conversationId?.trim())
+            .filter((id): id is string => !!id);
+        conversations.prefetchDocuments(ids);
     }
 
     /**

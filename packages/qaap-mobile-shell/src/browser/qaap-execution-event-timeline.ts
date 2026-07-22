@@ -49,6 +49,7 @@ import {
     patchTranscriptWebSearchCard,
     TRANSCRIPT_WEB_SEARCH_CARD_CLASS,
 } from './qaap-transcript-web-search-ui';
+import { syncActivityToolIconMotion } from './qaap-activity-tool-icon-motion';
 
 /** Data attribute: stable id of the execution event a `section` element renders. */
 const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
@@ -1224,6 +1225,9 @@ function patchMobileExecutionEventSection(
     if (icon && prev.icon !== next.icon) {
         icon.className = `codicon ${next.icon} theia-mobile-tool-group-icon`;
     }
+    if (icon) {
+        syncActivityToolIconMotion(icon, next.hasPending && !next.hasError, next.kind);
+    }
     const meta = group.querySelector<HTMLElement>('.theia-mobile-tool-group-meta');
     if (meta) {
         meta.classList.toggle('theia-mod-shimmer', next.hasPending);
@@ -1655,6 +1659,7 @@ function createMobileToolGroupElement(
     const icon = document.createElement('span');
     icon.className = `codicon ${event.icon} theia-mobile-tool-group-icon`;
     icon.setAttribute('aria-hidden', 'true');
+    syncActivityToolIconMotion(icon, event.hasPending && !event.hasError, event.kind);
 
     const verb = document.createElement('span');
     verb.className = `theia-mobile-tool-group-verb ${event.hasPending ? 'theia-mod-shimmer' : ''}`;
@@ -2069,7 +2074,8 @@ export function createMobileDiffSummaryElement(
             if (typeof file.removed === 'number' && file.removed > 0) {
                 const removedStat = document.createElement('span');
                 removedStat.className = 'theia-mobile-diff-summary-file-stat theia-mod-deleted';
-                removedStat.textContent = `-${file.removed}`;
+                // Unicode minus matches composer / changed-files rows (+12 −3).
+                removedStat.textContent = `−${file.removed}`;
                 tail.append(removedStat);
                 hasStats = true;
             }
@@ -2140,7 +2146,7 @@ export function createMobileLineDiffSummaryElement(
     if (linesRemoved > 0) {
         const stat = document.createElement('span');
         stat.className = 'theia-mobile-diff-summary-stat theia-mod-deleted';
-        stat.textContent = `-${linesRemoved}`;
+        stat.textContent = `−${linesRemoved}`;
         header.append(stat);
     }
 

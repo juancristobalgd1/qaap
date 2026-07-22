@@ -41,6 +41,8 @@ export interface WorkHubTeamMember {
     readonly projectId?: string;
     /** VPS background task id — set for leader-task and subtask rows. */
     readonly taskId?: string;
+    /** Shell/agent command for VPS tasks (e.g. `npm run test`) — DETAIL activity fallback. */
+    readonly command?: string;
 }
 
 export interface WorkHubTeamConversationInput {
@@ -124,6 +126,8 @@ export function collectAgentMembers(input: CollectAgentMembersInput): WorkHubTea
                 createdAt: task.createdAt,
                 updatedAt: task.createdAt,
                 taskId: task.id,
+                command: task.command?.trim() || undefined,
+                activityLabel: resolveTaskMemberActivityLabel(task),
             });
             continue;
         }
@@ -151,6 +155,8 @@ export function collectAgentMembers(input: CollectAgentMembersInput): WorkHubTea
             createdAt: task.createdAt,
             updatedAt: task.finishedAt ?? task.createdAt,
             taskId: task.id,
+            command: task.command?.trim() || undefined,
+            activityLabel: resolveTaskMemberActivityLabel(task),
         });
     }
     const remapped = members.map(member => {
@@ -252,6 +258,16 @@ function normalizeTeamCwd(cwd: string): string {
         normalized = normalized.slice(0, -1);
     }
     return normalized;
+}
+
+/** Live status text for VPS task rows (list + DETAIL fallback seed). */
+function resolveTaskMemberActivityLabel(task: WorkHubTeamTaskInput): string | undefined {
+    const command = task.command?.trim() || task.title?.trim();
+    if (!command) {
+        return undefined;
+    }
+    // Prefer the concrete command over a generic "Working" label.
+    return command.length > 80 ? `${command.slice(0, 77)}…` : command;
 }
 
 function inferAgentIdFromCommand(command: string): string {

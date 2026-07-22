@@ -21,9 +21,14 @@ import {
     type QaapGitHunkLine,
     type QaapGitPrReadiness,
 } from '../common/qaap-git-review';
-import { middleTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
+import { leadingTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
 import { isCurrentAgentDiffRequest } from './qaap-diff-review-request-state';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import {
+    highlightTranscriptCodeInto,
+    resolveTranscriptCodeLanguage,
+    type TranscriptCodeLanguage,
+} from './qaap-transcript-code-view';
 
 /** Git extension commands used by the bulk review actions. */
 const GIT_STAGE_ALL = 'git.stageAll';
@@ -137,7 +142,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
     /** Agent Changes tab: per-file diff sections expanded in the accordion. */
     protected readonly expandedAgentFiles = new Set<string>();
     protected readonly expandedContextBlocks = new Set<string>();
+    /** Cursor-style collapse for the whole "Uncommitted Changes" group. */
+    protected uncommittedGroupCollapsed = false;
     protected onTranscriptAgentFeedback: ((message: string) => void | Promise<void>) | undefined;
+    protected onTranscriptClose: (() => void) | undefined;
     protected onReviewStatsChange: ((stats: { fileCount: number; adds: number; dels: number; pending: number }) => void) | undefined;
 
     /** Called when the widget is mounted inside {@link MobileProjectsPanel} Work Hub diff. */
@@ -166,6 +174,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.agentDiffGeneration++;
         this.expandedAgentFiles.clear();
         this.expandedContextBlocks.clear();
+        this.uncommittedGroupCollapsed = false;
         this.branchName = undefined;
         this.removeClass('qaap-diff-review--work-hub');
         this.addClass('qaap-diff-review--transcript');
@@ -189,6 +198,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
         handler: ((message: string) => void | Promise<void>) | undefined,
     ): void {
         this.onTranscriptAgentFeedback = handler;
+    }
+
+    setTranscriptCloseHandler(handler: (() => void) | undefined): void {
+        this.onTranscriptClose = handler;
     }
 
     setReviewStatsChangeHandler(
@@ -550,16 +563,18 @@ export class QaapDiffReviewWidget extends ReactWidget {
         return (
             <div className='qaap-agent-changes'>
                 {this.renderAgentToolbar(totals, count)}
-                <div className='qaap-agent-changes-scroll'>
-                    {this.loadingAgentDiffPaths.size > 0 && this.agentFileDiffs.size === 0 && (
-                        <div className='qaap-agent-changes-loading' aria-busy='true'>
-                            <div className='qaap-agent-changes-loading-bar' />
-                            <div className='qaap-agent-changes-loading-bar qaap-mod-short' />
-                            <div className='qaap-agent-changes-loading-bar qaap-mod-shorter' />
-                        </div>
-                    )}
-                    {this.files.map(file => this.renderAgentFileSection(file))}
-                </div>
+                {!this.uncommittedGroupCollapsed && (
+                    <div className='qaap-agent-changes-scroll'>
+                        {this.loadingAgentDiffPaths.size > 0 && this.agentFileDiffs.size === 0 && (
+                            <div className='qaap-agent-changes-loading' aria-busy='true'>
+                                <div className='qaap-agent-changes-loading-bar' />
+                                <div className='qaap-agent-changes-loading-bar qaap-mod-short' />
+                                <div className='qaap-agent-changes-loading-bar qaap-mod-shorter' />
+                            </div>
+                        )}
+                        {this.files.map(file => this.renderAgentFileSection(file))}
+                    </div>
+                )}
             </div>
         );
     }
@@ -570,10 +585,12 @@ export class QaapDiffReviewWidget extends ReactWidget {
             ? nls.localize('qaap/mobileProjects/uncommittedChangeOne', '1 Uncommitted Change')
             : nls.localize('qaap/mobileProjects/uncommittedChangeMany', '{0} Uncommitted Changes', String(count));
         const bulkDisabled = !this.bulkActionsEnabled || this.runningBulkAction || count === 0;
+        const groupExpanded = !this.uncommittedGroupCollapsed;
         return (
             <header className='qaap-agent-changes-toolbar'>
                 <div className='qaap-agent-changes-toolbar-primary'>
                     <span className='qaap-agent-changes-scope'>
+                        <i className={codicon('device-desktop')} aria-hidden='true' />
                         {nls.localize('qaap/mobileProjects/changesScopeLocal', 'Local')}
                     </span>
                     <span className='qaap-agent-changes-branch' title={branch}>
@@ -585,19 +602,41 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     {this.bulkActionsEnabled && this.renderAgentCommitControls(bulkDisabled)}
                 </div>
                 <div className='qaap-agent-changes-toolbar-secondary'>
-                    <span className='qaap-agent-changes-summary'>
-                        <i className={`${codicon('folder')} qaap-agent-changes-summary-icon`} aria-hidden='true' />
+                    <button
+                        type='button'
+                        className='qaap-agent-changes-summary'
+                        aria-expanded={groupExpanded}
+                        onClick={this.onToggleUncommittedGroup}
+                    >
+                        <i
+                            className={`${codicon(groupExpanded ? 'chevron-down' : 'chevron-right')} qaap-agent-changes-summary-chevron`}
+                            aria-hidden='true'
+                        />
                         <span className='qaap-agent-changes-summary-label'>{summaryLabel}</span>
                         <span className='qaap-agent-changes-summary-stats'>
                             <span className='qaap-diff-add'>+{totals.adds}</span>
-                            <span className='qaap-diff-del'>−{totals.dels}</span>
+                            <span className='qaap-diff-del'>-{totals.dels}</span>
                         </span>
-                    </span>
+                    </button>
                     {this.renderAgentBulkActions(bulkDisabled)}
                 </div>
             </header>
         );
     }
+
+    protected readonly onToggleUncommittedGroup = (): void => {
+        this.uncommittedGroupCollapsed = !this.uncommittedGroupCollapsed;
+        this.update();
+    };
+
+    protected readonly onCloseChanges = (): void => {
+        if (this.onTranscriptClose) {
+            this.onTranscriptClose();
+            return;
+        }
+        this.uncommittedGroupCollapsed = true;
+        this.update();
+    };
 
     protected renderAgentCommitControls(disabled: boolean): React.ReactNode {
         return (
@@ -825,13 +864,22 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 </button>
                 <button
                     type='button'
-                    className='qaap-diff-review-icon-btn qaap-mod-accept'
-                    title={nls.localize('qaap/diff/acceptAll', 'Accept all hunks')}
-                    aria-label={nls.localize('qaap/diff/acceptAll', 'Accept all hunks')}
+                    className='qaap-diff-review-icon-btn'
+                    title={nls.localize('qaap/diff/stageAll', 'Stage all')}
+                    aria-label={nls.localize('qaap/diff/stageAll', 'Stage all')}
                     disabled={disabled}
                     onClick={this.onAcceptAll}
                 >
-                    <i className={codicon('check')} />
+                    <i className={codicon('diff')} />
+                </button>
+                <button
+                    type='button'
+                    className='qaap-diff-review-icon-btn'
+                    title={nls.localize('qaap/diff/closeChanges', 'Close changes')}
+                    aria-label={nls.localize('qaap/diff/closeChanges', 'Close changes')}
+                    onClick={this.onCloseChanges}
+                >
+                    <i className={codicon('close')} />
                 </button>
             </span>
         );
@@ -839,7 +887,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     protected renderAgentFileSection(file: QaapGitChangedFile): React.ReactNode {
         const diff = this.agentFileDiffs.get(file.path);
-        const displayPath = middleTruncatePath(file.path);
+        const displayPath = leadingTruncatePath(file.path);
         const isNew = isUntrackedFile(file);
         const expanded = this.isAgentFileExpanded(file.path);
         const fileClass = [
@@ -871,53 +919,39 @@ export class QaapDiffReviewWidget extends ReactWidget {
                         )}
                         <span className='qaap-agent-changes-filehdr-stats'>
                             <span className='qaap-diff-add'>+{file.adds}</span>
-                            <span className='qaap-diff-del'>−{file.dels}</span>
+                            <span className='qaap-diff-del'>-{file.dels}</span>
                         </span>
                     </button>
-                    <span className='qaap-agent-changes-filehdr-actions'>
-                        <button
-                            type='button'
-                            className='qaap-diff-review-icon-btn'
-                            title={nls.localize('qaap/diff/openInEditor', 'Open in editor')}
-                            aria-label={nls.localize('qaap/diff/openInEditor', 'Open in editor')}
-                            onClick={event => {
-                                event.stopPropagation();
-                                this.onOpenInEditor(file.path);
-                            }}
-                        >
-                            <i className={codicon('go-to-file')} />
-                        </button>
-                        {this.bulkActionsEnabled && (
-                            <>
-                                <button
-                                    type='button'
-                                    className='qaap-diff-review-icon-btn'
-                                    title={nls.localize('qaap/diff/discardFile', 'Discard file changes')}
-                                    aria-label={nls.localize('qaap/diff/discardFile', 'Discard file changes')}
-                                    disabled={this.runningFileAction}
-                                    onClick={event => {
-                                        event.stopPropagation();
-                                        void this.rejectFile(file.path);
-                                    }}
-                                >
-                                    <i className={codicon('discard')} />
-                                </button>
-                                <button
-                                    type='button'
-                                    className='qaap-diff-review-icon-btn qaap-mod-accept'
-                                    title={nls.localize('qaap/diff/acceptFile', 'Accept file changes')}
-                                    aria-label={nls.localize('qaap/diff/acceptFile', 'Accept file changes')}
-                                    disabled={this.runningFileAction}
-                                    onClick={event => {
-                                        event.stopPropagation();
-                                        void this.acceptFile(file.path);
-                                    }}
-                                >
-                                    <i className={codicon('check')} />
-                                </button>
-                            </>
-                        )}
-                    </span>
+                    {this.bulkActionsEnabled && (
+                        <span className='qaap-agent-changes-filehdr-actions'>
+                            <button
+                                type='button'
+                                className='qaap-diff-review-icon-btn'
+                                title={nls.localize('qaap/diff/discardFile', 'Discard file changes')}
+                                aria-label={nls.localize('qaap/diff/discardFile', 'Discard file changes')}
+                                disabled={this.runningFileAction}
+                                onClick={event => {
+                                    event.stopPropagation();
+                                    void this.rejectFile(file.path);
+                                }}
+                            >
+                                <i className={codicon('discard')} />
+                            </button>
+                            <button
+                                type='button'
+                                className='qaap-diff-review-icon-btn'
+                                title={nls.localize('qaap/diff/stageFile', 'Stage file')}
+                                aria-label={nls.localize('qaap/diff/stageFile', 'Stage file')}
+                                disabled={this.runningFileAction}
+                                onClick={event => {
+                                    event.stopPropagation();
+                                    void this.acceptFile(file.path);
+                                }}
+                            >
+                                <i className={codicon('diff')} />
+                            </button>
+                        </span>
+                    )}
                 </div>
                 <div
                     id={`qaap-agent-changes-hunks-${encodeURIComponent(file.path)}`}
@@ -972,13 +1006,23 @@ export class QaapDiffReviewWidget extends ReactWidget {
     }
 
     protected renderCollapsedHunkLines(path: string, hunkIndex: number, lines: QaapGitHunkLine[]): React.ReactNode {
+        const language = resolveTranscriptCodeLanguage(path);
+        const onStageHunk = this.bulkActionsEnabled
+            ? () => { void this.runHunkAction(`${QAAP_GIT_REVIEW_API_PATH}/stage-hunk`, path, hunkIndex); }
+            : undefined;
         const segments = buildContextSegments(lines);
         return segments.map((segment, segmentIndex) => {
             if (segment.kind === 'lines') {
                 return (
                     <React.Fragment key={`lines-${hunkIndex}-${segmentIndex}`}>
                         {segment.lines.map((line, lineIndex) => (
-                            <DiffLine key={lineIndex} line={line} agentStyle={true} />
+                            <DiffLine
+                                key={lineIndex}
+                                line={line}
+                                agentStyle={true}
+                                language={language}
+                                onStageLine={onStageHunk}
+                            />
                         ))}
                     </React.Fragment>
                 );
@@ -994,7 +1038,13 @@ export class QaapDiffReviewWidget extends ReactWidget {
                             onToggle={() => this.onToggleContextBlock(blockId)}
                         />
                         {segment.lines.map((line, lineIndex) => (
-                            <DiffLine key={lineIndex} line={line} agentStyle={true} />
+                            <DiffLine
+                                key={lineIndex}
+                                line={line}
+                                agentStyle={true}
+                                language={language}
+                                onStageLine={onStageHunk}
+                            />
                         ))}
                     </React.Fragment>
                 );
@@ -1598,10 +1648,31 @@ function isUntrackedFile(file: QaapGitChangedFile): boolean {
     return file.status === 'U' || file.status === '?';
 }
 
-function DiffLine(props: { line: QaapGitHunkLine; agentStyle?: boolean }): React.ReactElement {
-    const { line, agentStyle } = props;
+function HighlightedDiffCode(props: {
+    text: string;
+    language: TranscriptCodeLanguage;
+}): React.ReactElement {
+    const hostRef = React.useRef<HTMLSpanElement>(null);
+    React.useLayoutEffect(() => {
+        const host = hostRef.current;
+        if (!host) {
+            return;
+        }
+        highlightTranscriptCodeInto(host, props.text, props.language);
+    }, [props.text, props.language]);
+    return <span ref={hostRef} className='qaap-diff-review-code theia-mobile-agent-code-text' />;
+}
+
+function DiffLine(props: {
+    line: QaapGitHunkLine;
+    agentStyle?: boolean;
+    language?: TranscriptCodeLanguage;
+    onStageLine?: () => void;
+}): React.ReactElement {
+    const { line, agentStyle, language, onStageLine } = props;
     const sign = line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ';
     const number = line.type === 'del' ? line.oldNumber : line.newNumber;
+    const canStage = !!agentStyle && !!onStageLine && (line.type === 'add' || line.type === 'del');
     const lineClass = [
         'qaap-diff-review-line',
         `qaap-diff-review-line--${line.type}`,
@@ -1609,9 +1680,25 @@ function DiffLine(props: { line: QaapGitHunkLine; agentStyle?: boolean }): React
     ].filter(Boolean).join(' ');
     return (
         <div className={lineClass}>
+            {canStage && (
+                <button
+                    type='button'
+                    className='qaap-agent-changes-line-stage'
+                    title={nls.localize('qaap/diff/stageLine', 'Stage this change')}
+                    aria-label={nls.localize('qaap/diff/stageLine', 'Stage this change')}
+                    onClick={event => {
+                        event.stopPropagation();
+                        onStageLine();
+                    }}
+                >
+                    <span aria-hidden='true'>+</span>
+                </button>
+            )}
             <span className='qaap-diff-review-gutter'>{number ?? ''}</span>
             {!agentStyle && <span className='qaap-diff-review-sign'>{sign}</span>}
-            <span className='qaap-diff-review-code'>{line.text}</span>
+            {agentStyle && language
+                ? <HighlightedDiffCode text={line.text} language={language} />
+                : <span className='qaap-diff-review-code'>{line.text}</span>}
         </div>
     );
 }

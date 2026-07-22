@@ -13,11 +13,20 @@ export function splitRepoRelativePath(path: string): { base: string; dir: string
     return { base: normalized.slice(slash + 1), dir: normalized.slice(0, slash) };
 }
 
-/** Middle-ellipsis truncation for narrow diff headers (Cursor-style). */
+/** Middle-ellipsis truncation for narrow diff headers. */
 export function middleTruncatePath(path: string, maxLength = 52): string {
     if (path.length <= maxLength) {
         return path;
     }
     const keep = Math.max(8, Math.floor((maxLength - 1) / 2));
     return `${path.slice(0, keep)}…${path.slice(-keep)}`;
+}
+
+/** Leading-ellipsis truncation (Cursor Changes): keep the path tail. */
+export function leadingTruncatePath(path: string, maxLength = 52): string {
+    if (path.length <= maxLength) {
+        return path;
+    }
+    const keep = Math.max(12, maxLength - 1);
+    return `…${path.slice(-keep)}`;
 }

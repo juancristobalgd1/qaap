@@ -57,3 +57,21 @@ export function formatTranscriptActivityStepDuration(durationMs: number): string
     const seconds = totalSeconds % 60;
     return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
+
+const TRANSCRIPT_ACTIVITY_SETTLED_STATES: ReadonlySet<TranscriptActivityStepState> = new Set([
+    'success',
+    'warning',
+    'error',
+    'cancelled',
+]);
+
+/** True when a timeline step settles from a live state to a terminal state (settle motion). */
+export function shouldApplyTranscriptActivitySettleMotion(
+    previousState: TranscriptActivityStepState | undefined,
+    nextState: TranscriptActivityStepState,
+): boolean {
+    if (previousState === undefined) {
+        return false;
+    }
+    return isTranscriptActivityLiveState(previousState) && TRANSCRIPT_ACTIVITY_SETTLED_STATES.has(nextState);
+}
