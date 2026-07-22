@@ -9609,37 +9609,64 @@ body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
   letter-spacing: -0.01em;
 }
 
-.theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-skill {
-  color: #FFD89A;
-  background: color-mix(in srgb, #D8953A 38%, #1f1f1f);
-  border-radius: 7px;
+/*
+ * Skills / skill-like slash tokens: letter color only.
+ * Zero chip fill, padding halo, radius, or glow — beat Codex / theme pills.
+ */
+.theia-mod-syntax-highlight-host .theia-mod-token-skill,
+.theia-mod-syntax-highlight-host .theia-mod-token-slash-command.theia-mod-token-skill,
+.theia-mobile-projects-sticky-composer-input-editor.theia-mod-syntax-highlight-host
+  .theia-mobile-projects-sticky-composer-input-highlight
+  .theia-mod-token-skill,
+.theia-mobile-projects-sticky-composer-input-editor.theia-mod-syntax-highlight-host
+  .theia-mobile-projects-sticky-composer-input-highlight
+  .theia-mod-token-slash-command,
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex
+  .theia-mobile-projects-sticky-composer-input-highlight
+  .theia-mod-token-skill,
+.theia-mobile-projects-sticky-composer-card.theia-mod-codex
+  .theia-mobile-projects-sticky-composer-input-highlight
+  .theia-mod-token-slash-command {
+  color: #FFD89A !important;
+  -webkit-text-fill-color: #FFD89A !important;
+  background: transparent !important;
+  background-image: none !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
   font-weight: 650;
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, #D8953A 24%, transparent),
-    0 0 16px color-mix(in srgb, #D8953A 24%, transparent);
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+  text-decoration: none !important;
+  text-shadow: none !important;
+  -webkit-box-decoration-break: slice;
+  box-decoration-break: slice;
 }
 
-.theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-slash-command {
-  color: #FFD89A;
-  background: color-mix(in srgb, #D8953A 42%, #1f1f1f);
-  border-radius: 7px;
-  font-weight: 650;
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, #D8953A 26%, transparent),
-    0 0 16px color-mix(in srgb, #D8953A 28%, transparent);
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-
-body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-skill,
-body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-highlight .theia-mod-token-slash-command {
-  color: #6B3F08;
-  background: color-mix(in srgb, #F0B35C 40%, white);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, #D8953A 24%, transparent),
-    0 0 12px color-mix(in srgb, #D8953A 18%, transparent);
+body.qaap-theme-light .theia-mod-syntax-highlight-host .theia-mod-token-skill,
+body.qaap-theme-light .theia-mod-syntax-highlight-host .theia-mod-token-slash-command.theia-mod-token-skill,
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-editor.theia-mod-syntax-highlight-host
+  .theia-mobile-projects-sticky-composer-input-highlight
+  .theia-mod-token-skill,
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-editor.theia-mod-syntax-highlight-host
+  .theia-mobile-projects-sticky-composer-input-highlight
+  .theia-mod-token-slash-command,
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-card.theia-mod-codex
+  .theia-mobile-projects-sticky-composer-input-highlight
+  .theia-mod-token-skill,
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-card.theia-mod-codex
+  .theia-mobile-projects-sticky-composer-input-highlight
+  .theia-mod-token-slash-command {
+  color: #6B3F08 !important;
+  -webkit-text-fill-color: #6B3F08 !important;
+  background: transparent !important;
+  background-image: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
 }
 
 /*
@@ -20076,27 +20103,32 @@ button.theia-mobile-agent-transcript-feedback-tag:hover {
   font-weight: 500;
 }
 
+/* Skill mark in transcript: colored letters only — no pill/chip. */
 .theia-mobile-agent-transcript-skill-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 2px 8px;
-  border-radius: 8px;
-  background: color-mix(in srgb, #D8953A 42%, #1f1f1f);
+  display: inline;
+  align-items: unset;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent !important;
+  background-image: none !important;
+  background-color: transparent !important;
   color: #FFD89A;
+  -webkit-text-fill-color: #FFD89A;
   font-weight: 700;
-  line-height: 1.25;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
-    0 0 0 1px color-mix(in srgb, #D8953A 18%, transparent);
+  line-height: inherit;
+  box-shadow: none !important;
 }
 
 body.qaap-theme-light .theia-mobile-agent-transcript-skill-pill {
-  background: color-mix(in srgb, #F0B35C 40%, white);
+  background: transparent !important;
+  background-image: none !important;
+  background-color: transparent !important;
   color: #6B3F08;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 44%, transparent),
-    0 0 0 1px color-mix(in srgb, #D8953A 20%, transparent);
+  -webkit-text-fill-color: #6B3F08;
+  box-shadow: none !important;
 }
 
 .theia-mobile-agent-transcript-user-wrap.theia-mod-git-action-record {

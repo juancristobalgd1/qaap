@@ -19,6 +19,9 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     public runGate(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
         return this.finishSuccessfulTaskAfterVerification(task, exitCode);
     }
+    public releaseGateSlot(): void {
+        this.releaseVerificationPass();
+    }
     public residualProcessGroupReaps = 0;
     protected override reapAgentProcessGroupAfterExit(_child: ChildProcess): void {
         this.residualProcessGroupReaps++;
@@ -180,6 +183,7 @@ function makeGateRunner(
     Object.assign(runner, {
         tasks,
         activeVerificationPasses: 0,
+        verificationPassWaiters: [],
         maxConcurrentVerificationPasses: () => 4,
         verifySuccessfulAgentTask: verify,
         reviewSuccessfulAgentTask: async () => undefined,
@@ -227,14 +231,19 @@ describe('QaapAgentTaskRunner verification blocking gate', () => {
         expect(finished().state).to.equal('completed_with_warnings');
     });
 
-    it("completes without verification when the concurrent-verification cap is full", async () => {
+    it('waits FIFO instead of completing without verification when the verification lane is full', async () => {
         const { runner, tasks, finished } = makeGateRunner(
             async () => ({ status: 'failed', command: 'npm run build', attempts: 2, summary: 'never called' }),
             { activeVerificationPasses: 4 },
         );
-        await runner.runGate(TASK, 0);
-        expect(finished().state).to.equal('completed');
+        const pending = runner.runGate(TASK, 0);
+        await Promise.resolve();
+        expect(finished().state).to.equal(undefined);
         expect(tasks.get(TASK.id)?.verification).to.equal(undefined);
+        runner.releaseGateSlot();
+        await pending;
+        expect(finished().state).to.equal('completed_with_warnings');
+        expect(tasks.get(TASK.id)?.verification?.status).to.equal('failed');
     });
 });
 

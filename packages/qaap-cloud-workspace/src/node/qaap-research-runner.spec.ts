@@ -30,7 +30,7 @@ interface FakeCommandResult {
 /** Records every `runGenericCommand` call so tests can assert on `run`/`measure`/`revert` shell-outs. */
 class FakeTaskRunner {
     protected nextTaskId = 1;
-    readonly createdTasks: Array<{ id: string; request: unknown }> = [];
+    readonly createdTasks: Array<{ id: string; request: unknown; ownerLogin?: string }> = [];
     readonly cancelledIds: string[] = [];
     readonly genericCommandCalls: Array<{ command: string; cwd: string; taskId: string; timeoutMs: number }> = [];
     protected readonly listeners = new Set<(event: QaapAgentTaskEvent) => void>();
@@ -39,9 +39,12 @@ class FakeTaskRunner {
     genericCommandResults: FakeCommandResult[] = [];
     defaultResult: FakeCommandResult = { exitCode: 0, stdout: '', stderr: '', timedOut: false };
 
-    create(request: { readonly cwd: string; readonly prompt?: string; readonly title?: string }): QaapAgentTask {
+    create(
+        request: { readonly cwd: string; readonly prompt?: string; readonly title?: string },
+        ownerLogin?: string,
+    ): QaapAgentTask {
         const id = `task-${this.nextTaskId++}`;
-        this.createdTasks.push({ id, request });
+        this.createdTasks.push({ id, request, ownerLogin });
         return { id, title: request.title ?? '', command: request.prompt ?? '', cwd: request.cwd, state: 'running', createdAt: Date.now() };
     }
 
@@ -91,6 +94,7 @@ class FakeTaskRunner {
 class FakeResearchStore {
     protected readonly goals = new Map<string, ResearchGoal>();
     protected readonly ledgers = new Map<string, ResearchExperimentRecord[]>();
+    ownerLogin: string | undefined;
 
     seedGoal(goal: ResearchGoal): void {
         this.goals.set(goal.id, goal);
@@ -148,7 +152,7 @@ class FakeResearchStore {
     }
 
     ownerOf(): string | undefined {
-        return undefined;
+        return this.ownerLogin;
     }
 }
 
@@ -245,6 +249,21 @@ async function passPreflight(taskRunner: FakeTaskRunner): Promise<void> {
 // ---- tests --------------------------------------------------------------------
 
 describe('QaapResearchRunner state machine', () => {
+
+    it('propagates the research-goal owner to autonomous agent turns', async () => {
+        const store = new FakeResearchStore();
+        store.ownerLogin = 'alice';
+        const taskRunner = new FakeTaskRunner();
+        const goal = makeGoal({ metrics: [METRIC] });
+        store.seedGoal(goal);
+
+        const runner = makeRunner(store, taskRunner);
+        const promise = runner.callStartNewRound(goal, 1);
+        expect(taskRunner.createdTasks[0].ownerLogin).to.equal('alice');
+        taskRunner.setLog(taskRunner.createdTasks[0].id, proposalBlock({ learning_rate: 0.01 }));
+        taskRunner.finishTask(taskRunner.createdTasks[0].id, 'failed');
+        await promise;
+    });
 
     it('propose → commit → measure: a parseable proposal runs the full round with no runCommand', async () => {
         const store = new FakeResearchStore();

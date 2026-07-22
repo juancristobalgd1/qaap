@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { bindRootContributionProvider } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { MessagingListenerContribution } from '@theia/core/lib/node/messaging/messaging-listeners';
 import { FileSystemProvider } from '@theia/filesystem/lib/common/files';
@@ -50,6 +51,15 @@ import { QaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system
 import { QaapWebsocketAuthListener } from './qaap-websocket-auth-listener';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contribution';
+import { QaapJobEndpoint } from './qaap-job-endpoint';
+import { QaapJobLoopEndpoint } from './qaap-job-loop-endpoint';
+import { QaapJobLoopEngine } from './qaap-job-loop-engine';
+import { QaapJobRuntime } from './qaap-job-runtime';
+import {
+    QaapBuiltinJobFunctions,
+    QaapJobFunctionContribution,
+    QaapJobFunctionRegistry,
+} from './qaap-job-function-registry';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
     // Confine HTTP file uploads to the caller's workspace (auth + ownership); the upstream
@@ -75,6 +85,16 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapWebPushService).toSelf().inSingletonScope();
     bind(QaapPreviewShareStore).toSelf().inSingletonScope();
     bind(QaapTenantSpawnService).toSelf().inSingletonScope();
+    bindRootContributionProvider(bind, QaapJobFunctionContribution);
+    bind(QaapJobFunctionRegistry).toSelf().inSingletonScope();
+    bind(QaapBuiltinJobFunctions).toSelf().inSingletonScope();
+    bind(QaapJobFunctionContribution).toService(QaapBuiltinJobFunctions);
+    bind(QaapJobRuntime).toSelf().inSingletonScope();
+    bind(QaapJobEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapJobEndpoint);
+    bind(QaapJobLoopEngine).toSelf().inSingletonScope();
+    bind(QaapJobLoopEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapJobLoopEndpoint);
     bind(QaapPreviewSupervisor).toSelf().inSingletonScope();
     bind(QaapTerminalSessionStore).toSelf().inSingletonScope();
     bind(QaapPreviewShareProxyContribution).toSelf().inSingletonScope();

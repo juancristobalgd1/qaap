@@ -10,6 +10,14 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     public exposeDrainQueuedTasks(): void {
         this.drainQueuedTasks();
     }
+
+    public exposeRestorePersistedIndex(stored: unknown): void {
+        this.restorePersistedIndex(stored);
+    }
+
+    public exposeReleaseVerificationPass(): void {
+        this.releaseVerificationPass();
+    }
 }
 
 describe('QaapAgentTaskRunner concurrency quota', () => {
@@ -85,23 +93,84 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         expect(tasks.get(a3.id)?.state).to.equal('running');
     });
 
-    it('skips the extra verification pass when the verification budget is full (REL-3)', async () => {
+    it('restores a queued request and can execute it after a backend restart', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map<string, import('../common/qaap-agent-task').QaapAgentTask>();
+        const queuedCreateRequests = new Map<string, import('../common/qaap-agent-task').QaapCreateAgentTaskRequest>();
+        let spawned = 0;
+        const request = { prompt: 'resume me', cwd: '/repo', agent: 'qaiq' };
+        Object.assign(runner, {
+            tasks,
+            queuedCreateRequests,
+            processes: new Map(),
+            onDidChangeTaskEmitter: { fire: () => undefined },
+            maxConcurrentAgents: () => 1,
+            countRunningTasks: () => [...tasks.values()].filter(task => task.state === 'running').length,
+            ownerAtConcurrencyCap: () => false,
+            persist: async () => undefined,
+            spawnProcessWhenReady: async () => { spawned++; },
+        });
+
+        runner.exposeRestorePersistedIndex({
+            version: 2,
+            tasks: [{
+                id: 'queued-1',
+                title: 'resume me',
+                command: 'resume me',
+                cwd: '/repo',
+                state: 'queued',
+                createdAt: 1,
+                ownerLogin: 'alice',
+            }],
+            queuedRequests: { 'queued-1': request },
+        });
+        runner.exposeDrainQueuedTasks();
+
+        expect(tasks.get('queued-1')?.state).to.equal('running');
+        expect(queuedCreateRequests.has('queued-1')).to.equal(false);
+        expect(spawned).to.equal(1);
+    });
+
+    it('marks a legacy queued task interrupted when its executable request cannot be reconstructed', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map<string, import('../common/qaap-agent-task').QaapAgentTask>();
+        Object.assign(runner, { tasks, queuedCreateRequests: new Map() });
+
+        runner.exposeRestorePersistedIndex([{
+            id: 'legacy-queued',
+            title: 'legacy',
+            command: 'legacy',
+            cwd: '/repo',
+            state: 'queued',
+            createdAt: 1,
+        }]);
+
+        expect(tasks.get('legacy-queued')?.state).to.equal('interrupted');
+    });
+
+    it('queues the extra verification pass when the verification budget is full (REL-3)', async () => {
         const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
         let verifyCalls = 0;
         let finishState = '';
         Object.assign(runner, {
             activeVerificationPasses: 1,               // already at cap
+            verificationPassWaiters: [],
             maxConcurrentVerificationPasses: () => 1,
             tasks: new Map([['t', { id: 't', state: 'running' }]]),
             verifySuccessfulAgentTask: async () => { verifyCalls++; return undefined; },
+            reviewSuccessfulAgentTask: async () => undefined,
             finishTask: (_id: string, state: string) => { finishState = state; },
         });
 
-        await (runner as unknown as { finishSuccessfulTaskAfterVerification(task: unknown, code: number): Promise<void> })
+        const pending = (runner as unknown as { finishSuccessfulTaskAfterVerification(task: unknown, code: number): Promise<void> })
             .finishSuccessfulTaskAfterVerification({ id: 't' }, 0);
-
-        expect(verifyCalls).to.equal(0);         // no extra fix-turn qaiq spawned
-        expect(finishState).to.equal('completed'); // task still completes cleanly
+        await Promise.resolve();
+        expect(verifyCalls).to.equal(0);
+        expect(finishState).to.equal('');
+        runner.exposeReleaseVerificationPass();
+        await pending;
+        expect(verifyCalls).to.equal(1);
+        expect(finishState).to.equal('completed');
     });
 
     it('runs verification when the budget has room and releases the slot (REL-3)', async () => {
@@ -109,6 +178,7 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         let verifyCalls = 0;
         Object.assign(runner, {
             activeVerificationPasses: 0,
+            verificationPassWaiters: [],
             maxConcurrentVerificationPasses: () => 2,
             tasks: new Map([['t', { id: 't', state: 'running' }]]),
             verifySuccessfulAgentTask: async () => { verifyCalls++; return undefined; },

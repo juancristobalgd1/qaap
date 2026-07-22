@@ -205,6 +205,19 @@ const ENV_AGENT_ID = 'env';
 
 const STORE_DIR = path.join(os.homedir(), '.qaap', 'agent-tasks');
 const INDEX_PATH = path.join(STORE_DIR, 'index.json');
+const STORE_DIR_MODE = 0o700;
+const STORE_FILE_MODE = 0o600;
+
+/**
+ * Versioned task index. Queued requests must be persisted alongside their public task summaries:
+ * without the original request the runner cannot reconstruct the agent command after a backend
+ * restart, and the old array-only format silently turned every queued task into a failure.
+ */
+interface PersistedAgentTaskIndex {
+    readonly version: 2;
+    readonly tasks: QaapAgentTask[];
+    readonly queuedRequests: Record<string, QaapCreateAgentTaskRequest>;
+}
 /** Cap returned log size so a runaway task cannot blow up the response. */
 const MAX_LOG_BYTES = 512 * 1024;
 /** Kill agent CLIs that sit silent for too long, usually waiting for auth/quota/input. */
@@ -364,6 +377,8 @@ export class QaapAgentTaskRunner {
     protected readonly repoMapCache = new Map<string, { readonly text: string | undefined; readonly at: number }>();
     /** Original create requests for tasks waiting on the concurrency queue. */
     protected readonly queuedCreateRequests = new Map<string, QaapCreateAgentTaskRequest>();
+    /** Serializes whole-index snapshots so an older, slower write can never overwrite a newer one. */
+    protected persistChain: Promise<void> = Promise.resolve();
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
     protected readonly probedAgentBins = new Set<string>();
 
@@ -672,19 +687,44 @@ export class QaapAgentTaskRunner {
     protected async restoreFromDisk(): Promise<void> {
         try {
             const raw = await fsp.readFile(INDEX_PATH, 'utf8');
-            const stored = JSON.parse(raw) as QaapAgentTask[];
-            for (const task of stored) {
-                const restored = task.state === 'running'
-                    ? { ...task, state: 'interrupted' as const }
-                    : task.state === 'queued'
-                        ? { ...task, state: 'queued' as const }
-                        : task;
-                this.tasks.set(task.id, restored);
-            }
+            this.restorePersistedIndex(JSON.parse(raw));
             await this.persist();
             this.drainQueuedTasks();
-        } catch {
-            /* no prior tasks */
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                console.warn('[qaap-agent-tasks] failed to restore task index:', error);
+            }
+        }
+    }
+
+    /**
+     * Restore both the current versioned index and the legacy task-array format. A legacy queued
+     * task has no executable request to resume, so report it as interrupted rather than claiming
+     * that a newly attempted run failed.
+     */
+    protected restorePersistedIndex(stored: unknown): void {
+        const legacy = Array.isArray(stored);
+        const tasks = legacy
+            ? stored as QaapAgentTask[]
+            : (stored as Partial<PersistedAgentTaskIndex> | undefined)?.tasks;
+        const queuedRequests: Readonly<Record<string, QaapCreateAgentTaskRequest>> = legacy
+            ? {}
+            : (stored as Partial<PersistedAgentTaskIndex> | undefined)?.queuedRequests ?? {};
+        if (!Array.isArray(tasks)) {
+            throw new Error('Invalid persisted agent task index.');
+        }
+        for (const task of tasks) {
+            if (!task?.id) {
+                continue;
+            }
+            const queuedRequest = task.state === 'queued' ? queuedRequests[task.id] : undefined;
+            const state = task.state === 'running' || (task.state === 'queued' && !queuedRequest)
+                ? 'interrupted' as const
+                : task.state;
+            this.tasks.set(task.id, { ...task, state });
+            if (state === 'queued' && queuedRequest) {
+                this.queuedCreateRequests.set(task.id, queuedRequest);
+            }
         }
     }
 
@@ -2076,6 +2116,8 @@ export class QaapAgentTaskRunner {
 
     /** In-flight self-verification passes. Each may spawn an extra (fix-turn) qaiq — bounded below. */
     protected activeVerificationPasses = 0;
+    /** FIFO waiters for a verification slot. A released slot is transferred directly to one waiter. */
+    protected verificationPassWaiters: Array<() => void> = [];
 
     protected maxConcurrentVerificationPasses(): number {
         const raw = process.env.QAAP_AGENT_VERIFY_MAX_CONCURRENT?.trim();
@@ -2083,19 +2125,36 @@ export class QaapAgentTaskRunner {
         return Number.isFinite(parsed) && parsed > 0 ? parsed : this.maxConcurrentAgents();
     }
 
-    protected async finishSuccessfulTaskAfterVerification(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
-        // Self-verification runs an extra qaiq fix-turn that is NOT otherwise counted against the
-        // concurrency budget, so many tasks verifying at once could spawn N uncounted agents and
-        // saturate the box's RAM. Bound the number of simultaneous verification passes; when full,
-        // complete the task without the (optional) auto-fix rather than pile on more processes. The
-        // task already holds its own slot, so we cap verification separately instead of waiting on a
-        // free slot (which could deadlock when every slot is held by a task in verification). (REL-3)
-        if (this.activeVerificationPasses >= this.maxConcurrentVerificationPasses()) {
-            this.finishTask(task.id, 'completed', exitCode);
+    protected acquireVerificationPass(): Promise<void> {
+        if (this.activeVerificationPasses < this.maxConcurrentVerificationPasses()) {
+            this.activeVerificationPasses++;
+            return Promise.resolve();
+        }
+        return new Promise(resolve => {
+            this.verificationPassWaiters.push(resolve);
+        });
+    }
+
+    protected releaseVerificationPass(): void {
+        const next = this.verificationPassWaiters.shift();
+        if (next) {
+            // Transfer the occupied slot directly. Decrementing first would let a newly arriving
+            // task overtake this FIFO waiter and briefly exceed the configured process budget.
+            next();
             return;
         }
-        this.activeVerificationPasses++;
+        this.activeVerificationPasses = Math.max(0, this.activeVerificationPasses - 1);
+    }
+
+    protected async finishSuccessfulTaskAfterVerification(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
+        // Verification/fix turns use their own bounded lane. A saturated lane waits FIFO instead of
+        // silently upgrading an unverified change to `completed`. The commands inside the lane have
+        // hard wall clocks, so a waiter cannot be held indefinitely by a healthy runner.
+        await this.acquireVerificationPass();
         try {
+            if (this.tasks.get(task.id)?.state !== 'running') {
+                return;
+            }
             let verification: QaapAgentTaskVerification | undefined;
             try {
                 verification = await this.verifySuccessfulAgentTask(task);
@@ -2148,7 +2207,7 @@ export class QaapAgentTaskRunner {
             const withWarnings = verification?.status === 'failed' || review?.status === 'failed';
             this.finishTask(task.id, withWarnings ? 'completed_with_warnings' : 'completed', exitCode);
         } finally {
-            this.activeVerificationPasses--;
+            this.releaseVerificationPass();
         }
     }
 
@@ -2893,13 +2952,30 @@ export class QaapAgentTaskRunner {
         }
     }
 
-    protected async persist(): Promise<void> {
-        try {
-            await fsp.mkdir(STORE_DIR, { recursive: true });
-            await writeJsonAtomic(INDEX_PATH, [...this.tasks.values()]);
-        } catch {
-            /* persistence is best-effort */
+    protected persist(): Promise<void> {
+        const queuedRequests: Record<string, QaapCreateAgentTaskRequest> = {};
+        for (const [taskId, request] of this.queuedCreateRequests) {
+            if (this.tasks.get(taskId)?.state === 'queued') {
+                queuedRequests[taskId] = request;
+            }
         }
+        const index: PersistedAgentTaskIndex = {
+            version: 2,
+            tasks: [...this.tasks.values()],
+            queuedRequests,
+        };
+        const previous = this.persistChain ?? Promise.resolve();
+        this.persistChain = previous
+            .catch(() => undefined)
+            .then(async () => {
+                await fsp.mkdir(STORE_DIR, { recursive: true, mode: STORE_DIR_MODE });
+                await fsp.chmod(STORE_DIR, STORE_DIR_MODE).catch(() => undefined);
+                await writeJsonAtomic(INDEX_PATH, index, { mode: STORE_FILE_MODE });
+            })
+            .catch(error => {
+                console.warn('[qaap-agent-tasks] failed to persist task index:', error);
+            });
+        return this.persistChain;
     }
 
     protected logPath(id: string): string {

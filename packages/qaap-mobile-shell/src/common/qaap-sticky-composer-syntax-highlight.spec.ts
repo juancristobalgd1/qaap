@@ -54,7 +54,7 @@ describe('qaap-sticky-composer-syntax-highlight', () => {
         expect(highlight?.textContent).to.contain('/loop');
     });
 
-    it('prefers slash command highlighting when a token is also a skill', () => {
+    it('prefers skill highlighting when a token is also listed as a slash command', () => {
         const inputEditor = document.createElement('div');
         const input = document.createElement('textarea');
         inputEditor.append(input);
@@ -63,16 +63,17 @@ describe('qaap-sticky-composer-syntax-highlight', () => {
         const ui = attachStickyComposerSyntaxHighlight({
             inputEditor,
             input,
-            getSkillNames: () => ['loop'],
-            getSlashCommandNames: () => ['loop'],
+            getSkillNames: () => ['karpathy-skills'],
+            // Slash menu also lists skills; those must not steal the chip class.
+            getSlashCommandNames: () => ['karpathy-skills', 'fork'],
         });
 
-        input.value = '/loop';
+        input.value = '/karpathy-skills';
         ui.refresh();
 
         const highlight = inputEditor.querySelector('.theia-mobile-projects-sticky-composer-input-highlight');
-        expect(highlight?.innerHTML).to.contain('theia-mod-token-slash-command');
-        expect(highlight?.innerHTML).not.to.contain('theia-mod-token-skill');
+        expect(highlight?.innerHTML).to.contain('theia-mod-token-skill');
+        expect(highlight?.innerHTML).not.to.contain('theia-mod-token-slash-command');
     });
 
     it('keeps the textarea caret-only and disables spellcheck while attached', () => {

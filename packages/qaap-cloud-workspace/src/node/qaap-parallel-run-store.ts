@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { nls } from '@theia/core/lib/common/nls';
 import { execFile, spawnSync } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
@@ -29,6 +30,8 @@ const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const STORE_DIR = path.join(os.homedir(), '.qaap', 'parallel-runs');
 const INDEX_PATH = path.join(STORE_DIR, 'index.json');
 const LIVE_STATS_DEBOUNCE_MS = 1500;
+const DEFAULT_MAX_PARALLEL_VARIANTS = 4;
+const MAX_PARALLEL_VARIANTS_ENV = 'QAAP_MAX_PARALLEL_VARIANTS';
 
 /**
  * Orchestrates "parallel runs": the same prompt handed to N agents, each working in its own
@@ -85,7 +88,7 @@ export class QaapParallelRunStore {
         if (!prompt) {
             throw new Error('A non-empty "prompt" is required.');
         }
-        const agents = (request.agents ?? []).filter(a => !!a && a.trim());
+        const agents = this.normalizeAgents(request.agents ?? []);
         if (agents.length === 0) {
             throw new Error('At least one agent is required.');
         }
@@ -114,7 +117,7 @@ export class QaapParallelRunStore {
                     parallelRunId: id,
                     parallelBaseCwd: cwd,
                     ...(request.agentModels?.[agentId] ? { agentModel: request.agentModels[agentId] } : {}),
-                });
+                }, ownerLogin);
                 variants.push({
                     id: randomUUID(),
                     agentId,
@@ -149,6 +152,32 @@ export class QaapParallelRunStore {
         await this.persist();
         void this.pushLiveStats(id);
         return run;
+    }
+
+    /** Normalize untrusted API input before allocating any branches, worktrees or conversations. */
+    protected normalizeAgents(input: readonly string[]): string[] {
+        const unique = new Map<string, string>();
+        for (const value of input) {
+            const agentId = typeof value === 'string' ? value.trim() : '';
+            if (agentId && !unique.has(agentId.toLowerCase())) {
+                unique.set(agentId.toLowerCase(), agentId);
+            }
+        }
+        const agents = [...unique.values()];
+        const max = this.maxParallelVariants();
+        if (agents.length > max) {
+            throw new Error(nls.localize(
+                'qaap/parallelRuns/maxVariants',
+                'A parallel run supports at most {0} variants.',
+                String(max),
+            ));
+        }
+        return agents;
+    }
+
+    protected maxParallelVariants(): number {
+        const configured = Number.parseInt(process.env[MAX_PARALLEL_VARIANTS_ENV]?.trim() ?? '', 10);
+        return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_PARALLEL_VARIANTS;
     }
 
     /** Refresh each variant's state (from its conversation) and working-tree diff stats. */

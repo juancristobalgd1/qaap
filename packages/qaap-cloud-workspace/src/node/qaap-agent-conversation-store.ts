@@ -459,7 +459,10 @@ export class QaapAgentConversationStore {
         }
         let task: QaapAgentTask | undefined;
         try {
-            task = this.taskRunner.create(this.buildTaskCreateRequest(next, turnAgentId, latencyMarks));
+            task = this.taskRunner.create(
+                this.buildTaskCreateRequest(next, turnAgentId, latencyMarks),
+                next.ownerLogin,
+            );
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             return this.failTurnBeforeSpawn(id, next, userMessage.id, message);
@@ -1853,7 +1856,10 @@ export class QaapAgentConversationStore {
         };
         let spawned: QaapAgentTask;
         try {
-            spawned = this.taskRunner.create(this.buildTaskCreateRequest(retryConv, conv.agentId));
+            spawned = this.taskRunner.create(
+                this.buildTaskCreateRequest(retryConv, conv.agentId),
+                retryConv.ownerLogin,
+            );
         } catch {
             return false;
         }

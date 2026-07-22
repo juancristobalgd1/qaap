@@ -59,7 +59,7 @@ export class QaapWorkHubRoutineRunner {
             agent: routine.agent ?? this.taskRunner.defaultAgent(),
             title: routine.title,
             autoApprove: resolveRoutineAutoApprove(routine.autoApprove),
-        });
+        }, routine.ownerLogin);
         this.taskToRoutine.set(task.id, routine.id);
         const updated = this.store.markRunStarted(routine.id, task.id);
         return updated ?? routine;
@@ -95,7 +95,7 @@ export class QaapWorkHubRoutineRunner {
                 title: routine.title,
                 message: routine.prompt,
                 ...(routine.autoApprove === false ? { autoApprove: false } : {}),
-            });
+            }, routine.ownerLogin);
             conversationId = conv.id;
             taskId = conv.messages.find(m => m.role === 'user' && m.taskId)?.taskId;
         }

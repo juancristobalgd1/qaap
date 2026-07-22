@@ -246,7 +246,7 @@ export class QaapResearchRunner {
             title: `Research preflight: ${goal.description}`,
             autoApprove: true,
             agentModel: toAgentTaskModel(goal.agentModel),
-        });
+        }, this.store.ownerOf(goal.id));
         this.activeExecutionId.set(goal.id, task.id);
         const finished = await this.waitForTaskFinishOrTimeout(task.id, PREFLIGHT_TIMEOUT_MS);
         this.activeExecutionId.delete(goal.id);
@@ -388,7 +388,7 @@ export class QaapResearchRunner {
             title: `Research round ${record.round}: ${goal.description}`,
             autoApprove: true,
             agentModel: toAgentTaskModel(goal.agentModel),
-        });
+        }, this.store.ownerOf(goal.id));
         this.activeExecutionId.set(goal.id, task.id);
         const finished = await this.waitForTaskFinish(task.id);
         this.activeExecutionId.delete(goal.id);

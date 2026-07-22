@@ -384,7 +384,9 @@ export class MobileProjectsStickyComposerColumnUi {
                 input,
                 getSkillNames: options.getSkillNames,
                 getSlashCommandNames: () => options.getSlashMenuSections?.()
-                    .flatMap(section => section.entries.map(entry => entry.label)) ?? [],
+                    .flatMap(section => section.entries
+                        .filter(entry => entry.kind !== 'skill')
+                        .map(entry => entry.label)) ?? [],
             })
             : undefined;
 

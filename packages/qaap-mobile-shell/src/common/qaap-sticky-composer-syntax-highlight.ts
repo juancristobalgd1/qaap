@@ -34,11 +34,12 @@ function renderHighlightedDraft(
         if (start > lastIndex) {
             html += escapeHtml(text.slice(lastIndex, start));
         }
-        const skillName = token.slice(1);
-        if (slashCommandNames.has(skillName)) {
-            html += `<span class="theia-mod-token-slash-command">${escapeHtml(token)}</span>`;
-        } else if (skillNames.has(skillName)) {
+        const skillName = token.slice(1).toLowerCase();
+        // Skills win over slash-menu labels: skill spans must stay text-only (no chip class).
+        if (skillNames.has(skillName)) {
             html += `<span class="theia-mod-token-skill">${escapeHtml(token)}</span>`;
+        } else if (slashCommandNames.has(skillName)) {
+            html += `<span class="theia-mod-token-slash-command">${escapeHtml(token)}</span>`;
         } else {
             html += escapeHtml(token);
         }
@@ -70,8 +71,12 @@ export function attachStickyComposerSyntaxHighlight(options: {
     input.spellcheck = false;
 
     const refresh = (): void => {
-        const skillNames = new Set(getSkillNames?.() ?? []);
-        const slashCommandNames = new Set(getSlashCommandNames?.() ?? []);
+        const skillNames = new Set(
+            (getSkillNames?.() ?? []).map(name => name.trim().toLowerCase()).filter(Boolean),
+        );
+        const slashCommandNames = new Set(
+            (getSlashCommandNames?.() ?? []).map(name => name.trim().toLowerCase()).filter(Boolean),
+        );
         highlight.innerHTML = renderHighlightedDraft(input.value, skillNames, slashCommandNames);
         highlight.scrollTop = input.scrollTop;
     };
