@@ -109,6 +109,14 @@ Do not "fix" it by aliasing to the ESM fork `@xhmikosr/decompress` — Theia
 `require()`s it from CommonJS and the ESM default-export shape breaks every call
 site.
 
+**Defense-in-depth (untrusted archives):** runtime `local-file:` installs
+(drag/drop VSIX, Install from VSIX, drop-in `~/.theia/.../extensions/*.vsix`)
+are blocked by default via `QaapPluginServerImpl` +
+`QaapPluginDeployerSecurityParticipant` in `@theia/qaap-product`. Marketplace
+(`vscode-extension:`) and build-time `download-plugins` still extract through
+the patched `decompress`. Set `QAAP_ALLOW_LOCAL_VSIX=1` only when sideloading
+is intentionally required (local desktop/dev).
+
 Two HIGH advisories remain, both `tar` inside `scanoss` (pinned to `^6.2.1`):
 `tar@7` is ESM with no default export and `scanoss` does `import tar from
 'tar'`, which breaks `build:browser`. These paths only run when a SCANOSS scan

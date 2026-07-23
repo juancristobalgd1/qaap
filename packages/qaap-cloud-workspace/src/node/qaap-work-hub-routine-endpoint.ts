@@ -17,7 +17,7 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
-import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
@@ -77,15 +77,17 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
             res.status(400).json({ error: 'Fields cannot be empty.' });
             return;
         }
-        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
-            this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
+        // Normalize + ownership-check to the caller's canonical per-user repo path, and persist
+        // THAT — `ownsWorkspacePath` accepts bare/legacy/cross-tenant-equivalent names by
+        // resolution, but the runner would otherwise execute on the literal body.cwd (SEC-7).
+        // resolveOwnedRepositoryCwd also rejects container cwds (needs-project).
+        const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+        if (resolved.kind === 'needs-project') {
+            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
             return;
         }
-        // `ownsWorkspacePath` accepts container levels of the caller's OWN tree (their per-user root,
-        // an owner directory). A routine stored with such a cwd would run the agent over every repo
-        // they own, on every tick. Reject it here, as the conversation/task endpoints already do.
-        if (isQaapWorkspaceContainerPath(body.cwd)) {
-            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
+        if (resolved.kind !== 'ok') {
+            this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
             return;
         }
         try {
@@ -93,7 +95,7 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
             const routine = this.store.create({
                 title: body.title,
                 prompt: body.prompt,
-                cwd: body.cwd,
+                cwd: resolved.cwd,
                 agent: body.agent,
                 trigger: body.trigger,
                 intervalHours: body.intervalHours,
@@ -117,15 +119,20 @@ export class QaapWorkHubRoutineEndpoint implements BackendApplicationContributio
         }
         const ctx = this.requireAuth(req, res)!;
         const body = (req.body ?? {}) as QaapUpdateWorkHubRoutineBody;
-        if (body.cwd !== undefined && !this.auth.ownsWorkspacePath(ctx, body.cwd)) {
-            this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
-            return;
+        let updateBody = body;
+        if (body.cwd !== undefined) {
+            const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+            if (resolved.kind === 'needs-project') {
+                res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
+                return;
+            }
+            if (resolved.kind !== 'ok') {
+                this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
+                return;
+            }
+            updateBody = { ...body, cwd: resolved.cwd };
         }
-        if (body.cwd !== undefined && isQaapWorkspaceContainerPath(body.cwd)) {
-            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
-            return;
-        }
-        const updated = this.store.update(req.params.id, body);
+        const updated = this.store.update(req.params.id, updateBody);
         if (!updated) {
             res.status(404).json({ error: 'Routine not found.' });
             return;

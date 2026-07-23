@@ -31,6 +31,8 @@ import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapCloudWorkspaceEndpoint } from './qaap-cloud-workspace-endpoint';
 import { QaapParallelRunEndpoint } from './qaap-parallel-run-endpoint';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
+import { QaapResearchEndpoint } from './qaap-research-endpoint';
+import { QaapWorkHubRoutineEndpoint } from './qaap-work-hub-routine-endpoint';
 
 type TerminalStoreEntry = { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string };
 
@@ -366,6 +368,153 @@ describe('Multi-tenancy isolation', () => {
             const h = buildEndpoint({ kind: 'denied' });
             await call(h.endpoint, { cwd: '../evil', prompt: 'p', agents: ['a'] }, fakeRes());
             expect(h.denyCalls).to.equal(1);
+            expect(h.storeCwd).to.be.undefined;
+        });
+    });
+
+    // ─── SEC-7: research persists the resolved canonical cwd ──────────
+
+    describe('SEC-7: research passes the resolved canonical cwd to the store', () => {
+        function buildResearchEndpoint(resolved: { kind: string; cwd?: string }): {
+            endpoint: QaapResearchEndpoint;
+            storeCwd: string | undefined;
+            denyCalls: number;
+        } {
+            const state = { storeCwd: undefined as string | undefined, denyCalls: 0 };
+            const endpoint = Object.create(QaapResearchEndpoint.prototype) as QaapResearchEndpoint;
+            Object.assign(endpoint, {
+                requireAuth: () => ({ kind: 'authenticated', userLogin: userA }),
+                auth: {
+                    resolveOwnedRepositoryCwd: () => resolved,
+                    resolveUserLogin: () => userA,
+                    denyForbidden: (res: { statusCode: number }) => { state.denyCalls++; res.statusCode = 403; return false; },
+                },
+                store: {
+                    create: (req: { cwd: string }) => {
+                        state.storeCwd = req.cwd;
+                        return { id: 'g', cwd: req.cwd };
+                    },
+                },
+                runner: { start: () => undefined },
+            });
+            return {
+                endpoint,
+                get storeCwd(): string | undefined { return state.storeCwd; },
+                get denyCalls(): number { return state.denyCalls; },
+            };
+        }
+
+        const fakeRes = (): { statusCode: number; body: unknown; status(c: number): unknown; json(b: unknown): unknown } => ({
+            statusCode: 200,
+            body: undefined,
+            status(code: number) { this.statusCode = code; return this; },
+            json(b: unknown) { this.body = b; return this; },
+        });
+
+        const validBody = {
+            cwd: `${reposRoot}/users/${userB}/acme/demo`,
+            description: 'improve latency',
+            metrics: [{ id: 'latency', label: 'Latency', direction: 'minimize', kind: 'numeric' }],
+        };
+
+        const call = (endpoint: QaapResearchEndpoint, body: unknown, res: unknown): void => {
+            (endpoint as unknown as { handleCreate(req: unknown, res: unknown): void })
+                .handleCreate({ body }, res);
+        };
+
+        it('persists canonical resolved.cwd for a cross-tenant-equivalent path (validate == execute)', () => {
+            const canonical = `${reposRoot}/users/${userA}/acme/demo`;
+            const h = buildResearchEndpoint({ kind: 'ok', cwd: canonical });
+            const res = fakeRes();
+            call(h.endpoint, validBody, res);
+            expect(res.statusCode).to.equal(201);
+            expect(h.storeCwd).to.equal(canonical);
+            expect(h.storeCwd).to.not.equal(validBody.cwd);
+            expect(h.denyCalls).to.equal(0);
+        });
+
+        it('persists canonical cwd for a legacy/relative bare name', () => {
+            const canonical = `${reposRoot}/users/${userA}/acme/demo`;
+            const h = buildResearchEndpoint({ kind: 'ok', cwd: canonical });
+            call(h.endpoint, { ...validBody, cwd: 'demo' }, fakeRes());
+            expect(h.storeCwd).to.equal(canonical);
+        });
+
+        it('400s a container cwd (needs-project) without reaching the store', () => {
+            const h = buildResearchEndpoint({ kind: 'needs-project' });
+            const res = fakeRes();
+            call(h.endpoint, { ...validBody, cwd: '/workspace' }, res);
+            expect(res.statusCode).to.equal(400);
+            expect(h.storeCwd).to.be.undefined;
+        });
+
+        it('denies a non-owned cwd without reaching the store', () => {
+            const h = buildResearchEndpoint({ kind: 'denied' });
+            call(h.endpoint, validBody, fakeRes());
+            expect(h.denyCalls).to.equal(1);
+            expect(h.storeCwd).to.be.undefined;
+        });
+    });
+
+    // ─── SEC-7: work-hub routines persist the resolved canonical cwd ──
+
+    describe('SEC-7: work-hub routines pass the resolved canonical cwd to the store', () => {
+        function buildRoutineEndpoint(resolved: { kind: string; cwd?: string }): {
+            endpoint: QaapWorkHubRoutineEndpoint;
+            storeCwd: string | undefined;
+            denyCalls: number;
+        } {
+            const state = { storeCwd: undefined as string | undefined, denyCalls: 0 };
+            const endpoint = Object.create(QaapWorkHubRoutineEndpoint.prototype) as QaapWorkHubRoutineEndpoint;
+            Object.assign(endpoint, {
+                requireAuth: () => ({ kind: 'authenticated', userLogin: userA }),
+                auth: {
+                    resolveOwnedRepositoryCwd: () => resolved,
+                    resolveUserLogin: () => userA,
+                    denyForbidden: (res: { statusCode: number }) => { state.denyCalls++; res.statusCode = 403; return false; },
+                },
+                store: {
+                    create: (req: { cwd: string }) => {
+                        state.storeCwd = req.cwd;
+                        return { id: 'r', cwd: req.cwd };
+                    },
+                },
+            });
+            return {
+                endpoint,
+                get storeCwd(): string | undefined { return state.storeCwd; },
+                get denyCalls(): number { return state.denyCalls; },
+            };
+        }
+
+        const fakeRes = (): { statusCode: number; status(c: number): unknown; json(b: unknown): unknown } => ({
+            statusCode: 200,
+            status(code: number) { this.statusCode = code; return this; },
+            json() { return this; },
+        });
+
+        const call = (endpoint: QaapWorkHubRoutineEndpoint, body: unknown, res: unknown): void => {
+            (endpoint as unknown as { handleCreate(req: unknown, res: unknown): void })
+                .handleCreate({ body }, res);
+        };
+
+        it('persists canonical resolved.cwd, not the raw body.cwd', () => {
+            const canonical = `${reposRoot}/users/${userA}/acme/demo`;
+            const h = buildRoutineEndpoint({ kind: 'ok', cwd: canonical });
+            call(h.endpoint, {
+                title: 't',
+                prompt: 'p',
+                cwd: `${reposRoot}/users/${userB}/acme/demo`,
+            }, fakeRes());
+            expect(h.storeCwd).to.equal(canonical);
+            expect(h.denyCalls).to.equal(0);
+        });
+
+        it('400s a container cwd without reaching the store', () => {
+            const h = buildRoutineEndpoint({ kind: 'needs-project' });
+            const res = fakeRes();
+            call(h.endpoint, { title: 't', prompt: 'p', cwd: '/workspace' }, res);
+            expect(res.statusCode).to.equal(400);
             expect(h.storeCwd).to.be.undefined;
         });
     });

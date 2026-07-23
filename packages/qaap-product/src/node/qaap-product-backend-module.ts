@@ -6,11 +6,17 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { BackendApplicationContribution, BackendApplicationServer } from '@theia/core/lib/node';
 import { LocalizationContribution } from '@theia/core/lib/node/i18n/localization-contribution';
+import {
+    PluginDeployerParticipant,
+    PluginServer,
+} from '@theia/plugin-ext/lib/common/plugin-protocol';
 import { QaapBackendStartupLogFilterContribution } from './qaap-backend-startup-log-filter';
 import { QaapLocalizationContribution } from './qaap-localization-contribution';
 import { QaapFrontendStaticServer } from './qaap-immutable-chunk-cache-contribution';
 import { SocketWriteBuffer } from '@theia/core/lib/common/messaging/socket-write-buffer';
 import { QaapSocketWriteBuffer } from './qaap-socket-write-buffer';
+import { QaapPluginDeployerSecurityParticipant } from './qaap-plugin-deployer-security-participant';
+import { QaapPluginServerImpl } from './qaap-plugin-server-impl';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapLocalizationContribution).toSelf().inSingletonScope();
@@ -27,4 +33,14 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     } else {
         bind(SocketWriteBuffer).to(QaapSocketWriteBuffer);
     }
+
+    // Defense-in-depth for GHSA-mp2f-45pm-3cg9: block untrusted local VSIX/archives at the
+    // PluginServer RPC choke point + filter drop-in local-file: entries at deployer start.
+    // Extraction itself remains hardened by decompress+4.2.1.patch (see SECURITY.md).
+    if (isBound(PluginServer)) {
+        bind(QaapPluginServerImpl).toSelf().inSingletonScope();
+        rebind(PluginServer).toService(QaapPluginServerImpl);
+    }
+    bind(QaapPluginDeployerSecurityParticipant).toSelf().inSingletonScope();
+    bind(PluginDeployerParticipant).toService(QaapPluginDeployerSecurityParticipant);
 });

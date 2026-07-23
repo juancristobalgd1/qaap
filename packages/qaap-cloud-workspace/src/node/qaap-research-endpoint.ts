@@ -17,7 +17,7 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
-import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapResearchRunner } from './qaap-research-runner';
 import { QaapResearchStore } from './qaap-research-store';
 
@@ -78,20 +78,23 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: '"metrics" must be a non-empty array.' });
             return;
         }
-        if (!this.auth.ownsWorkspacePath(ctx, body.cwd)) {
-            this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
+        // Normalize + ownership-check to the caller's canonical per-user repo path, and persist
+        // THAT — `ownsWorkspacePath` accepts bare/legacy/cross-tenant-equivalent names by
+        // resolution, but the runner would otherwise execute git/runCommand on the literal
+        // body.cwd (SEC-7). resolveOwnedRepositoryCwd also rejects container cwds.
+        const resolved = this.auth.resolveOwnedRepositoryCwd(ctx, body.cwd);
+        if (resolved.kind === 'needs-project') {
+            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
             return;
         }
-        // Same guard as routines/tasks: a container-level cwd would run the researcher's agent
-        // turns AND its runCommand over every repository the caller owns at once.
-        if (isQaapWorkspaceContainerPath(body.cwd)) {
-            res.status(400).json({ error: QAAP_CONTAINER_CWD_ERROR });
+        if (resolved.kind !== 'ok') {
+            this.auth.denyForbidden(res, req, 'workspace_path', { cwd: body.cwd });
             return;
         }
         try {
             const ownerLogin = this.auth.resolveUserLogin(ctx);
             const goal = this.store.create({
-                cwd: body.cwd,
+                cwd: resolved.cwd,
                 description: body.description,
                 agentId: body.agentId,
                 agentModel: body.agentModel,
