@@ -23,12 +23,21 @@ export interface TranscriptFileTreeEntry {
     readonly isDirectory: boolean;
 }
 
+/** Git / SCM decoration for a tree row — same source as the IDE Explorer. */
+export interface TranscriptFileDecoration {
+    readonly color?: string;
+    readonly letter?: string;
+    readonly tooltip?: string;
+}
+
 export interface TranscriptFilesViewServices {
     resolveRootUri(cwd: string): string | undefined;
     listDirectory(resourcePath: string): Promise<readonly TranscriptFileTreeEntry[]>;
     relativePathForResource(resourcePath: string, rootUri: string): string;
     readFile(resourcePath: string): Promise<string>;
     resolveFileIcon?(resourcePath: string, isDirectory: boolean): string;
+    /** SCM / git decoration for `resourcePath` (Explorer parity). */
+    getFileDecoration?(resourcePath: string, isDirectory: boolean): TranscriptFileDecoration | undefined;
     renderMarkdownPreview?(resourcePath: string, markdown: string): HTMLElement;
     createNewFile?(parentResourcePath?: string): void | Promise<void>;
     createNewFolder?(parentResourcePath?: string): void | Promise<void>;
@@ -40,6 +49,8 @@ export interface TranscriptFilesViewServices {
         options?: TranscriptPreviewMonacoEditorOptions,
     ): Promise<TranscriptPreviewMonacoEditor | undefined>;
     watchFileTreeChanges?(onChange: () => void): Disposable;
+    /** Re-render tree when Explorer-style decorations change. */
+    watchFileDecorations?(onChange: () => void): Disposable;
     localize(key: string, defaultValue: string, ...args: string[]): string;
 }
 
@@ -994,6 +1005,26 @@ export function mountTranscriptFilesView(
         label.className = 'theia-mobile-transcript-files-label';
         label.textContent = entry.name;
         row.append(chevron, icon, label);
+        const decoration = services.getFileDecoration?.(entry.resourcePath, entry.isDirectory);
+        if (decoration?.color) {
+            label.style.color = decoration.color;
+        }
+        if (decoration?.letter) {
+            const badge = document.createElement('span');
+            badge.className = 'theia-mobile-transcript-files-scm-badge';
+            badge.textContent = decoration.letter;
+            badge.setAttribute('aria-hidden', 'true');
+            if (decoration.color) {
+                badge.style.color = decoration.color;
+            }
+            if (decoration.tooltip) {
+                badge.title = decoration.tooltip;
+            }
+            row.append(badge);
+        }
+        if (decoration?.tooltip) {
+            row.title = decoration.tooltip;
+        }
         row.addEventListener('click', () => {
             if (entry.isDirectory) {
                 if (state.expanded.has(entry.resourcePath)) {
@@ -1276,6 +1307,11 @@ export function mountTranscriptFilesView(
         disposables.push(services.watchFileTreeChanges(() => {
             state.childrenByPath.clear();
             state.failedPaths.clear();
+            void renderTree();
+        }));
+    }
+    if (services.watchFileDecorations) {
+        disposables.push(services.watchFileDecorations(() => {
             void renderTree();
         }));
     }

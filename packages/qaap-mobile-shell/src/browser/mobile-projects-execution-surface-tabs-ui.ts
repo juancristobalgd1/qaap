@@ -21,6 +21,9 @@ import {
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '../common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome } from './qaap-execution-surface-header-chrome';
+import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
+import { resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -80,6 +83,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     renderHeader(): void;
     renderSubtitle(): void;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
@@ -560,6 +564,9 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             onSelect(tab);
         };
         const displayTabId = this.resolveExecutionSurfaceIconSelectDisplayTab(activeTab);
+        if (activeTab === 'terminal') {
+            strip.append(this.createTerminalAgentTuiSelect());
+        }
         strip.append(this.createExecutionSurfaceIconSelect(
             displayTabId,
             activeTab,
@@ -568,6 +575,128 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         ));
         applyExecutionSurfaceHeaderChrome(strip, activeTab);
         return strip;
+    }
+
+    /**
+     * Header control left of the view switcher: pick a chat-supported agent and open its
+     * interactive TUI in a new Work Hub terminal.
+     */
+    createTerminalAgentTuiSelect(): HTMLElement {
+        const wrap = document.createElement('div');
+        wrap.className = 'theia-mobile-transcript-tab-icon-select-host theia-mobile-transcript-terminal-agent-tui-host';
+
+        const menuLabel = nls.localize('qaap/mobileProjects/terminalAgentTui', 'Open agent TUI');
+        const menu = document.createElement('div');
+        menu.className = 'theia-mobile-transcript-tab-icon-select-menu theia-mobile-transcript-terminal-agent-tui-menu';
+        menu.hidden = true;
+        menu.setAttribute('role', 'menu');
+        menu.setAttribute('aria-label', menuLabel);
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'theia-mobile-transcript-tab-icon-select theia-mobile-transcript-terminal-agent-tui';
+        trigger.setAttribute('role', 'button');
+        trigger.setAttribute('aria-haspopup', 'menu');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.title = menuLabel;
+        trigger.setAttribute('aria-label', menuLabel);
+
+        const symbol = document.createElement('span');
+        symbol.className = 'theia-mobile-transcript-tab-icon-select-symbol codicon codicon-robot';
+        symbol.setAttribute('aria-hidden', 'true');
+        const chevron = document.createElement('span');
+        chevron.className = 'theia-mobile-transcript-tab-icon-select-chevron codicon codicon-chevron-down';
+        chevron.setAttribute('aria-hidden', 'true');
+        trigger.append(symbol, chevron);
+
+        const loading = document.createElement('div');
+        loading.className = 'theia-mobile-transcript-terminal-agent-tui-status';
+        loading.textContent = nls.localize('qaap/mobileProjects/terminalAgentTuiLoading', 'Loading agents…');
+        menu.append(loading);
+
+        const populate = async (): Promise<void> => {
+            const project = this.host.transcriptOpenProject ?? this.resolveExecutionSurfaceProject();
+            if (!project) {
+                menu.replaceChildren();
+                const empty = document.createElement('div');
+                empty.className = 'theia-mobile-transcript-terminal-agent-tui-status';
+                empty.textContent = nls.localize(
+                    'qaap/mobileProjects/terminalAgentTuiNoProject',
+                    'Open a project to launch an agent.',
+                );
+                menu.append(empty);
+                return;
+            }
+            try {
+                const agents = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project);
+                menu.replaceChildren();
+                const launchable = agents.filter(agent => resolveInteractiveAgentCliBin(agent.id));
+                if (launchable.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'theia-mobile-transcript-terminal-agent-tui-status';
+                    empty.textContent = nls.localize(
+                        'qaap/mobileProjects/terminalAgentTuiEmpty',
+                        'No interactive agents available on this machine.',
+                    );
+                    menu.append(empty);
+                    return;
+                }
+                for (const agent of launchable) {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'theia-mobile-transcript-tab-icon-select-option';
+                    item.dataset.agentId = agent.id;
+                    item.setAttribute('role', 'menuitem');
+                    item.title = agent.label;
+                    item.setAttribute('aria-label', agent.label);
+                    item.toggleAttribute('disabled', agent.available === false);
+                    appendAgentBrandIcon(item, agent.id, 'sm');
+                    const itemLabel = document.createElement('span');
+                    itemLabel.className = 'theia-mobile-transcript-tab-icon-select-option-label';
+                    itemLabel.textContent = resolveAgentDisplayLabel(agent.id, agent.label);
+                    item.append(itemLabel);
+                    if (agent.available === false) {
+                        item.classList.add('theia-mod-unavailable');
+                    }
+                    item.addEventListener('click', event => {
+                        event.stopPropagation();
+                        if (agent.available === false) {
+                            return;
+                        }
+                        this.closeExecutionTabOverflowMenu();
+                        void this.host.transcriptSurfacesUi.launchAgentTuiInTranscriptTerminal(
+                            project,
+                            this.host.transcriptOpenSummary ?? this.host.resolveAgentsHubShellSummary(project),
+                            agent.id,
+                        );
+                    });
+                    menu.append(item);
+                }
+            } catch {
+                menu.replaceChildren();
+                const err = document.createElement('div');
+                err.className = 'theia-mobile-transcript-terminal-agent-tui-status';
+                err.textContent = nls.localize(
+                    'qaap/mobileProjects/terminalAgentTuiFailed',
+                    'Could not load agents.',
+                );
+                menu.append(err);
+            }
+        };
+
+        trigger.addEventListener('click', event => {
+            event.stopPropagation();
+            if (this.host.executionTabOverflowMenu?.classList.contains('theia-mod-open')) {
+                this.closeExecutionTabOverflowMenu();
+                return;
+            }
+            void populate().then(() => {
+                this.openExecutionTabOverflowMenu(trigger, menu);
+            });
+        });
+
+        wrap.append(trigger, menu);
+        return wrap;
     }
 
     executionSurfaceTabSpecs(): Array<{ id: TranscriptTab; label: string; icon: string }> {

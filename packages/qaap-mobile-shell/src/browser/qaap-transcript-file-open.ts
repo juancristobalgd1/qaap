@@ -9,6 +9,8 @@ import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { LabelProvider, URIIconReference } from '@theia/core/lib/browser';
+import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
+import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -16,6 +18,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
 import { isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
 import {
+    type TranscriptFileDecoration,
     type TranscriptFileTreeEntry,
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
@@ -108,6 +111,8 @@ export function createTranscriptFilesViewServices(
     editorProvider?: MonacoEditorProvider,
     labelProvider?: LabelProvider,
     markdownPreviewHandler?: MarkdownPreviewHandler,
+    decorationsService?: DecorationsService,
+    colorRegistry?: ColorRegistry,
 ): TranscriptFilesViewServices {
     return {
         resolveRootUri: cwd => resolveTranscriptWorkspaceRootUri(cwd, workspaceService)?.toString(),
@@ -135,6 +140,14 @@ export function createTranscriptFilesViewServices(
                 }
                 return labelProvider.getIcon(new URI(resourcePath));
             }
+            : undefined,
+        getFileDecoration: decorationsService
+            ? (resourcePath, isDirectory) => resolveTranscriptFileDecoration(
+                decorationsService,
+                colorRegistry,
+                resourcePath,
+                isDirectory,
+            )
             : undefined,
         renderMarkdownPreview: markdownPreviewHandler
             ? (resourcePath, markdown) => markdownPreviewHandler.renderContent({
@@ -168,7 +181,41 @@ export function createTranscriptFilesViewServices(
             });
             return Disposable.create(() => subscription.dispose());
         },
+        watchFileDecorations: decorationsService
+            ? onChange => {
+                const subscription = decorationsService.onDidChangeDecorations(() => {
+                    onChange();
+                });
+                return Disposable.create(() => subscription.dispose());
+            }
+            : undefined,
         localize: (key, defaultValue, ...args) => nls.localize(key, defaultValue, ...args),
+    };
+}
+
+/** Prefer the highest-weight decoration with a letter (Explorer parity). */
+export function resolveTranscriptFileDecoration(
+    decorationsService: DecorationsService,
+    colorRegistry: ColorRegistry | undefined,
+    resourcePath: string,
+    isDirectory: boolean,
+): TranscriptFileDecoration | undefined {
+    const decorations = decorationsService.getDecoration(new URI(resourcePath), isDirectory);
+    if (decorations.length === 0) {
+        return undefined;
+    }
+    const primary = [...decorations].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))[0];
+    if (!primary.letter && !primary.colorId && !primary.tooltip) {
+        return undefined;
+    }
+    const color = primary.colorId
+        ? `var(${colorRegistry?.toCssVariableName(primary.colorId)
+            ?? `--theia-${primary.colorId.replace(/\./g, '-')}`})`
+        : undefined;
+    return {
+        color,
+        letter: primary.letter,
+        tooltip: primary.tooltip,
     };
 }
 

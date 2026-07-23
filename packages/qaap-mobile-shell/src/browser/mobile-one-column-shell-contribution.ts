@@ -67,6 +67,8 @@ import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-inp
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
 import { LabelProvider } from '@theia/core/lib/browser';
+import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
+import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
 import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
@@ -299,6 +301,12 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(LabelProvider)
     protected readonly labelProvider: LabelProvider;
 
+    @inject(DecorationsService)
+    protected readonly decorationsService: DecorationsService;
+
+    @inject(ColorRegistry)
+    protected readonly colorRegistry: ColorRegistry;
+
     @inject(MarkdownPreviewHandler)
     protected readonly markdownPreviewHandler: MarkdownPreviewHandler;
 
@@ -440,6 +448,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 monacoEditorProvider: this.monacoEditorProvider,
                 labelProvider: this.labelProvider,
                 markdownPreviewHandler: this.markdownPreviewHandler,
+                decorationsService: this.decorationsService,
+                colorRegistry: this.colorRegistry,
                 terminalService: this.terminalService,
                 storageService: this.storageService,
                 previewSurfaceRegistry: this.previewSurfaceRegistry,

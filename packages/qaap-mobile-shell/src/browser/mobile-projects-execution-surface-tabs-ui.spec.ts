@@ -84,6 +84,9 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             stickyComposerRenderUi: {
                 renderStickyComposer: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerRenderUi'],
+            stickyComposerAgentsUi: {
+                ensureStickyComposerAgentsLoaded: async () => [],
+            } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
             resolveAgentsHubShellSummary: () => ({
                 id: 'idle',
                 cwd: '/tmp/demo',
@@ -266,6 +269,19 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(chatOption?.querySelector('.qaap-icon-message-circle')).to.exist;
         const trigger = strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-symbol');
         expect(trigger?.classList.contains('qaap-icon-message-circle')).to.equal(true);
+        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')).to.equal(null);
+    });
+
+    it('prepends the agent TUI selector only on the Terminal surface', () => {
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
+        const strip = ui.buildExecutionViewTabStrip('terminal', () => undefined);
+        const children = Array.from(strip.children);
+        const tuiHost = strip.querySelector('.theia-mobile-transcript-terminal-agent-tui-host');
+        const viewSelect = strip.querySelector('.theia-mobile-transcript-tab-icon-select-host:not(.theia-mobile-transcript-terminal-agent-tui-host)');
+        expect(tuiHost).to.exist;
+        expect(viewSelect).to.exist;
+        expect(children[0]).to.equal(tuiHost);
+        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui .codicon-robot')).to.exist;
     });
 
     it('flushes the composer draft before clearing the composer when leaving Messages', () => {

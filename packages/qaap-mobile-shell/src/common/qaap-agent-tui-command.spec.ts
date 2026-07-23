@@ -1,0 +1,24 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { expect } from 'chai';
+import { resolveInteractiveAgentCliBin } from './qaap-agent-tui-command';
+
+describe('resolveInteractiveAgentCliBin', () => {
+    it('maps composer agents to interactive TUI binaries', () => {
+        expect(resolveInteractiveAgentCliBin('qaiq')).to.equal('qaiq');
+        expect(resolveInteractiveAgentCliBin('openclaude')).to.equal('qaiq');
+        expect(resolveInteractiveAgentCliBin('codex')).to.equal('codex');
+        expect(resolveInteractiveAgentCliBin('claude')).to.equal('claude');
+        expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');
+        expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
+    });
+
+    it('returns undefined for unknown or empty ids', () => {
+        expect(resolveInteractiveAgentCliBin(undefined)).to.equal(undefined);
+        expect(resolveInteractiveAgentCliBin('')).to.equal(undefined);
+        expect(resolveInteractiveAgentCliBin('not-an-agent')).to.equal(undefined);
+    });
+});

@@ -5,6 +5,8 @@
 
 import type { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import type { LabelProvider } from '@theia/core/lib/browser';
+import type { ColorRegistry } from '@theia/core/lib/browser/color-registry';
+import type { DecorationsService } from '@theia/core/lib/browser/decorations-service';
 import type { StorageService } from '@theia/core/lib/browser/storage-service';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
 import type { MessageService } from '@theia/core/lib/common/message-service';
@@ -97,6 +99,8 @@ export interface MobileProjectsPanelFactoryDeps {
     monacoEditorProvider: MonacoEditorProvider;
     labelProvider: LabelProvider;
     markdownPreviewHandler: MarkdownPreviewHandler;
+    decorationsService: DecorationsService;
+    colorRegistry: ColorRegistry;
     terminalService: TerminalService;
     storageService: StorageService;
     previewSurfaceRegistry: QaapPreviewSurfaceRegistry;
@@ -266,6 +270,8 @@ export class MobileProjectsPanelFactory {
                     deps.monacoEditorProvider,
                     deps.labelProvider,
                     deps.markdownPreviewHandler,
+                    deps.decorationsService,
+                    deps.colorRegistry,
                 ),
                 createTranscriptTerminalViewServices: () => createTranscriptTerminalViewServices(
                     deps.terminalService,

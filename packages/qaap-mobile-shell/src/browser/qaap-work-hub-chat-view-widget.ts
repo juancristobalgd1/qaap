@@ -16,6 +16,8 @@ import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-co
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { LabelProvider, PanelLayout } from '@theia/core/lib/browser';
+import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
+import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
 import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { QuickInputService } from '@theia/core';
@@ -94,6 +96,10 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly monacoEditorProvider: MonacoEditorProvider;
     @inject(LabelProvider)
     protected readonly labelProvider: LabelProvider;
+    @inject(DecorationsService)
+    protected readonly decorationsService: DecorationsService;
+    @inject(ColorRegistry)
+    protected readonly colorRegistry: ColorRegistry;
     @inject(MarkdownPreviewHandler)
     protected readonly markdownPreviewHandler: MarkdownPreviewHandler;
     @inject(TerminalService)
@@ -199,6 +205,8 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 monacoEditorProvider: this.monacoEditorProvider,
                 labelProvider: this.labelProvider,
                 markdownPreviewHandler: this.markdownPreviewHandler,
+                decorationsService: this.decorationsService,
+                colorRegistry: this.colorRegistry,
                 terminalService: this.terminalService,
                 storageService: this.storageService,
                 previewSurfaceRegistry: this.previewSurfaceRegistry,

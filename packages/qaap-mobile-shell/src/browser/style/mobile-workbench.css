@@ -17340,6 +17340,12 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
 }
 
 /* Header-inline view picker — single overflow control for all execution surfaces. */
+.theia-mobile-transcript-tabs.theia-mod-header-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-tab-icon-select {
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
   background: transparent !important;
@@ -17348,6 +17354,34 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   opacity: 1;
   color: var(--theia-foreground);
   font-weight: var(--qaap-mobile-weight-body, 500);
+}
+
+.theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-terminal-agent-tui {
+  min-width: 44px;
+  padding-inline: 8px;
+}
+
+.theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-terminal-agent-tui .theia-mobile-transcript-tab-icon-select-symbol {
+  font-size: 15px;
+}
+
+.theia-mobile-transcript-terminal-agent-tui-menu .theia-mobile-transcript-tab-icon-select-option .qaap-agent-brand-icon,
+.theia-mobile-transcript-terminal-agent-tui-menu .theia-mobile-transcript-tab-icon-select-option .theia-qaap-agent-brand-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.theia-mobile-transcript-terminal-agent-tui-status {
+  padding: 10px 12px;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.theia-mobile-transcript-terminal-agent-tui-menu .theia-mobile-transcript-tab-icon-select-option.theia-mod-unavailable {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-tab-icon-select.theia-mod-selected,
@@ -19484,10 +19518,21 @@ body>.theia-mobile-transcript-files-menu {
 }
 
 .theia-mobile-transcript-files-label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.theia-mobile-transcript-files-scm-badge {
+  flex: none;
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  opacity: 0.92;
 }
 
 @media (max-width: 420px) {

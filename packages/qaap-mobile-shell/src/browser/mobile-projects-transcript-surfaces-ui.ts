@@ -64,6 +64,8 @@ import {
     type TranscriptTerminalSurface,
     type TranscriptTerminalViewServices,
 } from './qaap-transcript-terminal-view';
+import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
+import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
     normalizeTranscriptWorkspaceKey,
     TranscriptWorkspaceSurfacesCache,
@@ -2172,6 +2174,48 @@ export class MobileProjectsTranscriptSurfacesUi {
             );
             slider?.append(note);
             console.error('[qaap-mobile-shell] transcript terminal failed', error);
+        }
+    }
+
+    /**
+     * Opens (or focuses) the Terminal surface, creates a fresh PTY slide, and starts the
+     * interactive agent CLI — same agents as chat, but as a TUI in the integrated terminal.
+     */
+    async launchAgentTuiInTranscriptTerminal(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        agentId: string,
+    ): Promise<void> {
+        const bin = resolveInteractiveAgentCliBin(agentId);
+        if (!bin) {
+            return;
+        }
+        this.host.executionSurfaceTabsUi.selectTranscriptTab('terminal', project, summary);
+        await this.ensureTranscriptTerminalTab(project, summary);
+        const workspaceKey = this.resolveTranscriptWorkspaceKey(project, summary);
+        const cwd = this.resolveTranscriptProjectCwd(project, summary);
+        const services = this.host.createTranscriptTerminalViewServices?.();
+        if (!workspaceKey || !cwd || !services) {
+            return;
+        }
+        await this.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary, true);
+        const state = this.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
+        const surface = state?.surfaces[state.activeIndex];
+        if (!surface || surface.terminal.isDisposed) {
+            return;
+        }
+        const title = resolveAgentDisplayLabel(agentId);
+        try {
+            surface.terminal.title.label = title;
+        } catch {
+            /* title is best-effort */
+        }
+        this.renderTranscriptTerminalSlides(workspaceKey);
+        await new Promise<void>(resolve => {
+            window.setTimeout(resolve, 120);
+        });
+        if (!surface.terminal.isDisposed) {
+            surface.terminal.sendText(`${bin}\n`);
         }
     }
 
