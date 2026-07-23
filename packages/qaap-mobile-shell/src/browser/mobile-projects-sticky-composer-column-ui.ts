@@ -40,10 +40,6 @@ import {
     recordStickyComposerPromptSubmission,
 } from './qaap-sticky-composer-prompt-history';
 import {
-    estimateQaapAgentTask,
-    formatQaapAgentTaskEstimate,
-} from '../common/qaap-agent-task-estimate';
-import {
     createStickyComposerSendIcon,
     playStickyComposerSendFly,
 } from './mobile-projects-sticky-composer-send-icon';
@@ -278,9 +274,6 @@ export class MobileProjectsStickyComposerColumnUi {
         sendBtn.className = 'theia-mobile-projects-sticky-composer-send';
         sendBtn.disabled = true;
         const sendLabel = options.sendLabel ?? nls.localize('qaap/mobileProjects/inlineStart', 'Start');
-        const estimateBadge = document.createElement('span');
-        estimateBadge.className = 'theia-mobile-projects-sticky-composer-cost-estimate';
-        estimateBadge.hidden = true;
         sendBtn.title = sendLabel;
         sendBtn.setAttribute('aria-label', sendLabel);
         sendBtn.replaceChildren(createStickyComposerSendIcon());
@@ -329,14 +322,6 @@ export class MobileProjectsStickyComposerColumnUi {
                 }
             }
             improveBtn.disabled = !has && !improving;
-            const estimate = estimateQaapAgentTask(input.value);
-            estimateBadge.hidden = !has || !estimate.visible || working;
-            estimateBadge.classList.toggle('theia-mod-large', estimate.size === 'large');
-            estimateBadge.textContent = formatQaapAgentTaskEstimate(estimate);
-            estimateBadge.title = nls.localize(
-                'qaap/mobileProjects/taskEstimateDisclaimer',
-                'Estimated range before submit. Actual usage depends on repository context, tools, model, and retries.',
-            );
             improveBtn.classList.toggle('theia-mod-has-text', has);
             if (improving) {
                 improveBtn.title = cancelImproveLabel;
@@ -510,7 +495,7 @@ export class MobileProjectsStickyComposerColumnUi {
             });
         }
         options.onContextUsageBadgeMounted?.(usageBadge);
-        controlsRight.append(estimateBadge, inputActions);
+        controlsRight.append(inputActions);
         controlsRow.append(controlsLeft, controlsRight);
         const borderBeamBloom = document.createElement('div');
         borderBeamBloom.className = 'qaap-border-beam-bloom';
