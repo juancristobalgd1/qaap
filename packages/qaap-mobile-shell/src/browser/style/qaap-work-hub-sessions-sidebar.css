@@ -248,14 +248,15 @@
   pointer-events: none;
 }
 
-/* Deployed-build badge: muted short SHA so "which build am I on?" is a glance, not a debug session. */
+/* Deployed-build SHA sits next to the account name: `Juan Cristobal (abc123…)`. */
 .theia-mobile-work-hub-sessions-sidebar-build {
-  flex: 0 0 auto;
-  margin-left: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
   font-family: var(--monaco-monospace-font, monospace);
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 400;
   letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--theia-foreground) 38%, transparent);
+  color: color-mix(in srgb, var(--theia-foreground) 42%, transparent);
   white-space: nowrap;
   user-select: text;
 }
@@ -339,7 +340,17 @@
 }
 
 .theia-mobile-work-hub-sessions-sidebar-account-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
   flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-account-name {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

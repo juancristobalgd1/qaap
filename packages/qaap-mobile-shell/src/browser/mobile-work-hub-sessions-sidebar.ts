@@ -76,6 +76,8 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected readonly accountLabel: HTMLSpanElement;
+    /** Short deployed git SHA from `/qaap/api/auth/config` (shown next to the account name). */
+    protected deployedBuildSha: string | undefined;
     protected readonly scrollHost: HTMLElement;
     protected readonly listHost: HTMLElement;
     protected readonly resizeHandle: HTMLElement;
@@ -143,7 +145,7 @@ export class MobileWorkHubSessionsSidebar {
         footer.append(this.accountBtn);
         this.mountAppearanceModeSwitch(footer);
         this.updateAccountAvatar();
-        this.appendDeployedBuildBadge(footer);
+        this.loadDeployedBuildSha();
 
         const nav = document.createElement('nav');
         nav.className = 'theia-mobile-work-hub-sessions-sidebar-nav';
@@ -245,7 +247,30 @@ export class MobileWorkHubSessionsSidebar {
 
     updateAccountAvatar(): void {
         renderQaapAccountAvatarVisual(this.accountAvatar, { titleTarget: this.accountBtn });
-        this.accountLabel.textContent = this.accountBtn.title;
+        this.syncAccountLabel();
+    }
+
+    /**
+     * Account label: `Name` or `Name (shortSha)` when a deployed build is known.
+     * The SHA stays muted inside the account button so the footer theme switch keeps the right edge.
+     */
+    protected syncAccountLabel(): void {
+        const name = this.accountBtn.title.trim()
+            || nls.localize('qaap/accountMenu/title', 'Account');
+        this.accountLabel.replaceChildren();
+        const nameEl = document.createElement('span');
+        nameEl.className = 'theia-mobile-work-hub-sessions-sidebar-account-name';
+        nameEl.textContent = name;
+        this.accountLabel.append(nameEl);
+        const build = this.deployedBuildSha?.trim();
+        if (!build) {
+            return;
+        }
+        const buildEl = document.createElement('span');
+        buildEl.className = 'theia-mobile-work-hub-sessions-sidebar-build';
+        buildEl.textContent = `(${build})`;
+        buildEl.title = nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build);
+        this.accountLabel.append(buildEl);
     }
 
     protected mountAppearanceModeSwitch(footer: HTMLElement): void {
@@ -264,22 +289,17 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     /**
-     * Muted deployed-build badge (short git SHA from `/qaap/api/auth/config`). One glance answers
-     * "which build am I actually on?" — the recurring deploy-debugging question. Absent in local
-     * dev (no `QAAP_BUILD_SHA`), and silently omitted when the config fetch fails.
+     * Loads the muted deployed-build SHA from `/qaap/api/auth/config` and places it next to the
+     * account name. Absent in local dev (no `QAAP_BUILD_SHA`); omitted when the fetch fails.
      */
-    protected appendDeployedBuildBadge(footer: HTMLElement): void {
+    protected loadDeployedBuildSha(): void {
         void fetchQaapAuthConfig().then(config => {
             const build = config.build?.trim();
             setQaapClientErrorBuild(build);
-            if (!build || !footer.isConnected) {
-                return;
+            this.deployedBuildSha = build || undefined;
+            if (this.root.isConnected || this.accountLabel.isConnected) {
+                this.syncAccountLabel();
             }
-            const badge = document.createElement('span');
-            badge.className = 'theia-mobile-work-hub-sessions-sidebar-build';
-            badge.textContent = build;
-            badge.title = nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build);
-            footer.append(badge);
         }).catch(() => undefined);
     }
 
