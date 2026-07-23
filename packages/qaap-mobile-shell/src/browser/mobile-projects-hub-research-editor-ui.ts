@@ -7,7 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { createResearchGoal } from '../common/qaap-research-client';
 import type { QaapCreateResearchGoalBody } from '../common/qaap-research-api';
-import { createFormFieldLabel } from './qaap-mobile-form-ui';
+import { createFormFieldLabel, wireFormFieldLabel } from './qaap-mobile-form-ui';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectsHubView, MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -29,6 +29,9 @@ export interface MobileProjectsHubResearchEditorHost {
 /** Minimal sheet to create a research goal and start it on the VPS backend. */
 export class MobileProjectsHubResearchEditorUi {
 
+    protected escapeListener: ((ev: KeyboardEvent) => void) | undefined;
+    protected restoreFocusTo: HTMLElement | undefined;
+
     constructor(protected readonly host: MobileProjectsHubResearchEditorHost) { }
 
     resolveDefaultResearchCwd(): string {
@@ -48,6 +51,9 @@ export class MobileProjectsHubResearchEditorUi {
 
     openResearchEditor(): void {
         this.closeResearchEditor();
+        const previouslyFocused = document.activeElement;
+        this.restoreFocusTo = previouslyFocused instanceof HTMLElement ? previouslyFocused : undefined;
+
         const sheet = document.createElement('div');
         sheet.className = 'theia-mobile-routine-sheet theia-mod-research-sheet';
         sheet.setAttribute('role', 'dialog');
@@ -69,10 +75,20 @@ export class MobileProjectsHubResearchEditorUi {
         const header = document.createElement('header');
         header.className = 'theia-mobile-routine-sheet-header';
         const heading = document.createElement('h2');
+        heading.id = 'qaap-research-sheet-title';
         heading.textContent = nls.localize('qaap/mobileProjects/researchNew', 'New research goal');
+        sheet.setAttribute('aria-labelledby', heading.id);
+
         const close = document.createElement('button');
         close.type = 'button';
-        close.className = 'theia-mobile-routine-sheet-close q-icon-button codicon codicon-close';
+        close.className = 'theia-mobile-routine-sheet-close q-icon-button';
+        const closeLabel = nls.localize('qaap/mobileProjects/researchClose', 'Close');
+        close.title = closeLabel;
+        close.setAttribute('aria-label', closeLabel);
+        const closeIcon = document.createElement('span');
+        closeIcon.className = 'codicon codicon-close';
+        closeIcon.setAttribute('aria-hidden', 'true');
+        close.append(closeIcon);
         close.addEventListener('click', () => this.closeResearchEditor());
         header.append(heading, close);
 
@@ -112,14 +128,35 @@ export class MobileProjectsHubResearchEditorUi {
             'Optional long run command (hours on the VPS)',
         );
 
+        const descriptionLabel = createFormFieldLabel(
+            nls.localize('qaap/mobileProjects/researchDescription', 'Goal'),
+            { id: 'qaap-research-field-description' },
+        );
+        const cwdLabel = createFormFieldLabel(
+            nls.localize('qaap/mobileProjects/researchCwd', 'Repository'),
+            { id: 'qaap-research-field-cwd' },
+        );
+        const metricLabel = createFormFieldLabel(
+            nls.localize('qaap/mobileProjects/researchMetricCommand', 'Metric command'),
+            { id: 'qaap-research-field-metric' },
+        );
+        const runLabel = createFormFieldLabel(
+            nls.localize('qaap/mobileProjects/researchRunCommand', 'Run command (optional)'),
+            { id: 'qaap-research-field-run' },
+        );
+        wireFormFieldLabel(descriptionLabel, descriptionInput);
+        wireFormFieldLabel(cwdLabel, cwdInput);
+        wireFormFieldLabel(metricLabel, metricCommandInput);
+        wireFormFieldLabel(runLabel, runCommandInput);
+
         form.append(
-            createFormFieldLabel(nls.localize('qaap/mobileProjects/researchDescription', 'Goal')),
+            descriptionLabel,
             descriptionInput,
-            createFormFieldLabel(nls.localize('qaap/mobileProjects/researchCwd', 'Repository')),
+            cwdLabel,
             cwdInput,
-            createFormFieldLabel(nls.localize('qaap/mobileProjects/researchMetricCommand', 'Metric command')),
+            metricLabel,
             metricCommandInput,
-            createFormFieldLabel(nls.localize('qaap/mobileProjects/researchRunCommand', 'Run command (optional)')),
+            runLabel,
             runCommandInput,
         );
 
@@ -145,12 +182,30 @@ export class MobileProjectsHubResearchEditorUi {
         sheet.append(backdrop, panel);
         document.body.append(sheet);
         this.host.researchSheet = sheet;
+
+        this.escapeListener = (ev: KeyboardEvent): void => {
+            if (ev.key === 'Escape') {
+                ev.preventDefault();
+                ev.stopPropagation();
+                this.closeResearchEditor();
+            }
+        };
+        document.addEventListener('keydown', this.escapeListener, true);
         descriptionInput.focus();
     }
 
     closeResearchEditor(): void {
+        if (this.escapeListener) {
+            document.removeEventListener('keydown', this.escapeListener, true);
+            this.escapeListener = undefined;
+        }
         this.host.researchSheet?.remove();
         this.host.researchSheet = undefined;
+        const restore = this.restoreFocusTo;
+        this.restoreFocusTo = undefined;
+        if (restore?.isConnected) {
+            restore.focus();
+        }
         if (this.host.visible && this.host.hubView === 'research') {
             this.host.renderList();
         }

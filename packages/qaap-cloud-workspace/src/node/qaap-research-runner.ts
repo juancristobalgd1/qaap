@@ -133,6 +133,17 @@ export class QaapResearchRunner {
      *  call racing the boot-time reconciliation). */
     protected readonly loopRunning = new Set<string>();
 
+
+    /**
+     * Starts a ledger write. Returns a Promise only for the real async store; sync test doubles
+     * return `undefined` so callers can skip `await` and avoid an unconditional microtask yield.
+     */
+    protected beginLedgerWrite(cwd: string, record: ResearchExperimentRecord): undefined | Promise<void> {
+        const pending = this.store.upsertRecord(cwd, record) as void | Promise<void>;
+        return pending ? pending : undefined;
+    }
+
+
     @postConstruct()
     protected init(): void {
         void this.reconcileOnBoot();
@@ -257,7 +268,7 @@ export class QaapResearchRunner {
         if (!finished) {
             // Timed out: the task may still be running server-side — cancel it so it does not leak.
             this.taskRunner.cancel(task.id);
-            this.recordPreflightResult(goal, `preflight failed: timed out after ${Math.round(PREFLIGHT_TIMEOUT_MS / 60_000)} minutes with no response.`);
+            await this.recordPreflightResult(goal, `preflight failed: timed out after ${Math.round(PREFLIGHT_TIMEOUT_MS / 60_000)} minutes with no response.`);
             this.terminate(goal, 'infra-broken');
             return false;
         }
@@ -271,7 +282,7 @@ export class QaapResearchRunner {
         if (finished.state === 'failed' || turnError) {
             const reason = turnError
                 ?? `agent task exited with a non-zero status${finished.exitCode !== undefined ? ` (exit code ${finished.exitCode})` : ''}.`;
-            this.recordPreflightResult(goal, `preflight failed: ${reason}`);
+            await this.recordPreflightResult(goal, `preflight failed: ${reason}`);
             this.terminate(goal, 'infra-broken');
             return false;
         }
@@ -281,18 +292,18 @@ export class QaapResearchRunner {
         // suspicious enough to fail fast on, rather than let round 1 discover it.
         const agentText = extractAgentTextFromLog(stdout).trim();
         if (!agentText) {
-            this.recordPreflightResult(goal, 'preflight failed: agent produced no text response.');
+            await this.recordPreflightResult(goal, 'preflight failed: agent produced no text response.');
             this.terminate(goal, 'infra-broken');
             return false;
         }
 
-        this.recordPreflightResult(goal, undefined);
+        await this.recordPreflightResult(goal, undefined);
         return true;
     }
 
     /** Writes the `round: 0` preflight record. `failureNote` present → verdict `'failed'`, matching
      *  the shape `finishAsInfraFailure` uses for a normal round's infra failure. */
-    protected recordPreflightResult(goal: ResearchGoal, failureNote: string | undefined): void {
+    protected async recordPreflightResult(goal: ResearchGoal, failureNote: string | undefined): Promise<void> {
         const now = Date.now();
         const record: ResearchExperimentRecord = {
             id: randomUUID(),
@@ -310,7 +321,10 @@ export class QaapResearchRunner {
             notes: failureNote ?? 'preflight ok',
             preflight: true,
         };
-        this.store.upsertRecord(goal.cwd, record);
+        const pending = this.beginLedgerWrite(goal.cwd, record);
+        if (pending) {
+            await pending;
+        }
     }
 
     protected terminate(goal: ResearchGoal, reason: TerminationReason): void {
@@ -343,7 +357,10 @@ export class QaapResearchRunner {
             // its proposal itself instead of leaving the change for Qaap's audit commit.
             baselineSha: this.runGit(goal.cwd, ['rev-parse', 'HEAD']).stdout || undefined,
         };
-        this.store.upsertRecord(goal.cwd, skeleton);
+        const pending = this.beginLedgerWrite(goal.cwd, skeleton);
+        if (pending) {
+            await pending;
+        }
         await this.runPropose(goal, skeleton, {});
     }
 
@@ -410,7 +427,7 @@ export class QaapResearchRunner {
         if (finished.state === 'failed' || turnError) {
             const reason = turnError
                 ?? `agent task exited with a non-zero status${finished.exitCode !== undefined ? ` (exit code ${finished.exitCode})` : ''}.`;
-            this.finishAsInfraFailure(goal, record, `agent turn failed: ${reason}`, record.runAttempts);
+            await this.finishAsInfraFailure(goal, record, `agent turn failed: ${reason}`, record.runAttempts);
             return;
         }
 
@@ -425,7 +442,7 @@ export class QaapResearchRunner {
         // infra failure lets the consecutive-failure termination stop a goal that keeps blocking.
         const blockedNeed = parseAgentBlockedSignal(agentText);
         if (blockedNeed !== undefined) {
-            this.finishAsInfraFailure(goal, record,
+            await this.finishAsInfraFailure(goal, record,
                 `agent declared itself blocked on input only a human can provide: ${blockedNeed}`,
                 record.runAttempts);
             return;
@@ -469,7 +486,10 @@ export class QaapResearchRunner {
             gateReview: finished.review?.status,
             notes,
         };
-        this.store.upsertRecord(goal.cwd, proposed);
+        const pending = this.beginLedgerWrite(goal.cwd, proposed);
+        if (pending) {
+            await pending;
+        }
 
         // The propose task already ran the change-quality gate inside the task runner (script
         // verification + its fix-turn budget, adversarial review). A round that STILL closes with
@@ -506,7 +526,7 @@ export class QaapResearchRunner {
         }
 
         if (isNoop) {
-            this.finishAsNoop(goal, proposed);
+            await this.finishAsNoop(goal, proposed);
             return;
         }
         await this.commitRound(goal, proposed);
@@ -601,7 +621,7 @@ export class QaapResearchRunner {
     /** A round where the agent made no repo changes and proposed nothing parseable, even after one
      *  re-prompt: record it as done without ever touching runCommand/measure, so a format miss can
      *  never cost a real (hours-long) run on top of the round it already wasted. */
-    protected finishAsNoop(goal: ResearchGoal, record: ResearchExperimentRecord): void {
+    protected async finishAsNoop(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         const finished: ResearchExperimentRecord = {
             ...record,
             phase: 'done',
@@ -617,7 +637,10 @@ export class QaapResearchRunner {
             ),
             finishedAt: Date.now(),
         };
-        this.store.upsertRecord(goal.cwd, finished);
+        const pending = this.beginLedgerWrite(goal.cwd, finished);
+        if (pending) {
+            await pending;
+        }
     }
 
     // ---- phase: commit (round → branch) --------------------------------------
@@ -636,7 +659,10 @@ export class QaapResearchRunner {
                 : record.notes,
             phase: goal.runCommand ? 'run' : 'measure',
         };
-        this.store.upsertRecord(goal.cwd, committed);
+        const pending = this.beginLedgerWrite(goal.cwd, committed);
+        if (pending) {
+            await pending;
+        }
         if (goal.runCommand) {
             await this.runRunPhase(goal, committed, false);
         } else {
@@ -700,7 +726,10 @@ export class QaapResearchRunner {
             ),
             finishedAt: Date.now(),
         };
-        this.store.upsertRecord(goal.cwd, failed);
+        const pending = this.beginLedgerWrite(goal.cwd, failed);
+        if (pending) {
+            await pending;
+        }
         await this.revertRound(goal, failed);
     }
 
@@ -723,7 +752,7 @@ export class QaapResearchRunner {
         }
         const runAttempts = (record.runAttempts ?? 0) + (isResume ? 1 : 0);
         if (isResume && runAttempts > MAX_RUN_RESUME_ATTEMPTS) {
-            this.finishAsInfraFailure(goal, record, `runCommand lost its process ${MAX_RUN_RESUME_ATTEMPTS} times across backend `
+            await this.finishAsInfraFailure(goal, record, `runCommand lost its process ${MAX_RUN_RESUME_ATTEMPTS} times across backend `
                 + 'restarts; treating as an infra failure rather than retrying indefinitely.', runAttempts);
             return;
         }
@@ -743,7 +772,7 @@ export class QaapResearchRunner {
             return;
         }
         if (result.exitCode !== 0) {
-            this.finishAsInfraFailure(
+            await this.finishAsInfraFailure(
                 goal,
                 record,
                 this.describeCommandFailure('runCommand', result),
@@ -752,7 +781,10 @@ export class QaapResearchRunner {
             return;
         }
         const advanced: ResearchExperimentRecord = { ...record, phase: 'measure', runAttempts };
-        this.store.upsertRecord(goal.cwd, advanced);
+        const pending = this.beginLedgerWrite(goal.cwd, advanced);
+        if (pending) {
+            await pending;
+        }
         await this.runMeasurePhase(goal, advanced);
     }
 
@@ -781,13 +813,13 @@ export class QaapResearchRunner {
                 const reason = result.exitCode === 0
                     ? this.appendCommandOutput(`metricCommand for "${spec.name}" produced an unparseable value.`, result)
                     : this.describeCommandFailure(`metricCommand for "${spec.name}"`, result);
-                this.finishAsInfraFailure(goal, record, reason, record.runAttempts);
+                await this.finishAsInfraFailure(goal, record, reason, record.runAttempts);
                 return;
             }
             metrics.push({ name: spec.name, value, direction: spec.direction });
         }
         if (!primary) {
-            this.finishAsInfraFailure(goal, record, 'Goal has no metrics to evaluate.', record.runAttempts);
+            await this.finishAsInfraFailure(goal, record, 'Goal has no metrics to evaluate.', record.runAttempts);
             return;
         }
         const primaryValue = metrics.find(metric => metric.name === primary.name)!.value;
@@ -802,13 +834,16 @@ export class QaapResearchRunner {
             bestSoFar: verdict === 'improved' ? primaryValue : best,
             finishedAt: Date.now(),
         };
-        this.store.upsertRecord(goal.cwd, measured);
+        const pending = this.beginLedgerWrite(goal.cwd, measured);
+        if (pending) {
+            await pending;
+        }
         if (verdict === 'regressed') {
             await this.revertRound(goal, measured);
         }
     }
 
-    protected finishAsInfraFailure(goal: ResearchGoal, record: ResearchExperimentRecord, reason: string, runAttempts: number | undefined): void {
+    protected async finishAsInfraFailure(goal: ResearchGoal, record: ResearchExperimentRecord, reason: string, runAttempts: number | undefined): Promise<void> {
         const failed: ResearchExperimentRecord = {
             ...record,
             phase: 'done',
@@ -817,7 +852,10 @@ export class QaapResearchRunner {
             finishedAt: Date.now(),
             runAttempts,
         };
-        this.store.upsertRecord(goal.cwd, failed);
+        const pending = this.beginLedgerWrite(goal.cwd, failed);
+        if (pending) {
+            await pending;
+        }
     }
 
     // ---- discard a regression --------------------------------------------------
@@ -838,12 +876,18 @@ export class QaapResearchRunner {
             { header: `\n[qaap-research] round ${record.round}: reverting regression\n`, tailOutput: true },
         );
         if (result.exitCode === 0) {
-            this.store.upsertRecord(goal.cwd, { ...record, reverted: true });
+            const pending = this.beginLedgerWrite(goal.cwd, { ...record, reverted: true });
+            if (pending) {
+                await pending;
+            }
         } else {
-            this.store.upsertRecord(goal.cwd, {
+            const pending = this.beginLedgerWrite(goal.cwd, {
                 ...record,
                 notes: this.appendNote(record.notes, `git revert failed (exit ${result.exitCode}); regression left in place — needs a human look.`),
             });
+            if (pending) {
+                await pending;
+            }
         }
     }
 

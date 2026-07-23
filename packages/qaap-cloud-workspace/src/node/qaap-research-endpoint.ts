@@ -6,6 +6,7 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_RESEARCH_API_PATH,
     type QaapCreateResearchGoalBody,
@@ -50,7 +51,7 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
             this.handleCreate(req, res);
         });
         app.get(`${QAAP_RESEARCH_API_PATH}/:id`, (req, res) => {
-            this.handleDetail(req, res);
+            void this.handleDetail(req, res);
         });
         app.post(`${QAAP_RESEARCH_API_PATH}/:id/cancel`, (req, res) => {
             this.handleCancel(req, res);
@@ -67,15 +68,21 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         }
         const body = (req.body ?? {}) as Partial<QaapCreateResearchGoalBody>;
         if (typeof body.cwd !== 'string' || !body.cwd.trim()) {
-            res.status(400).json({ error: '"cwd" is required.' });
+            res.status(400).json({
+                error: nls.localize('qaap/research/cwdRequired', '"cwd" is required.'),
+            });
             return;
         }
         if (typeof body.description !== 'string' || !body.description.trim()) {
-            res.status(400).json({ error: '"description" is required.' });
+            res.status(400).json({
+                error: nls.localize('qaap/research/descriptionRequired', '"description" is required.'),
+            });
             return;
         }
         if (!Array.isArray(body.metrics) || body.metrics.length === 0) {
-            res.status(400).json({ error: '"metrics" must be a non-empty array.' });
+            res.status(400).json({
+                error: nls.localize('qaap/research/metricsRequired', '"metrics" must be a non-empty array.'),
+            });
             return;
         }
         // Normalize + ownership-check to the caller's canonical per-user repo path, and persist
@@ -93,6 +100,9 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         }
         try {
             const ownerLogin = this.auth.resolveUserLogin(ctx);
+            if (!this.assertResearchQuota(ownerLogin, res)) {
+                return;
+            }
             const goal = this.store.create({
                 cwd: resolved.cwd,
                 description: body.description,
@@ -115,12 +125,15 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         }
     }
 
-    protected handleDetail(req: Request, res: Response): void {
+    protected async handleDetail(req: Request, res: Response): Promise<void> {
         const goal = this.getGoalIfOwned(req, res, req.params.id);
         if (!goal) {
             return;
         }
-        res.json({ goal, records: this.store.readLedgerForGoal(goal) } satisfies QaapResearchGoalDetailResponse);
+        res.json({
+            goal,
+            records: await this.store.readLedgerForGoalAsync(goal),
+        } satisfies QaapResearchGoalDetailResponse);
     }
 
     protected handleCancel(req: Request, res: Response): void {
@@ -129,7 +142,9 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         }
         const cancelled = this.runner.cancel(req.params.id);
         if (!cancelled) {
-            res.status(404).json({ error: 'Research goal not found.' });
+            res.status(404).json({
+                error: nls.localize('qaap/research/goalNotFound', 'Research goal not found.'),
+            });
             return;
         }
         res.json(cancelled);
@@ -141,7 +156,9 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
             return;
         }
         if (source.status === 'running') {
-            res.status(409).json({ error: 'Research goal is already running.' });
+            res.status(409).json({
+                error: nls.localize('qaap/research/alreadyRunning', 'Research goal is already running.'),
+            });
             return;
         }
         const ctx = this.requireAuth(req, res);
@@ -150,6 +167,9 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         }
         try {
             const ownerLogin = this.auth.resolveUserLogin(ctx);
+            if (!this.assertResearchQuota(ownerLogin, res)) {
+                return;
+            }
             const goal = this.store.replayFrom(source.id, ownerLogin);
             this.runner.start(goal);
             res.status(201).json(goal);
@@ -158,10 +178,55 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         }
     }
 
+    protected assertResearchQuota(ownerLogin: string | undefined, res: Response): boolean {
+        const running = this.store.listRunning();
+        const globalLimit = this.maxConcurrentResearch();
+        if (running.length >= globalLimit) {
+            res.status(409).json({
+                error: nls.localize(
+                    'qaap/research/globalQuota',
+                    'Too many research goals are already running (limit {0}).',
+                    String(globalLimit),
+                ),
+            });
+            return false;
+        }
+        if (ownerLogin) {
+            const perUser = this.maxConcurrentResearchPerUser();
+            const ownerRunning = running.filter(goal => this.store.ownerOf(goal.id) === ownerLogin).length;
+            if (ownerRunning >= perUser) {
+                res.status(409).json({
+                    error: nls.localize(
+                        'qaap/research/userQuota',
+                        'You already have the maximum number of running research goals ({0}).',
+                        String(perUser),
+                    ),
+                });
+                return false;
+            }
+        }
+        return true;
+    }
+
+    protected maxConcurrentResearch(): number {
+        return this.positiveEnv('QAAP_RESEARCH_MAX_CONCURRENT', 2);
+    }
+
+    protected maxConcurrentResearchPerUser(): number {
+        return this.positiveEnv('QAAP_RESEARCH_MAX_CONCURRENT_PER_USER', 1);
+    }
+
+    protected positiveEnv(name: string, fallback: number): number {
+        const parsed = Number.parseInt(process.env[name]?.trim() ?? '', 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    }
+
     protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {
         const ctx = this.auth.authenticate(req);
         if (ctx.kind === 'unauthorized') {
-            res.status(401).json({ error: 'Not signed in' });
+            res.status(401).json({
+                error: nls.localize('qaap/research/notSignedIn', 'Not signed in'),
+            });
             return undefined;
         }
         return ctx;
@@ -174,7 +239,9 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         }
         const goal = this.store.get(id);
         if (!goal) {
-            res.status(404).json({ error: 'Research goal not found.' });
+            res.status(404).json({
+                error: nls.localize('qaap/research/goalNotFound', 'Research goal not found.'),
+            });
             return undefined;
         }
         if (!this.ownsGoal(ctx, goal)) {

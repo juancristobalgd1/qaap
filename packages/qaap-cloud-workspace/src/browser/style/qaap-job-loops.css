@@ -142,6 +142,11 @@
     color: var(--theia-foreground);
 }
 
+.qaap-job-loops-navigation button:focus-visible {
+    outline: 2px solid var(--theia-focusBorder, var(--theia-foreground));
+    outline-offset: 2px;
+}
+
 .qaap-job-loop-management {
     display: grid;
     min-height: 0;

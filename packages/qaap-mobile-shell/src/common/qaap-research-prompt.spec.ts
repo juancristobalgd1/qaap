@@ -101,12 +101,12 @@ describe('qaap-research-prompt', () => {
         expect(prompt).to.contain('"symptom"');
     });
 
-    it('shows "unbounded" rounds remaining when maxRounds is not set', () => {
-        const unboundedGoal = normalizeResearchGoal({
+    it('shows remaining rounds from the default maxRounds budget', () => {
+        const goal = normalizeResearchGoal({
             id: 'g2', cwd: '/tmp', description: 'd',
             metrics: [{ name: 'loss', direction: 'min', metricCommand: 'x' }],
         });
-        const prompt = buildResearchRoundPrompt(unboundedGoal, []);
-        expect(prompt).to.contain('Rounds remaining: unbounded');
+        const prompt = buildResearchRoundPrompt(goal, []);
+        expect(prompt).to.contain(`Rounds remaining: ${goal.maxRounds} of ${goal.maxRounds}`);
     });
 });

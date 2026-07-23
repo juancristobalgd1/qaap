@@ -40,6 +40,10 @@ const DEFAULT_MAX_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_MAX_LOG_CHARS = 512 * 1024;
 const DEFAULT_MAX_CONCURRENT = 8;
 const DEFAULT_MAX_CONCURRENT_PER_USER = 4;
+const DEFAULT_JOB_RETENTION_DAYS = 30;
+const DEFAULT_JOB_MAX_PER_USER = 500;
+const DEFAULT_JOB_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const JOB_PRUNE_START_DELAY_MS = 5 * 60 * 1000;
 const MAX_FUNCTION_INPUT_CHARS = 64 * 1024;
 const MAX_FUNCTION_RESULT_CHARS = 256 * 1024;
 const MAX_GRAPH_NODES = 128;
@@ -127,6 +131,8 @@ export class QaapJobRuntime {
     protected persistChain: Promise<void> = Promise.resolve();
     protected draining = false;
     protected stopping = false;
+    protected pruneStartTimer: NodeJS.Timeout | undefined;
+    protected pruneIntervalTimer: NodeJS.Timeout | undefined;
 
     protected readonly onDidChangeJobEmitter = new Emitter<QaapJobEvent>();
     readonly onDidChangeJob: Event<QaapJobEvent> = this.onDidChangeJobEmitter.event;
@@ -151,6 +157,7 @@ export class QaapJobRuntime {
         if (stateIsWritable) {
             void this.persist();
         }
+        this.scheduleRetentionPrune();
     }
 
     create(request: QaapCreateJobRequest, ownerLogin?: string): QaapCreateJobResult {
@@ -324,6 +331,7 @@ export class QaapJobRuntime {
     /** Gracefully stop active process groups and durably mark them interrupted. */
     async shutdown(): Promise<void> {
         this.stopping = true;
+        this.clearRetentionPruneTimers();
         for (const timer of this.retryTimers.values()) {
             clearTimeout(timer);
         }
@@ -339,6 +347,81 @@ export class QaapJobRuntime {
             }
         }
         await this.persist();
+    }
+
+    /**
+     * Drop finished jobs/graphs outside the retention window or over the per-user cap.
+     * Never deletes active jobs or dependencies still required by active jobs.
+     */
+    pruneRetainedJobs(nowMs = Date.now()): { prunedJobs: number; prunedGraphs: number } {
+        const retentionDays = this.retentionDays();
+        const maxPerUser = this.maxJobsPerUser();
+        if (retentionDays <= 0 && maxPerUser <= 0) {
+            return { prunedJobs: 0, prunedGraphs: 0 };
+        }
+        const protectedIds = this.collectProtectedJobIds();
+        const cutoffMs = retentionDays > 0 ? nowMs - (retentionDays * 24 * 60 * 60 * 1000) : undefined;
+        const toDelete = new Set<string>();
+
+        const byOwner = new Map<string, QaapJob[]>();
+        for (const job of this.jobs.values()) {
+            const key = job.ownerLogin?.trim() || '__none__';
+            const bucket = byOwner.get(key);
+            if (bucket) {
+                bucket.push(job);
+            } else {
+                byOwner.set(key, [job]);
+            }
+        }
+
+        for (const jobs of byOwner.values()) {
+            const finished = jobs
+                .filter(job => isQaapJobFinished(job.state) && !protectedIds.has(job.id))
+                .sort((left, right) => this.jobAgeMs(right) - this.jobAgeMs(left));
+
+            if (cutoffMs !== undefined) {
+                for (const job of finished) {
+                    if (this.jobAgeMs(job) < cutoffMs) {
+                        toDelete.add(job.id);
+                    }
+                }
+            }
+
+            if (maxPerUser > 0 && jobs.length > maxPerUser) {
+                const keepFinished = finished.filter(job => !toDelete.has(job.id));
+                const activeCount = jobs.length - finished.length;
+                const finishedBudget = Math.max(0, maxPerUser - activeCount);
+                for (const job of keepFinished.slice(finishedBudget)) {
+                    toDelete.add(job.id);
+                }
+            }
+        }
+
+        for (const id of toDelete) {
+            this.removeJobRecord(id);
+        }
+
+        let prunedGraphs = 0;
+        for (const [graphId, persisted] of [...this.graphs.entries()]) {
+            const jobIds = Object.values(persisted.graph.jobsByKey);
+            const allGone = jobIds.length === 0 || jobIds.every(id => !this.jobs.has(id));
+            const allFinishedOrGone = jobIds.every(id => {
+                const job = this.jobs.get(id);
+                return !job || isQaapJobFinished(job.state);
+            });
+            const graphAge = persisted.graph.createdAt;
+            const graphExpired = cutoffMs !== undefined && graphAge < cutoffMs;
+            if (allGone || (allFinishedOrGone && graphExpired && jobIds.every(id => toDelete.has(id) || !this.jobs.has(id)))) {
+                this.removeGraphRecord(graphId);
+                prunedGraphs++;
+            }
+        }
+
+        if (toDelete.size > 0 || prunedGraphs > 0) {
+            console.info(`[qaap-jobs] pruned ${toDelete.size} job(s), ${prunedGraphs} graph(s)`);
+            void this.persist();
+        }
+        return { prunedJobs: toDelete.size, prunedGraphs };
     }
 
     protected normalizeRequest(request: QaapCreateJobRequest): NormalizedJobRequest {
@@ -1136,5 +1219,90 @@ export class QaapJobRuntime {
 
     protected maxLogChars(): number {
         return this.positiveEnv('QAAP_JOB_MAX_LOG_CHARS', DEFAULT_MAX_LOG_CHARS);
+    }
+
+    protected retentionDays(): number {
+        return this.envIntOr('QAAP_JOB_RETENTION_DAYS', DEFAULT_JOB_RETENTION_DAYS);
+    }
+
+    protected maxJobsPerUser(): number {
+        return this.envIntOr('QAAP_JOB_MAX_PER_USER', DEFAULT_JOB_MAX_PER_USER);
+    }
+
+    protected pruneIntervalMs(): number {
+        return this.positiveEnv('QAAP_JOB_PRUNE_INTERVAL_MS', DEFAULT_JOB_PRUNE_INTERVAL_MS);
+    }
+
+    protected envIntOr(name: string, fallback: number): number {
+        const raw = process.env[name]?.trim();
+        if (raw === undefined || raw === '') {
+            return fallback;
+        }
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    protected scheduleRetentionPrune(): void {
+        if (this.retentionDays() <= 0 && this.maxJobsPerUser() <= 0) {
+            return;
+        }
+        this.clearRetentionPruneTimers();
+        this.pruneStartTimer = setTimeout(() => {
+            void this.pruneRetainedJobs();
+            this.pruneIntervalTimer = setInterval(() => {
+                void this.pruneRetainedJobs();
+            }, this.pruneIntervalMs());
+            this.pruneIntervalTimer.unref?.();
+        }, JOB_PRUNE_START_DELAY_MS);
+        this.pruneStartTimer.unref?.();
+    }
+
+    protected clearRetentionPruneTimers(): void {
+        if (this.pruneStartTimer) {
+            clearTimeout(this.pruneStartTimer);
+            this.pruneStartTimer = undefined;
+        }
+        if (this.pruneIntervalTimer) {
+            clearInterval(this.pruneIntervalTimer);
+            this.pruneIntervalTimer = undefined;
+        }
+    }
+
+    protected jobAgeMs(job: QaapJob): number {
+        return job.finishedAt ?? job.createdAt;
+    }
+
+    protected collectProtectedJobIds(): Set<string> {
+        const protectedIds = new Set<string>();
+        for (const job of this.jobs.values()) {
+            if (!isQaapJobFinished(job.state)) {
+                protectedIds.add(job.id);
+                for (const dep of job.dependsOn) {
+                    protectedIds.add(dep);
+                }
+            }
+        }
+        return protectedIds;
+    }
+
+    protected removeJobRecord(id: string): void {
+        const job = this.jobs.get(id);
+        this.jobs.delete(id);
+        this.requests.delete(id);
+        this.logs.delete(id);
+        this.results.delete(id);
+        if (job?.idempotencyKey) {
+            this.idempotencyIndex.delete(this.ownerIdempotencyKey(job.ownerLogin, job.idempotencyKey));
+        }
+    }
+
+    protected removeGraphRecord(id: string): void {
+        const persisted = this.graphs.get(id);
+        this.graphs.delete(id);
+        if (persisted?.graph.idempotencyKey) {
+            this.graphIdempotencyIndex.delete(
+                this.ownerIdempotencyKey(persisted.graph.ownerLogin, persisted.graph.idempotencyKey),
+            );
+        }
     }
 }

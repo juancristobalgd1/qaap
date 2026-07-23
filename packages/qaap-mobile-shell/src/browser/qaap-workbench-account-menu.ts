@@ -7,6 +7,7 @@ import { CommandRegistry, nls } from '@theia/core/lib/common';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import type { WorkHubCatalogAction, WorkHubCatalogItem, WorkHubCatalogSection } from '../common/mobile-work-hub-catalog';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
+import { QAAP_MESSAGE_CIRCLE_ICON_CLASS } from '../common/qaap-scm-changes-icon';
 import { createSegmentedField } from './qaap-mobile-form-ui';
 
 export const QAAP_AUTH_SIGN_IN_GITHUB_COMMAND = 'qaap.auth.signInGithub';
@@ -204,7 +205,7 @@ export function openQaapAccountMenu(
                 {
                     id: 'agent',
                     label: nls.localize('qaap/mobileBottomBar/agents', 'Agents'),
-                    iconClass: 'codicon-comment-discussion',
+                    iconClass: QAAP_MESSAGE_CIRCLE_ICON_CLASS,
                 },
             ],
             value: viewToggle.activeId,

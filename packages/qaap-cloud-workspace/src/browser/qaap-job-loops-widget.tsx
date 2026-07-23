@@ -217,20 +217,89 @@ export class QaapJobLoopsWidget extends ReactWidget {
                     onSaveTemplate={request => this.saveTemplate(request)}
                     onClose={() => { this.builderOpen = false; this.editingTemplateId = undefined; this.builderError = undefined; this.update(); }}
                 />}
-                {this.activeView === 'runs' ? this.renderRuns() : this.renderManagement()}
+                {this.activeView === 'runs' ? (
+                    <div
+                        id='qaap-job-loops-panel-runs'
+                        role='tabpanel'
+                        aria-labelledby='qaap-job-loops-tab-runs'
+                    >
+                        {this.renderRuns()}
+                    </div>
+                ) : (
+                    <div
+                        id='qaap-job-loops-panel-automation'
+                        role='tabpanel'
+                        aria-labelledby='qaap-job-loops-tab-automation'
+                    >
+                        {this.renderManagement()}
+                    </div>
+                )}
             </div>
         );
     }
 
     protected renderNavigation(): React.ReactNode {
-        return <div className='qaap-job-loops-navigation' role='tablist' aria-label={nls.localize('qaap/jobLoops/views', 'Job loop views')}>
-            <button type='button' role='tab' aria-selected={this.activeView === 'runs'} onClick={() => { this.activeView = 'runs'; this.update(); }}>
+        const views: Array<'runs' | 'automation'> = ['runs', 'automation'];
+        return <div
+            className='qaap-job-loops-navigation'
+            role='tablist'
+            aria-label={nls.localize('qaap/jobLoops/views', 'Job loop views')}
+            onKeyDown={ev => this.handleNavigationKeyDown(ev, views)}
+        >
+            <button
+                type='button'
+                id='qaap-job-loops-tab-runs'
+                role='tab'
+                aria-selected={this.activeView === 'runs'}
+                aria-controls='qaap-job-loops-panel-runs'
+                tabIndex={this.activeView === 'runs' ? 0 : -1}
+                onClick={() => { this.activeView = 'runs'; this.update(); }}
+            >
                 {nls.localize('qaap/jobLoops/runsView', 'Runs')}
             </button>
-            <button type='button' role='tab' aria-selected={this.activeView === 'automation'} onClick={() => void this.openManagement()}>
+            <button
+                type='button'
+                id='qaap-job-loops-tab-automation'
+                role='tab'
+                aria-selected={this.activeView === 'automation'}
+                aria-controls='qaap-job-loops-panel-automation'
+                tabIndex={this.activeView === 'automation' ? 0 : -1}
+                onClick={() => void this.openManagement()}
+            >
                 {nls.localize('qaap/jobLoops/automationView', 'Templates and automation')}
             </button>
         </div>;
+    }
+
+    protected handleNavigationKeyDown(ev: React.KeyboardEvent<HTMLDivElement>, views: Array<'runs' | 'automation'>): void {
+        const current = views.indexOf(this.activeView);
+        if (current < 0) {
+            return;
+        }
+        let next = current;
+        if (ev.key === 'ArrowRight' || ev.key === 'ArrowDown') {
+            next = (current + 1) % views.length;
+        } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') {
+            next = (current - 1 + views.length) % views.length;
+        } else if (ev.key === 'Home') {
+            next = 0;
+        } else if (ev.key === 'End') {
+            next = views.length - 1;
+        } else {
+            return;
+        }
+        ev.preventDefault();
+        const target = views[next];
+        if (target === 'runs') {
+            this.activeView = 'runs';
+            this.update();
+        } else {
+            void this.openManagement();
+        }
+        requestAnimationFrame(() => {
+            const id = target === 'runs' ? 'qaap-job-loops-tab-runs' : 'qaap-job-loops-tab-automation';
+            document.getElementById(id)?.focus();
+        });
     }
 
     protected renderRuns(): React.ReactNode {

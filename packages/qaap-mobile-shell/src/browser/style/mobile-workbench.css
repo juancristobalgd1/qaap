@@ -30375,7 +30375,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
   .theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-head {
     min-height: 28px !important;
-    padding: 6px 8px !important;
+    padding: 6px 12px 6px 10px !important;
   }
 
   .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-body {
@@ -30390,8 +30390,8 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 /*
 || Turn-failure ("Task failed"): blend into the transcript when collapsed —
-|| no charcoal card, compact label + chevron. Expanded: light border + copy
-|| pinned to the far-right of the header row.
+|| no charcoal card, compact label + chevron. Expanded: light border; copy
+|| stays with the title cluster (not pinned to the card's far-right edge).
 */
 .theia-mobile-agent-shell-window.theia-mod-turn-failure,
 .theia-mobile-agent-shell-window.theia-mod-turn-failure.theia-mod-failed {
@@ -30440,7 +30440,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   display: flex;
   width: 100%;
   max-width: 100%;
-  padding: 6px 8px !important;
+  padding: 6px 12px 6px 10px !important;
   border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground, #fff) 8%, transparent) !important;
 }
 
@@ -30475,12 +30475,15 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-tail {
   order: 5;
-  margin-left: 4px;
+  /* Override the global `margin-left: auto !important` so copy sits after the
+     title/chevron instead of flush against the card's right edge. */
+  margin-left: 2px !important;
   gap: 2px;
 }
 
-.theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-tail {
-  margin-left: auto;
+.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-copy {
+  width: 28px;
+  height: 28px;
 }
 
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-state {

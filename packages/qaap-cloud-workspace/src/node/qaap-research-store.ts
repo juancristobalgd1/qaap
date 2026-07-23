@@ -7,6 +7,7 @@ import { Emitter, Event } from '@theia/core/lib/common/event';
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { writeJsonAtomicSync } from './qaap-write-json-atomic';
@@ -45,6 +46,9 @@ export class QaapResearchStore {
 
     protected readonly goals = new Map<string, ResearchGoal>();
     protected readonly ownerByGoalId = new Map<string, string>();
+    /** Serializes RMW ledger writes per repository so concurrent rounds never corrupt JSONL. */
+    protected readonly ledgerChains = new Map<string, Promise<void>>();
+    protected ledgerTempCounter = 0;
     protected readonly onDidChangeEmitter = new Emitter<void>();
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
 
@@ -151,10 +155,81 @@ export class QaapResearchStore {
 
     /** All records for `cwd`, oldest round first. Never cached — the runner is the only writer. */
     readLedger(cwd: string): ResearchExperimentRecord[] {
-        let raw: string;
+        return this.parseLedgerRaw(this.readLedgerRawSync(cwd));
+    }
+
+    /** Await pending writes for `cwd`, then read — use from HTTP handlers after async upserts. */
+    async readLedgerAsync(cwd: string): Promise<ResearchExperimentRecord[]> {
+        await this.ledgerChains.get(cwd);
+        return this.parseLedgerRaw(await this.readLedgerRawAsync(cwd));
+    }
+
+    /** {@link readLedger} scoped to one goal, in case two goals ever share a `cwd`. */
+    readLedgerForGoal(goal: ResearchGoal): ResearchExperimentRecord[] {
+        return this.readLedger(goal.cwd).filter(record => record.goalId === goal.id);
+    }
+
+    async readLedgerForGoalAsync(goal: ResearchGoal): Promise<ResearchExperimentRecord[]> {
+        return (await this.readLedgerAsync(goal.cwd)).filter(record => record.goalId === goal.id);
+    }
+
+    /**
+     * Upserts a record by id: same id as an existing row → rewritten in place (a round's record
+     * moves through `propose` → `run` → `measure` → `done` without changing identity); new id →
+     * appended. Writes are serialized per `cwd` and use async atomic rename so the event loop is
+     * not blocked on large ledgers.
+     */
+    async upsertRecord(cwd: string, record: ResearchExperimentRecord): Promise<void> {
+        return this.enqueueLedgerOp(cwd, async () => {
+            const records = this.parseLedgerRaw(await this.readLedgerRawAsync(cwd));
+            const index = records.findIndex(existing => existing.id === record.id);
+            const next = index >= 0
+                ? records.map((existing, i) => (i === index ? record : existing))
+                : [...records, record];
+            await this.writeLedgerAtomic(cwd, next);
+        });
+    }
+
+    bestSoFar(goal: ResearchGoal, metric: ResearchMetricSpec): number | undefined {
+        const values = this.readLedgerForGoal(goal)
+            .map(record => record.metrics.find(value => value.name === metric.name)?.value)
+            .filter((value): value is number => value !== undefined);
+        if (values.length === 0) {
+            return undefined;
+        }
+        return metric.direction === 'max' ? Math.max(...values) : Math.min(...values);
+    }
+
+    protected enqueueLedgerOp(cwd: string, op: () => Promise<void>): Promise<void> {
+        const previous = this.ledgerChains.get(cwd) ?? Promise.resolve();
+        const next = previous
+            .catch(() => undefined)
+            .then(op)
+            .catch(error => {
+                console.warn('[qaap-research] ledger write failed:', error instanceof Error ? error.message : error);
+            });
+        this.ledgerChains.set(cwd, next);
+        return next;
+    }
+
+    protected readLedgerRawSync(cwd: string): string {
         try {
-            raw = fs.readFileSync(this.ledgerPath(cwd), 'utf8');
+            return fs.readFileSync(this.ledgerPath(cwd), 'utf8');
         } catch {
+            return '';
+        }
+    }
+
+    protected async readLedgerRawAsync(cwd: string): Promise<string> {
+        try {
+            return await fsp.readFile(this.ledgerPath(cwd), 'utf8');
+        } catch {
+            return '';
+        }
+    }
+
+    protected parseLedgerRaw(raw: string): ResearchExperimentRecord[] {
+        if (!raw) {
             return [];
         }
         const records: ResearchExperimentRecord[] = [];
@@ -172,43 +247,18 @@ export class QaapResearchStore {
         return records;
     }
 
-    /** {@link readLedger} scoped to one goal, in case two goals ever share a `cwd`. */
-    readLedgerForGoal(goal: ResearchGoal): ResearchExperimentRecord[] {
-        return this.readLedger(goal.cwd).filter(record => record.goalId === goal.id);
-    }
-
-    /**
-     * Upserts a record by id: same id as an existing row → rewritten in place (a round's record
-     * moves through `propose` → `run` → `measure` → `done` without changing identity); new id →
-     * appended. The whole file is rewritten atomically so a crash mid-write can never leave a
-     * truncated/corrupt ledger — small files, correctness over throughput.
-     */
-    upsertRecord(cwd: string, record: ResearchExperimentRecord): void {
-        const records = this.readLedger(cwd);
-        const index = records.findIndex(existing => existing.id === record.id);
-        const next = index >= 0
-            ? records.map((existing, i) => (i === index ? record : existing))
-            : [...records, record];
-        this.writeLedgerAtomicSync(cwd, next);
-    }
-
-    bestSoFar(goal: ResearchGoal, metric: ResearchMetricSpec): number | undefined {
-        const values = this.readLedgerForGoal(goal)
-            .map(record => record.metrics.find(value => value.name === metric.name)?.value)
-            .filter((value): value is number => value !== undefined);
-        if (values.length === 0) {
-            return undefined;
-        }
-        return metric.direction === 'max' ? Math.max(...values) : Math.min(...values);
-    }
-
-    protected writeLedgerAtomicSync(cwd: string, records: readonly ResearchExperimentRecord[]): void {
+    protected async writeLedgerAtomic(cwd: string, records: readonly ResearchExperimentRecord[]): Promise<void> {
         const ledgerPath = this.ledgerPath(cwd);
-        fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
-        const tmp = `${ledgerPath}.${process.pid}.${Date.now()}.tmp`;
+        await fsp.mkdir(path.dirname(ledgerPath), { recursive: true });
+        const tmp = `${ledgerPath}.${process.pid}.${++this.ledgerTempCounter}.tmp`;
         const body = records.map(record => JSON.stringify(record)).join('\n');
-        fs.writeFileSync(tmp, records.length > 0 ? `${body}\n` : '', 'utf8');
-        fs.renameSync(tmp, ledgerPath);
+        try {
+            await fsp.writeFile(tmp, records.length > 0 ? `${body}\n` : '', 'utf8');
+            await fsp.rename(tmp, ledgerPath);
+        } catch (error) {
+            await fsp.rm(tmp, { force: true }).catch(() => undefined);
+            throw error;
+        }
     }
 
     // ---- persistence (goal metadata only — the ledger lives per-repo) ------

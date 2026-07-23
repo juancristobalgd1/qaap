@@ -13,6 +13,22 @@ import {
     type QaapAgentCliUpdateResult,
     type QaapAgentCliUpdatesResponse,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-cli-update';
+import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+
+/** Operator opt-in for in-place `npm install -g` on hosted/production backends. */
+export const QAAP_ALLOW_IN_PLACE_CLI_UPDATE = 'QAAP_ALLOW_IN_PLACE_CLI_UPDATE';
+
+/**
+ * Hosted/production: deny mutating global agent CLIs unless the operator opts in.
+ * Local/dev: allow (single-user box). Prefer rebuilding immutable images in cloud.
+ */
+export function isInPlaceCliUpdateAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+    if (!isQaapProductionRuntime(env)) {
+        return true;
+    }
+    const raw = env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE]?.trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
 
 /** npm registry GET timeout — boot toast must never block the backend event loop long. */
 const NPM_FETCH_TIMEOUT_MS = 4_000;
@@ -101,6 +117,10 @@ export class QaapAgentCliUpdateService {
         return !(raw === '0' || raw === 'false' || raw === 'off' || raw === 'no');
     }
 
+    isInPlaceCliUpdateAllowed(): boolean {
+        return isInPlaceCliUpdateAllowed();
+    }
+
     /** Outdated CLIs only — empty when check disabled or everything is current. */
     async listOutdated(): Promise<QaapAgentCliUpdatesResponse> {
         if (!this.isUpdateCheckEnabled()) {
@@ -117,9 +137,25 @@ export class QaapAgentCliUpdateService {
     /**
      * Best-effort in-place update for a whitelisted npm package.
      * QAIQ and unknown agents return a clear non-ok message (no shell injection — id is mapped).
+     * Hosted/production denies unless `QAAP_ALLOW_IN_PLACE_CLI_UPDATE` is set.
      */
     async installUpdate(agentId: string): Promise<QaapAgentCliUpdateResult> {
         const id = agentId.trim().toLowerCase();
+        if (!this.isUpdateCheckEnabled()) {
+            return {
+                ok: false,
+                id,
+                message: 'Agent CLI update checks are disabled (QAAP_AGENT_CLI_UPDATE_CHECK=0).',
+            };
+        }
+        if (!this.isInPlaceCliUpdateAllowed()) {
+            return {
+                ok: false,
+                id,
+                message: 'In-place CLI updates are disabled on hosted/production deployments. '
+                    + 'Rebuild the Qaap image with updated CLI pins (or set QAAP_ALLOW_IN_PLACE_CLI_UPDATE=1).',
+            };
+        }
         const tracked = TRACKED_AGENT_CLIS.find(entry => entry.id === id);
         if (!tracked) {
             return { ok: false, id, message: `Unknown agent CLI: ${agentId}` };
@@ -181,7 +217,7 @@ export class QaapAgentCliUpdateService {
                 latestVersion,
                 updateAvailable: true,
                 npmPackage: tracked.npmPackage,
-                updateSupported: !!tracked.npmPackage,
+                updateSupported: !!tracked.npmPackage && this.isInPlaceCliUpdateAllowed(),
             });
         }
         return { updates };

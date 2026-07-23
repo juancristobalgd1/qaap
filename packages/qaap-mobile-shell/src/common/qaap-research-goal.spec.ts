@@ -65,6 +65,7 @@ describe('qaap-research-goal', () => {
         expect(goal.runTimeoutMs).to.equal(DEFAULT_RESEARCH_RUN_TIMEOUT_MS);
         expect(goal.stagnationRounds).to.equal(DEFAULT_RESEARCH_STAGNATION_ROUNDS);
         expect(goal.infraFailureLimit).to.equal(DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT);
+        expect(goal.maxRounds).to.equal(20);
         expect(goal.metrics[0].minImprovement).to.equal(0);
         expect(goal.status).to.equal('running');
         expect(goal.createdAt).to.be.a('number');
@@ -107,16 +108,31 @@ describe('qaap-research-goal', () => {
     it('preserves caller-supplied overrides instead of defaults', () => {
         const goal = normalizeResearchGoal({
             id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
-            runTimeoutMs: 1000, stagnationRounds: 5, infraFailureLimit: 2,
+            runTimeoutMs: 120_000, stagnationRounds: 5, infraFailureLimit: 2,
             maxRounds: 10, deadlineAt: 123, createdAt: 42, status: 'completed',
         });
-        expect(goal.runTimeoutMs).to.equal(1000);
+        expect(goal.runTimeoutMs).to.equal(120_000);
         expect(goal.stagnationRounds).to.equal(5);
         expect(goal.infraFailureLimit).to.equal(2);
         expect(goal.maxRounds).to.equal(10);
         expect(goal.deadlineAt).to.equal(123);
         expect(goal.createdAt).to.equal(42);
         expect(goal.status).to.equal('completed');
+    });
+
+    it('rejects out-of-range timeouts, rounds and metric counts', () => {
+        expect(() => normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric], runTimeoutMs: 1000,
+        })).to.throw(/runTimeoutMs/);
+        expect(() => normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric], maxRounds: 0,
+        })).to.throw(/maxRounds/);
+        expect(() => normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd',
+            metrics: Array.from({ length: 6 }, (_, i) => ({
+                name: `m${i}`, direction: 'min' as const, metricCommand: 'echo 1',
+            })),
+        })).to.throw(/at most 5 metrics/);
     });
 
     it('passes through an explicit agentModel unchanged', () => {

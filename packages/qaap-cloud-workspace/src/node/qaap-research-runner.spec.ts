@@ -130,6 +130,8 @@ class FakeResearchStore {
         return (this.ledgers.get(goal.cwd) ?? []).filter(record => record.goalId === goal.id);
     }
 
+    /** Sync stand-in: returning void (not a Promise) keeps `persistRecord` from yielding a
+     *  microtask so tests can finish the propose task in the same turn as `callStartNewRound`. */
     upsertRecord(cwd: string, record: ResearchExperimentRecord): void {
         const list = this.ledgers.get(cwd) ?? [];
         const index = list.findIndex(existing => existing.id === record.id);
@@ -497,7 +499,7 @@ describe('QaapResearchRunner state machine', () => {
         const goal = makeGoal({ metrics: [METRIC] });
         store.seedGoal(goal);
         // Seed a prior, better round so the new measurement counts as a regression.
-        store.upsertRecord(goal.cwd, {
+        await store.upsertRecord(goal.cwd, {
             id: 'prior', goalId: goal.id, round: 1, startedAt: 0, hypothesis: 'h', declaredConfig: {}, declaredConfigFingerprint: 'fp-prior',
             realChangeFingerprint: 'rfp-prior',
             phase: 'done', metrics: [{ name: 'accuracy', value: 0.9, direction: 'max' }], verdict: 'improved',
@@ -1100,7 +1102,7 @@ describe('QaapResearchRunner state machine', () => {
             // a second propose task — unrelated to what this test actually checks (no re-probe).
             const goal = makeGoal({ metrics: [METRIC], maxRounds: 1 });
             store.seedGoal(goal);
-            store.upsertRecord(goal.cwd, {
+            await store.upsertRecord(goal.cwd, {
                 id: 'preflight-1', goalId: goal.id, round: 0, startedAt: 0, finishedAt: 0,
                 hypothesis: '(preflight)', declaredConfig: {}, declaredConfigFingerprint: '', realChangeFingerprint: '',
                 phase: 'done', metrics: [], notes: 'preflight ok', preflight: true,

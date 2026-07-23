@@ -260,6 +260,16 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: '"agentId" is required.' });
             return;
         }
+        // Hosted/production: any authenticated tenant must not mutate shared global CLIs.
+        if (!this.cliUpdates.isInPlaceCliUpdateAllowed()) {
+            res.status(403).json({
+                ok: false,
+                id: agentId,
+                message: 'In-place CLI updates are disabled on hosted/production deployments. '
+                    + 'Rebuild the Qaap image with updated CLI pins.',
+            });
+            return;
+        }
         try {
             const result = await this.cliUpdates.installUpdate(agentId);
             res.status(result.ok ? 200 : 400).json(result);

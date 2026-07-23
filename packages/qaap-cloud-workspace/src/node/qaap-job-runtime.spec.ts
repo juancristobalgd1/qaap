@@ -33,6 +33,8 @@ class TestableQaapJobRuntime extends QaapJobRuntime {
     testDirectory = '/tmp/qaap-job-runtime-test';
     globalLimit = 10;
     perUserLimit = 10;
+    retentionDaysValue = 30;
+    maxJobsPerUserValue = 500;
     readonly limits: Record<QaapJobResourceClass, number> = {
         cpu: 10,
         io: 10,
@@ -42,6 +44,13 @@ class TestableQaapJobRuntime extends QaapJobRuntime {
     };
 
     public exposeRestore(stored: unknown): void {
+        this.jobs.clear();
+        this.requests.clear();
+        this.logs.clear();
+        this.results.clear();
+        this.idempotencyIndex.clear();
+        this.graphs.clear();
+        this.graphIdempotencyIndex.clear();
         this.restorePersistedIndex(stored);
     }
 
@@ -51,6 +60,10 @@ class TestableQaapJobRuntime extends QaapJobRuntime {
 
     public exposePersist(): Promise<void> {
         return this.persist();
+    }
+
+    public exposePrune(nowMs?: number): { prunedJobs: number; prunedGraphs: number } {
+        return this.pruneRetainedJobs(nowMs);
     }
 
     public exposeResolveFunctionWorkspacePath(cwd: string, relativePath: string): Promise<string> {
@@ -75,6 +88,18 @@ class TestableQaapJobRuntime extends QaapJobRuntime {
 
     protected override resourceLimit(resourceClass: QaapJobResourceClass): number {
         return this.limits[resourceClass];
+    }
+
+    protected override retentionDays(): number {
+        return this.retentionDaysValue;
+    }
+
+    protected override maxJobsPerUser(): number {
+        return this.maxJobsPerUserValue;
+    }
+
+    protected override scheduleRetentionPrune(): void {
+        // Tests call pruneRetainedJobs explicitly.
     }
 }
 
@@ -514,5 +539,96 @@ describe('QaapJobRuntime', () => {
         } finally {
             fs.rmSync(temporaryRoot, { recursive: true, force: true });
         }
+    });
+
+    it('prunes finished jobs older than the retention window but keeps active jobs and their deps', () => {
+        const { runtime } = buildHarness();
+        runtime.retentionDaysValue = 7;
+        runtime.maxJobsPerUserValue = 0;
+        const now = Date.now();
+        const day = 24 * 60 * 60 * 1000;
+        runtime.exposeRestore({
+            version: 2,
+            jobs: [{
+                id: 'old', kind: 'command', title: 'old', command: 'echo', cwd: '/repo',
+                resourceClass: 'cpu', workspaceAccess: 'read', state: 'succeeded', dependsOn: [],
+                timeoutMs: 10_000, attempt: 1, createdAt: now - (30 * day), finishedAt: now - (30 * day),
+                ownerLogin: 'alice',
+            }, {
+                id: 'fresh', kind: 'command', title: 'fresh', command: 'echo', cwd: '/repo',
+                resourceClass: 'cpu', workspaceAccess: 'read', state: 'succeeded', dependsOn: [],
+                timeoutMs: 10_000, attempt: 1, createdAt: now - day, finishedAt: now - day,
+                ownerLogin: 'alice',
+            }, {
+                id: 'live', kind: 'command', title: 'live', command: 'sleep', cwd: '/repo',
+                resourceClass: 'cpu', workspaceAccess: 'write', state: 'queued', dependsOn: ['old'],
+                timeoutMs: 10_000, attempt: 0, createdAt: now, ownerLogin: 'alice',
+            }],
+            requests: {
+                live: {
+                    kind: 'command', title: 'live', command: 'sleep', cwd: '/repo',
+                    resourceClass: 'cpu', workspaceAccess: 'write', dependsOn: ['old'], timeoutMs: 10_000,
+                },
+            },
+            logs: { old: 'old-log', fresh: 'fresh-log', live: 'live-log' },
+            results: {},
+            graphs: [],
+        });
+
+        const report = runtime.exposePrune(now);
+        expect(report.prunedJobs).to.equal(0); // `old` is protected as a dependency of `live`
+        expect(runtime.get('old')).to.not.equal(undefined);
+        expect(runtime.get('fresh')).to.not.equal(undefined);
+        expect(runtime.get('live')).to.not.equal(undefined);
+
+        // Drop the active job so `old` becomes eligible for age prune.
+        runtime.exposeRestore({
+            version: 2,
+            jobs: [{
+                id: 'old', kind: 'command', title: 'old', command: 'echo', cwd: '/repo',
+                resourceClass: 'cpu', workspaceAccess: 'read', state: 'succeeded', dependsOn: [],
+                timeoutMs: 10_000, attempt: 1, createdAt: now - (30 * day), finishedAt: now - (30 * day),
+                ownerLogin: 'alice',
+            }, {
+                id: 'fresh', kind: 'command', title: 'fresh', command: 'echo', cwd: '/repo',
+                resourceClass: 'cpu', workspaceAccess: 'read', state: 'succeeded', dependsOn: [],
+                timeoutMs: 10_000, attempt: 1, createdAt: now - day, finishedAt: now - day,
+                ownerLogin: 'alice',
+            }],
+            requests: {},
+            logs: { old: 'old-log', fresh: 'fresh-log' },
+            results: {},
+            graphs: [],
+        });
+        const after = runtime.exposePrune(now);
+        expect(after.prunedJobs).to.equal(1);
+        expect(runtime.get('old')).to.equal(undefined);
+        expect(runtime.get('fresh')).to.not.equal(undefined);
+    });
+
+    it('enforces max finished jobs per user after age filtering', () => {
+        const { runtime } = buildHarness();
+        runtime.retentionDaysValue = 0;
+        runtime.maxJobsPerUserValue = 2;
+        const now = Date.now();
+        runtime.exposeRestore({
+            version: 2,
+            jobs: [1, 2, 3, 4].map(n => ({
+                id: `j${n}`, kind: 'command' as const, title: `j${n}`, command: 'echo', cwd: '/repo',
+                resourceClass: 'cpu' as const, workspaceAccess: 'read' as const, state: 'succeeded' as const,
+                dependsOn: [], timeoutMs: 10_000, attempt: 1,
+                createdAt: now - n * 1000, finishedAt: now - n * 1000, ownerLogin: 'bob',
+            })),
+            requests: {},
+            logs: {},
+            results: {},
+            graphs: [],
+        });
+        const report = runtime.exposePrune(now);
+        expect(report.prunedJobs).to.equal(2);
+        expect(runtime.get('j1')).to.not.equal(undefined);
+        expect(runtime.get('j2')).to.not.equal(undefined);
+        expect(runtime.get('j3')).to.equal(undefined);
+        expect(runtime.get('j4')).to.equal(undefined);
     });
 });

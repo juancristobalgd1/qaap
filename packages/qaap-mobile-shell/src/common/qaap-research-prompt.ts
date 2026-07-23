@@ -30,9 +30,7 @@ function bestPrimaryResult(
 
 function renderGoalSection(goal: ResearchGoal, records: readonly ResearchExperimentRecord[], primary: ResearchMetricSpec): string {
     const best = bestPrimaryResult(records, primary);
-    const roundsRemaining = goal.maxRounds !== undefined
-        ? `${Math.max(goal.maxRounds - records.length, 0)} of ${goal.maxRounds}`
-        : 'unbounded';
+    const roundsRemaining = `${Math.max(goal.maxRounds - records.length, 0)} of ${goal.maxRounds}`;
     return [
         '## Research goal',
         '',

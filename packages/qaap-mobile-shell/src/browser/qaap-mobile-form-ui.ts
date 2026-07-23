@@ -3,10 +3,15 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { createExecutionSurfaceIconElement } from '../common/qaap-scm-changes-icon';
+
 export interface QaapSegmentedOption<T extends string = string> {
     readonly id: T;
     readonly label: string;
-    /** Codicon name without the `codicon` prefix (e.g. `comment-discussion`). */
+    /**
+     * Icon class: a `codicon-*` glyph, or a custom Qaap SVG host such as
+     * `qaap-icon-message-circle`.
+     */
     readonly iconClass?: string;
 }
 
@@ -68,10 +73,7 @@ export function createSegmentedField<T extends string>(options: {
         btn.setAttribute('aria-label', segment.label);
         btn.setAttribute('role', 'tab');
         if (segment.iconClass) {
-            const icon = document.createElement('span');
-            icon.className = `codicon ${segment.iconClass}`;
-            icon.setAttribute('aria-hidden', 'true');
-            btn.append(icon);
+            btn.append(createExecutionSurfaceIconElement(segment.iconClass, ''));
             if (!options.iconOnly) {
                 const text = document.createElement('span');
                 text.className = 'theia-qaap-segmented-option-label';
@@ -107,9 +109,26 @@ export function createSegmentedField<T extends string>(options: {
     };
 }
 
-export function createFormFieldLabel(text: string): HTMLElement {
-    const label = document.createElement('div');
+export function createFormFieldLabel(text: string, options?: { readonly id?: string }): HTMLElement {
+    const label = document.createElement('label');
     label.className = 'theia-qaap-form-field-label';
     label.textContent = text;
+    if (options?.id) {
+        label.id = options.id;
+    }
     return label;
+}
+
+/** Associates a visual field label with its control for assistive tech. */
+export function wireFormFieldLabel(label: HTMLElement, control: HTMLElement): void {
+    if (!label.id) {
+        label.id = `qaap-form-label-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    if (!control.id) {
+        control.id = `${label.id}-control`;
+    }
+    if (label instanceof HTMLLabelElement) {
+        label.htmlFor = control.id;
+    }
+    control.setAttribute('aria-labelledby', label.id);
 }

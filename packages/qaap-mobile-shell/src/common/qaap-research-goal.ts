@@ -73,7 +73,8 @@ export interface ResearchGoal {
     /** Timeout for `runCommand`. Defaults to a generous multi-hour budget. */
     readonly runTimeoutMs: number;
     readonly metrics: readonly ResearchMetricSpec[];
-    readonly maxRounds?: number;
+    /** Hard cap on experiment rounds. Always set by {@link normalizeResearchGoal}. */
+    readonly maxRounds: number;
     readonly deadlineAt?: number;
     /** Consecutive non-improving rounds (excluding infra failures) before giving up. Default 3. */
     readonly stagnationRounds: number;
@@ -91,9 +92,59 @@ export interface ResearchGoal {
 /** Generous multi-hour default for the long-running `runCommand` (4 hours). */
 export const DEFAULT_RESEARCH_RUN_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
+export const MIN_RESEARCH_RUN_TIMEOUT_MS = 60_000;
+
+export const MAX_RESEARCH_RUN_TIMEOUT_MS = DEFAULT_RESEARCH_RUN_TIMEOUT_MS;
+
 export const DEFAULT_RESEARCH_STAGNATION_ROUNDS = 3;
 
 export const DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT = 3;
+
+export const DEFAULT_RESEARCH_MAX_ROUNDS = 20;
+
+export const MIN_RESEARCH_MAX_ROUNDS = 1;
+
+export const MAX_RESEARCH_MAX_ROUNDS = 50;
+
+export const MIN_RESEARCH_STAGNATION_ROUNDS = 1;
+
+export const MAX_RESEARCH_STAGNATION_ROUNDS = 100;
+
+export const MIN_RESEARCH_INFRA_FAILURE_LIMIT = 1;
+
+export const MAX_RESEARCH_INFRA_FAILURE_LIMIT = 100;
+
+export const MAX_RESEARCH_METRICS = 5;
+
+export const MAX_RESEARCH_COMMAND_CHARS = 16_384;
+
+/** Wall-clock deadline may be at most 7 days ahead of normalize time. */
+export const MAX_RESEARCH_DEADLINE_AHEAD_MS = 7 * 24 * 60 * 60 * 1000;
+
+function requireBoundedInteger(
+    value: number | undefined,
+    fallback: number,
+    min: number,
+    max: number,
+    label: string,
+): number {
+    const candidate = value === undefined ? fallback : value;
+    if (!Number.isSafeInteger(candidate) || candidate < min || candidate > max) {
+        throw new Error(`${label} must be an integer between ${min} and ${max}.`);
+    }
+    return candidate;
+}
+
+function requireCommand(value: string | undefined, label: string): string {
+    const trimmed = value?.trim() ?? '';
+    if (!trimmed) {
+        throw new Error(`${label} is required.`);
+    }
+    if (trimmed.length > MAX_RESEARCH_COMMAND_CHARS) {
+        throw new Error(`${label} exceeds the maximum length of ${MAX_RESEARCH_COMMAND_CHARS} characters.`);
+    }
+    return trimmed;
+}
 
 /**
  * Fills in defaults and validates a research goal. Exactly one metric ends up `primary: true`:
@@ -161,6 +212,9 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
     if (!input.metrics || input.metrics.length === 0) {
         throw new Error('ResearchGoal requires at least one metric.');
     }
+    if (input.metrics.length > MAX_RESEARCH_METRICS) {
+        throw new Error(`ResearchGoal supports at most ${MAX_RESEARCH_METRICS} metrics.`);
+    }
     if (input.agentModel && (!input.agentModel.provider?.trim() || !input.agentModel.modelId?.trim())) {
         throw new Error('ResearchGoal.agentModel requires a non-empty provider and modelId.');
     }
@@ -169,15 +223,40 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
     if (primaryCount > 1) {
         throw new Error('ResearchGoal must have exactly one primary metric, found more than one.');
     }
-    const metrics = input.metrics.map((metric, index) => ({
-        ...metric,
-        primary: primaryCount === 1 ? !!metric.primary : index === 0,
-        minImprovement: metric.minImprovement ?? 0,
-    }));
+    const metrics = input.metrics.map((metric, index) => {
+        const name = metric.name?.trim();
+        if (!name) {
+            throw new Error('ResearchGoal metrics require a non-empty name.');
+        }
+        if (metric.direction !== 'max' && metric.direction !== 'min') {
+            throw new Error(`ResearchGoal metric "${name}" requires direction "max" or "min".`);
+        }
+        return {
+            ...metric,
+            name,
+            metricCommand: requireCommand(metric.metricCommand, `ResearchGoal metric "${name}" metricCommand`),
+            primary: primaryCount === 1 ? !!metric.primary : index === 0,
+            minImprovement: metric.minImprovement ?? 0,
+        };
+    });
+
+    const runCommand = input.runCommand === undefined || input.runCommand === ''
+        ? undefined
+        : requireCommand(input.runCommand, 'ResearchGoal.runCommand');
 
     const createdAt = input.createdAt ?? Date.now();
     const status = input.status ?? 'running';
     const startedAt = input.startedAt ?? (status === 'running' ? createdAt : undefined);
+
+    let deadlineAt = input.deadlineAt;
+    if (deadlineAt !== undefined) {
+        if (!Number.isSafeInteger(deadlineAt) || deadlineAt <= 0) {
+            throw new Error('ResearchGoal.deadlineAt must be a positive integer timestamp.');
+        }
+        if (deadlineAt > Date.now() + MAX_RESEARCH_DEADLINE_AHEAD_MS) {
+            throw new Error(`ResearchGoal.deadlineAt cannot be more than ${MAX_RESEARCH_DEADLINE_AHEAD_MS}ms ahead.`);
+        }
+    }
 
     return {
         id: input.id,
@@ -185,13 +264,37 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
         agentId: input.agentId,
         description: input.description,
         agentModel: input.agentModel,
-        runCommand: input.runCommand,
-        runTimeoutMs: input.runTimeoutMs ?? DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
+        runCommand,
+        runTimeoutMs: requireBoundedInteger(
+            input.runTimeoutMs,
+            DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
+            MIN_RESEARCH_RUN_TIMEOUT_MS,
+            MAX_RESEARCH_RUN_TIMEOUT_MS,
+            'ResearchGoal.runTimeoutMs',
+        ),
         metrics,
-        maxRounds: input.maxRounds,
-        deadlineAt: input.deadlineAt,
-        stagnationRounds: input.stagnationRounds ?? DEFAULT_RESEARCH_STAGNATION_ROUNDS,
-        infraFailureLimit: input.infraFailureLimit ?? DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT,
+        maxRounds: requireBoundedInteger(
+            input.maxRounds,
+            DEFAULT_RESEARCH_MAX_ROUNDS,
+            MIN_RESEARCH_MAX_ROUNDS,
+            MAX_RESEARCH_MAX_ROUNDS,
+            'ResearchGoal.maxRounds',
+        ),
+        deadlineAt,
+        stagnationRounds: requireBoundedInteger(
+            input.stagnationRounds,
+            DEFAULT_RESEARCH_STAGNATION_ROUNDS,
+            MIN_RESEARCH_STAGNATION_ROUNDS,
+            MAX_RESEARCH_STAGNATION_ROUNDS,
+            'ResearchGoal.stagnationRounds',
+        ),
+        infraFailureLimit: requireBoundedInteger(
+            input.infraFailureLimit,
+            DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT,
+            MIN_RESEARCH_INFRA_FAILURE_LIMIT,
+            MAX_RESEARCH_INFRA_FAILURE_LIMIT,
+            'ResearchGoal.infraFailureLimit',
+        ),
         createdAt,
         startedAt,
         finishedAt: input.finishedAt,
