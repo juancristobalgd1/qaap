@@ -14,6 +14,12 @@ import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { resolveTranscriptWorkspaceRootUri } from './qaap-transcript-file-open';
 import type { TranscriptTerminalSurface } from './qaap-transcript-surface-types';
+import {
+    restoreOrCreateTranscriptTerminal,
+    sanitizeTranscriptTerminalPersistedWorkspace,
+    type TranscriptTerminalPersistedTerminal,
+    type TranscriptTerminalPersistedWorkspace,
+} from './qaap-transcript-terminal-restore';
 
 export interface TranscriptTerminalViewServices {
     resolveCwd(cwd: string): string;
@@ -25,18 +31,14 @@ export interface TranscriptTerminalViewServices {
 }
 
 export type { TranscriptTerminalSurface } from './qaap-transcript-surface-types';
+export {
+    restoreOrCreateTranscriptTerminal,
+    sanitizeTranscriptTerminalPersistedWorkspace,
+    type TranscriptTerminalPersistedTerminal,
+    type TranscriptTerminalPersistedWorkspace,
+} from './qaap-transcript-terminal-restore';
 
 const WORK_HUB_TERMINALS_STORAGE_KEY = 'qaap.workHub.terminals.v1';
-
-export interface TranscriptTerminalPersistedTerminal {
-    readonly terminalId: number;
-    readonly titleLabel?: string;
-}
-
-export interface TranscriptTerminalPersistedWorkspace {
-    readonly activeIndex: number;
-    readonly terminals: TranscriptTerminalPersistedTerminal[];
-}
 
 interface TranscriptTerminalPersistedStore {
     readonly version: 1;
@@ -216,24 +218,20 @@ export function createTranscriptTerminalViewServices(
             return cwd;
         },
         createTerminal: async cwd => terminalService.newTerminal(defaultTerminalOptions(cwd)),
-        restoreTerminal: async (cwd, state) => {
-            const terminal = await terminalService.newTerminal(defaultTerminalOptions(cwd));
-            if (state.titleLabel) {
-                terminal.title.label = state.titleLabel;
-                terminal.title.caption = state.titleLabel;
-            }
-            await terminal.start(state.terminalId);
-            return terminal;
-        },
+        restoreTerminal: async (cwd, state) => restoreOrCreateTranscriptTerminal(
+            () => terminalService.newTerminal(defaultTerminalOptions(cwd)),
+            state,
+        ),
         loadWorkspaceState: async workspaceKey => {
             const store = await loadStore();
-            return store.workspaces[workspaceKey];
+            return sanitizeTranscriptTerminalPersistedWorkspace(store.workspaces[workspaceKey]);
         },
         saveWorkspaceState: async (workspaceKey, state) => {
             const store = await loadStore();
             const workspaces = { ...store.workspaces };
-            if (state && state.terminals.length > 0) {
-                workspaces[workspaceKey] = state;
+            const sanitized = sanitizeTranscriptTerminalPersistedWorkspace(state);
+            if (sanitized && sanitized.terminals.length > 0) {
+                workspaces[workspaceKey] = sanitized;
             } else {
                 delete workspaces[workspaceKey];
             }

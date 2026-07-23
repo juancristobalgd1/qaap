@@ -41,6 +41,7 @@ import {
 } from '../common/qaap-dev-preview';
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors';
 import {
     buildQaapPreviewId,
     normalizeQaapPreviewConversationId,
@@ -2145,36 +2146,71 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         try {
-            const staging = createTranscriptTerminalStagingHost();
-            const surface = await createTranscriptTerminalSurface(staging, cwd, services);
-            const state = this.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey) ?? { surfaces: [], activeIndex: 0 };
-            state.surfaces.push(surface);
-            state.activeIndex = activateNewest ? state.surfaces.length - 1 : Math.max(0, state.activeIndex);
-            this.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
-            void this.persistTranscriptTerminalWorkspace(workspaceKey);
-            if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'terminal'
-                && this.resolveTranscriptWorkspaceKey(project, summary) === workspaceKey) {
-                this.renderTranscriptTerminalSlides(workspaceKey);
-            }
-        } catch (error) {
-            if (!host.isConnected) {
-                return;
-            }
-            const slider = this.host.transcriptTerminalSlider;
-            if (slider) {
-                slider.replaceChildren();
-            }
-            const note = document.createElement('div');
-            note.className = 'theia-mobile-transcript-terminal-error';
-            const message = error instanceof Error ? error.message : String(error);
-            note.textContent = services.localize(
-                'qaap/mobileProjects/transcriptTerminalFailed',
-                'Could not start the terminal: {0}',
-                message,
+            await this.mountFreshTranscriptTerminalSlide(
+                workspaceKey, cwd, services, project, summary, activateNewest,
             );
-            slider?.append(note);
-            console.error('[qaap-mobile-shell] transcript terminal failed', error);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            // Stale Work Hub PTY ids survive VPS/backend restarts in browser storage. Clear and retry once.
+            if (isTerminalDoesNotExistError(message)) {
+                try {
+                    await services.saveWorkspaceState(workspaceKey, undefined);
+                    await this.mountFreshTranscriptTerminalSlide(
+                        workspaceKey, cwd, services, project, summary, activateNewest,
+                    );
+                    return;
+                } catch (retryError) {
+                    this.showTranscriptTerminalError(host, services, retryError);
+                    return;
+                }
+            }
+            this.showTranscriptTerminalError(host, services, error);
         }
+    }
+
+    protected async mountFreshTranscriptTerminalSlide(
+        workspaceKey: TranscriptWorkspaceSurfaceKey,
+        cwd: string,
+        services: TranscriptTerminalViewServices,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        activateNewest: boolean,
+    ): Promise<void> {
+        const staging = createTranscriptTerminalStagingHost();
+        const surface = await createTranscriptTerminalSurface(staging, cwd, services);
+        const state = this.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey) ?? { surfaces: [], activeIndex: 0 };
+        state.surfaces.push(surface);
+        state.activeIndex = activateNewest ? state.surfaces.length - 1 : Math.max(0, state.activeIndex);
+        this.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
+        void this.persistTranscriptTerminalWorkspace(workspaceKey);
+        if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'terminal'
+            && this.resolveTranscriptWorkspaceKey(project, summary) === workspaceKey) {
+            this.renderTranscriptTerminalSlides(workspaceKey);
+        }
+    }
+
+    protected showTranscriptTerminalError(
+        host: HTMLElement,
+        services: TranscriptTerminalViewServices,
+        error: unknown,
+    ): void {
+        if (!host.isConnected) {
+            return;
+        }
+        const slider = this.host.transcriptTerminalSlider;
+        if (slider) {
+            slider.replaceChildren();
+        }
+        const note = document.createElement('div');
+        note.className = 'theia-mobile-transcript-terminal-error';
+        const message = error instanceof Error ? error.message : String(error);
+        note.textContent = services.localize(
+            'qaap/mobileProjects/transcriptTerminalFailed',
+            'Could not start the terminal: {0}',
+            message,
+        );
+        slider?.append(note);
+        console.error('[qaap-mobile-shell] transcript terminal failed', error);
     }
 
     /**
