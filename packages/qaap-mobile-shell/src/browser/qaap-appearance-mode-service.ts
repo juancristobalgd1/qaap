@@ -174,9 +174,9 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
         }
     }
 
-    protected resolveExistingThemeId(themeId: string): string {
+    protected resolveExistingThemeId(themeId?: string): string {
         const themes = this.themeService.getThemes();
-        if (themes.some(theme => theme.id === themeId)) {
+        if (themeId && themes.some(theme => theme.id === themeId)) {
             return themeId;
         }
         const wantLight = this.mode === 'light'
@@ -186,7 +186,7 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
             : QAAP_APPEARANCE_DEFAULT_DARK_THEME_ID;
         return themes.some(theme => theme.id === fallback)
             ? fallback
-            : (themes[0]?.id ?? themeId);
+            : (themes[0]?.id ?? themeId ?? '');
     }
 
     protected syncMediaListener(): void {
