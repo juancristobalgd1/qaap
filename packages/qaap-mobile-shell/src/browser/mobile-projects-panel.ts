@@ -713,6 +713,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected researchRefreshTimer: number | undefined;
     protected researchSheet: HTMLElement | undefined;
     protected researchInteractionLock = false;
+    protected researchExpandedGoalIds = new Set<string>();
     protected readonly chatServiceSessionSummariesByProjectId = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected executionTabOverflowMenu: HTMLElement | undefined;
     protected executionTabOverflowAnchor: HTMLElement | undefined;

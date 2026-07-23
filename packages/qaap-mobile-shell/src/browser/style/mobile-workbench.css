@@ -5761,6 +5761,136 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: flex;
   align-items: center;
   min-height: 52px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-hub-research-chevron {
+  flex: 0 0 12px;
+  width: 12px;
+  margin-left: 10px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--theia-descriptionForeground, var(--qaap-muted, #85816f));
+  opacity: 0.7;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.theia-mobile-hub-research-row.theia-mod-expanded .theia-mobile-hub-research-chevron {
+  transform: rotate(90deg);
+}
+
+.theia-mobile-hub-research-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 14px 12px 36px;
+  border-top: 1px solid var(--q-line-soft, var(--qaap-line-soft, color-mix(in srgb, var(--theia-foreground) 8%, transparent)));
+}
+
+.theia-mobile-hub-research-row.theia-mod-expanded .theia-mobile-hub-research-detail {
+  padding-top: 10px;
+}
+
+.theia-mobile-hub-research-detail-description {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
+  white-space: pre-wrap;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.theia-mobile-hub-research-detail-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.theia-mobile-hub-research-detail-summary-line {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.theia-mobile-hub-research-detail-empty {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+  font-style: italic;
+}
+
+.theia-mobile-hub-research-rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theia-mobile-hub-research-round {
+  border: 1px solid var(--q-line-soft, var(--qaap-line-soft, color-mix(in srgb, var(--theia-foreground) 8%, transparent)));
+  border-radius: var(--q-radius-sm, 8px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--theia-foreground) 2%, transparent);
+}
+
+.theia-mobile-hub-research-round-summary {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 550;
+  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
+  cursor: pointer;
+  list-style: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-hub-research-round-summary::-webkit-details-marker {
+  display: none;
+}
+
+.theia-mobile-hub-research-round-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+  border-top: 1px solid var(--q-line-soft, var(--qaap-line-soft, color-mix(in srgb, var(--theia-foreground) 6%, transparent)));
+}
+
+.theia-mobile-hub-research-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theia-mobile-hub-research-detail-field-label {
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+}
+
+.theia-mobile-hub-research-detail-field-value {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
+  white-space: pre-wrap;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.theia-mobile-hub-research-detail-field-value.theia-mod-pre {
+  font-family: var(--theia-monospace-font-family, ui-monospace, monospace);
+  font-size: 11px;
 }
 
 .theia-mobile-hub-research-row.theia-mod-running .theia-mobile-hub-research-meta {
@@ -5797,7 +5927,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  padding: 10px 0 10px 14px;
+  padding: 10px 0 10px 8px;
 }
 
 .theia-mobile-hub-research-title {
