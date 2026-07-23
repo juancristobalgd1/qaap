@@ -216,6 +216,54 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(icon?.querySelectorAll('path')).to.have.lengthOf(2);
     });
 
+    it('compareSessionsSidebarProjectOrder prefers current then most recent activity', () => {
+        const older = {
+            id: 'older',
+            name: 'Older',
+            isCurrent: false,
+            lastActiveAt: '2026-01-01T00:00:00.000Z',
+        } as MobileProjectEntry;
+        const newer = {
+            id: 'newer',
+            name: 'Newer',
+            isCurrent: false,
+            lastActiveAt: '2026-07-01T00:00:00.000Z',
+        } as MobileProjectEntry;
+        const current = {
+            id: 'current',
+            name: 'Current',
+            isCurrent: true,
+            lastActiveAt: '2026-02-01T00:00:00.000Z',
+        } as MobileProjectEntry;
+        const host = {
+            agentsHubSelectedProjectId: undefined,
+            conversationIndexUi: { countRunningTasks: () => 0 },
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        const ordered = [older, newer, current].sort((a, b) => ui.compareSessionsSidebarProjectOrder(a, b));
+        expect(ordered.map(p => p.id)).to.deep.equal(['current', 'newer', 'older']);
+    });
+
+    it('ensureSessionsSidebarActiveProjectExpanded keeps the selected project open after defaults', () => {
+        const selected = { id: 'selected', name: 'Selected', isCurrent: false } as MobileProjectEntry;
+        const other = { id: 'other', name: 'Other', isCurrent: false } as MobileProjectEntry;
+        const expanded = new Set<string>();
+        const host = {
+            agentsHubSelectedProjectId: 'selected',
+            sessionsSidebarExpandedProjectIds: expanded,
+            sessionsSidebarAccordionDefaultsApplied: true,
+            conversationIndexUi: { countRunningTasks: () => 0 },
+            resolveHomePinnedProject: () => undefined,
+            projects: [selected, other],
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+
+        ui.ensureSessionsSidebarActiveProjectExpanded([selected, other]);
+
+        expect(expanded.has('selected')).to.equal(true);
+        expect(expanded.has('other')).to.equal(false);
+    });
+
     it('openEmptyMobileChatSheet activates the card project on Agents hub landing', async () => {
         const cardProject = { id: 'card-proj', name: 'Card Repo', status: 'idle' } as MobileProjectEntry;
         const activated: string[] = [];

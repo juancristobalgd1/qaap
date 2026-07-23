@@ -316,7 +316,7 @@ export class MobileProjectsSessionsSidebarUi {
     }
 
     protected buildSessionsSidebarStructureFingerprint(): string {
-        const projects = [...this.host.projects].sort((a, b) => this.host.compareChatInboxProjectOrder(a, b));
+        const projects = [...this.host.projects].sort((a, b) => this.compareSessionsSidebarProjectOrder(a, b));
         const query = this.host.query.trim().toLowerCase();
         const pinnedGroups = this.collectSessionsSidebarPinnedGroups(projects, query);
         const visibleProjectGroupIds: string[] = [];
@@ -445,7 +445,7 @@ export class MobileProjectsSessionsSidebarUi {
     }
 
     protected collectSessionsSidebarConversationEntries(): SessionsSidebarConversationEntry[] {
-        const projects = [...this.host.projects].sort((a, b) => this.host.compareChatInboxProjectOrder(a, b));
+        const projects = [...this.host.projects].sort((a, b) => this.compareSessionsSidebarProjectOrder(a, b));
         const query = this.host.query.trim().toLowerCase();
         const bypassConversationLimit = query.length > 0;
         const onActivate = (): void => {
@@ -538,7 +538,7 @@ export class MobileProjectsSessionsSidebarUi {
             ?? this.host.resolveHomePinnedProject();
     }
     renderWorkHubSessionsSidebarList(host: HTMLElement): void {
-        const projects = [...this.host.projects].sort((a, b) => this.host.compareChatInboxProjectOrder(a, b));
+        const projects = [...this.host.projects].sort((a, b) => this.compareSessionsSidebarProjectOrder(a, b));
         const query = this.host.query.trim().toLowerCase();
         if (projects.length === 0) {
             const empty = document.createElement('p');
@@ -553,6 +553,7 @@ export class MobileProjectsSessionsSidebarUi {
             this.host.sessionsSidebar?.hideForMobileOverlay();
         };
         this.seedSessionsSidebarAccordionDefaults(projects);
+        this.ensureSessionsSidebarActiveProjectExpanded(projects);
         const pinnedGroups = this.collectSessionsSidebarPinnedGroups(projects, query);
         const bypassConversationLimit = query.length > 0;
         if (pinnedGroups.length > 0) {
@@ -874,6 +875,56 @@ export class MobileProjectsSessionsSidebarUi {
         if (projects.length > 0 && this.host.sessionsSidebarExpandedProjectIds.size === 0) {
             this.host.sessionsSidebarExpandedProjectIds.add(projects[0].id);
         }
+    }
+
+    /**
+     * Keep the active Work Hub project expanded on every paint (current workspace / selected
+     * Agents hub project / running tasks). Defaults only seed once; this follows project switches.
+     */
+    ensureSessionsSidebarActiveProjectExpanded(projects: MobileProjectEntry[]): void {
+        const selectedId = this.host.agentsHubSelectedProjectId;
+        for (const project of projects) {
+            if (
+                project.isCurrent
+                || project.id === selectedId
+                || this.host.conversationIndexUi.countRunningTasks(project) > 0
+            ) {
+                this.host.sessionsSidebarExpandedProjectIds.add(project.id);
+            }
+        }
+        const active = this.resolveWorkHubSessionsSidebarProject();
+        if (active && projects.some(project => project.id === active.id)) {
+            this.host.sessionsSidebarExpandedProjectIds.add(active.id);
+        }
+    }
+
+    /**
+     * Sidebar project order: active work first, then most recently used.
+     * Unlike the Agents inbox comparator, alphabetical name is only a tie-breaker.
+     */
+    compareSessionsSidebarProjectOrder(a: MobileProjectEntry, b: MobileProjectEntry): number {
+        const aRunning = this.host.conversationIndexUi.countRunningTasks(a) > 0 ? 1 : 0;
+        const bRunning = this.host.conversationIndexUi.countRunningTasks(b) > 0 ? 1 : 0;
+        if (aRunning !== bRunning) {
+            return bRunning - aRunning;
+        }
+        if (a.isCurrent !== b.isCurrent) {
+            return a.isCurrent ? -1 : 1;
+        }
+        const selectedId = this.host.agentsHubSelectedProjectId;
+        const aSelected = selectedId && a.id === selectedId ? 1 : 0;
+        const bSelected = selectedId && b.id === selectedId ? 1 : 0;
+        if (aSelected !== bSelected) {
+            return bSelected - aSelected;
+        }
+        const aTime = a.lastActiveAt ? Date.parse(a.lastActiveAt) : NaN;
+        const bTime = b.lastActiveAt ? Date.parse(b.lastActiveAt) : NaN;
+        const aValid = Number.isFinite(aTime) ? aTime : 0;
+        const bValid = Number.isFinite(bTime) ? bTime : 0;
+        if (aValid !== bValid) {
+            return bValid - aValid;
+        }
+        return a.name.localeCompare(b.name);
     }
     createSessionsSidebarProjectGroup(
         project: MobileProjectEntry,

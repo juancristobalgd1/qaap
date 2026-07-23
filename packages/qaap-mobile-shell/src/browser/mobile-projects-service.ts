@@ -878,7 +878,10 @@ export class MobileProjectsService {
             entries.push(entry);
         }
 
-        const githubProjects = await this.loadGithubProjects(sessionMap, true);
+        // Only GitHub repos already opened/cloned into Qaap (sessions + current), not the full
+        // remote catalog — Work Hub / sidebar are "projects in the app", not a GitHub browser.
+        // Full catalog remains available via {@link listGithubRepositories} (Open repository dialog).
+        const githubProjects = await this.loadGithubProjects(sessionMap, false);
         for (const project of githubProjects) {
             if (hiddenIds.has(project.id) || entries.some(entry => entry.id === project.id)) {
                 continue;
