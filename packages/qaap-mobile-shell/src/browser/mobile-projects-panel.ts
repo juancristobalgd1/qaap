@@ -410,6 +410,8 @@ export interface MobileProjectsPanelOptions {
     readPreference?: (key: string) => unknown;
     /** User preferences — MCP plugin install/remove from the composer slash menu. */
     preferenceService?: PreferenceService;
+    /** Light / Dark / System mode for the sessions sidebar foot switch. */
+    appearanceModeService?: import('./qaap-appearance-mode-service').QaapAppearanceModeService;
     /** Registered BYOK language models from AI Configuration (same source as the agents UI). */
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
     /** Monaco quick input — Work Hub search opens as a top overlay instead of an inline field. */
@@ -752,6 +754,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly previewClipboard: MobileProjectsPanelOptions['clipboard'];
     protected readonly readPreference: MobileProjectsPanelOptions['readPreference'];
     protected readonly preferenceService: PreferenceService | undefined;
+    readonly appearanceModeService: MobileProjectsPanelOptions['appearanceModeService'];
     protected readonly getRegisteredLanguageModels: MobileProjectsPanelOptions['getRegisteredLanguageModels'];
     protected readonly quickInputService: QuickInputService | undefined;
     protected readonly commitMessageAi: MobileProjectsPanelOptions['commitMessageAi'];
@@ -887,6 +890,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.previewClipboard = options.clipboard;
         this.readPreference = options.readPreference;
         this.preferenceService = options.preferenceService;
+        this.appearanceModeService = options.appearanceModeService;
         this.getRegisteredLanguageModels = options.getRegisteredLanguageModels;
         this.quickInputService = options.quickInputService;
         this.commitMessageAi = options.commitMessageAi;
@@ -921,10 +925,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
      * The bootstrap just opened/navigated the IDE mini-browser preview widget. While the Work Hub
      * is the foreground surface that widget sits hidden behind the hub overlay and is suspended to
      * `about:blank`, so every "Open preview" affordance looked like a silent no-op. Mirror the
-     * navigation into the hub's own Preview tab — the same surface as "Change view → Preview".
+     * navigation into the hub's own Preview tab — but only for explicit user-initiated opens
+     * (pill / link / manual). Agent/auto paths must not yank the transcript to Browser.
      */
-    protected readonly onBootstrapPreviewOpened = (): void => {
+    protected readonly onBootstrapPreviewOpened = (event: Event): void => {
         if (!this.visible || !this.agentsHubShellActive) {
+            return;
+        }
+        const detail = (event as CustomEvent<{ userInitiated?: boolean }>).detail;
+        // Explicit false = agent/auto path. Missing detail = legacy user focusPreview.
+        if (detail?.userInitiated === false) {
             return;
         }
         const state = this.transcriptController.state;

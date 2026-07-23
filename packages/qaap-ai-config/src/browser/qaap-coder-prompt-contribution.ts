@@ -81,7 +81,7 @@ Live bootstrap context is also available as **#${QAAP_BOOTSTRAP_VARIABLE.name}**
 1. **~{${QAAP_BOOTSTRAP_STATUS_TOOL_ID}}** — inspect phase, \`needsInstall\`, \`previewUrl\`, terminal failures, and errors before acting.
 2. If \`needsInstall\` is true or dependencies changed, run **~{${QAAP_BOOTSTRAP_INSTALL_TOOL_ID}}** and wait until phase is \`ready-to-run\` (install may chain into dev automatically).
 3. **~{${QAAP_BOOTSTRAP_RUN_DEV_TOOL_ID}}** — start or restart the dev server when install is not required.
-4. **~{${QAAP_BOOTSTRAP_OPEN_PREVIEW_TOOL_ID}}** — open or focus the in-IDE preview tab once a URL is available.
+4. **~{${QAAP_BOOTSTRAP_OPEN_PREVIEW_TOOL_ID}}** — stage the preview URL once available and report it as a clickable link. Never switch the user's view; they open Preview via the Open preview control.
 5. **~{${QAAP_PICK_ELEMENT_TOOL_ID}}** — activate the DOM picker in the preview to anchor visual edits (returns element path and HTML).
 
 After each UI edit cycle, **re-run dev and open preview** so changes are visible. Do not assume hot reload fixed everything without checking \`qaap_bootstrap_status\`.`;

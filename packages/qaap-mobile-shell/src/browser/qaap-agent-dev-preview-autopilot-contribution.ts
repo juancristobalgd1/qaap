@@ -149,7 +149,9 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             workspaceRoot: conversation.parallelBaseCwd ?? conversation.cwd,
         });
         if (readyUrl) {
-            await this.bootstrap.focusPreview().catch(() => undefined);
+            // Mount the preview widget for headless capture without yanking the Work Hub surface
+            // to Browser/Preview — the user opens that tab only via an explicit affordance.
+            await this.bootstrap.openPreview(readyUrl, true, { silent: true }).catch(() => undefined);
             // Work Hub normally suspends preview iframes to avoid background HMR traffic. Resume
             // them only for this bounded capture, then restore the normal shell policy.
             resumeQaapMiniBrowserPreview(this.shell);

@@ -435,7 +435,11 @@ export class MobileProjectsStickyComposerColumnUi {
             lastSubmitDraft = draft;
             playStickyComposerSendFly(sendBtn);
             recordStickyComposerPromptSubmission(input, draft);
-            input.value = '';
+            if (syntaxHighlight) {
+                syntaxHighlight.syncInputValue('');
+            } else {
+                input.value = '';
+            }
             options.setDraft('');
             updateSend();
             try {

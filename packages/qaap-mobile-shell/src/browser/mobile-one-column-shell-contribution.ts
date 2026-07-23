@@ -60,6 +60,7 @@ import { MobileProjectsConversationFlags } from './mobile-projects-conversation-
 import { MobileProjectsService } from './mobile-projects-service';
 import { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
+import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
@@ -246,6 +247,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     @inject(PreferenceService)
     protected readonly preferenceService: PreferenceService;
+
+    @inject(QaapAppearanceModeService)
+    protected readonly appearanceModeService: QaapAppearanceModeService;
 
     @inject(MCPFrontendService) @optional()
     protected readonly mcpFrontendService?: MCPFrontendService;
@@ -442,6 +446,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 elementInspectorService: this.elementInspectorService,
                 clipboardService: this.clipboardService,
                 preferenceService: this.preferenceService,
+                appearanceModeService: this.appearanceModeService,
                 mcpFrontendService: this.mcpFrontendService,
                 languageModelRegistry: this.languageModelRegistry,
                 commitMessageAi: this.commitMessageAi,

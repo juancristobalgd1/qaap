@@ -5,7 +5,7 @@
 
 /**
  * Agent CLI "Update Available" toast — T3-inspired card: white/rounded, provider logo with
- * download badge, Settings (outline) + Update (primary), dismiss X.
+ * download badge, Cancel (outline) + Update (primary), dismiss X.
  */
 
 .qaap-agent-cli-update-toast {

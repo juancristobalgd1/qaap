@@ -150,6 +150,41 @@ describe('qaap-sticky-composer-popover', () => {
         expect(popover.style.left).to.equal('156px');
     });
 
+    it('centers fixed popovers horizontally when align is center', () => {
+        const visualViewport = Object.assign(new window.EventTarget(), {
+            offsetTop: 0,
+            offsetLeft: 0,
+            width: 395,
+            height: 700,
+        });
+        Object.defineProperty(window, 'visualViewport', {
+            configurable: true,
+            value: visualViewport,
+        });
+        const anchor = document.createElement('button');
+        const popover = document.createElement('div');
+        Object.defineProperties(popover, {
+            offsetWidth: { configurable: true, value: 360 },
+            offsetHeight: { configurable: true, value: 200 },
+        });
+        anchor.getBoundingClientRect = () => ({
+            top: 40,
+            right: 80,
+            bottom: 70,
+            left: 12,
+            width: 68,
+            height: 30,
+            x: 12,
+            y: 40,
+            toJSON: () => undefined,
+        });
+
+        positionStickyComposerPopover(popover, anchor, 'center', 360);
+
+        expect(popover.style.left).to.equal('17.5px');
+        expect(popover.style.top).to.equal('76px');
+    });
+
     it('coalesces visual viewport changes and stops observing on cleanup', () => {
         const visualViewport = Object.assign(new window.EventTarget(), {
             offsetTop: 0,

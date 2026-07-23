@@ -55,6 +55,7 @@ import { MobileOneColumnShellContribution } from './mobile-one-column-shell-cont
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
+import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 import { MobileEditorGestureContribution } from './mobile-editor-gesture-contribution';
 import { QaapEmptyWorkbenchBrandingContribution } from './qaap-empty-workbench-branding-contribution';
 import { QaapWatermarkCommandsContribution } from './qaap-watermark-commands-contribution';
@@ -192,6 +193,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(CommandContribution).toService(MobileOnboardingTutorialContribution);
     bind(MobileThemeChromeContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileThemeChromeContribution);
+    bind(QaapAppearanceModeService).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapAppearanceModeService);
     bind(MobileEditorGestureContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileEditorGestureContribution);
 

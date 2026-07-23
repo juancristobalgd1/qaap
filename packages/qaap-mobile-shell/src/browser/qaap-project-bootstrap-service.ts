@@ -943,17 +943,20 @@ export class QaapProjectBootstrapService {
      * When the dev port is already bound, probe common ports and open the preview against the
      * server that is already listening instead of asking the user to free the port first.
      */
-    async openExistingPreview(): Promise<void> {
-        // User-initiated: if a ready URL was staged by the auto-open gate (agent turn was still
-        // streaming), attach reports success without navigating — honor the tap and open it now.
+    async openExistingPreview(options?: { auto?: boolean }): Promise<void> {
+        // Default (user tap): if a ready URL was staged by the auto-open gate, honor the tap and
+        // open it now. Agent/tool callers pass `{ auto: true }` to stage without navigating.
         if (this._previewUrl) {
-            await this.openPreview(this._previewUrl);
+            await this.openPreview(this._previewUrl, true, options);
             this._error = undefined;
             this._portConflictDetected = false;
             this._portConflictPort = undefined;
             return;
         }
         const plan = this.resolveDevPlan();
+        // Attach path already uses `{ auto: true }` via recordForwardedPort → openPreview, so it
+        // stages when the gate forbids navigation (agent/tool). User taps with a staged URL hit
+        // the branch above and navigate via openPreview without auto.
         const attached = await this.tryAttachToExistingServer(this.collectProbePorts(plan));
         if (attached) {
             this._error = undefined;
@@ -1217,11 +1220,10 @@ export class QaapProjectBootstrapService {
     }
 
     /**
-     * Transcript UI hook: while a watched agent turn is still streaming, automatic preview opens
-     * (port detected, warmup, attach) must not yank the user away from the live transcript. When
-     * the gate returns false, the ready preview is STAGED — state flips to `running` with the URL
-     * recorded, the transcript listener shows the "Preview ready · Open preview" pill — and the
-     * actual navigation happens on user tap or at turn settle. User-initiated opens ignore the gate.
+     * Transcript UI hook: automatic preview opens (port detected, warmup, attach) must not yank
+     * the user away from the live transcript. When the gate returns false, the ready preview is
+     * STAGED — state flips to `running` with the URL recorded and the "Open preview" pill appears —
+     * and navigation happens only on an explicit user tap. User-initiated opens ignore the gate.
      */
     setPreviewAutoOpenGate(gate: (() => boolean) | undefined): void {
         this.previewAutoOpenGate = gate;
@@ -1621,7 +1623,18 @@ export class QaapProjectBootstrapService {
         await this.miniBrowser.openPreview(url);
     }
 
-    protected async openPreview(url: string, isPrimary: boolean = true, options?: { auto?: boolean }): Promise<void> {
+    /**
+     * Open or stage a preview URL.
+     * - `{ auto: true }` + gate closed → stage URL / Open-preview pill only (no navigation).
+     * - `{ silent: true }` → mount the widget for capture without mirroring into the Work Hub tab.
+     * - default (user tap / focusPreview) → navigate and emit `qaap-bootstrap-preview-opened`
+     *   with `userInitiated: true` so the hub Preview tab can mirror the open.
+     */
+    async openPreview(
+        url: string,
+        isPrimary: boolean = true,
+        options?: { auto?: boolean; silent?: boolean },
+    ): Promise<void> {
         // Re-claim the target port right before opening: claims are TTL'd server-side and the
         // proxy fails closed, so an open without a live claim 403s the owner's own preview.
         const targetPortForClaim = this.extractPort(url);
@@ -1630,8 +1643,7 @@ export class QaapProjectBootstrapService {
         }
         if (options?.auto && !this.mayAutoOpenPreviewNow()) {
             // Stage instead of navigating: record the ready URL and flip to `running` so the
-            // transcript listener offers the "Open preview" pill; the user (or turn settle)
-            // performs the actual navigation.
+            // transcript listener offers the "Open preview" pill; the user performs navigation.
             this._previewUrl = url;
             this.persistPhase('running');
             this.setPhase('running');
@@ -1650,8 +1662,10 @@ export class QaapProjectBootstrapService {
             this.persistPhase('running');
             this.setPhase('running');
             this.syncHubSession('running');
-            if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('qaap-bootstrap-preview-opened', { detail: { url } }));
+            if (typeof window !== 'undefined' && !options?.silent) {
+                window.dispatchEvent(new CustomEvent('qaap-bootstrap-preview-opened', {
+                    detail: { url, userInitiated: !options?.auto },
+                }));
             }
             this.syncMiniBrowserPreviewSuspensionAfterOpen();
         } catch (e) {

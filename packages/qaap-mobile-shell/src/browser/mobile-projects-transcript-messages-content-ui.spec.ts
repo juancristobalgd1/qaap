@@ -14,6 +14,7 @@ import {
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-streaming-markdown-view';
 import {
     extractTranscriptPreviewId,
+    isTranscriptPreviewHrefShellSelf,
     MobileProjectsTranscriptMessagesContentUi,
     normalizeTranscriptPreviewHref,
     TRANSCRIPT_STREAMING_HYBRID_CLASS,
@@ -177,6 +178,55 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         expect(normalizeTranscriptPreviewHref('https://example.com/dashboard', origin)).to.equal(undefined);
         expect(normalizeTranscriptPreviewHref('/qaap-preview/api/probe', origin)).to.equal(undefined);
         expect(normalizeTranscriptPreviewHref(`ftp://${previewId}.preview.qaap.example/`, origin)).to.equal(undefined);
+    });
+
+    it('isTranscriptPreviewHrefShellSelf detects the IDE URL itself', () => {
+        const origin = 'http://localhost:3000';
+        expect(isTranscriptPreviewHrefShellSelf('http://localhost:3000', origin)).to.equal(true);
+        expect(isTranscriptPreviewHrefShellSelf('http://localhost:3000/', origin)).to.equal(true);
+        expect(isTranscriptPreviewHrefShellSelf('http://127.0.0.1:3000', origin)).to.equal(true);
+        expect(isTranscriptPreviewHrefShellSelf('http://localhost:5173', origin)).to.equal(false);
+        expect(isTranscriptPreviewHrefShellSelf('/qaap-dev/5173/', origin)).to.equal(false);
+        expect(isTranscriptPreviewHrefShellSelf('/qaap-preview/project-run-abc/', origin)).to.equal(false);
+    });
+
+    it('openTranscriptPreviewUrlFromLink treats shell-self links as already-here', async () => {
+        let selectedTab = '';
+        let snackbarKind: string | undefined;
+        const host = {
+            transcriptComposerSummary: { id: 'conversation' },
+            transcriptOpenSummary: { id: 'conversation' },
+            transcriptOpenProject: { id: 'project', name: 'Project' },
+            projects: [{ id: 'project', name: 'Project' }],
+            projectsService: {
+                recordProjectPreviewUrl: async (): Promise<void> => undefined,
+            },
+            executionSurfaceTabsUi: {
+                selectTranscriptTab: (tab: string): void => {
+                    selectedTab = tab;
+                },
+            },
+            transcriptPreviewRequestPending: false,
+            transcriptPreviewRequestRunning: false,
+        };
+        const ui = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        (ui as unknown as { previewPublicOrigin: () => string }).previewPublicOrigin = () => 'http://localhost:3000';
+        const snackbar = MobileSnackbar as typeof MobileSnackbar & { show: typeof MobileSnackbar.show };
+        const originalShow = snackbar.show;
+        let shown = false;
+        snackbar.show = (_message, options) => {
+            shown = true;
+            snackbarKind = options?.kind;
+        };
+        try {
+            const opened = await ui.openTranscriptPreviewUrlFromLink('http://localhost:3000');
+            expect(opened).to.equal(true);
+            expect(selectedTab).to.equal('');
+            expect(shown).to.equal(true);
+            expect(snackbarKind === undefined || snackbarKind === 'default').to.equal(true);
+        } finally {
+            snackbar.show = originalShow;
+        }
     });
 
     it('linkifies previewId URLs returned as plain agent text', () => {

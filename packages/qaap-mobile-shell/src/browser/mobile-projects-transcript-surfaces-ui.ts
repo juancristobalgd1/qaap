@@ -27,7 +27,6 @@ import { resolveTranscriptWorkspaceCwd, isTranscriptWorkspaceFilesystemPath } fr
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
 import {
-    conversationMayAutoOpenTranscriptPreview,
     conversationShouldWatchDevPreview,
     findTranscriptPreviewUrlFromConversation,
     previewPageTitleMatchesProjectName,
@@ -1338,15 +1337,15 @@ export class MobileProjectsTranscriptSurfacesUi {
                     ? updatedProject
                     : this.host.transcriptOpenProject;
                 void this.host.projectsService.recordProjectPreviewUrl(updatedProject, normalized).catch(() => undefined);
-                if (!conversationMayAutoOpenTranscriptPreview(conv)) {
-                    this.stageTranscriptPreviewReadyUrl(conversationScopeId, normalized);
-                } else if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
+                // Never auto-switch to Preview. If the user is already on that tab, mount the
+                // iframe in place; otherwise only stage the Open-preview pill / ready offer.
+                if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
                     const host = this.executionPreviewHost();
                     if (host) {
                         void this.tryMountProjectScopedPreview(host, project, summary, updatedProject, normalized);
                     }
                 } else {
-                    void this.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(normalized);
+                    this.stageTranscriptPreviewReadyUrl(conversationScopeId, normalized);
                 }
             } else if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
                 this.updateTranscriptPreviewRunButtonState(conv);
@@ -1448,18 +1447,11 @@ export class MobileProjectsTranscriptSurfacesUi {
             return;
         }
         const onPreviewTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject) === 'preview';
-        const previewRequestInFlight = this.host.transcriptPreviewRequestRunning
-            || this.host.transcriptPreviewRequestPending;
-        if (!onPreviewTab && !previewRequestInFlight) {
+        // Never auto-switch to Preview because a prompt matched "run the app" / pending bootstrap.
+        // Staging + the composer Open preview pill stay on Chat; the header play control only
+        // belongs on the Preview tab after an explicit user navigation (pill / link / tab).
+        if (!onPreviewTab) {
             return;
-        }
-        if (!onPreviewTab && previewRequestInFlight) {
-            // Submit / conversation-open paths may force Messages mid-request; keep Preview
-            // selected so the header play control never leaves the chrome while starting preview.
-            this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(openProject, 'preview');
-            this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('preview');
-            this.host.root.classList.toggle('theia-mod-project-surface-chat', false);
-            this.host.root.classList.toggle('theia-mod-project-surface-tools', true);
         }
         let button = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-run');
         if (!button) {

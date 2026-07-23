@@ -245,4 +245,85 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             composerHost.remove();
         }
     });
+
+    it('onTranscriptUserMessageSubmitted sets preview pending without switching execution tab', () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        let activeTab: 'messages' | 'preview' = 'messages';
+        const setExecutionSurfaceTabCalls: Array<'messages' | 'preview'> = [];
+        const showOnlyExecutionSurfaceTabCalls: Array<'messages' | 'preview'> = [];
+        let beginPreviewCalls = 0;
+        const host = createHost(chatHost, composerHost);
+        host.transcriptOpenSummaryId = 'conv-preview';
+        host.transcriptOpenProject = {
+            id: 'p1',
+            name: 'Demo',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        };
+        host.transcriptOpenSummary = {
+            id: 'conv-preview',
+            cwd: '/tmp/demo',
+            agentId: 'codex',
+            title: 'Preview',
+            status: 'streaming',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 1,
+        };
+        host.executionSurfaceTabsUi = {
+            executionSurfaceTabForProject: () => activeTab,
+            activeExecutionTab: () => activeTab,
+            setExecutionSurfaceTab: (_project: unknown, tab: 'messages' | 'preview') => {
+                setExecutionSurfaceTabCalls.push(tab);
+                activeTab = tab;
+            },
+            showOnlyExecutionSurfaceTab: (tab: 'messages' | 'preview') => {
+                showOnlyExecutionSurfaceTabCalls.push(tab);
+                activeTab = tab;
+            },
+        } as unknown as MobileProjectsTranscriptLiveHost['executionSurfaceTabsUi'];
+        host.beginTranscriptDevPreviewRequest = () => {
+            beginPreviewCalls += 1;
+        };
+        const conv = {
+            id: 'conv-preview',
+            cwd: '/tmp/demo',
+            agentId: 'codex',
+            title: 'Preview',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [],
+        };
+        const liveUi = new MobileProjectsTranscriptLiveUi(host);
+        const liveUiAny = liveUi as unknown as {
+            ensureTranscriptDevPreviewWatch: () => void;
+        };
+        liveUiAny.ensureTranscriptDevPreviewWatch = () => undefined;
+
+        liveUi.onTranscriptUserMessageSubmitted(
+            'Figure out how to build and run this project locally. Start the dev server, confirm it boots cleanly, and report the URL plus any setup steps I should know.',
+            conv,
+        );
+
+        expect(host.transcriptPreviewRequestPending).to.equal(true);
+        expect(beginPreviewCalls).to.equal(1);
+        expect(setExecutionSurfaceTabCalls).to.not.include('preview');
+        expect(showOnlyExecutionSurfaceTabCalls).to.not.include('preview');
+        expect(activeTab).to.equal('messages');
+
+        chatHost.remove();
+        composerHost.remove();
+    });
 });

@@ -6,6 +6,8 @@
 
 export interface StickyComposerSyntaxHighlightUi {
     refresh(): void;
+    /** Assign textarea value and refresh the mirror (input events do not fire programmatically). */
+    syncInputValue(value: string): void;
     dispose(): void;
 }
 
@@ -89,8 +91,15 @@ export function attachStickyComposerSyntaxHighlight(options: {
     input.addEventListener('scroll', onScroll);
     refresh();
 
+    /** Clear textarea + mirror together after programmatic submit/restore mutations. */
+    const syncInputValue = (value: string): void => {
+        input.value = value;
+        refresh();
+    };
+
     return {
         refresh,
+        syncInputValue,
         dispose: () => {
             input.removeEventListener('input', refresh);
             input.removeEventListener('scroll', onScroll);

@@ -113,6 +113,7 @@ import {
     parkWorkingControlFromAncestor,
     transferWorkingControlToHost,
 } from './qaap-sticky-composer-working-agents-popover';
+import { transferStepPillToHost } from './qaap-sticky-composer-step-pill';
 import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
 import { extractTranscriptPreviewId } from './mobile-projects-transcript-messages-content-ui';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
@@ -1389,26 +1390,43 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const activityOptions = this.buildTranscriptComposerActivityOptions(project, summary);
         const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
         const changesPill = renderStickyComposerChangesPill(activityOptions);
-        const existingPill = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
+        // Activity row vs Working/Step-only strip share the same host class — never tear down
+        // `theia-mod-working-only` during streaming ticks or Step/Working flicker every SSE.
+        const pillHosts = Array.from(
+            wrap.querySelectorAll(':scope > .theia-mobile-sticky-composer-changes-pill-host'),
+        );
+        const existingActivityPill = pillHosts.find(
+            host => !host.classList.contains('theia-mod-working-only'),
+        );
+        const pillsOnlyHost = pillHosts.find(
+            host => host.classList.contains('theia-mod-working-only'),
+        );
         if (!changesPill) {
-            if (existingPill instanceof HTMLElement) {
-                parkWorkingControlFromAncestor(existingPill);
+            if (existingActivityPill instanceof HTMLElement) {
+                parkWorkingControlFromAncestor(existingActivityPill);
+                existingActivityPill.remove();
             }
-            existingPill?.remove();
             this.lastComposerChangesPillFingerprint = '';
-        } else if (existingPill instanceof HTMLElement) {
+        } else if (existingActivityPill instanceof HTMLElement) {
             if (pillFingerprint === this.lastComposerChangesPillFingerprint
-                || patchStickyComposerChangesPillHost(existingPill, activityOptions)) {
+                || patchStickyComposerChangesPillHost(existingActivityPill, activityOptions)) {
                 this.lastComposerChangesPillFingerprint = pillFingerprint;
             } else {
                 if (changesPill instanceof HTMLElement) {
-                    transferWorkingControlToHost(existingPill, changesPill);
+                    transferWorkingControlToHost(existingActivityPill, changesPill);
+                    transferStepPillToHost(existingActivityPill, changesPill);
                 } else {
-                    parkWorkingControlFromAncestor(existingPill);
+                    parkWorkingControlFromAncestor(existingActivityPill);
                 }
-                existingPill.replaceWith(changesPill);
+                existingActivityPill.replaceWith(changesPill);
                 this.lastComposerChangesPillFingerprint = pillFingerprint;
             }
+        } else if (pillsOnlyHost instanceof HTMLElement && changesPill instanceof HTMLElement) {
+            transferWorkingControlToHost(pillsOnlyHost, changesPill);
+            transferStepPillToHost(pillsOnlyHost, changesPill);
+            wrap.insertBefore(changesPill, card);
+            pillsOnlyHost.remove();
+            this.lastComposerChangesPillFingerprint = pillFingerprint;
         } else {
             wrap.insertBefore(changesPill, card);
             this.lastComposerChangesPillFingerprint = pillFingerprint;
@@ -2127,6 +2145,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
         disposeComposerContextEntries(this.host.transcriptComposerContext);
         this.host.transcriptComposerContext = [];
         const clearComposerDraft = (): void => {
+            if (this.host.transcriptComposerDraftPersistTimer !== undefined) {
+                window.clearTimeout(this.host.transcriptComposerDraftPersistTimer);
+                this.host.transcriptComposerDraftPersistTimer = undefined;
+            }
             if (isAgentsHubIdleConversationSummary(summary)) {
                 // Shared idle summary id — clear the project-scoped draft instead of the (unrelated) per-conversation one.
                 writeProjectComposerDraft(project.id, '');
@@ -2150,9 +2172,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 clearComposerDraft();
                 this.refreshComposerActivityStack();
                 const input = this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
-                if (input instanceof HTMLTextAreaElement) {
-                    input.value = '';
-                }
+                // Column submit clears the textarea; re-dispatch input so the syntax mirror refreshes too.
+                input?.dispatchEvent(new Event('input', { bubbles: true }));
                 this.host.transcriptComposerSendRefresh?.();
             }
             return;

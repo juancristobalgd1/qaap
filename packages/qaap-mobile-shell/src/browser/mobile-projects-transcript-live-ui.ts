@@ -797,20 +797,15 @@ export class MobileProjectsTranscriptLiveUi {
 
     protected async openReadyTranscriptPreviewUrl(
         readyUrl: string,
-        conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv,
+        _conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv,
     ): Promise<void> {
         const normalized = normalizePreviewUrlForSameOrigin(readyUrl);
         if (this.transcriptPreviewOfferAnnouncedUrl === normalized) {
             return;
         }
-        if (!conversationMayAutoOpenTranscriptPreview(conv)) {
-            this.host.stageTranscriptPreviewReadyUrl(normalized);
-            return;
-        }
-        const opened = await this.host.transcriptMessagesUi.openTranscriptPreviewUrlFromLink(normalized);
-        if (opened) {
-            this.transcriptPreviewOfferAnnouncedUrl = normalized;
-        }
+        // Never auto-navigate: stage the Ready/Open-preview affordances for an explicit tap.
+        this.host.stageTranscriptPreviewReadyUrl(normalized);
+        this.transcriptPreviewOfferAnnouncedUrl = normalized;
     }
 
     async finalizeTranscriptDevPreviewAfterSettle(): Promise<void> {

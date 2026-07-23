@@ -29,7 +29,7 @@ const BOOT_DELAY_MS = 2_500;
 
 /**
  * On app start, ask the backend which agent CLIs are outdated and surface a T3-like toast
- * (Settings / Update / dismiss). Non-blocking: failures are swallowed; dismiss is session-scoped.
+ * (Cancel / Update / dismiss). Non-blocking: failures are swallowed; dismiss is session-scoped.
  */
 @injectable()
 export class QaapAgentCliUpdateContribution implements FrontendApplicationContribution {
@@ -89,7 +89,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         this.shownAgentId = info.id;
         this.toast = showAgentCliUpdateToast(info, {
             onDismiss: () => this.dismiss(info),
-            onSettings: () => this.openSettings(),
+            onCancel: () => this.dismiss(info),
             onUpdate: () => void this.runUpdate(info),
         });
     }
@@ -173,7 +173,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
                 onAction: () => this.openSettings(),
             },
         );
-        // Keep the toast so the user can retry or open Settings / dismiss.
+        // Keep the toast so the user can retry, cancel, or dismiss.
         this.toast?.setUpdating(false);
     }
 }

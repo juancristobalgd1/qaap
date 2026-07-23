@@ -5,7 +5,7 @@
 
 /**
  * T3-inspired floating toast for agent CLI updates: provider logo + download badge,
- * title/subtitle, Settings (outline) + Update (primary), and an X dismiss control.
+ * title/subtitle, Cancel (outline) + Update (primary), and an X dismiss control.
  */
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -13,7 +13,7 @@ import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
 import type { QaapAgentCliUpdateInfo } from '../common/qaap-agent-cli-update';
 
 export interface QaapAgentCliUpdateToastHandlers {
-    readonly onSettings: () => void;
+    readonly onCancel: () => void;
     readonly onUpdate: () => void;
     readonly onDismiss: () => void;
 }
@@ -85,7 +85,7 @@ export function showAgentCliUpdateToast(
     subtitle.className = 'qaap-agent-cli-update-toast-subtitle';
     subtitle.textContent = nls.localize(
         'qaap/agentCliUpdate/subtitle',
-        'Install the update now or review provider settings.',
+        'Install the update now, or cancel to dismiss this notice.',
     );
     text.append(subtitle);
     body.append(text);
@@ -94,12 +94,12 @@ export function showAgentCliUpdateToast(
     const actions = document.createElement('div');
     actions.className = 'qaap-agent-cli-update-toast-actions';
 
-    const settingsBtn = document.createElement('button');
-    settingsBtn.type = 'button';
-    settingsBtn.className = 'qaap-agent-cli-update-toast-action';
-    settingsBtn.textContent = nls.localize('qaap/agentCliUpdate/settings', 'Settings');
-    settingsBtn.addEventListener('click', () => handlers.onSettings());
-    actions.append(settingsBtn);
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'qaap-agent-cli-update-toast-action';
+    cancelBtn.textContent = nls.localize('qaap/agentCliUpdate/cancel', 'Cancel');
+    cancelBtn.addEventListener('click', () => handlers.onCancel());
+    actions.append(cancelBtn);
 
     const updateBtn = document.createElement('button');
     updateBtn.type = 'button';
@@ -116,7 +116,7 @@ export function showAgentCliUpdateToast(
         setUpdating(updating: boolean): void {
             root.classList.toggle('qaap-mod-updating', updating);
             updateBtn.disabled = updating;
-            settingsBtn.disabled = updating;
+            // Cancel stays enabled so the user can dismiss even while an update is in flight.
             updateBtn.textContent = updating
                 ? nls.localize('qaap/agentCliUpdate/updating', 'Updating…')
                 : nls.localize('qaap/agentCliUpdate/update', 'Update');

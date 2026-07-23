@@ -8,7 +8,7 @@ import {
     QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT,
 } from './mobile-keyboard-helper';
 
-export type StickyComposerPopoverAlign = 'start' | 'end';
+export type StickyComposerPopoverAlign = 'start' | 'end' | 'center';
 
 interface StickyComposerViewportBounds {
     readonly top: number;
@@ -91,7 +91,12 @@ export function positionStickyComposerPopover(
         const aboveTop = anchorRect.top - gap - popoverHeight;
         top = aboveTop >= minTop ? aboveTop : Math.max(minTop, maxBottom - popoverHeight);
     }
-    let left = align === 'end' ? anchorRect.right - popoverWidth : anchorRect.left;
+    const viewportWidth = viewport.right - viewport.left;
+    let left = align === 'center'
+        ? viewport.left + (viewportWidth - popoverWidth) / 2
+        : align === 'end'
+            ? anchorRect.right - popoverWidth
+            : anchorRect.left;
     left = Math.max(viewport.left + margin, Math.min(left, viewport.right - popoverWidth - margin));
     popover.style.top = `${top}px`;
     popover.style.left = `${left}px`;

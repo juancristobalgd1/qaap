@@ -766,12 +766,13 @@
     background: var(--theia-editor-background);
 }
 
-/* Cursor charcoal surface for the transcript Changes embed. */
+/* Transcript Changes embed — follow the active Theia theme (light or dark). */
 .qaap-diff-review--transcript-agent .qaap-agent-changes,
 .qaap-diff-review--transcript-agent .qaap-agent-changes-toolbar,
 .qaap-diff-review--transcript-agent .qaap-agent-changes-scroll,
 .qaap-diff-review--transcript-agent .qaap-agent-changes-filehdr {
-    background: #1e1e1e;
+    background: var(--theia-editor-background);
+    color: var(--theia-foreground);
 }
 
 .qaap-agent-changes-toolbar {
@@ -846,7 +847,9 @@
     border-radius: 6px;
     overflow: visible;
     border: none;
-    background: #f3f3f3;
+    /* High-contrast CTA that inverts with the theme (light pill on dark, dark on light). */
+    background: var(--theia-button-background, var(--theia-foreground));
+    color: var(--theia-button-foreground, var(--theia-editor-background));
     position: relative;
 }
 
@@ -860,7 +863,7 @@
     flex: none;
     border: none;
     background: transparent;
-    color: #1e1e1e;
+    color: inherit;
     font-family: var(--theia-ui-font-family, sans-serif);
     font-size: 12px;
     font-weight: 600;
@@ -903,9 +906,9 @@
     justify-content: center;
     width: 26px;
     border: none;
-    border-left: 1px solid rgba(0, 0, 0, 0.12);
+    border-left: 1px solid color-mix(in srgb, currentColor 18%, transparent);
     background: transparent;
-    color: #1e1e1e;
+    color: inherit;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
@@ -918,11 +921,11 @@
 
 .qaap-agent-changes-commit-btn:not(:disabled):active,
 .qaap-agent-changes-commit-menu:not(:disabled):active {
-    background: rgba(0, 0, 0, 0.08);
+    background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
 .qaap-agent-changes-commit-menu.qaap-mod-open {
-    background: rgba(0, 0, 0, 0.08);
+    background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
 .qaap-agent-changes-commit-dropdown {
@@ -934,8 +937,9 @@
     padding: 4px;
     border-radius: 8px;
     border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
-    background: color-mix(in srgb, var(--theia-editor-background) 92%, #000 8%);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    background: var(--theia-dropdown-background, var(--theia-editor-background));
+    color: var(--theia-dropdown-foreground, var(--theia-foreground));
+    box-shadow: 0 8px 24px color-mix(in srgb, #000 22%, transparent);
 }
 
 .qaap-agent-changes-commit-dropdown-item {
@@ -1278,15 +1282,15 @@
     justify-content: center;
     border: none;
     border-radius: 3px;
-    background: #fff;
-    color: #1e1e1e;
+    background: var(--theia-button-background, var(--theia-foreground));
+    color: var(--theia-button-foreground, var(--theia-editor-background));
     font-size: 12px;
     font-weight: 700;
     line-height: 1;
     cursor: pointer;
     z-index: 3;
     padding: 0;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 1px 3px color-mix(in srgb, #000 22%, transparent);
     -webkit-tap-highlight-color: transparent;
 }
 

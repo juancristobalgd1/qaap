@@ -117,6 +117,10 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         return shouldUseStickyComposerPopover(anchor);
     }
 
+    protected resolveWorkspacePopoverAlign(anchor?: HTMLElement): StickyComposerPopoverAlign {
+        return isWorkHubHeaderProjectPopoverAnchor(anchor) ? 'center' : 'start';
+    }
+
     protected shouldToggleCloseComposerWorkspaceSheet(
         anchor: HTMLElement | undefined,
         intent: ComposerWorkspaceSheetOpenIntent,
@@ -413,7 +417,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         this.mountComposerWorkspaceSheetPresentation(panel, {
             transcriptOverlay,
             anchor,
-            align: 'start',
+            align: this.resolveWorkspacePopoverAlign(anchor),
             variant: 'project',
         });
         window.requestAnimationFrame(() => this.syncWorkspacePopoverPosition());
@@ -495,7 +499,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         this.mountComposerWorkspaceSheetPresentation(panel, {
             transcriptOverlay,
             anchor,
-            align: 'start',
+            align: this.resolveWorkspacePopoverAlign(anchor),
             variant: 'branch',
         });
         window.requestAnimationFrame(() => this.syncWorkspacePopoverPosition());
@@ -586,7 +590,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         this.mountComposerWorkspaceSheetPresentation(panel, {
             transcriptOverlay,
             anchor,
-            align: 'start',
+            align: this.resolveWorkspacePopoverAlign(anchor),
             variant: 'branch',
         });
 

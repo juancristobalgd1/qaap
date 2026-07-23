@@ -76,6 +76,27 @@ describe('qaap-sticky-composer-syntax-highlight', () => {
         expect(highlight?.innerHTML).not.to.contain('theia-mod-token-slash-command');
     });
 
+    it('clears the mirror layer when the textarea value is cleared programmatically', () => {
+        const inputEditor = document.createElement('div');
+        const input = document.createElement('textarea');
+        inputEditor.append(input);
+        document.body.append(inputEditor);
+
+        const ui = attachStickyComposerSyntaxHighlight({
+            inputEditor,
+            input,
+            getSkillNames: () => ['react-doctor'],
+        });
+
+        ui.syncInputValue('Interfaz cli terminal');
+        const highlight = inputEditor.querySelector('.theia-mobile-projects-sticky-composer-input-highlight');
+        expect(highlight?.textContent).to.contain('Interfaz cli terminal');
+
+        ui.syncInputValue('');
+        expect(input.value).to.equal('');
+        expect(highlight?.textContent).to.equal('');
+    });
+
     it('keeps the textarea caret-only and disables spellcheck while attached', () => {
         const inputEditor = document.createElement('div');
         const input = document.createElement('textarea');

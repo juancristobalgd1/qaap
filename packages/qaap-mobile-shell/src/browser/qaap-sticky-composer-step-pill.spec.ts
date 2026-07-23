@@ -121,4 +121,54 @@ describe('qaap-sticky-composer-step-pill', () => {
         expect(wrap.querySelector(`.${STEP_PILL_CLASS}`)).to.equal(null);
         expect(document.querySelector(`.${STEP_MENU_CLASS}`)).to.equal(null);
     });
+
+    it('opens the step menu above the pill when there is room', () => {
+        const wrap = createComposerWrap();
+        document.body.append(wrap);
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 });
+        const offsetHeightDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+        const offsetWidthDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+        Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+            configurable: true,
+            get(this: HTMLElement): number {
+                return this.classList.contains(STEP_MENU_CLASS) ? 120 : 0;
+            },
+        });
+        Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+            configurable: true,
+            get(this: HTMLElement): number {
+                return this.classList.contains(STEP_MENU_CLASS) ? 260 : 0;
+            },
+        });
+        try {
+            syncStickyComposerStepPill(wrap, {
+                progress: {
+                    current: 1,
+                    total: 2,
+                    items: [
+                        { label: 'First', status: 'in_progress' },
+                        { label: 'Second', status: 'pending' },
+                    ],
+                },
+            });
+            const step = wrap.querySelector<HTMLButtonElement>(`.${STEP_PILL_CLASS}`);
+            expect(step).to.not.equal(null);
+            step!.getBoundingClientRect = () => ({
+                x: 100, y: 600, top: 600, left: 100, bottom: 630, right: 170, width: 70, height: 30, toJSON: () => ({}),
+            });
+            step!.click();
+            const menu = document.querySelector<HTMLElement>(`.${STEP_MENU_CLASS}`);
+            expect(menu).to.not.equal(null);
+            expect(menu?.dataset.placement).to.equal('above');
+            expect(Number.parseFloat(menu!.style.top)).to.be.below(600);
+        } finally {
+            if (offsetHeightDesc) {
+                Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeightDesc);
+            }
+            if (offsetWidthDesc) {
+                Object.defineProperty(HTMLElement.prototype, 'offsetWidth', offsetWidthDesc);
+            }
+        }
+    });
 });

@@ -236,7 +236,7 @@ describe('qaap-transcript-preview-offer', () => {
         expect(conversationAwaitingDevPreview(conv)).to.equal(true);
     });
 
-    it('conversationMayAutoOpenTranscriptPreview never auto-opens while the turn is streaming', () => {
+    it('conversationMayAutoOpenTranscriptPreview never auto-opens — not even after the turn settles', () => {
         const base: QaapAgentConversationDTO = {
             id: 'c4',
             cwd: '/repo',
@@ -248,7 +248,7 @@ describe('qaap-transcript-preview-offer', () => {
             messages: [{
                 id: 'a1',
                 role: 'agent',
-                // A printed URL mid-turn must stage the offer, not switch the surface.
+                // A printed URL must stage the offer; idle settle must not yank the surface either.
                 content: 'Dev server running at http://localhost:5175/',
                 createdAt: 2,
                 segments: [{
@@ -261,7 +261,7 @@ describe('qaap-transcript-preview-offer', () => {
             }],
         };
         expect(conversationMayAutoOpenTranscriptPreview(base)).to.equal(false);
-        expect(conversationMayAutoOpenTranscriptPreview({ ...base, status: 'idle' })).to.equal(true);
+        expect(conversationMayAutoOpenTranscriptPreview({ ...base, status: 'idle' })).to.equal(false);
         expect(conversationMayAutoOpenTranscriptPreview(undefined)).to.equal(false);
     });
 });

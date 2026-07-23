@@ -9,6 +9,7 @@ import type { StorageService } from '@theia/core/lib/browser/storage-service';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
 import type { MessageService } from '@theia/core/lib/common/message-service';
 import type { PreferenceService } from '@theia/core/lib/common/preferences';
+import type { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 import type { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import type { QuickInputService } from '@theia/core';
 import type { AIVariableService, FrontendLanguageModelRegistry, PromptService } from '@theia/ai-core';
@@ -102,6 +103,7 @@ export interface MobileProjectsPanelFactoryDeps {
     elementInspectorService: ElementInspectorService;
     clipboardService: ClipboardService;
     preferenceService: PreferenceService;
+    appearanceModeService?: QaapAppearanceModeService;
     mcpFrontendService?: MCPFrontendService;
     languageModelRegistry?: FrontendLanguageModelRegistry;
     commitMessageAi?: QaapCommitMessageAi;
@@ -278,6 +280,7 @@ export class MobileProjectsPanelFactory {
                 clipboard: deps.clipboardService,
                 readPreference: key => deps.preferenceService.get(key),
                 preferenceService: deps.preferenceService,
+                appearanceModeService: deps.appearanceModeService,
                 getRegisteredLanguageModels: deps.languageModelRegistry
                     ? () => deps.languageModelRegistry!.getLanguageModels()
                     : undefined,

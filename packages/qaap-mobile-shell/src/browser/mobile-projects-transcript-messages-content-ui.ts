@@ -16,6 +16,7 @@ import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/brows
 import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
 import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
 import {
+    parseQaapDevPreviewRequestPath,
     parseQaapIdentityPreviewRequestPath,
     type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
@@ -116,6 +117,42 @@ export function normalizeTranscriptPreviewHref(href: string, publicOrigin: strin
     return undefined;
 }
 
+/**
+ * True when a transcript "preview" link is actually the Qaap IDE itself (same origin / same
+ * listen port) — e.g. the agent reports `http://localhost:3000` while the user is already
+ * there. Those must not go through the workspace preview probe (they always fail closed).
+ */
+export function isTranscriptPreviewHrefShellSelf(href: string, publicOrigin: string): boolean {
+    const trimmed = href.trim();
+    if (!trimmed || !publicOrigin) {
+        return false;
+    }
+    try {
+        const origin = new URL(publicOrigin);
+        const shellPort = Number(origin.port || (origin.protocol === 'https:' ? '443' : '80'));
+        if (!Number.isInteger(shellPort) || shellPort <= 0) {
+            return false;
+        }
+        const normalized = normalizeTranscriptPreviewHref(trimmed, publicOrigin) ?? trimmed;
+        const parsed = new URL(
+            /^(?:https?:)?\/\//i.test(normalized) || normalized.startsWith('/')
+                ? normalized
+                : `http://${normalized}`,
+            origin,
+        );
+        const isPreviewProxy = !!parseQaapDevPreviewRequestPath(parsed.pathname)
+            || !!parseQaapIdentityPreviewRequestPath(parsed.pathname);
+        if (parsed.origin === origin.origin && !isPreviewProxy) {
+            return true;
+        }
+        const linkPort = extractDevPreviewPortFromUrl(normalized)
+            ?? extractDevPreviewPortFromUrl(trimmed);
+        return linkPort === shellPort && !isPreviewProxy;
+    } catch {
+        return false;
+    }
+}
+
 /** Per-row token smoothing state: full received text vs. the prefix revealed so far. */
 interface TranscriptStreamSmoothEntry {
     target: string;
@@ -164,6 +201,18 @@ export class MobileProjectsTranscriptMessagesContentUi {
         const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
         const project = this.host.transcriptOpenProject;
         const publicOrigin = this.previewPublicOrigin();
+        if (isTranscriptPreviewHrefShellSelf(href, publicOrigin)) {
+            // Agent replies often cite the IDE URL itself ("open http://localhost:3000"). Probing
+            // that port as a workspace preview always fails and used to show a scary toast.
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobileProjects/previewLinkIsShell',
+                    'That link is this Qaap window — you are already here.',
+                ),
+                { duration: 2400 },
+            );
+            return true;
+        }
         const previewUrl = normalizeTranscriptPreviewHref(href, publicOrigin);
         if (!previewUrl || !summary || !project) {
             return false;

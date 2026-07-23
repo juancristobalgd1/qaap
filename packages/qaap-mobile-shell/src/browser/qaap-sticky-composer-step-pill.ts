@@ -309,18 +309,47 @@ function positionStepMenu(menu: HTMLElement, pill: HTMLButtonElement): void {
     const gap = 6;
     // Measure after append.
     const width = Math.max(menu.offsetWidth, 260);
-    const height = menu.offsetHeight;
+    const height = Math.max(menu.offsetHeight, 1);
     let left = rect.left;
     left = Math.min(left, view.innerWidth - margin - width);
     left = Math.max(margin, left);
-    let top = rect.bottom + gap;
-    if (top + height > view.innerHeight - margin) {
-        const above = rect.top - gap - height;
-        top = above >= margin ? above : Math.max(margin, view.innerHeight - margin - height);
+    // Prefer upward: the sticky composer sits at the bottom, so opening below clips.
+    const above = rect.top - gap - height;
+    const below = rect.bottom + gap;
+    let top: number;
+    let placement: 'above' | 'below';
+    if (above >= margin) {
+        top = above;
+        placement = 'above';
+    } else if (below + height <= view.innerHeight - margin) {
+        top = below;
+        placement = 'below';
+    } else {
+        top = Math.max(margin, view.innerHeight - margin - height);
+        placement = above > view.innerHeight - below ? 'above' : 'below';
     }
     menu.style.left = `${left}px`;
     menu.style.top = `${top}px`;
     menu.style.minWidth = `${Math.max(width, rect.width)}px`;
+    menu.dataset.placement = placement;
+}
+
+/** Preserve the Step plan pill across Changes-row remounts (Working transfer companion). */
+export function transferStepPillToHost(fromHost: HTMLElement, toHost: HTMLElement): void {
+    const fromRow = fromHost.querySelector('.theia-mobile-sticky-composer-changes-pill-row');
+    const pill = fromRow?.querySelector(`:scope > .${STEP_PILL_CLASS}`)
+        ?? fromHost.querySelector(`.${STEP_PILL_CLASS}`);
+    if (!(pill instanceof HTMLButtonElement)) {
+        return;
+    }
+    const toRow = toHost.querySelector('.theia-mobile-sticky-composer-changes-pill-row');
+    if (!(toRow instanceof HTMLElement)) {
+        return;
+    }
+    placeStepPillInRow(toRow, pill);
+    if (activeMenu?.pill === pill) {
+        positionStepMenu(activeMenu.menu, pill);
+    }
 }
 
 function renderStepMenu(progress: QaapTodoStepProgress): HTMLElement {

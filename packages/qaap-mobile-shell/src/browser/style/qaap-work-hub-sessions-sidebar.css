@@ -196,8 +196,56 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+}
+
+/* Light / Dark / System pill — matches product mock (circular thumb, muted unselected icons). */
+.theia-qaap-appearance-mode-switch {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0;
+  margin-left: auto;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-qaap-appearance-mode-switch-option {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: color-mix(in srgb, var(--theia-foreground) 45%, transparent);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.theia-qaap-appearance-mode-switch-option:hover {
+  color: color-mix(in srgb, var(--theia-foreground) 70%, transparent);
+}
+
+.theia-qaap-appearance-mode-switch-option.theia-mod-selected {
+  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-qaap-appearance-mode-switch-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
 }
 
 /* Deployed-build badge: muted short SHA so "which build am I on?" is a glance, not a debug session. */
@@ -218,7 +266,8 @@
   align-items: center;
   gap: 10px;
   flex: 1 1 auto;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   min-width: 0;
   min-height: 44px;
   padding: 8px 6px;

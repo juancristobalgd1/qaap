@@ -164,8 +164,9 @@ export class QaapBootstrapOpenPreviewTool implements ToolProvider {
             id: QAAP_BOOTSTRAP_OPEN_PREVIEW_TOOL_ID,
             name: QAAP_BOOTSTRAP_OPEN_PREVIEW_TOOL_ID,
             providerName: 'qaap',
-            description: 'Opens or focuses the in-IDE preview for the running dev server. If preview URL is unknown, '
-                + 'probes common local ports or suggests qaap_bootstrap_run_dev.',
+            description: 'Stages the in-IDE preview URL for the running dev server without switching the user\'s view. '
+                + 'Report the URL as a clickable link; the user opens Preview via the Open preview control. '
+                + 'If preview URL is unknown, probes common local ports or suggests qaap_bootstrap_run_dev.',
             parameters: {
                 type: 'object',
                 properties: {},
@@ -180,20 +181,35 @@ export class QaapBootstrapOpenPreviewTool implements ToolProvider {
                 }
                 try {
                     if (before.previewUrl) {
-                        await this.bootstrap.focusPreview();
-                        return snapshotJson(this.bootstrap, 'Focused existing preview.');
+                        // Stage only — never auto-navigate the user's surface. Report the URL so
+                        // the agent can leave a clickable link; the Open preview pill stays the CTA.
+                        await this.bootstrap.openPreview(before.previewUrl, true, { auto: true });
+                        return snapshotJson(
+                            this.bootstrap,
+                            `Preview ready at ${before.previewUrl}. Do not switch the user's view; they open it via Open preview or the link.`,
+                        );
                     }
                     if (before.portInUse || before.lastPort !== undefined || before.phase === 'run-failed') {
-                        await this.bootstrap.openExistingPreview();
+                        await this.bootstrap.openExistingPreview({ auto: true });
                         const after = this.bootstrap.getStateSnapshot();
                         if (after.previewUrl) {
-                            return snapshotJson(this.bootstrap, 'Attached preview to existing dev server.');
+                            return snapshotJson(
+                                this.bootstrap,
+                                `Preview ready at ${after.previewUrl}. Do not switch the user's view; they open it via Open preview or the link.`,
+                            );
                         }
                         return snapshotJson(this.bootstrap, after.error ?? 'Could not attach to an existing dev server.');
                     }
                     if (before.phase === 'running') {
-                        await this.bootstrap.focusPreview();
-                        return snapshotJson(this.bootstrap, 'Preview focus requested.');
+                        const url = before.previewUrl;
+                        if (url) {
+                            await this.bootstrap.openPreview(url, true, { auto: true });
+                            return snapshotJson(
+                                this.bootstrap,
+                                `Preview ready at ${url}. Do not switch the user's view; they open it via Open preview or the link.`,
+                            );
+                        }
+                        return snapshotJson(this.bootstrap, 'Dev server is running but no preview URL is available yet.');
                     }
                     await this.bootstrap.runDevServer();
                     return snapshotJson(this.bootstrap, 'No preview URL yet; dev server start requested.');

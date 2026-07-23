@@ -262,18 +262,14 @@ export function conversationShouldKickoffDevPreviewBootstrap(conv: QaapAgentConv
 }
 
 /**
- * True when the UI may auto-switch to Preview and mount the iframe.
+ * True when the UI may auto-switch to Preview / Browser without an explicit user action.
  *
- * Never auto-open mid-turn: the agent may still be installing dependencies or fixing the
- * build, and pending approval prompts must stay visible in the transcript. While streaming,
- * the ready URL is staged ("Preview ready" offer) and the preview opens automatically once
- * the turn settles (see `finalizeTranscriptDevPreviewAfterSettle`).
+ * Always false: a ready preview is staged for the "Open preview" pill and clickable transcript
+ * links. Navigation happens only when the user taps those affordances or manually opens the
+ * Preview tab — never because the agent said "levanta la app" or the turn settled.
  */
-export function conversationMayAutoOpenTranscriptPreview(conv: QaapAgentConversationDTO | undefined): boolean {
-    if (!conv) {
-        return false;
-    }
-    return conv.status !== 'streaming';
+export function conversationMayAutoOpenTranscriptPreview(_conv: QaapAgentConversationDTO | undefined): boolean {
+    return false;
 }
 
 /** Ports to probe while waiting for a dev server to bind. */

@@ -44,6 +44,7 @@ export interface MobileProjectsSessionsSidebarHost {
     sessionsSidebarVisibleConversationCountByProjectId: Map<string, number>;
     sessionsSidebarAccordionDefaultsApplied: boolean;
     sessionsSidebarContainer?: () => HTMLElement | undefined;
+    appearanceModeService?: import('./qaap-appearance-mode-service').QaapAppearanceModeService;
     projects: MobileProjectEntry[];
     query: string;
     transcriptOpenSummaryId: string | undefined;
@@ -222,6 +223,15 @@ export class MobileProjectsSessionsSidebarUi {
                 onAutomations: () => { void this.onWorkHubSessionsSidebarAutomations(); },
                 onResearch: () => { void this.onWorkHubSessionsSidebarResearch(); },
                 isEmbedded: () => (!isDesktopSessionsSidebarLayout() || document.body.classList.contains('theia-mobile-mod-desktop-ide')) && this.host.sessionsSidebarContainer?.() !== undefined,
+                getAppearanceMode: this.host.appearanceModeService
+                    ? () => this.host.appearanceModeService!.getMode()
+                    : undefined,
+                setAppearanceMode: this.host.appearanceModeService
+                    ? mode => this.host.appearanceModeService!.setMode(mode)
+                    : undefined,
+                onAppearanceModeChanged: this.host.appearanceModeService
+                    ? listener => this.host.appearanceModeService!.onDidChangeMode(listener)
+                    : undefined,
             });
         }
         const useBodyGrid = isDesktopSessionsSidebarLayout()

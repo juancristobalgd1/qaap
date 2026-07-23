@@ -69,6 +69,8 @@ export interface MobileProjectsTasksHubHost {
     transcriptComposerSummary?: QaapAgentConversationSummaryDTO;
     transcriptOpenProject?: MobileProjectEntry;
     transcriptOpenSummary?: QaapAgentConversationSummaryDTO;
+    /** Live transcript document — used as Step-pill fallback while threadStore catches up. */
+    transcriptLastConv?: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO;
     transcriptComposerSendRefresh?: (() => void) | undefined;
     stickyComposerDraft: string;
     stickyComposerHost: HTMLElement | undefined;
@@ -443,6 +445,13 @@ export class MobileProjectsTasksHubUi {
     }
 
     /**
+     * Sticky last-known Step progress so SSE/render gaps don't unmount the pill
+     * (and its open menu) while the transcript is still painting.
+     */
+    protected lastStepPillConversationId: string | undefined;
+    protected lastStepPillProgress: ReturnType<typeof resolveTodoStepProgress> | undefined;
+
+    /**
      * "Step X/Y" pill to the right of Working when the active conversation has a
      * parseable TodoWrite checklist. Hover/click opens the plan to-do menu.
      */
@@ -458,16 +467,31 @@ export class MobileProjectsTasksHubUi {
         const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
         const conversationId = summary?.id?.trim();
         if (!conversationId) {
+            this.lastStepPillConversationId = undefined;
+            this.lastStepPillProgress = undefined;
             return undefined;
         }
         const document = this.host.conversations?.threadStore.getDocument(conversationId);
-        if (!document?.messages?.length) {
+        const liveConv = this.host.transcriptLastConv?.id === conversationId
+            ? this.host.transcriptLastConv
+            : undefined;
+        const messages = document?.messages?.length
+            ? document.messages
+            : liveConv?.messages;
+        if (!messages?.length) {
             // Best-effort warm: live/chrome refresh will re-sync once the doc lands.
             this.host.conversations?.prefetchDocument(conversationId);
+            // Keep the previous Step chrome for this conversation during transient gaps.
+            if (this.lastStepPillConversationId === conversationId) {
+                return this.lastStepPillProgress;
+            }
             return undefined;
         }
-        const items = resolveLatestTranscriptTodos(document.messages);
-        return items ? resolveTodoStepProgress(items) : undefined;
+        const items = resolveLatestTranscriptTodos(messages);
+        const progress = items ? resolveTodoStepProgress(items) : undefined;
+        this.lastStepPillConversationId = conversationId;
+        this.lastStepPillProgress = progress;
+        return progress;
     }
 
     /**
