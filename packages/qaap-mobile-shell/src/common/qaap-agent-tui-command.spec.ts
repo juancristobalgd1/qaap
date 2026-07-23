@@ -13,6 +13,8 @@ describe('resolveInteractiveAgentCliBin', () => {
         expect(resolveInteractiveAgentCliBin('codex')).to.equal('codex');
         expect(resolveInteractiveAgentCliBin('claude')).to.equal('claude');
         expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');
+        expect(resolveInteractiveAgentCliBin('antigravity')).to.equal('agy');
+        expect(resolveInteractiveAgentCliBin('gemini')).to.equal('agy');
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
     });
 

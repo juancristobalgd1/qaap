@@ -72,7 +72,7 @@
 }
 
 .gs-quick-action:focus-visible {
-  outline: 2px solid var(--theia-focusBorder);
+  outline: 0.5px solid var(--theia-focusBorder);
   outline-offset: 2px;
 }
 
@@ -154,7 +154,7 @@
 }
 
 .gs-section .gs-action-container a:focus-visible {
-  outline: 2px solid var(--theia-focusBorder);
+  outline: 0.5px solid var(--theia-focusBorder);
   outline-offset: 2px;
 }
 

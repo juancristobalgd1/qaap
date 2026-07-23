@@ -142,12 +142,18 @@ export function createTranscriptFilesViewServices(
             }
             : undefined,
         getFileDecoration: decorationsService
-            ? (resourcePath, isDirectory) => resolveTranscriptFileDecoration(
-                decorationsService,
-                colorRegistry,
-                resourcePath,
-                isDirectory,
-            )
+            ? (resourcePath, isDirectory) => {
+                try {
+                    return resolveTranscriptFileDecoration(
+                        decorationsService,
+                        colorRegistry,
+                        resourcePath,
+                        isDirectory,
+                    );
+                } catch {
+                    return undefined;
+                }
+            }
             : undefined,
         renderMarkdownPreview: markdownPreviewHandler
             ? (resourcePath, markdown) => markdownPreviewHandler.renderContent({
@@ -183,10 +189,25 @@ export function createTranscriptFilesViewServices(
         },
         watchFileDecorations: decorationsService
             ? onChange => {
+                let scheduled: ReturnType<typeof setTimeout> | undefined;
                 const subscription = decorationsService.onDidChangeDecorations(() => {
-                    onChange();
+                    // Coalesce decoration storms so Files preview I/O is not starved by
+                    // continuous full-tree re-renders while SCM badges settle.
+                    if (scheduled !== undefined) {
+                        return;
+                    }
+                    scheduled = setTimeout(() => {
+                        scheduled = undefined;
+                        onChange();
+                    }, 48);
                 });
-                return Disposable.create(() => subscription.dispose());
+                return Disposable.create(() => {
+                    if (scheduled !== undefined) {
+                        clearTimeout(scheduled);
+                        scheduled = undefined;
+                    }
+                    subscription.dispose();
+                });
             }
             : undefined,
         localize: (key, defaultValue, ...args) => nls.localize(key, defaultValue, ...args),

@@ -86,7 +86,10 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerRenderUi'],
             stickyComposerAgentsUi: {
                 ensureStickyComposerAgentsLoaded: async () => [],
+                resolveStickyComposerPinnedAgentId: () => 'qaiq',
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
+            stickyComposerPinnedAgentId: 'qaiq',
+            resolveAgentsHubShellProject: () => undefined,
             resolveAgentsHubShellSummary: () => ({
                 id: 'idle',
                 cwd: '/tmp/demo',
@@ -281,7 +284,74 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(tuiHost).to.exist;
         expect(viewSelect).to.exist;
         expect(children[0]).to.equal(tuiHost);
-        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui .codicon-robot')).to.exist;
+        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui .theia-qaap-agent-brand-icon')).to.exist;
+        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.classList.contains('theia-mod-selected')).to.equal(false);
+        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.getAttribute('data-tab')).to.equal(null);
+    });
+
+    it('keeps view-switcher chrome on the Terminal picker, not the agent TUI trigger', () => {
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
+        const strip = ui.buildExecutionViewTabStrip('terminal', () => undefined);
+        ui.refreshExecutionSurfaceTabStripState(strip, 'terminal');
+        const tui = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui');
+        const view = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui)');
+        expect(tui?.dataset.tab).to.equal(undefined);
+        expect(tui?.classList.contains('theia-mod-selected')).to.equal(false);
+        expect(view?.dataset.tab).to.equal('terminal');
+        expect(view?.classList.contains('theia-mod-selected')).to.equal(true);
+        expect(tui?.dataset.agentId).to.equal('qaiq');
+    });
+
+    it('lists CLI agents in the TUI menu via Agents Hub shell project', async () => {
+        const project: MobileProjectEntry = {
+            id: 'p-qaap',
+            name: 'qaap',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        };
+        const host = createHost({
+            agentsHubShellActive: true,
+            transcriptOpenProject: undefined,
+            expandedId: undefined,
+            projectDetailExpandedId: undefined,
+            resolveAgentsHubShellProject: () => project,
+            stickyComposerAgentsUi: {
+                ensureStickyComposerAgentsLoaded: async () => ([
+                    { id: 'qaiq', label: 'QAIQ', available: true },
+                    { id: 'claude', label: 'Claude Code', available: true },
+                    { id: 'codex', label: 'Codex', available: true },
+                    { id: 'grok', label: 'Grok Build', available: true },
+                ]),
+                resolveStickyComposerPinnedAgentId: () => 'qaiq',
+            } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
+        });
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        expect(ui.resolveExecutionSurfaceProject()?.id).to.equal('p-qaap');
+
+        const strip = ui.buildExecutionViewTabStrip('terminal', () => undefined);
+        host.root.append(strip);
+        const trigger = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui');
+        expect(trigger).to.exist;
+        trigger!.click();
+        await new Promise<void>(resolve => { window.setTimeout(resolve, 0); });
+
+        const menu = host.root.querySelector('.theia-mobile-transcript-terminal-agent-tui-menu');
+        expect(menu).to.exist;
+        expect(menu!.textContent).to.not.include('Open a project to launch an agent.');
+        const labels = Array.from(menu!.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
+            .map(node => node.textContent);
+        expect(labels).to.include.members(['QAIQ', 'Claude Code', 'Codex', 'Grok Build']);
+        strip.remove();
+        ui.closeExecutionTabOverflowMenu();
     });
 
     it('flushes the composer draft before clearing the composer when leaving Messages', () => {

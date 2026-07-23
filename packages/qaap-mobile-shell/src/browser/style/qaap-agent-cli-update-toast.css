@@ -83,7 +83,7 @@
 }
 
 .qaap-agent-cli-update-toast-close:focus-visible {
-    outline: 2px solid var(--theia-focusBorder);
+    outline: 0.5px solid var(--theia-focusBorder);
     outline-offset: 1px;
 }
 
@@ -204,7 +204,7 @@
 }
 
 .qaap-agent-cli-update-toast-action:focus-visible {
-    outline: 2px solid var(--theia-focusBorder);
+    outline: 0.5px solid var(--theia-focusBorder);
     outline-offset: 2px;
 }
 

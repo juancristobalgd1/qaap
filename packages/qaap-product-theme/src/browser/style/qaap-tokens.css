@@ -79,12 +79,14 @@ body.qaap-theme-light {
   --qaap-del-bg: #F8E5DF;
   --qaap-del-ink: #8E2F1F;
   --qaap-code: #FCFBF7;
-  --qaap-focus-ring: rgba(73, 73, 73, 0.28);
+  /* Ultra-soft focus — subpixel hairline, barely visible. */
+  --qaap-focus-border: color-mix(in srgb, #494949 10%, transparent);
+  --qaap-focus-ring: rgba(73, 73, 73, 0.04);
 
   --qaap-shadow-sm: 0 1px 2px rgba(17, 17, 17, 0.04), 0 1px 1px rgba(17, 17, 17, 0.03);
   --qaap-shadow-md: 0 6px 18px rgba(17, 17, 17, 0.06), 0 2px 6px rgba(17, 17, 17, 0.04);
   --qaap-shadow-lg: 0 18px 40px rgba(17, 17, 17, 0.08), 0 4px 12px rgba(17, 17, 17, 0.05);
-  --qaap-shadow-accent: 0 0 0 3px var(--qaap-focus-ring);
+  --qaap-shadow-accent: 0 0 0 0.5px var(--qaap-focus-ring);
 }
 
 /*=============================================================================
@@ -120,12 +122,14 @@ body.qaap-theme-dark {
   --qaap-del-bg: #2E1814;
   --qaap-del-ink: #E89A8B;
   --qaap-code: #121110;
-  --qaap-focus-ring: rgba(73, 73, 73, 0.55);
+  /* Ultra-soft focus — subpixel hairline, barely visible. */
+  --qaap-focus-border: color-mix(in srgb, #DADADA 9%, transparent);
+  --qaap-focus-ring: rgba(212, 208, 196, 0.055);
 
   --qaap-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 1px rgba(0, 0, 0, 0.30);
   --qaap-shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.30);
   --qaap-shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35);
-  --qaap-shadow-accent: 0 0 0 3px var(--qaap-focus-ring);
+  --qaap-shadow-accent: 0 0 0 0.5px var(--qaap-focus-ring);
 }
 
 /*=============================================================================
@@ -239,7 +243,7 @@ body.qaap-theme-dark {
   --theia-tab-unfocusedInactiveForeground: var(--qaap-muted) !important;
 
   /* Accent: focus, buttons, badges, progress */
-  --theia-focusBorder: var(--qaap-accent) !important;
+  --theia-focusBorder: var(--qaap-focus-border) !important;
   --theia-button-background: var(--qaap-accent) !important;
   --theia-button-foreground: var(--qaap-bg) !important;
   --theia-button-hoverBackground: var(--qaap-accent-ink) !important;
@@ -634,7 +638,7 @@ body.qaap-theme-light .theia-input:focus,
 body.qaap-theme-light .theia-input:focus-visible,
 body.qaap-theme-dark .theia-input:focus,
 body.qaap-theme-dark .theia-input:focus-visible {
-  border-color: var(--qaap-accent);
+  border-color: var(--qaap-focus-border);
   box-shadow: var(--qaap-shadow-accent);
   outline: none;
 }
@@ -671,7 +675,7 @@ body.qaap-theme-dark .quick-input-widget input {
 
 body.qaap-theme-light .quick-input-widget .monaco-inputbox.synthetic-focus,
 body.qaap-theme-dark .quick-input-widget .monaco-inputbox.synthetic-focus {
-  outline-color: var(--qaap-accent) !important;
+  outline-color: var(--qaap-focus-border) !important;
   box-shadow: var(--qaap-shadow-accent);
 }
 
@@ -768,7 +772,7 @@ body.qaap-theme-dark .theia-mobile-open-repo-item:active {
 body.qaap-theme-light .theia-mobile-open-repo-item:focus-visible,
 body.qaap-theme-dark .theia-mobile-open-repo-item:focus-visible {
   outline: none;
-  border-color: var(--qaap-accent);
+  border-color: var(--qaap-focus-border);
   box-shadow: var(--qaap-shadow-accent);
 }
 
@@ -797,8 +801,8 @@ body.qaap-theme-dark .gs-quick-action:active {
 
 body.qaap-theme-light .gs-quick-action:focus-visible,
 body.qaap-theme-dark .gs-quick-action:focus-visible {
-  outline: 2px solid var(--qaap-accent);
-  outline-offset: 2px;
+  outline: 0.5px solid var(--qaap-focus-border);
+  outline-offset: 1px;
   border: none;
   box-shadow: none;
 }
@@ -835,14 +839,24 @@ body.qaap-theme-dark .gs-container {
 }
 
 /*-----------------------------------------------------------------------------
-|| Focus ring: replaces the harsh single-pixel ring with a soft graphite glow.
+|| Focus ring: subpixel hairline (~0.5px), barely visible.
 ||----------------------------------------------------------------------------*/
 
 body.qaap-theme-light #theia-app-shell :focus-visible,
 body.qaap-theme-dark #theia-app-shell :focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--qaap-bg), 0 0 0 4px var(--qaap-focus-ring);
+  outline: 0.5px solid var(--qaap-focus-ring);
+  outline-offset: 0;
+  outline-width: 0.5px;
+  box-shadow: none;
   border-radius: var(--qaap-radius-sm);
+}
+
+@media (prefers-contrast: more) {
+  body.qaap-theme-light #theia-app-shell :focus-visible,
+  body.qaap-theme-dark #theia-app-shell :focus-visible {
+    outline: 1px solid var(--qaap-focus-border);
+    outline-offset: 1px;
+  }
 }
 
 /*-----------------------------------------------------------------------------

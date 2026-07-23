@@ -883,9 +883,12 @@ export function mountTranscriptFilesView(
                 'Could not read {0}',
                 entry.relativePath,
             ));
+        } finally {
+            if (requestId === state.previewRequestId) {
+                renderTree();
+                syncTreeLayout();
+            }
         }
-        renderTree();
-        syncTreeLayout();
     };
 
     const ensureChildren = async (resourcePath: string): Promise<readonly TranscriptFileTreeEntry[]> => {

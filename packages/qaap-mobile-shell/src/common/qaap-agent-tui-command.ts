@@ -9,6 +9,9 @@ import { LEGACY_OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } 
 /**
  * Interactive TUI CLI binary for an agent id — the bare executable to type into a PTY,
  * not the headless `--print` / `exec --json` templates used by background task runs.
+ *
+ * Antigravity is special: the product agent id is `antigravity`, but the CLI on PATH is
+ * usually Google's `agy` (then community `antigravity`, then legacy `gemini`).
  */
 export function resolveInteractiveAgentCliBin(agentId: string | undefined): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
@@ -17,6 +20,9 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
     }
     if (normalized === QAIQ_AGENT_ID || normalized === LEGACY_OPENCLAUDE_AGENT_ID) {
         return 'qaiq';
+    }
+    if (normalized === 'antigravity' || normalized === 'gemini') {
+        return 'agy';
     }
     const builtin = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === normalized);
     return builtin?.bin;

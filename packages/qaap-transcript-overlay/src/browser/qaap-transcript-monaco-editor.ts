@@ -71,17 +71,24 @@ export async function createTranscriptPreviewMonacoEditor(
         }));
     }
 
+    const layoutToHost = (): void => {
+        const width = host.clientWidth;
+        const height = host.clientHeight;
+        if (width > 0 && height > 0) {
+            editor.setSize({ width, height });
+        }
+    };
+
     if (options?.focus) {
         editor.focus();
-    } else {
-        window.requestAnimationFrame(() => editor.resizeToFit());
     }
+    window.requestAnimationFrame(layoutToHost);
 
     return {
         readOnly,
         getText: () => model.getValue(),
         focus: () => editor.focus(),
-        layout: () => editor.resizeToFit(),
+        layout: layoutToHost,
         save: () => editor.document.save(),
         dispose: () => disposables.dispose(),
         onDidChangeContent: onDidChangeContentEmitter.event,
