@@ -49,6 +49,7 @@ import {
     resolveTodoStepProgress,
 } from '../common/qaap-transcript-todo-step';
 import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
+import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 
 /** Panel surface for Tasks hub list rendering and Agents Hub landing recents/quick actions. */
@@ -373,10 +374,11 @@ export class MobileProjectsTasksHubUi {
         // count can lag behind cancel; reading-retain must not keep "1 Working").
         const realCount = isWorkingPillSuppressedAfterStopAll() ? 0 : rawCount;
         const reading = isWorkingAgentsExpandPinnedOpen() && !isWorkingPillSuppressedAfterStopAll();
+        const suppressForEmptyComposer = this.shouldSuppressWorkingPillForEmptyComposer();
         // Never auto-collapse while the user is reading (list or detail). Summary/settled
         // often drops the working count to 0 (streaming → idle); only ✕ / Escape / Stop All
-        // / pill toggle may close in that case.
-        if (realCount <= 0 && !reading) {
+        // / pill toggle may close in that case. Empty/new chat surfaces always hide the pill.
+        if (suppressForEmptyComposer || (realCount <= 0 && !reading)) {
             closeWorkingAgentsPopover(true);
         }
         // Keep chrome alive while home/transcript composers exist, or while an expand session
@@ -385,7 +387,7 @@ export class MobileProjectsTasksHubUi {
             this.host.stickyComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner')
             || this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner')
         );
-        const count = (realCount > 0 || reading)
+        const count = !suppressForEmptyComposer && (realCount > 0 || reading)
             && (this.host.homeMode || composerMounted || reading)
             ? Math.max(realCount, reading ? 1 : 0)
             : 0;
@@ -793,6 +795,39 @@ export class MobileProjectsTasksHubUi {
      */
     countWorkingAgentsForPill(): number {
         return filterWorkingTeamMembers(this.host.collectTeamMembersForHub()).length;
+    }
+
+    /**
+     * Hide the global Working pill on blank composer surfaces (Agents hub idle shell, pending
+     * new-chat section, or any chat before the first user message). Other projects may still
+     * have running agents — the pill returns once the open conversation is non-empty.
+     */
+    shouldSuppressWorkingPillForEmptyComposer(): boolean {
+        const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
+        if (!summary) {
+            const composerHost = this.host.transcriptComposerHost ?? this.host.stickyComposerHost;
+            return composerHost?.classList.contains('theia-mod-show-quick-actions') ?? false;
+        }
+        if (isAgentsHubIdleConversationSummary(summary)) {
+            return true;
+        }
+        if (summary.id.startsWith('pending-new-chat-')) {
+            return true;
+        }
+        const cached = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : undefined;
+        const conv = cached ?? {
+            id: summary.id,
+            cwd: summary.cwd,
+            agentId: summary.agentId,
+            title: summary.title,
+            status: summary.status,
+            createdAt: summary.createdAt,
+            updatedAt: summary.updatedAt,
+            messages: [],
+        };
+        return shouldShowTranscriptEmptyQuickActions(conv, cached);
     }
 
     /** Flips the one-shot first-load flag once conversations arrive or the safety timeout fires. */

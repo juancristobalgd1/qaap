@@ -117,6 +117,7 @@ import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHo
 import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from './mobile-projects-hub-catalog-ui';
 import { MobileProjectsHubRoutinesUi, type MobileProjectsHubRoutinesHost } from './mobile-projects-hub-routines-ui';
 import { MobileProjectsHubResearchUi, type MobileProjectsHubResearchHost } from './mobile-projects-hub-research-ui';
+import { MobileProjectsHubResearchEditorUi, type MobileProjectsHubResearchEditorHost } from './mobile-projects-hub-research-editor-ui';
 import { MobileProjectsHubRoutineEditorUi, type MobileProjectsHubRoutineEditorHost } from './mobile-projects-hub-routine-editor-ui';
 import { MobileProjectsReposHubUi, type MobileProjectsReposHubHost } from './mobile-projects-repos-hub-ui';
 import { MobileProjectsProjectActionsUi, type MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
@@ -662,6 +663,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly hubRoutineEditorUi = new MobileProjectsHubRoutineEditorUi(this as unknown as MobileProjectsHubRoutineEditorHost);
     protected readonly hubRoutinesUi = new MobileProjectsHubRoutinesUi(this as unknown as MobileProjectsHubRoutinesHost);
     protected readonly hubResearchUi = new MobileProjectsHubResearchUi(this as unknown as MobileProjectsHubResearchHost);
+    protected readonly hubResearchEditorUi = new MobileProjectsHubResearchEditorUi(this as unknown as MobileProjectsHubResearchEditorHost);
     protected readonly hubTeamDataUi = new MobileProjectsHubTeamDataUi(this as unknown as MobileProjectsHubTeamDataHost);
     protected readonly conversationActionsUi = new MobileProjectsConversationActionsUi(this as unknown as MobileProjectsConversationActionsHost);
     protected readonly projectActionsUi = new MobileProjectsProjectActionsUi(this as unknown as MobileProjectsProjectActionsHost);
@@ -709,6 +711,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected researchGoalsLoading = false;
     protected researchGoalsLoaded = false;
     protected researchRefreshTimer: number | undefined;
+    protected researchSheet: HTMLElement | undefined;
+    protected researchInteractionLock = false;
     protected readonly chatServiceSessionSummariesByProjectId = new Map<string, QaapAgentConversationSummaryDTO[]>();
     protected executionTabOverflowMenu: HTMLElement | undefined;
     protected executionTabOverflowAnchor: HTMLElement | undefined;
@@ -2776,6 +2780,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected renderResearchHubView(): void {
         this.hubResearchUi.renderResearchHubView();
+    }
+
+    protected openResearchEditor(): void {
+        this.hubResearchEditorUi.openResearchEditor();
+    }
+
+    protected closeResearchEditor(): void {
+        this.hubResearchEditorUi.closeResearchEditor();
     }
 
     protected sortRoutinesForDisplay(routines: readonly QaapWorkHubRoutine[]): QaapWorkHubRoutine[] {

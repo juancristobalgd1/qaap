@@ -2777,7 +2777,18 @@ body.theia-mobile-mod-workhub-composer-header .theia-workbench-right-controls .t
   z-index: 9400;
 }
 
+.theia-mobile-projects.theia-mod-home.theia-mod-hub-research .theia-mobile-projects-fab {
+  position: fixed;
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px) + var(--theia-mobile-projects-fab-lift, 0px));
+  z-index: 9400;
+}
+
 .theia-mobile-projects.theia-mod-home.theia-mod-hub-list-chrome.theia-mod-hub-routines .theia-mobile-projects-fab {
+  bottom: calc(var(--theia-mobile-bottom-bar-height, 56px) + env(safe-area-inset-bottom, 0px) + 16px + var(--theia-mobile-projects-fab-lift, 0px));
+}
+
+.theia-mobile-projects.theia-mod-home.theia-mod-hub-list-chrome.theia-mod-hub-research .theia-mobile-projects-fab {
   bottom: calc(var(--theia-mobile-bottom-bar-height, 56px) + env(safe-area-inset-bottom, 0px) + 16px + var(--theia-mobile-projects-fab-lift, 0px));
 }
 
@@ -2790,7 +2801,17 @@ body.theia-mobile-mod-workhub-composer-header .theia-workbench-right-controls .t
   padding-bottom: calc(72px + var(--theia-mobile-bottom-bar-height, 56px) + env(safe-area-inset-bottom, 0px));
 }
 
+.theia-mobile-projects.theia-mod-home.theia-mod-hub-list-chrome.theia-mod-hub-research .theia-mobile-projects-scroll {
+  padding-inline: 0;
+  padding-bottom: calc(72px + var(--theia-mobile-bottom-bar-height, 56px) + env(safe-area-inset-bottom, 0px));
+}
+
 .theia-mobile-projects.theia-mod-home.theia-mod-hub-routines .theia-mobile-projects-scroll {
+  padding-inline: 0;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+.theia-mobile-projects.theia-mod-home.theia-mod-hub-research .theia-mobile-projects-scroll {
   padding-inline: 0;
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
@@ -5457,6 +5478,17 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   padding-bottom: 28px;
 }
 
+.theia-mobile-projects.theia-mod-hub-research .theia-mobile-projects-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  padding-inline: 0;
+  padding-bottom: 28px;
+}
+
 .theia-mobile-projects.theia-mod-hub-routines .theia-mobile-projects-header {
   padding-top: max(14px, env(safe-area-inset-top, 0px));
   padding-left: max(clamp(12px, 4vw, 20px), env(safe-area-inset-left, 0px));
@@ -5791,6 +5823,34 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-hub-research-cancel:active {
   color: var(--q-accent, var(--theia-foreground));
   background: var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 6%, transparent));
+}
+
+.theia-mobile-hub-research-play {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  border-radius: var(--q-radius-icon, 10px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+  background: transparent;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-hub-research-play:active:not(:disabled) {
+  color: var(--q-accent, var(--theia-foreground));
+  background: var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 6%, transparent));
+}
+
+.theia-mobile-hub-research-play:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .theia-mobile-projects-empty.theia-mod-research-empty,
@@ -8634,7 +8694,7 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 .theia-mobile-sticky-composer-changes-pill-count {
   flex: 0 0 auto;
   color: var(--theia-descriptionForeground);
-  font-size: 11px;
+  font-size: inherit;
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -8906,15 +8966,14 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   margin-left: 0;
 }
 
-/* Changes pill: diff-stat numbers run without badge background/border — only text color is kept.
- * Slightly larger than the "Changes" label (pill font-size 12px) so +N / −N read first. */
+/* Changes pill: diff-stat numbers run without badge background/border — only text color is kept. */
 .theia-mobile-sticky-composer-changes-pill .theia-mobile-sticky-composer-activity-inline-stats .theia-mobile-agent-diff-stat {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
   padding-inline: 2px;
-  font-size: 1.12em;
-  font-weight: 600;
+  font-size: inherit;
+  font-weight: 500;
 }
 
 .theia-mobile-sticky-composer-changes-pill .theia-mobile-sticky-composer-activity-inline-stats .theia-mobile-agent-diff-stat.theia-mod-added {

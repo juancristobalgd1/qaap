@@ -147,4 +147,27 @@ describe('QaapResearchStore ledger', () => {
         const goal = store.create({ cwd: tmpDir, description: 'Improve accuracy', metrics: [METRIC] });
         expect(goal.agentModel).to.equal(undefined);
     });
+
+    it('replayFrom clones a stopped goal with a new id and running status', () => {
+        const store = makeStoreForGoalCreation();
+        const source = store.create({
+            cwd: tmpDir,
+            description: 'Tune hyperparameters',
+            metrics: [METRIC],
+            runCommand: 'npm test',
+        }, 'alice');
+        store.updateGoal(source.id, { status: 'completed', terminationReason: 'reached-target' });
+        const replayed = store.replayFrom(source.id);
+        expect(replayed.id).to.not.equal(source.id);
+        expect(replayed.status).to.equal('running');
+        expect(replayed.description).to.equal(source.description);
+        expect(replayed.runCommand).to.equal('npm test');
+        expect(store.ownerOf(replayed.id)).to.equal('alice');
+    });
+
+    it('replayFrom rejects a running goal', () => {
+        const store = makeStoreForGoalCreation();
+        const source = store.create({ cwd: tmpDir, description: 'Improve accuracy', metrics: [METRIC] });
+        expect(() => store.replayFrom(source.id)).to.throw(/already running/);
+    });
 });

@@ -22,9 +22,9 @@ import { QaapResearchRunner } from './qaap-research-runner';
 import { QaapResearchStore } from './qaap-research-store';
 
 /**
- * REST create/list/detail/cancel for the auto-researcher v1. No frontend yet — `v1 sin UI, se
- * maneja con curl` — so this mirrors {@link QaapWorkHubRoutineEndpoint}'s auth/ownership pattern
- * without any UI-specific shaping.
+ * REST create/list/detail/cancel/replay for the auto-researcher v1. Work Hub lists goals and
+ * starts them via POST create or POST replay; the Node runner keeps executing after the browser
+ * closes (see {@link QaapResearchRunner#reconcileOnBoot}).
  */
 @injectable()
 export class QaapResearchEndpoint implements BackendApplicationContribution {
@@ -54,6 +54,9 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         });
         app.post(`${QAAP_RESEARCH_API_PATH}/:id/cancel`, (req, res) => {
             this.handleCancel(req, res);
+        });
+        app.post(`${QAAP_RESEARCH_API_PATH}/:id/replay`, (req, res) => {
+            this.handleReplay(req, res);
         });
     }
 
@@ -127,6 +130,29 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
             return;
         }
         res.json(cancelled);
+    }
+
+    protected handleReplay(req: Request, res: Response): void {
+        const source = this.getGoalIfOwned(req, res, req.params.id);
+        if (!source) {
+            return;
+        }
+        if (source.status === 'running') {
+            res.status(409).json({ error: 'Research goal is already running.' });
+            return;
+        }
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        try {
+            const ownerLogin = this.auth.resolveUserLogin(ctx);
+            const goal = this.store.replayFrom(source.id, ownerLogin);
+            this.runner.start(goal);
+            res.status(201).json(goal);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+        }
     }
 
     protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {

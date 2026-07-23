@@ -5,6 +5,7 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
+import { buildAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
 import {
     clearWorkingPillStopAllSuppression,
@@ -241,6 +242,65 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
         const host = createHost({ running: 0, streaming: 0 });
         new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
         expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.equal(null);
+    });
+
+    it('hides the Working pill on an empty Agents hub composer even when other agents are working', () => {
+        const host = createHost({
+            running: 1,
+            members: [{
+                id: 'm0',
+                kind: 'conversation',
+                title: 'Other project agent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'm0',
+                projectId: 'p1',
+                activityLabel: 'Working',
+            }],
+        });
+        host.transcriptComposerSummary = buildAgentsHubIdleConversationSummary('/srv/demo');
+        host.stickyComposerHost.classList.add('theia-mod-show-quick-actions');
+        new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
+        expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.equal(null);
+        expect(host.stickyComposerHost.querySelector('.theia-mod-working-only')).to.equal(null);
+    });
+
+    it('shows the Working pill on a non-empty open conversation', () => {
+        const host = createHost({
+            running: 1,
+            members: [{
+                id: 'm0',
+                kind: 'conversation',
+                title: 'Active agent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'm0',
+                projectId: 'p1',
+                activityLabel: 'Working',
+            }],
+        });
+        host.transcriptComposerSummary = {
+            id: 'conv-with-messages',
+            cwd: '/srv/demo',
+            agentId: 'qaiq',
+            title: 'Fix login bug',
+            status: 'streaming',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 3,
+        } as QaapAgentConversationSummaryDTO;
+        new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
+        expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.not.equal(null);
     });
 
     it('hides the Working pill after Stop All even if detail was open', async () => {

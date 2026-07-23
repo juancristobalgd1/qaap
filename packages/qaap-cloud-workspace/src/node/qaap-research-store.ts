@@ -111,6 +111,31 @@ export class QaapResearchStore {
         return this.updateGoal(id, { status: 'cancelled', terminationReason: 'cancelled' });
     }
 
+    /** Starts a new goal with the same configuration as a stopped goal (new id, fresh ledger branch). */
+    replayFrom(sourceId: string, ownerLogin?: string): ResearchGoal {
+        const source = this.goals.get(sourceId);
+        if (!source) {
+            throw new Error('Research goal not found.');
+        }
+        if (source.status === 'running') {
+            throw new Error('Research goal is already running.');
+        }
+        const owner = ownerLogin ?? this.ownerByGoalId.get(sourceId);
+        return this.create({
+            cwd: source.cwd,
+            description: source.description,
+            agentId: source.agentId,
+            agentModel: source.agentModel,
+            runCommand: source.runCommand,
+            runTimeoutMs: source.runTimeoutMs,
+            metrics: source.metrics.map(metric => ({ ...metric })),
+            maxRounds: source.maxRounds,
+            deadlineAt: source.deadlineAt,
+            stagnationRounds: source.stagnationRounds,
+            infraFailureLimit: source.infraFailureLimit,
+        }, owner);
+    }
+
     // ---- experiment ledger -------------------------------------------------
 
     protected ledgerPath(cwd: string): string {

@@ -14,6 +14,27 @@ import type { ResearchExperimentRecord } from './qaap-research-ledger';
 
 export const QAAP_RESEARCH_API_PATH = '/services/qaap-research/goals';
 
+/** POST suffix to start a fresh run from a stopped goal's saved configuration. */
+export const QAAP_RESEARCH_GOAL_REPLAY_PATH = (id: string): string =>
+    `${QAAP_RESEARCH_API_PATH}/${encodeURIComponent(id)}/replay`;
+
+/** Clone a stopped goal's configuration into a create body (new id assigned server-side). */
+export function researchGoalToCreateBody(goal: ResearchGoal): QaapCreateResearchGoalBody {
+    return {
+        cwd: goal.cwd,
+        description: goal.description,
+        agentId: goal.agentId,
+        agentModel: goal.agentModel,
+        runCommand: goal.runCommand,
+        runTimeoutMs: goal.runTimeoutMs,
+        metrics: goal.metrics.map(metric => ({ ...metric })),
+        maxRounds: goal.maxRounds,
+        deadlineAt: goal.deadlineAt,
+        stagnationRounds: goal.stagnationRounds,
+        infraFailureLimit: goal.infraFailureLimit,
+    };
+}
+
 export interface QaapCreateResearchGoalBody {
     readonly cwd: string;
     readonly description: string;

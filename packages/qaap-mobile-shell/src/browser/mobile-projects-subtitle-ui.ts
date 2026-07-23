@@ -142,7 +142,7 @@ export class MobileProjectsSubtitleUi {
             } else if (running > 0) {
                 this.host.subtitleEl.textContent = nls.localize(
                     'qaap/mobileProjects/researchSubtitleRunning',
-                    '{0} goals · {1} running',
+                    '{0} goals · {1} running on the VPS',
                     String(visible.length),
                     String(running),
                 );

@@ -9,6 +9,7 @@ import {
     cancelResearchGoal,
     fetchResearchGoalDetail,
     fetchResearchGoals,
+    replayResearchGoal,
 } from '../common/qaap-research-client';
 import {
     filterResearchGoalsByQuery,
@@ -38,6 +39,8 @@ export interface MobileProjectsHubResearchHost {
     researchGoalsLoaded: boolean;
     researchGoalsLoading: boolean;
     researchRefreshTimer: number | undefined;
+    researchInteractionLock: boolean;
+    researchSheet: HTMLElement | undefined;
 
     refreshResearchGoals(force?: boolean): Promise<void>;
     renderSubtitle(): void;
@@ -131,6 +134,9 @@ export class MobileProjectsHubResearchUi {
 
     scheduleResearchRefreshWhileRunning(): void {
         window.clearTimeout(this.host.researchRefreshTimer);
+        if (this.host.researchInteractionLock || this.host.researchSheet) {
+            return;
+        }
         const hasRunning = this.host.researchGoals.some(goal => goal.status === 'running');
         if (!hasRunning || this.host.hubView !== 'research' || !this.host.visible) {
             return;
@@ -164,7 +170,7 @@ export class MobileProjectsHubResearchUi {
             )
             : nls.localize(
                 'qaap/mobileProjects/researchEmptyBody',
-                'Create goals with curl against /services/qaap-research/goals.',
+                'Tap + to start a research goal on your VPS.',
             );
         empty.append(title, body);
         return empty;
@@ -267,8 +273,8 @@ export class MobileProjectsHubResearchUi {
         if (goal.status === 'running') {
             const cancel = document.createElement('button');
             cancel.type = 'button';
-            cancel.className = 'theia-mobile-hub-research-cancel q-icon-button codicon codicon-close';
-            cancel.title = nls.localize('qaap/mobileProjects/researchCancel', 'Cancel research goal');
+            cancel.className = 'theia-mobile-hub-research-cancel q-icon-button codicon codicon-debug-stop';
+            cancel.title = nls.localize('qaap/mobileProjects/researchStop', 'Stop research goal');
             cancel.setAttribute('aria-label', cancel.title);
             cancel.addEventListener('click', ev => {
                 ev.preventDefault();
@@ -276,6 +282,19 @@ export class MobileProjectsHubResearchUi {
                 void this.cancelGoal(goal);
             });
             trailing.append(cancel);
+        } else {
+            const play = document.createElement('button');
+            play.type = 'button';
+            play.className = 'theia-mobile-hub-research-play q-icon-button codicon codicon-debug-start';
+            play.title = nls.localize('qaap/mobileProjects/researchPlay', 'Start research');
+            play.setAttribute('aria-label', play.title);
+            play.disabled = this.host.researchInteractionLock;
+            play.addEventListener('click', ev => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                void this.playGoal(goal);
+            });
+            trailing.append(play);
         }
 
         row.append(main, trailing);
@@ -283,6 +302,10 @@ export class MobileProjectsHubResearchUi {
     }
 
     async cancelGoal(goal: ResearchGoal): Promise<void> {
+        if (this.host.researchInteractionLock) {
+            return;
+        }
+        this.host.researchInteractionLock = true;
         try {
             await cancelResearchGoal(goal.id);
             MobileSnackbar.show(
@@ -292,6 +315,26 @@ export class MobileProjectsHubResearchUi {
         } catch (error) {
             this.host.messageService?.error(error instanceof Error ? error.message : String(error));
         } finally {
+            this.host.researchInteractionLock = false;
+            await this.host.refreshResearchGoals(true);
+        }
+    }
+
+    async playGoal(goal: ResearchGoal): Promise<void> {
+        if (this.host.researchInteractionLock || goal.status === 'running') {
+            return;
+        }
+        this.host.researchInteractionLock = true;
+        try {
+            await replayResearchGoal(goal.id);
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/researchStarted', 'Research started on the VPS'),
+                { kind: 'success', duration: 2200 },
+            );
+        } catch (error) {
+            this.host.messageService?.error(error instanceof Error ? error.message : String(error));
+        } finally {
+            this.host.researchInteractionLock = false;
             await this.host.refreshResearchGoals(true);
         }
     }

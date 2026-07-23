@@ -29,12 +29,15 @@ export class MobileProjectsHubListChromeUi {
         this.host.root.classList.toggle('theia-mod-repo-expanded', repoExpanded);
         const showRepoFab = this.host.hubView === 'repos' && !repoExpanded;
         const showRoutineFab = this.host.hubView === 'routines';
-        const showFab = showRepoFab || showRoutineFab;
+        const showResearchFab = this.host.hubView === 'research';
+        const showFab = showRepoFab || showRoutineFab || showResearchFab;
         this.host.newFabBtn.hidden = !showFab;
         this.host.newFabBtn.setAttribute('aria-hidden', showFab ? 'false' : 'true');
-        this.host.newFabBtn.title = showRoutineFab
-            ? nls.localize('qaap/mobileProjects/newRoutine', 'New routine')
-            : nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
+        this.host.newFabBtn.title = showResearchFab
+            ? nls.localize('qaap/mobileProjects/newResearch', 'New research goal')
+            : showRoutineFab
+                ? nls.localize('qaap/mobileProjects/newRoutine', 'New routine')
+                : nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
         this.host.newFabBtn.setAttribute('aria-label', this.host.newFabBtn.title);
     }
 

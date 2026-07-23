@@ -28,6 +28,7 @@ export interface MobileProjectsRepoLifecycleHost {
     };
 
     openRoutineEditor(): void;
+    openResearchEditor(): void;
     render(): void;
     renderList(): void;
     openProjectDetail(project: MobileProjectEntry): Promise<void>;
@@ -44,6 +45,10 @@ export class MobileProjectsRepoLifecycleUi {
     async onNewClick(): Promise<void> {
         if (this.host.hubView === 'routines') {
             this.host.openRoutineEditor();
+            return;
+        }
+        if (this.host.hubView === 'research') {
+            this.host.openResearchEditor();
             return;
         }
         if (!this.host.openRepoDialog) {
