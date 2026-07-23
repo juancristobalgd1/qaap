@@ -1,8 +1,3 @@
-// *****************************************************************************
-// Copyright (C) 2026 Theia contributors and Qaap product fork.
-// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
-// *****************************************************************************
-
 import { expect } from 'chai';
 import {
     QAAP_APPEARANCE_MODE_KEY,
@@ -16,7 +11,7 @@ import {
     writeQaapAppearancePreferredTheme,
 } from './qaap-appearance-mode';
 
-describe('qaap-appearance-mode', () => {
+describe('qaap-appearance-mode (integration)', () => {
 
     function createStorage(): Pick<Storage, 'getItem' | 'setItem'> & { map: Map<string, string> } {
         const map = new Map<string, string>();

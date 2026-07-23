@@ -15,6 +15,7 @@ export const CHAT_SCROLL_FADE_SCROLLER_SELECTORS = [
     '.chat-tree-view-widget',
     '.chat-tree-view-widget .body',
     '.theia-mobile-agent-transcript',
+    '.theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-scroll',
 ] as const;
 
 export const CHAT_SCROLL_FADE_SCROLLER_SELECTOR = CHAT_SCROLL_FADE_SCROLLER_SELECTORS.join(',');
@@ -44,7 +45,16 @@ export function resolveChatScrollFadeState(
     };
 }
 
+function resolveProjectsScrollBottomHost(scroller: HTMLElement): HTMLElement | undefined {
+    const projectsRoot = scroller.closest<HTMLElement>('.theia-mobile-projects.theia-mod-sticky-composer');
+    if (!projectsRoot) {
+        return undefined;
+    }
+    return projectsRoot.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? undefined;
+}
+
 export function resolveChatScrollFadeHosts(scroller: HTMLElement): ChatScrollFadeHosts {
+    const projectsScrollBottom = resolveProjectsScrollBottomHost(scroller);
     const workHubChat = scroller.closest<HTMLElement>('.qaap-work-hub-chat-view-widget');
     const transcriptList = scroller.classList.contains('theia-mobile-agent-transcript')
         ? scroller
@@ -56,7 +66,7 @@ export function resolveChatScrollFadeHosts(scroller: HTMLElement): ChatScrollFad
         const inlineTranscript = realChatHost?.closest<HTMLElement>('.theia-mobile-agents-hub-inline-transcript');
         return {
             top: inlineTranscript ?? workHubChat,
-            bottom: realChatHost ?? transcriptList,
+            bottom: projectsScrollBottom ?? realChatHost ?? transcriptList,
         };
     }
 
@@ -72,7 +82,11 @@ export function resolveChatScrollFadeHosts(scroller: HTMLElement): ChatScrollFad
         const inlineTranscript = realChatHost?.closest<HTMLElement>('.theia-mobile-agents-hub-inline-transcript');
         const topHost = inlineTranscript ?? realChatHost ?? transcriptList;
         const bottomHost = realChatHost ?? transcriptList;
-        return { top: topHost, bottom: bottomHost };
+        return { top: topHost, bottom: projectsScrollBottom ?? bottomHost };
+    }
+
+    if (scroller.classList.contains('theia-mobile-projects-scroll') && projectsScrollBottom) {
+        return { top: scroller, bottom: projectsScrollBottom };
     }
 
     const realChat = scroller.closest<HTMLElement>('.theia-mobile-agent-transcript-real-chat');
@@ -89,6 +103,12 @@ export function installChatScrollFade(scroller: HTMLElement): Disposable {
     }
     if (scroller.dataset.qaapChatScrollFade === 'true') {
         return Disposable.NULL;
+    }
+    if (scroller.classList.contains('theia-mobile-projects-scroll')) {
+        const innerTranscript = scroller.querySelector(':scope .theia-mobile-agent-transcript');
+        if (innerTranscript instanceof HTMLElement) {
+            return Disposable.NULL;
+        }
     }
     scroller.dataset.qaapChatScrollFade = 'true';
 

@@ -1403,20 +1403,21 @@ function patchMobileToolDetail(
             if (nextResult) {
                 pendingTerminalOutputResult.set(el, nextResult);
             }
+            const latestResult = nextResult || pendingTerminalOutputResult.get(el);
             if (!el.open) {
                 // Collapsed: skip the stripAnsiEscapes + code-view DOM work
                 // entirely — the lazy open handler attached at creation
                 // covers it once the user expands the card. Still clear a
                 // stale pending placeholder so a later open doesn't show
                 // "Running…" for a tool that already finished empty.
-                if (!nextResult && nextTool.isFinished) {
+                if (!latestResult && nextTool.isFinished) {
                     const placeholder = content.querySelector('.theia-mobile-terminal-output-pending');
                     if (placeholder) {
                         placeholder.remove();
                     }
                 }
-            } else if (nextResult) {
-                renderMobileTerminalOutput(content, nextResult);
+            } else if (latestResult) {
+                renderMobileTerminalOutput(content, latestResult);
             } else if (nextTool.isFinished) {
                 ensureMobileTerminalEmptyOutputState(content);
             }

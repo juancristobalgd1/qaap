@@ -77,12 +77,18 @@ export function restoreTranscriptScrollAnchor(scroller: HTMLElement, anchor: Tra
     scroller.scrollTop += currentOffset - anchor.offsetTop;
 }
 
+type TranscriptScrollReconcileIntent =
+    | { readonly kind: 'follow-tail' }
+    | { readonly kind: 'preserve-anchor'; readonly anchor: TranscriptScrollAnchor; readonly settlePass?: boolean };
+
 export class TranscriptScrollController {
     protected currentPhase: TranscriptScrollPhase = 'idle';
     protected currentConversationId: string | undefined;
     protected programmaticScrollUntil = 0;
-    protected contentChangedRaf = 0;
-    protected contentChangedScroller: HTMLElement | undefined;
+    protected reconcileRaf = 0;
+    protected reconcileScroller: HTMLElement | undefined;
+    protected reconcileIntent: TranscriptScrollReconcileIntent | undefined;
+    protected reconcileNeedsSettlePass = false;
 
     constructor(protected readonly primaryScroller: HTMLElement) { }
 
@@ -109,6 +115,8 @@ export class TranscriptScrollController {
     jumpToLatest(): void {
         this.primaryScroller.removeAttribute(TRANSCRIPT_USER_SCROLL_INTENT_AT_ATTR);
         this.primaryScroller.removeAttribute(TRANSCRIPT_USER_SCROLL_INTENT_REASON_ATTR);
+        document.getSelection()?.removeAllRanges();
+        this.cancelPendingPreserveAnchor();
         this.transition({ type: 'jump-to-latest' });
     }
 
@@ -151,6 +159,83 @@ export class TranscriptScrollController {
         restoreTranscriptScrollAnchor(scroller, anchor);
     }
 
+    /** Preserve viewport anchor after layout settles (optionally twice for full rebuilds). */
+    schedulePreserveAnchor(scroller: HTMLElement, anchor: TranscriptScrollAnchor): void {
+        this.scheduleScrollReconciliation(scroller, { kind: 'preserve-anchor', anchor });
+    }
+
+    /** True while a deferred preserve-anchor reconciliation is queued. */
+    isPreserveAnchorPending(): boolean {
+        return this.reconcileIntent?.kind === 'preserve-anchor';
+    }
+
+    cancelPendingPreserveAnchor(): void {
+        if (this.reconcileIntent?.kind === 'preserve-anchor') {
+            this.reconcileIntent = undefined;
+            this.reconcileNeedsSettlePass = false;
+        }
+        if (this.reconcileRaf && !this.reconcileIntent) {
+            cancelAnimationFrame(this.reconcileRaf);
+            this.reconcileRaf = 0;
+            this.reconcileScroller = undefined;
+        }
+    }
+
+    /** One scroll decision per animation frame — follow OR preserve, never both. */
+    scheduleScrollReconciliation(scroller: HTMLElement, intent: TranscriptScrollReconcileIntent): void {
+        this.reconcileScroller = scroller;
+        this.reconcileIntent = this.mergeReconcileIntent(intent);
+        if (this.reconcileIntent.kind === 'follow-tail') {
+            this.reconcileNeedsSettlePass = false;
+        } else if (intent.kind === 'preserve-anchor' && !intent.settlePass) {
+            this.reconcileNeedsSettlePass = true;
+        }
+        if (this.reconcileRaf) {
+            return;
+        }
+        this.reconcileRaf = requestAnimationFrame(() => {
+            this.reconcileRaf = 0;
+            this.flushScrollReconciliation();
+        });
+    }
+
+    protected mergeReconcileIntent(next: TranscriptScrollReconcileIntent): TranscriptScrollReconcileIntent {
+        const current = this.reconcileIntent;
+        if (!current) {
+            return next;
+        }
+        if (next.kind === 'follow-tail' || current.kind === 'follow-tail') {
+            return { kind: 'follow-tail' };
+        }
+        return next;
+    }
+
+    protected flushScrollReconciliation(): void {
+        const scroller = this.reconcileScroller;
+        const intent = this.reconcileIntent;
+        const needsSettle = this.reconcileNeedsSettlePass;
+        this.reconcileScroller = undefined;
+        this.reconcileIntent = undefined;
+        this.reconcileNeedsSettlePass = false;
+        if (!scroller || !intent) {
+            return;
+        }
+        if (this.shouldFollowTail()) {
+            this.scrollToTail(scroller, 'auto');
+            return;
+        }
+        if (intent.kind === 'preserve-anchor') {
+            this.restoreAnchor(scroller, intent.anchor);
+            if (needsSettle) {
+                this.scheduleScrollReconciliation(scroller, {
+                    kind: 'preserve-anchor',
+                    anchor: intent.anchor,
+                    settlePass: true,
+                });
+            }
+        }
+    }
+
     scrollToTail(scroller: HTMLElement, behavior: ScrollBehavior = 'auto'): void {
         if (!transcriptScrollPhaseAllowsViewportMutation(this.currentPhase, 'follow-tail')) {
             return;
@@ -184,18 +269,8 @@ export class TranscriptScrollController {
     }
 
     onContentChanged(scroller: HTMLElement): void {
-        this.contentChangedScroller = scroller;
-        if (this.contentChangedRaf) {
-            return;
-        }
-        this.contentChangedRaf = requestAnimationFrame(() => {
-            this.contentChangedRaf = 0;
-            const pendingScroller = this.contentChangedScroller;
-            this.contentChangedScroller = undefined;
-            if (pendingScroller && this.shouldFollowTail()) {
-                this.scrollToTail(pendingScroller, 'auto');
-            }
-        });
+        this.cancelPendingPreserveAnchor();
+        this.scheduleScrollReconciliation(scroller, { kind: 'follow-tail' });
     }
 
     bind(scroller: HTMLElement): Disposable {

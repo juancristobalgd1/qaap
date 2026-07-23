@@ -374,6 +374,7 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
         scrollController.jumpToLatest();
         scrollController.markProgrammaticScroll(600);
         scrollTranscriptToEnd(scroller);
+        scrollController.onContentChanged(scroller);
         const resync = (): void => onScrollerScroll();
         if ('onscrollend' in scroller) {
             scroller.addEventListener('scrollend', resync, { once: true });

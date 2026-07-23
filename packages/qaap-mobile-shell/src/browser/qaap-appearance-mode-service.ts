@@ -8,25 +8,28 @@ import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposa
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { ThemeService } from '@theia/core/lib/browser/theming';
-import { getThemeMode } from '@theia/core/lib/common/theme';
+import { getThemeMode, type Theme } from '@theia/core/lib/common/theme';
 import {
-    QAAP_APPEARANCE_DARK_THEME_ID,
-    QAAP_APPEARANCE_LIGHT_THEME_ID,
+    QAAP_APPEARANCE_DEFAULT_DARK_THEME_ID,
+    QAAP_APPEARANCE_DEFAULT_LIGHT_THEME_ID,
     QaapAppearanceMode,
+    QaapAppearanceThemePair,
+    prefersDarkColorScheme,
     readQaapAppearanceMode,
+    readQaapAppearanceThemePair,
     resolveQaapAppearanceThemeId,
     writeQaapAppearanceMode,
+    writeQaapAppearancePreferredTheme,
 } from '../common/qaap-appearance-mode';
 
 /**
  * Light / Dark / System control for the Work Hub sessions sidebar.
  *
- * Light and Dark are the active Qaap product themes (`light` / `dark` — "Light (Qaap)" /
- * "Dark (Qaap)"), not a parallel skin. System picks between those same two themes using
- * `prefers-color-scheme`.
- *
- * Until the user picks a mode, startup leaves the current Theia theme alone and the switch
- * selection mirrors that theme's light/dark mode.
+ * Light and Dark navigate the remembered theme pair (preferred light theme ↔
+ * preferred dark theme). Picking a color theme elsewhere updates the matching
+ * side of that pair, so the switch never snaps back to built-in Qaap Light/Dark
+ * unless those are still the remembered preferences. System follows the OS
+ * between the same pair.
  */
 @injectable()
 export class QaapAppearanceModeService implements FrontendApplicationContribution {
@@ -37,6 +40,10 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
     protected mode: QaapAppearanceMode = 'system';
     protected hasExplicitMode = false;
     protected applyingTheme = false;
+    protected pair: QaapAppearanceThemePair = {
+        lightThemeId: QAAP_APPEARANCE_DEFAULT_LIGHT_THEME_ID,
+        darkThemeId: QAAP_APPEARANCE_DEFAULT_DARK_THEME_ID,
+    };
     protected readonly onDidChangeModeEmitter = new Emitter<QaapAppearanceMode>();
     protected readonly toDispose = new DisposableCollection();
     protected mediaListener = Disposable.NULL;
@@ -49,10 +56,12 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
             return;
         }
         this.started = true;
+        this.pair = readQaapAppearanceThemePair();
         const stored = readQaapAppearanceMode();
         this.hasExplicitMode = stored !== undefined;
         this.mode = stored ?? this.inferModeFromCurrentTheme();
         void this.themeService.initialized.then(() => {
+            this.rememberCurrentThemeInPair();
             if (!this.hasExplicitMode) {
                 this.mode = this.inferModeFromCurrentTheme();
                 this.onDidChangeModeEmitter.fire(this.mode);
@@ -65,7 +74,8 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
             if (this.applyingTheme) {
                 return;
             }
-            this.syncModeFromActiveQaapTheme();
+            this.rememberCurrentThemeInPair();
+            this.syncModeFromActiveTheme();
         }));
     }
 
@@ -84,7 +94,6 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
         if (this.hasExplicitMode && (this.mode === 'light' || this.mode === 'dark')) {
             return this.mode;
         }
-        // No explicit pick yet — selection follows the active Qaap / Theia theme.
         return this.inferModeFromCurrentTheme();
     }
 
@@ -99,22 +108,42 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
 
     protected inferModeFromCurrentTheme(): QaapAppearanceMode {
         const theme = this.themeService.getCurrentTheme();
-        if (theme?.id === QAAP_APPEARANCE_LIGHT_THEME_ID) {
-            return 'light';
-        }
-        if (theme?.id === QAAP_APPEARANCE_DARK_THEME_ID) {
+        return this.themeSide(theme) === 'light' ? 'light' : 'dark';
+    }
+
+    protected themeSide(theme: Theme | undefined): 'light' | 'dark' {
+        if (!theme) {
             return 'dark';
         }
-        const themeMode = getThemeMode(theme?.type ?? 'dark');
-        return themeMode === 'light' ? 'light' : 'dark';
+        if (theme.id === this.pair.lightThemeId) {
+            return 'light';
+        }
+        if (theme.id === this.pair.darkThemeId) {
+            return 'dark';
+        }
+        return getThemeMode(theme.type) === 'light' ? 'light' : 'dark';
+    }
+
+    /** When the user picks a color theme, remember it as this pair's light or dark side. */
+    protected rememberCurrentThemeInPair(): void {
+        const theme = this.themeService.getCurrentTheme();
+        if (!theme?.id) {
+            return;
+        }
+        const side = getThemeMode(theme.type) === 'light' ? 'light' : 'dark';
+        if (side === 'light') {
+            this.pair = { ...this.pair, lightThemeId: theme.id };
+        } else {
+            this.pair = { ...this.pair, darkThemeId: theme.id };
+        }
+        writeQaapAppearancePreferredTheme(side, theme.id);
     }
 
     /**
-     * Keep Light/Dark selection aligned with the active Qaap theme when the user changes
-     * color theme elsewhere (e.g. Color Theme picker). System stays selected until they
-     * explicitly pick Light or Dark.
+     * Keep Light/Dark selection aligned with the active theme when the user changes
+     * color theme elsewhere. System stays selected until they explicitly pick Light/Dark.
      */
-    protected syncModeFromActiveQaapTheme(): void {
+    protected syncModeFromActiveTheme(): void {
         if (this.mode === 'system' && this.hasExplicitMode) {
             return;
         }
@@ -123,7 +152,6 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
             return;
         }
         this.mode = next;
-        // Mirror an external theme pick into the appearance preference so reload stays consistent.
         if (this.hasExplicitMode) {
             writeQaapAppearanceMode(next);
         }
@@ -131,7 +159,8 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
     }
 
     protected applyResolvedTheme(): void {
-        const themeId = resolveQaapAppearanceThemeId(this.mode);
+        const requestedId = resolveQaapAppearanceThemeId(this.mode, this.pair);
+        const themeId = this.resolveExistingThemeId(requestedId);
         this.applyingTheme = true;
         try {
             this.themeService.setCurrentTheme(themeId, true);
@@ -143,6 +172,21 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
         } finally {
             this.applyingTheme = false;
         }
+    }
+
+    protected resolveExistingThemeId(themeId: string): string {
+        const themes = this.themeService.getThemes();
+        if (themes.some(theme => theme.id === themeId)) {
+            return themeId;
+        }
+        const wantLight = this.mode === 'light'
+            || (this.mode === 'system' && !prefersDarkColorScheme());
+        const fallback = wantLight
+            ? QAAP_APPEARANCE_DEFAULT_LIGHT_THEME_ID
+            : QAAP_APPEARANCE_DEFAULT_DARK_THEME_ID;
+        return themes.some(theme => theme.id === fallback)
+            ? fallback
+            : (themes[0]?.id ?? themeId);
     }
 
     protected syncMediaListener(): void {

@@ -218,9 +218,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         ].join(':');
     }
 
-    /** Derive legacy segments[] from traceEvents so incremental DOM patches can reuse segment logic. */
+    /** Derive segments[] from traceEvents so incremental DOM patches match {@link resolveQaapTranscriptTrace}. */
     protected withDerivedTranscriptSegments(msg: QaapAgentMessageDTO): QaapAgentMessageDTO {
-        if (!msg.traceEvents?.length || msg.segments?.length) {
+        if (!msg.traceEvents?.length) {
             return msg;
         }
         const segments = dedupeAgentMessageTextSegments(traceEventsToSegments(msg.traceEvents));
@@ -424,11 +424,16 @@ export class MobileProjectsTranscriptMessagesRenderUi {
      * only through the controller's gesture-aware scroll listener.
      */
     protected shouldFollowTranscriptTail(scroller: HTMLElement): boolean {
+        const scroll = this.resolveTranscriptScrollController(scroller);
+        // Explicit live-edge opt-in (Jump to latest) wins over stale selection/focus.
+        if (scroll.shouldFollowTail()) {
+            return true;
+        }
         if (transcriptHasActiveSelection(scroller) || transcriptHasInteractiveFocus(scroller)) {
-            this.resolveTranscriptScrollController(scroller).notifyUserDetach('interaction');
+            scroll.notifyUserDetach('interaction');
             return false;
         }
-        return this.resolveTranscriptScrollController(scroller).shouldFollowTail();
+        return false;
     }
 
     protected captureTranscriptScrollAnchor(scroller: HTMLElement): ReturnType<TranscriptScrollController['captureAnchor']> {
@@ -440,6 +445,36 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         anchor: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,
     ): void {
         this.resolveTranscriptScrollController(scroller).restoreAnchor(scroller, anchor);
+    }
+
+    /**
+     * Reconcile scroll after a DOM mutation. Re-checks follow intent at apply time so a
+     * jump-to-latest during an in-flight patch cannot lose to a stale captured anchor.
+     */
+    protected applyTranscriptScrollAfterMutation(
+        messageHost: HTMLElement,
+        anchor?: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,
+    ): void {
+        if (this.shouldFollowTranscriptTail(messageHost)) {
+            this.scrollTranscriptFollowTail(messageHost);
+        } else if (anchor) {
+            this.resolveTranscriptScrollController(messageHost).schedulePreserveAnchor(messageHost, anchor);
+        }
+    }
+
+    /** Preserve reading position now and once more after layout settles (full rebuild path). */
+    protected scheduleTranscriptScrollAfterMutation(
+        messageHost: HTMLElement,
+        anchor?: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,
+    ): void {
+        if (this.shouldFollowTranscriptTail(messageHost)) {
+            this.scrollTranscriptFollowTail(messageHost);
+            return;
+        }
+        if (!anchor) {
+            return;
+        }
+        this.resolveTranscriptScrollController(messageHost).schedulePreserveAnchor(messageHost, anchor);
     }
 
     protected scrollTranscriptTurnStartIntoReadingPosition(messageHost: HTMLElement, row: HTMLElement): void {
@@ -804,11 +839,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 this.scrollTranscriptToLastUserTurn(messageHost);
             }
             scroll.completeRestore();
-        } else if (shouldFollowTail) {
-            this.scrollTranscriptFollowTail(messageHost);
-        } else if (anchor) {
-            this.restoreTranscriptScrollAnchor(messageHost, anchor);
-            window.requestAnimationFrame(() => this.restoreTranscriptScrollAnchor(messageHost, anchor));
+        } else {
+            this.scheduleTranscriptScrollAfterMutation(messageHost, anchor);
         }
         this.attachTranscriptScrollChrome(host, messageHost, conv);
     }
@@ -898,11 +930,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             this.host.transcriptLastConv = conv;
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
-            if (shouldFollowTail) {
-                this.scrollTranscriptFollowTail(messageHost);
-            } else if (anchor) {
-                this.restoreTranscriptScrollAnchor(messageHost, anchor);
-            }
+            this.applyTranscriptScrollAfterMutation(messageHost, anchor);
             return true;
         }
 
@@ -953,11 +981,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 this.host.transcriptLastConv = conv;
                 this.host.transcriptLastRenderedConversationId = conv.id;
                 this.host.transcriptLastRenderedMessageId = lastAgent.id;
-                if (shouldFollowTail) {
-                    this.scrollTranscriptFollowTail(messageHost);
-                } else if (anchor) {
-                    this.restoreTranscriptScrollAnchor(messageHost, anchor);
-                }
+                this.applyTranscriptScrollAfterMutation(messageHost, anchor);
                 return true;
             }
         }
@@ -1012,11 +1036,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptLastConv = conv;
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = lastAgent.id;
-        if (shouldFollowTail) {
-            this.scrollTranscriptFollowTail(messageHost);
-        } else if (anchor) {
-            this.restoreTranscriptScrollAnchor(messageHost, anchor);
-        }
+        this.applyTranscriptScrollAfterMutation(messageHost, anchor);
         return true;
     }
 

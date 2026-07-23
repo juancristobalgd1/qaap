@@ -2124,8 +2124,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (segmentsBody && hasMobileExecutionEventTimeline(row)) {
             const queuedRefreshSegments = this.consumeExecutionTimelineRefresh(row);
             const skippedOnly = !queuedRefreshSegments && this.consumeSkippedExecutionTimelineRefresh(row);
-            const refreshSegments = queuedRefreshSegments ?? nextSegments;
-            if (!skippedOnly) {
+            // Prefer live trace-derived segments from the conversation snapshot —
+            // stale msg.segments[] can lag behind traceEvents while a shell tool
+            // streams stdout, which would leave an open terminal card on
+            // "Running…" even though patch_tool / patch_trace_event already
+            // updated the trace. Signature caching keeps no-op refreshes cheap.
+            const refreshSegments = conv
+                ? this.resolveTranscriptRowSegments(conv, row)
+                : (queuedRefreshSegments ?? nextSegments);
+            if (conv || !skippedOnly) {
                 const hasTools = refreshSegments.some(s => s.type === 'tool');
                 if (hasTools) {
                     recordTranscriptRenderMetric('timeline_sync');

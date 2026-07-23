@@ -13,6 +13,7 @@ import {
     QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
 } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '../common/qaap-transcript-incremental-update';
 import {
     enableTranscriptRenderMetrics,
@@ -450,6 +451,134 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(ensureTranscriptScrollController(messageHost).phase).to.equal('detached');
     });
 
+    it('keeps following the live edge after jump-to-latest while streaming with text selected', async () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const streaming = conversationWithMessages([
+            { id: 'user-1', role: 'user', content: 'Explain this bug', createdAt: 1 },
+            { id: 'agent-1', role: 'agent', content: 'First chunk', createdAt: 2 },
+        ]);
+        renderUi.renderTranscriptMessages(chatHost, streaming);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        let scrollTop = 0;
+        let scrollHeight = 1200;
+        Object.defineProperties(messageHost, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 400 },
+            scrollHeight: {
+                configurable: true,
+                get: () => scrollHeight,
+            },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+        });
+        scrollTop = 120;
+        const controller = ensureTranscriptScrollController(messageHost);
+        controller.notifyUserDetach('wheel');
+        controller.jumpToLatest();
+        scrollTop = 800;
+
+        const content = messageHost.querySelector('.theia-mobile-agent-transcript-content');
+        if (content?.firstChild) {
+            const range = document.createRange();
+            range.selectNodeContents(content.firstChild);
+            const selection = document.getSelection()!;
+            selection.removeAllRanges();
+            selection.addRange(range);
+            expect(selection.isCollapsed).to.equal(false);
+        }
+
+        host.transcriptLastConv = streaming;
+        host.transcriptLastRenderedConversationId = streaming.id;
+        scrollHeight = 1400;
+        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
+            { id: 'user-1', role: 'user', content: 'Explain this bug', createdAt: 1 },
+            { id: 'agent-1', role: 'agent', content: 'First chunk with more streaming tokens', createdAt: 2 },
+        ]));
+
+        expect(controller.phase).to.equal('following');
+        await new Promise<void>(resolve => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => resolve());
+            });
+        });
+        expect(scrollTop).to.equal(1400);
+    });
+
+    it('does not apply a stale captured anchor after jump-to-latest on streaming patch', async () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const streaming = conversationWithMessages([
+            { id: 'user-1', role: 'user', content: 'Explain this bug', createdAt: 1 },
+            { id: 'agent-1', role: 'agent', content: 'First chunk', createdAt: 2 },
+        ]);
+        renderUi.renderTranscriptMessages(chatHost, streaming);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        let scrollTop = 120;
+        let scrollHeight = 1200;
+        Object.defineProperties(messageHost, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 400 },
+            scrollHeight: {
+                configurable: true,
+                get: () => scrollHeight,
+            },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+        });
+        const controller = ensureTranscriptScrollController(messageHost);
+        controller.notifyUserDetach('wheel');
+        const staleAnchor = { ...controller.captureAnchor(messageHost), top: 120 };
+        controller.jumpToLatest();
+        scrollTop = 800;
+
+        host.transcriptLastConv = streaming;
+        host.transcriptLastRenderedConversationId = streaming.id;
+        scrollHeight = 1400;
+        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
+            { id: 'user-1', role: 'user', content: 'Explain this bug', createdAt: 1 },
+            { id: 'agent-1', role: 'agent', content: 'First chunk with more streaming tokens', createdAt: 2 },
+        ]));
+
+        (renderUi as unknown as {
+            applyTranscriptScrollAfterMutation(host: HTMLElement, anchor?: { top: number }): void;
+        }).applyTranscriptScrollAfterMutation(messageHost, staleAnchor);
+
+        expect(controller.phase).to.equal('following');
+        await new Promise<void>(resolve => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => resolve());
+            });
+        });
+        expect(scrollTop).to.equal(1400);
+    });
+
     function settledConversation(
         id: string,
         messages: QaapAgentConversationDTO['messages'],
@@ -548,6 +677,37 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         } finally {
             resetTranscriptRenderMetrics();
             enableTranscriptRenderMetrics(false);
+        }
+    });
+
+    it('derives streaming tool stdout from traceEvents even when legacy segments[] exist', () => {
+        const { renderUi } = createRenderUi();
+        const derived = (renderUi as MobileProjectsTranscriptMessagesRenderUi & {
+            withDerivedTranscriptSegments(msg: QaapAgentMessageDTO): QaapAgentMessageDTO;
+        }).withDerivedTranscriptSegments({
+            id: 'a1',
+            role: 'agent',
+            content: '',
+            createdAt: 1,
+            segments: [{
+                type: 'tool',
+                toolUseId: 't1',
+                name: 'Bash',
+                args: '{}',
+                finished: false,
+            }],
+            traceEvents: [{
+                type: 'tool_call',
+                id: 't1',
+                name: 'Bash',
+                args: '{}',
+                status: 'running',
+                result: 'line1\n',
+            }],
+        });
+        expect(derived.segments?.[0]?.type).to.equal('tool');
+        if (derived.segments?.[0]?.type === 'tool') {
+            expect(derived.segments[0].result).to.equal('line1\n');
         }
     });
 

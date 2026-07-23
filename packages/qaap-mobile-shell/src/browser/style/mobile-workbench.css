@@ -6232,7 +6232,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
     max-width: none;
   }
 
-  .theia-mobile-projects-sticky-composer-inner:has(> .theia-mobile-projects-sticky-composer-card.theia-mod-codex),
   .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
     --qaap-codex-shell-radius: 16px;
     --qaap-codex-shell-lip-radius: 14px;
@@ -7554,35 +7553,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   margin-top: 4px;
 }
 
-/*
- * Working expand panel + codex composer — one stacked shell (match activity-stack → stage).
- * Drop the pill-row gap and flatten the shared seam; radii follow composer tokens on inner.
- */
-.theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)+.theia-mobile-projects-sticky-composer-card.theia-mod-codex {
-  margin-top: 0;
-}
-
-.theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)+.theia-mobile-projects-sticky-composer-card.theia-mod-codex:not(.theia-mod-has-activity):not(.theia-mod-has-context)>.theia-mobile-projects-sticky-composer-stage>.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-codex {
-  border-top: none !important;
-  border-top-left-radius: 0 !important;
-  border-top-right-radius: 0 !important;
-  margin-top: -1px;
-}
-
-.theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)+.theia-mobile-projects-sticky-composer-card.theia-mod-codex:not(.theia-mod-has-context)>.theia-mobile-sticky-composer-activity-stack {
-  border-top: none;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  margin-top: -1px;
-}
-
-.theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)+.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-context:not(.theia-mod-has-activity)>.theia-mobile-projects-sticky-composer-context-strip {
-  border-top: none;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  margin-top: -1px;
-}
-
 .theia-mobile-sticky-composer-changes-pill-host .theia-mobile-sticky-composer-changes-pill-row {
   width: 100%;
 }
@@ -7927,15 +7897,10 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   align-self: stretch;
   width: 100%;
   max-width: none;
-  border-radius: var(--qaap-codex-shell-radius, 16px);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
-  border-bottom: none;
-  background: var(--qaap-codex-shell-bg, color-mix(in srgb, var(--theia-editor-background, #1e1e1e) 94%, #000));
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-  box-shadow: 0 8px 22px color-mix(in srgb, #000 36%, transparent);
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--theia-editor-background, #1e1e1e) 94%, #000);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -7959,6 +7924,22 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex: 1 1 100%;
   width: 100%;
   max-width: 100%;
+}
+
+/* Working open: hide the horizontal pill slider (Changes, Commit, Step, …). */
+.theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)
+  > :not(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
+  display: none;
+}
+
+.theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)::after {
+  content: none;
+}
+
+/* Separate pill-only host (e.g. Step) while Working expands elsewhere. */
+.theia-mobile-projects-sticky-composer-inner:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)
+  > .theia-mobile-sticky-composer-changes-pill-host:not(:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)) {
+  display: none;
 }
 
 .theia-mobile-sticky-composer-working-control > .theia-mobile-sticky-composer-working-pill {
@@ -8250,7 +8231,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   min-height: 0;
 }
 
-/* Live VPS command output — premium terminal card under the activity feed. */
+/* Live command output — same soft surface language as thought / activity cards. */
 .qaap-working-agents-detail-command-log {
   display: flex;
   flex-direction: column;
@@ -8258,22 +8239,15 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex: 0 1 auto;
   min-width: 0;
   min-height: 0;
-  padding: 10px 11px 11px;
-  border-radius: 12px;
-  background:
-    linear-gradient(
-      165deg,
-      color-mix(in srgb, #121820 92%, transparent) 0%,
-      color-mix(in srgb, #070b10 94%, var(--theia-editor-background, #1e1e1e)) 100%
-    );
-  border: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.28)) 62%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
-    0 8px 20px color-mix(in srgb, #000 18%, transparent);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theia-foreground) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  box-shadow: none;
 }
 
 .qaap-working-agents-detail-command-log[data-state='running'] {
-  border-color: color-mix(in srgb, var(--q-accent, #E58E40) 28%, var(--theia-panel-border, rgba(128, 128, 128, 0.28)));
+  border-color: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
 }
 
 .qaap-working-agents-detail-command-log-header {
@@ -8285,12 +8259,12 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .qaap-working-agents-detail-command-log-label {
-  color: color-mix(in srgb, #9aa4b2 90%, transparent);
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 94%, transparent);
   font-family: var(--theia-ui-font-family, sans-serif);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .qaap-working-agents-detail-command-log-live {
@@ -8298,11 +8272,11 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   align-items: center;
   gap: 5px;
   flex: 0 0 auto;
-  color: color-mix(in srgb, var(--q-accent, #E58E40) 88%, #fff);
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 92%, transparent);
   font-family: var(--theia-ui-font-family, sans-serif);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
@@ -8311,8 +8285,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--q-accent, #E58E40);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-accent, #E58E40) 55%, transparent);
+  background: var(--q-accent, var(--theia-focusBorder, #E58E40));
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-accent, var(--theia-focusBorder, #E58E40)) 45%, transparent);
   animation: qaap-working-detail-command-log-pulse 1.6s ease-out infinite;
 }
 
@@ -8322,7 +8296,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 @keyframes qaap-working-detail-command-log-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-accent, #E58E40) 45%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-accent, var(--theia-focusBorder, #E58E40)) 40%, transparent);
   }
   70% {
     box-shadow: 0 0 0 6px transparent;
@@ -8342,21 +8316,21 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   overscroll-behavior-y: contain;
-  padding: 9px 10px;
-  border-radius: 9px;
-  background: color-mix(in srgb, #000 42%, transparent);
-  border: 1px solid color-mix(in srgb, #fff 7%, transparent);
-  color: color-mix(in srgb, #dce3ec 94%, #9aa4b2);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theia-editor-background, var(--theia-editorWidget-background)) 88%, var(--theia-foreground) 4%);
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  color: color-mix(in srgb, var(--theia-foreground) 88%, var(--theia-descriptionForeground));
   font-family: var(--theia-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 11.5px;
-  line-height: 1.6;
+  line-height: 1.55;
   tab-size: 2;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .qaap-working-agents-detail-command-log-output.theia-mod-empty {
-  color: color-mix(in srgb, #9aa4b2 82%, transparent);
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 88%, transparent);
   font-style: italic;
   font-family: var(--theia-ui-font-family, sans-serif);
   font-size: 12px;
@@ -8367,7 +8341,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   background-image: linear-gradient(
     100deg,
     transparent 0%,
-    color-mix(in srgb, #fff 4%, transparent) 46%,
+    color-mix(in srgb, var(--theia-foreground) 5%, transparent) 46%,
     transparent 100%
   );
   background-size: 220% 100%;
@@ -25939,7 +25913,6 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialo
   backdrop-filter: none !important;
 }
 
-.theia-mobile-projects-sticky-composer-inner:has(> .theia-mobile-projects-sticky-composer-card.theia-mod-codex),
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
   --qaap-codex-shell-bg: color-mix(in srgb, var(--theia-editor-background) 94%, var(--theia-foreground) 6%);
   --qaap-codex-tray-bg: color-mix(in srgb, var(--qaap-codex-shell-bg) 88%, #000 12%);
@@ -25947,9 +25920,6 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialo
   --qaap-codex-send-ready-fg: color-mix(in srgb, var(--theia-editor-background) 92%, #000);
   --qaap-codex-shell-radius: 26px;
   --qaap-codex-shell-lip-radius: 18px;
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex {
   border-radius: var(--qaap-codex-shell-radius);
   border: none;
   background: transparent;
@@ -26004,13 +25974,11 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialo
   background: transparent;
 }
 
-body.qaap-theme-light .theia-mobile-projects-sticky-composer-inner:has(> .theia-mobile-projects-sticky-composer-card.theia-mod-codex),
 body.qaap-theme-light .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
   /* Frosted glass: translucent so the chat shows through; blur is applied on the surfaces below. */
   --qaap-codex-shell-bg: color-mix(in srgb, #ffffff 74%, transparent);
 }
 
-body.qaap-theme-dark .theia-mobile-projects-sticky-composer-inner:has(> .theia-mobile-projects-sticky-composer-card.theia-mod-codex),
 body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
   /* Frosted glass: translucent so the chat shows through; blur is applied on the surfaces below. */
   --qaap-codex-shell-bg: color-mix(in srgb,
@@ -26281,7 +26249,6 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   justify-content: space-between;
   gap: 12px;
   padding: 4px 12px 6px;
-  background: var(--qaap-codex-shell-bg);
 }
 
 .theia-mobile-projects-sticky-composer-controls-row button,
@@ -26797,15 +26764,6 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex:not(.theia-mod-input-expanded) .theia-mobile-projects-sticky-composer-input-panel.theia-mod-codex {
   border-bottom: none !important;
-  border-bottom-left-radius: var(--qaap-codex-shell-lip-radius) !important;
-  border-bottom-right-radius: var(--qaap-codex-shell-lip-radius) !important;
-}
-
-/* White input lip → grey tray: curve the tray top to match the shell lip (no rectangular seam). */
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex:not(.theia-mod-input-expanded) .theia-mobile-projects-sticky-composer-stage>.qaap-codex-context-tray,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex:not(.theia-mod-input-expanded) .theia-mobile-projects-sticky-composer-stage>.theia-mobile-projects-sticky-composer-toolbar.qaap-codex-context-tray {
-  border-top-left-radius: var(--qaap-codex-shell-lip-radius);
-  border-top-right-radius: var(--qaap-codex-shell-lip-radius);
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .qaap-codex-context-tray.theia-mod-workspace-context-tray {
@@ -30349,9 +30307,12 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 .theia-mobile-agent-shell-window.theia-mod-turn-failure,
 .theia-mobile-agent-shell-window.theia-mod-turn-failure.theia-mod-failed {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   margin: 2px 0 !important;
+  margin-inline: 0 !important;
+  align-self: stretch;
   overflow: visible;
   border: none !important;
   border-color: transparent !important;
@@ -30438,14 +30399,31 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 }
 
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-body {
-  margin: 0;
+  margin: 0 !important;
+  margin-inline: 0 !important;
   padding: 4px 0 6px;
+  padding-inline: 0 !important;
   background: transparent;
-  border: none;
+  border: none !important;
+  border-left: none !important;
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-body::after {
+  display: none;
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure:not([open]) .theia-mobile-agent-shell-head {
+  margin-inline: auto;
 }
 
 .theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-body {
   padding: 8px 10px 10px;
+}
+
+.theia-mobile-agent-transcript-segments > .theia-mobile-agent-shell-window.theia-mod-turn-failure {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
 }
 
 /* IDE chat panel: execution surfaces must fill and stay centered after view changes. */

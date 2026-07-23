@@ -107,4 +107,131 @@ describe('qaap-transcript-scroll-controller', () => {
         expect(controller.phase).to.equal('following');
         expect(controller.shouldFollowTail()).to.equal(true);
     });
+
+    it('jumpToLatest clears an active text selection', () => {
+        const scroller = document.createElement('div');
+        scroller.textContent = 'Selectable transcript line';
+        document.body.append(scroller);
+        const controller = ensureTranscriptScrollController(scroller);
+        const range = document.createRange();
+        range.selectNodeContents(scroller);
+        const selection = document.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        expect(selection.isCollapsed).to.equal(false);
+
+        controller.jumpToLatest();
+
+        expect(selection.isCollapsed).to.equal(true);
+        expect(controller.phase).to.equal('following');
+        scroller.remove();
+    });
+
+    it('jumpToLatest cancels a pending deferred preserve-anchor restore', async () => {
+        const scroller = document.createElement('div');
+        let scrollTop = 120;
+        Object.defineProperties(scroller, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 400 },
+            scrollHeight: { configurable: true, value: 1200 },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+            getBoundingClientRect: {
+                configurable: true,
+                value: () => ({ top: 0, bottom: 400, left: 0, right: 320, width: 320, height: 400, x: 0, y: 0, toJSON: () => ({}) }),
+            },
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.notifyUserDetach('wheel');
+        const staleAnchor = controller.captureAnchor(scroller);
+        const pendingRafs: FrameRequestCallback[] = [];
+        const previousRaf = globalThis.requestAnimationFrame;
+        const previousCancel = globalThis.cancelAnimationFrame;
+        globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            pendingRafs.push(callback);
+            return pendingRafs.length;
+        };
+        globalThis.cancelAnimationFrame = (): void => {
+            pendingRafs.length = 0;
+        };
+        try {
+            controller.schedulePreserveAnchor(scroller, staleAnchor);
+            expect(scrollTop).to.equal(120);
+
+            controller.jumpToLatest();
+            scrollTop = 800;
+
+            pendingRafs.forEach(callback => callback(0));
+        } finally {
+            globalThis.requestAnimationFrame = previousRaf;
+            globalThis.cancelAnimationFrame = previousCancel;
+        }
+
+        expect(controller.phase).to.equal('following');
+        expect(scrollTop).to.equal(800);
+    });
+
+    it('coalesces competing follow and preserve intents into a single follow write', () => {
+        const scroller = document.createElement('div');
+        let scrollTop = 100;
+        let scrollToCalls = 0;
+        Object.defineProperties(scroller, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 400 },
+            scrollHeight: { configurable: true, value: 900 },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    scrollToCalls++;
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+            getBoundingClientRect: {
+                configurable: true,
+                value: () => ({ top: 0, bottom: 400, left: 0, right: 320, width: 320, height: 400, x: 0, y: 0, toJSON: () => ({}) }),
+            },
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.beginPositionTurn();
+        controller.completePositionTurn();
+        const anchor = controller.captureAnchor(scroller);
+        const pendingRafs: FrameRequestCallback[] = [];
+        const previousRaf = globalThis.requestAnimationFrame;
+        const previousCancel = globalThis.cancelAnimationFrame;
+        globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            pendingRafs.push(callback);
+            return pendingRafs.length;
+        };
+        globalThis.cancelAnimationFrame = (): void => {
+            pendingRafs.length = 0;
+        };
+        try {
+            controller.schedulePreserveAnchor(scroller, anchor);
+            controller.onContentChanged(scroller);
+            controller.onContentChanged(scroller);
+            expect(pendingRafs).to.have.length(1);
+            pendingRafs.forEach(callback => callback(0));
+        } finally {
+            globalThis.requestAnimationFrame = previousRaf;
+            globalThis.cancelAnimationFrame = previousCancel;
+        }
+        expect(scrollToCalls).to.equal(1);
+        expect(scrollTop).to.equal(900);
+    });
 });

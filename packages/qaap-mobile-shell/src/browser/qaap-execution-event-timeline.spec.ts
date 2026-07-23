@@ -456,6 +456,34 @@ describe('qaap-execution-event-timeline', () => {
             expect(body?.querySelector('.theia-mobile-terminal-output-empty')).to.equal(null);
         });
 
+        it('streams stdout into an open running terminal card in place', () => {
+            const segmentsBody = document.createElement('div');
+            segmentsBody.className = 'theia-mobile-agent-transcript-segments';
+            segmentsBody.append(createMobileExecutionEventTimeline([
+                toolSegment('Bash', 'tool-stream', JSON.stringify({ command: 'npm run compile' }), false, false, ''),
+            ]));
+
+            const group = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-tool-group');
+            group!.open = true;
+            const terminal = segmentsBody.querySelector<HTMLDetailsElement>('.theia-mobile-terminal-output');
+            terminal!.open = true;
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-pending')?.textContent).to.equal('Running...');
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Bash', 'tool-stream', JSON.stringify({ command: 'npm run compile' }), false, false, '> compile\n'),
+            ]);
+
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-pending')).to.equal(null);
+            expect(terminal?.textContent).to.include('compile');
+            expect(terminal?.querySelector('.theia-mobile-terminal-output-code-view')).to.not.equal(null);
+
+            refreshMobileExecutionEventTimeline(segmentsBody, [
+                toolSegment('Bash', 'tool-stream', JSON.stringify({ command: 'npm run compile' }), false, false, '> compile\nDone.\n'),
+            ]);
+
+            expect(terminal?.textContent).to.include('Done.');
+        });
+
         it('shows an explicit empty state when a complete terminal has no result', () => {
             const el = createMobileExecutionEventTimeline([
                 {

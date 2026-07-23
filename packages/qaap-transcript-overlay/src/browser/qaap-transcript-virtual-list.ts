@@ -383,11 +383,17 @@ export class TranscriptVirtualList implements Disposable {
         }
         this.update();
         if (deltaAboveViewport !== 0) {
-            // Keep the content the user is looking at fixed in place: apply the
-            // correction after update() so the spacer is already resized and the
-            // new scrollTop cannot be clamped against a stale scrollHeight.
-            // Tag as programmatic so near-bottom after correction never re-enables follow.
-            getTranscriptScrollController(this.scrollHost)?.markProgrammaticScroll();
+            const scrollController = getTranscriptScrollController(this.scrollHost);
+            // Live-edge follow wins — coalesce with render-layer follow instead of fighting delta.
+            if (scrollController?.shouldFollowTail()) {
+                scrollController.onContentChanged(this.scrollHost);
+                return;
+            }
+            // Defer height correction while a preserve pass is already queued for this frame.
+            if (scrollController?.isPreserveAnchorPending()) {
+                return;
+            }
+            scrollController?.markProgrammaticScroll();
             this.scrollHost.scrollTop = scrollTop + deltaAboveViewport;
         }
     }
