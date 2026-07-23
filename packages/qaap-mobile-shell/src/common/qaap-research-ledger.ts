@@ -297,6 +297,23 @@ export function bestPrimaryValue(records: readonly ResearchExperimentRecord[], p
     return primary.direction === 'max' ? Math.max(...values) : Math.min(...values);
 }
 
+export interface ResearchGoalLedgerSummary {
+    readonly experimentRoundCount: number;
+    readonly lastHypothesis?: string;
+    readonly lastVerdict?: ExperimentVerdict;
+}
+
+/** Compact ledger facts for a finished goal card — excludes preflight and round 0 probes. */
+export function summarizeResearchGoalLedger(records: readonly ResearchExperimentRecord[]): ResearchGoalLedgerSummary {
+    const experiments = records.filter(record => !record.preflight && record.round > 0);
+    const last = experiments[experiments.length - 1];
+    return {
+        experimentRoundCount: experiments.length,
+        lastHypothesis: last?.hypothesis,
+        lastVerdict: last?.verdict,
+    };
+}
+
 /**
  * Pure termination check, re-evaluated after every round. Returns `undefined` while the loop
  * should keep going. Checked in this order: reached-target, budget-exhausted, infra-broken,

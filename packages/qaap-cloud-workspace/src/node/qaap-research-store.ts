@@ -95,12 +95,19 @@ export class QaapResearchStore {
         return goal;
     }
 
-    updateGoal(id: string, patch: Partial<Pick<ResearchGoal, 'status' | 'terminationReason'>>): ResearchGoal | undefined {
+    updateGoal(id: string, patch: Partial<Pick<ResearchGoal, 'status' | 'terminationReason' | 'startedAt' | 'finishedAt'>>): ResearchGoal | undefined {
         const existing = this.goals.get(id);
         if (!existing) {
             return undefined;
         }
-        const next: ResearchGoal = { ...existing, ...patch };
+        let finishedAt = patch.finishedAt ?? existing.finishedAt;
+        if (patch.finishedAt === undefined
+            && patch.status !== undefined
+            && patch.status !== 'running'
+            && existing.status === 'running') {
+            finishedAt = Date.now();
+        }
+        const next: ResearchGoal = { ...existing, ...patch, finishedAt };
         this.goals.set(id, next);
         this.persistGoals();
         this.onDidChangeEmitter.fire();

@@ -395,7 +395,7 @@ export class MobileProjectsTasksHubUi {
             [this.host.stickyComposerHost, this.host.transcriptComposerHost],
             {
                 count,
-                forceHide: isWorkingPillSuppressedAfterStopAll(),
+                forceHide: isWorkingPillSuppressedAfterStopAll() || suppressForEmptyComposer,
                 onOpen: anchor => this.openWorkingAgentsPopoverFromPill(anchor),
             },
         );
@@ -798,15 +798,35 @@ export class MobileProjectsTasksHubUi {
     }
 
     /**
+     * True when the sticky composer or transcript scroll shows the empty-chat welcome /
+     * quick-action affordances ("Ready when you are.", Fix a bug, …). DOM wins once painted;
+     * summary logic covers pre-mount ticks and unit tests.
+     */
+    protected isEmptyComposerQuickActionsSurfacePainted(): boolean {
+        for (const host of [this.host.transcriptComposerHost, this.host.stickyComposerHost]) {
+            if (host?.isConnected && host.classList.contains('theia-mod-show-quick-actions')) {
+                return true;
+            }
+        }
+        const scroll = this.host.scroll;
+        if (scroll?.isConnected) {
+            return scroll.querySelector('.theia-mobile-agent-transcript-empty-welcome') !== null;
+        }
+        return false;
+    }
+
+    /**
      * Hide the global Working pill on blank composer surfaces (Agents hub idle shell, pending
      * new-chat section, or any chat before the first user message). Other projects may still
      * have running agents — the pill returns once the open conversation is non-empty.
      */
     shouldSuppressWorkingPillForEmptyComposer(): boolean {
+        if (this.isEmptyComposerQuickActionsSurfacePainted()) {
+            return true;
+        }
         const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
         if (!summary) {
-            const composerHost = this.host.transcriptComposerHost ?? this.host.stickyComposerHost;
-            return composerHost?.classList.contains('theia-mod-show-quick-actions') ?? false;
+            return false;
         }
         if (isAgentsHubIdleConversationSummary(summary)) {
             return true;
@@ -817,7 +837,10 @@ export class MobileProjectsTasksHubUi {
         const cached = this.host.transcriptLastConv?.id === summary.id
             ? this.host.transcriptLastConv
             : undefined;
-        const conv = cached ?? {
+        if (cached) {
+            return shouldShowTranscriptEmptyQuickActions(cached, cached);
+        }
+        const conv = {
             id: summary.id,
             cwd: summary.cwd,
             agentId: summary.agentId,
@@ -827,7 +850,7 @@ export class MobileProjectsTasksHubUi {
             updatedAt: summary.updatedAt,
             messages: [],
         };
-        return shouldShowTranscriptEmptyQuickActions(conv, cached);
+        return shouldShowTranscriptEmptyQuickActions(conv, undefined);
     }
 
     /** Flips the one-shot first-load flag once conversations arrive or the safety timeout fires. */

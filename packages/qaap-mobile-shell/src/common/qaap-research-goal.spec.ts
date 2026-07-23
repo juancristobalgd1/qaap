@@ -9,8 +9,10 @@ import {
     DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
     DEFAULT_RESEARCH_STAGNATION_ROUNDS,
     filterResearchGoalsByQuery,
+    formatResearchGoalActiveDuration,
     normalizeResearchGoal,
     researchGoalCwdBasename,
+    resolveResearchGoalActiveElapsedMs,
 } from './qaap-research-goal';
 
 describe('qaap-research-goal', () => {
@@ -66,6 +68,40 @@ describe('qaap-research-goal', () => {
         expect(goal.metrics[0].minImprovement).to.equal(0);
         expect(goal.status).to.equal('running');
         expect(goal.createdAt).to.be.a('number');
+        expect(goal.startedAt).to.equal(goal.createdAt);
+    });
+
+    it('sets startedAt when a running goal is normalized without an explicit value', () => {
+        const goal = normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
+            createdAt: 1000,
+        });
+        expect(goal.startedAt).to.equal(1000);
+    });
+
+    it('omits startedAt for non-running goals unless the caller supplies it', () => {
+        const goal = normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
+            status: 'completed', createdAt: 1000,
+        });
+        expect(goal.startedAt).to.equal(undefined);
+    });
+
+    it('resolveResearchGoalActiveElapsedMs uses startedAt and finishedAt for stopped goals', () => {
+        const goal = normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
+            startedAt: 1000, finishedAt: 175_000, status: 'completed', createdAt: 500,
+        });
+        expect(resolveResearchGoalActiveElapsedMs(goal)).to.equal(174_000);
+        expect(formatResearchGoalActiveDuration(goal)).to.equal('2m 54s');
+    });
+
+    it('resolveResearchGoalActiveElapsedMs falls back to createdAt for legacy running goals', () => {
+        const goal = normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
+            createdAt: 1000,
+        });
+        expect(resolveResearchGoalActiveElapsedMs(goal, 175_000)).to.equal(174_000);
     });
 
     it('preserves caller-supplied overrides instead of defaults', () => {

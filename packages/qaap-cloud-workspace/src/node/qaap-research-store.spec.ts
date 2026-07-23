@@ -160,9 +160,26 @@ describe('QaapResearchStore ledger', () => {
         const replayed = store.replayFrom(source.id);
         expect(replayed.id).to.not.equal(source.id);
         expect(replayed.status).to.equal('running');
+        expect(replayed.startedAt).to.be.a('number');
+        expect(replayed.startedAt).to.equal(replayed.createdAt);
         expect(replayed.description).to.equal(source.description);
         expect(replayed.runCommand).to.equal('npm test');
         expect(store.ownerOf(replayed.id)).to.equal('alice');
+    });
+
+    it('updateGoal stamps finishedAt when a running goal stops', () => {
+        const store = makeStoreForGoalCreation();
+        const goal = store.create({ cwd: tmpDir, description: 'Improve accuracy', metrics: [METRIC] });
+        const before = Date.now();
+        const stopped = store.updateGoal(goal.id, { status: 'completed', terminationReason: 'reached-target' });
+        expect(stopped?.finishedAt).to.be.at.least(before);
+        expect(stopped?.finishedAt).to.be.at.most(Date.now());
+    });
+
+    it('create sets startedAt for a new running goal', () => {
+        const store = makeStoreForGoalCreation();
+        const goal = store.create({ cwd: tmpDir, description: 'Improve accuracy', metrics: [METRIC] });
+        expect(goal.startedAt).to.equal(goal.createdAt);
     });
 
     it('replayFrom rejects a running goal', () => {

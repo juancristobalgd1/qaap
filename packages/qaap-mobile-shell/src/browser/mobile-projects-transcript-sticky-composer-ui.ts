@@ -2082,7 +2082,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         shell.append(column);
         host.append(shell);
-        this.host.updateWorkingPillChrome();
         const isIdleComposer = isAgentsHubIdleConversationSummary(summary);
         this.agentsHubIdleComposerMounted = isIdleComposer;
         // Autofocus deterministically AFTER the frontend reaches 'ready' — the
@@ -2109,6 +2108,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             });
         }
         this.syncTranscriptComposerQuickActionsVisibility(host, summary);
+        this.host.updateWorkingPillChrome();
         this.syncComposerActivityFingerprint(summary, project);
         if (this.host.transcriptLastConv?.id === summary.id) {
             this.host.transcriptLiveUi.syncTranscriptPendingApproval(this.host.transcriptLastConv);

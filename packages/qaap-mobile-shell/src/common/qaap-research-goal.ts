@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { formatTranscriptStreamElapsed } from './qaap-transcript-stream-status';
+
 /**
  * Pure (common) data model for the auto-researcher v1: an agent that proposes an experiment,
  * a runner (node/) that executes it and measures the result, and a ledger that feeds the next
@@ -78,6 +80,10 @@ export interface ResearchGoal {
     /** Consecutive infra failures (run/measure broke, not a bad hypothesis) before giving up. Default 3. */
     readonly infraFailureLimit: number;
     readonly createdAt: number;
+    /** Wall-clock start of the current running session (create or replay). */
+    readonly startedAt?: number;
+    /** Wall-clock end when the goal leaves `running`. */
+    readonly finishedAt?: number;
     readonly status: ResearchGoalStatus;
     readonly terminationReason?: TerminationReason;
 }
@@ -98,6 +104,36 @@ export const DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT = 3;
 export function researchGoalCwdBasename(cwd: string): string {
     const parts = cwd.split(/[/\\]/).filter(Boolean);
     return parts[parts.length - 1] ?? cwd;
+}
+
+export function resolveResearchGoalStartedAt(goal: ResearchGoal): number | undefined {
+    if (goal.startedAt !== undefined) {
+        return goal.startedAt;
+    }
+    if (goal.status === 'running') {
+        return goal.createdAt;
+    }
+    return undefined;
+}
+
+export function resolveResearchGoalActiveElapsedMs(goal: ResearchGoal, nowMs = Date.now()): number | undefined {
+    const startedAt = resolveResearchGoalStartedAt(goal);
+    if (startedAt === undefined) {
+        return undefined;
+    }
+    const endMs = goal.status === 'running' ? nowMs : goal.finishedAt;
+    if (endMs === undefined) {
+        return undefined;
+    }
+    return Math.max(0, endMs - startedAt);
+}
+
+export function formatResearchGoalActiveDuration(goal: ResearchGoal, nowMs = Date.now()): string | undefined {
+    const elapsedMs = resolveResearchGoalActiveElapsedMs(goal, nowMs);
+    if (elapsedMs === undefined) {
+        return undefined;
+    }
+    return formatTranscriptStreamElapsed(elapsedMs);
 }
 
 export function filterResearchGoalsByQuery(goals: readonly ResearchGoal[], query: string): ResearchGoal[] {
@@ -139,6 +175,10 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
         minImprovement: metric.minImprovement ?? 0,
     }));
 
+    const createdAt = input.createdAt ?? Date.now();
+    const status = input.status ?? 'running';
+    const startedAt = input.startedAt ?? (status === 'running' ? createdAt : undefined);
+
     return {
         id: input.id,
         cwd: input.cwd,
@@ -152,8 +192,10 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
         deadlineAt: input.deadlineAt,
         stagnationRounds: input.stagnationRounds ?? DEFAULT_RESEARCH_STAGNATION_ROUNDS,
         infraFailureLimit: input.infraFailureLimit ?? DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT,
-        createdAt: input.createdAt ?? Date.now(),
-        status: input.status ?? 'running',
+        createdAt,
+        startedAt,
+        finishedAt: input.finishedAt,
+        status,
         terminationReason: input.terminationReason,
     };
 }

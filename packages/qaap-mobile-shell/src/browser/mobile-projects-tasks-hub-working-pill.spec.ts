@@ -270,6 +270,57 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
         expect(host.stickyComposerHost.querySelector('.theia-mod-working-only')).to.equal(null);
     });
 
+    it('hides the Working pill when Agents hub landing DOM is painted before composer mount', () => {
+        const host = createHost({
+            running: 1,
+            members: [{
+                id: 'm0',
+                kind: 'conversation',
+                title: 'Other project agent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'm0',
+                projectId: 'p1',
+                activityLabel: 'Working',
+            }],
+        });
+        host.agentsHubShellActive = true;
+        // Stale open summary would defeat summary-only suppress (streaming, non-idle).
+        host.transcriptOpenSummary = {
+            id: 'stale-streaming-open',
+            cwd: '/srv/demo',
+            agentId: 'qaiq',
+            title: 'Stale open row',
+            status: 'streaming',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 0,
+        } as QaapAgentConversationSummaryDTO;
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        const messageHost = document.createElement('div');
+        messageHost.className = 'theia-mobile-agent-transcript theia-mod-empty-chat';
+        const welcome = document.createElement('div');
+        welcome.className = 'theia-mobile-agent-transcript-empty-welcome';
+        const title = document.createElement('div');
+        title.className = 'theia-mobile-agent-transcript-empty-title';
+        title.textContent = 'Ready when you are.';
+        welcome.append(title);
+        messageHost.append(welcome);
+        chatHost.append(messageHost);
+        host.scroll.append(chatHost);
+        document.body.append(host.scroll);
+
+        new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
+        expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.equal(null);
+        expect(host.stickyComposerHost.querySelector('.theia-mod-working-only')).to.equal(null);
+    });
+
     it('shows the Working pill on a non-empty open conversation', () => {
         const host = createHost({
             running: 1,

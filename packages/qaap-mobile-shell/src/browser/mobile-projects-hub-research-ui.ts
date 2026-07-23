@@ -13,13 +13,19 @@ import {
 } from '../common/qaap-research-client';
 import {
     filterResearchGoalsByQuery,
+    formatResearchGoalActiveDuration,
     researchGoalCwdBasename,
     type ResearchGoal,
     type ResearchMetricSpec,
     type TerminationReason,
 } from '../common/qaap-research-goal';
-import { bestPrimaryValue, type ResearchExperimentRecord } from '../common/qaap-research-ledger';
+import {
+    bestPrimaryValue,
+    summarizeResearchGoalLedger,
+    type ResearchExperimentRecord,
+} from '../common/qaap-research-ledger';
 import { MobileSnackbar } from './mobile-snackbar';
+import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import type { MobileProjectsHubView } from './mobile-projects-types';
 
 export interface ResearchGoalDetailCache {
@@ -220,31 +226,84 @@ export class MobileProjectsHubResearchUi {
         return `${metric.name} ${value}`;
     }
 
-    researchRowSubtitle(goal: ResearchGoal): string {
+    researchRowHeaderSubtitle(goal: ResearchGoal, nowMs = Date.now()): string {
         const parts: string[] = [
             researchGoalCwdBasename(goal.cwd),
             this.statusLabel(goal),
         ];
-        const primary = this.primaryMetric(goal);
-        if (primary?.target !== undefined) {
-            parts.push(nls.localize(
-                'qaap/mobileProjects/researchTarget',
-                'target {0}',
-                String(primary.target),
-            ));
+        const activeDuration = formatResearchGoalActiveDuration(goal, nowMs);
+        if (activeDuration) {
+            parts.push(activeDuration);
         }
-        const best = this.host.researchGoalDetails.get(goal.id)?.bestPrimary;
-        if (primary !== undefined && best !== undefined) {
-            parts.push(nls.localize(
-                'qaap/mobileProjects/researchBest',
-                'best {0}',
-                this.formatMetricValue(primary, best),
-            ));
-        }
-        if (goal.status !== 'running' && goal.terminationReason) {
-            parts.push(this.terminationReasonLabel(goal.terminationReason));
+        if (goal.status === 'running') {
+            const primary = this.primaryMetric(goal);
+            if (primary?.target !== undefined) {
+                parts.push(nls.localize(
+                    'qaap/mobileProjects/researchTarget',
+                    'target {0}',
+                    String(primary.target),
+                ));
+            }
+            const best = this.host.researchGoalDetails.get(goal.id)?.bestPrimary;
+            if (primary !== undefined && best !== undefined) {
+                parts.push(nls.localize(
+                    'qaap/mobileProjects/researchBest',
+                    'best {0}',
+                    this.formatMetricValue(primary, best),
+                ));
+            }
         }
         return parts.join(' · ');
+    }
+
+    researchResultLines(goal: ResearchGoal): string[] {
+        if (goal.status === 'running') {
+            return [];
+        }
+        const lines: string[] = [];
+        const primary = this.primaryMetric(goal);
+        const detail = this.host.researchGoalDetails.get(goal.id);
+        const best = detail?.bestPrimary;
+        if (primary !== undefined && best !== undefined) {
+            if (primary.target !== undefined) {
+                lines.push(nls.localize(
+                    'qaap/mobileProjects/researchResultBestVsTarget',
+                    'Best {0} vs target {1}',
+                    this.formatMetricValue(primary, best),
+                    String(primary.target),
+                ));
+            } else {
+                lines.push(nls.localize(
+                    'qaap/mobileProjects/researchResultBest',
+                    'Best {0}',
+                    this.formatMetricValue(primary, best),
+                ));
+            }
+        }
+        if (goal.terminationReason) {
+            lines.push(this.terminationReasonLabel(goal.terminationReason));
+        }
+        const ledger = summarizeResearchGoalLedger(detail?.records ?? []);
+        if (ledger.experimentRoundCount > 0) {
+            const lastHypothesis = ledger.lastHypothesis
+                ? this.descriptionSnippet(ledger.lastHypothesis)
+                : undefined;
+            if (lastHypothesis) {
+                lines.push(nls.localize(
+                    'qaap/mobileProjects/researchResultRounds',
+                    '{0} rounds · last: {1}',
+                    String(ledger.experimentRoundCount),
+                    lastHypothesis,
+                ));
+            } else {
+                lines.push(nls.localize(
+                    'qaap/mobileProjects/researchResultRoundCount',
+                    '{0} rounds',
+                    String(ledger.experimentRoundCount),
+                ));
+            }
+        }
+        return lines;
     }
 
     createResearchRow(goal: ResearchGoal): HTMLElement {
@@ -252,7 +311,12 @@ export class MobileProjectsHubResearchUi {
         row.className = 'theia-mobile-hub-research-row';
         if (goal.status === 'running') {
             row.classList.add('theia-mod-running');
+        } else {
+            row.classList.add('theia-mod-finished');
         }
+
+        const head = document.createElement('div');
+        head.className = 'theia-mobile-hub-research-row-head';
 
         const main = document.createElement('div');
         main.className = 'theia-mobile-hub-research-main';
@@ -262,7 +326,7 @@ export class MobileProjectsHubResearchUi {
         title.textContent = this.descriptionSnippet(goal.description);
         const meta = document.createElement('span');
         meta.className = 'theia-mobile-hub-research-meta';
-        meta.textContent = this.researchRowSubtitle(goal);
+        this.syncResearchRowMeta(meta, goal);
         main.append(title, meta);
 
         const trailing = document.createElement('div');
@@ -297,8 +361,48 @@ export class MobileProjectsHubResearchUi {
             trailing.append(play);
         }
 
-        row.append(main, trailing);
+        head.append(main, trailing);
+        row.append(head);
+
+        const results = this.createResearchRowResults(goal);
+        if (results) {
+            const separator = document.createElement('div');
+            separator.className = 'theia-mobile-hub-research-results-separator';
+            separator.setAttribute('aria-hidden', 'true');
+            row.append(separator, results);
+        }
+
         return row;
+    }
+
+    protected createResearchRowResults(goal: ResearchGoal): HTMLElement | undefined {
+        const lines = this.researchResultLines(goal);
+        if (lines.length === 0) {
+            return undefined;
+        }
+        const results = document.createElement('div');
+        results.className = 'theia-mobile-hub-research-results';
+        for (const line of lines) {
+            const lineEl = document.createElement('span');
+            lineEl.className = 'theia-mobile-hub-research-results-line';
+            lineEl.textContent = line;
+            results.append(lineEl);
+        }
+        return results;
+    }
+
+    protected syncResearchRowMeta(meta: HTMLElement, goal: ResearchGoal): void {
+        if (goal.status === 'running') {
+            sharedSecondTicker.register({
+                element: meta,
+                render: nowMs => {
+                    meta.textContent = this.researchRowHeaderSubtitle(goal, nowMs);
+                },
+            });
+            return;
+        }
+        sharedSecondTicker.unregister(meta);
+        meta.textContent = this.researchRowHeaderSubtitle(goal);
     }
 
     async cancelGoal(goal: ResearchGoal): Promise<void> {

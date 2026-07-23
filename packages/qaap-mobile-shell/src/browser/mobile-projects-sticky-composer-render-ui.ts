@@ -321,7 +321,12 @@ export class MobileProjectsStickyComposerRenderUi {
                     this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(this.host.stickyComposerHost, shellProject!, shellSummary!, chatHost!);
                 } else {
                     this.host.transcriptComposerSendRefresh?.();
+                    this.host.transcriptStickyComposerUi.syncTranscriptComposerQuickActionsVisibility(
+                        this.host.stickyComposerHost,
+                        shellSummary!,
+                    );
                 }
+                this.host.updateWorkingPillChrome();
             } else {
                 this.host.transcriptComposerMountKey = undefined;
                 parkWorkingControlFromAncestor(this.host.stickyComposerHost);
