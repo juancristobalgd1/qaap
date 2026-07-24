@@ -72,7 +72,7 @@ describe('MobileProjectsHubWorkflowRunsUi', () => {
             query: '',
             scroll: document.createElement('div'),
             projects: [project],
-            projectsService: { getProjectCwd: () => '/repo/demo', getCurrentWorkspaceCwd: () => '/repo/demo' },
+            projectsService: { getProjectCwd: () => '/repo/demo' },
             messageService: undefined,
             renderList: () => { renders++; },
         };
@@ -150,24 +150,6 @@ describe('MobileProjectsHubWorkflowRunsUi', () => {
         (buttons[0] as HTMLButtonElement).click();
         await settle();
         expect(ui.continued).to.deep.equal([{ runId: 'r-gate', nodeId: 'gate' }]);
-        ui.dispose();
-    });
-
-
-    it('falls back to a prefilled cwd input when no project resolves a path', async () => {
-        const { ui, host } = createUi();
-        host.projectsService.getProjectCwd = () => undefined;
-        ui.renderWorkflowRunsSection();
-        await settle();
-        (ui.renderWorkflowRunsSection().querySelector('.theia-mobile-hub-workflow-start-card') as HTMLButtonElement).click();
-        const withForm = ui.renderWorkflowRunsSection();
-        expect(withForm.querySelector('select')).to.equal(null);
-        const cwd = withForm.querySelector('input') as HTMLInputElement;
-        expect(cwd.value).to.equal('/repo/demo');
-        (withForm.querySelector('textarea') as HTMLTextAreaElement).value = 'do it';
-        (withForm.querySelector('.theia-button.main') as HTMLButtonElement).click();
-        await settle();
-        expect(ui.started[0]?.cwd).to.equal('/repo/demo');
         ui.dispose();
     });
 
