@@ -1694,10 +1694,13 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
   display: contents;
 }
 
+/* Same match-by-construction rule as the mobile transcript: the un-rendered live suffix must
+   wrap identically to the markdown it is about to become, or every worker patch re-flows the
+   block to a different height. */
 .chat-view-widget .theia-mod-markdown .theia-transcript-stream-plain-preview {
-  font-family: var(--theia-ui-font-family);
-  font-size: 13px;
-  line-height: 1.45;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -21402,10 +21405,21 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
   display: contents;
 }
 
+/*
+ * Live suffix typography MUST match the rendered markdown body below
+ * (.theia-mod-markdown: 15px / 1.58, proportional). This element holds the text the
+ * markdown worker has not caught up to yet; when the worker lands, that text moves from
+ * here into rendered markdown. Any font metric mismatch re-wraps the block to a different
+ * line count on every patch, so the whole transcript below shifts — the visible "jump"
+ * while streaming and while scrolling down through fresh content.
+ */
 .theia-mobile-agent-transcript-content.theia-mod-streaming-hybrid .theia-transcript-stream-plain-preview {
-  font-family: var(--theia-code-font-family, ui-monospace, monospace);
-  font-size: 14px;
-  line-height: 1.5;
+  /* Inherit rather than restate the numbers: several rules set the body type scale, so a
+     hardcoded size here silently drifts out of match again. Inheriting from the content
+     element is match-by-construction. */
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -26136,6 +26150,13 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
 }
 
 /*
+ * The pill strip stays transparent on purpose: the Working/Changes pills are meant to read as
+ * floating chips over the transcript, not as a banded toolbar. Each pill carries its own
+ * surface; the strip must not add a second one. (The transcript tail is kept clear of them by
+ * the composer scroll-gap overlap, not by masking the strip.)
+ */
+
+/*
  * Work Hub landing / non-agents surfaces: keep composer flush (no lip overlap).
  * Agents hub chat restores geometric overlap below — see next rules.
  */
@@ -26155,13 +26176,24 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 /*
- * While live-status sits at the transcript scroller tail, cancel the lip overlap
- * so Working/Changes pills sit *below* "Planning next moves…" instead of on top.
+ * While live-status sits at the transcript scroller tail the pills must sit *below* it.
+ * Cancelling the lip overlap achieved that, but a positive gap stops the scrollport before the
+ * composer and leaves a visible dead band. Keep the overlap — so the scroller still stretches
+ * to the composer's top edge — and deepen it instead: `padding-bottom` below is derived from
+ * the same variable, so the tail (live-status) is pushed up by exactly the overlap and lands
+ * directly above the pills rather than under them.
  */
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status),
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status),
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status) {
-  --theia-mobile-transcript-composer-scroll-gap: 4px;
+  --theia-mobile-transcript-composer-scroll-gap: -12px;
+}
+
+/* Working/Changes strip mounted: clear its full height so live-status clears the pills. */
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host),
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host),
+.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host) {
+  --theia-mobile-transcript-composer-scroll-gap: calc(-1 * (var(--qaap-composer-pill-strip-height, 40px) + 8px));
 }
 
 body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
