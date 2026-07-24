@@ -38,6 +38,14 @@ const FUNCTION_BY_OP: Readonly<Partial<Record<QaapWorkflowDeterministicNode['op'
     verify: QAAP_WORKFLOW_VERIFY_FUNCTION,
 };
 
+/**
+ * How long a backend whose CLI hard-failed stays out of routing. A CLI that exits non-zero is
+ * almost always infrastructure (quota exhausted, auth expired, broken install), not "the task was
+ * hard" — agent CLIs report hard tasks in-band with exit 0. Long enough to stop every subsequent
+ * run from failing the same way; short enough that a transient blip self-heals.
+ */
+const AGENT_FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
+
 @injectable()
 export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
 
@@ -52,6 +60,12 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
 
     @inject(QaapWorkflowRoutingPolicy)
     protected readonly routing: QaapWorkflowRoutingPolicy;
+
+    /** Task id → the routed backend, so a terminal event can be attributed to the agent that ran it. */
+    protected readonly routedAgentByTask = new Map<string, string>();
+
+    /** Backend id → epoch millis until which routing must skip it. */
+    protected readonly agentCooldownUntil = new Map<string, number>();
 
     async startAgentTurn(node: QaapWorkflowAgentTurnNode, context: QaapWorkflowDispatchContext): Promise<string> {
         const record = this.store.get(context.ownerLogin, context.runId);
@@ -79,10 +93,32 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
             // as well. Only writer turns would trigger it; a read-only judge never does.
             externalReview: node.isolation !== 'cwd-readonly',
         }, context.ownerLogin || undefined);
+        if (routed.agentRef) {
+            this.routedAgentByTask.set(task.id, routed.agentRef);
+        }
         return task.id;
     }
 
+    noteAgentTurnResult(externalId: string, state: QaapAgentTaskState): void {
+        const agentRef = this.routedAgentByTask.get(externalId);
+        if (!agentRef) {
+            return;
+        }
+        this.routedAgentByTask.delete(externalId);
+        if (state === 'failed') {
+            this.agentCooldownUntil.set(agentRef, Date.now() + AGENT_FAILURE_COOLDOWN_MS);
+            console.warn(`[qaap-workflow] agent "${agentRef}" CLI failed; routing around it for ${AGENT_FAILURE_COOLDOWN_MS / 60000} min.`);
+        } else {
+            // Any completed turn (even a task-level failure reported in-band) proves the CLI works.
+            this.agentCooldownUntil.delete(agentRef);
+        }
+    }
+
     protected isAgentAvailable(agentRef: string): boolean {
+        const coolingUntil = this.agentCooldownUntil.get(agentRef);
+        if (coolingUntil !== undefined && Date.now() < coolingUntil) {
+            return false;
+        }
         return this.runner.listAgents().some(agent => agent.id === agentRef && agent.available);
     }
 

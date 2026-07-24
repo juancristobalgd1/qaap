@@ -30,6 +30,12 @@ export interface QaapWorkflowAgentTurnPort {
     startAgentTurn(node: QaapWorkflowAgentTurnNode, context: QaapWorkflowDispatchContext): Promise<string>;
     /** Current state of a task, or undefined when the runtime no longer knows it. */
     lookupAgentTurn(externalId: string): Promise<{ readonly state: QaapAgentTaskState; readonly log?: string } | undefined>;
+    /**
+     * Observe how a dispatched turn ended, so the adapter can track backend health — a CLI that
+     * exits non-zero (quota exhausted, auth broken) is put on cooldown and later unpinned turns
+     * route around it instead of failing the same way run after run.
+     */
+    noteAgentTurnResult?(externalId: string, state: QaapAgentTaskState): void;
 }
 
 export interface QaapWorkflowDeterministicPort {
@@ -91,6 +97,7 @@ export class QaapWorkflowDispatcher {
         if (node?.kind !== 'agent-turn') {
             return;
         }
+        this.ports.agent.noteAgentTurnResult?.(externalId, state);
         await this.report(found.record.ownerLogin, found.record.run.id, found.nodeId, resolveAgentTurnOutcome(node, state, log));
     }
 

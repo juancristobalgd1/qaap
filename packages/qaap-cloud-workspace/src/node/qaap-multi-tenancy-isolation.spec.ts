@@ -394,6 +394,9 @@ describe('Multi-tenancy isolation', () => {
                         state.storeCwd = req.cwd;
                         return { id: 'g', cwd: req.cwd };
                     },
+                    // assertResearchQuota consults these before create(); an empty system is under quota.
+                    listRunning: () => [],
+                    ownerOf: () => undefined,
                 },
                 runner: { start: () => undefined },
             });
