@@ -26152,6 +26152,16 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   --theia-mobile-transcript-composer-scroll-gap: -34px;
 }
 
+/*
+ * While live-status sits at the transcript scroller tail, cancel the lip overlap
+ * so Working/Changes pills sit *below* "Planning next moves…" instead of on top.
+ */
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status),
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status),
+.theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status) {
+  --theia-mobile-transcript-composer-scroll-gap: 4px;
+}
+
 body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
 body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
 body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),
@@ -29413,13 +29423,10 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   position: relative;
 }
 
+/* No top hairline — new-message entrance is motion-only. */
 .theia-mobile-agent-transcript .theia-mod-new-message::before {
-  content: '';
-  display: block;
-  width: 100%;
-  height: 1px;
-  margin: 2px 0 10px;
-  background: color-mix(in srgb, var(--theia-focusBorder) 42%, transparent);
+  content: none;
+  display: none;
 }
 
 .theia-mobile-agent-transcript .theia-mod-search-match {
@@ -30859,8 +30866,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 }
 
 /* ─── ProcessAccordion: the single collapsible for all process steps ──────── */
-/* Codex-style process header — no bottom rule here; the live turn footer divider
- * (`.theia-mobile-agent-live-status`) is the only horizontal rule above composer chrome. */
+/* Codex-style process header — no bottom rule; live turn footer is chrome-free. */
 /* Auto-expands while working, auto-collapses on success, open on error.       */
 
 .theia-mobile-process-accordion {
@@ -30883,22 +30889,10 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   display: none;
 }
 
-/* Durable working signal next to "Processing… Xs" — must survive timeline rebuilds. */
-.theia-mobile-process-accordion-header .theia-mobile-process-accordion-logo.qaap-thinking-orb-indicator {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  line-height: 0;
-  overflow: hidden;
-}
-
-.theia-mobile-process-accordion-header .theia-mobile-process-accordion-logo.qaap-thinking-orb-indicator canvas {
-  display: block;
-  width: 20px !important;
-  height: 20px !important;
+/* Orb belongs in the pinned stream footer, not the accordion header. */
+.theia-mobile-process-accordion-header .theia-mobile-process-accordion-logo,
+.theia-mobile-process-accordion-header .qaap-thinking-orb-indicator {
+  display: none !important;
 }
 
 .theia-mobile-process-accordion-label {

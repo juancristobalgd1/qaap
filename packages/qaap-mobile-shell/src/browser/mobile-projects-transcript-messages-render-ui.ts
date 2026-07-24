@@ -107,7 +107,14 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         const list = document.createElement('div');
         list.className = 'theia-mobile-agent-transcript';
-        host.replaceChildren(list);
+        // Preserve the legacy stream-footer host (empty/hidden). Live-status mounts
+        // as the last child of the scroller list after messages render.
+        const streamFooter = host.querySelector(':scope > .theia-mobile-agent-transcript-stream-footer');
+        if (streamFooter instanceof HTMLElement) {
+            host.replaceChildren(list, streamFooter);
+        } else {
+            host.replaceChildren(list);
+        }
         return list;
     }
 
@@ -577,6 +584,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptLastRenderedConversationId = normalized.id;
         this.host.transcriptLastRenderedMessageId = normalized.messages.at(-1)?.id;
         if (options?.newTurnStarted) {
+            // Always pin the new user turn near the top with prior context.
+            // completePositionTurn leaves the phase detached so the stream can
+            // grow off-screen without chasing the live edge.
             scroll.beginPositionTurn();
             const lastUserIndex = this.findLastUserMessageIndex(normalized);
             if (lastUserIndex >= 0) {
@@ -585,6 +595,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 this.scrollTranscriptVirtualListToIndex(list, lastUserIndex, contextPx);
             }
             scroll.completePositionTurn();
+            this.artifactsUi.ensurePinnedTranscriptLiveStatus(normalized);
         } else if (options?.openingConversation && !this.hasExplicitTranscriptMessageHash()) {
             scroll.beginRestore();
             scroll.markProgrammaticScroll(200);
@@ -829,6 +840,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         } else if (runningCompaction) {
             messageHost.append(runningCompaction);
         }
+        // replaceChildren drops the scroller-tail live-status — remount / clear via hold rules.
+        this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
         if (newTurnStarted) {
             this.scrollTranscriptToLastUserTurn(messageHost, { asPositionTurn: true });
         } else if (openingConversation && !this.hasExplicitTranscriptMessageHash()) {
@@ -840,6 +853,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             scroll.completeRestore();
         } else {
+            // Following after replaceChildren: pin synchronously before paint so the
+            // viewport does not flash at scrollTop 0 for a frame.
+            if (shouldFollowTail) {
+                scroll.markProgrammaticScroll();
+                messageHost.scrollTop = messageHost.scrollHeight;
+            }
             this.scheduleTranscriptScrollAfterMutation(messageHost, anchor);
         }
         this.attachTranscriptScrollChrome(host, messageHost, conv);
@@ -958,6 +977,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
             this.syncTranscriptActivityRow(messageHost, conv);
             this.scrollTranscriptToLastUserTurn(messageHost, { asPositionTurn: true });
+            this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
             return true;
         }
 
@@ -1036,6 +1056,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.host.transcriptLastConv = conv;
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = lastAgent.id;
+        // Live-status is the scroller tail — re-pin after message append/replace.
+        this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
         this.applyTranscriptScrollAfterMutation(messageHost, anchor);
         return true;
     }
@@ -1104,6 +1126,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
             this.scrollTranscriptToLastUserTurn(messageHost, { asPositionTurn: true });
+            this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
             return true;
         }
 
@@ -1328,6 +1351,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
             if (activityRow) {
                 messageHost.append(activityRow);
+                this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
             }
             return;
         }

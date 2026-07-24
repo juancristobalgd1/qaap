@@ -25,11 +25,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import {
-    createThinkingOrbIndicator,
-    destroyThinkingOrbIndicator,
-    syncThinkingOrbIndicator,
-} from './qaap-thinking-orb-indicator';
+import { destroyThinkingOrbIndicator } from './qaap-thinking-orb-indicator';
 import { extractToolArgFilePath, formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, extractTranscriptTaskSummary } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptSubagentToolName } from '../common/qaap-transcript-activity-nesting';
@@ -592,7 +588,7 @@ export const MOBILE_EXECUTION_TIMELINE_CLASS = 'theia-mobile-execution-timeline'
 /** CSS class on the process accordion that wraps the timeline. */
 export const MOBILE_PROCESS_ACCORDION_CLASS = 'theia-mobile-process-accordion';
 
-/** ThinkingOrb host in the process accordion header while the agent is working. */
+/** Legacy ThinkingOrb host class — no longer mounted; kept for strip/cleanup. */
 export const MOBILE_PROCESS_ACCORDION_LOGO_CLASS = 'theia-mobile-process-accordion-logo';
 
 /** Data attribute: whether the user manually toggled the accordion. */
@@ -757,14 +753,8 @@ export function wrapMobileProcessAccordion(
     chevron.setAttribute('aria-hidden', 'true');
 
     header.append(label, chevron);
-    // ThinkingOrb is the durable "agent is working" signal — keep it in the header
-    // for the whole active turn so timeline rebuilds never leave Processing… without it.
-    syncMobileProcessAccordionBrandLogo(header, isWorking || isError || !!isCancelled, {
-        activityVerb,
-        isWorking,
-        isError,
-        isCancelled,
-    });
+    // Orb lives in the pinned stream footer — never in the accordion header.
+    syncMobileProcessAccordionBrandLogo(header, false);
     details.append(header);
 
     // Content wrapper — children are only rendered when open (lazy).
@@ -824,46 +814,23 @@ function recordProcessAccordionTurnState(turnStartMs: number, details: HTMLDetai
 }
 
 /**
- * Ensures the ThinkingOrb stays as the first child of the process accordion
- * header while the agent turn is unfinished. Rebuilds of the timeline must
- * never leave "Processing…" without this durable working signal.
+ * Strips any ThinkingOrb from the process accordion header. The orb belongs
+ * only in the pinned stream footer above the composer.
  */
 export function syncMobileProcessAccordionBrandLogo(
     header: HTMLElement,
-    show: boolean,
-    activity?: {
+    _show?: boolean,
+    _activity?: {
         readonly activityVerb?: string;
         readonly isWorking?: boolean;
         readonly isError?: boolean;
         readonly isCancelled?: boolean;
     },
 ): void {
-    const existing = header.querySelector<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_LOGO_CLASS}`);
-    if (!show) {
-        if (existing) {
-            destroyThinkingOrbIndicator(existing);
-            existing.remove();
-        }
-        return;
+    for (const existing of header.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_LOGO_CLASS}`)) {
+        destroyThinkingOrbIndicator(existing);
+        existing.remove();
     }
-    const orbOptions = {
-        activityVerb: activity?.activityVerb,
-        isWorking: activity?.isWorking ?? true,
-        isError: activity?.isError,
-        isCancelled: activity?.isCancelled,
-        size: 20 as const,
-        speed: 1.25,
-        className: `${MOBILE_PROCESS_ACCORDION_LOGO_CLASS} theia-mod-compact`,
-    };
-    if (existing) {
-        syncThinkingOrbIndicator(existing, orbOptions);
-        if (header.firstElementChild !== existing) {
-            header.prepend(existing);
-        }
-        return;
-    }
-    const orb = createThinkingOrbIndicator(orbOptions);
-    header.prepend(orb);
 }
 
 /**
@@ -945,14 +912,7 @@ export function syncMobileProcessAccordionState(
 
     const header = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-header');
     if (header) {
-        // Keep the ThinkingOrb mounted while the turn is active, failed, or stopped.
-        // A successful settle is the only state that drops it.
-        syncMobileProcessAccordionBrandLogo(header, isWorking || isError || !!isCancelled, {
-            activityVerb,
-            isWorking,
-            isError,
-            isCancelled,
-        });
+        syncMobileProcessAccordionBrandLogo(header, false);
     }
 
     // Update modifier classes.

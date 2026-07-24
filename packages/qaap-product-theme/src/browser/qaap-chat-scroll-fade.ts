@@ -53,8 +53,16 @@ function resolveProjectsScrollBottomHost(scroller: HTMLElement): HTMLElement | u
     return projectsRoot.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? undefined;
 }
 
+/** Agents hub chat already dissolves into composer chrome — skip bottom overlay host. */
+function isAgentsHubChatSurface(node: Element | null | undefined): boolean {
+    const projects = node?.closest?.('.theia-mobile-projects');
+    return !!projects?.classList.contains('theia-mod-agents-hub-inline-active')
+        || !!projects?.classList.contains('theia-mod-agents-hub-shell-active');
+}
+
 export function resolveChatScrollFadeHosts(scroller: HTMLElement): ChatScrollFadeHosts {
     const projectsScrollBottom = resolveProjectsScrollBottomHost(scroller);
+    const agentsHubChat = isAgentsHubChatSurface(scroller);
     const workHubChat = scroller.closest<HTMLElement>('.qaap-work-hub-chat-view-widget');
     const transcriptList = scroller.classList.contains('theia-mobile-agent-transcript')
         ? scroller
@@ -66,7 +74,10 @@ export function resolveChatScrollFadeHosts(scroller: HTMLElement): ChatScrollFad
         const inlineTranscript = realChatHost?.closest<HTMLElement>('.theia-mobile-agents-hub-inline-transcript');
         return {
             top: inlineTranscript ?? workHubChat,
-            bottom: projectsScrollBottom ?? realChatHost ?? transcriptList,
+            // Prefer real-chat (CSS forces ::after display:none) over projects-scroll fade.
+            bottom: agentsHubChat
+                ? (realChatHost ?? transcriptList)
+                : (projectsScrollBottom ?? realChatHost ?? transcriptList),
         };
     }
 
@@ -82,7 +93,10 @@ export function resolveChatScrollFadeHosts(scroller: HTMLElement): ChatScrollFad
         const inlineTranscript = realChatHost?.closest<HTMLElement>('.theia-mobile-agents-hub-inline-transcript');
         const topHost = inlineTranscript ?? realChatHost ?? transcriptList;
         const bottomHost = realChatHost ?? transcriptList;
-        return { top: topHost, bottom: projectsScrollBottom ?? bottomHost };
+        return {
+            top: topHost,
+            bottom: agentsHubChat ? bottomHost : (projectsScrollBottom ?? bottomHost),
+        };
     }
 
     if (scroller.classList.contains('theia-mobile-projects-scroll') && projectsScrollBottom) {

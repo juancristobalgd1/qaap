@@ -36,7 +36,7 @@ describe('qaap-transcript-stream-status', () => {
     });
 
     it('formats approximate token counts', () => {
-        expect(formatTranscriptStreamTokens(0)).to.equal(undefined);
+        expect(formatTranscriptStreamTokens(0)).to.equal('~0 tokens');
         expect(formatTranscriptStreamTokens(3_480)).to.equal('~870 tokens');
         expect(formatTranscriptStreamTokens(16_800)).to.equal('~4.2k tokens');
         expect(formatTranscriptStreamTokens(48_000)).to.equal('~12k tokens');
@@ -58,11 +58,11 @@ describe('qaap-transcript-stream-status', () => {
             {
                 role: 'agent', createdAt: 2, segments: [
                     { type: 'thinking', content: '12345' },
-                    { type: 'tool', content: 'ignored-tool-output' },
+                    { type: 'tool', content: 'ignored-tool-output', args: 'ab', result: 'cd' },
                     { type: 'text', content: '1234567890' },
                 ],
             },
-        ])).to.equal(15);
+        ])).to.equal(19);
         expect(resolveTranscriptTurnStreamChars([
             { role: 'agent', createdAt: 2, content: 'abc' },
         ])).to.equal(3);

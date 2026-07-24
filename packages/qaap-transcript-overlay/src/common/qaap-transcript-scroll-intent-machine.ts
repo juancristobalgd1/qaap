@@ -34,7 +34,9 @@ export function reduceTranscriptScrollPhase(
         case 'position-turn-start':
             return 'positioning-turn';
         case 'position-turn-done':
-            return 'following';
+            // Pin the new turn for reading, then stay put. Streaming content may
+            // grow off-screen; follow resumes only via Jump to latest / live edge.
+            return 'detached';
         case 'user-detach':
             return 'detached';
         case 'user-return-to-live-edge':

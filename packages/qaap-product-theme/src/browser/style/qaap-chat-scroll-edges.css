@@ -276,24 +276,35 @@
   opacity: 1;
 }
 
+/*
+ * Agents hub chat: bottom dissolve + backdrop blur painted a tall frosted band
+ * over the transcript whenever the user scrolled up (showBottom). Composer /
+ * pills / live-status already own that edge — keep geometric clearance only.
+ */
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active > .theia-mobile-projects-scroll::after,
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active > .theia-mobile-projects-scroll::after {
+  display: none !important;
+  opacity: 0 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-scroll::after {
     transition: none;
   }
 }
 
+/* Soft gradient only (no backdrop-filter) — blur was sampling the whole stack. */
 @supports (backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px)) {
   .theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-scroll::after {
-    height: calc(var(--qaap-chat-edge-fade-height-bottom) + var(--qaap-chat-edge-blur-bleed-bottom-composer));
-    -webkit-backdrop-filter: blur(var(--qaap-chat-edge-blur-bottom)) saturate(var(--qaap-chat-edge-saturate-bottom));
-    backdrop-filter: blur(var(--qaap-chat-edge-blur-bottom)) saturate(var(--qaap-chat-edge-saturate-bottom));
+    height: var(--qaap-chat-edge-fade-height-bottom);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     background: linear-gradient(to top,
         var(--theia-editor-background) 0%,
-        color-mix(in srgb, var(--theia-editor-background) 94%, transparent) 28%,
-        color-mix(in srgb, var(--theia-editor-background) 68%, transparent) 58%,
-        color-mix(in srgb, var(--theia-editor-background) 32%, transparent) 82%,
+        color-mix(in srgb, var(--theia-editor-background) 88%, transparent) 42%,
+        color-mix(in srgb, var(--theia-editor-background) 40%, transparent) 78%,
         transparent 100%);
-    -webkit-mask-image: linear-gradient(to top, #000 0%, #000 52%, transparent 100%);
-    mask-image: linear-gradient(to top, #000 0%, #000 52%, transparent 100%);
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 }

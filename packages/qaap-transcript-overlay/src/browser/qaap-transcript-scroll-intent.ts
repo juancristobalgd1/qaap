@@ -75,17 +75,30 @@ export function shouldPauseTranscriptAutoFollow(scroller: HTMLElement): boolean 
         || transcriptHasRecentUserScrollIntent(scroller);
 }
 
+/**
+ * Observe genuine reading intent that should leave the live edge.
+ *
+ * Keep this aligned with {@link TranscriptScrollController.bind}: exploratory
+ * touch / pointer contact and expanding tool summaries must NOT detach follow.
+ * Detach on upward wheel, selection, search keyboard, editable focus, and
+ * navigating a link — every reading interaction is intent.
+ */
 export function attachTranscriptScrollIntentObserver(scroller: HTMLElement): Disposable {
-    const mark = (reason: string) => (): void => markTranscriptUserScrollIntent(scroller, reason);
-    const onWheel = mark('wheel');
-    const onTouch = mark('touch');
-    const onPointer = (event: PointerEvent): void => {
-        if (event.pointerType !== 'mouse' || event.buttons > 0) {
-            markTranscriptUserScrollIntent(scroller, 'pointer');
+    const onWheel = (event: WheelEvent): void => {
+        // Downward wheel may be catching up to the live edge — do not detach.
+        if (event.deltaY < 0) {
+            markTranscriptUserScrollIntent(scroller, 'wheel');
         }
     };
     const onKeydown = (event: KeyboardEvent): void => {
-        if (eventHasUserIntent(event)) {
+        if (!eventHasUserIntent(event)) {
+            return;
+        }
+        const key = event.key;
+        // Match controller.bind: only upward / search keys leave the live edge.
+        if (key === 'ArrowUp' || key === 'PageUp' || key === 'Home'
+            || ((event.ctrlKey || event.metaKey) && ['f', 'g', 'F', 'G'].includes(key))
+            || key === 'Escape' || key === 'escape') {
             markTranscriptUserScrollIntent(scroller, 'keyboard');
         }
     };
@@ -95,20 +108,26 @@ export function attachTranscriptScrollIntentObserver(scroller: HTMLElement): Dis
         }
     };
     const onFocusIn = (event: FocusEvent): void => {
-        if (event.target instanceof HTMLElement && event.target.closest(INTERACTIVE_SELECTOR)) {
+        if (!(event.target instanceof HTMLElement)) {
+            return;
+        }
+        // Text fields / contenteditable imply reading; tool buttons and <summary>
+        // toggles must stay follow-friendly during streaming.
+        if (event.target.closest('input, textarea, select, [contenteditable="true"]')) {
             markTranscriptUserScrollIntent(scroller, 'focus');
         }
     };
     const onClick = (event: MouseEvent): void => {
-        if (event.target instanceof HTMLElement && event.target.closest('a[href], button, summary')) {
-            markTranscriptUserScrollIntent(scroller, 'interaction');
+        if (!(event.target instanceof HTMLElement)) {
+            return;
+        }
+        // Opening a link is reading intent; expanding <summary>/buttons is not.
+        if (event.target.closest('a[href]')) {
+            markTranscriptUserScrollIntent(scroller, 'link');
         }
     };
 
     scroller.addEventListener('wheel', onWheel, { passive: true });
-    scroller.addEventListener('touchstart', onTouch, { passive: true });
-    scroller.addEventListener('touchmove', onTouch, { passive: true });
-    scroller.addEventListener('pointerdown', onPointer, { passive: true });
     scroller.addEventListener('keydown', onKeydown);
     scroller.addEventListener('focusin', onFocusIn);
     scroller.addEventListener('click', onClick, true);
@@ -116,9 +135,6 @@ export function attachTranscriptScrollIntentObserver(scroller: HTMLElement): Dis
 
     return Disposable.create(() => {
         scroller.removeEventListener('wheel', onWheel);
-        scroller.removeEventListener('touchstart', onTouch);
-        scroller.removeEventListener('touchmove', onTouch);
-        scroller.removeEventListener('pointerdown', onPointer);
         scroller.removeEventListener('keydown', onKeydown);
         scroller.removeEventListener('focusin', onFocusIn);
         scroller.removeEventListener('click', onClick, true);

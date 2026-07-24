@@ -1,5 +1,20 @@
-/* Claude-style live turn footer: logo + activity + elapsed · tokens.
- * Sole horizontal divider above the floating composer chrome during streaming. */
+/* Claude-style live turn row: logo + activity + elapsed · tokens.
+ * Lives as the last child of the transcript scroller so it scrolls with the
+ * thread and stays below the latest agent message. */
+
+.theia-mobile-agent-transcript-stream-footer {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  box-sizing: border-box;
+  /* Opaque so any residual composer lip cannot show through the status row. */
+  background: var(--q-bg, var(--qaap-bg, var(--theia-editor-background, #0a0a0a)));
+}
+
+.theia-mobile-agent-transcript-stream-footer[hidden] {
+  display: none !important;
+}
 
 .theia-mobile-agent-live-status {
   box-sizing: border-box;
@@ -7,10 +22,26 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  margin-top: 24px;
-  padding: 14px 8px 6px;
-  border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  margin-top: 0;
+  padding: 10px 8px 8px;
+  border: none;
   min-height: 36px;
+  cursor: pointer;
+}
+
+/*
+ * Canonical host: direct child of the transcript scroller (always last).
+ * Nested copies inside message rows/segments stay hidden (off-DOM build leak).
+ */
+.theia-mobile-agent-transcript > .theia-mobile-agent-live-status {
+  display: flex !important;
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+
+.theia-mobile-agent-transcript .theia-mobile-agent-transcript-msg .theia-mobile-agent-live-status,
+.theia-mobile-agent-transcript .theia-mobile-agent-transcript-segments .theia-mobile-agent-live-status {
+  display: none !important;
 }
 
 .qaap-transcript-live-status-activity {
@@ -33,4 +64,20 @@
 
 .theia-mobile-agent-live-status.theia-mod-stalled .qaap-agent-setup-letter {
   color: color-mix(in srgb, var(--q-accent, #E58E40) 72%, var(--theia-descriptionForeground));
+}
+
+/*
+ * Setup / waiting activity row: when the scroller-tail live-status is present,
+ * hide the duplicate orb+label in the scrollport (keep timeout banners if present).
+ */
+.theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status)
+  .theia-mobile-agent-activity > .qaap-agent-setup,
+.theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status)
+  .theia-mobile-agent-activity > .theia-mobile-agent-stream-line {
+  display: none !important;
+}
+
+.theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status)
+  .theia-mobile-agent-activity:not(:has(.theia-mobile-agent-stream-timeout-banner)) {
+  display: none !important;
 }

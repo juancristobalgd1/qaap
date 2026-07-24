@@ -85,6 +85,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             transcriptStickyComposerUi: {} as MobileProjectsTranscriptMessagesHost['transcriptStickyComposerUi'],
             executionSurfaceTabsUi: {} as MobileProjectsTranscriptMessagesHost['executionSurfaceTabsUi'],
             maybeSyncTranscriptVisuallySettledChrome: () => undefined,
+            workHub: {} as WorkHubTranscriptBridge,
         } as unknown as MobileProjectsTranscriptMessagesHost;
         const workHub = {
             isAgentsHubLanding: () => true,
@@ -426,7 +427,8 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         ]));
 
         expect(scrollToCalls).to.equal(1);
-        expect(ensureTranscriptScrollController(messageHost).phase).to.equal('following');
+        // New turn pins for reading; stream may grow off-screen until Jump to latest.
+        expect(ensureTranscriptScrollController(messageHost).phase).to.equal('detached');
     });
 
     it('opens an existing conversation at the latest user turn instead of the absolute bottom', () => {

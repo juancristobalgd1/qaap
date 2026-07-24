@@ -17,7 +17,11 @@ import { excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptM
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
-import { hasUnfinishedAgentWork, resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
+import {
+    hasUnfinishedAgentWork,
+    isTranscriptAgentExecutionBusy,
+    resolveTranscriptEffectiveStatus,
+} from '../common/qaap-transcript-turn-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigateTarget, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
 import { groupTranscriptActivityNavigationItems, resolveTranscriptLifecycleActivityItems } from '../common/qaap-transcript-activity-navigation';
@@ -125,12 +129,19 @@ import {
 import { ensureSlowTurnHint } from './qaap-slow-turn-hint';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import {
+    clearLegacyTranscriptStreamFooterHost,
     createTranscriptLiveStatusElement,
+    ensureTranscriptLiveStatusAtScrollerTail,
+    removeNestedTranscriptLiveStatusCopies,
     removeTranscriptLiveStatusElement,
+    resolveTranscriptChatHostFromNode,
+    resolveTranscriptLiveStatusTokenCount,
+    resolveTranscriptScroller,
     resolveTranscriptSegmentsFooterAnchor,
     syncTranscriptLiveStatusElement,
     TRANSCRIPT_LIVE_STATUS_CLASS,
     TRANSCRIPT_LIVE_STATUS_LOGO_CLASS,
+    TRANSCRIPT_STREAM_FOOTER_HOST_CLASS,
 } from '../common/qaap-transcript-live-status';
 
 const TRANSCRIPT_TRACE_STATUS_ATTR = 'data-transcript-trace-status';
@@ -608,8 +619,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             body.querySelector('.theia-mobile-diff-summary')?.remove();
             if (streaming && conv) {
                 this.ensureAndSyncTranscriptLiveStatusFooter(body, segments, conv, { streaming: true });
+            } else if (conv && this.shouldShowPinnedTranscriptLiveStatus(conv)) {
+                // Visual settle while the backend is still busy — keep the pinned footer.
+                this.removeTranscriptLiveStatusWithOrb(body);
+                this.ensurePinnedTranscriptLiveStatus(conv);
             } else {
                 this.removeTranscriptLiveStatusWithOrb(body);
+                this.clearPinnedTranscriptStreamFooter(resolveTranscriptChatHostFromNode(body));
             }
         }
     }
@@ -1202,6 +1218,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             } else {
                 segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
                 this.removeTranscriptLiveStatusWithOrb(segmentsBody);
+            }
+            // Keep pinned status through finalize while the agent turn is still busy.
+            if (this.shouldShowPinnedTranscriptLiveStatus(conv)) {
+                this.ensurePinnedTranscriptLiveStatus(conv);
+            } else {
+                this.clearPinnedTranscriptStreamFooter(resolveTranscriptChatHostFromNode(segmentsBody));
             }
             // Sync the process accordion: collapse on success, stay open on error.
             this.syncRowProcessAccordion(row, segments, conv, false);
@@ -2108,6 +2130,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
             this.ensureTranscriptStreamStallWatch(row);
         }
+        // Pin status from the first setup tick so the orb never lives only in the scrollport.
+        this.ensurePinnedTranscriptLiveStatus(conv, { stalled, timedOut });
         return true;
     }
 
@@ -2259,16 +2283,199 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      */
     ensureTranscriptLiveStatusForStreamingRow(row: HTMLElement, conv: QaapAgentConversationDTO): void {
         const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
-        if (!(segmentsBody instanceof HTMLElement)) {
+        if (segmentsBody instanceof HTMLElement) {
+            const segments = this.resolveTranscriptRowSegments(conv, row);
+            const stalled = this.resolveTranscriptStreamStalled(conv);
+            const timedOut = this.resolveTranscriptStreamTimedOut(conv);
+            this.ensureAndSyncTranscriptLiveStatusFooter(segmentsBody, segments, conv, {
+                streaming: true,
+                stalled,
+                timedOut,
+            });
             return;
         }
-        const segments = this.resolveTranscriptRowSegments(conv, row);
-        const stalled = this.resolveTranscriptStreamStalled(conv);
-        const timedOut = this.resolveTranscriptStreamTimedOut(conv);
-        this.ensureAndSyncTranscriptLiveStatusFooter(segmentsBody, segments, conv, {
-            streaming: true,
-            stalled,
-            timedOut,
+        this.ensurePinnedTranscriptLiveStatus(conv);
+    }
+
+    /** Suppress clear/remount flicker when status dips for a frame mid-turn. */
+    protected pinnedLiveStatusHoldUntil = 0;
+    protected pinnedLiveStatusConvId: string | undefined;
+    /** High-water mark so the token meter never blinks away mid-turn. */
+    protected pinnedLiveStatusPeakTokens = 0;
+
+    /** True while the live-status row should stay at the transcript scroller tail. */
+    protected shouldShowPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
+        if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
+            return true;
+        }
+        return isTranscriptAgentExecutionBusy({ id: conv.id, status: conv.status }, conv);
+    }
+
+    protected resolveTranscriptLiveStatusChatHost(hint?: HTMLElement): HTMLElement | undefined {
+        if (hint?.isConnected && hint.classList.contains('theia-mobile-agent-transcript-real-chat')) {
+            return hint;
+        }
+        const fromHint = resolveTranscriptChatHostFromNode(hint);
+        if (fromHint?.isConnected) {
+            return fromHint;
+        }
+        const fromHost = this.host.transcriptChatHost;
+        if (fromHost instanceof HTMLElement && fromHost.isConnected) {
+            return fromHost;
+        }
+        const queried = document.querySelector<HTMLElement>('.theia-mobile-agent-transcript-real-chat');
+        return queried?.isConnected ? queried : undefined;
+    }
+
+    /**
+     * Keep orb + process + elapsed + tokens as the last child of the transcript scroller
+     * for the whole turn (setup → tools → finalize). Scrolls with the thread; never pinned
+     * outside the scrollport.
+     */
+    ensurePinnedTranscriptLiveStatus(
+        conv: QaapAgentConversationDTO,
+        options?: { readonly stalled?: boolean; readonly timedOut?: boolean; readonly chatHost?: HTMLElement },
+    ): void {
+        const chatHost = this.resolveTranscriptLiveStatusChatHost(options?.chatHost);
+        if (!chatHost) {
+            return;
+        }
+        // Drop off-DOM-build leftovers nested inside rows/segments (not the scroller tail).
+        removeNestedTranscriptLiveStatusCopies(chatHost);
+
+        const wantVisible = this.shouldShowPinnedTranscriptLiveStatus(conv);
+        if (wantVisible) {
+            if (this.pinnedLiveStatusConvId !== conv.id) {
+                this.pinnedLiveStatusPeakTokens = 0;
+            }
+            this.pinnedLiveStatusConvId = conv.id;
+            this.pinnedLiveStatusHoldUntil = Date.now() + 2_000;
+        } else if (
+            this.pinnedLiveStatusConvId === conv.id
+            && Date.now() < this.pinnedLiveStatusHoldUntil
+        ) {
+            // Hold the existing chrome through brief status dips — do not remount.
+            return;
+        } else {
+            this.clearPinnedTranscriptStreamFooter(chatHost);
+            this.pinnedLiveStatusConvId = undefined;
+            this.pinnedLiveStatusHoldUntil = 0;
+            this.pinnedLiveStatusPeakTokens = 0;
+            return;
+        }
+
+        const turnStart = resolveTranscriptTurnStartMs(conv.messages) ?? conv.createdAt;
+        if (turnStart === undefined) {
+            return;
+        }
+        const scroller = resolveTranscriptScroller(chatHost);
+        if (!scroller) {
+            return;
+        }
+        let liveStatus = scroller.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_LIVE_STATUS_CLASS}`);
+        if (!liveStatus) {
+            // Migrate a leftover from the legacy pinned footer, if any.
+            const legacyHost = chatHost.querySelector<HTMLElement>(
+                `:scope > .${TRANSCRIPT_STREAM_FOOTER_HOST_CLASS}`,
+            );
+            liveStatus = legacyHost?.querySelector<HTMLElement>(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`) ?? null;
+        }
+        if (!liveStatus) {
+            liveStatus = createTranscriptLiveStatusElement({
+                createIndicator: () => createThinkingOrbIndicator({
+                    setup: true,
+                    isWorking: true,
+                }),
+            });
+            liveStatus.addEventListener('click', () => {
+                const streamingRow = scroller.querySelector<HTMLElement>(
+                    '.theia-mobile-agent-transcript-msg.theia-mod-agent.theia-mod-streaming',
+                );
+                const accordion = streamingRow?.querySelector<HTMLDetailsElement>('.theia-mobile-process-accordion');
+                if (accordion) {
+                    accordion.open = !accordion.open;
+                }
+            });
+        }
+        // Append once / re-tail — never replaceChildren on later ticks (that kills the orb).
+        ensureTranscriptLiveStatusAtScrollerTail(chatHost, liveStatus);
+        clearLegacyTranscriptStreamFooterHost(chatHost);
+        const footer = liveStatus;
+        const renderFooter = (): void => {
+            const latestConv = this.host.transcriptLastConv?.id === conv.id ? this.host.transcriptLastConv : conv;
+            if (this.shouldShowPinnedTranscriptLiveStatus(latestConv)) {
+                this.pinnedLiveStatusHoldUntil = Date.now() + 2_000;
+                this.pinnedLiveStatusConvId = latestConv.id;
+            } else if (
+                this.pinnedLiveStatusConvId === latestConv.id
+                && Date.now() < this.pinnedLiveStatusHoldUntil
+            ) {
+                return;
+            } else {
+                sharedSecondTicker.unregister(footer);
+                transcriptLiveStatusTickerBound.delete(footer);
+                this.clearPinnedTranscriptStreamFooter(chatHost);
+                this.pinnedLiveStatusConvId = undefined;
+                this.pinnedLiveStatusHoldUntil = 0;
+                this.pinnedLiveStatusPeakTokens = 0;
+                return;
+            }
+            removeNestedTranscriptLiveStatusCopies(chatHost);
+            ensureTranscriptLiveStatusAtScrollerTail(chatHost, footer);
+            const latestSegments = [...resolveTranscriptStreamingAgentSegments(latestConv)];
+            const stalled = options?.stalled ?? this.resolveTranscriptStreamStalled(latestConv);
+            const timedOut = options?.timedOut ?? this.resolveTranscriptStreamTimedOut(latestConv);
+            const activity = resolveTranscriptStreamingActivityFromSegments(
+                latestSegments as QaapAgentMessageSegmentDTO[],
+                { stalled, timedOut },
+            );
+            const streamChars = resolveTranscriptTurnStreamChars(latestConv.messages);
+            const nextTokens = resolveTranscriptLiveStatusTokenCount({
+                streamChars,
+                contextUsage: latestConv.contextUsage,
+            });
+            this.pinnedLiveStatusPeakTokens = Math.max(this.pinnedLiveStatusPeakTokens, nextTokens);
+            syncTranscriptLiveStatusElement(footer, {
+                elapsedMs: Date.now() - turnStart,
+                streamChars,
+                tokenCount: this.pinnedLiveStatusPeakTokens,
+                activityTitle: activity.title,
+                activityKind: activity.kind,
+                stalled,
+                timedOut,
+            });
+            const orbHost = footer.querySelector<HTMLElement>(
+                `.${TRANSCRIPT_LIVE_STATUS_LOGO_CLASS}.${QAAP_THINKING_ORB_INDICATOR_CLASS}`,
+            );
+            if (orbHost) {
+                syncThinkingOrbIndicator(orbHost, {
+                    activityKind: activity.kind,
+                    isWorking: true,
+                    stalled,
+                    timedOut,
+                });
+            }
+            const accordion = scroller.querySelector<HTMLDetailsElement>(
+                '.theia-mobile-agent-transcript-msg.theia-mod-streaming .theia-mobile-process-accordion',
+            );
+            footer.classList.toggle('theia-mod-process-open', !!accordion?.open);
+        };
+        renderFooter();
+        if (transcriptLiveStatusTickerBound.has(footer)) {
+            return;
+        }
+        transcriptLiveStatusTickerBound.add(footer);
+        sharedSecondTicker.register({
+            element: footer,
+            render: () => {
+                if (!footer.isConnected) {
+                    return;
+                }
+                if (!isTranscriptDocumentVisible()) {
+                    return;
+                }
+                renderFooter();
+            },
         });
     }
 
@@ -2805,94 +3012,41 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         target.closest('.theia-mod-history-gap')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     }
 
+    protected clearPinnedTranscriptStreamFooter(chatHost?: HTMLElement): void {
+        this.pinnedLiveStatusPeakTokens = 0;
+        const host = chatHost
+            ?? this.host.transcriptChatHost
+            ?? document.querySelector<HTMLElement>(`.theia-mobile-agent-transcript-real-chat`);
+        if (!(host instanceof HTMLElement)) {
+            return;
+        }
+        const scroller = resolveTranscriptScroller(host);
+        if (scroller) {
+            this.removeTranscriptLiveStatusWithOrb(scroller);
+        }
+        clearLegacyTranscriptStreamFooterHost(host);
+    }
+
     protected ensureAndSyncTranscriptLiveStatusFooter(
         segmentsBody: HTMLElement,
-        segments: readonly QaapAgentMessageSegmentDTO[],
+        _segments: readonly QaapAgentMessageSegmentDTO[],
         conv: QaapAgentConversationDTO | undefined,
         options?: { readonly streaming?: boolean; readonly stalled?: boolean; readonly timedOut?: boolean },
     ): void {
-        if (!options?.streaming || !conv) {
-            this.removeTranscriptLiveStatusWithOrb(segmentsBody);
-            return;
-        }
-        const turnStart = resolveTranscriptTurnStartMs(conv.messages) ?? conv.createdAt;
-        if (turnStart === undefined) {
-            this.removeTranscriptLiveStatusWithOrb(segmentsBody);
-            return;
-        }
-        let footer = segmentsBody.querySelector<HTMLElement>(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`);
-        if (!footer) {
-            footer = createTranscriptLiveStatusElement({
-                createIndicator: () => createThinkingOrbIndicator({
-                    setup: true,
-                    isWorking: true,
-                }),
-            });
-        }
-        // Keep the live footer anchored at the end of the segment column.
-        segmentsBody.append(footer);
-        const renderFooter = (): void => {
-            const latestConv = this.host.transcriptLastConv?.id === conv.id ? this.host.transcriptLastConv : conv;
-            const ownerRow = footer.closest<HTMLElement>('.theia-mobile-agent-transcript-msg');
-            const latestSegments = ownerRow
-                ? this.resolveTranscriptRowSegments(latestConv, ownerRow)
-                : [...resolveTranscriptStreamingAgentSegments(latestConv)];
-            const stalled = options?.stalled ?? this.resolveTranscriptStreamStalled(latestConv);
-            const timedOut = options?.timedOut ?? this.resolveTranscriptStreamTimedOut(latestConv);
-            const activity = resolveTranscriptStreamingActivityFromSegments(
-                latestSegments as QaapAgentMessageSegmentDTO[],
-                { stalled, timedOut },
+        // Never mount into segmentsBody — off-DOM row builds cannot resolve real-chat via
+        // closest(), and a nested copy is what flickered. Canonical host is the scroller tail.
+        this.removeTranscriptLiveStatusWithOrb(segmentsBody);
+        if (!conv) {
+            const chatHost = this.resolveTranscriptLiveStatusChatHost(
+                resolveTranscriptChatHostFromNode(segmentsBody),
             );
-            syncTranscriptLiveStatusElement(footer, {
-                elapsedMs: Date.now() - turnStart,
-                streamChars: resolveTranscriptTurnStreamChars(latestConv.messages),
-                activityTitle: activity.title,
-                activityKind: activity.kind,
-                stalled,
-                timedOut,
-            });
-            const orbHost = footer.querySelector<HTMLElement>(
-                `.${TRANSCRIPT_LIVE_STATUS_LOGO_CLASS}.${QAAP_THINKING_ORB_INDICATOR_CLASS}`,
-            );
-            if (orbHost) {
-                syncThinkingOrbIndicator(orbHost, {
-                    activityKind: activity.kind,
-                    isWorking: true,
-                    stalled,
-                    timedOut,
-                });
-            }
-        };
-        renderFooter();
-        if (transcriptLiveStatusTickerBound.has(footer)) {
+            this.clearPinnedTranscriptStreamFooter(chatHost);
             return;
         }
-        transcriptLiveStatusTickerBound.add(footer);
-        sharedSecondTicker.register({
-            element: footer,
-            render: () => {
-                if (!footer.isConnected) {
-                    return;
-                }
-                const latestConv = this.host.transcriptLastConv?.id === conv.id ? this.host.transcriptLastConv : conv;
-                const ownerRow = footer.closest<HTMLElement>('.theia-mobile-agent-transcript-msg');
-                // Prefer backend/effective status over a fleeting CSS class toggle —
-                // mid-stream patches briefly drop `theia-mod-streaming`, and removing
-                // the footer on that flicker hid the brand logo until the next ensure.
-                const stillStreaming = resolveTranscriptEffectiveStatus(latestConv) === 'streaming'
-                    || !!ownerRow?.classList.contains('theia-mod-streaming');
-                if (!stillStreaming) {
-                    sharedSecondTicker.unregister(footer);
-                    transcriptLiveStatusTickerBound.delete(footer);
-                    this.destroyThinkingOrbHosts(footer);
-                    footer.remove();
-                    return;
-                }
-                if (!isTranscriptDocumentVisible()) {
-                    return;
-                }
-                renderFooter();
-            },
+        this.ensurePinnedTranscriptLiveStatus(conv, {
+            stalled: options?.stalled,
+            timedOut: options?.timedOut,
+            chatHost: resolveTranscriptChatHostFromNode(segmentsBody),
         });
     }
 
@@ -2910,6 +3064,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         }
         if (!options?.streaming) {
             this.removeTranscriptLiveStatusWithOrb(segmentsBody);
+            if (options?.conv && this.shouldShowPinnedTranscriptLiveStatus(options.conv)) {
+                this.ensurePinnedTranscriptLiveStatus(options.conv, { stalled: options?.stalled });
+            } else {
+                this.clearPinnedTranscriptStreamFooter(resolveTranscriptChatHostFromNode(segmentsBody));
+            }
             const status = row.querySelector<HTMLElement>(`[${TRANSCRIPT_TRACE_STATUS_ATTR}]`);
             if (status) {
                 status.hidden = true;
@@ -5585,6 +5744,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             }
             this.ensureTranscriptStreamStallWatch(row);
         }
+        // Whole-turn pinned chrome (setup → first agent tokens → tools → finalize).
+        this.ensurePinnedTranscriptLiveStatus(conv, { stalled, timedOut });
         return row;
     }
 
@@ -5601,12 +5762,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         meta.className = 'theia-mobile-agent-stream-meta';
         const update = (): void => {
             const parts = [formatTranscriptStreamElapsed(Date.now() - turnStart)];
-            const tokens = formatTranscriptStreamTokens(resolveTranscriptTurnStreamChars(
+            // Keep the token meter visible for the whole stream (incl. ~0).
+            parts.push(formatTranscriptStreamTokens(resolveTranscriptTurnStreamChars(
                 this.host.transcriptLastConv?.id === conv.id ? this.host.transcriptLastConv.messages : conv.messages,
-            ));
-            if (tokens) {
-                parts.push(tokens);
-            }
+            )) ?? '~0 tokens');
             meta.textContent = `· ${parts.join(' · ')}`;
         };
         update();

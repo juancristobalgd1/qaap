@@ -874,20 +874,19 @@ describe('qaap-execution-event-timeline', () => {
             expect(label?.textContent).to.equal('Processing…');
         });
 
-        it('keeps the ThinkingOrb in the header while the agent is working', () => {
+        it('does not mount a ThinkingOrb in the accordion header', () => {
             const segments = [toolSegment('read', 't1', '{}', false)];
             const accordion = createMobileProcessAccordion(segments, {
                 isWorking: true, isError: false, elapsedMs: 21_000, activityVerb: 'Read',
             });
             const header = accordion.querySelector('.theia-mobile-process-accordion-header');
-            const logo = header?.querySelector('.theia-mobile-process-accordion-logo.qaap-thinking-orb-indicator');
-            expect(logo).to.not.equal(null);
-            expect(header?.firstElementChild).to.equal(logo);
+            expect(header?.querySelector('.theia-mobile-process-accordion-logo')).to.equal(null);
+            expect(header?.querySelector('.qaap-thinking-orb-indicator')).to.equal(null);
 
             syncMobileProcessAccordionState(accordion, {
                 isWorking: true, isError: false, elapsedMs: 22_000, activityVerb: 'Read',
             });
-            expect(header?.querySelector('.theia-mobile-process-accordion-logo')).to.equal(logo);
+            expect(header?.querySelector('.theia-mobile-process-accordion-logo')).to.equal(null);
 
             syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, settled: true, elapsedMs: 22_000 });
             expect(header?.querySelector('.theia-mobile-process-accordion-logo')).to.equal(null);

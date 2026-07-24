@@ -18,7 +18,12 @@ interface StreamStatusMessage {
     readonly role: string;
     readonly createdAt?: number;
     readonly content?: string;
-    readonly segments?: ReadonlyArray<{ readonly type: string; readonly content?: string }>;
+    readonly segments?: ReadonlyArray<{
+        readonly type: string;
+        readonly content?: string;
+        readonly args?: string;
+        readonly result?: string;
+    }>;
 }
 
 /** Start of the in-flight turn: the last user message's timestamp. */
@@ -32,7 +37,11 @@ export function resolveTranscriptTurnStartMs(messages: readonly StreamStatusMess
     return undefined;
 }
 
-/** Characters produced by the in-flight agent turn (text + thinking segments, or raw content). */
+/**
+ * Characters produced by the in-flight agent turn.
+ * Counts text + thinking, and tool args/results so mid-tool turns still show a
+ * token estimate next to elapsed time (not only after prose streams).
+ */
 export function resolveTranscriptTurnStreamChars(messages: readonly StreamStatusMessage[]): number {
     const last = messages[messages.length - 1];
     if (!last || last.role === 'user') {
@@ -44,6 +53,8 @@ export function resolveTranscriptTurnStreamChars(messages: readonly StreamStatus
         for (const segment of segments) {
             if (segment.type === 'text' || segment.type === 'thinking') {
                 total += segment.content?.length ?? 0;
+            } else if (segment.type === 'tool') {
+                total += (segment.args?.length ?? 0) + (segment.result?.length ?? 0);
             }
         }
         return total;
@@ -64,18 +75,25 @@ export function formatTranscriptStreamElapsed(elapsedMs: number): string {
     return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
 }
 
-/** "~870 tokens", "~4.2k tokens"; undefined while nothing has streamed yet. */
-export function formatTranscriptStreamTokens(chars: number): string | undefined {
-    const tokens = Math.round(chars / STREAM_STATUS_CHARS_PER_TOKEN);
-    if (tokens <= 0) {
+/** "~870 tokens", "~4.2k tokens"; "~0 tokens" when count is zero; undefined if not a number. */
+export function formatTranscriptTokenCount(tokens: number): string | undefined {
+    if (!Number.isFinite(tokens) || tokens < 0) {
         return undefined;
     }
+    if (tokens === 0) {
+        return '~0 tokens';
+    }
     if (tokens < 1000) {
-        return `~${tokens} tokens`;
+        return `~${Math.round(tokens)} tokens`;
     }
     const thousands = tokens / 1000;
     const rounded = thousands >= 10 ? Math.round(thousands).toString() : (Math.round(thousands * 10) / 10).toFixed(1);
     return `~${rounded}k tokens`;
+}
+
+/** "~870 tokens", "~4.2k tokens"; undefined while nothing has streamed yet. */
+export function formatTranscriptStreamTokens(chars: number): string | undefined {
+    return formatTranscriptTokenCount(Math.round(chars / STREAM_STATUS_CHARS_PER_TOKEN));
 }
 
 type ThinkingPhaseSegment = Readonly<{ readonly type: string; readonly content?: string; readonly finished?: boolean }>;

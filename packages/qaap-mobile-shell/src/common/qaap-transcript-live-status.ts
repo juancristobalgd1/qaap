@@ -4,21 +4,57 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens } from './qaap-transcript-stream-status';
+import {
+    formatTranscriptStreamElapsed,
+    formatTranscriptTokenCount,
+} from './qaap-transcript-stream-status';
+import {
+    totalTokensFromContextUsage,
+    type QaapAgentContextUsage,
+} from './qaap-agent-context-usage';
 import { QAAP_BRAND_LOGO_INDICATOR_CLASS, syncShimmerTextElement } from './qaap-agent-setup-phrases';
 
-/** Footer row shown while a turn streams; hidden once the diff summary mounts. */
+/** Live turn row: always the last child of the transcript scroller while streaming. */
 export const TRANSCRIPT_LIVE_STATUS_ATTR = 'data-transcript-live-status';
 export const TRANSCRIPT_LIVE_STATUS_CLASS = 'theia-mobile-agent-live-status';
 export const TRANSCRIPT_LIVE_STATUS_LOGO_CLASS = 'qaap-transcript-live-status-logo';
+/**
+ * Legacy pinned host (sibling of the scroller). Kept for host reshape / clear paths;
+ * live-status now mounts inside the scroller as its last child.
+ */
+export const TRANSCRIPT_STREAM_FOOTER_HOST_CLASS = 'theia-mobile-agent-transcript-stream-footer';
 
 export interface TranscriptLiveStatusSnapshot {
     readonly elapsedMs: number;
     readonly streamChars: number;
+    /** Preferred token count (provider usage); falls back to streamChars estimate. */
+    readonly tokenCount?: number;
     readonly activityTitle: string;
     readonly activityKind?: string;
     readonly stalled?: boolean;
     readonly timedOut?: boolean;
+}
+
+/**
+ * Tokens shown next to elapsed time: provider usage when present, else a
+ * chars/4 estimate from the in-flight agent turn (incl. tool I/O).
+ */
+export function resolveTranscriptLiveStatusTokenCount(options: {
+    readonly streamChars: number;
+    readonly contextUsage?: QaapAgentContextUsage;
+}): number {
+    const usage = options.contextUsage;
+    if (usage) {
+        const produced = usage.outputTokens + (usage.reasoningTokens ?? 0);
+        if (produced > 0) {
+            return produced;
+        }
+        const total = totalTokensFromContextUsage(usage);
+        if (total > 0) {
+            return total;
+        }
+    }
+    return Math.max(0, Math.round(options.streamChars / 4));
 }
 
 export interface CreateTranscriptLiveStatusElementOptions {
@@ -53,12 +89,96 @@ export function createTranscriptLiveStatusElement(
     return root;
 }
 
+/**
+ * Ensure the legacy stream-footer host exists as a sibling of the message scroller
+ * (kept empty/hidden; live-status lives in the scroller tail).
+ */
+export function ensureTranscriptStreamFooterHost(chatHost: HTMLElement): HTMLElement {
+    let host = chatHost.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_STREAM_FOOTER_HOST_CLASS}`);
+    if (host) {
+        // Keep the footer after the scroller even if replaceChildren reordered children.
+        const scroller = chatHost.querySelector(':scope > .theia-mobile-agent-transcript');
+        if (scroller && host.previousElementSibling !== scroller) {
+            chatHost.append(host);
+        }
+        return host;
+    }
+    host = document.createElement('div');
+    host.className = TRANSCRIPT_STREAM_FOOTER_HOST_CLASS;
+    host.hidden = true;
+    chatHost.append(host);
+    return host;
+}
+
+export function resolveTranscriptChatHostFromNode(node: ParentNode | null | undefined): HTMLElement | undefined {
+    if (!(node instanceof Element)) {
+        return undefined;
+    }
+    const chatHost = node.closest('.theia-mobile-agent-transcript-real-chat');
+    return chatHost instanceof HTMLElement ? chatHost : undefined;
+}
+
+export function resolveTranscriptScroller(chatHost: HTMLElement): HTMLElement | undefined {
+    const scroller = chatHost.querySelector(':scope > .theia-mobile-agent-transcript');
+    return scroller instanceof HTMLElement ? scroller : undefined;
+}
+
+/**
+ * Strip live-status copies nested inside message rows/segments. Keeps the canonical
+ * direct child of the scroller (always-last transcript tail).
+ */
+export function removeNestedTranscriptLiveStatusCopies(chatHost: HTMLElement): void {
+    const scroller = resolveTranscriptScroller(chatHost);
+    if (!scroller) {
+        return;
+    }
+    for (const element of scroller.querySelectorAll<HTMLElement>(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`)) {
+        if (element.parentElement !== scroller) {
+            element.remove();
+        }
+    }
+}
+
+/** @deprecated Use {@link removeNestedTranscriptLiveStatusCopies}. */
+export function removeInlineTranscriptLiveStatusFromScroller(chatHost: HTMLElement): void {
+    removeNestedTranscriptLiveStatusCopies(chatHost);
+}
+
+/**
+ * Keep `element` as the last child of the transcript scroller so new message rows
+ * never bury the live-status chrome mid-turn.
+ */
+export function ensureTranscriptLiveStatusAtScrollerTail(
+    chatHost: HTMLElement,
+    element: HTMLElement,
+): HTMLElement | undefined {
+    const scroller = resolveTranscriptScroller(chatHost);
+    if (!scroller) {
+        return undefined;
+    }
+    if (element.parentElement !== scroller || scroller.lastElementChild !== element) {
+        scroller.append(element);
+    }
+    return scroller;
+}
+
+/** Hide and empty the legacy pinned footer host (live-status no longer mounts there). */
+export function clearLegacyTranscriptStreamFooterHost(chatHost: HTMLElement): void {
+    const footerHost = chatHost.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_STREAM_FOOTER_HOST_CLASS}`);
+    if (!footerHost) {
+        return;
+    }
+    footerHost.hidden = true;
+    footerHost.replaceChildren();
+}
+
 export function formatTranscriptLiveStatusMeta(snapshot: TranscriptLiveStatusSnapshot): string {
     const parts: string[] = [formatTranscriptStreamElapsed(snapshot.elapsedMs)];
-    const tokens = formatTranscriptStreamTokens(snapshot.streamChars);
-    if (tokens) {
-        parts.push(tokens);
-    }
+    // Always show the token meter beside elapsed — never drop it when count is 0.
+    const rawTokens = snapshot.tokenCount !== undefined
+        ? snapshot.tokenCount
+        : Math.round(snapshot.streamChars / 4);
+    parts.push(formatTranscriptTokenCount(Math.max(0, rawTokens)) ?? '~0 tokens');
     return parts.join(' · ');
 }
 

@@ -95,8 +95,7 @@ describe('qaap-transcript-scroll-controller', () => {
     it('user detach then jump-to-latest re-enables following', () => {
         const scroller = document.createElement('div');
         const controller = ensureTranscriptScrollController(scroller);
-        controller.beginPositionTurn();
-        controller.completePositionTurn();
+        controller.jumpToLatest();
         expect(controller.phase).to.equal('following');
 
         controller.notifyUserDetach('wheel');
@@ -106,6 +105,16 @@ describe('qaap-transcript-scroll-controller', () => {
         controller.jumpToLatest();
         expect(controller.phase).to.equal('following');
         expect(controller.shouldFollowTail()).to.equal(true);
+    });
+
+    it('completing a position-turn leaves the reader detached', () => {
+        const scroller = document.createElement('div');
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.jumpToLatest();
+        controller.beginPositionTurn();
+        controller.completePositionTurn();
+        expect(controller.phase).to.equal('detached');
+        expect(controller.shouldFollowTail()).to.equal(false);
     });
 
     it('jumpToLatest clears an active text selection', () => {
@@ -181,6 +190,84 @@ describe('qaap-transcript-scroll-controller', () => {
         expect(scrollTop).to.equal(800);
     });
 
+    it('skips follow-tail writes when already at max scroll', () => {
+        const scroller = document.createElement('div');
+        let scrollTop = 300;
+        let scrollToCalls = 0;
+        Object.defineProperties(scroller, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: { configurable: true, value: 400 },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    scrollToCalls++;
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.jumpToLatest();
+
+        controller.onContentChanged(scroller);
+        controller.scrollToTail(scroller, 'auto');
+
+        expect(scrollToCalls).to.equal(0);
+        expect(scrollTop).to.equal(300);
+    });
+
+    it('follow-tail scrolls when content growth leaves the live edge', async () => {
+        const scroller = document.createElement('div');
+        let scrollTop = 300;
+        let scrollHeight = 400;
+        let scrollToCalls = 0;
+        Object.defineProperties(scroller, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: {
+                configurable: true,
+                get: () => scrollHeight,
+            },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    scrollToCalls++;
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.jumpToLatest();
+        const pendingRafs: FrameRequestCallback[] = [];
+        const previousRaf = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            pendingRafs.push(callback);
+            return pendingRafs.length;
+        };
+        try {
+            scrollHeight = 520;
+            controller.onContentChanged(scroller);
+            expect(pendingRafs).to.have.length(1);
+            pendingRafs.forEach(callback => callback(0));
+        } finally {
+            globalThis.requestAnimationFrame = previousRaf;
+        }
+        expect(scrollToCalls).to.equal(1);
+        expect(scrollTop).to.equal(520);
+    });
+
     it('coalesces competing follow and preserve intents into a single follow write', () => {
         const scroller = document.createElement('div');
         let scrollTop = 100;
@@ -208,8 +295,7 @@ describe('qaap-transcript-scroll-controller', () => {
             },
         });
         const controller = ensureTranscriptScrollController(scroller);
-        controller.beginPositionTurn();
-        controller.completePositionTurn();
+        controller.jumpToLatest();
         const anchor = controller.captureAnchor(scroller);
         const pendingRafs: FrameRequestCallback[] = [];
         const previousRaf = globalThis.requestAnimationFrame;

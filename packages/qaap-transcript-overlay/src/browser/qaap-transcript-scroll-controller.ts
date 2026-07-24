@@ -11,7 +11,10 @@ import {
     type TranscriptScrollIntentEvent,
     type TranscriptScrollPhase,
 } from '../common/qaap-transcript-scroll-intent-machine';
-import { TRANSCRIPT_SCROLL_TO_BOTTOM_NEAR_BOTTOM_PX } from '../common/qaap-transcript-scroll-to-bottom';
+import {
+    isTranscriptAtMaxScroll,
+    TRANSCRIPT_SCROLL_TO_BOTTOM_NEAR_BOTTOM_PX,
+} from '../common/qaap-transcript-scroll-to-bottom';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 
 /** Keep in sync with `qaap-transcript-scroll-intent` (string literal avoids circular import). */
@@ -142,6 +145,7 @@ export class TranscriptScrollController {
         this.transition({ type: 'position-turn-start' });
     }
 
+    /** Finish placing the turn; leaves phase detached so streaming does not chase. */
     completePositionTurn(): void {
         this.transition({ type: 'position-turn-done' });
     }
@@ -240,6 +244,16 @@ export class TranscriptScrollController {
         if (!transcriptScrollPhaseAllowsViewportMutation(this.currentPhase, 'follow-tail')) {
             return;
         }
+        // Already glued to the live edge — skip the write so activity-row /
+        // virtual-list height thrash cannot chase scrollTop up and down.
+        if (behavior === 'auto' && isTranscriptAtMaxScroll(
+            scroller.scrollTop,
+            scroller.clientHeight,
+            scroller.scrollHeight,
+        )) {
+            this.markProgrammaticScroll(DEFAULT_PROGRAMMATIC_SCROLL_MS);
+            return;
+        }
         this.markProgrammaticScroll(behavior === 'smooth' ? SMOOTH_PROGRAMMATIC_SCROLL_MS : DEFAULT_PROGRAMMATIC_SCROLL_MS);
         scroller.scrollTo({ top: scroller.scrollHeight, behavior });
     }
@@ -270,6 +284,16 @@ export class TranscriptScrollController {
 
     onContentChanged(scroller: HTMLElement): void {
         this.cancelPendingPreserveAnchor();
+        if (this.shouldFollowTail() && isTranscriptAtMaxScroll(
+            scroller.scrollTop,
+            scroller.clientHeight,
+            scroller.scrollHeight,
+        )) {
+            // Content did not push us off the live edge (shrink / no-op patch).
+            // Avoid a redundant RAF scrollTo that fights layout settle.
+            this.markProgrammaticScroll(DEFAULT_PROGRAMMATIC_SCROLL_MS);
+            return;
+        }
         this.scheduleScrollReconciliation(scroller, { kind: 'follow-tail' });
     }
 

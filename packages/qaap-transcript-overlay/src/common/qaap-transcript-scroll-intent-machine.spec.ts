@@ -33,10 +33,11 @@ describe('qaap-transcript-scroll-intent-machine', () => {
         expect(reduceTranscriptScrollPhase(restoring, { type: 'restore-done' })).to.equal('detached');
     });
 
-    it('positions a new turn once and then follows', () => {
+    it('positions a new turn once and then stays detached for reading', () => {
         const positioning = reduceTranscriptScrollPhase('detached', { type: 'position-turn-start' });
         expect(positioning).to.equal('positioning-turn');
-        expect(reduceTranscriptScrollPhase(positioning, { type: 'position-turn-done' })).to.equal('following');
+        expect(reduceTranscriptScrollPhase(positioning, { type: 'position-turn-done' })).to.equal('detached');
+        expect(transcriptScrollPhaseAllowsAutoFollow('detached')).to.equal(false);
     });
 
     it('enables following only for explicit live-edge gestures', () => {
@@ -44,6 +45,12 @@ describe('qaap-transcript-scroll-intent-machine', () => {
         expect(reduceTranscriptScrollPhase('detached', { type: 'user-return-to-live-edge' })).to.equal('following');
         expect(reduceTranscriptScrollPhase('idle', { type: 'user-return-to-live-edge' })).to.equal('following');
         expect(reduceTranscriptScrollPhase('restoring', { type: 'user-return-to-live-edge' })).to.equal('restoring');
+        // Submitting a turn must not implicitly opt into auto-follow.
+        const afterTurn = reduceTranscriptScrollPhase(
+            reduceTranscriptScrollPhase('following', { type: 'position-turn-start' }),
+            { type: 'position-turn-done' },
+        );
+        expect(afterTurn).to.equal('detached');
     });
 
     it('never re-follows because a programmatic or content-height change lands near bottom', () => {

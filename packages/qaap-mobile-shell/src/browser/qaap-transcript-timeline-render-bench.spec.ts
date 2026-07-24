@@ -75,8 +75,9 @@ describe('qaap-transcript-timeline-render-bench', () => {
         return segments;
     }
 
-    function createArtifactsUi(): MobileProjectsTranscriptMessagesArtifactsUi {
+    function createArtifactsUi(transcriptChatHost?: HTMLElement): MobileProjectsTranscriptMessagesArtifactsUi {
         const host = {
+            transcriptChatHost,
             transcriptLastConv: undefined,
             transcriptUserScrollPinDispose: Disposable.NULL,
             transcriptLiveUi: {
@@ -1067,7 +1068,14 @@ describe('qaap-transcript-timeline-render-bench', () => {
     });
 
     it('appends the diff summary when a streaming turn with file changes settles', () => {
-        const artifactsUi = createArtifactsUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        const scroller = document.createElement('div');
+        scroller.className = 'theia-mobile-agent-transcript';
+        chatHost.append(scroller);
+        document.body.append(chatHost);
+
+        const artifactsUi = createArtifactsUi(chatHost);
         const segments: QaapAgentMessageSegmentDTO[] = [
             { type: 'thinking', content: 'Plan the work.' },
             {
@@ -1089,18 +1097,35 @@ describe('qaap-transcript-timeline-render-bench', () => {
             { type: 'text', content: 'Updated the page component.' },
         ];
         const conv = createCompletedConv(segments);
-        // Streaming row — no diff summary while streaming; live footer is visible instead
+        // Streaming row — no diff summary while streaming; live status is the last
+        // child of the scroller (not nested in the row / segments body).
         const streamingRow = createStreamingRow(artifactsUi, segments);
+        scroller.append(streamingRow);
+        // Re-tail after append (mirrors production patch path).
+        artifactsUi.ensurePinnedTranscriptLiveStatus({
+            ...conv,
+            status: 'streaming',
+            messages: [
+                { id: 'user-1', role: 'user', content: 'Bench prompt', createdAt: Date.now() - 5000 },
+                { id: 'agent-1', role: 'agent', content: '', segments },
+            ],
+        } as QaapAgentConversationDTO);
         expect(streamingRow.querySelector('.theia-mobile-diff-summary')).to.equal(null);
-        expect(streamingRow.querySelector('.theia-mobile-agent-live-status')).to.not.equal(null);
-        const liveFooter = streamingRow.querySelector('.theia-mobile-agent-live-status');
+        expect(streamingRow.querySelector('.theia-mobile-agent-live-status')).to.equal(null);
+        expect(
+            streamingRow.querySelector('.theia-mobile-agent-transcript-segments')
+                ?.querySelector('.theia-mobile-agent-live-status'),
+        ).to.equal(null);
+        const liveFooter = scroller.querySelector<HTMLElement>(':scope > .theia-mobile-agent-live-status');
         expect(liveFooter).to.not.equal(null);
+        expect(scroller.lastElementChild).to.equal(liveFooter);
         const metaText = liveFooter?.querySelector('.qaap-transcript-live-status-meta')?.textContent ?? '';
         expect(metaText).to.match(/\d+s/);
         const activityLabel = liveFooter?.querySelector('.qaap-transcript-live-status-activity')?.getAttribute('aria-label') ?? '';
         expect(activityLabel.length).to.be.greaterThan(0);
-        // Finalize — live footer hides and the diff summary closes the story
+        // Finalize — scroller-tail live-status clears and the diff summary closes the story
         artifactsUi.finalizeStreamingAgentTrace(streamingRow, segments, conv);
+        expect(scroller.querySelector(':scope > .theia-mobile-agent-live-status')).to.equal(null);
         expect(streamingRow.querySelector('.theia-mobile-agent-live-status')).to.equal(null);
         const diffSummary = streamingRow.querySelector('.theia-mobile-diff-summary');
         expect(diffSummary).to.not.equal(null);
