@@ -35,6 +35,13 @@ describe('QaapWorkflowPromptRegistry', () => {
         expect(prompt).to.contain('artifacts/diff.patch');
     });
 
+    it('instructs the reviewer to emit the verdict sentinel', () => {
+        // Without this line a faithful reviewer writes prose and every review is inconclusive.
+        const prompt = registry.resolve('adversarial-review', { inputs: { task: 'x' }, bindings: {} });
+        expect(prompt).to.contain('@@QAAP:VERDICT@@');
+        expect(prompt).to.contain('inspect the working tree');
+    });
+
     it('refuses to shadow an existing ref', () => {
         expect(() => registry.register('user-task', () => 'other')).to.throw(QaapWorkflowPromptError, /Duplicate/);
     });

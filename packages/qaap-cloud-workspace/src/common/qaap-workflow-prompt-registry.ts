@@ -11,6 +11,8 @@
  * turn workflow authoring into prompt injection with the run's own credentials and cwd.
  */
 
+import { buildAgentReviewPrompt } from './qaap-agent-review';
+
 export interface QaapWorkflowPromptContext {
     /** Values captured when the run started, e.g. `{ task: 'fix the login bug' }`. */
     readonly inputs: Readonly<Record<string, string>>;
@@ -71,15 +73,18 @@ export class QaapWorkflowPromptRegistry {
             `Original task: ${requireInput('fix-verification', context, 'task')}`,
         ].join('\n'));
 
-        // The reviewer prompt proper (with the inlined diff) is built by the review adapter from
-        // the git-diff binding; this ref only carries the framing, so the sentinel contract stays
-        // in one place: qaap-agent-review.
-        this.register('adversarial-review', context => [
-            'Review the change in this workspace adversarially, as an independent second agent.',
-            'Judge the actual diff, not the description of it.',
-            '',
-            `Task under review: ${requireInput('adversarial-review', context, 'task')}`,
-            context.bindings['review.diff'] ? `Diff artifact: ${context.bindings['review.diff']}` : '',
-        ].filter(Boolean).join('\n'));
+        // Reuse the runner's reviewer prompt so the @@QAAP:VERDICT@@ contract lives in exactly one
+        // place. A judge node declares requireSentinel, and without this instruction a faithful
+        // reviewer writes prose, emits no marker, and every review lands inconclusive — observed
+        // live with the claude backend. The diff is not inlined (bindings hold refs, not bodies);
+        // the prompt's empty-diff branch tells the reviewer to inspect the working tree itself.
+        this.register('adversarial-review', context => {
+            const prompt = buildAgentReviewPrompt({
+                originalCommand: requireInput('adversarial-review', context, 'task'),
+                diff: '',
+            });
+            const diffRef = context.bindings['review.diff'];
+            return diffRef ? `${prompt}\nDiff artifact: ${diffRef}` : prompt;
+        });
     }
 }
