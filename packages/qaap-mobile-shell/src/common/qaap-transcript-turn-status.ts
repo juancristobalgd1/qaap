@@ -140,8 +140,7 @@ export function isTranscriptSummaryAgentWorking(
     return isTranscriptAgentExecutionBusy(summary, conv);
 }
 
-/**
- * True when the last agent message should use live streaming markdown (plain/hybrid)
+/** True when the last agent message should use live streaming markdown (plain/hybrid)
  * instead of full settled rendering.
  */
 export function isTranscriptAgentTailStreaming(conv: QaapAgentConversationDTO): boolean {
@@ -150,6 +149,18 @@ export function isTranscriptAgentTailStreaming(conv: QaapAgentConversationDTO): 
     }
     const last = conv.messages[conv.messages.length - 1];
     return last?.role === 'agent';
+}
+
+/**
+ * Mid-turn scroller-tail live-status (orb + activity + elapsed). Hide once the backend
+ * leaves `streaming`, and while streaming hide as soon as the turn looks complete
+ * (effective status becomes settled) — even if Stop/glow stay busy during finalizing.
+ */
+export function shouldShowTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
+    if (conv.status !== 'streaming') {
+        return false;
+    }
+    return resolveTranscriptEffectiveStatus(conv) === 'streaming';
 }
 
 export function conversationHasUserMessage(

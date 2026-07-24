@@ -43,7 +43,7 @@ class TestableGitReviewEndpoint extends QaapGitReviewEndpoint {
 }
 
 describe('qaap-git-review-endpoint computeFileDiff', function (): void {
-    // git subprocess churn ù allow slack on slow CI runners.
+    // git subprocess churn ÔøΩ allow slack on slow CI runners.
     this.timeout(20_000);
 
     let repo: string;
@@ -75,7 +75,7 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         fs.chmodSync(path.join(repo, 'mode.sh'), 0o755);
         // Host-level breakage that killed per-file diffs in production: an external diff driver
         // that does not exist on the server. Plumbing (--numstat/status) ignores it, so the
-        // changes list works while every patch-producing diff dies ù unless we pass --no-ext-diff.
+        // changes list works while every patch-producing diff dies ÔøΩ unless we pass --no-ext-diff.
         git(['config', 'diff.external', '/nonexistent-external-diff-tool']);
     });
 

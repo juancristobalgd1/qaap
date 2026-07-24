@@ -248,10 +248,50 @@ export class TranscriptVirtualList implements Disposable {
     }
 
     /**
+     * True while a streaming agent row is mounted — its height can grow every
+     * token and must expand the spacer before absolute content paints over the
+     * scroller-tail live-status sibling.
+     */
+    protected hasMountedStreamingRow(): boolean {
+        for (const row of this.mounted.values()) {
+            if (row.classList.contains('theia-mod-streaming')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Force a measure pass on the next animation frame (clears any pending
+     * throttle). Call after in-place streaming patches that grow row height.
+     */
+    requestMeasureImmediate(): void {
+        if (this.disposed) {
+            return;
+        }
+        if (this.shouldPauseBackgroundWork()) {
+            this.measureRequested = true;
+            this.pendingWhileHidden = true;
+            return;
+        }
+        this.measureRequested = true;
+        if (this.measureTimeoutId !== undefined) {
+            clearTimeout(this.measureTimeoutId);
+            this.measureTimeoutId = undefined;
+        }
+        this.lastMeasureRanAt = Date.now();
+        this.scheduleUpdate();
+    }
+
+    /**
      * Throttled remeasure path used by ResizeObserver and content swaps during streaming.
      * Bursts of reflow events coalesce into one `scheduleUpdate()` per
      * `TRANSCRIPT_VIRTUAL_MEASURE_THROTTLE_MS` window, avoiding layout thrash on every
      * token delta. Scroll handling stays on its own RAF path and remains snappy.
+     *
+     * While a `theia-mod-streaming` row is mounted, skip the throttle so the
+     * spacer keeps up with absolute-positioned content and does not overflow
+     * onto the in-flow live-status row below the virtual root.
      */
     protected scheduleMeasure(): void {
         if (this.disposed) {
@@ -263,6 +303,10 @@ export class TranscriptVirtualList implements Disposable {
             return;
         }
         this.measureRequested = true;
+        if (this.hasMountedStreamingRow()) {
+            this.requestMeasureImmediate();
+            return;
+        }
         if (this.measureTimeoutId !== undefined) {
             return;
         }

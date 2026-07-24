@@ -595,7 +595,6 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 this.scrollTranscriptVirtualListToIndex(list, lastUserIndex, contextPx);
             }
             scroll.completePositionTurn();
-            this.artifactsUi.ensurePinnedTranscriptLiveStatus(normalized);
         } else if (options?.openingConversation && !this.hasExplicitTranscriptMessageHash()) {
             scroll.beginRestore();
             scroll.markProgrammaticScroll(200);
@@ -614,6 +613,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         } else if (wasFollowingTail) {
             scroll.onContentChanged(messageHost);
         }
+        // mount() replaceChildren drops the scroller-tail live-status — re-pin
+        // after every virtual mount, not only on newTurnStarted.
+        this.artifactsUi.ensurePinnedTranscriptLiveStatus(normalized);
         this.attachTranscriptScrollChrome(host, messageHost, conv);
     }
 
@@ -949,6 +951,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             this.host.transcriptLastConv = conv;
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
+            this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
             this.applyTranscriptScrollAfterMutation(messageHost, anchor);
             return true;
         }
@@ -1105,6 +1108,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }));
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
+            this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
             if (wasFollowingTail) {
                 this.scrollTranscriptFollowTail(messageHost);
             }
@@ -1151,6 +1155,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 list.setFooter(this.buildTranscriptVirtualFooter(conv));
                 this.host.transcriptLastRenderedConversationId = conv.id;
                 this.host.transcriptLastRenderedMessageId = lastAgent.id;
+                // Grow spacer before absolute streaming content paints over live-status.
+                list.requestMeasureImmediate();
                 if (wasFollowingTail) {
                     this.scrollTranscriptFollowTail(messageHost);
                 }
@@ -1180,6 +1186,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         list.setFooter(this.buildTranscriptVirtualFooter(conv));
         this.host.transcriptLastRenderedConversationId = conv.id;
         this.host.transcriptLastRenderedMessageId = lastAgent.id;
+        this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
+        list.requestMeasureImmediate();
         if (wasFollowingTail) {
             this.scrollTranscriptFollowTail(messageHost);
         }

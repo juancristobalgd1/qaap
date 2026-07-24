@@ -13,6 +13,7 @@ import {
     isTranscriptSummaryAgentWorking,
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
+    shouldShowTranscriptLiveStatus,
 } from './qaap-transcript-turn-status';
 
 const conv = (partial: Partial<QaapAgentConversationDTO> = {}): QaapAgentConversationDTO => ({
@@ -226,6 +227,9 @@ describe('qaap-transcript-turn-status', () => {
             ],
         });
         expect(resolveTranscriptEffectiveStatus(settledTurn)).to.equal('settled');
+        expect(shouldShowTranscriptLiveStatus(settledTurn)).to.equal(false);
+        expect(shouldShowTranscriptLiveStatus({ ...settledTurn, status: 'settled' })).to.equal(false);
+        expect(shouldShowTranscriptLiveStatus({ ...settledTurn, status: 'idle' })).to.equal(false);
         expect(resolveTranscriptAgentExecutionState(summary, settledTurn)).to.deep.equal({
             phase: 'finalizing',
             busy: true,
@@ -234,6 +238,28 @@ describe('qaap-transcript-turn-status', () => {
         expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'settled' }, undefined)).to.equal(true);
         expect(isTranscriptSummaryAgentWorking(summary, undefined)).to.equal(true);
         expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'idle' }, { ...settledTurn, status: 'idle' })).to.equal(false);
+    });
+
+    it('shows live-status only while the effective turn is still streaming', () => {
+        const working = conv({
+            status: 'streaming',
+            messages: [
+                { id: 'u1', role: 'user', content: 'go', createdAt: 2 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: '',
+                    createdAt: 3,
+                    segments: [{ type: 'tool', toolUseId: 't1', name: 'Edit', args: '{}', finished: false }],
+                },
+            ],
+        });
+        expect(shouldShowTranscriptLiveStatus(working)).to.equal(true);
+        const setupOnly = conv({
+            status: 'streaming',
+            messages: [{ id: 'u1', role: 'user', content: 'go', createdAt: 2 }],
+        });
+        expect(shouldShowTranscriptLiveStatus(setupOnly)).to.equal(true);
     });
 
     it('execution chrome is idle once the backend is idle, even with an unfinished-looking tool', () => {

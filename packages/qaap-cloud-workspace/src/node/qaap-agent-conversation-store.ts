@@ -2667,6 +2667,7 @@ export class QaapAgentConversationStore {
             return undefined;
         }
         const link: QaapLinkedPullRequest = {
+            ...conv.linkedPullRequest,
             owner: repo.owner,
             repo: repo.name,
             branch,

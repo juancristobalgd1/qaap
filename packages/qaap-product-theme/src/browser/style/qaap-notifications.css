@@ -223,7 +223,9 @@
   }
 
   /*
-   * Virtual keyboard raised in Work Hub: anchor above the keyboard only.
+   * Virtual keyboard raised: bottom chrome hidden; anchor above keyboard only.
+   * These rules follow the IDE-classic block so equal-specificity cascade wins
+   * when both body classes are present simultaneously.
    */
   body.theia-mobile-mod-keyboard-open
     .theia-notifications-container.theia-notification-toasts,

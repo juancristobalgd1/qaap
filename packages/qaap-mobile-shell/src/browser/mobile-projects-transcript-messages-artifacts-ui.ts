@@ -19,8 +19,9 @@ import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     hasUnfinishedAgentWork,
-    isTranscriptAgentExecutionBusy,
+    isConversationTurnVisuallySettled,
     resolveTranscriptEffectiveStatus,
+    shouldShowTranscriptLiveStatus,
 } from '../common/qaap-transcript-turn-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigateTarget, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
@@ -2303,12 +2304,26 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     /** High-water mark so the token meter never blinks away mid-turn. */
     protected pinnedLiveStatusPeakTokens = 0;
 
-    /** True while the live-status row should stay at the transcript scroller tail. */
+    /**
+     * True while the live-status row should stay at the transcript scroller tail.
+     * Mid-turn streaming only — never while idle/failed, and never during backend
+     * `settled` finalizing (summary/answer already on screen) even though Stop/glow
+     * may still report execution-busy until the task detaches.
+     */
     protected shouldShowPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
-        if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
-            return true;
+        return shouldShowTranscriptLiveStatus(conv);
+    }
+
+    /**
+     * Hold only covers brief mid-stream status dips. Drop immediately once the
+     * backend leaves `streaming` or the turn looks complete.
+     */
+    protected shouldHoldPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
+        if (conv.status !== 'streaming' || isConversationTurnVisuallySettled(conv)) {
+            return false;
         }
-        return isTranscriptAgentExecutionBusy({ id: conv.id, status: conv.status }, conv);
+        return this.pinnedLiveStatusConvId === conv.id
+            && Date.now() < this.pinnedLiveStatusHoldUntil;
     }
 
     protected resolveTranscriptLiveStatusChatHost(hint?: HTMLElement): HTMLElement | undefined {
@@ -2350,10 +2365,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             }
             this.pinnedLiveStatusConvId = conv.id;
             this.pinnedLiveStatusHoldUntil = Date.now() + 2_000;
-        } else if (
-            this.pinnedLiveStatusConvId === conv.id
-            && Date.now() < this.pinnedLiveStatusHoldUntil
-        ) {
+        } else if (this.shouldHoldPinnedTranscriptLiveStatus(conv)) {
             // Hold the existing chrome through brief status dips — do not remount.
             return;
         } else {
@@ -2406,10 +2418,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             if (this.shouldShowPinnedTranscriptLiveStatus(latestConv)) {
                 this.pinnedLiveStatusHoldUntil = Date.now() + 2_000;
                 this.pinnedLiveStatusConvId = latestConv.id;
-            } else if (
-                this.pinnedLiveStatusConvId === latestConv.id
-                && Date.now() < this.pinnedLiveStatusHoldUntil
-            ) {
+            } else if (this.shouldHoldPinnedTranscriptLiveStatus(latestConv)) {
                 return;
             } else {
                 sharedSecondTicker.unregister(footer);

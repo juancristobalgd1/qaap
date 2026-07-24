@@ -14015,6 +14015,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 .theia-mobile-projects-task-dot.theia-mod-pr-ready,
+.theia-mobile-projects-task-dot.theia-mod-git-pr,
 .theia-mobile-projects-task-dot.theia-mod-verified,
 .theia-mobile-projects-task-dot.theia-mod-failed,
 .theia-mobile-projects-task-dot.theia-mod-needs-input {

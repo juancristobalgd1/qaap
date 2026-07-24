@@ -37,6 +37,11 @@
   display: flex !important;
   flex: 0 0 auto;
   margin-top: 4px;
+  /* Opaque + above the virtual window: streaming rows are position:absolute
+   * inside the spacer and can paint into this band until sizes[] catch up. */
+  position: relative;
+  z-index: 2;
+  background: var(--q-bg, var(--qaap-bg, var(--theia-editor-background, #0a0a0a)));
 }
 
 .theia-mobile-agent-transcript .theia-mobile-agent-transcript-msg .theia-mobile-agent-live-status,
