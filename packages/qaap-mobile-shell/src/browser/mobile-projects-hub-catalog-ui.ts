@@ -17,10 +17,14 @@ import {
 } from '../common/mobile-work-hub-catalog';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
+import {
+    MobileProjectsHubWorkflowRunsUi,
+    type MobileProjectsHubWorkflowRunsHost,
+} from './mobile-projects-hub-workflow-runs-ui';
 import type { MobileProjectsHubView } from './mobile-projects-types';
 
 /** Panel surface for the Workflows (catalog) hub tab. */
-export interface MobileProjectsHubCatalogHost {
+export interface MobileProjectsHubCatalogHost extends MobileProjectsHubWorkflowRunsHost {
     query: string;
     scroll: HTMLElement;
     commands: CommandRegistry;
@@ -34,17 +38,18 @@ export interface MobileProjectsHubCatalogHost {
 /** Workflows catalog cards grouped by section. */
 export class MobileProjectsHubCatalogUi {
 
-    constructor(protected readonly host: MobileProjectsHubCatalogHost) { }
+    /** Live Dynamic Workflow runs, rendered above the static navigation cards. */
+    protected readonly workflowRuns: MobileProjectsHubWorkflowRunsUi;
+
+    constructor(protected readonly host: MobileProjectsHubCatalogHost) {
+        this.workflowRuns = new MobileProjectsHubWorkflowRunsUi(host);
+    }
 
     renderCatalogHubView(): void {
-        const sections = filterCatalogSections(QAAP_WORK_HUB_WORKFLOWS, this.host.query);
-        if (sections.length === 0) {
-            this.host.scroll.append(this.createCatalogEmptyState());
-            this.host.renderSubtitle();
-            return;
-        }
         const catalog = document.createElement('div');
         catalog.className = 'theia-mobile-hub-catalog';
+        catalog.append(this.workflowRuns.renderWorkflowRunsSection());
+        const sections = filterCatalogSections(QAAP_WORK_HUB_WORKFLOWS, this.host.query);
         for (const section of sections) {
             catalog.append(this.createCatalogSection(section));
         }

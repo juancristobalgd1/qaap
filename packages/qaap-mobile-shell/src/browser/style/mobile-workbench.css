@@ -32397,3 +32397,36 @@ body.theia-dark .theia-mobile-agent-web-search,
     transform: none;
   }
 }
+
+/* ── Dynamic Workflow runs on the Workflows hub tab ─────────────────────── */
+
+.theia-mobile-hub-workflow-start-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.theia-mobile-hub-workflow-start-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.theia-mobile-hub-workflow-run-card {
+  align-items: center;
+}
+
+.theia-mobile-hub-workflow-run-card .theia-mobile-hub-workflow-continue {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.theia-mobile-hub-workflow-run-card[data-status='failed'] .theia-mobile-hub-catalog-card-icon,
+.theia-mobile-hub-workflow-run-card[data-status='budget-exhausted'] .theia-mobile-hub-catalog-card-icon {
+  color: var(--theia-errorForeground);
+}
+
+.theia-mobile-hub-workflow-run-card[data-status='succeeded'] .theia-mobile-hub-catalog-card-icon {
+  color: var(--theia-successBackground, var(--theia-charts-green));
+}
