@@ -26,7 +26,10 @@ export interface MobileProjectsHubWorkflowRunsHost {
     query: string;
     scroll: HTMLElement;
     projects: MobileProjectEntry[];
-    projectsService: { getProjectCwd(project: MobileProjectEntry): string | undefined };
+    projectsService: {
+        getProjectCwd(project: MobileProjectEntry): string | undefined;
+        getCurrentWorkspaceCwd(): string | undefined;
+    };
     messageService: MessageService | undefined;
     renderList(): void;
 }
@@ -121,6 +124,8 @@ export class MobileProjectsHubWorkflowRunsUi {
         const form = document.createElement('div');
         form.className = 'theia-mobile-hub-catalog-card theia-mobile-hub-workflow-start-form';
 
+        // Project picker when project cwds resolve; a free-text cwd (like the research editor)
+        // when they do not — e.g. the hub opened before the repos list loaded.
         const projectSelect = document.createElement('select');
         projectSelect.className = 'theia-mobile-routine-field';
         projectSelect.setAttribute('aria-label', nls.localize('qaap/mobileProjects/workflowProject', 'Project'));
@@ -134,6 +139,12 @@ export class MobileProjectsHubWorkflowRunsUi {
             option.textContent = project.name;
             projectSelect.append(option);
         }
+        const cwdInput = document.createElement('input');
+        cwdInput.type = 'text';
+        cwdInput.className = 'theia-mobile-routine-field';
+        cwdInput.placeholder = nls.localize('qaap/mobileProjects/workflowCwdPlaceholder', 'Repository path');
+        cwdInput.value = this.host.projectsService.getCurrentWorkspaceCwd() ?? '';
+        const useSelect = projectSelect.options.length > 0;
 
         const task = document.createElement('textarea');
         task.className = 'theia-mobile-routine-field';
@@ -151,17 +162,16 @@ export class MobileProjectsHubWorkflowRunsUi {
         cancel.className = 'theia-button secondary';
         cancel.textContent = nls.localize('qaap/mobileProjects/workflowCancel', 'Cancel');
         actions.append(start, cancel);
-        form.append(projectSelect, task, actions);
+        form.append(useSelect ? projectSelect : cwdInput, task, actions);
 
         cancel.addEventListener('click', () => {
             this.startOpen = false;
             this.host.renderList();
         });
-        start.addEventListener('click', () => void this.submitStart(projectSelect.value, task.value));
-        if (projectSelect.options.length === 0) {
-            start.disabled = true;
-            task.placeholder = nls.localize('qaap/mobileProjects/workflowNoProjects', 'Open a project first.');
-        }
+        start.addEventListener('click', () => void this.submitStart(
+            useSelect ? projectSelect.value : cwdInput.value.trim(),
+            task.value,
+        ));
         return form;
     }
 
