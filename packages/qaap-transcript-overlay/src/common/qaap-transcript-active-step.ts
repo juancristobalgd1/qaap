@@ -53,8 +53,20 @@ export function resolveTranscriptScrollFabMode(
     if (!activeStep) {
         return 'bottom';
     }
-    if (!isElementVisibleInScroller(activeStep, scroller)) {
+    // Only offer "Back to current step" when the active step sits BELOW the viewport — i.e. the
+    // reader scrolled up, away from where the agent is working. When the active step is above the
+    // viewport the reader is already past it, watching the live tail grow below; scrolling them
+    // back UP to a timeline header at the top of a tall streaming message is disorienting, so the
+    // correct action there is "Jump to latest" (bottom). Keeps the timeline-agent case intact.
+    const scrollerRect = scroller.getBoundingClientRect();
+    const stepRect = activeStep.getBoundingClientRect();
+    const stepBelowViewport = stepRect.top > scrollerRect.bottom;
+    const stepAboveViewport = stepRect.bottom < scrollerRect.top;
+    if (stepBelowViewport) {
         return 'active-step';
+    }
+    if (stepAboveViewport) {
+        return 'bottom';
     }
     if (nearBottomThresholdPx !== undefined) {
         const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;

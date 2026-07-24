@@ -61,6 +61,58 @@ describe('qaap-transcript-scroll-controller', () => {
         binding.dispose();
     });
 
+    it('does not re-attach mid-gesture when the reader scrolls into the live-edge band', () => {
+        // Attaching while the finger/wheel is still moving lets the next streaming tick snap
+        // the viewport to the tail under the reader. The intent is held until scroll settles.
+        const scroller = document.createElement('div');
+        Object.defineProperties(scroller, {
+            scrollTop: { configurable: true, writable: true, value: 195 },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: { configurable: true, value: 300 },
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.beginConversation('conversation-gesture');
+        controller.beginRestore();
+        controller.completeRestore();
+        const binding = controller.bind(scroller);
+
+        scroller.dispatchEvent(new window.Event('touchstart'));
+        scroller.dispatchEvent(new window.Event('scroll'));
+        expect(controller.phase).to.equal('detached');
+        expect(controller.shouldFollowTail()).to.equal(false);
+
+        // Gesture ends at the live edge — now the intent commits.
+        scroller.dispatchEvent(new window.Event('touchend'));
+        scroller.dispatchEvent(new window.Event('scrollend'));
+        expect(controller.shouldFollowTail()).to.equal(true);
+        binding.dispose();
+    });
+
+    it('drops the held re-attach when the gesture ends away from the live edge', () => {
+        const scroller = document.createElement('div');
+        let top = 195;
+        Object.defineProperties(scroller, {
+            scrollTop: { configurable: true, get: () => top, set: (value: number) => { top = value; } },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: { configurable: true, value: 300 },
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.beginConversation('conversation-gesture-2');
+        controller.beginRestore();
+        controller.completeRestore();
+        const binding = controller.bind(scroller);
+
+        scroller.dispatchEvent(new window.Event('touchstart'));
+        scroller.dispatchEvent(new window.Event('scroll'));
+        // Momentum carries the reader back up out of the band before scrolling settles.
+        top = 40;
+        scroller.dispatchEvent(new window.Event('touchend'));
+        scroller.dispatchEvent(new window.Event('scrollend'));
+
+        expect(controller.shouldFollowTail()).to.equal(false);
+        binding.dispose();
+    });
+
     it('jumpToLatest enables following and scrollToTail writes once opted in', () => {
         const scroller = document.createElement('div');
         let writtenTop = 0;

@@ -53,9 +53,17 @@ describe('qaap-transcript-active-step', () => {
         expect(isElementVisibleInScroller(marker, scroller)).to.equal(false);
     });
 
-    it('prefers active-step mode when the live marker is off-screen during streaming', () => {
+    it('prefers active-step mode when the live marker is off-screen below during streaming', () => {
         const scroller = mockStreamingScroller(900);
         expect(resolveTranscriptScrollFabMode(scroller)).to.equal('active-step');
+    });
+
+    it('prefers jump-to-latest when the active step scrolled off the top (reader is below it)', () => {
+        // Active step bottom (-100 + 40 = -60) is above the scroller top (0): the reader has
+        // scrolled past the step and is watching the live tail grow below, so dragging them back
+        // up to the step would be disorienting — jump-to-latest is the right action.
+        const scroller = mockStreamingScroller(-100);
+        expect(resolveTranscriptScrollFabMode(scroller)).to.equal('bottom');
     });
 
     it('shows the scroll fab while the active step is off-screen', () => {

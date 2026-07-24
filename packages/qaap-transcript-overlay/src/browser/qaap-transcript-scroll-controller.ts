@@ -67,17 +67,31 @@ export function captureTranscriptScrollAnchor(scroller: HTMLElement): Transcript
     };
 }
 
-export function restoreTranscriptScrollAnchor(scroller: HTMLElement, anchor: TranscriptScrollAnchor): void {
+/** Smallest scroll correction worth writing. Sub-pixel restores only cost a reflow + a
+ * spurious `scroll` event (which re-runs every scroll listener) without moving the viewport,
+ * so during detached streaming — where this runs on every SSE tick — they read as jank. */
+const ANCHOR_RESTORE_MIN_DELTA_PX = 0.5;
+
+/** Returns `true` only when the viewport actually moved, so callers can skip follow-up work. */
+export function restoreTranscriptScrollAnchor(scroller: HTMLElement, anchor: TranscriptScrollAnchor): boolean {
     const element = anchor.messageId
         ? findTranscriptAnchorElement(scroller, anchor.messageId) ?? anchor.element
         : anchor.element;
     if (!element?.isConnected || anchor.offsetTop === undefined) {
+        if (Math.abs(scroller.scrollTop - anchor.top) < ANCHOR_RESTORE_MIN_DELTA_PX) {
+            return false;
+        }
         scroller.scrollTop = anchor.top;
-        return;
+        return true;
     }
     const scrollerRect = scroller.getBoundingClientRect();
     const currentOffset = element.getBoundingClientRect().top - scrollerRect.top;
-    scroller.scrollTop += currentOffset - anchor.offsetTop;
+    const delta = currentOffset - anchor.offsetTop;
+    if (Math.abs(delta) < ANCHOR_RESTORE_MIN_DELTA_PX) {
+        return false;
+    }
+    scroller.scrollTop += delta;
+    return true;
 }
 
 type TranscriptScrollReconcileIntent =
@@ -169,13 +183,21 @@ export class TranscriptScrollController {
         return captureTranscriptScrollAnchor(scroller);
     }
 
-    restoreAnchor(scroller: HTMLElement, anchor: TranscriptScrollAnchor): void {
+    restoreAnchor(scroller: HTMLElement, anchor: TranscriptScrollAnchor): boolean {
         const kind = this.currentPhase === 'restoring' ? 'restore' : 'preserve-anchor';
         if (!transcriptScrollPhaseAllowsViewportMutation(this.currentPhase, kind)) {
-            return;
+            return false;
         }
+        // Mark before the write so the (async) scroll event is attributed to us; roll the
+        // window back when the restore is a sub-pixel no-op so a genuine user gesture arriving
+        // in the same window is not misread as programmatic.
+        const previousProgrammaticUntil = this.programmaticScrollUntil;
         this.markProgrammaticScroll();
-        restoreTranscriptScrollAnchor(scroller, anchor);
+        const moved = restoreTranscriptScrollAnchor(scroller, anchor);
+        if (!moved) {
+            this.programmaticScrollUntil = previousProgrammaticUntil;
+        }
+        return moved;
     }
 
     /** Preserve viewport anchor after layout settles (optionally twice for full rebuilds). */
@@ -353,7 +375,32 @@ export class TranscriptScrollController {
         let userGestureActive = false;
         let touchActive = false;
         let gestureTimer: ReturnType<typeof setTimeout> | undefined;
+        /**
+         * The reader crossed into the live-edge band while still scrolling. Re-attaching
+         * mid-gesture lets the next streaming tick snap the viewport to the tail while the
+         * finger/wheel is still moving — the reader's own scroll is yanked out from under
+         * them. Hold the intent and settle it once the gesture ends.
+         */
+        let pendingReturnToLiveEdge = false;
 
+        const isNearLiveEdge = (): boolean => isTranscriptScrollNearBottom(
+            scroller.scrollTop,
+            scroller.clientHeight,
+            scroller.scrollHeight,
+            TRANSCRIPT_SCROLL_TO_BOTTOM_NEAR_BOTTOM_PX,
+        );
+        const settleGesture = (): void => {
+            userGestureActive = false;
+            if (!pendingReturnToLiveEdge) {
+                return;
+            }
+            pendingReturnToLiveEdge = false;
+            // Re-check against the settled position: momentum may have carried the reader
+            // back out of the band after the last scroll event.
+            if (isNearLiveEdge()) {
+                this.transition({ type: 'user-return-to-live-edge' });
+            }
+        };
         const clearGestureTimer = (): void => {
             if (gestureTimer !== undefined) {
                 clearTimeout(gestureTimer);
@@ -365,7 +412,7 @@ export class TranscriptScrollController {
             gestureTimer = setTimeout(() => {
                 gestureTimer = undefined;
                 if (!touchActive) {
-                    userGestureActive = false;
+                    settleGesture();
                 }
             }, USER_GESTURE_SCROLL_WINDOW_MS);
         };
@@ -374,6 +421,7 @@ export class TranscriptScrollController {
             this.programmaticScrollUntil = 0;
             // Upward wheel detaches immediately; downward may re-follow on scroll settle.
             if (event.deltaY < 0) {
+                pendingReturnToLiveEdge = false;
                 this.notifyUserDetach('wheel');
             }
             expireGesture();
@@ -407,6 +455,7 @@ export class TranscriptScrollController {
                 const key = event.key;
                 if (key === 'ArrowUp' || key === 'PageUp' || key === 'Home'
                     || ((event.ctrlKey || event.metaKey) && ['f', 'F', 'g', 'G'].includes(key))) {
+                    pendingReturnToLiveEdge = false;
                     this.notifyUserDetach('keyboard');
                 }
                 expireGesture();
@@ -429,11 +478,21 @@ export class TranscriptScrollController {
                 return;
             }
             if (nearBottom) {
-                this.transition({ type: 'user-return-to-live-edge' });
+                // Arm, do not attach: settleGesture() commits once scrolling stops.
+                pendingReturnToLiveEdge = true;
             } else {
+                pendingReturnToLiveEdge = false;
                 this.notifyUserDetach('scroll');
             }
             expireGesture();
+        };
+        // `scrollend` (where supported) settles the gesture the moment momentum stops,
+        // instead of waiting out the full gesture window.
+        const onScrollEnd = (): void => {
+            if (!touchActive) {
+                clearGestureTimer();
+                settleGesture();
+            }
         };
         scroller.addEventListener('wheel', onWheel, { passive: true });
         scroller.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -442,6 +501,9 @@ export class TranscriptScrollController {
         scroller.addEventListener('pointerdown', onPointerDown, { passive: true });
         scroller.addEventListener('keydown', onKeydown);
         scroller.addEventListener('scroll', onScroll, { passive: true });
+        if ('onscrollend' in scroller) {
+            scroller.addEventListener('scrollend', onScrollEnd, { passive: true });
+        }
 
         return Disposable.create(() => {
             clearGestureTimer();
@@ -452,6 +514,9 @@ export class TranscriptScrollController {
             scroller.removeEventListener('pointerdown', onPointerDown);
             scroller.removeEventListener('keydown', onKeydown);
             scroller.removeEventListener('scroll', onScroll);
+            if ('onscrollend' in scroller) {
+                scroller.removeEventListener('scrollend', onScrollEnd);
+            }
         });
     }
 

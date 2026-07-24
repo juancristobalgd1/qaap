@@ -370,6 +370,20 @@ export class TranscriptVirtualList implements Disposable {
 
         this.spacer.style.height = `${range.totalHeight + this.footerHeight}px`;
 
+        // Re-assert the glue on every update while following. Resizing the spacer changes the
+        // scrollable range without moving the viewport, so a reader who never detached can be
+        // stranded away from the live edge — the browser clamps scrollTop when a remount
+        // shrinks the spacer, and nothing brings them back: `measureMounted` only chases on
+        // row-height deltas, which this path does not produce. `onContentChanged` is
+        // self-limiting (it no-ops when already glued and ignores transient shrinks under the
+        // latched high-water), so re-asserting is cheap. Strictly gated on the follow phase:
+        // while detached it would cancel a queued preserve-anchor restore and lose the
+        // reader's position.
+        const scrollController = getTranscriptScrollController(this.scrollHost);
+        if (scrollController?.shouldFollowTail()) {
+            scrollController.onContentChanged(this.scrollHost);
+        }
+
         // Forced layout reads only when row content may have changed — plain
         // scroll frames stay write-only and never trigger a synchronous reflow.
         // A pending measure RAF covers rows mounted afterwards too, because the
