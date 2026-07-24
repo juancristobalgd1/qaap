@@ -319,7 +319,10 @@ export namespace ApplicationProps {
             config: BackendApplicationConfig.DEFAULT
         },
         frontend: {
-            config: FrontendApplicationConfig.DEFAULT
+            config: {
+                ...FrontendApplicationConfig.DEFAULT,
+                applicationIcon: './media/qaap-logo.svg'
+            }
         },
         generator: {
             config: GeneratorConfig.DEFAULT

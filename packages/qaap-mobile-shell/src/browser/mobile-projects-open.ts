@@ -48,6 +48,44 @@ const QAAP_MOBILE_WORK_HUB_BOOT_CLASS = 'theia-mobile-workhub-boot';
 /** One-shot gate so `consumeMobileProjectsPanelDismiss()` fires its idempotent cleanup once per page load. */
 let mobileProjectsPanelDismissConsumed = false;
 
+/**
+ * Whether an IDE side sheet (Explorer/Chat file browser) is INTENTIONALLY open in the Work Hub.
+ * This is the only thing that may reveal `#theia-left-content-panel` while Work Hub is the surface.
+ * It cannot be inferred from the panel's expanded state: the Theia layout restorer also leaves that
+ * panel expanded on reload — which is precisely the leak this guards against.
+ */
+let mobileWorkHubSideSheetOpenInternal = false;
+
+/** Internal accessor for the mobileWorkHubSideSheetOpen state. Read-only exports provide control over visibility and mutation. */
+export function getMobileWorkHubSideSheetOpen(): boolean {
+    return mobileWorkHubSideSheetOpenInternal;
+}
+
+/**
+ * Set mobileWorkHubSideSheetOpen state.
+ * Internal-only to prevent direct mutation of the exported variable.
+ */
+function setMobileWorkHubSideSheetOpenInternal(open: boolean): void {
+    mobileWorkHubSideSheetOpenInternal = open;
+}
+
+/** Record an explicit side-sheet open/close so {@link recomputeMobileWorkHubHideIdeSidePanels} honors it. */
+export function setMobileWorkHubSideSheetOpen(open: boolean): void {
+    setMobileWorkHubSideSheetOpenInternal(open);
+    recomputeMobileWorkHubHideIdeSidePanels();
+}
+
+/**
+ * Recompute the hide-IDE-side-panels class from the single invariant that governs it: restored IDE
+ * side panels stay hidden across EVERY Work Hub surface (landing, tasks, chat, transcript, and the
+ * desktop-width hub), on every viewport, and are revealed only when the classic IDE is open
+ * (`desktop-ide`) or the user explicitly opened a side sheet.
+ */
+export function recomputeMobileWorkHubHideIdeSidePanels(): void {
+    const mobileWorkHubSideSheetOpen = getMobileWorkHubSideSheetOpen();
+    setMobileWorkHubHideIdeSidePanels(!peekPreferDesktopIde() && !mobileWorkHubSideSheetOpen);
+}
+
 installMobileWorkHubBootGuard();
 
 export function markMobileProjectsLeftLanding(): void {
@@ -228,32 +266,6 @@ export function setMobileWorkHubHideIdeSidePanels(hidden: boolean): void {
         return;
     }
     document.body.classList.toggle(QAAP_MOBILE_WORKHUB_HIDE_IDE_SIDE_PANELS_BODY_CLASS, hidden);
-}
-
-/**
- * Whether an IDE side sheet (Explorer/Chat file browser) is INTENTIONALLY open in the Work Hub.
- * This is the only thing that may reveal `#theia-left-content-panel` while Work Hub is the surface.
- * It cannot be inferred from the panel's expanded state: the Theia layout restorer also leaves that
- * panel expanded on reload — which is precisely the leak this guards against.
- */
-let mobileWorkHubSideSheetOpen = false;
-
-/**
- * Recompute the hide-IDE-side-panels class from the single invariant that governs it: restored IDE
- * side panels stay hidden across EVERY Work Hub surface (landing, tasks, chat, transcript, and the
- * desktop-width hub), on every viewport, and are revealed only when the classic IDE is open
- * (`desktop-ide`) or the user explicitly opened a side sheet. Keeping this class present is what
- * beats the layout restorer — the CSS hides `#theia-left-content-panel` by visibility whether it
- * ends up expanded or collapsed, so no runtime re-collapse is required.
- */
-export function recomputeMobileWorkHubHideIdeSidePanels(): void {
-    setMobileWorkHubHideIdeSidePanels(!peekPreferDesktopIde() && !mobileWorkHubSideSheetOpen);
-}
-
-/** Record an explicit side-sheet open/close so {@link recomputeMobileWorkHubHideIdeSidePanels} honors it. */
-export function setMobileWorkHubSideSheetOpen(open: boolean): void {
-    mobileWorkHubSideSheetOpen = open;
-    recomputeMobileWorkHubHideIdeSidePanels();
 }
 
 /**
