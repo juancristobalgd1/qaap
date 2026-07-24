@@ -56,9 +56,17 @@ These four gaps — not durability — are the actual work.
 4. **Machine-parseable sentinels** (`@@QAAP:…@@`) are the routing contract between agent nodes (reuse blocked / verdict patterns).
 5. **Phase 1 ships pure IR + validation + the Implement→Review template** with a dry-run stepper. No UI change. No migration of `QaapAgentTaskRunner` yet.
 
-## Open question blocking phase 2
+## Resolved: how an agent turn becomes a durable step
 
-**How does an agent turn become a durable step?** A turn can be wrapped as a `function` job whose `execute` awaits an agent task, but that makes two schedulers govern one process: the job lane and workspace lease on one side, the agent spawn budget and watchdog on the other, with a job sitting `running` for hours. Options are (a) wrap and reconcile the two budgets, (b) add a third job kind that delegates lifecycle to `QaapAgentTaskRunner`, (c) keep turns outside jobs and let the workflow layer own only agent nodes. Not decided; phase 2 should not start until it is.
+**Decision: agent turns stay in `QaapAgentTaskRunner`; the workflow layer dispatches to both runtimes and reconciles their terminal events.**
+
+Wrapping a turn in a `function` job was rejected because the runner already provides the same guarantees, and stacking them deadlocks:
+
+- Durability: versioned index at `~/.qaap/agent-tasks/index.json` persists queued create requests; `restoreFromDisk()` re-marks lost processes as `interrupted`.
+- Concurrency: a global cap (`QAAP_MAX_CONCURRENT_AGENTS`, default 4) **and** a per-user cap (default 2) with FIFO waiting.
+- Liveness: idle-task watchdog and queued-approval grace timeouts.
+
+A `function` job wrapping a turn would hold a job lane and a workspace lease while the inner task waits in the runner's FIFO queue — starvation, and deadlock once agent fan-out fills both queues. So the planner dispatches deterministic nodes as jobs, agent turns as agent tasks, and reacts to terminal events from either, the way `reconcileLoopsContaining(jobId)` already reconciles loops.
 
 ## Consequences
 
@@ -75,15 +83,23 @@ These four gaps — not durability — are the actual work.
 - Bidirectional peer mailbox
 - Replacing Job Loops
 
-## Known limits of the phase 1 IR
+## Known limits
 
-Deliberate, so nobody mistakes the current file for a finished engine:
+Still open, so nobody mistakes the current files for a finished product:
 
-- No run state: no `WorkflowRun`, `bindings`, or join counters, so `join` and `router` are declared types without semantics and `stepQaapWorkflow` only walks a frontier.
-- No loop primitive: cycles in `edges` carry no iteration budget. Budgets are expected to come from the job-loop layer.
+- `router` nodes are declared types without semantics: `policyId` is never evaluated, because capability/tier → agent resolution needs the agent catalog, which the reducer deliberately does not import.
 - Edge conditions are literal equality on a closed outcome enum; composite predicates (`verdict:pass` **and** `risk:low`) are not expressible.
+- Run state is a pure reducer with no store yet: nothing persists `QaapWorkflowRun` or replays it after a backend restart.
+- Loop budgets (`maxNodeRuns`, `maxVisitsPerNode`) bound cycles by dispatch count only — no token or wall-clock budget.
 
-## First code
+## Code
 
 - `src/common/qaap-workflow-ir.ts` — types, validation, Review template, pure stepper
-- `src/common/qaap-workflow-ir.spec.ts` — Review graph transitions, fan-out isolation rules
+- `src/common/qaap-workflow-run.ts` — run state + pure reducer: frontier, joins (`all`/`any`/`n`), bindings, human gates, loop budget, stall detection
+- matching `*.spec.ts` files
+
+## Next
+
+1. Persist `QaapWorkflowRun` and reconcile it from `QaapJob` and agent-task terminal events (the planner's only I/O).
+2. Evaluate `router` nodes against the agent catalog.
+3. Recompile one existing runner (review is the smallest) onto the planner behind unchanged UX.
