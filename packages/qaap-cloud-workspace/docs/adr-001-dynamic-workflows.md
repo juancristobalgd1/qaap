@@ -100,10 +100,23 @@ Still open, so nobody mistakes the current files for a finished product:
 - `src/common/qaap-workflow-outcome.ts` — runtime state → edge outcome, including the `@@QAAP:VERDICT@@` sentinel
 - `src/node/qaap-workflow-run-store.ts` — durable owner-scoped runs (atomic index at `~/.qaap/workflow-runs`), restart restore, duplicate-report suppression, dispatch map, `interrupt()`
 - `src/node/qaap-workflow-dispatcher.ts` — starts nodes through ports, routes terminal events back, reconciles on boot
+- `src/node/qaap-workflow-runtime-ports.ts` — adapters binding the ports to `QaapAgentTaskRunner` / `QaapJobRuntime`
+- `src/node/qaap-workflow-job-functions.ts` — `risk-classify` / `git-diff` as typed job functions
+- `src/node/qaap-workflow-service.ts` — event subscriptions, boot reconciliation, the `start` entry point
+- `src/node/qaap-workflow-endpoint.ts` + `src/common/qaap-workflow-api.ts` — authenticated `/qaap/api/workflows` HTTP API
+- `src/common/qaap-workflow-template-registry.ts` — server-side allowlist of runnable graphs
+- `src/common/qaap-workflow-prompt-registry.ts` — allowlisted `promptRef` resolution
+- `src/common/qaap-workflow-routing.ts` — capability + tier → installed backend, configurable via `QAAP_WORKFLOW_AGENT_ROUTES`
 - matching `*.spec.ts` files
+
+## Done since phase 1
+
+- Ports wired to both runtimes; `promptRef` resolved through the prompt registry; terminal events subscribed; `reconcileOnBoot()` called from the service.
+- HTTP API starts runs by template id (allowlist), guards cwd with the same ownership check as jobs, and continues human gates.
+- Capability/tier routing resolves an unpinned turn onto an installed agent; a pinned `agentRef` still wins, and an unresolved ref falls back to the runner default. No vendor is named in the IR.
 
 ## Next
 
-1. Implement the two ports against `QaapAgentTaskRunner` and `QaapJobRuntime`, resolve `promptRef` through a template registry, and subscribe both runtimes' terminal events to the dispatcher. Call `reconcileOnBoot()` from the backend module.
-2. Evaluate `router` nodes against the agent catalog.
-3. Recompile one existing runner (review is the smallest) onto the planner behind unchanged UX.
+1. Client surface: a Work Hub trigger to start a run and observe its nodes. (Deferred while the mobile-shell merge is in flight.)
+2. Recompile one existing runner (review is the smallest) onto the planner behind unchanged UX.
+3. Give deterministic ops `verify` / `shell` a runtime (currently they fail loudly by design).

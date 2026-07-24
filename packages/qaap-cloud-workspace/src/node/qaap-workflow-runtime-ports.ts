@@ -16,6 +16,7 @@ import { QaapAgentTaskState } from '../common/qaap-agent-task';
 import { QaapJobState } from '../common/qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowDeterministicNode } from '../common/qaap-workflow-ir';
 import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-registry';
+import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapJobRuntime } from './qaap-job-runtime';
 import {
@@ -47,6 +48,9 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
     @inject(QaapWorkflowPromptRegistry)
     protected readonly prompts: QaapWorkflowPromptRegistry;
 
+    @inject(QaapWorkflowRoutingPolicy)
+    protected readonly routing: QaapWorkflowRoutingPolicy;
+
     async startAgentTurn(node: QaapWorkflowAgentTurnNode, context: QaapWorkflowDispatchContext): Promise<string> {
         const record = this.store.get(context.ownerLogin, context.runId);
         if (!record) {
@@ -56,15 +60,25 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
             inputs: record.inputs,
             bindings: record.run.bindings,
         });
+        // An unpinned turn declares only capability + tier; the policy maps that onto an installed
+        // backend, and an unresolved ref falls back to the runner's own default agent.
+        const routed = this.routing.resolve(
+            node.capability,
+            node.costTier,
+            agentRef => this.isAgentAvailable(agentRef),
+            node.agentRef,
+        );
         const task = this.runner.create({
             title: `${record.def.name} · ${node.id}`,
             prompt,
             cwd: record.cwd,
-            // Capability/tier routing lands with the router node; until then an unpinned turn uses
-            // the runner's own default agent resolution rather than a hardcoded vendor here.
-            agent: node.agentRef,
+            agent: routed.agentRef,
         }, context.ownerLogin || undefined);
         return task.id;
+    }
+
+    protected isAgentAvailable(agentRef: string): boolean {
+        return this.runner.listAgents().some(agent => agent.id === agentRef && agent.available);
     }
 
     async lookupAgentTurn(externalId: string): Promise<{ readonly state: QaapAgentTaskState; readonly log?: string } | undefined> {

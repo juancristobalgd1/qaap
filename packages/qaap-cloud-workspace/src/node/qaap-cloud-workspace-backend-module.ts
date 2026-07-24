@@ -69,6 +69,7 @@ import {
     QaapJobFunctionRegistry,
 } from './qaap-job-function-registry';
 import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-registry';
+import { QaapWorkflowRoutingPolicy, parseQaapWorkflowRoutingTable } from '../common/qaap-workflow-routing';
 import { QaapWorkflowTemplateRegistry } from '../common/qaap-workflow-template-registry';
 import { QaapWorkflowDispatcher } from './qaap-workflow-dispatcher';
 import { QaapWorkflowEndpoint } from './qaap-workflow-endpoint';
@@ -129,6 +130,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // Dynamic Workflows (ADR-001). Inert until a run is started: the service only reacts to
     // terminal events for tasks and jobs that belong to a workflow run.
     bind(QaapWorkflowPromptRegistry).toSelf().inSingletonScope();
+    bind(QaapWorkflowRoutingPolicy).toDynamicValue(
+        () => new QaapWorkflowRoutingPolicy(parseQaapWorkflowRoutingTable(process.env.QAAP_WORKFLOW_AGENT_ROUTES)),
+    ).inSingletonScope();
     bind(QaapWorkflowRunStore).toSelf().inSingletonScope();
     bind(QaapWorkflowAgentTurnAdapter).toSelf().inSingletonScope();
     bind(QaapWorkflowDeterministicAdapter).toSelf().inSingletonScope();
