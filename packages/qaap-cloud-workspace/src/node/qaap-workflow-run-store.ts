@@ -27,12 +27,23 @@ const MAX_RUNS_PER_OWNER = 200;
  * The definition travels with the run: defs are immutable `id@version` and are not stored
  * anywhere else, so a run must stay replayable even if its template is edited or deleted.
  */
+/** Where a dispatched node is actually executing, so terminal events can be routed back. */
+export interface QaapWorkflowDispatchedNode {
+    readonly nodeId: string;
+    /** Agent task id or job id, depending on `kind`. */
+    readonly externalId: string;
+    readonly kind: 'agent' | 'job';
+    readonly dispatchedAt: number;
+}
+
 export interface QaapPersistedWorkflowRun {
     readonly run: QaapWorkflowRun;
     readonly def: QaapWorkflowDef;
     readonly ownerLogin: string;
     readonly createdAt: number;
     readonly updatedAt: number;
+    /** Node id → its live execution. Persisted so a restart can still map events back to nodes. */
+    readonly dispatched: Readonly<Record<string, QaapWorkflowDispatchedNode>>;
 }
 
 interface PersistedWorkflowRunIndex {
@@ -94,9 +105,23 @@ export class QaapWorkflowRunStore {
      * job runtime and the agent task runner, reporting dead nodes through {@link interrupt}.
      */
     listUnfinished(ownerLogin?: string): QaapPersistedWorkflowRun[] {
-        return this.list(ownerLogin).filter(
-            record => record.run.status === 'running' || record.run.status === 'awaiting-human',
-        );
+        return this.list(ownerLogin).filter(record => this.isUnfinished(record));
+    }
+
+    /**
+     * Every tenant's unfinished runs. Backend-internal: boot reconciliation must see all owners,
+     * and `listUnfinished()` without an argument only sees the anonymous bucket. Never expose this
+     * through an HTTP endpoint — it crosses tenant boundaries by design.
+     */
+    listAllUnfinished(): QaapPersistedWorkflowRun[] {
+        return [...this.records.values()]
+            .filter(record => this.isUnfinished(record))
+            .sort((left, right) => right.updatedAt - left.updatedAt)
+            .map(record => this.clone(record));
+    }
+
+    protected isUnfinished(record: QaapPersistedWorkflowRun): boolean {
+        return record.run.status === 'running' || record.run.status === 'awaiting-human';
     }
 
     start(def: QaapWorkflowDef, ownerLogin?: string, budget?: QaapWorkflowRunBudget): Promise<QaapWorkflowDispatchResult> {
@@ -123,9 +148,10 @@ export class QaapWorkflowRunStore {
                 ownerLogin: owner,
                 createdAt: now,
                 updatedAt: now,
+                dispatched: {},
             };
             return { records: [...records, record], result: { record, dispatch: started.dispatch } };
-        });
+        }, result => result.record);
     }
 
     /** Report the outcome of a dispatched node and return whatever must start next. */
@@ -150,11 +176,61 @@ export class QaapWorkflowRunStore {
                 return { records, result: { record: this.clone(previous), dispatch: [] } };
             }
             const advanced = advanceQaapWorkflowRun(previous.def, previous.run, nodeId, outcome, bindingRef);
-            const record: QaapPersistedWorkflowRun = { ...previous, run: advanced.run, updatedAt: this.now() };
+            const dispatched = { ...previous.dispatched };
+            delete dispatched[nodeId];
+            const record: QaapPersistedWorkflowRun = {
+                ...previous,
+                run: advanced.run,
+                dispatched,
+                updatedAt: this.now(),
+            };
             const next = [...records];
             next[index] = record;
             return { records: next, result: { record, dispatch: advanced.dispatch } };
-        });
+        }, result => result.record);
+    }
+
+    /** Record where a dispatched node is executing, so its terminal event can be routed back. */
+    attachDispatch(
+        ownerLogin: string | undefined,
+        runId: string,
+        nodeId: string,
+        kind: 'agent' | 'job',
+        externalId: string,
+    ): Promise<QaapPersistedWorkflowRun> {
+        return this.mutate(records => {
+            const owner = this.normalizeOwner(ownerLogin);
+            const index = records.findIndex(entry => entry.run.id === runId && entry.ownerLogin === owner);
+            if (index < 0) {
+                throw new QaapWorkflowRunRequestError(nls.localize(
+                    'qaap/workflowRuns/notFound', 'Workflow run {0} was not found.', runId,
+                ));
+            }
+            const previous = records[index];
+            const record: QaapPersistedWorkflowRun = {
+                ...previous,
+                dispatched: {
+                    ...previous.dispatched,
+                    [nodeId]: { nodeId, externalId, kind, dispatchedAt: this.now() },
+                },
+                updatedAt: this.now(),
+            };
+            const next = [...records];
+            next[index] = record;
+            return { records: next, result: record };
+        }, result => result);
+    }
+
+    /** Resolve the run and node a job or agent-task id belongs to. */
+    findByExternalId(externalId: string): { readonly record: QaapPersistedWorkflowRun; readonly nodeId: string } | undefined {
+        for (const record of this.records.values()) {
+            for (const entry of Object.values(record.dispatched)) {
+                if (entry.externalId === externalId) {
+                    return { record: this.clone(record), nodeId: entry.nodeId };
+                }
+            }
+        }
+        return undefined;
     }
 
     /**
@@ -190,13 +266,16 @@ export class QaapWorkflowRunStore {
         this.records.clear();
         for (const record of parsed.runs) {
             if (record?.run?.id && record.def) {
-                this.records.set(record.run.id, record);
+                // `dispatched` was added after the first runs were written; default it rather than
+                // dropping otherwise valid rows.
+                this.records.set(record.run.id, { ...record, dispatched: record.dispatched ?? {} });
             }
         }
     }
 
     protected mutate<T>(
         apply: (records: readonly QaapPersistedWorkflowRun[]) => { records: readonly QaapPersistedWorkflowRun[]; result: T },
+        changed?: (result: T) => QaapPersistedWorkflowRun,
     ): Promise<T> {
         const run = this.mutationChain.then(async () => {
             const { records, result } = apply([...this.records.values()]);
@@ -210,9 +289,8 @@ export class QaapWorkflowRunStore {
         // Keep the chain alive even when this mutation rejects, so one bad request cannot wedge the store.
         this.mutationChain = run.then(() => undefined, () => undefined);
         return run.then(result => {
-            const dispatched = result as unknown as QaapWorkflowDispatchResult;
-            if (dispatched?.record) {
-                this.onDidChangeEmitter.fire(dispatched.record);
+            if (changed) {
+                this.onDidChangeEmitter.fire(changed(result));
             }
             return result;
         });

@@ -90,17 +90,20 @@ Still open, so nobody mistakes the current files for a finished product:
 - `router` nodes are declared types without semantics: `policyId` is never evaluated, because capability/tier → agent resolution needs the agent catalog, which the reducer deliberately does not import.
 - Edge conditions are literal equality on a closed outcome enum; composite predicates (`verdict:pass` **and** `risk:low`) are not expressible.
 - Loop budgets (`maxNodeRuns`, `maxVisitsPerNode`) bound cycles by dispatch count only — no token or wall-clock budget.
-- Runs persist, but nothing subscribes yet: no code dispatches the returned node ids or feeds job / agent-task terminal events back into `report()`. The store is inert until that wiring lands.
+- The dispatcher drives runs through ports, but no adapter implements them against the real runtimes yet, and nothing subscribes `onDidChangeTask` / `onDidChangeJob` to it. Nothing is bound in the backend module, so no user-visible behaviour changes yet.
+- `promptRef` is not resolved: an adapter needs a prompt-template registry before an agent turn can actually be spawned.
 
 ## Code
 
 - `src/common/qaap-workflow-ir.ts` — types, validation, Review template, pure stepper
 - `src/common/qaap-workflow-run.ts` — run state + pure reducer: frontier, joins (`all`/`any`/`n`), bindings, human gates, loop budget, stall detection
-- `src/node/qaap-workflow-run-store.ts` — durable owner-scoped runs (atomic index at `~/.qaap/workflow-runs`), restart restore, duplicate-report suppression, `interrupt()` for nodes that lost their process
+- `src/common/qaap-workflow-outcome.ts` — runtime state → edge outcome, including the `@@QAAP:VERDICT@@` sentinel
+- `src/node/qaap-workflow-run-store.ts` — durable owner-scoped runs (atomic index at `~/.qaap/workflow-runs`), restart restore, duplicate-report suppression, dispatch map, `interrupt()`
+- `src/node/qaap-workflow-dispatcher.ts` — starts nodes through ports, routes terminal events back, reconciles on boot
 - matching `*.spec.ts` files
 
 ## Next
 
-1. Wire the dispatcher: start the returned node ids on the job runtime / agent task runner, and subscribe their terminal events to `report()`. On boot, reconcile `listUnfinished()` against both runtimes and `interrupt()` whatever is gone.
+1. Implement the two ports against `QaapAgentTaskRunner` and `QaapJobRuntime`, resolve `promptRef` through a template registry, and subscribe both runtimes' terminal events to the dispatcher. Call `reconcileOnBoot()` from the backend module.
 2. Evaluate `router` nodes against the agent catalog.
 3. Recompile one existing runner (review is the smallest) onto the planner behind unchanged UX.

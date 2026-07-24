@@ -105,6 +105,16 @@ describe('QaapWorkflowRunStore', () => {
         expect(resumed.record.run.status).to.equal('succeeded');
     });
 
+    it('lists unfinished runs across every owner for boot reconciliation', async () => {
+        await store.start(buildImplementThenReviewWorkflow(), 'ada');
+        await store.start(buildImplementThenReviewWorkflow(), 'grace');
+
+        // The owner-scoped view must not be used for reconciliation: it only sees one tenant.
+        expect(store.listUnfinished()).to.deep.equal([]);
+        expect(store.listUnfinished('ada')).to.have.lengthOf(1);
+        expect(store.listAllUnfinished().map(record => record.ownerLogin).sort()).to.deep.equal(['ada', 'grace']);
+    });
+
     it('survives a corrupted index instead of throwing on boot', () => {
         fs.writeFileSync(path.join(directory, 'index.json'), '{"version":99}', 'utf8');
         const broken = new TestStore(directory);
