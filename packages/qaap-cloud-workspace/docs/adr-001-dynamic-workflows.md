@@ -115,8 +115,20 @@ Still open, so nobody mistakes the current files for a finished product:
 - HTTP API starts runs by template id (allowlist), guards cwd with the same ownership check as jobs, and continues human gates.
 - Capability/tier routing resolves an unpinned turn onto an installed agent; a pinned `agentRef` still wins, and an unresolved ref falls back to the runner default. No vendor is named in the IR.
 
+## Review conformance (Next #2, in progress)
+
+`qaap-workflow-review-conformance.ts` expresses the runner's `high-risk`-mode review decision as
+workflow outcomes, reusing `resolveTaskReviewRisk` and `parseAgentReviewVerdict` — the same helpers
+`reviewTaskChanges` uses. The conformance spec asserts the implement-then-review graph reaches the
+same terminal decision (skipped / passed / failed / inconclusive) as the runner across the risk and
+verdict matrix, so swapping the live runner onto the planner is a proven behaviour-preserving change
+rather than a rewrite. The template encodes `QAAP_AGENT_REVIEW=high-risk` (the default); `all` and
+`off` modes are not yet modelled as graph variants.
+
 ## Next
 
 1. Client surface: a Work Hub trigger to start a run and observe its nodes. (Deferred while the mobile-shell merge is in flight.)
-2. Recompile one existing runner (review is the smallest) onto the planner behind unchanged UX.
-3. Give deterministic ops `verify` / `shell` a runtime (currently they fail loudly by design).
+2. Flip the live review path onto the planner. The decision is proven equivalent above; the swap
+   itself needs a backend restart to verify UX, so it is deferred to a session that can run it.
+3. Model `QAAP_AGENT_REVIEW=all` (review low-risk too) and `off` as template/router variants.
+4. Give deterministic ops `verify` / `shell` a runtime (currently they fail loudly by design).
