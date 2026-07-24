@@ -114,6 +114,29 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
                 { outcome: string };
             expect(result.outcome).to.equal('risk:high');
         });
+
+        it('sees a NEW sensitive file that was never staged', async () => {
+            // Regression: untracked files are invisible to `git diff HEAD`. Counting only the diff
+            // classified an agent turn that CREATED src/auth/session.ts as an empty, low-risk change
+            // and skipped the adversarial review entirely. Caught by a live end-to-end run.
+            fs.mkdirSync(path.join(repo, 'src', 'auth'), { recursive: true });
+            fs.writeFileSync(path.join(repo, 'src', 'auth', 'session.ts'), 'export const createSession = () => ({});\n');
+            expect(fs.existsSync(path.join(repo, '.git')), 'repo present').to.equal(true);
+
+            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), undefined) as
+                { outcome: string; files: { path: string }[] };
+            expect(result.outcome).to.equal('risk:high');
+            expect(result.files.map(file => file.path)).to.include('src/auth/session.ts');
+        });
+
+        it('counts three new untracked files as high risk', async () => {
+            for (const name of ['a.ts', 'b.ts', 'c.ts']) {
+                fs.writeFileSync(path.join(repo, name), 'export const x = 1;\n');
+            }
+            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), undefined) as
+                { outcome: string };
+            expect(result.outcome).to.equal('risk:high');
+        });
     });
 
     describe('git-diff against a real repository', () => {

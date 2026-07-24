@@ -17,7 +17,7 @@ import { execFile } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { promisify } from 'util';
-import { parseGitNumstat, resolveTaskReviewRisk } from '../common/qaap-agent-review';
+import { parseGitNumstat, QaapReviewChangedFile, resolveTaskReviewRisk } from '../common/qaap-agent-review';
 import { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import { QaapJobFunctionContribution, QaapJobFunctionContext, QaapJobFunctionRegistry } from './qaap-job-function-registry';
@@ -72,8 +72,7 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
             },
             normalizeInput: () => undefined,
             execute: async context => {
-                const numstat = await this.git(context, ['diff', '--numstat', 'HEAD']);
-                const files = parseGitNumstat(numstat);
+                const files = await this.changedFiles(context);
                 return { outcome: resolveTaskReviewRisk(files) === 'high' ? 'risk:high' : 'risk:low', files };
             },
         });
@@ -93,7 +92,14 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
             },
             normalizeInput: () => undefined,
             execute: async context => {
-                const diff = await this.git(context, ['diff', 'HEAD']);
+                const tracked = await this.git(context, ['diff', 'HEAD']);
+                const untracked = (await this.git(context, ['ls-files', '--others', '--exclude-standard']))
+                    .split('\n').map(line => line.trim()).filter(Boolean);
+                // New files are absent from `git diff HEAD`; name them so the reviewer knows they
+                // exist and can read them, instead of judging a change it cannot see.
+                const diff = untracked.length > 0
+                    ? `${tracked}\n# new files (untracked, not shown in the diff above):\n${untracked.map(file => `#   ${file}`).join('\n')}\n`
+                    : tracked;
                 const truncated = Buffer.byteLength(diff, 'utf8') > MAX_DIFF_BYTES;
                 return {
                     outcome: 'success',
@@ -161,6 +167,25 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
             // No manifest or unreadable → no scripts → nothing to verify.
             return undefined;
         }
+    }
+
+    /**
+     * Every file the turn touched, tracked and untracked.
+     *
+     * Untracked (new) files never appear in `git diff HEAD`, so counting only the diff classifies a
+     * turn that CREATED files — a new `src/auth/session.ts`, say — as an empty, low-risk change and
+     * silently skips the adversarial review. Mirrors the runner's own review path, which lists
+     * untracked files for exactly this reason; their line counts are unknown and stay at 0, so they
+     * still feed the file-count and sensitive-path signals.
+     */
+    protected async changedFiles(context: QaapJobFunctionContext): Promise<QaapReviewChangedFile[]> {
+        const numstat = await this.git(context, ['diff', '--numstat', 'HEAD']);
+        const untracked = await this.git(context, ['ls-files', '--others', '--exclude-standard']);
+        return [
+            ...parseGitNumstat(numstat),
+            ...untracked.split('\n').map(line => line.trim()).filter(Boolean)
+                .map(file => ({ path: file, added: 0, removed: 0 })),
+        ];
     }
 
     /** `execFile`, never a shell string: workflow inputs must never reach a shell. */

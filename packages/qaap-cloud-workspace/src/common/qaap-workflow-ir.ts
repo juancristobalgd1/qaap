@@ -141,8 +141,6 @@ export interface QaapWorkflowStepResult {
     readonly terminalReason?: 'emit' | 'no-edge' | 'unknown-node';
 }
 
-const WRITER_ISOLATIONS: ReadonlySet<QaapWorkflowIsolation> = new Set(['cwd', 'worktree']);
-
 export function validateQaapWorkflowDef(def: QaapWorkflowDef): QaapWorkflowValidationResult {
     const issues: QaapWorkflowValidationIssue[] = [];
     if (!def.id.trim()) {
@@ -291,7 +289,7 @@ function cwdWriterIds(
         .filter(id => !shared.has(id))
         .filter(id => {
             const node = byId.get(id);
-            return node?.kind === 'agent-turn' && node.isolation === 'cwd' && WRITER_ISOLATIONS.has(node.isolation);
+            return node?.kind === 'agent-turn' && node.isolation === 'cwd';
         })
         .sort();
 }
