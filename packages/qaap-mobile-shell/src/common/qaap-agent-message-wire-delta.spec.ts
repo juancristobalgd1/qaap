@@ -46,6 +46,7 @@ describe('computeAgentMessageWireDelta', () => {
             kind: 'append_content',
             messageId: 'a1',
             text: 'lo',
+            baseLength: 3,
         });
     });
 
@@ -63,6 +64,7 @@ describe('computeAgentMessageWireDelta', () => {
             messageId: 'a1',
             segmentIndex: 0,
             text: 'lo',
+            baseLength: 3,
         });
     });
 
@@ -128,6 +130,7 @@ describe('computeAgentMessageWireDelta', () => {
             messageId: 'a1',
             eventId: 'tool-1',
             resultAppend: 'ok',
+            resultBaseLength: 0,
             status: 'completed',
         });
     });
@@ -184,6 +187,111 @@ describe('applyAgentMessageWireDelta', () => {
             text: 'lo',
         });
         expect(patched?.content).to.equal('Hello');
+    });
+
+    it('rejects an append whose base is ahead of the local snapshot (lost delta)', () => {
+        // The producer sliced this append assuming 5 chars were already applied, but we only
+        // hold 3 — a delta went missing. Appending anyway would drop those 2 chars for the rest
+        // of the turn; returning undefined routes the caller into its resync instead.
+        const conv = {
+            messages: [agentMessage({ id: 'a1', content: 'Hel' }) as QaapAgentMessageDTO],
+        };
+        const patched = applyAgentMessageWireDelta(conv, {
+            kind: 'append_content',
+            messageId: 'a1',
+            text: ' world',
+            baseLength: 5,
+        });
+        expect(patched).to.equal(undefined);
+    });
+
+    it('applies only the unseen suffix when a duplicate append arrives late', () => {
+        const conv = {
+            messages: [agentMessage({ id: 'a1', content: 'Hello' }) as QaapAgentMessageDTO],
+        };
+        const patched = applyAgentMessageWireDelta(conv, {
+            kind: 'append_content',
+            messageId: 'a1',
+            text: 'llo world',
+            baseLength: 2,
+        });
+        expect(patched?.content).to.equal('Hello world');
+    });
+
+    it('applies an append whose base matches exactly', () => {
+        const conv = {
+            messages: [agentMessage({ id: 'a1', content: 'Hel' }) as QaapAgentMessageDTO],
+        };
+        const patched = applyAgentMessageWireDelta(conv, {
+            kind: 'append_content',
+            messageId: 'a1',
+            text: 'lo',
+            baseLength: 3,
+        });
+        expect(patched?.content).to.equal('Hello');
+    });
+
+    it('rejects a segment append whose base is ahead of the local segment', () => {
+        const conv = {
+            messages: [agentMessage({
+                id: 'a1',
+                segments: [{ type: 'text', content: 'Hel' }],
+            }) as QaapAgentMessageDTO],
+        };
+        const patched = applyAgentMessageWireDelta(conv, {
+            kind: 'append_segment_text',
+            messageId: 'a1',
+            segmentIndex: 0,
+            text: ' world',
+            baseLength: 5,
+        });
+        expect(patched).to.equal(undefined);
+    });
+
+    it('rejects a trace-event append whose base is ahead of the local event (lost delta)', () => {
+        // Structured agents stream assistant text through patch_trace_event, so this is the
+        // path whose lost deltas surfaced as prose with fragments missing mid-stream.
+        const conv = {
+            messages: [agentMessage({
+                id: 'a1',
+                traceEvents: [{
+                    type: 'assistant_text',
+                    id: 'text-1',
+                    content: 'Hel',
+                    status: 'streaming',
+                }],
+            }) as QaapAgentMessageDTO],
+        };
+        const patched = applyAgentMessageWireDelta(conv, {
+            kind: 'patch_trace_event',
+            messageId: 'a1',
+            eventId: 'text-1',
+            contentAppend: ' world',
+            contentBaseLength: 5,
+        });
+        expect(patched).to.equal(undefined);
+    });
+
+    it('applies only the unseen suffix for a duplicate trace-event append', () => {
+        const conv = {
+            messages: [agentMessage({
+                id: 'a1',
+                traceEvents: [{
+                    type: 'assistant_text',
+                    id: 'text-1',
+                    content: 'Hello',
+                    status: 'streaming',
+                }],
+            }) as QaapAgentMessageDTO],
+        };
+        const patched = applyAgentMessageWireDelta(conv, {
+            kind: 'patch_trace_event',
+            messageId: 'a1',
+            eventId: 'text-1',
+            contentAppend: 'llo world',
+            contentBaseLength: 2,
+        });
+        expect(patched?.traceEvents?.[0]).to.include({ content: 'Hello world' });
     });
 
     it('applies patch_trace_event onto traceEvents', () => {

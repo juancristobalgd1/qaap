@@ -66,6 +66,7 @@ describe('qaap-ag-ui-transcript-adapter', () => {
             messageId: 'agent-1',
             eventId: 'tool-1',
             resultAppend: 'ok',
+            resultBaseLength: 0,
             status: 'completed',
         });
     });

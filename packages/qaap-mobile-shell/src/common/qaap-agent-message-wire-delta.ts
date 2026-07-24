@@ -22,6 +22,14 @@ export type QaapAgentMessageWireDelta =
         readonly messageId: string;
         readonly text: string;
         readonly textEncoding?: QaapAgentWireCompressionEncoding;
+        /**
+         * Length the producer assumed the target already held. Appends carry no sequence
+         * number, so without this a dropped or reordered delta is concatenated onto a
+         * shorter base and silently loses that chunk for the rest of the turn (visible as
+         * text with fragments missing until the settle poll repairs it). Optional for wire
+         * compatibility: when absent the append is applied unchecked, as before.
+         */
+        readonly baseLength?: number;
     }
     | {
         readonly kind: 'append_segment_text';
@@ -29,6 +37,8 @@ export type QaapAgentMessageWireDelta =
         readonly segmentIndex: number;
         readonly text: string;
         readonly textEncoding?: QaapAgentWireCompressionEncoding;
+        /** @see the `append_content` counterpart. */
+        readonly baseLength?: number;
     }
     | {
         readonly kind: 'patch_tool';
@@ -60,6 +70,14 @@ export type QaapAgentMessageWireDelta =
         readonly argsAppendEncoding?: QaapAgentWireCompressionEncoding;
         readonly resultAppend?: string;
         readonly resultAppendEncoding?: QaapAgentWireCompressionEncoding;
+        /**
+         * Lengths the producer assumed each target field already held. This is the path that
+         * carries structured-agent assistant text, so a lost delta here is what shows up as
+         * streamed prose with fragments missing. @see the `append_content` counterpart.
+         */
+        readonly contentBaseLength?: number;
+        readonly argsBaseLength?: number;
+        readonly resultBaseLength?: number;
         readonly status?: QaapTranscriptTraceEventDTO extends infer Event
             ? Event extends { readonly status: infer Status } ? Status : never
             : never;
@@ -181,8 +199,8 @@ function computeTraceEventPatch(
             kind: 'patch_trace_event',
             messageId,
             eventId: incoming.id,
-            ...(argsAppend ? { argsAppend } : {}),
-            ...(resultAppend ? { resultAppend } : {}),
+            ...(argsAppend ? { argsAppend, argsBaseLength: previousArgs.length } : {}),
+            ...(resultAppend ? { resultAppend, resultBaseLength: previousResult.length } : {}),
             ...(status ? { status } : {}),
         };
     }
@@ -201,7 +219,7 @@ function computeTraceEventPatch(
             kind: 'patch_trace_event',
             messageId,
             eventId: incoming.id,
-            ...(contentAppend ? { contentAppend } : {}),
+            ...(contentAppend ? { contentAppend, contentBaseLength: previousContent.length } : {}),
             ...(status ? { status } : {}),
         };
     }
@@ -259,10 +277,23 @@ function computeTraceEventsWireDelta(
     return tracePatch;
 }
 
+/** Gap-checked append for one trace-event field; `''` when there is nothing left to add. */
+function resolveTraceAppend(
+    current: string | undefined,
+    baseLength: number | undefined,
+    append: string | undefined,
+): string | undefined {
+    if (append === undefined) {
+        return '';
+    }
+    return resolveAppendSuffix((current ?? '').length, baseLength, append);
+}
+
+/** `undefined` signals a detected gap — the caller must resync instead of applying. */
 function patchTraceEventInPlace(
     event: QaapTranscriptTraceEventDTO,
     delta: TraceEventPatch,
-): QaapTranscriptTraceEventDTO {
+): QaapTranscriptTraceEventDTO | undefined {
     if (event.id !== delta.eventId) {
         return event;
     }
@@ -276,37 +307,42 @@ function patchTraceEventInPlace(
                 || status === 'cancelled'
                 ? status
                 : event.status;
+            const args = resolveTraceAppend(event.args, delta.argsBaseLength, delta.argsAppend);
+            const result = resolveTraceAppend(event.result, delta.resultBaseLength, delta.resultAppend);
+            if (args === undefined || result === undefined) {
+                return undefined;
+            }
             return {
                 ...event,
                 status: nextStatus,
-                ...(delta.argsAppend !== undefined
-                    ? { args: `${event.args ?? ''}${delta.argsAppend}` }
-                    : {}),
-                ...(delta.resultAppend !== undefined
-                    ? { result: `${event.result ?? ''}${delta.resultAppend}` }
-                    : {}),
+                ...(args.length ? { args: `${event.args ?? ''}${args}` } : {}),
+                ...(result.length ? { result: `${event.result ?? ''}${result}` } : {}),
             };
         }
         case 'thought': {
             const status = delta.status;
             const nextStatus = status === 'running' || status === 'completed' ? status : event.status;
+            const content = resolveTraceAppend(event.content, delta.contentBaseLength, delta.contentAppend);
+            if (content === undefined) {
+                return undefined;
+            }
             return {
                 ...event,
                 status: nextStatus,
-                ...(delta.contentAppend !== undefined
-                    ? { content: `${event.content ?? ''}${delta.contentAppend}` }
-                    : {}),
+                ...(content.length ? { content: `${event.content ?? ''}${content}` } : {}),
             };
         }
         case 'assistant_text': {
             const status = delta.status;
             const nextStatus = status === 'streaming' || status === 'completed' ? status : event.status;
+            const content = resolveTraceAppend(event.content, delta.contentBaseLength, delta.contentAppend);
+            if (content === undefined) {
+                return undefined;
+            }
             return {
                 ...event,
                 status: nextStatus,
-                ...(delta.contentAppend !== undefined
-                    ? { content: `${event.content ?? ''}${delta.contentAppend}` }
-                    : {}),
+                ...(content.length ? { content: `${event.content ?? ''}${content}` } : {}),
             };
         }
         case 'error':
@@ -357,6 +393,7 @@ export function computeAgentMessageWireDelta(
                 kind: 'append_content',
                 messageId: next.id,
                 text: nextContent.slice(prevContent.length),
+                baseLength: prevContent.length,
             };
         }
         return { kind: 'replace', message: toWireMessage(next) };
@@ -385,7 +422,7 @@ export function computeAgentMessageWireDelta(
         return { kind: 'replace', message: toWireMessage(next) };
     }
 
-    let textGrowth: { segmentIndex: number; text: string } | undefined;
+    let textGrowth: { segmentIndex: number; text: string; baseLength: number } | undefined;
     let toolPatch: Extract<QaapAgentMessageWireDelta, { kind: 'patch_tool' }> | undefined;
 
     for (let index = 0; index < prevSegments.length; index++) {
@@ -401,6 +438,7 @@ export function computeAgentMessageWireDelta(
                 const candidate = {
                     segmentIndex: index,
                     text: incomingText.slice(previousText.length),
+                    baseLength: previousText.length,
                 };
                 if (textGrowth) {
                     return { kind: 'replace', message: toWireMessage(next) };
@@ -454,6 +492,7 @@ export function computeAgentMessageWireDelta(
             messageId: next.id,
             segmentIndex: textGrowth.segmentIndex,
             text: textGrowth.text,
+            baseLength: textGrowth.baseLength,
         };
     }
     if (toolPatch) {
@@ -468,6 +507,7 @@ export function computeAgentMessageWireDelta(
                 kind: 'append_content',
                 messageId: next.id,
                 text: nextContent.slice(prevContent.length),
+                baseLength: prevContent.length,
             };
         }
         return { kind: 'replace', message: toWireMessage(next) };
@@ -487,20 +527,42 @@ export function applyAgentMessageWireDelta(
         case 'message_start':
         case 'replace':
             return delta.message;
-        case 'append_content':
+        case 'append_content': {
+            // The producer tells us how long the target was when it sliced this append.
+            // Behind that mark we lost a delta — concatenating anyway would silently drop the
+            // missing chunk for the rest of the turn, so bail and let the caller resync.
+            const current = findMessage(conv, delta.messageId)?.content ?? '';
+            const text = resolveAppendSuffix(current.length, delta.baseLength, delta.text);
+            if (text === undefined) {
+                return undefined;
+            }
             return patchMessage(conv, delta.messageId, message => ({
                 ...message,
-                content: `${message.content ?? ''}${delta.text}`,
+                content: `${message.content ?? ''}${text}`,
             }));
-        case 'append_segment_text':
+        }
+        case 'append_segment_text': {
+            const targetSegment = findMessage(conv, delta.messageId)?.segments?.[delta.segmentIndex];
+            if (delta.baseLength !== undefined && targetSegment !== undefined && targetSegment.type !== 'text') {
+                return undefined;
+            }
+            const text = resolveAppendSuffix(
+                (targetSegment?.type === 'text' ? targetSegment.content ?? '' : '').length,
+                delta.baseLength,
+                delta.text,
+            );
+            if (text === undefined) {
+                return undefined;
+            }
             return patchMessage(conv, delta.messageId, message => ({
                 ...message,
                 segments: (message.segments ?? []).map((segment, index) => (
                     index === delta.segmentIndex && segment.type === 'text'
-                        ? { ...segment, content: `${segment.content ?? ''}${delta.text}` }
+                        ? { ...segment, content: `${segment.content ?? ''}${text}` }
                         : segment
                 )),
             }));
+        }
         case 'patch_tool':
             return patchMessage(conv, delta.messageId, message => ({
                 ...message,
@@ -530,16 +592,58 @@ export function applyAgentMessageWireDelta(
                 ...message,
                 traceEvents: [...(message.traceEvents ?? []), delta.event],
             }));
-        case 'patch_trace_event':
-            return patchMessage(conv, delta.messageId, message => ({
-                ...message,
-                traceEvents: (message.traceEvents ?? []).map(event => patchTraceEventInPlace(event, delta)),
-            }));
+        case 'patch_trace_event': {
+            const target = findMessage(conv, delta.messageId);
+            if (!target) {
+                return undefined;
+            }
+            const patchedEvents: QaapTranscriptTraceEventDTO[] = [];
+            for (const event of target.traceEvents ?? []) {
+                const patchedEvent = patchTraceEventInPlace(event, delta);
+                if (!patchedEvent) {
+                    // Gap on the structured-text path — refetch rather than stream a string
+                    // that is permanently missing a chunk.
+                    return undefined;
+                }
+                patchedEvents.push(patchedEvent);
+            }
+            return { ...target, traceEvents: patchedEvents };
+        }
         default: {
             const exhaustive: never = delta;
             return exhaustive;
         }
     }
+}
+
+/**
+ * Reconcile an append against the producer's assumed base length.
+ *
+ * - No `baseLength` (older producer): apply as-is.
+ * - Target shorter than the base: a delta was lost or reordered — return `undefined` so the
+ *   caller refetches instead of concatenating into a permanently corrupted string.
+ * - Target at or past the base: apply only the part we do not already hold, so a duplicate or
+ *   late-arriving delta is idempotent rather than a resync loop.
+ */
+function resolveAppendSuffix(
+    currentLength: number,
+    baseLength: number | undefined,
+    text: string,
+): string | undefined {
+    if (baseLength === undefined) {
+        return text;
+    }
+    if (currentLength < baseLength) {
+        return undefined;
+    }
+    return text.slice(Math.min(currentLength - baseLength, text.length));
+}
+
+function findMessage(
+    conv: { readonly messages: readonly QaapAgentMessageDTO[] },
+    messageId: string,
+): QaapAgentMessageDTO | undefined {
+    return conv.messages.find(message => message.id === messageId);
 }
 
 function patchMessage(
