@@ -1077,6 +1077,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (!row) {
             return;
         }
+        // Settling swaps streaming chrome for the final trace (diff summary, completed tool
+        // cards), which measurably grows the row — on a real turn this was ~+1.2k px. Anchor
+        // the viewport across it exactly like the streaming patch paths do, so the reader's
+        // position survives the expansion instead of the transcript jumping at every turn end.
+        const shouldFollowTail = this.shouldFollowTranscriptTail(messageHost);
+        const anchor = shouldFollowTail ? undefined : this.captureTranscriptScrollAnchor(messageHost);
         row.classList.remove('theia-mod-streaming');
         this.contentUi.settleTranscriptStreamingContent(row);
         delete row.dataset.qaapRowRenderKey;
@@ -1084,6 +1090,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         if (segments?.length) {
             this.artifactsUi.finalizeStreamingAgentTrace(row, segments, conv);
         }
+        this.applyTranscriptScrollAfterMutation(messageHost, anchor);
     }
 
     tryPatchStreamingTranscriptVirtual(

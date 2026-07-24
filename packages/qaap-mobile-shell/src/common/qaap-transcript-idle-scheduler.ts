@@ -3,11 +3,20 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+export type TranscriptIdleWorkPriority = 'background' | 'user-visible';
+
 export interface TranscriptIdleWorkOptions {
     /** Max wait before {@link requestIdleCallback} runs the task anyway. */
     readonly timeoutMs?: number;
     /** Skip the task when this returns false (e.g. hidden document). */
     readonly when?: () => boolean;
+    /**
+     * `background` (default) may be starved for as long as the main thread stays busy — fine
+     * for work nobody is waiting on. Use `user-visible` when the result is already on screen
+     * (e.g. hydrating a row that just scrolled into view), so a busy stream cannot leave a
+     * placeholder showing indefinitely.
+     */
+    readonly priority?: TranscriptIdleWorkPriority;
 }
 
 export interface TranscriptIdleWorkHandle {
@@ -45,7 +54,10 @@ export function scheduleTranscriptIdleWork(
     const schedulerApi = (globalThis as { scheduler?: SchedulerPostTask }).scheduler;
     if (schedulerApi?.postTask) {
         const controller = new AbortController();
-        void schedulerApi.postTask(run, { priority: 'background', signal: controller.signal }).catch(() => undefined);
+        void schedulerApi.postTask(run, {
+            priority: options?.priority ?? 'background',
+            signal: controller.signal,
+        }).catch(() => undefined);
         return {
             cancel: () => {
                 cancelled = true;

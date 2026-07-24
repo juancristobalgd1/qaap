@@ -144,8 +144,13 @@ export function attachTranscriptRowDeferObserver(
         if (hydrateIdleHandle) {
             return;
         }
+        // The observer only fires for rows already within 120px of the viewport, so this is
+        // work the reader is waiting on: at background priority a busy stream can starve it
+        // and leave the excerpt placeholder on screen.
         hydrateIdleHandle = scheduleTranscriptIdleWork(flushPendingHydrateRows, {
             when: isTranscriptDocumentVisible,
+            priority: 'user-visible',
+            timeoutMs: 200,
         });
     };
 

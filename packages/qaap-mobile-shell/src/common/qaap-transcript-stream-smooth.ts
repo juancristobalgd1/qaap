@@ -15,8 +15,15 @@ export const STREAM_SMOOTH_MIN_CHARS_PER_SECOND = 120;
 /** The visible text catches up to the latest received chunk within this window. */
 export const STREAM_SMOOTH_CATCH_UP_MS = 350;
 
-/** Backlogs beyond this jump straight to the end (tab restore, huge paste-like chunks). */
-export const STREAM_SMOOTH_MAX_LAG_CHARS = 1600;
+/**
+ * Backlogs beyond this jump straight to the end (tab restore, huge paste-like chunks).
+ *
+ * Kept well above a typical agent burst (~1–2k chars): the reveal rate is
+ * `backlog / STREAM_SMOOTH_CATCH_UP_MS`, so every backlog under this cap still converges
+ * within the same catch-up window — the cap only decides whether the text *paces* there or
+ * *snaps* there. Cutting in at burst size made ordinary streaming visibly jump.
+ */
+export const STREAM_SMOOTH_MAX_LAG_CHARS = 6000;
 
 /**
  * Next reveal length for a smoothing tick.

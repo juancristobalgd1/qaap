@@ -470,8 +470,23 @@ export class MobileProjectsTranscriptMessagesContentUi {
                 body.textContent = clean;
                 enhanceTranscriptCaptureDirectives(host);
             } else {
-                host.replaceChildren();
-                host.textContent = clean;
+                // Append-only fast path: streaming ticks almost always extend the previous
+                // text, so growing the existing text node lets the browser repaint just the
+                // appended glyphs instead of tearing down and re-laying-out the whole block
+                // (the source of the visible plain-text streaming flicker). Fall back to a
+                // full reset whenever the tail diverges or the node shape is unexpected.
+                const previous = transcriptStreamSourceCache.get(host);
+                const firstChild = host.firstChild;
+                if (previous !== undefined
+                    && clean.length > previous.length
+                    && clean.startsWith(previous)
+                    && host.childNodes.length === 1
+                    && firstChild instanceof Text) {
+                    firstChild.appendData(clean.slice(previous.length));
+                } else if (previous !== clean || host.childNodes.length !== 1 || !(firstChild instanceof Text)) {
+                    host.replaceChildren();
+                    host.textContent = clean;
+                }
             }
             transcriptStreamSourceCache.set(host, clean);
             delete host.dataset[STREAM_STABLE_LENGTH_DATA];

@@ -22,10 +22,25 @@ describe('qaap-transcript-row-defer', () => {
             messageCount: 5,
             conversationStreaming: true,
         })).to.equal(true);
+    });
+
+    it('keeps the tail eager once the turn settles', () => {
+        // Regression: keying the exemption on `conversationStreaming` un-exempted the answer
+        // the moment it finished, so the next full render collapsed it to a ~180-char excerpt
+        // and sprang back on hydration — a visible blink plus scroll jump at the end of every
+        // turn, on exactly the row the reader is looking at.
         expect(shouldDeferTranscriptRowHeavyContent({
             messageIndex: 4,
             messageCount: 5,
             conversationStreaming: false,
-        })).to.equal(true);
+        })).to.equal(false);
+    });
+
+    it('keeps the user turn above the settled answer eager too', () => {
+        expect(shouldDeferTranscriptRowHeavyContent({
+            messageIndex: 3,
+            messageCount: 5,
+            conversationStreaming: false,
+        })).to.equal(false);
     });
 });
