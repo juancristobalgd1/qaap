@@ -101,7 +101,7 @@ Still open, so nobody mistakes the current files for a finished product:
 - `src/node/qaap-workflow-run-store.ts` — durable owner-scoped runs (atomic index at `~/.qaap/workflow-runs`), restart restore, duplicate-report suppression, dispatch map, `interrupt()`
 - `src/node/qaap-workflow-dispatcher.ts` — starts nodes through ports, routes terminal events back, reconciles on boot
 - `src/node/qaap-workflow-runtime-ports.ts` — adapters binding the ports to `QaapAgentTaskRunner` / `QaapJobRuntime`
-- `src/node/qaap-workflow-job-functions.ts` — `risk-classify` / `git-diff` as typed job functions
+- `src/node/qaap-workflow-job-functions.ts` — `risk-classify` / `git-diff` / `verify` as typed job functions
 - `src/node/qaap-workflow-service.ts` — event subscriptions, boot reconciliation, the `start` entry point
 - `src/node/qaap-workflow-endpoint.ts` + `src/common/qaap-workflow-api.ts` — authenticated `/qaap/api/workflows` HTTP API
 - `src/common/qaap-workflow-template-registry.ts` — server-side allowlist of runnable graphs
@@ -133,4 +133,10 @@ the conformance spec asserts the graph matches the runner for each mode.
 2. Flip the live review path onto the planner. The decision is proven equivalent above for all three
    modes; the swap itself needs a backend restart to verify UX, so it is deferred to a session that
    can run it.
-3. Give deterministic ops `verify` / `shell` a runtime (currently they fail loudly by design).
+3. Wire the `verify` node into the implement-then-review template with a fix-loop
+   (`verify` fail → implement-fix → `verify`, bounded by the run's visit budget), matching the
+   runner's post-implement verification. The `verify` op now has a runtime
+   (`QAAP_WORKFLOW_VERIFY_FUNCTION`: runs the resolved npm scripts, stops at the first failure); only
+   the template wiring remains.
+4. `shell` stays unimplemented deliberately: the deterministic node has no command channel, and
+   adding one needs an injection-safe design (command from the allowlisted template, never free-form).

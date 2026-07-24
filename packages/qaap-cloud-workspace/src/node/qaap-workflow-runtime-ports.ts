@@ -27,6 +27,7 @@ import {
 import {
     QAAP_WORKFLOW_CLASSIFY_RISK_FUNCTION,
     QAAP_WORKFLOW_GIT_DIFF_FUNCTION,
+    QAAP_WORKFLOW_VERIFY_FUNCTION,
 } from './qaap-workflow-job-functions';
 import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
 
@@ -34,6 +35,7 @@ import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
 const FUNCTION_BY_OP: Readonly<Partial<Record<QaapWorkflowDeterministicNode['op'], string>>> = {
     'risk-classify': QAAP_WORKFLOW_CLASSIFY_RISK_FUNCTION,
     'git-diff': QAAP_WORKFLOW_GIT_DIFF_FUNCTION,
+    verify: QAAP_WORKFLOW_VERIFY_FUNCTION,
 };
 
 @injectable()
@@ -103,9 +105,9 @@ export class QaapWorkflowDeterministicAdapter implements QaapWorkflowDeterminist
         }
         const functionId = FUNCTION_BY_OP[node.op];
         if (!functionId) {
-            // 'verify', 'shell' and 'parse-sentinel' need a per-repo command or a parser that does
-            // not exist yet. Failing here routes the node down the graph's failure edge instead of
-            // pretending the step succeeded.
+            // 'shell' has no command channel on the node (adding one needs an injection-safe design)
+            // and 'parse-sentinel' has no parser yet. Failing here routes the node down the graph's
+            // failure edge instead of pretending the step succeeded.
             throw new Error(`Deterministic workflow op "${node.op}" has no runtime yet.`);
         }
         const created = this.jobs.create({
