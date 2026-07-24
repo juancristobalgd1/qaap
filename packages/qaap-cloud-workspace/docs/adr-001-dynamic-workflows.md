@@ -89,17 +89,18 @@ Still open, so nobody mistakes the current files for a finished product:
 
 - `router` nodes are declared types without semantics: `policyId` is never evaluated, because capability/tier → agent resolution needs the agent catalog, which the reducer deliberately does not import.
 - Edge conditions are literal equality on a closed outcome enum; composite predicates (`verdict:pass` **and** `risk:low`) are not expressible.
-- Run state is a pure reducer with no store yet: nothing persists `QaapWorkflowRun` or replays it after a backend restart.
 - Loop budgets (`maxNodeRuns`, `maxVisitsPerNode`) bound cycles by dispatch count only — no token or wall-clock budget.
+- Runs persist, but nothing subscribes yet: no code dispatches the returned node ids or feeds job / agent-task terminal events back into `report()`. The store is inert until that wiring lands.
 
 ## Code
 
 - `src/common/qaap-workflow-ir.ts` — types, validation, Review template, pure stepper
 - `src/common/qaap-workflow-run.ts` — run state + pure reducer: frontier, joins (`all`/`any`/`n`), bindings, human gates, loop budget, stall detection
+- `src/node/qaap-workflow-run-store.ts` — durable owner-scoped runs (atomic index at `~/.qaap/workflow-runs`), restart restore, duplicate-report suppression, `interrupt()` for nodes that lost their process
 - matching `*.spec.ts` files
 
 ## Next
 
-1. Persist `QaapWorkflowRun` and reconcile it from `QaapJob` and agent-task terminal events (the planner's only I/O).
+1. Wire the dispatcher: start the returned node ids on the job runtime / agent task runner, and subscribe their terminal events to `report()`. On boot, reconcile `listUnfinished()` against both runtimes and `interrupt()` whatever is gone.
 2. Evaluate `router` nodes against the agent catalog.
 3. Recompile one existing runner (review is the smallest) onto the planner behind unchanged UX.
