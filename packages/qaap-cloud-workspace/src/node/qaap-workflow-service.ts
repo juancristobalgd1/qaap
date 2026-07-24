@@ -74,6 +74,11 @@ export class QaapWorkflowService implements BackendApplicationContribution {
         return this.store.get(options.ownerLogin, started.record.run.id) ?? started.record;
     }
 
+    /** Resume a run parked at a human gate. */
+    continueAfterHumanGate(ownerLogin: string | undefined, runId: string, nodeId: string): Promise<void> {
+        return this.dispatcher.continueAfterHumanGate(ownerLogin ?? '', runId, nodeId);
+    }
+
     protected async onAgentTaskFinished(taskId: string): Promise<void> {
         try {
             // The log is only read for tasks that belong to a run, so unrelated tasks cost nothing.

@@ -69,7 +69,9 @@ import {
     QaapJobFunctionRegistry,
 } from './qaap-job-function-registry';
 import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-registry';
+import { QaapWorkflowTemplateRegistry } from '../common/qaap-workflow-template-registry';
 import { QaapWorkflowDispatcher } from './qaap-workflow-dispatcher';
+import { QaapWorkflowEndpoint } from './qaap-workflow-endpoint';
 import { QaapWorkflowJobFunctions } from './qaap-workflow-job-functions';
 import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import {
@@ -137,8 +139,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             deterministic: container.get(QaapWorkflowDeterministicAdapter),
         },
     )).inSingletonScope();
+    bind(QaapWorkflowTemplateRegistry).toSelf().inSingletonScope();
     bind(QaapWorkflowService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorkflowService);
+    bind(QaapWorkflowEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapWorkflowEndpoint);
     bind(QaapPreviewSupervisor).toSelf().inSingletonScope();
     bind(QaapTerminalSessionStore).toSelf().inSingletonScope();
     bind(QaapPreviewShareProxyContribution).toSelf().inSingletonScope();
