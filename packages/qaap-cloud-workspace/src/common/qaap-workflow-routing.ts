@@ -90,6 +90,10 @@ export class QaapWorkflowRoutingPolicy {
 /**
  * Parse `QAAP_WORKFLOW_AGENT_ROUTES` (JSON) into a routing table, falling back to the default on
  * any problem. Shape: `{ "<capability>": { "cheap"|"standard"|"premium"|"any": ["agentId", …] } }`.
+ *
+ * Overrides are MERGED per capability, not substituted wholesale: pinning `judge` to one backend
+ * must not silently strip routing from `implement`, `explore` and the rest, which would send every
+ * other capability down the runner-default fallback.
  */
 export function parseQaapWorkflowRoutingTable(raw: string | undefined): QaapWorkflowRoutingTable {
     if (!raw?.trim()) {
@@ -100,14 +104,19 @@ export function parseQaapWorkflowRoutingTable(raw: string | undefined): QaapWork
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
             return DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE;
         }
-        const table: QaapWorkflowRoutingTable = {};
+        const overrides: QaapWorkflowRoutingTable = {};
         for (const [capability, value] of Object.entries(parsed as Record<string, unknown>)) {
             const route = sanitizeRoute(value);
             if (route) {
-                table[capability as QaapWorkflowCapability] = route;
+                overrides[capability as QaapWorkflowCapability] = route;
             }
         }
-        return Object.keys(table).length > 0 ? table : DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE;
+        if (Object.keys(overrides).length === 0) {
+            return DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE;
+        }
+        // An overridden capability replaces its own route entirely (so an operator can shrink a
+        // preference list); untouched capabilities keep their defaults.
+        return { ...DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE, ...overrides };
     } catch {
         return DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE;
     }

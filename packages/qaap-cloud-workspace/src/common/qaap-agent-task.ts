@@ -58,6 +58,12 @@ export interface QaapAgentTask {
     readonly parentId?: string;
     /** Whether skip-permission flags were applied when the CLI was spawned. */
     readonly autoApprove?: boolean;
+    /**
+     * Set when an orchestrator (a workflow run) owns the adversarial review for this turn, so the
+     * runner must not also run its own. Without it a workflow-driven turn is reviewed twice — once
+     * by the runner and once by the workflow's judge node — at double the latency and cost.
+     */
+    readonly externalReview?: boolean;
     /** Model the user picked in the mobile agent sheet (provider + vendor + modelId). */
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     /** @deprecated Use {@link agentModel}. Kept for persisted tasks and older clients. */
@@ -158,6 +164,11 @@ export interface QaapCreateAgentTaskRequest {
      * for background tasks; set `false` to require manual CLI approval (will hang if unattended).
      */
     readonly autoApprove?: boolean;
+    /**
+     * The caller runs its own adversarial review for this turn, so the runner must skip its
+     * internal one. Used by workflow runs, whose graph owns the judge node.
+     */
+    readonly externalReview?: boolean;
     /** Composer interaction mode for QAIQ (`agent`, `plan`, `ask`). */
     readonly interactionModeId?: string;
     /** Composer approval preset (`request-approval`, `approve-for-me`, `full-access`). */

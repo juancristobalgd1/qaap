@@ -62,10 +62,32 @@ describe('parseQaapWorkflowRoutingTable', () => {
         expect(policy.resolve('implement', 'standard', only('hermes')).agentRef).to.equal('hermes');
     });
 
-    it('drops non-string ids and empty routes without failing', () => {
+    it('merges an override with the defaults instead of replacing the whole table', () => {
+        // Pinning one capability must not strip routing from every other one.
+        const table = parseQaapWorkflowRoutingTable('{"judge":{"any":["qaiq"]}}');
+        const policy = new QaapWorkflowRoutingPolicy(table);
+        expect(policy.resolve('judge', undefined, only('qaiq')).agentRef).to.equal('qaiq');
+        // 'implement' was untouched, so it keeps its default route rather than falling back.
+        expect(policy.resolve('implement', 'cheap', all)).to.deep.equal(
+            { agentRef: DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE.implement!.cheap![0], reason: 'routed' },
+        );
+        expect(table.explore).to.deep.equal(DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE.explore);
+    });
+
+    it('lets an override shrink the preference list of the capability it names', () => {
+        const table = parseQaapWorkflowRoutingTable('{"judge":{"any":["qaiq"]}}');
+        // Default judge order starts with codex; the override drops it entirely.
+        expect(table.judge?.any).to.deep.equal(['qaiq']);
+        expect(new QaapWorkflowRoutingPolicy(table).resolve('judge', undefined, only('codex')).reason)
+            .to.equal('fallback');
+    });
+
+    it('drops non-string ids and ignores an empty route without failing', () => {
         const table = parseQaapWorkflowRoutingTable('{"implement":{"any":[1,"pi",""]},"judge":{"any":[]}}');
         expect(table.implement?.any).to.deep.equal(['pi']);
-        expect(table.judge).to.equal(undefined);
+        // An empty/malformed override is ignored, so that capability keeps its default route
+        // rather than losing routing altogether.
+        expect(table.judge).to.deep.equal(DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE.judge);
     });
 
     it('falls back to the default on malformed JSON', () => {

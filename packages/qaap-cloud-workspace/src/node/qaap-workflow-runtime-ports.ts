@@ -75,6 +75,9 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
             prompt,
             cwd: record.cwd,
             agent: routed.agentRef,
+            // The graph owns the review (its judge node), so the runner must not review this turn
+            // as well. Only writer turns would trigger it; a read-only judge never does.
+            externalReview: node.isolation !== 'cwd-readonly',
         }, context.ownerLogin || undefined);
         return task.id;
     }

@@ -1069,6 +1069,7 @@ export class QaapAgentTaskRunner {
             createdAt: Date.now(),
             parentId,
             autoApprove,
+            ...(request.externalReview ? { externalReview: true } : {}),
             ...(ownerLogin ? { ownerLogin } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
             ...(() => {
@@ -2288,6 +2289,11 @@ export class QaapAgentTaskRunner {
     ): Promise<QaapAgentTaskReview | undefined> {
         const mode = resolveAgentReviewMode(process.env.QAAP_AGENT_REVIEW);
         if (mode === 'off' || !this.isTaskStillRunning(task.id)) {
+            return undefined;
+        }
+        if (task.externalReview) {
+            // A workflow run owns the review for this turn (its judge node). Reviewing here as well
+            // would spend a second reviewer agent on the same diff and delay the turn for nothing.
             return undefined;
         }
         const agentId = this.resolveTaskAgentId(task);
