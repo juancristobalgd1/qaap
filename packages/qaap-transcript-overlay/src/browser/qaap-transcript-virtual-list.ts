@@ -69,6 +69,13 @@ export class TranscriptVirtualList implements Disposable {
     protected measureTimeoutId: ReturnType<typeof setTimeout> | undefined;
     protected lastMeasureRanAt = 0;
     protected pendingWhileHidden = false;
+    /**
+     * Set by content-driven mutations only (item count, footer, measured row heights) so the
+     * next `update()` re-asserts follow-tail. Never set from the scroll listener: `update()`
+     * runs on scroll, and a follow write emits a scroll event, so an unconditional re-assert
+     * loops at frame rate.
+     */
+    protected followReassertRequested = false;
     protected scrollListener: () => void;
     protected resizeObserver: ResizeObserver | undefined;
     protected visibilityListener: (() => void) | undefined;
@@ -107,6 +114,7 @@ export class TranscriptVirtualList implements Disposable {
             this.visibilityListener = () => {
                 if (isTranscriptDocumentVisible() && this.pendingWhileHidden) {
                     this.pendingWhileHidden = false;
+                    this.followReassertRequested = true;
                     this.scheduleUpdate();
                 }
             };
@@ -125,12 +133,14 @@ export class TranscriptVirtualList implements Disposable {
             this.offsetsDirty = true;
             this.measureRequested = true;
         }
+        this.followReassertRequested = true;
         this.scheduleUpdate();
     }
 
     setFooter(children: readonly HTMLElement[]): void {
         this.footerHost.replaceChildren(...children);
         this.measureRequested = true;
+        this.followReassertRequested = true;
         this.scheduleUpdate();
     }
 
@@ -331,6 +341,9 @@ export class TranscriptVirtualList implements Disposable {
             return;
         }
         this.pendingWhileHidden = false;
+        // Consume here, past the pause guard, so a deferred update still re-asserts.
+        const reassertFollow = this.followReassertRequested;
+        this.followReassertRequested = false;
         if (this.offsetsDirty || this.offsets.length !== this.sizes.length + 1) {
             this.offsets = buildVirtualListOffsets(this.sizes, this.defaultItemHeight);
             this.offsetsDirty = false;
@@ -370,18 +383,22 @@ export class TranscriptVirtualList implements Disposable {
 
         this.spacer.style.height = `${range.totalHeight + this.footerHeight}px`;
 
-        // Re-assert the glue on every update while following. Resizing the spacer changes the
-        // scrollable range without moving the viewport, so a reader who never detached can be
-        // stranded away from the live edge — the browser clamps scrollTop when a remount
-        // shrinks the spacer, and nothing brings them back: `measureMounted` only chases on
-        // row-height deltas, which this path does not produce. `onContentChanged` is
-        // self-limiting (it no-ops when already glued and ignores transient shrinks under the
-        // latched high-water), so re-asserting is cheap. Strictly gated on the follow phase:
-        // while detached it would cancel a queued preserve-anchor restore and lose the
-        // reader's position.
-        const scrollController = getTranscriptScrollController(this.scrollHost);
-        if (scrollController?.shouldFollowTail()) {
-            scrollController.onContentChanged(this.scrollHost);
+        // Re-assert the glue, but ONLY for content-driven updates. Resizing the spacer changes
+        // the scrollable range without moving the viewport, so a reader who never detached can
+        // be stranded away from the live edge — the browser clamps scrollTop when a remount
+        // shrinks the spacer, and `measureMounted` only chases on row-height deltas, which that
+        // path does not produce.
+        //
+        // This MUST NOT run on scroll-driven updates: `update()` is wired to the scroll event,
+        // and a follow write emits a scroll event, so re-asserting unconditionally builds a
+        // self-sustaining 60fps write loop (the "already glued" guard cannot break it while
+        // streaming keeps the tail moving). Strictly gated on the follow phase too: while
+        // detached this would cancel a queued preserve-anchor and lose the reading position.
+        if (reassertFollow) {
+            const scrollController = getTranscriptScrollController(this.scrollHost);
+            if (scrollController?.shouldFollowTail()) {
+                scrollController.onContentChanged(this.scrollHost);
+            }
         }
 
         // Forced layout reads only when row content may have changed — plain
@@ -439,6 +456,8 @@ export class TranscriptVirtualList implements Disposable {
         if (!changed) {
             return;
         }
+        // Measured row heights moved: a content-driven reflow, so let update() re-assert follow.
+        this.followReassertRequested = true;
         this.update();
         if (deltaAboveViewport !== 0) {
             const scrollController = getTranscriptScrollController(this.scrollHost);

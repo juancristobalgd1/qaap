@@ -139,6 +139,48 @@ describe('TranscriptVirtualList follow-tail after spacer thrash', () => {
         list.dispose();
     });
 
+    it('re-asserts follow on content updates but never on scroll frames', () => {
+        // `update()` is wired to the scroll event and a follow write emits a scroll event, so
+        // re-asserting follow on every update builds a self-sustaining frame-rate write loop
+        // (visible as scroll thrash + flicker while streaming). Only content-driven updates may
+        // re-assert. This test exists because that loop shipped once.
+        const list = new TranscriptVirtualList({
+            scrollHost: host,
+            defaultItemHeight: 200,
+            renderItem: index => {
+                const row = document.createElement('div');
+                row.textContent = `row-${index}`;
+                return row;
+            },
+        });
+        const scroll = ensureTranscriptScrollController(host);
+        list.setItemCount(4);
+        flushRaf();
+        scroll.jumpToLatest();
+
+        let reasserts = 0;
+        const original = scroll.onContentChanged.bind(scroll);
+        scroll.onContentChanged = (scroller: HTMLElement): void => {
+            reasserts++;
+            original(scroller);
+        };
+
+        // Content changed -> must re-assert.
+        list.setItemCount(9);
+        flushRaf();
+        flushRaf();
+        expect(reasserts).to.be.greaterThan(0);
+
+        // Pure scroll frames -> must not re-assert (no loop).
+        const afterContent = reasserts;
+        for (let i = 0; i < 5; i++) {
+            host.dispatchEvent(new window.Event('scroll'));
+            flushRaf();
+        }
+        expect(reasserts).to.equal(afterContent);
+        list.dispose();
+    });
+
     it('requestMeasureImmediate schedules an update without waiting for the throttle window', () => {
         const list = new TranscriptVirtualList({
             scrollHost: host,
