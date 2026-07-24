@@ -240,6 +240,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 onShowAgentsHub: () => this.navigateWorkHub('tasks'),
                 onShowRoutinesHub: () => this.navigateWorkHub('routines'),
                 onShowResearchHub: () => this.navigateWorkHub('research'),
+                onShowWorkflowsHub: () => this.navigateWorkHub('workflows'),
                 onHubLandingViewChanged: () => undefined,
                 onEnterActiveTranscript: () => undefined,
                 onEnterWorkHubConversation: () => undefined,

@@ -72,6 +72,7 @@ export interface MobileProjectsPanelFactoryDelegate {
     onShowAgentsHub(): void;
     onShowRoutinesHub(): void;
     onShowResearchHub(): void;
+    onShowWorkflowsHub(): void;
     onHubLandingViewChanged(): void;
     onEnterActiveTranscript(): void;
     onEnterWorkHubConversation(): void;
@@ -174,6 +175,7 @@ export class MobileProjectsPanelFactory {
                 onShowAgentsHub: () => delegate.onShowAgentsHub(),
                 onShowRoutinesHub: () => delegate.onShowRoutinesHub(),
                 onShowResearchHub: () => delegate.onShowResearchHub(),
+                onShowWorkflowsHub: () => delegate.onShowWorkflowsHub(),
                 onHubLandingViewChanged: () => delegate.onHubLandingViewChanged(),
                 onEnterActiveTranscript: () => delegate.onEnterActiveTranscript(),
                 onEnterWorkHubConversation: () => delegate.onEnterWorkHubConversation(),

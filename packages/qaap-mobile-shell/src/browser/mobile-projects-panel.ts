@@ -322,6 +322,7 @@ export interface MobileProjectsPanelDelegate {
     onShowRoutinesHub?(): void | Promise<void>;
     /** Show Work Hub Research from the sessions sidebar. */
     onShowResearchHub?(): void | Promise<void>;
+    onShowWorkflowsHub?(): void | Promise<void>;
     /** Shell bottom bar active state after in-panel hub tab changes. */
     onHubLandingViewChanged?(): void;
     /** Transcript sheet on body: leave Work Hub landing overlay while chat is active. */

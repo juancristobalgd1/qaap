@@ -41,6 +41,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onSearch?: () => void;
     onExtensions?: () => void;
     onAutomations?: () => void;
+    onWorkflows?: () => void;
     onResearch?: () => void;
     onStartNewProject?: () => void;
     isEmbedded?: () => boolean;
@@ -168,6 +169,11 @@ export class MobileWorkHubSessionsSidebar {
                 'codicon-extensions',
                 nls.localize('qaap/sessionsSidebar/extensions', 'Extensions'),
                 () => this.delegate.onExtensions?.(),
+            ),
+            this.createNavButton(
+                'codicon-rocket',
+                nls.localize('qaap/mobileProjects/workflowsTitle', 'Workflows'),
+                () => this.delegate.onWorkflows?.(),
             ),
             this.createNavButton(
                 'codicon-zap',
