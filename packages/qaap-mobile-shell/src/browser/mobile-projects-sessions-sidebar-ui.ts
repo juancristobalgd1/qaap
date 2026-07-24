@@ -57,7 +57,6 @@ export interface MobileProjectsSessionsSidebarHost {
         onProjectOpenInIde?(project: MobileProjectEntry): void | Promise<void>;
         onShowRoutinesHub?(): void | Promise<void>;
         onShowResearchHub?(): void | Promise<void>;
-        onShowWorkflowsHub?(): void | Promise<void>;
         cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
         projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     };
@@ -223,7 +222,6 @@ export class MobileProjectsSessionsSidebarUi {
                 onExtensions: () => { void this.host.commands.executeCommand('workbench.view.extensions'); },
                 onAutomations: () => { void this.onWorkHubSessionsSidebarAutomations(); },
                 onResearch: () => { void this.onWorkHubSessionsSidebarResearch(); },
-                onWorkflows: () => { void this.onWorkHubSessionsSidebarWorkflows(); },
                 isEmbedded: () => (!isDesktopSessionsSidebarLayout() || document.body.classList.contains('theia-mobile-mod-desktop-ide')) && this.host.sessionsSidebarContainer?.() !== undefined,
                 getAppearanceMode: this.host.appearanceModeService
                     ? () => this.host.appearanceModeService!.getMode()
@@ -1083,10 +1081,6 @@ export class MobileProjectsSessionsSidebarUi {
     async onWorkHubSessionsSidebarResearch(): Promise<void> {
         this.host.sessionsSidebar?.hide();
         await this.host.delegate.onShowResearchHub?.();
-    }
-    async onWorkHubSessionsSidebarWorkflows(): Promise<void> {
-        this.host.sessionsSidebar?.hide();
-        await this.host.delegate.onShowWorkflowsHub?.();
     }
     onSessionsSidebarAccountClick(anchor: HTMLButtonElement): void {
         const viewToggle = {
