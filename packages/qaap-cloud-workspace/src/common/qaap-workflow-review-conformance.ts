@@ -16,7 +16,7 @@
  */
 
 import { parseAgentReviewVerdict, QaapReviewChangedFile, resolveTaskReviewRisk } from './qaap-agent-review';
-import { QaapWorkflowNodeOutcome } from './qaap-workflow-ir';
+import { QaapWorkflowNodeOutcome, QaapWorkflowReviewMode } from './qaap-workflow-ir';
 
 /** The four terminal states the review flow can reach, named as in {@link QaapAgentTaskReview}. */
 export type QaapReviewDecision = 'skipped' | 'passed' | 'failed' | 'inconclusive';
@@ -30,15 +30,19 @@ export const REVIEW_DECISION_BINDING: Readonly<Record<QaapReviewDecision, string
 };
 
 /**
- * The runner's own decision for a finished, edited task under `high-risk` mode. Mirrors the
- * branch order in {@code reviewTaskChanges}: low risk skips; otherwise the verdict decides, and a
- * missing verdict is inconclusive (fail-open), never a pass.
+ * The runner's own decision for a finished, edited task. Mirrors the branch order in
+ * {@code reviewTaskChanges}: `off` never reviews; `high-risk` skips a low-risk diff; otherwise the
+ * verdict decides, and a missing verdict is inconclusive (fail-open), never a pass.
  */
 export function runnerReviewDecision(
     changedFiles: readonly QaapReviewChangedFile[],
     reviewerOutput: string | undefined,
+    mode: QaapWorkflowReviewMode = 'high-risk',
 ): QaapReviewDecision {
-    if (resolveTaskReviewRisk(changedFiles) === 'low') {
+    if (mode === 'off') {
+        return 'skipped';
+    }
+    if (mode === 'high-risk' && resolveTaskReviewRisk(changedFiles) === 'low') {
         return 'skipped';
     }
     const verdict = parseAgentReviewVerdict(reviewerOutput);

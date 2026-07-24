@@ -11,6 +11,7 @@
  * request can be validated before anything is spawned.
  */
 
+import { resolveAgentReviewMode } from './qaap-agent-review';
 import { QaapWorkflowTemplateSummary } from './qaap-workflow-api';
 import { buildImplementThenReviewWorkflow, QaapWorkflowDef } from './qaap-workflow-ir';
 
@@ -54,7 +55,16 @@ export class QaapWorkflowTemplateRegistry {
                     'Implements the task, classifies the change risk, and runs an independent adversarial review only when the diff is high-risk.',
                 requiredInputs: ['task'],
             },
-            build: () => buildImplementThenReviewWorkflow(),
+            // Match the deployment's configured review mode so a started run behaves like the
+            // runner's own review under the same QAAP_AGENT_REVIEW setting.
+            build: () => buildImplementThenReviewWorkflow({
+                reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
+            }),
         });
+    }
+
+    /** Isolated for tests; the live registry reads the process env. */
+    protected reviewModeEnv(): string | undefined {
+        return process.env.QAAP_AGENT_REVIEW;
     }
 }

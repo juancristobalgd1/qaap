@@ -5,7 +5,12 @@
 
 import { expect } from 'chai';
 import { QaapReviewChangedFile } from './qaap-agent-review';
-import { buildImplementThenReviewWorkflow, dryRunQaapWorkflowPath } from './qaap-workflow-ir';
+import {
+    buildImplementThenReviewWorkflow,
+    dryRunQaapWorkflowPath,
+    validateQaapWorkflowDef,
+    type QaapWorkflowReviewMode,
+} from './qaap-workflow-ir';
 import {
     judgeOutcome,
     REVIEW_DECISION_BINDING,
@@ -23,8 +28,12 @@ const DECISION_EMIT_NODE: Readonly<Record<QaapReviewDecision, string>> = {
 };
 
 /** Drive the graph with outcomes derived from the same helpers the runner uses. */
-function graphDecision(changedFiles: readonly QaapReviewChangedFile[], reviewerOutput: string | undefined): string {
-    const def = buildImplementThenReviewWorkflow();
+function graphDecision(
+    changedFiles: readonly QaapReviewChangedFile[],
+    reviewerOutput: string | undefined,
+    reviewMode: QaapWorkflowReviewMode = 'high-risk',
+): string {
+    const def = buildImplementThenReviewWorkflow({ reviewMode });
     const path = dryRunQaapWorkflowPath(def, {
         implement: 'success',
         'risk-classify': riskOutcome(changedFiles),
@@ -74,5 +83,36 @@ describe('workflow review conformance', () => {
             'risk-classify': riskOutcome(lowRisk),
         });
         expect(path).to.not.include('judge');
+    });
+
+    describe('mode conformance', () => {
+        it("'off' mode skips review regardless of risk or verdict", () => {
+            expect(runnerReviewDecision(highRiskBySize, failOutput, 'off')).to.equal('skipped');
+            expect(graphDecision(highRiskBySize, failOutput, 'off')).to.equal(DECISION_EMIT_NODE.skipped);
+        });
+
+        it("'all' mode reviews a low-risk diff instead of skipping it", () => {
+            expect(runnerReviewDecision(lowRisk, passOutput, 'all')).to.equal('passed');
+            expect(graphDecision(lowRisk, passOutput, 'all')).to.equal(DECISION_EMIT_NODE.passed);
+            // The same low-risk diff skips under the default high-risk mode.
+            expect(graphDecision(lowRisk, passOutput, 'high-risk')).to.equal(DECISION_EMIT_NODE.skipped);
+        });
+
+        it("'all' mode still fails on a fail verdict for a low-risk diff", () => {
+            expect(runnerReviewDecision(lowRisk, failOutput, 'all')).to.equal('failed');
+            expect(graphDecision(lowRisk, failOutput, 'all')).to.equal(DECISION_EMIT_NODE.failed);
+        });
+
+        it("'off' mode produces a graph with no judge node", () => {
+            const def = buildImplementThenReviewWorkflow({ reviewMode: 'off' });
+            expect(def.nodes.some(node => node.id === 'judge')).to.equal(false);
+        });
+
+        for (const reviewMode of ['high-risk', 'all', 'off'] as const) {
+            it(`${reviewMode} mode builds a valid definition`, () => {
+                expect(validateQaapWorkflowDef(buildImplementThenReviewWorkflow({ reviewMode })))
+                    .to.deep.include({ ok: true });
+            });
+        }
     });
 });

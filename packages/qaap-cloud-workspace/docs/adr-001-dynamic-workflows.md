@@ -122,13 +122,15 @@ workflow outcomes, reusing `resolveTaskReviewRisk` and `parseAgentReviewVerdict`
 `reviewTaskChanges` uses. The conformance spec asserts the implement-then-review graph reaches the
 same terminal decision (skipped / passed / failed / inconclusive) as the runner across the risk and
 verdict matrix, so swapping the live runner onto the planner is a proven behaviour-preserving change
-rather than a rewrite. The template encodes `QAAP_AGENT_REVIEW=high-risk` (the default); `all` and
-`off` modes are not yet modelled as graph variants.
+rather than a rewrite. All three `QAAP_AGENT_REVIEW` modes are modelled: `buildImplementThenReviewWorkflow`
+takes a `reviewMode` (`high-risk` gates on the classifier, `all` reviews every change, `off` skips
+review with no judge node), the template registry builds with the deployment's configured mode, and
+the conformance spec asserts the graph matches the runner for each mode.
 
 ## Next
 
 1. Client surface: a Work Hub trigger to start a run and observe its nodes. (Deferred while the mobile-shell merge is in flight.)
-2. Flip the live review path onto the planner. The decision is proven equivalent above; the swap
-   itself needs a backend restart to verify UX, so it is deferred to a session that can run it.
-3. Model `QAAP_AGENT_REVIEW=all` (review low-risk too) and `off` as template/router variants.
-4. Give deterministic ops `verify` / `shell` a runtime (currently they fail loudly by design).
+2. Flip the live review path onto the planner. The decision is proven equivalent above for all three
+   modes; the swap itself needs a backend restart to verify UX, so it is deferred to a session that
+   can run it.
+3. Give deterministic ops `verify` / `shell` a runtime (currently they fail loudly by design).

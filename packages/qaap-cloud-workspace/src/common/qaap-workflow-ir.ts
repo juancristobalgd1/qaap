@@ -337,6 +337,13 @@ function edgeMatches(when: QaapWorkflowEdgeWhen, outcome: QaapWorkflowNodeOutcom
 }
 
 /**
+ * Which changes enter the adversarial review, mirroring `QAAP_AGENT_REVIEW` via
+ * {@code resolveAgentReviewMode}: `high-risk` gates on the risk classifier (the default), `all`
+ * reviews every edited change, and `off` skips review entirely.
+ */
+export type QaapWorkflowReviewMode = 'high-risk' | 'all' | 'off';
+
+/**
  * Product template matching today's Implement → (optional risk gate) → Adversarial Review flow
  * in {@code finishSuccessfulTaskAfterVerification}. Engine wiring comes later; this IR is the
  * contract the runner will execute.
@@ -344,77 +351,79 @@ function edgeMatches(when: QaapWorkflowEdgeWhen, outcome: QaapWorkflowNodeOutcom
 export function buildImplementThenReviewWorkflow(options?: {
     readonly implementAgentRef?: QaapWorkflowAgentRef;
     readonly judgeAgentRef?: QaapWorkflowAgentRef;
+    readonly reviewMode?: QaapWorkflowReviewMode;
 }): QaapWorkflowDef {
+    const reviewMode = options?.reviewMode ?? 'high-risk';
+    const nodes: QaapWorkflowNode[] = [
+        {
+            kind: 'agent-turn',
+            id: 'implement',
+            capability: 'implement',
+            costTier: 'standard',
+            agentRef: options?.implementAgentRef,
+            isolation: 'cwd',
+            promptRef: 'user-task',
+        },
+        { kind: 'emit', id: 'done-skip', bindingKey: 'review.skipped' },
+    ];
+    const edges: QaapWorkflowEdge[] = [
+        { from: 'implement', to: 'done-skip', when: 'fail' },
+        { from: 'implement', to: 'done-skip', when: 'blocked' },
+    ];
+
+    if (reviewMode === 'off') {
+        // No review at all: a successful implement is the terminal skip, like the runner returning
+        // undefined when QAAP_AGENT_REVIEW is off.
+        edges.push({ from: 'implement', to: 'done-skip', when: 'success' });
+        return { id: 'qaap.implement-then-review', version: 1, name: 'Implement (review off)', entry: 'implement', nodes, edges };
+    }
+
+    nodes.push(
+        { kind: 'deterministic', id: 'risk-classify', op: 'risk-classify' },
+        { kind: 'deterministic', id: 'git-diff', op: 'git-diff' },
+        {
+            kind: 'agent-turn',
+            id: 'judge',
+            capability: 'judge',
+            costTier: 'standard',
+            agentRef: options?.judgeAgentRef,
+            isolation: 'cwd-readonly',
+            promptRef: 'adversarial-review',
+            requireSentinel: true,
+        },
+        { kind: 'emit', id: 'done-pass', bindingKey: 'review.passed' },
+        { kind: 'emit', id: 'done-fail', bindingKey: 'review.failed' },
+        { kind: 'emit', id: 'done-inconclusive', bindingKey: 'review.inconclusive' },
+    );
+    edges.push({ from: 'implement', to: 'risk-classify', when: 'success' });
+    if (reviewMode === 'all') {
+        // No gate: every edited change reaches the judge, low or high risk.
+        edges.push(
+            { from: 'risk-classify', to: 'git-diff', when: 'risk:low' },
+            { from: 'risk-classify', to: 'git-diff', when: 'risk:high' },
+        );
+    } else {
+        // high-risk gates on the classifier: only high-risk diffs enter the judge.
+        edges.push(
+            { from: 'risk-classify', to: 'done-skip', when: 'risk:low' },
+            { from: 'risk-classify', to: 'git-diff', when: 'risk:high' },
+        );
+    }
+    edges.push(
+        { from: 'git-diff', to: 'judge', when: 'success' },
+        { from: 'git-diff', to: 'done-inconclusive', when: 'fail' },
+        { from: 'judge', to: 'done-pass', when: 'verdict:pass' },
+        { from: 'judge', to: 'done-fail', when: 'verdict:fail' },
+        { from: 'judge', to: 'done-inconclusive', when: 'verdict:inconclusive' },
+        { from: 'judge', to: 'done-inconclusive', when: 'fail' },
+    );
     return {
         id: 'qaap.implement-then-review',
         version: 1,
-        name: 'Implement then adversarial review',
+        name: reviewMode === 'all' ? 'Implement then review every change' : 'Implement then adversarial review',
         entry: 'implement',
-        nodes: [
-            {
-                kind: 'agent-turn',
-                id: 'implement',
-                capability: 'implement',
-                costTier: 'standard',
-                agentRef: options?.implementAgentRef,
-                isolation: 'cwd',
-                promptRef: 'user-task',
-            },
-            {
-                kind: 'deterministic',
-                id: 'risk-classify',
-                op: 'risk-classify',
-            },
-            {
-                kind: 'deterministic',
-                id: 'git-diff',
-                op: 'git-diff',
-            },
-            {
-                kind: 'agent-turn',
-                id: 'judge',
-                capability: 'judge',
-                costTier: 'standard',
-                agentRef: options?.judgeAgentRef,
-                isolation: 'cwd-readonly',
-                promptRef: 'adversarial-review',
-                requireSentinel: true,
-            },
-            {
-                kind: 'emit',
-                id: 'done-pass',
-                bindingKey: 'review.passed',
-            },
-            {
-                kind: 'emit',
-                id: 'done-fail',
-                bindingKey: 'review.failed',
-            },
-            {
-                kind: 'emit',
-                id: 'done-skip',
-                bindingKey: 'review.skipped',
-            },
-            {
-                kind: 'emit',
-                id: 'done-inconclusive',
-                bindingKey: 'review.inconclusive',
-            },
-        ],
-        edges: [
-            { from: 'implement', to: 'risk-classify', when: 'success' },
-            { from: 'implement', to: 'done-skip', when: 'fail' },
-            { from: 'implement', to: 'done-skip', when: 'blocked' },
-            // Mirrors resolveAgentReviewMode default: only high-risk diffs enter the judge.
-            { from: 'risk-classify', to: 'done-skip', when: 'risk:low' },
-            { from: 'risk-classify', to: 'git-diff', when: 'risk:high' },
-            { from: 'git-diff', to: 'judge', when: 'success' },
-            { from: 'git-diff', to: 'done-inconclusive', when: 'fail' },
-            { from: 'judge', to: 'done-pass', when: 'verdict:pass' },
-            { from: 'judge', to: 'done-fail', when: 'verdict:fail' },
-            { from: 'judge', to: 'done-inconclusive', when: 'verdict:inconclusive' },
-            { from: 'judge', to: 'done-inconclusive', when: 'fail' },
-        ],
+        nodes,
+        edges,
     };
 }
 
