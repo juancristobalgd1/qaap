@@ -94,6 +94,8 @@ import {
     isAntigravityCliCommand,
 } from './qaap-antigravity-settings';
 import { QaapWebPushService } from './qaap-web-push-service';
+import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
+import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import {
     buildAgentReviewPrompt,
@@ -349,6 +351,13 @@ export class QaapAgentTaskRunner {
 
     @inject(PreferenceService) @optional()
     protected readonly preferenceService: PreferenceService | undefined;
+
+    /** Judge routing shared with workflow runs; optional so bare test harnesses keep old behavior. */
+    @inject(QaapWorkflowRoutingPolicy) @optional()
+    protected readonly workflowRouting: QaapWorkflowRoutingPolicy | undefined;
+
+    @inject(QaapAgentHealthTracker) @optional()
+    protected readonly agentHealth: QaapAgentHealthTracker | undefined;
 
     protected readonly tasks = new Map<string, QaapAgentTask>();
     protected readonly processes = new Map<string, ChildProcess>();
@@ -2320,38 +2329,106 @@ export class QaapAgentTaskRunner {
         }
         const diff = await this.runGenericCommand('git diff HEAD', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
         const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diff.stdout });
-        let command: string;
-        try {
-            ({ command } = this.buildAgentCommand(
-                prompt,
-                agentId,
-                true,
-                resolveTaskAgentModel(task),
-                task.cwd,
-                undefined,
-                undefined,
-                'full-access',
-            ));
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            this.appendAndFireOutput(task.id, `\n[qaap] Skipping independent review: ${message}\n`);
-            return undefined;
-        }
-        const result = await this.runGenericCommand(command, task.cwd, env, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
-            header: `\n[qaap] High-risk change — starting independent ${agentId} review.\n`,
-            streamOutput: true,
-        });
-        const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
-        if (!verdict) {
+        // Composer tasks share the workflow judge's brain: routing picks an INDEPENDENT reviewer
+        // (not the agent that wrote the change), health cooldowns skip backends whose CLI is down,
+        // and an infra-failed reviewer fails over to the next candidate instead of burning the
+        // review. UX is unchanged — same streaming into the task log, same review shape.
+        const candidates = this.resolveReviewerCandidates(task);
+        let ranAnyReviewer = false;
+        let lastReviewer = agentId;
+        for (const reviewerId of candidates) {
+            if (!this.isTaskStillRunning(task.id)) {
+                return undefined;
+            }
+            lastReviewer = reviewerId;
+            let command: string;
+            try {
+                ({ command } = this.buildAgentCommand(
+                    prompt,
+                    reviewerId,
+                    true,
+                    // The task's model binding only makes sense on the task's own CLI.
+                    reviewerId === agentId ? resolveTaskAgentModel(task) : undefined,
+                    task.cwd,
+                    undefined,
+                    undefined,
+                    'full-access',
+                ));
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                this.appendAndFireOutput(task.id, `\n[qaap] Skipping reviewer ${reviewerId}: ${message}\n`);
+                continue;
+            }
+            ranAnyReviewer = true;
+            const result = await this.runGenericCommand(command, task.cwd, env, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
+                header: `\n[qaap] High-risk change — starting independent ${reviewerId} review.\n`,
+                streamOutput: true,
+            });
+            const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
+            if (verdict) {
+                this.agentHealth?.noteSuccess(reviewerId);
+                return { status: verdict.status, reason: verdict.reason, agentId: reviewerId };
+            }
+            if (result.exitCode !== 0 && !result.timedOut) {
+                // The reviewer CLI itself died (quota, auth, broken install): cool it down and try
+                // the next candidate, exactly like a failed workflow judge turn.
+                this.agentHealth?.noteFailure(reviewerId);
+                continue;
+            }
+            // Ran to completion but stayed silent, or timed out: a second reviewer would double the
+            // cost for the same fail-open outcome — keep the single-attempt behavior.
             return {
                 status: 'inconclusive',
                 reason: result.timedOut
                     ? 'Reviewer timed out before emitting a verdict.'
                     : 'Reviewer did not emit a verdict.',
-                agentId,
+                agentId: reviewerId,
             };
         }
-        return { status: verdict.status, reason: verdict.reason, agentId };
+        if (!ranAnyReviewer) {
+            // No candidate could even be started (all build failures) — same skip as before.
+            return undefined;
+        }
+        return {
+            status: 'inconclusive',
+            reason: 'Every reviewer agent failed before emitting a verdict.',
+            agentId: lastReviewer,
+        };
+    }
+
+    /**
+     * Reviewer candidates for one inline review, best first. The workflow judge routing
+     * (capability `judge`, honoring {@link QaapAgentHealthTracker} cooldowns) prefers a backend
+     * INDEPENDENT of the one that wrote the change; the task's own agent closes the list so review
+     * still happens when no routed backend is installed. Same selection a workflow judge node
+     * gets, so composer tasks and workflow runs share one routing brain.
+     */
+    protected resolveReviewerCandidates(task: QaapAgentTask): string[] {
+        const own = this.resolveTaskAgentId(task);
+        if (!this.workflowRouting) {
+            return [own];
+        }
+        const picked: string[] = [];
+        const excluded = new Set<string>();
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const routed = this.workflowRouting.resolve(
+                'judge',
+                'standard',
+                ref => !excluded.has(ref)
+                    && this.agentHealth?.isCoolingDown(ref) !== true
+                    && this.listAgents().some(agent => agent.id === ref && agent.available),
+                undefined,
+            );
+            if (!routed.agentRef) {
+                break;
+            }
+            excluded.add(routed.agentRef);
+            picked.push(routed.agentRef);
+        }
+        if (!picked.includes(own)) {
+            picked.push(own);
+        }
+        return picked.slice(0, 3);
     }
 
     protected async hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean> {

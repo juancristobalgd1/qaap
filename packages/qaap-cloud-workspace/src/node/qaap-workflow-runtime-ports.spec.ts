@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { QaapWorkflowAgentTurnNode } from '../common/qaap-workflow-ir';
 import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-registry';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
+import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { QaapWorkflowDispatchContext } from './qaap-workflow-dispatcher';
 import { QaapWorkflowAgentTurnAdapter } from './qaap-workflow-runtime-ports';
 
@@ -34,7 +35,7 @@ function buildAdapter(): Harness {
     const adapter = Object.create(QaapWorkflowAgentTurnAdapter.prototype) as QaapWorkflowAgentTurnAdapter;
     Object.assign(adapter, {
         routedAgentByTask: new Map(),
-        agentCooldownUntil: new Map(),
+        agentHealth: new QaapAgentHealthTracker(),
         routing: new QaapWorkflowRoutingPolicy(),
         prompts: new QaapWorkflowPromptRegistry(),
         store: {
