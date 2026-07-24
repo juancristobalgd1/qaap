@@ -133,10 +133,11 @@ the conformance spec asserts the graph matches the runner for each mode.
 2. Flip the live review path onto the planner. The decision is proven equivalent above for all three
    modes; the swap itself needs a backend restart to verify UX, so it is deferred to a session that
    can run it.
-3. Wire the `verify` node into the implement-then-review template with a fix-loop
-   (`verify` fail → implement-fix → `verify`, bounded by the run's visit budget), matching the
-   runner's post-implement verification. The `verify` op now has a runtime
-   (`QAAP_WORKFLOW_VERIFY_FUNCTION`: runs the resolved npm scripts, stops at the first failure); only
-   the template wiring remains.
+3. Flip `withVerify` on by default once the live swap happens. The verification fix-loop is built
+   and tested (`buildImplementThenReviewWorkflow({ withVerify: true })`: `implement` → `verify`,
+   `verify` fail → `implement-fix` → `verify`, a fix turn that cannot run ends as `verify.failed`),
+   but stays opt-in so the default graph remains exactly the one the review conformance proved.
+   Loop termination comes from the run's `maxVisitsPerNode` budget, not the graph — covered by a
+   spec that would otherwise spin forever.
 4. `shell` stays unimplemented deliberately: the deterministic node has no command channel, and
    adding one needs an injection-safe design (command from the allowlisted template, never free-form).

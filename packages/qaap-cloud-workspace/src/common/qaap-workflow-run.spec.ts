@@ -179,6 +179,28 @@ describe('advanceQaapWorkflowRun', () => {
         expect(resumed.run.bindings).to.have.property('deployed');
     });
 
+    it('terminates the verification fix-loop on the visit budget instead of spinning forever', () => {
+        const def = buildImplementThenReviewWorkflow({ withVerify: true });
+        let state: QaapWorkflowRun = startQaapWorkflowRun(def, {
+            runId: 'loop',
+            budget: { maxNodeRuns: 64, maxVisitsPerNode: 3 },
+        }).run;
+        state = advanceQaapWorkflowRun(def, state, 'implement', 'success').run;
+
+        // A verification that never goes green would otherwise cycle verify → implement-fix forever.
+        let guard = 0;
+        while (state.status === 'running' && guard++ < 40) {
+            state = advanceQaapWorkflowRun(def, state, 'verify', 'fail').run;
+            if (state.status !== 'running') {
+                break;
+            }
+            state = advanceQaapWorkflowRun(def, state, 'implement-fix', 'success').run;
+        }
+        expect(state.status).to.equal('budget-exhausted');
+        expect(state.terminationReason).to.equal('max-visits');
+        expect(state.visits.verify).to.be.at.most(3);
+    });
+
     it('ignores outcomes reported after the run finished', () => {
         const def = buildImplementThenReviewWorkflow();
         const started = startQaapWorkflowRun(def, { runId: 'r8' });

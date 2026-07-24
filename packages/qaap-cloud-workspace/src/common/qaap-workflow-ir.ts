@@ -352,8 +352,15 @@ export function buildImplementThenReviewWorkflow(options?: {
     readonly implementAgentRef?: QaapWorkflowAgentRef;
     readonly judgeAgentRef?: QaapWorkflowAgentRef;
     readonly reviewMode?: QaapWorkflowReviewMode;
+    /**
+     * Insert the runner's post-implement verification with its fix-loop
+     * (`verify` fail → `implement-fix` → `verify`). Opt-in for now: the default graph stays as the
+     * review conformance proved it, and the loop is bounded by the run's `maxVisitsPerNode` budget.
+     */
+    readonly withVerify?: boolean;
 }): QaapWorkflowDef {
     const reviewMode = options?.reviewMode ?? 'high-risk';
+    const withVerify = options?.withVerify ?? false;
     const nodes: QaapWorkflowNode[] = [
         {
             kind: 'agent-turn',
@@ -371,10 +378,38 @@ export function buildImplementThenReviewWorkflow(options?: {
         { from: 'implement', to: 'done-skip', when: 'blocked' },
     ];
 
+    // Node a successful implement hands off to: verification when enabled, else straight on.
+    const afterImplement = withVerify ? 'verify' : undefined;
+    if (withVerify) {
+        nodes.push(
+            { kind: 'deterministic', id: 'verify', op: 'verify' },
+            {
+                kind: 'agent-turn',
+                id: 'implement-fix',
+                capability: 'implement',
+                costTier: 'standard',
+                agentRef: options?.implementAgentRef,
+                isolation: 'cwd',
+                promptRef: 'fix-verification',
+            },
+            { kind: 'emit', id: 'done-unverified', bindingKey: 'verify.failed' },
+        );
+        edges.push(
+            { from: 'implement', to: 'verify', when: 'success' },
+            // Fix-loop: a failed verification re-enters an implement turn, which verifies again.
+            // Termination comes from the run budget (maxVisitsPerNode), not from the graph.
+            { from: 'verify', to: 'implement-fix', when: 'fail' },
+            { from: 'implement-fix', to: 'verify', when: 'success' },
+            // A fix turn that cannot run leaves the change unverified rather than looping forever.
+            { from: 'implement-fix', to: 'done-unverified', when: 'fail' },
+            { from: 'implement-fix', to: 'done-unverified', when: 'blocked' },
+        );
+    }
+
     if (reviewMode === 'off') {
-        // No review at all: a successful implement is the terminal skip, like the runner returning
-        // undefined when QAAP_AGENT_REVIEW is off.
-        edges.push({ from: 'implement', to: 'done-skip', when: 'success' });
+        // No review at all: a successful implement (or verification) is the terminal skip, like the
+        // runner returning undefined when QAAP_AGENT_REVIEW is off.
+        edges.push({ from: afterImplement ?? 'implement', to: 'done-skip', when: 'success' });
         return { id: 'qaap.implement-then-review', version: 1, name: 'Implement (review off)', entry: 'implement', nodes, edges };
     }
 
@@ -395,7 +430,7 @@ export function buildImplementThenReviewWorkflow(options?: {
         { kind: 'emit', id: 'done-fail', bindingKey: 'review.failed' },
         { kind: 'emit', id: 'done-inconclusive', bindingKey: 'review.inconclusive' },
     );
-    edges.push({ from: 'implement', to: 'risk-classify', when: 'success' });
+    edges.push({ from: afterImplement ?? 'implement', to: 'risk-classify', when: 'success' });
     if (reviewMode === 'all') {
         // No gate: every edited change reaches the judge, low or high risk.
         edges.push(

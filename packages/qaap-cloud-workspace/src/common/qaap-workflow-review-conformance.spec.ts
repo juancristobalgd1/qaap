@@ -113,6 +113,53 @@ describe('workflow review conformance', () => {
                 expect(validateQaapWorkflowDef(buildImplementThenReviewWorkflow({ reviewMode })))
                     .to.deep.include({ ok: true });
             });
+
+            it(`${reviewMode} mode with verification builds a valid definition`, () => {
+                expect(validateQaapWorkflowDef(buildImplementThenReviewWorkflow({ reviewMode, withVerify: true })))
+                    .to.deep.include({ ok: true });
+            });
         }
+    });
+
+    describe('verification fix-loop', () => {
+        it('is absent by default, so the proven review graph is unchanged', () => {
+            const def = buildImplementThenReviewWorkflow();
+            expect(def.nodes.some(node => node.id === 'verify')).to.equal(false);
+            expect(def.edges.some(edge => edge.from === 'implement' && edge.to === 'risk-classify')).to.equal(true);
+        });
+
+        it('routes a passing verification on to the review', () => {
+            const def = buildImplementThenReviewWorkflow({ withVerify: true });
+            const path = dryRunQaapWorkflowPath(def, {
+                implement: 'success',
+                verify: 'success',
+                'risk-classify': riskOutcome(highRiskBySize),
+                'git-diff': 'success',
+                judge: judgeOutcome(passOutput),
+            });
+            expect(path).to.deep.equal(['implement', 'verify', 'risk-classify', 'git-diff', 'judge', 'done-pass']);
+        });
+
+        it('sends a failed verification into a fix turn and back to verify', () => {
+            const def = buildImplementThenReviewWorkflow({ withVerify: true });
+            expect(def.edges).to.deep.include({ from: 'verify', to: 'implement-fix', when: 'fail' });
+            expect(def.edges).to.deep.include({ from: 'implement-fix', to: 'verify', when: 'success' });
+        });
+
+        it('ends as unverified when the fix turn itself cannot run', () => {
+            const def = buildImplementThenReviewWorkflow({ withVerify: true });
+            const path = dryRunQaapWorkflowPath(def, {
+                implement: 'success',
+                verify: 'fail',
+                'implement-fix': 'blocked',
+            });
+            expect(path[path.length - 1]).to.equal('done-unverified');
+        });
+
+        it('accepts the sequential implement and implement-fix cwd writers', () => {
+            // Both write the shared cwd but never concurrently; the fan-out check must not reject them.
+            const result = validateQaapWorkflowDef(buildImplementThenReviewWorkflow({ withVerify: true }));
+            expect(result).to.deep.equal({ ok: true, issues: [] });
+        });
     });
 });
