@@ -40,7 +40,7 @@ class FakeAgentPort implements QaapWorkflowAgentTurnPort {
         return id;
     }
 
-    lookupAgentTurn(externalId: string): { state: QaapAgentTaskState; log?: string } | undefined {
+    async lookupAgentTurn(externalId: string): Promise<{ state: QaapAgentTaskState; log?: string } | undefined> {
         return this.tasks.get(externalId);
     }
 }
@@ -57,7 +57,7 @@ class FakeJobPort implements QaapWorkflowDeterministicPort {
         return id;
     }
 
-    lookupDeterministic(externalId: string): { state: QaapJobState; result?: unknown } | undefined {
+    async lookupDeterministic(externalId: string): Promise<{ state: QaapJobState; result?: unknown } | undefined> {
         return this.jobs.get(externalId);
     }
 }
@@ -81,7 +81,7 @@ describe('QaapWorkflowDispatcher', () => {
     afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
 
     async function startRun(): Promise<string> {
-        const started = await store.start(buildImplementThenReviewWorkflow(), 'ada');
+        const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
         await dispatcher.dispatch(started.record, started.dispatch);
         return started.record.run.id;
     }
@@ -133,7 +133,7 @@ describe('QaapWorkflowDispatcher', () => {
 
     it('fails the node when the runtime refuses to start it', async () => {
         agent.failNext = true;
-        const started = await store.start(buildImplementThenReviewWorkflow(), 'ada');
+        const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
         await dispatcher.dispatch(started.record, started.dispatch);
 
         const record = store.get('ada', started.record.run.id);

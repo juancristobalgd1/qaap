@@ -29,7 +29,7 @@ describe('QaapWorkflowRunStore', () => {
     afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
 
     it('starts a run and returns the entry node to dispatch', async () => {
-        const started = await store.start(buildImplementThenReviewWorkflow(), 'Ada');
+        const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'Ada', inputs: { task: 'fix the login bug' } });
         expect(started.dispatch).to.deep.equal(['implement']);
         expect(started.record.run.status).to.equal('running');
         expect(started.record.ownerLogin).to.equal('ada');
@@ -39,7 +39,7 @@ describe('QaapWorkflowRunStore', () => {
         const invalid: QaapWorkflowDef = {
             id: 'bad', version: 1, name: 'Bad', entry: 'missing', nodes: [], edges: [],
         };
-        await store.start(invalid, 'ada').then(
+        await store.start(invalid, { cwd: '/repo', ownerLogin: 'ada' }).then(
             () => expect.fail('expected the invalid definition to be rejected'),
             error => expect(error).to.be.instanceOf(QaapWorkflowRunRequestError),
         );
@@ -47,7 +47,7 @@ describe('QaapWorkflowRunStore', () => {
     });
 
     it('advances the run across reports and records the emitted binding', async () => {
-        const started = await store.start(buildImplementThenReviewWorkflow(), 'ada');
+        const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
         const id = started.record.run.id;
         expect((await store.report('ada', id, 'implement', 'success')).dispatch).to.deep.equal(['risk-classify']);
         expect((await store.report('ada', id, 'risk-classify', 'risk:high')).dispatch).to.deep.equal(['git-diff']);
@@ -59,7 +59,7 @@ describe('QaapWorkflowRunStore', () => {
     });
 
     it('ignores a duplicate report for a node that already finished', async () => {
-        const started = await store.start(buildImplementThenReviewWorkflow(), 'ada');
+        const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
         const id = started.record.run.id;
         await store.report('ada', id, 'implement', 'success');
         const duplicate = await store.report('ada', id, 'implement', 'success');
@@ -68,7 +68,7 @@ describe('QaapWorkflowRunStore', () => {
     });
 
     it('routes an interrupted node through the graph failure edges', async () => {
-        const started = await store.start(buildImplementThenReviewWorkflow(), 'ada');
+        const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
         const id = started.record.run.id;
         const interrupted = await store.interrupt('ada', id, 'implement');
         expect(interrupted.record.run.status).to.equal('failed');
@@ -76,7 +76,7 @@ describe('QaapWorkflowRunStore', () => {
     });
 
     it('keeps runs owner-scoped', async () => {
-        const started = await store.start(buildImplementThenReviewWorkflow(), 'ada');
+        const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
         const id = started.record.run.id;
         expect(store.get('grace', id)).to.equal(undefined);
         expect(store.list('grace')).to.deep.equal([]);
@@ -88,7 +88,7 @@ describe('QaapWorkflowRunStore', () => {
     });
 
     it('restores unfinished runs from disk after a restart', async () => {
-        const started = await store.start(buildImplementThenReviewWorkflow(), 'ada');
+        const started = await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
         const id = started.record.run.id;
         await store.report('ada', id, 'implement', 'success');
 
@@ -106,8 +106,8 @@ describe('QaapWorkflowRunStore', () => {
     });
 
     it('lists unfinished runs across every owner for boot reconciliation', async () => {
-        await store.start(buildImplementThenReviewWorkflow(), 'ada');
-        await store.start(buildImplementThenReviewWorkflow(), 'grace');
+        await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
+        await store.start(buildImplementThenReviewWorkflow(), { cwd: '/repo', ownerLogin: 'grace', inputs: { task: 'fix the login bug' } });
 
         // The owner-scoped view must not be used for reconciliation: it only sees one tenant.
         expect(store.listUnfinished()).to.deep.equal([]);

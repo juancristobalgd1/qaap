@@ -40,6 +40,10 @@ export interface QaapPersistedWorkflowRun {
     readonly run: QaapWorkflowRun;
     readonly def: QaapWorkflowDef;
     readonly ownerLogin: string;
+    /** Absolute working directory every node of this run executes in. */
+    readonly cwd: string;
+    /** Values a node's `promptRef` template resolves against, e.g. the user's task text. */
+    readonly inputs: Readonly<Record<string, string>>;
     readonly createdAt: number;
     readonly updatedAt: number;
     /** Node id → its live execution. Persisted so a restart can still map events back to nodes. */
@@ -55,6 +59,15 @@ export interface QaapWorkflowDispatchResult {
     readonly record: QaapPersistedWorkflowRun;
     /** Nodes the caller must now start on the job runtime or the agent task runner. */
     readonly dispatch: readonly string[];
+}
+
+export interface QaapStartWorkflowRunOptions {
+    /** Absolute working directory every node runs in. */
+    readonly cwd: string;
+    readonly ownerLogin?: string;
+    /** Template values for `promptRef` resolution, e.g. `{ task: 'fix the login bug' }`. */
+    readonly inputs?: Readonly<Record<string, string>>;
+    readonly budget?: QaapWorkflowRunBudget;
 }
 
 export class QaapWorkflowRunRequestError extends Error { }
@@ -124,7 +137,8 @@ export class QaapWorkflowRunStore {
         return record.run.status === 'running' || record.run.status === 'awaiting-human';
     }
 
-    start(def: QaapWorkflowDef, ownerLogin?: string, budget?: QaapWorkflowRunBudget): Promise<QaapWorkflowDispatchResult> {
+    start(def: QaapWorkflowDef, options: QaapStartWorkflowRunOptions): Promise<QaapWorkflowDispatchResult> {
+        const { ownerLogin, budget } = options;
         return this.mutate(records => {
             const validation = validateQaapWorkflowDef(def);
             if (!validation.ok) {
@@ -146,6 +160,8 @@ export class QaapWorkflowRunStore {
                 run: started.run,
                 def,
                 ownerLogin: owner,
+                cwd: options.cwd,
+                inputs: options.inputs ?? {},
                 createdAt: now,
                 updatedAt: now,
                 dispatched: {},
@@ -266,9 +282,14 @@ export class QaapWorkflowRunStore {
         this.records.clear();
         for (const record of parsed.runs) {
             if (record?.run?.id && record.def) {
-                // `dispatched` was added after the first runs were written; default it rather than
-                // dropping otherwise valid rows.
-                this.records.set(record.run.id, { ...record, dispatched: record.dispatched ?? {} });
+                // `dispatched`, `cwd` and `inputs` were added after the first runs were written;
+                // default them rather than dropping otherwise valid rows.
+                this.records.set(record.run.id, {
+                    ...record,
+                    dispatched: record.dispatched ?? {},
+                    cwd: record.cwd ?? '',
+                    inputs: record.inputs ?? {},
+                });
             }
         }
     }

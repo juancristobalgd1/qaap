@@ -13,7 +13,6 @@
  * budgets or restart recovery are duplicated here.
  */
 
-import { injectable } from '@theia/core/shared/inversify';
 import { QaapAgentTaskState } from '../common/qaap-agent-task';
 import { QaapJobState } from '../common/qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowDeterministicNode, QaapWorkflowNode } from '../common/qaap-workflow-ir';
@@ -30,13 +29,13 @@ export interface QaapWorkflowAgentTurnPort {
     /** Start a coding-agent turn and return its task id. */
     startAgentTurn(node: QaapWorkflowAgentTurnNode, context: QaapWorkflowDispatchContext): Promise<string>;
     /** Current state of a task, or undefined when the runtime no longer knows it. */
-    lookupAgentTurn(externalId: string): { readonly state: QaapAgentTaskState; readonly log?: string } | undefined;
+    lookupAgentTurn(externalId: string): Promise<{ readonly state: QaapAgentTaskState; readonly log?: string } | undefined>;
 }
 
 export interface QaapWorkflowDeterministicPort {
     /** Start a deterministic step and return its job id. */
     startDeterministic(node: QaapWorkflowDeterministicNode, context: QaapWorkflowDispatchContext): Promise<string>;
-    lookupDeterministic(externalId: string): { readonly state: QaapJobState; readonly result?: unknown } | undefined;
+    lookupDeterministic(externalId: string): Promise<{ readonly state: QaapJobState; readonly result?: unknown } | undefined>;
 }
 
 export interface QaapWorkflowPorts {
@@ -47,7 +46,7 @@ export interface QaapWorkflowPorts {
 /** Node kinds the dispatcher cannot start: they are resolved by the graph or by a person. */
 const NON_DISPATCHABLE: ReadonlySet<QaapWorkflowNode['kind']> = new Set(['emit', 'join', 'human-gate', 'router']);
 
-@injectable()
+/** Constructed by the backend module through {@code toDynamicValue}; the ports are adapters. */
 export class QaapWorkflowDispatcher {
 
     constructor(
@@ -126,7 +125,7 @@ export class QaapWorkflowDispatcher {
             for (const entry of Object.values(record.dispatched)) {
                 const node = record.def.nodes.find(candidate => candidate.id === entry.nodeId);
                 if (entry.kind === 'agent' && node?.kind === 'agent-turn') {
-                    const task = this.ports.agent.lookupAgentTurn(entry.externalId);
+                    const task = await this.ports.agent.lookupAgentTurn(entry.externalId);
                     if (!task) {
                         await this.store.interrupt(record.ownerLogin, record.run.id, entry.nodeId).then(
                             result => this.dispatch(result.record, result.dispatch),
@@ -138,7 +137,7 @@ export class QaapWorkflowDispatcher {
                     }
                     continue;
                 }
-                const job = this.ports.deterministic.lookupDeterministic(entry.externalId);
+                const job = await this.ports.deterministic.lookupDeterministic(entry.externalId);
                 if (!job) {
                     await this.store.interrupt(record.ownerLogin, record.run.id, entry.nodeId).then(
                         result => this.dispatch(result.record, result.dispatch),

@@ -68,6 +68,15 @@ import {
     QaapJobFunctionContribution,
     QaapJobFunctionRegistry,
 } from './qaap-job-function-registry';
+import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-registry';
+import { QaapWorkflowDispatcher } from './qaap-workflow-dispatcher';
+import { QaapWorkflowJobFunctions } from './qaap-workflow-job-functions';
+import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import {
+    QaapWorkflowAgentTurnAdapter,
+    QaapWorkflowDeterministicAdapter,
+} from './qaap-workflow-runtime-ports';
+import { QaapWorkflowService } from './qaap-workflow-service';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
     // Confine HTTP file uploads to the caller's workspace (auth + ownership); the upstream
@@ -97,6 +106,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapJobFunctionRegistry).toSelf().inSingletonScope();
     bind(QaapBuiltinJobFunctions).toSelf().inSingletonScope();
     bind(QaapJobFunctionContribution).toService(QaapBuiltinJobFunctions);
+    bind(QaapWorkflowJobFunctions).toSelf().inSingletonScope();
+    bind(QaapJobFunctionContribution).toService(QaapWorkflowJobFunctions);
     bind(QaapJobRuntime).toSelf().inSingletonScope();
     bind(QaapJobEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapJobEndpoint);
@@ -112,6 +123,22 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapJobLoopTriggerService).toSelf().inSingletonScope();
     bind(QaapJobLoopTriggerEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapJobLoopTriggerEndpoint);
+
+    // Dynamic Workflows (ADR-001). Inert until a run is started: the service only reacts to
+    // terminal events for tasks and jobs that belong to a workflow run.
+    bind(QaapWorkflowPromptRegistry).toSelf().inSingletonScope();
+    bind(QaapWorkflowRunStore).toSelf().inSingletonScope();
+    bind(QaapWorkflowAgentTurnAdapter).toSelf().inSingletonScope();
+    bind(QaapWorkflowDeterministicAdapter).toSelf().inSingletonScope();
+    bind(QaapWorkflowDispatcher).toDynamicValue(({ container }) => new QaapWorkflowDispatcher(
+        container.get(QaapWorkflowRunStore),
+        {
+            agent: container.get(QaapWorkflowAgentTurnAdapter),
+            deterministic: container.get(QaapWorkflowDeterministicAdapter),
+        },
+    )).inSingletonScope();
+    bind(QaapWorkflowService).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapWorkflowService);
     bind(QaapPreviewSupervisor).toSelf().inSingletonScope();
     bind(QaapTerminalSessionStore).toSelf().inSingletonScope();
     bind(QaapPreviewShareProxyContribution).toSelf().inSingletonScope();
