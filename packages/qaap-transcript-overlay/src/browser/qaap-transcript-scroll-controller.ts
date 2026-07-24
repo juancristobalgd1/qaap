@@ -84,6 +84,9 @@ type TranscriptScrollReconcileIntent =
     | { readonly kind: 'follow-tail' }
     | { readonly kind: 'preserve-anchor'; readonly anchor: TranscriptScrollAnchor; readonly settlePass?: boolean };
 
+/** Distance from the live edge that still counts as "glued" for follow writes. */
+const FOLLOW_BOTTOM_LATCH_EPSILON_PX = 24;
+
 export class TranscriptScrollController {
     protected currentPhase: TranscriptScrollPhase = 'idle';
     protected currentConversationId: string | undefined;
@@ -92,6 +95,11 @@ export class TranscriptScrollController {
     protected reconcileScroller: HTMLElement | undefined;
     protected reconcileIntent: TranscriptScrollReconcileIntent | undefined;
     protected reconcileNeedsSettlePass = false;
+    /**
+     * High-water scrollHeight while glued to the live edge. Shrinks that do not
+     * exceed this height must not trigger a chase write (grow→scroll→shrink→clamp bounce).
+     */
+    protected followBottomLatchedScrollHeight = 0;
 
     constructor(protected readonly primaryScroller: HTMLElement) { }
 
@@ -112,6 +120,7 @@ export class TranscriptScrollController {
     }
 
     notifyUserDetach(reason?: string): void {
+        this.clearFollowBottomLatch();
         this.transition({ type: 'user-detach', reason });
     }
 
@@ -120,12 +129,18 @@ export class TranscriptScrollController {
         this.primaryScroller.removeAttribute(TRANSCRIPT_USER_SCROLL_INTENT_REASON_ATTR);
         document.getSelection()?.removeAllRanges();
         this.cancelPendingPreserveAnchor();
+        this.clearFollowBottomLatch();
         this.transition({ type: 'jump-to-latest' });
     }
 
     beginConversation(conversationId: string): void {
         this.currentConversationId = conversationId;
+        this.clearFollowBottomLatch();
         this.transition({ type: 'conversation-open' });
+    }
+
+    protected clearFollowBottomLatch(): void {
+        this.followBottomLatchedScrollHeight = 0;
     }
 
     /** Bind conversation identity without resetting follow/detach phase. */
@@ -244,6 +259,7 @@ export class TranscriptScrollController {
         if (!transcriptScrollPhaseAllowsViewportMutation(this.currentPhase, 'follow-tail')) {
             return;
         }
+        const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
         // Already glued to the live edge — skip the write so activity-row /
         // virtual-list height thrash cannot chase scrollTop up and down.
         if (behavior === 'auto' && isTranscriptAtMaxScroll(
@@ -251,11 +267,30 @@ export class TranscriptScrollController {
             scroller.clientHeight,
             scroller.scrollHeight,
         )) {
+            this.followBottomLatchedScrollHeight = Math.max(
+                this.followBottomLatchedScrollHeight,
+                scroller.scrollHeight,
+            );
+            this.markProgrammaticScroll(DEFAULT_PROGRAMMATIC_SCROLL_MS);
+            return;
+        }
+        // Shrink while following: browser already clamped scrollTop. Chasing the
+        // smaller max recreates the grow→scroll→shrink→clamp bounce.
+        if (
+            behavior === 'auto'
+            && this.followBottomLatchedScrollHeight > 0
+            && scroller.scrollHeight <= this.followBottomLatchedScrollHeight
+            && (maxScrollTop - scroller.scrollTop) <= FOLLOW_BOTTOM_LATCH_EPSILON_PX
+        ) {
             this.markProgrammaticScroll(DEFAULT_PROGRAMMATIC_SCROLL_MS);
             return;
         }
         this.markProgrammaticScroll(behavior === 'smooth' ? SMOOTH_PROGRAMMATIC_SCROLL_MS : DEFAULT_PROGRAMMATIC_SCROLL_MS);
-        scroller.scrollTo({ top: scroller.scrollHeight, behavior });
+        scroller.scrollTo({ top: maxScrollTop, behavior });
+        this.followBottomLatchedScrollHeight = Math.max(
+            this.followBottomLatchedScrollHeight,
+            scroller.scrollHeight,
+        );
     }
 
     /** Place a turn near the top with prior context (open/restore or gated position-turn). */
@@ -284,13 +319,30 @@ export class TranscriptScrollController {
 
     onContentChanged(scroller: HTMLElement): void {
         this.cancelPendingPreserveAnchor();
-        if (this.shouldFollowTail() && isTranscriptAtMaxScroll(
+        if (!this.shouldFollowTail()) {
+            return;
+        }
+        const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        const distanceFromBottom = maxScrollTop - scroller.scrollTop;
+        if (isTranscriptAtMaxScroll(
             scroller.scrollTop,
             scroller.clientHeight,
             scroller.scrollHeight,
         )) {
             // Content did not push us off the live edge (shrink / no-op patch).
-            // Avoid a redundant RAF scrollTo that fights layout settle.
+            this.followBottomLatchedScrollHeight = Math.max(
+                this.followBottomLatchedScrollHeight,
+                scroller.scrollHeight,
+            );
+            this.markProgrammaticScroll(DEFAULT_PROGRAMMATIC_SCROLL_MS);
+            return;
+        }
+        if (
+            this.followBottomLatchedScrollHeight > 0
+            && scroller.scrollHeight <= this.followBottomLatchedScrollHeight
+            && distanceFromBottom <= FOLLOW_BOTTOM_LATCH_EPSILON_PX
+        ) {
+            // Transient shrink under the latched high-water — stay put.
             this.markProgrammaticScroll(DEFAULT_PROGRAMMATIC_SCROLL_MS);
             return;
         }

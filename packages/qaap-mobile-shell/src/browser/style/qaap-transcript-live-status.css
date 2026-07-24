@@ -68,16 +68,12 @@
 
 /*
  * Setup / waiting activity row: when the scroller-tail live-status is present,
- * hide the duplicate orb+label in the scrollport (keep timeout banners if present).
+ * hide only the duplicate orb+label chrome. Do NOT `display:none` the whole
+ * activity host — that swings scrollHeight and bounces follow-tail.
  */
 .theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status)
   .theia-mobile-agent-activity > .qaap-agent-setup,
 .theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status)
   .theia-mobile-agent-activity > .theia-mobile-agent-stream-line {
-  display: none !important;
-}
-
-.theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status)
-  .theia-mobile-agent-activity:not(:has(.theia-mobile-agent-stream-timeout-banner)) {
   display: none !important;
 }

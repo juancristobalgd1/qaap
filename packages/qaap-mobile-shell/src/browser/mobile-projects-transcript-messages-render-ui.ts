@@ -853,13 +853,13 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             }
             scroll.completeRestore();
         } else {
-            // Following after replaceChildren: pin synchronously before paint so the
-            // viewport does not flash at scrollTop 0 for a frame.
+            // Following after replaceChildren: one follow path only (no sync scrollTop
+            // plus RAF — that double-write flashes when live-status remounts).
             if (shouldFollowTail) {
-                scroll.markProgrammaticScroll();
-                messageHost.scrollTop = messageHost.scrollHeight;
+                this.scrollTranscriptFollowTail(messageHost);
+            } else {
+                this.scheduleTranscriptScrollAfterMutation(messageHost, anchor);
             }
-            this.scheduleTranscriptScrollAfterMutation(messageHost, anchor);
         }
         this.attachTranscriptScrollChrome(host, messageHost, conv);
     }

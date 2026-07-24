@@ -2420,8 +2420,16 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 this.pinnedLiveStatusPeakTokens = 0;
                 return;
             }
-            removeNestedTranscriptLiveStatusCopies(chatHost);
-            ensureTranscriptLiveStatusAtScrollerTail(chatHost, footer);
+            const nestedLeak = chatHost.querySelector(
+                `.theia-mobile-agent-transcript .theia-mobile-agent-transcript-msg .${TRANSCRIPT_LIVE_STATUS_CLASS}, `
+                + `.theia-mobile-agent-transcript .theia-mobile-agent-transcript-segments .${TRANSCRIPT_LIVE_STATUS_CLASS}`,
+            );
+            if (nestedLeak) {
+                removeNestedTranscriptLiveStatusCopies(chatHost);
+            }
+            if (scroller.lastElementChild !== footer) {
+                ensureTranscriptLiveStatusAtScrollerTail(chatHost, footer);
+            }
             const latestSegments = [...resolveTranscriptStreamingAgentSegments(latestConv)];
             const stalled = options?.stalled ?? this.resolveTranscriptStreamStalled(latestConv);
             const timedOut = options?.timedOut ?? this.resolveTranscriptStreamTimedOut(latestConv);

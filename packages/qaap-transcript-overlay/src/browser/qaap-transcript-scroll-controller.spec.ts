@@ -89,7 +89,7 @@ describe('qaap-transcript-scroll-controller', () => {
         controller.jumpToLatest();
         expect(controller.phase).to.equal('following');
         controller.scrollToTail(scroller, 'auto');
-        expect(writtenTop).to.equal(400);
+        expect(writtenTop).to.equal(300); // maxScrollTop = scrollHeight - clientHeight
     });
 
     it('user detach then jump-to-latest re-enables following', () => {
@@ -265,7 +265,68 @@ describe('qaap-transcript-scroll-controller', () => {
             globalThis.requestAnimationFrame = previousRaf;
         }
         expect(scrollToCalls).to.equal(1);
-        expect(scrollTop).to.equal(520);
+        expect(scrollTop).to.equal(420); // scrollHeight - clientHeight
+    });
+
+    it('follow-tail ignores shrink under the latched high-water then writes on next grow', () => {
+        const scroller = document.createElement('div');
+        let scrollTop = 300;
+        let scrollHeight = 400;
+        let scrollToCalls = 0;
+        Object.defineProperties(scroller, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: {
+                configurable: true,
+                get: () => scrollHeight,
+            },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    scrollToCalls++;
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.jumpToLatest();
+        const pendingRafs: FrameRequestCallback[] = [];
+        const previousRaf = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            pendingRafs.push(callback);
+            return pendingRafs.length;
+        };
+        try {
+            // Grow off the live edge → one follow write.
+            scrollHeight = 520;
+            controller.onContentChanged(scroller);
+            pendingRafs.splice(0).forEach(callback => callback(0));
+            expect(scrollToCalls).to.equal(1);
+            expect(scrollTop).to.equal(420);
+
+            // Transient shrink (activity hide / live-status re-tail) — no chase write.
+            scrollHeight = 480;
+            scrollTop = 380; // browser clamp toward new max
+            controller.onContentChanged(scroller);
+            expect(pendingRafs).to.have.length(0);
+            expect(scrollToCalls).to.equal(1);
+
+            // Real growth past the latch → one more write.
+            scrollHeight = 600;
+            controller.onContentChanged(scroller);
+            expect(pendingRafs).to.have.length(1);
+            pendingRafs.splice(0).forEach(callback => callback(0));
+            expect(scrollToCalls).to.equal(2);
+            expect(scrollTop).to.equal(500);
+        } finally {
+            globalThis.requestAnimationFrame = previousRaf;
+        }
     });
 
     it('coalesces competing follow and preserve intents into a single follow write', () => {
@@ -318,6 +379,6 @@ describe('qaap-transcript-scroll-controller', () => {
             globalThis.cancelAnimationFrame = previousCancel;
         }
         expect(scrollToCalls).to.equal(1);
-        expect(scrollTop).to.equal(900);
+        expect(scrollTop).to.equal(500); // scrollHeight - clientHeight
     });
 });
