@@ -392,10 +392,13 @@ describe('Multi-tenancy isolation', () => {
                 store: {
                     create: (req: { cwd: string }) => {
                         state.storeCwd = req.cwd;
-                        return { id: 'g', cwd: req.cwd };
+                        return { id: 'g', cwd: req.cwd, status: 'running', createdAt: Date.now() };
                     },
+                    listRunning: () => [],
+                    ownerOf: () => userA,
                 },
                 runner: { start: () => undefined },
+                maxConcurrentResearch: () => 2,
             });
             return {
                 endpoint,
