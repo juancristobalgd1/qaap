@@ -55,11 +55,24 @@ function readComposerLiftPx(_mountHost: HTMLElement): number {
     return 0;
 }
 
-/** Scroll to the transcript tail; re-apply after layout settles (streaming / smooth scroll). */
+/**
+ * Scroll to the transcript tail; re-apply after layout settles (streaming / smooth scroll).
+ *
+ * The follow-up snaps are deferred (rAF, `scrollend`, and a timeout that lands ~480ms later),
+ * so by the time they run the reader may already have scrolled away. Firing them
+ * unconditionally drags the viewport back to the tail — a jump the reader did not ask for, up
+ * to the full height of the transcript, triggered by nothing more than scrolling shortly after
+ * a jump-to-latest. Each snap therefore re-checks that the reader is still following; any user
+ * gesture detaches the controller and silently cancels the rest.
+ */
 function scrollTranscriptToEnd(scroller: HTMLElement): void {
+    const scrollController = ensureTranscriptScrollController(scroller);
     const behavior = resolveScrollBehavior('smooth');
     scrollElementToEnd(scroller, behavior);
     const snapToEnd = (): void => {
+        if (!scrollController.shouldFollowTail()) {
+            return;
+        }
         scrollElementToEnd(scroller, 'auto');
     };
     if ('onscrollend' in scroller) {
