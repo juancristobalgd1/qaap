@@ -19,6 +19,7 @@ import {
     QaapAgentConversation,
     QaapAgentConversationCwdGroup,
     QaapAgentConversationEvent,
+    QaapAgentConversationStatus,
     QaapAgentConversationSummary,
     QaapAgentMessage,
     QaapContextCompaction,
@@ -160,6 +161,13 @@ const VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION = 40;
 /** Recorded tours are short (seconds), but webm still dwarfs PNGs — cap them separately. */
 const VISUAL_EVIDENCE_MAX_VIDEO_BYTES = 25 * 1024 * 1024;
 /** How often the turn watchdog scans for conversations stuck 'streaming' past the max duration. */
+/**
+ * How many agent runs may stream at once inside a single conversation (in-session multitasking).
+ * They share one working tree, so this is deliberately small: it is a guard against fan-out, not
+ * a capacity target.
+ */
+export const MAX_CONCURRENT_CONVERSATION_RUNS = 3;
+
 const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 
 /**
@@ -322,6 +330,63 @@ export class QaapAgentConversationStore {
         return undefined;
     }
 
+    /**
+     * Every run currently streaming into this conversation. A conversation used to hold at most
+     * one, but in-session multitasking lets the user start a second agent while the first still
+     * works, so anything that reasons about "the turn" has to reason about a set instead.
+     */
+    getActiveTaskIdsForConversation(conversationId: string): string[] {
+        const taskIds: string[] = [];
+        for (const [taskId, ref] of this.taskToConversation) {
+            if (ref.conversationId === conversationId) {
+                taskIds.push(taskId);
+            }
+        }
+        return taskIds;
+    }
+
+    /** True while another run of the same conversation is still streaming. */
+    protected hasOtherActiveTaskForConversation(conversationId: string, exceptTaskId: string): boolean {
+        for (const [taskId, ref] of this.taskToConversation) {
+            if (ref.conversationId === conversationId && taskId !== exceptTaskId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when another live task owns the same user turn — the model-fallback retry replaces a
+     * task for one user message, and only in that case is the old task's outcome stale. A peer
+     * run started by the user (different user message) is NOT superseding anything.
+     */
+    protected hasActiveTaskForUserMessage(
+        conversationId: string,
+        userMessageId: string,
+        exceptTaskId: string,
+    ): boolean {
+        for (const [taskId, ref] of this.taskToConversation) {
+            if (taskId !== exceptTaskId
+                && ref.conversationId === conversationId
+                && ref.userMessageId === userMessageId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The status a conversation takes when one run settles: while peers are still working the
+     * conversation stays `streaming`, so a finished run never switches off the whole session.
+     */
+    protected settleStatusForRun(
+        conversationId: string,
+        finishedTaskId: string,
+        settled: QaapAgentConversationStatus,
+    ): QaapAgentConversationStatus {
+        return this.hasOtherActiveTaskForConversation(conversationId, finishedTaskId) ? 'streaming' : settled;
+    }
+
     create(request: QaapCreateAgentConversationRequest, ownerLogin?: string): QaapAgentConversation {
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
@@ -401,16 +466,23 @@ export class QaapAgentConversationStore {
             throw new Error('Conversation not found.');
         }
         if (conv.status === 'streaming') {
-            if (!isConversationTurnVisuallySettled(conv)) {
-                throw new Error('A turn is already in progress for this conversation.');
+            // In-session multitasking: a new user message no longer waits for (or cancels) the
+            // turn in flight — it spawns a peer run that streams into its own agent message
+            // alongside the others. The cap is what keeps one conversation from fanning out
+            // into an unbounded number of agents over the same working tree.
+            const activeTaskIds = this.getActiveTaskIdsForConversation(id);
+            if (activeTaskIds.length === 0) {
+                // 'streaming' with no live run is a stale turn (backend restart, lost task):
+                // recover to idle instead of refusing the message forever.
+                conv = { ...conv, status: 'idle', updatedAt: Date.now() };
+                this.conversations.set(id, conv);
+                this.fire({ type: 'updated', conversation: toConversationSummary(conv) });
+            } else if (activeTaskIds.length >= MAX_CONCURRENT_CONVERSATION_RUNS) {
+                throw new Error(
+                    `This conversation already has ${activeTaskIds.length} agent runs in progress `
+                    + `(max ${MAX_CONCURRENT_CONVERSATION_RUNS}).`,
+                );
             }
-            const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
-            if (lastUser?.taskId) {
-                this.taskRunner.cancel(lastUser.taskId);
-            }
-            conv = { ...conv, status: 'idle', updatedAt: Date.now() };
-            this.conversations.set(id, conv);
-            this.fire({ type: 'updated', conversation: toConversationSummary(conv) });
         }
         const turnAgentId = this.resolveTurnAgent(conv, content, agentOverride);
         const userMessage: QaapAgentMessage = {
@@ -561,25 +633,43 @@ export class QaapAgentConversationStore {
         if (!conv) {
             return undefined;
         }
+        // Stop is session-wide: with in-session multitasking there can be several runs streaming
+        // at once, and cancelling only the newest would leave the others working behind a UI that
+        // says the session is idle. Every live run is cancelled and every open agent message
+        // finalized; the last-user-message fallback keeps pre-multitasking conversations working.
+        const activeRefs = this.getActiveTaskIdsForConversation(id)
+            .map(taskId => ({ taskId, ref: this.taskToConversation.get(taskId) }));
         const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
-        const turnRef = lastUser?.taskId ? this.taskToConversation.get(lastUser.taskId) : undefined;
-        if (lastUser?.taskId) {
-            this.taskRunner.cancel(lastUser.taskId);
-            for (const subtask of collectSubtasksForLeader(lastUser.taskId, this.taskRunner.list())) {
+        const cancelTaskIds = activeRefs.length > 0
+            ? activeRefs.map(entry => entry.taskId)
+            : (lastUser?.taskId ? [lastUser.taskId] : []);
+        for (const taskId of cancelTaskIds) {
+            this.taskRunner.cancel(taskId);
+            for (const subtask of collectSubtasksForLeader(taskId, this.taskRunner.list())) {
                 if (subtask.state === 'running') {
                     this.taskRunner.cancel(subtask.id);
                 }
             }
         }
-        const agentMessageId = turnRef?.agentMessageId
-            ?? (conv.messages[conv.messages.length - 1]?.role === 'agent'
-                ? conv.messages[conv.messages.length - 1].id
-                : undefined);
-        let next = this.appendRunCancelledTrace(conv, agentMessageId, 'Turn cancelled.');
-        next = this.finalizeStreamingAgentMessage(next, agentMessageId, 'Turn cancelled.');
+        const fallbackAgentMessageId = conv.messages[conv.messages.length - 1]?.role === 'agent'
+            ? conv.messages[conv.messages.length - 1].id
+            : undefined;
+        const agentMessageIds = activeRefs.length > 0
+            ? activeRefs.map(entry => entry.ref?.agentMessageId).filter((value): value is string => !!value)
+            : [];
+        if (agentMessageIds.length === 0 && fallbackAgentMessageId) {
+            agentMessageIds.push(fallbackAgentMessageId);
+        }
+        let next = conv;
+        for (const messageId of agentMessageIds) {
+            next = this.appendRunCancelledTrace(next, messageId, 'Turn cancelled.');
+            next = this.finalizeStreamingAgentMessage(next, messageId, 'Turn cancelled.');
+        }
         next = { ...next, status: 'idle', updatedAt: Date.now() };
         this.conversations.set(id, next);
-        this.publishFinalizedAgentMessage(id, next, agentMessageId);
+        for (const messageId of agentMessageIds) {
+            this.publishFinalizedAgentMessage(id, next, messageId);
+        }
         this.fire({ type: 'updated', conversation: toConversationSummary(next) });
         void this.persist();
         return next;
@@ -1557,12 +1647,11 @@ export class QaapAgentConversationStore {
         if (!convSnapshot) {
             return;
         }
-        // Defense-in-depth: a newer turn may have superseded this task (e.g. the user sent a new
-        // message that cancelled this one). This task's taskToConversation entry is already removed
-        // by the time we get here, so a *different* active task id means this outcome is stale —
-        // drop it rather than clobber the live turn's status/message.
-        const supersedingTaskId = this.getActiveTaskIdForConversation(conversationId);
-        if (supersedingTaskId && supersedingTaskId !== task.id) {
+        // Defense-in-depth: a newer task may have superseded this one — but only when it took
+        // over the SAME user turn (that is what the model-fallback retry does). Peer runs started
+        // by the user carry a different user message and are not superseding anything, so with
+        // in-session multitasking "some other task is active" can no longer mean "stale".
+        if (this.hasActiveTaskForUserMessage(conversationId, userMessageId, task.id)) {
             this.agentStreamByTaskId.delete(task.id);
             this.agUiStreamByTaskId.delete(task.id);
             return;
@@ -1574,7 +1663,7 @@ export class QaapAgentConversationStore {
         if (!conv) {
             return;
         }
-        const withUsageBaseline: QaapAgentConversation = {
+        let withUsageBaseline: QaapAgentConversation = {
             ...conv,
             contextUsage: usageFinalized.contextUsage,
             contextUsageEstimated: usageFinalized.contextUsageEstimated,
@@ -1584,12 +1673,30 @@ export class QaapAgentConversationStore {
             const cancelledReason = 'Turn cancelled.';
             const withCancelledTrace = this.appendRunCancelledTrace(withUsageBaseline, agentMessageId, cancelledReason);
             const finalized = this.finalizeStreamingAgentMessage(withCancelledTrace, agentMessageId, cancelledReason);
-            const next: QaapAgentConversation = { ...finalized, status: 'idle', updatedAt: Date.now() };
+            const next: QaapAgentConversation = {
+                ...finalized,
+                status: this.settleStatusForRun(conversationId, task.id, 'idle'),
+                updatedAt: Date.now(),
+            };
             this.publishFinalizedAgentMessage(conversationId, next, agentMessageId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, next);
             return;
         }
         const detail = await this.taskRunner.detail(task.id);
+        // Re-read across the await: with in-session multitasking a PEER run can stream into this
+        // same conversation while we wait for the task detail, and everything below derives what
+        // it writes back from this baseline. Keeping the pre-await snapshot would silently drop
+        // the other agent's output (read-modify-write over one shared conversation record).
+        const latest = this.conversations.get(conversationId);
+        if (!latest) {
+            return;
+        }
+        withUsageBaseline = {
+            ...latest,
+            contextUsage: usageFinalized.contextUsage,
+            contextUsageEstimated: usageFinalized.contextUsageEstimated,
+            contextWindowSize: usageFinalized.contextWindowSize,
+        };
         const log = this.filterAgentLogChunk((detail?.log ?? '').trim());
         const streamingAgent = agentMessageId
             ? withUsageBaseline.messages.find(message => message.id === agentMessageId)
@@ -1639,6 +1746,7 @@ export class QaapAgentConversationStore {
                 agentMessageId,
                 reason,
                 failureBody,
+                status: this.settleStatusForRun(conversationId, task.id, 'failed'),
             });
             const resolvedAgentMessageId = failed.agentMessageId ?? agentMessageId;
             const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
@@ -1657,7 +1765,12 @@ export class QaapAgentConversationStore {
                 })
                 : message
             );
-            withReply = { ...withUsageBaseline, status: 'idle', updatedAt: Date.now(), messages };
+            withReply = {
+                ...withUsageBaseline,
+                status: this.settleStatusForRun(conversationId, task.id, 'idle'),
+                updatedAt: Date.now(),
+                messages,
+            };
         } else if (agentMessageId) {
             const messages = withUsageBaseline.messages.map(message => {
                 if (message.id !== agentMessageId || message.role !== 'agent') {
@@ -1668,11 +1781,19 @@ export class QaapAgentConversationStore {
                     : message;
                 return materializeAgentMessageForApi(syncSettledTraceEventsOnMessage(backfilled));
             });
-            withReply = { ...withUsageBaseline, status: 'idle', updatedAt: Date.now(), messages };
+            withReply = {
+                ...withUsageBaseline,
+                status: this.settleStatusForRun(conversationId, task.id, 'idle'),
+                updatedAt: Date.now(),
+                messages,
+            };
         } else {
             const displayText = log ? resolveAgentLogDisplayText(conv.agentId, log) : '';
             const body = structuredParsed?.content?.trim() || displayText || '(agent produced no output)';
-            const reply = this.appendAgentReply({ ...withUsageBaseline, status: 'idle' }, body);
+            const reply = this.appendAgentReply(
+                { ...withUsageBaseline, status: this.settleStatusForRun(conversationId, task.id, 'idle') },
+                body,
+            );
             if (structuredParsed?.segments?.length) {
                 const messages = reply.messages.map((message, index, all) => {
                     if (index === all.length - 1 && message.role === 'agent') {
@@ -1712,6 +1833,7 @@ export class QaapAgentConversationStore {
                 userMessageId,
                 agentMessageId: settledAgentMessage.id,
                 reason,
+                status: this.settleStatusForRun(conversationId, task.id, 'failed'),
             });
             const resolvedAgentMessageId = failed.agentMessageId ?? settledAgentMessage.id;
             const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
@@ -2038,6 +2160,12 @@ export class QaapAgentConversationStore {
             readonly agentMessageId?: string;
             readonly reason: string;
             readonly failureBody?: string;
+            /**
+             * Conversation status to land on. Defaults to `failed`; a run that dies while peer
+             * runs of the same conversation keep working passes `streaming` so the failure stays
+             * scoped to its own message instead of switching off the whole session.
+             */
+            readonly status?: QaapAgentConversationStatus;
         },
     ): { readonly conv: QaapAgentConversation; readonly agentMessageId?: string } {
         let agentMessageId = options.agentMessageId;
@@ -2070,7 +2198,7 @@ export class QaapAgentConversationStore {
         return {
             conv: {
                 ...conv,
-                status: 'failed',
+                status: options.status ?? 'failed',
                 updatedAt: Date.now(),
                 messages,
             },
