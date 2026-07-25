@@ -96,6 +96,7 @@ import {
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
+import { diffSensitiveFiles, hashSensitiveFiles } from './qaap-sensitive-files';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import {
     buildAgentReviewPrompt,
@@ -2317,18 +2318,27 @@ export class QaapAgentTaskRunner {
         }
         const numstat = await this.runGenericCommand('git diff --numstat HEAD', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
         const untracked = await this.runGenericCommand('git ls-files --others --exclude-standard', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
+        // Gitignored secrets files never appear in either git listing; a rewritten .env must both
+        // count as a change and trip the sensitive-path high-risk signal.
+        const sensitiveChanges = this.changedSensitiveFiles(task);
         const changedFiles = [
             ...parseGitNumstat(numstat.stdout),
             // Untracked (new) files never show in `diff HEAD` — count them for the file-count and
             // sensitive-path signals; their line counts are unknown and stay at 0.
             ...untracked.stdout.split('\n').map(line => line.trim()).filter(Boolean)
                 .map(path => ({ path, added: 0, removed: 0 })),
+            ...sensitiveChanges.map(path => ({ path, added: 0, removed: 0 })),
         ];
         if (mode === 'high-risk' && resolveTaskReviewRisk(changedFiles) === 'low') {
             return undefined;
         }
         const diff = await this.runGenericCommand('git diff HEAD', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
-        const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diff.stdout });
+        // Name the secrets files the diff cannot show, so the reviewer inspects them read-only
+        // instead of judging a change it cannot see. Contents are never inlined.
+        const diffForReview = sensitiveChanges.length > 0
+            ? `${diff.stdout}\n# gitignored sensitive files CHANGED by this task (not shown above — inspect them):\n${sensitiveChanges.map(name => `#   ${name}`).join('\n')}\n`
+            : diff.stdout;
+        const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diffForReview });
         // Composer tasks share the workflow judge's brain: routing picks an INDEPENDENT reviewer
         // (not the agent that wrote the change), health cooldowns skip backends whose CLI is down,
         // and an infra-failed reviewer fails over to the next candidate instead of burning the
@@ -2432,6 +2442,11 @@ export class QaapAgentTaskRunner {
     }
 
     protected async hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean> {
+        // Gitignored secrets files first: both git baselines below are blind to them, and a task
+        // whose only "edit" is rewriting a .env must still enter verification and review.
+        if (this.changedSensitiveFiles(task).length > 0) {
+            return true;
+        }
         // Prefer the content fingerprint when both snapshots exist — it sees untracked content edits
         // that porcelain cannot. Never fall back to "any dirty path" once a baseline was captured:
         // that re-attributes the user's pre-existing dirty files to the agent.
@@ -2463,13 +2478,24 @@ export class QaapAgentTaskRunner {
      * Capture both the content fingerprint and a normalized porcelain snapshot before the agent
      * starts. Either field may be absent when git is unavailable; callers persist whatever is set.
      */
-    protected captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus'> {
+    protected captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'sensitiveBaselineHashes'> {
         const worktreeBaselineFingerprint = this.captureWorktreeFingerprint(cwd);
         const worktreeBaselineStatus = this.captureWorktreeStatus(cwd);
+        // Secrets files are gitignored, so the two git baselines above are blind to them.
+        const sensitiveBaselineHashes = hashSensitiveFiles(cwd);
         return {
             ...(worktreeBaselineFingerprint ? { worktreeBaselineFingerprint } : {}),
             ...(worktreeBaselineStatus !== undefined ? { worktreeBaselineStatus } : {}),
+            ...(Object.keys(sensitiveBaselineHashes).length > 0 ? { sensitiveBaselineHashes } : {}),
         };
+    }
+
+    /** Sensitive (gitignored) files this task changed, or `[]` when none / no baseline. */
+    protected changedSensitiveFiles(task: QaapAgentTask): string[] {
+        if (!task.sensitiveBaselineHashes) {
+            return [];
+        }
+        return diffSensitiveFiles(task.sensitiveBaselineHashes, hashSensitiveFiles(task.cwd));
     }
 
     /**

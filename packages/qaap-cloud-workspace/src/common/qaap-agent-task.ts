@@ -84,6 +84,12 @@ export interface QaapAgentTask {
      * git error) so pre-existing dirty files are still not attributed to the task.
      */
     readonly worktreeBaselineStatus?: string;
+    /**
+     * Content hashes of root-level secrets files (`.env`, `.env.*`) captured at task start.
+     * Git-based edit detection cannot see gitignored files, so without this an agent that
+     * overwrote a `.env` looked like "no edits" and skipped verification and review entirely.
+     */
+    readonly sensitiveBaselineHashes?: Readonly<Record<string, string>>;
     /** Backend self-verification result for QAIQ tasks that edited files. */
     readonly verification?: QaapAgentTaskVerification;
     /** Independent adversarial review verdict for high-risk tasks (second agent, clean context). */
