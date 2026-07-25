@@ -96,7 +96,7 @@ import {
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
-import { diffSensitiveFiles, hashSensitiveFiles } from './qaap-sensitive-files';
+import { diffSensitiveFiles, hashSensitiveFiles, restoreSensitiveFiles, snapshotSensitiveFiles } from './qaap-sensitive-files';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import {
     buildAgentReviewPrompt,
@@ -1905,9 +1905,14 @@ export class QaapAgentTaskRunner {
             await this.preferenceService.ready;
         }
         const markedTask = this.tasks.get(task.id) ?? task;
+        const baseline = this.captureWorktreeBaseline(task.cwd);
+        // Private disk copy of secrets — hashes alone cannot restore a destroyed `.env`.
+        const sensitiveSnapshotDir = path.join(STORE_DIR, task.id, 'sensitive-snapshot');
+        const snapshotted = snapshotSensitiveFiles(task.cwd, sensitiveSnapshotDir);
         task = {
             ...markedTask,
-            ...this.captureWorktreeBaseline(task.cwd),
+            ...baseline,
+            ...(snapshotted.length > 0 ? { sensitiveSnapshotDir } : {}),
         };
         this.tasks.set(task.id, task);
         void this.persist();
@@ -2227,6 +2232,13 @@ export class QaapAgentTaskRunner {
             // can react to it. An inconclusive review fails OPEN: the deterministic gates already
             // ran, and closing every reviewer timeout as a warning would erode trust in the state.
             const withWarnings = verification?.status === 'failed' || review?.status === 'failed';
+            // Mechanical secrets restore (never a model): after a rejected change, put baseline
+            // `.env*` back. Also runs when verification failed and skipped review — otherwise a
+            // destroyed `.env` would survive behind a red typecheck.
+            if (withWarnings) {
+                const latest = this.tasks.get(task.id) ?? task;
+                this.restoreBaselineSensitiveFiles(latest);
+            }
             this.finishTask(task.id, withWarnings ? 'completed_with_warnings' : 'completed', exitCode);
         } finally {
             this.releaseVerificationPass();
@@ -2496,6 +2508,30 @@ export class QaapAgentTaskRunner {
             return [];
         }
         return diffSensitiveFiles(task.sensitiveBaselineHashes, hashSensitiveFiles(task.cwd));
+    }
+
+    /**
+     * Mechanically restore baseline-known sensitive files this task changed. Only names that
+     * existed in {@link QaapAgentTask.sensitiveBaselineHashes} (modified/deleted) — never
+     * newly-created `.env*` files. Logs names only; never inlines contents.
+     */
+    protected restoreBaselineSensitiveFiles(task: QaapAgentTask): string[] {
+        if (!task.sensitiveSnapshotDir || !task.sensitiveBaselineHashes) {
+            return [];
+        }
+        const toRestore = this.changedSensitiveFiles(task)
+            .filter(name => task.sensitiveBaselineHashes![name] !== undefined);
+        if (toRestore.length === 0) {
+            return [];
+        }
+        const restored = restoreSensitiveFiles(task.sensitiveSnapshotDir, task.cwd, toRestore);
+        if (restored.length > 0) {
+            this.appendAndFireOutput(
+                task.id,
+                `\n[qaap] Restored sensitive file(s) from task snapshot: ${restored.join(', ')}\n`,
+            );
+        }
+        return restored;
     }
 
     /**

@@ -10,7 +10,13 @@ import * as os from 'os';
 import * as path from 'path';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
-import { diffSensitiveFiles, hashSensitiveFiles, listSensitiveFileNames } from './qaap-sensitive-files';
+import {
+    diffSensitiveFiles,
+    hashSensitiveFiles,
+    listSensitiveFileNames,
+    restoreSensitiveFiles,
+    snapshotSensitiveFiles,
+} from './qaap-sensitive-files';
 
 describe('qaap-sensitive-files', () => {
     let dir: string;
@@ -48,6 +54,25 @@ describe('qaap-sensitive-files', () => {
         const baseline = hashSensitiveFiles(dir);
         expect(diffSensitiveFiles(baseline, hashSensitiveFiles(dir))).to.deep.equal([]);
     });
+
+    it('snapshot + restore round-trips .env bytes after overwrite', () => {
+        const original = 'SECRET=real-value\nOTHER=x\n';
+        fs.writeFileSync(path.join(dir, '.env'), original);
+        const snap = path.join(dir, 'snap');
+        expect(snapshotSensitiveFiles(dir, snap)).to.deep.equal(['.env']);
+
+        fs.writeFileSync(path.join(dir, '.env'), 'NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-url.com');
+        expect(restoreSensitiveFiles(snap, dir, ['.env'])).to.deep.equal(['.env']);
+        expect(fs.readFileSync(path.join(dir, '.env'), 'utf8')).to.equal(original);
+    });
+
+    it('restore refuses path-traversal names', () => {
+        const snap = path.join(dir, 'snap');
+        fs.mkdirSync(snap, { recursive: true });
+        fs.writeFileSync(path.join(snap, '.env'), 'ok\n');
+        expect(restoreSensitiveFiles(snap, dir, ['../etc/passwd', '.env/../.env'])).to.deep.equal([]);
+        expect(fs.existsSync(path.join(dir, '.env'))).to.equal(false);
+    });
 });
 
 /** Exposes the protected seams without the DI container. */
@@ -58,6 +83,11 @@ class TestableRunner extends QaapAgentTaskRunner {
     hasEdits(task: QaapAgentTask): Promise<boolean> {
         return this.hasEditedFilesForVerification(task, {});
     }
+    restore(task: QaapAgentTask): string[] {
+        return this.restoreBaselineSensitiveFiles(task);
+    }
+    /** No-op log sink so restore does not touch ~/.qaap/agent-tasks. */
+    protected override appendAndFireOutput(_taskId: string, _chunk: string): void { /* test stub */ }
 }
 
 describe('runner edit detection for gitignored secrets', () => {
@@ -81,10 +111,10 @@ describe('runner edit detection for gitignored secrets', () => {
         return instance;
     }
 
-    function task(baseline: ReturnType<TestableRunner['baseline']>): QaapAgentTask {
+    function task(baseline: ReturnType<TestableRunner['baseline']>, extra?: Partial<QaapAgentTask>): QaapAgentTask {
         return {
             id: 't1', title: 'x', command: 'qaiq', cwd: repo, state: 'running', createdAt: 0,
-            agentId: 'qaiq', ...baseline,
+            agentId: 'qaiq', ...baseline, ...extra,
         };
     }
 
@@ -104,5 +134,18 @@ describe('runner edit detection for gitignored secrets', () => {
         const instance = runner();
         const baseline = instance.baseline(repo);
         expect(await instance.hasEdits(task(baseline))).to.equal(false);
+    });
+
+    it('REGRESSION: mechanical restore recovers overwritten .env without a model', () => {
+        const instance = runner();
+        const baseline = instance.baseline(repo);
+        const snap = path.join(repo, 'sensitive-snapshot');
+        expect(snapshotSensitiveFiles(repo, snap)).to.deep.equal(['.env']);
+        const original = fs.readFileSync(path.join(repo, '.env'), 'utf8');
+
+        fs.writeFileSync(path.join(repo, '.env'), 'NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-url.com');
+        const restored = instance.restore(task(baseline, { sensitiveSnapshotDir: snap }));
+        expect(restored).to.deep.equal(['.env']);
+        expect(fs.readFileSync(path.join(repo, '.env'), 'utf8')).to.equal(original);
     });
 });

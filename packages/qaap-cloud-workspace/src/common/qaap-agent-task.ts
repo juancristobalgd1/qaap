@@ -90,6 +90,12 @@ export interface QaapAgentTask {
      * overwrote a `.env` looked like "no edits" and skipped verification and review entirely.
      */
     readonly sensitiveBaselineHashes?: Readonly<Record<string, string>>;
+    /**
+     * Absolute path to a private per-task directory holding copies of root `.env*` files
+     * captured at task start (mode 0700/0600). Used for mechanical restore after a failed
+     * review — contents are never inlined in index.json or prompts.
+     */
+    readonly sensitiveSnapshotDir?: string;
     /** Backend self-verification result for QAIQ tasks that edited files. */
     readonly verification?: QaapAgentTaskVerification;
     /** Independent adversarial review verdict for high-risk tasks (second agent, clean context). */
