@@ -191,6 +191,12 @@ export class MobileProjectsTranscriptSubmitUi {
             widget?: AIChatInputWidget;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
+            /**
+             * Start this message as a peer run beside the turn already streaming (in-session
+             * multitasking) instead of taking over the conversation: the backend spawns a second
+             * agent, so the open turn must not be cancelled on the way in.
+             */
+            parallel?: boolean;
         } = {},
     ): Promise<void> {
         if (this.submitInFlightByConversationId.has(summary.id)) {
@@ -224,6 +230,8 @@ export class MobileProjectsTranscriptSubmitUi {
             widget?: AIChatInputWidget;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
+            /** See {@link submitTranscriptViaBackendConversation}. */
+            parallel?: boolean;
         } = {},
         submitAt = Date.now(),
     ): Promise<void> {
@@ -311,7 +319,9 @@ export class MobileProjectsTranscriptSubmitUi {
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_start');
         let base = await getConversation(summary.id);
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_end');
-        if (base.status === 'streaming' && isConversationTurnVisuallySettled(base)) {
+        // A settled-looking streaming turn is normally a dead turn worth cancelling before
+        // taking over — but a parallel run is meant to stream NEXT TO it, so it stays alive.
+        if (!options.parallel && base.status === 'streaming' && isConversationTurnVisuallySettled(base)) {
             await cancelConversation(summary.id);
             base = await getConversation(summary.id);
         }

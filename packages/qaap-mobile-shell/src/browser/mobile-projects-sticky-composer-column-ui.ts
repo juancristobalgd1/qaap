@@ -521,12 +521,13 @@ export class MobileProjectsStickyComposerColumnUi {
             }));
         }
         toolbar.classList.add('qaap-codex-context-tray');
-        if (options.activityStack) {
-            card.classList.add('theia-mod-has-activity');
-            card.append(options.activityStack);
-        }
         card.append(stage);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
+        // Queue popover mounts above the card — never fused into the codex lip.
+        if (options.activityStack) {
+            options.activityStack.classList.add('theia-mod-queue-popover');
+            wrap.append(options.activityStack);
+        }
         wrap.append(card);
         column.append(wrap);
         return column;

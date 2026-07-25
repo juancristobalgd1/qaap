@@ -556,5 +556,47 @@ describe('qaap-sticky-composer-activity-stack', () => {
             })).to.equal(true);
             expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-text')?.textContent).to.equal('second follow up');
         });
+
+        it('exposes Send now on every queued message', () => {
+            const sent: number[] = [];
+            const stack = renderStickyComposerActivityStack({
+                queueEntries: [{ draft: 'first' }, { draft: 'second' }, { draft: 'third' }],
+                queueExpanded: true,
+                onQueueSendNow: index => { sent.push(index); },
+            });
+            expect(stack).to.exist;
+            expect(stack!.classList.contains('theia-mod-queue-popover')).to.equal(true);
+            const sendButtons = Array.from(stack!.querySelectorAll<HTMLButtonElement>(
+                '.theia-mobile-sticky-composer-queue-action[aria-label="Send now"]',
+            ));
+            expect(sendButtons).to.have.length(3);
+            expect(stack!.querySelector('.codicon-arrow-up')).to.equal(null);
+            sendButtons[1].click();
+            expect(sent).to.deep.equal([1]);
+        });
+
+        it('labels the send action "Run in parallel" while the agent is working', () => {
+            const stack = renderStickyComposerActivityStack({
+                queueEntries: [{ draft: 'first' }],
+                queueExpanded: true,
+                agentWorking: true,
+                onQueueSendNow: () => { },
+            });
+            expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-action[aria-label="Run in parallel"]')).to.exist;
+            expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-action[aria-label="Send now"]')).to.equal(null);
+        });
+
+        it('repaints the send action label when the agent settles', () => {
+            const working = { queueEntries: [{ draft: 'first' }], queueExpanded: true, agentWorking: true };
+            const idle = { queueEntries: [{ draft: 'first' }], queueExpanded: true, agentWorking: false };
+            // The label is part of the fingerprint, so a working -> idle flip is not skipped as a no-op.
+            expect(buildStickyComposerActivityStackFingerprint(working))
+                .to.not.equal(buildStickyComposerActivityStackFingerprint(idle));
+
+            const stack = renderStickyComposerActivityStack(working);
+            document.body.append(stack!);
+            expect(patchStickyComposerActivityStack(stack!, idle)).to.equal(true);
+            expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-action[aria-label="Send now"]')).to.exist;
+        });
     });
 });

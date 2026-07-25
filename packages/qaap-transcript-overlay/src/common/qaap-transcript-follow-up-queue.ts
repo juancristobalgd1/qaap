@@ -67,6 +67,19 @@ export class TranscriptFollowUpQueue {
         }
     }
 
+    /** Removes and returns the entry at {@link index}, or `undefined` if out of range. */
+    takeAt(conversationId: string, index: number): TranscriptFollowUpEntry | undefined {
+        const queue = this.byConversation.get(conversationId);
+        if (!queue || index < 0 || index >= queue.length) {
+            return undefined;
+        }
+        const [entry] = queue.splice(index, 1);
+        if (!queue.length) {
+            this.byConversation.delete(conversationId);
+        }
+        return entry;
+    }
+
     moveUp(conversationId: string, index: number): boolean {
         if (index <= 0) {
             return false;

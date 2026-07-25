@@ -2211,8 +2211,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             worktree?: boolean;
             agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
         } = {},
-    ): Promise<void> {
-        await this.backgroundTaskUi.submitBackgroundAgentTask(project, draft, options);
+    ): Promise<QaapAgentConversationSummaryDTO | undefined> {
+        return this.backgroundTaskUi.submitBackgroundAgentTask(project, draft, options);
     }
 
     /**

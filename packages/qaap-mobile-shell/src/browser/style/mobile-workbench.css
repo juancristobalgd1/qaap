@@ -6839,7 +6839,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   border: 1px solid color-mix(in srgb, var(--q-accent, #E58E40) 28%, transparent);
 }
 
-/* Composer activity stack — queued follow-ups + changed files (single codex lip). */
+/* Composer activity stack — queued follow-ups (legacy in-card / shared base). */
 .theia-mobile-sticky-composer-activity-stack {
   display: flex;
   flex-direction: column;
@@ -6849,6 +6849,26 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   position: relative;
   z-index: 3;
   background: transparent;
+}
+
+/* Queue popover — floats above the composer card, visually detached. */
+.theia-mobile-projects-sticky-composer-inner > .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-popover {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 8px;
+  padding: 4px 8px 6px;
+  border: var(--qaap-codex-shell-border, 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent));
+  border-radius: var(--qaap-codex-shell-radius, 16px);
+  background: var(--qaap-codex-shell-bg, color-mix(in srgb, var(--theia-editorWidget-background, #1e1e1e) 88%, transparent));
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 28%, transparent);
+  z-index: 4;
+}
+
+.theia-mobile-projects-sticky-composer-inner > .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-popover .theia-mobile-sticky-composer-queue-actions {
+  opacity: 1;
 }
 
 .theia-mobile-sticky-composer-activity-section {
@@ -32396,4 +32416,43 @@ body.theia-dark .theia-mobile-agent-web-search,
     opacity: 1;
     transform: none;
   }
+}
+
+/*
+ * Queued follow-ups painted at the transcript tail (see qaap-transcript-queued-bubbles.ts).
+ * Same user bubble, held back visually: the message is sent but not yet in the turn.
+ */
+.theia-mobile-agent-transcript-queued {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+.theia-mobile-agent-transcript-msg.theia-mod-user.theia-mod-queued {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  opacity: 0.62;
+  border-style: dashed;
+}
+
+.theia-mobile-agent-transcript-msg.theia-mod-user.theia-mod-queued
+  .theia-mobile-agent-transcript-content {
+  align-self: stretch;
+}
+
+.theia-mobile-agent-transcript-queued-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: var(--qaap-mobile-radius-control, 8px);
+  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  white-space: nowrap;
 }

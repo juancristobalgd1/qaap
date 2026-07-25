@@ -216,13 +216,13 @@ export class MobileProjectsBackgroundTaskUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
         } = {},
-    ): Promise<void> {
+    ): Promise<QaapAgentConversationSummaryDTO | undefined> {
         if (this.backgroundSubmitInFlightByProjectId.has(project.id)) {
-            return;
+            return undefined;
         }
         this.backgroundSubmitInFlightByProjectId.add(project.id);
         try {
-            await this.submitBackgroundAgentTaskInner(project, draft, options);
+            return await this.submitBackgroundAgentTaskInner(project, draft, options);
         } finally {
             this.backgroundSubmitInFlightByProjectId.delete(project.id);
         }
@@ -247,14 +247,14 @@ export class MobileProjectsBackgroundTaskUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
         } = {},
-    ): Promise<void> {
+    ): Promise<QaapAgentConversationSummaryDTO | undefined> {
         try {
             const cwd = await this.ensureInlineComposerCwd(project);
             if (!cwd) {
                 // No usable repository path (snackbar already explained why). Roll the
                 // optimistic paint back or it lingers as a phantom "streaming" conversation.
                 this.host.rollbackTranscriptOptimisticSubmit?.();
-                return;
+                return undefined;
             }
             const { summary, outbound } = await this.createProjectChatSession(project, cwd, draft, options);
             this.host.seedTranscriptOptimisticSubmit(summary, outbound, options.selectedAgentId, options.imagePreviews);
@@ -273,6 +273,7 @@ export class MobileProjectsBackgroundTaskUi {
                 nls.localize('qaap/mobileProjects/taskStarted', 'Task started'),
                 { kind: 'success', duration: 1400 }
             );
+            return summary;
         } catch (error) {
             // The composer painted an optimistic "streaming" conversation BEFORE this create.
             // Roll it back, or the rejected submit lingers as a phantom stream until the
@@ -285,6 +286,7 @@ export class MobileProjectsBackgroundTaskUi {
                 'Could not start task: {0}',
                 detail
             ));
+            return undefined;
         }
     }
     async createProjectChatSession(

@@ -109,6 +109,7 @@ import {
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
+import { syncTranscriptQueuedBubbles } from './qaap-transcript-queued-bubbles';
 import {
     parkWorkingControlFromAncestor,
     transferWorkingControlToHost,
@@ -245,7 +246,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
         project: MobileProjectEntry,
         draft: string,
         options: Record<string, unknown>,
-    ): Promise<void>;
+    ): Promise<QaapAgentConversationSummaryDTO | undefined>;
     submitTranscriptViaBackendConversation(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -997,10 +998,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 this.host.transcriptFollowUpQueue.removeAt(summary.id, index);
                 this.remountTranscriptStickyComposer();
             },
-            onQueueMoveUp: index => {
-                if (this.host.transcriptFollowUpQueue.moveUp(summary.id, index)) {
-                    this.refreshComposerActivityStack();
-                }
+            onQueueSendNow: index => {
+                void this.sendQueuedFollowUpNow(project, summary, index);
             },
             onQueueRemove: index => {
                 this.host.transcriptFollowUpQueue.removeAt(summary.id, index);
@@ -1433,12 +1432,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
         }
         const stackFingerprint = buildStickyComposerActivityStackFingerprint(activityOptions);
         const stack = renderStickyComposerActivityStack(activityOptions);
-        const existing = card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
+        // Queue lives outside the card (sibling above it), not as theia-mod-has-activity lip.
+        const existing = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
+        card.classList.remove('theia-mod-has-activity');
+        card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack')?.remove();
         card.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-streaming')?.remove();
         if (!stack) {
             existing?.remove();
             this.lastComposerActivityStackFingerprint = '';
-            card.classList.remove('theia-mod-has-activity');
         } else if (existing instanceof HTMLElement) {
             if (stackFingerprint === this.lastComposerActivityStackFingerprint
                 || patchStickyComposerActivityStack(existing, activityOptions)) {
@@ -1447,20 +1448,24 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 existing.replaceWith(stack);
                 this.lastComposerActivityStackFingerprint = stackFingerprint;
             }
-            card.classList.add('theia-mod-has-activity');
         } else {
-            const stage = card.querySelector(':scope > .theia-mobile-projects-sticky-composer-stage');
-            if (stage) {
-                card.insertBefore(stack, stage);
-            } else {
-                card.append(stack);
-            }
+            wrap.insertBefore(stack, card);
             this.lastComposerActivityStackFingerprint = stackFingerprint;
-            card.classList.add('theia-mod-has-activity');
         }
         this.syncComposerActivityFingerprint(summary, project, activityOptions);
+        this.syncTranscriptQueuedFollowUpBubbles(summary);
         this.host.updateWorkingPillChrome();
         this.host.composerHeaderUi.updateStickyComposerFabLift();
+    }
+
+    /**
+     * Paints queued follow-ups as user bubbles at the transcript tail. Riding on the composer
+     * refresh (which already runs on enqueue/edit/remove and on every SSE tick) keeps the
+     * bubbles in step with the queue and re-mounts them after a full transcript rebuild.
+     */
+    protected syncTranscriptQueuedFollowUpBubbles(summary: QaapAgentConversationSummaryDTO): void {
+        const chatHost = this.host.resolveActiveTranscriptChatHost() ?? this.host.transcriptChatHost;
+        syncTranscriptQueuedBubbles(chatHost, this.host.transcriptFollowUpQueue.peek(summary.id));
     }
 
     refreshTranscriptComposerActivityIfNeeded(conv: QaapAgentConversationDTO): void {
@@ -1526,17 +1531,65 @@ export class MobileProjectsTranscriptStickyComposerUi {
         if (!next) {
             return;
         }
+        await this.submitQueuedFollowUpEntry(project, summary, next);
+    }
+
+    /**
+     * Sends a specific queued follow-up immediately. While the agent is still working the
+     * message starts its OWN agent run next to the open turn (parallel agents, like Cursor /
+     * Claude Code / Codex) — the running turn is never cancelled. When the agent is idle the
+     * entry goes into the open conversation as a normal follow-up.
+     */
+    async sendQueuedFollowUpNow(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        index: number,
+    ): Promise<void> {
+        const entry = this.host.transcriptFollowUpQueue.takeAt(summary.id, index);
+        if (!entry) {
+            return;
+        }
+        if (this.isTranscriptStickyComposerAgentWorking()) {
+            await this.dispatchQueuedFollowUpInParallel(project, summary, entry);
+            return;
+        }
+        await this.submitQueuedFollowUpEntry(project, summary, entry);
+    }
+
+    /**
+     * Starts a queued message as a second agent run inside THIS conversation (in-session
+     * multitasking) instead of interrupting the turn in flight: both agents stream into the same
+     * transcript, each into its own message. The user bubble paints immediately through the
+     * normal submit path, so the send is visible the moment it is dispatched.
+     */
+    protected async dispatchQueuedFollowUpInParallel(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        entry: TranscriptFollowUpEntry,
+    ): Promise<void> {
+        // The row already left the queue — repaint before the round-trip so the tap feels instant.
+        this.refreshComposerActivityStack();
+        await this.submitQueuedFollowUpEntry(project, summary, entry, { parallel: true });
+    }
+
+    protected async submitQueuedFollowUpEntry(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        entry: TranscriptFollowUpEntry,
+        options: { readonly parallel?: boolean } = {},
+    ): Promise<void> {
         this.host.transcriptFollowUpFlushInFlight = true;
         try {
-            await this.host.submitTranscriptViaBackendConversation(project, summary, next.draft, {
-                selectedAgentId: next.selectedAgentId,
-                modeId: next.modeId,
-                autoApprove: next.autoApprove,
-                approvalPolicyId: next.approvalPolicyId,
+            await this.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
+                selectedAgentId: entry.selectedAgentId,
+                modeId: entry.modeId,
+                autoApprove: entry.autoApprove,
+                approvalPolicyId: entry.approvalPolicyId,
                 agentModel: this.host.transcriptComposerAgentModel,
+                ...(options.parallel ? { parallel: true } : {}),
             });
         } catch (error) {
-            this.host.transcriptFollowUpQueue.unshift(summary.id, next);
+            this.host.transcriptFollowUpQueue.unshift(summary.id, entry);
             const detail = error instanceof Error ? error.message : String(error);
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail,

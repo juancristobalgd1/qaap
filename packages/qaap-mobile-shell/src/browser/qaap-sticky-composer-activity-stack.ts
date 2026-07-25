@@ -74,7 +74,8 @@ export interface StickyComposerActivityStackOptions {
     queueExpanded?: boolean;
     onQueueExpandedChange?: (expanded: boolean) => void;
     onQueueEdit?: (index: number, entry: TranscriptFollowUpEntry) => void;
-    onQueueMoveUp?: (index: number) => void;
+    /** Send a queued follow-up immediately (every queue row exposes this action). */
+    onQueueSendNow?: (index: number) => void;
     onQueueRemove?: (index: number) => void;
     changedFiles?: readonly StickyComposerChangedFileView[];
     /** Display count for the Changes pill when transcript evidence has more files than the git snapshot. */
@@ -140,6 +141,8 @@ export function buildStickyComposerActivityStackFingerprint(options: StickyCompo
     return [
         entries.length,
         options.queueExpanded ? 1 : 0,
+        // Drives the send action label ("Run in parallel" vs "Send now").
+        options.agentWorking ? 1 : 0,
         drafts,
     ].join('|');
 }
@@ -187,10 +190,16 @@ export function patchStickyComposerActivityStack(
         if (textEl.textContent !== entries[index].draft) {
             textEl.textContent = entries[index].draft;
         }
-        const expectedMoveUp = index > 0;
-        const hasMoveUp = !!item?.querySelector('.codicon-arrow-up');
-        if (hasMoveUp !== expectedMoveUp) {
+        const sendBtn = item?.querySelector('.codicon-send')?.closest<HTMLButtonElement>(
+            'button.theia-mobile-sticky-composer-queue-action',
+        );
+        if (!sendBtn) {
             return false;
+        }
+        const sendLabel = stickyComposerQueueSendNowLabel(options);
+        if (sendBtn.title !== sendLabel) {
+            sendBtn.title = sendLabel;
+            sendBtn.setAttribute('aria-label', sendLabel);
         }
     }
     return true;
@@ -370,7 +379,8 @@ export function renderStickyComposerActivityStack(options: StickyComposerActivit
         return undefined;
     }
     const stack = document.createElement('div');
-    stack.className = 'theia-mobile-sticky-composer-activity-stack';
+    // Floated above the composer card (not fused into the codex lip).
+    stack.className = 'theia-mobile-sticky-composer-activity-stack theia-mod-queue-popover';
     stack.append(queueSection);
     return stack;
 }
@@ -425,6 +435,16 @@ function renderStickyComposerQueueSection(options: StickyComposerActivityStackOp
     return section;
 }
 
+/**
+ * While the agent is working, the queue send action starts a second agent run beside the open
+ * turn instead of interrupting it — the label says so, so nobody expects a cancel.
+ */
+function stickyComposerQueueSendNowLabel(options: StickyComposerActivityStackOptions): string {
+    return options.agentWorking
+        ? nls.localize('qaap/mobileProjects/stickyComposerQueueRunParallel', 'Run in parallel')
+        : nls.localize('qaap/mobileProjects/stickyComposerQueueSendNow', 'Send now');
+}
+
 function renderQueueItem(
     entry: TranscriptFollowUpEntry,
     index: number,
@@ -452,13 +472,11 @@ function renderQueueItem(
     );
     actions.append(editBtn);
 
-    if (index > 0) {
-        actions.append(createQueueActionButton(
-            'codicon-arrow-up',
-            nls.localize('qaap/mobileProjects/stickyComposerQueueMoveUp', 'Move up in queue'),
-            () => options.onQueueMoveUp?.(index),
-        ));
-    }
+    actions.append(createQueueActionButton(
+        'codicon-send',
+        stickyComposerQueueSendNowLabel(options),
+        () => options.onQueueSendNow?.(index),
+    ));
 
     actions.append(createQueueActionButton(
         'codicon-trash',

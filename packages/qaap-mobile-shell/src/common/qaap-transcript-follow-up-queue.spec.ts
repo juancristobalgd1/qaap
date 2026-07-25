@@ -26,7 +26,7 @@ describe('qaap-transcript-follow-up-queue', () => {
         expect(queue.enqueue('c1', { draft: 'overflow' })).to.equal(false);
     });
 
-    it('removeAt, moveUp, and replaceAt mutate queue order', () => {
+    it('removeAt, takeAt, moveUp, and replaceAt mutate queue order', () => {
         const queue = new TranscriptFollowUpQueue();
         queue.enqueue('c1', { draft: 'first' });
         queue.enqueue('c1', { draft: 'second' });
@@ -37,5 +37,8 @@ describe('qaap-transcript-follow-up-queue', () => {
         expect(queue.peek('c1').map(entry => entry.draft)).to.deep.equal(['third', 'first']);
         expect(queue.replaceAt('c1', 1, { draft: 'updated' })).to.equal(true);
         expect(queue.peek('c1').map(entry => entry.draft)).to.deep.equal(['third', 'updated']);
+        expect(queue.takeAt('c1', 0)?.draft).to.equal('third');
+        expect(queue.peek('c1').map(entry => entry.draft)).to.deep.equal(['updated']);
+        expect(queue.takeAt('c1', 5)).to.equal(undefined);
     });
 });
