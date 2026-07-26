@@ -61,8 +61,22 @@ export const QAAP_WORKFLOW_VERIFY_FAILURE_ARTIFACT = 'verify.failure';
  */
 export const QAAP_WORKFLOW_REVIEW_VERDICT_ARTIFACT = 'review.verdict';
 
-/** How concurrent writer nodes isolate their working tree. */
-export type QaapWorkflowIsolation = 'cwd' | 'worktree' | 'cwd-readonly';
+/**
+ * What a node may do to the run's working tree.
+ *
+ * There is deliberately no per-node worktree here. The value existed, no template ever declared it,
+ * and nothing in the runtime read it — a `worktree` node was dispatched on `record.cwd` exactly like
+ * a `cwd` one. That made it worse than inert: {@link validateQaapWorkflow} told you concurrent
+ * writers "need worktree", while the check that caught them only counts `cwd` writers, so following
+ * the advice silenced the error and left both turns writing the same directory.
+ *
+ * Real per-node isolation is not a value in this union: the whole review lane measures `record.cwd`,
+ * so an isolated implement turn would produce an empty diff, low risk, and a judge reviewing
+ * nothing. It needs a per-node cwd in the run store, deterministic ops honouring it, a merge-back
+ * op, and reaping on every termination path — none of which exists. Concurrent writers are rejected
+ * instead of being pointed at a remedy that is not there.
+ */
+export type QaapWorkflowIsolation = 'cwd' | 'cwd-readonly';
 
 /** Capability hint for routing — resolved to a concrete agent via catalog bindings. */
 export type QaapWorkflowCapability =
@@ -255,8 +269,10 @@ export function validateQaapWorkflowDef(def: QaapWorkflowDef): QaapWorkflowValid
                 message: 'Router nodes are not executable yet: route with capability + costTier on the agent-turn instead.',
             });
         }
-        if (node.kind === 'agent-turn' && node.isolation === 'worktree' && node.capability === 'judge') {
-            // Judges are read-only by product contract; worktree isolation is wasteful/wrong.
+        if (node.kind === 'agent-turn' && node.capability === 'judge' && node.isolation !== 'cwd-readonly') {
+            // A judge that can edit the change it reviews does not produce a weaker verdict, it
+            // produces none. The dispatcher only restricts a turn it was told is read-only, so this
+            // is what makes the restriction reachable for judges at all.
             issues.push({
                 path: `nodes.${node.id}`,
                 message: 'Judge agent-turn nodes must use cwd-readonly isolation.',
@@ -327,7 +343,8 @@ function findConcurrentCwdWriterIssues(
                 path: group.source === 'entry' ? 'entry' : `nodes.${group.source}`,
                 message:
                     `Fan-out from "${group.source}" runs agent-turn nodes ${conflicting.map(id => `"${id}"`).join(', ')} ` +
-                    'concurrently on isolation "cwd"; concurrent writers need "worktree".',
+                    'concurrently on isolation "cwd": they would write the same working tree at the same time. ' +
+                    'Sequence them, or make all but one "cwd-readonly".',
             });
         }
     }

@@ -55,7 +55,7 @@ describe('validateQaapWorkflowDef', () => {
         const def = buildImplementThenReviewWorkflow();
         const nodes = def.nodes.map(node =>
             node.id === 'judge' && node.kind === 'agent-turn'
-                ? { ...node, isolation: 'worktree' as const }
+                ? { ...node, isolation: 'cwd' as const }
                 : node,
         );
         const result = validateQaapWorkflowDef({ ...def, nodes });
@@ -107,16 +107,20 @@ describe('validateQaapWorkflowDef', () => {
         expect(result.issues.some(i => i.message.includes('concurrently on isolation "cwd"'))).to.equal(true);
     });
 
-    it('accepts a fan-out whose concurrent writers are worktree-isolated', () => {
+    // The isolation union used to carry a `worktree` value, and this suite used to assert that it
+    // let a concurrent-writer fan-out through. Nothing ever read it: such a node was dispatched on
+    // the run's own cwd like any other writer, so the escape hatch silenced the error and left both
+    // turns writing the same tree. There is no remedy to point at, so the fan-out is simply refused.
+    it('rejects a fan-out that runs two writers at once, with no isolation escape hatch', () => {
         const def: QaapWorkflowDef = {
-            id: 'fan-worktree',
+            id: 'fan-writers',
             version: 1,
             name: 'Parallel run',
             entry: 'plan',
             nodes: [
                 { kind: 'deterministic', id: 'plan', op: 'parse-sentinel' },
-                { kind: 'agent-turn', id: 'left', capability: 'implement', isolation: 'worktree', promptRef: 'a' },
-                { kind: 'agent-turn', id: 'right', capability: 'implement', isolation: 'worktree', promptRef: 'b' },
+                { kind: 'agent-turn', id: 'left', capability: 'implement', isolation: 'cwd', promptRef: 'a' },
+                { kind: 'agent-turn', id: 'right', capability: 'implement', isolation: 'cwd', promptRef: 'b' },
                 { kind: 'join', id: 'join', wait: 'all' },
                 { kind: 'emit', id: 'done', bindingKey: 'x' },
             ],
@@ -128,7 +132,13 @@ describe('validateQaapWorkflowDef', () => {
                 { from: 'join', to: 'done', when: 'always' },
             ],
         };
-        expect(validateQaapWorkflowDef(def)).to.deep.equal({ ok: true, issues: [] });
+        const result = validateQaapWorkflowDef(def);
+        expect(result.ok).to.equal(false);
+        const message = result.issues.map(issue => issue.message).join(' ');
+        expect(message).to.include('"left"');
+        expect(message).to.include('"right"');
+        // Never advertise an isolation mode that does not isolate.
+        expect(message).to.not.include('worktree');
     });
 
     it('ignores a cwd writer on the branch suffix the fan-out reconverges into', () => {
