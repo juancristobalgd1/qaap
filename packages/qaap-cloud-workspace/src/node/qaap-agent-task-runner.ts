@@ -66,6 +66,7 @@ import {
 } from '../common/qaap-qaiq-stdio-approvals';
 import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
+import { detectEmptyAgentTurn, type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import {
     buildQaiqAutoDeniedToolMessage,
     buildQaiqQueuedApprovalTimeoutMessage,
@@ -227,6 +228,8 @@ interface PersistedAgentTaskIndex {
 }
 /** Cap returned log size so a runaway task cannot blow up the response. */
 const MAX_LOG_BYTES = 512 * 1024;
+/** Shown as the failing "command" when a turn is closed for having produced nothing at all. */
+const EMPTY_TURN_GATE_COMMAND = 'qaap empty-turn gate';
 /** Kill agent CLIs that sit silent for too long, usually waiting for auth/quota/input. */
 const IDLE_TASK_TIMEOUT_MS = 20 * 60 * 1000;
 /**
@@ -2182,6 +2185,27 @@ export class QaapAgentTaskRunner {
             if (this.tasks.get(task.id)?.state !== 'running') {
                 return;
             }
+            // Empty-turn gate, BEFORE the diff-centric gates: a turn that ran no tool and said
+            // nothing changed no files, so verification and review would both be skipped and a
+            // clean exit would earn 'completed' on work that never happened. Observed live with a
+            // free model that wrote its Edit call as plain text.
+            const emptyTurn = await this.detectEmptyAgentTurnForTask(task);
+            if (emptyTurn.empty) {
+                const current = this.tasks.get(task.id);
+                if (current) {
+                    this.tasks.set(task.id, {
+                        ...current,
+                        verification: {
+                            status: 'failed',
+                            command: EMPTY_TURN_GATE_COMMAND,
+                            attempts: 0,
+                            summary: emptyTurn.reason ?? 'The agent turn produced no work.',
+                        },
+                    });
+                }
+                this.finishTask(task.id, 'completed_with_warnings', exitCode);
+                return;
+            }
             let verification: QaapAgentTaskVerification | undefined;
             try {
                 verification = await this.verifySuccessfulAgentTask(task);
@@ -2242,6 +2266,33 @@ export class QaapAgentTaskRunner {
             this.finishTask(task.id, withWarnings ? 'completed_with_warnings' : 'completed', exitCode);
         } finally {
             this.releaseVerificationPass();
+        }
+    }
+
+    /**
+     * Whether this turn produced nothing at all. Deliberately hard to trigger: the log must be
+     * readable IN FULL (a tail could hide earlier tool calls) and the workspace must be provably
+     * unchanged, so a false positive cannot flag real work.
+     */
+    protected async detectEmptyAgentTurnForTask(task: QaapAgentTask): Promise<QaapEmptyAgentTurnResult> {
+        try {
+            const stat = await fsp.stat(this.logPath(task.id));
+            if (stat.size > MAX_LOG_BYTES) {
+                return { empty: false };
+            }
+            const log = await fsp.readFile(this.logPath(task.id), 'utf8');
+            const detected = detectEmptyAgentTurn(log, { complete: true });
+            if (!detected.empty) {
+                return detected;
+            }
+            // Second, independent witness: if anything in the workspace moved, the turn did work
+            // the log did not show, and the normal verification path must own it.
+            return await this.hasEditedFilesForVerification(task, this.buildChildEnv(task))
+                ? { empty: false }
+                : detected;
+        } catch {
+            // Unreadable log or git failure: never accuse a turn we cannot inspect.
+            return { empty: false };
         }
     }
 
