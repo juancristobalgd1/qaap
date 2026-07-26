@@ -88,6 +88,11 @@ import {
 } from '../common/qaap-qaiq-model-binding';
 import { resolveRequestAgentModel, resolveTaskAgentModel } from '../common/qaap-agent-task';
 import { resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
+import {
+    parseQaapNativeModelRoutingTable,
+    QAAP_AGENT_TASK_MODELS_ENV,
+    type QaapNativeModelRoutingTable,
+} from '../common/qaap-agent-native-model-routing';
 import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default-workflow';
 import { prependAgentTaskContextToPrompt, truncateProjectInfo, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
 import {
@@ -362,6 +367,8 @@ export class QaapAgentTaskRunner {
 
     @inject(QaapAgentHealthTracker) @optional()
     protected readonly agentHealth: QaapAgentHealthTracker | undefined;
+
+    protected cachedNativeModelRoutingTable: QaapNativeModelRoutingTable | undefined;
 
     protected readonly tasks = new Map<string, QaapAgentTask>();
     protected readonly processes = new Map<string, ChildProcess>();
@@ -1037,15 +1044,29 @@ export class QaapAgentTaskRunner {
         if (explicit) {
             return explicit;
         }
-        if (!this.preferenceService) {
-            return undefined;
-        }
         const agentId = this.resolveAgentId(prompt, request.agent);
+        // No preference guard here: only QAIQ's alias routing needs preferences, and the native-CLI
+        // branch (claude & co.) must still route when none is available — the reader simply yields
+        // undefined and the QAIQ path resolves to no binding, as before.
         return resolveEffectiveRequestAgentModel(
             request,
-            key => this.preferenceService!.get(key),
+            key => this.preferenceService?.get(key),
             agentId,
+            {
+                listNativeModels: id => listNativeAgentModels(id),
+                nativeTable: this.nativeModelRoutingTable(),
+            },
         );
+    }
+
+    /** Parsed once: the operator's `QAAP_AGENT_TASK_MODELS` override, or the built-in defaults. */
+    protected nativeModelRoutingTable(): QaapNativeModelRoutingTable {
+        if (!this.cachedNativeModelRoutingTable) {
+            this.cachedNativeModelRoutingTable = parseQaapNativeModelRoutingTable(
+                process.env[QAAP_AGENT_TASK_MODELS_ENV],
+            );
+        }
+        return this.cachedNativeModelRoutingTable;
     }
 
     /** Validate the request, spawn the process and start tracking the task. */

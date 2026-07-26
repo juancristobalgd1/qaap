@@ -17,11 +17,19 @@ describe('resolveQaapWorkflowTaskKind', () => {
         }
     });
 
-    it('routes a premium costTier to implementation regardless of capability', () => {
-        const capabilities: QaapWorkflowCapability[] = ['explore', 'implement', 'judge', 'measure', 'synthesize', 'creative', 'general'];
+    it('routes a premium costTier to implementation for every capability but judge', () => {
+        const capabilities: QaapWorkflowCapability[] = ['explore', 'implement', 'measure', 'synthesize', 'creative', 'general'];
         for (const capability of capabilities) {
             expect(resolveQaapWorkflowTaskKind(capability, 'premium'), capability).to.equal('implementation');
         }
+    });
+
+    it('keeps a premium judge on review instead of the writer slot', () => {
+        // 'implementation' is the writer's model. A premium judge asking for more capability must
+        // get the reviewer's frontier model, not the one that just wrote the change.
+        expect(resolveQaapWorkflowTaskKind('judge', 'premium')).to.equal('review');
+        expect(resolveQaapWorkflowTaskKind('judge', 'standard')).to.equal('review');
+        expect(resolveQaapWorkflowTaskKind('judge', undefined)).to.equal('review');
     });
 
     // costTier === 'standard' or omitted: falls back to the capability table. Mirrors the backend
@@ -31,9 +39,9 @@ describe('resolveQaapWorkflowTaskKind', () => {
         ['explore', 'general'],
         ['measure', 'exploration'],
         ['implement', 'implementation'],
-        // Never the writer's alias — see resolveQaapWorkflowTaskKind's doc: pinning the judge to
+        // Never the writer's slot — see resolveQaapWorkflowTaskKind's doc: pinning the judge to
         // `implementation` hands the review to the model that wrote the change.
-        ['judge', 'general'],
+        ['judge', 'review'],
         ['creative', 'general'],
         ['synthesize', 'general'],
         ['general', 'general'],

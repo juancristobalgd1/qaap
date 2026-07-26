@@ -137,16 +137,21 @@ export function resolveTaskAgentModel(task: {
 
 /**
  * Model-routing classification for a task: `'exploration'` (read-only/cheap work),
- * `'implementation'` (writes/expensive work), or `'general'` (no strong signal either way).
+ * `'implementation'` (writes/expensive work), `'review'` (adversarial review of someone else's
+ * work), or `'general'` (no strong signal either way).
  * A value supplied by the task's creator (e.g. a workflow node's capability/costTier via
  * {@link QaapCreateAgentTaskRequest.taskKind}) has more authority than the text-heuristic
  * classifier (`classifyAgentTaskKind`) but less than an explicit {@link QaapCreateAgentTaskRequest.agentModel}
  * pick — see `resolveEffectiveRequestAgentModel` in `qaap-agent-task-model-routing.ts`.
+ *
+ * `'review'` exists as its own kind precisely so a judge turn can be pinned AWAY from the writer's
+ * model instead of sharing `'implementation'`; the text heuristic never produces it (only a caller
+ * that knows the node is a judge can assert it).
  */
-export type QaapAgentTaskKind = 'exploration' | 'implementation' | 'general';
+export type QaapAgentTaskKind = 'exploration' | 'implementation' | 'review' | 'general';
 
 export namespace QaapAgentTaskKind {
-    const VALUES: ReadonlySet<string> = new Set<QaapAgentTaskKind>(['exploration', 'implementation', 'general']);
+    const VALUES: ReadonlySet<string> = new Set<QaapAgentTaskKind>(['exploration', 'implementation', 'review', 'general']);
     /** Narrows an untrusted value (an HTTP body field) to a task kind. */
     export function is(value: unknown): value is QaapAgentTaskKind {
         return typeof value === 'string' && VALUES.has(value);

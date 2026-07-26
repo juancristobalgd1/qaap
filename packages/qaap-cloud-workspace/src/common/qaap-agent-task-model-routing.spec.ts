@@ -5,6 +5,8 @@
 
 import { expect } from 'chai';
 import { QaapAgentTaskKind } from './qaap-agent-task';
+import { listStaticNativeAgentModels } from './qaap-agent-native-model-catalog';
+import { parseQaapNativeModelRoutingTable } from './qaap-agent-native-model-routing';
 import {
     classifyAgentTaskKind,
     resolveEffectiveRequestAgentModel,
@@ -113,6 +115,84 @@ describe('resolveEffectiveRequestAgentModel', () => {
         )).to.deep.equal(explicit);
     });
 
+    // The native-CLI branch: routed from the caller's evaluation only, and only to models the agent
+    // itself lists. Everything else keeps the CLI's own default model.
+    describe('native-catalog agents', () => {
+        const noPrefs = (): unknown => undefined;
+        const context = { listNativeModels: (agentId: string) => listStaticNativeAgentModels(agentId) };
+
+        it('routes a workflow-supplied taskKind to the pinned native model', () => {
+            const routed = resolveEffectiveRequestAgentModel(
+                { prompt: 'Collect the bundle size', taskKind: 'exploration' },
+                noPrefs,
+                'claude',
+                context,
+            );
+            expect(routed).to.deep.equal({ provider: 'anthropic', vendor: 'claude', modelId: 'claude-haiku-4-5' });
+        });
+
+        it('keeps a judge off the writer model', () => {
+            const writer = resolveEffectiveRequestAgentModel(
+                { prompt: 'Apply the fix', taskKind: 'implementation' }, noPrefs, 'claude', context,
+            );
+            const judge = resolveEffectiveRequestAgentModel(
+                { prompt: 'Review the diff', taskKind: 'review' }, noPrefs, 'claude', context,
+            );
+            expect(judge?.modelId).to.not.equal(writer?.modelId);
+        });
+
+        it('an explicit picker model still wins over the taskKind pin', () => {
+            const explicit = { provider: 'anthropic' as const, vendor: 'claude', modelId: 'claude-sonnet-5' };
+            const routed = resolveEffectiveRequestAgentModel(
+                { prompt: 'Collect the bundle size', taskKind: 'exploration', agentModel: explicit },
+                noPrefs,
+                'claude',
+                context,
+            );
+            expect(routed).to.deep.equal(explicit);
+        });
+
+        // The composer shows the model it will use in a chip and never sends taskKind; routing it on
+        // guessed intent would swap the model underneath that chip.
+        it('never routes a composer turn from the text heuristic', () => {
+            for (const prompt of ['Implement the OAuth callback fix', 'Where is the SSE handler defined?']) {
+                expect(resolveEffectiveRequestAgentModel({ prompt }, noPrefs, 'claude', context), prompt).to.equal(undefined);
+            }
+        });
+
+        it('emits nothing without a routing context, i.e. pre-feature behavior', () => {
+            expect(resolveEffectiveRequestAgentModel(
+                { prompt: 'Collect the bundle size', taskKind: 'exploration' },
+                noPrefs,
+                'claude',
+            )).to.equal(undefined);
+        });
+
+        it('emits nothing for an agent with no verifiable tier ordering', () => {
+            for (const agentId of ['codex', 'grok', 'copilot']) {
+                expect(resolveEffectiveRequestAgentModel(
+                    { prompt: 'Apply the fix', taskKind: 'implementation' },
+                    noPrefs,
+                    agentId,
+                    context,
+                ), agentId).to.equal(undefined);
+            }
+        });
+
+        it('honors an operator override and its off switch', () => {
+            const override = {
+                ...context,
+                nativeTable: parseQaapNativeModelRoutingTable('{"codex":{"exploration":"gpt-5.5"},"claude":{}}'),
+            };
+            expect(resolveEffectiveRequestAgentModel(
+                { prompt: 'Collect the bundle size', taskKind: 'exploration' }, noPrefs, 'codex', override,
+            )?.modelId).to.equal('gpt-5.5');
+            expect(resolveEffectiveRequestAgentModel(
+                { prompt: 'Collect the bundle size', taskKind: 'exploration' }, noPrefs, 'claude', override,
+            )).to.equal(undefined);
+        });
+    });
+
     // Precedence: explicit agentModel > caller-supplied taskKind > text-heuristic classifyAgentTaskKind.
     describe('taskKind precedence', () => {
         const readPref = (key: string): unknown => {
@@ -179,8 +259,8 @@ describe('resolveEffectiveRequestAgentModel', () => {
 
 describe('QaapAgentTaskKind.is', () => {
 
-    it('accepts the three kinds', () => {
-        for (const kind of ['exploration', 'implementation', 'general']) {
+    it('accepts the four kinds', () => {
+        for (const kind of ['exploration', 'implementation', 'review', 'general']) {
             expect(QaapAgentTaskKind.is(kind), kind).to.equal(true);
         }
     });

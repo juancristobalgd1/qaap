@@ -23,6 +23,13 @@ import { QaapWorkflowAgentTurnNode, QaapWorkflowCapability, QaapWorkflowCostTier
  * capability is (e.g. a `'cheap'` `judge` still gets the exploration/cheap alias). Only when
  * `costTier` is `'standard'` or omitted does the mapping fall back to `capability`.
  *
+ * The ONE exception is `judge`, which claims `'review'` ahead of the tier for everything except
+ * `'cheap'`. A premium judge falling into `'implementation'` would be handed the writer's slot —
+ * the same model that produced the change, presented as an independent verdict — which is the
+ * exact failure `'review'` was introduced to prevent. `'cheap'` keeps its meaning: a caller
+ * stating the review is worth less than a good answer gets the cheap model, which is in any case
+ * not the writer's.
+ *
  * The capability fallback deliberately mirrors {@link DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE}, which
  * orders backends for getting it right the first time rather than for unit cost: only a caller
  * asking for `'cheap'` gets the cheap answer. So `explore` does NOT downgrade itself here — its
@@ -33,12 +40,11 @@ import { QaapWorkflowAgentTurnNode, QaapWorkflowCapability, QaapWorkflowCostTier
  * - `judge` — deliberately NOT `'implementation'`, even though a review needs real reasoning.
  *   Pinning it to the same `code` alias as the writer guarantees the reviewer is the same model
  *   that wrote the change whenever both turns land on the same backend — which is exactly what the
- *   judge-independence routing exists to prevent, and it is a regression against the prompt-text
- *   heuristic this hint replaced (that one already sent a judge prompt to `'general'` and an
- *   implement prompt to `'implementation'`). Independence is enforced on the backend axis; the
- *   model axis must at least not undo it. Note the limitation: `'general'` only means "not pinned
- *   to the writer's alias" — real model independence would need a dedicated reviewer alias, and
- *   the alias set has none today.
+ *   judge-independence routing exists to prevent. It gets its own `'review'` kind, which for a
+ *   native CLI resolves to a frontier model that is NOT the one `'implementation'` pins (see
+ *   `DEFAULT_QAAP_NATIVE_MODEL_ROUTING_TABLE`), and for QAIQ still falls back to the operator's
+ *   default alias — the alias set has no reviewer slot, so `'review'` there means only "not the
+ *   writer's alias", as before.
  * - `explore` / `synthesize` / `creative` / `general` — no signal that justifies either specialized
  *   alias, so they route to `'general'`: the operator's configured default model, i.e. exactly what
  *   would run with no routing at all. `explore` reaches the cheaper alias only via `costTier: 'cheap'`.
@@ -47,6 +53,9 @@ export function resolveQaapWorkflowTaskKind(
     capability: QaapWorkflowCapability,
     costTier?: QaapWorkflowCostTier,
 ): QaapAgentTaskKind {
+    if (capability === 'judge' && costTier !== 'cheap') {
+        return 'review';
+    }
     if (costTier === 'cheap') {
         return 'exploration';
     }
@@ -58,7 +67,6 @@ export function resolveQaapWorkflowTaskKind(
             return 'exploration';
         case 'implement':
             return 'implementation';
-        case 'judge':
         case 'explore':
         case 'synthesize':
         case 'creative':

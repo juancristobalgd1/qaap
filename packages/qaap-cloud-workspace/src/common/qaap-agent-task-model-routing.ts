@@ -4,8 +4,13 @@
 // *****************************************************************************
 
 import { agentUsesSettingsModelCatalog } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-model-selection';
+import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import type { QaapAgentTaskKind, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import { resolveRequestAgentModel } from './qaap-agent-task';
+import {
+    resolveNativeAgentModelForTaskKind,
+    type QaapNativeModelRoutingTable,
+} from './qaap-agent-native-model-routing';
 import {
     parseTheiaLanguageModelId,
     resolveQaapQaiqModelBinding,
@@ -72,6 +77,8 @@ export function resolveRoutedQaiqModelBinding(
         case 'implementation':
             return resolveAliasBinding(readPref, 'default/code')
                 ?? resolveQaapQaiqModelBinding(readPref);
+        // 'review' and 'general' both land here: the Settings alias set has no reviewer slot, and
+        // inventing one by reusing `default/code` would hand the review to the writer's model.
         default:
             return resolveQaapQaiqModelBinding(readPref);
     }
@@ -99,28 +106,50 @@ export interface ResolveEffectiveAgentModelRequest {
     readonly taskKind?: QaapAgentTaskKind;
 }
 
+/** Everything the native-CLI branch needs; omit it and native agents keep their default model. */
+export interface QaapAgentModelRoutingContext {
+    /**
+     * The agent's live model catalog (CLI discovery first, curated static list as fallback — see
+     * `listNativeAgentModels`). It is the authority that makes a pin emittable.
+     */
+    readonly listNativeModels?: (agentId: string) => readonly QaapQaiqModelOption[];
+    /** Operator override parsed from `QAAP_AGENT_TASK_MODELS`; defaults apply when omitted. */
+    readonly nativeTable?: QaapNativeModelRoutingTable;
+}
+
 /**
- * Explicit composer/thread model wins. Otherwise route by task kind, but ONLY for agents whose
- * catalog IS the Settings catalog (QAIQ): the routed aliases are QAIQ provider bindings
- * (NVIDIA/OpenRouter/…), and applying one to a native-catalog CLI (claude, codex, grok, …)
- * produces `--model <foreign-vendor-model>` → model_not_found. Native CLIs without an explicit
- * pick run on their own default model.
+ * Explicit composer/thread model wins, always. Otherwise route by task kind, on two separate paths
+ * because the two catalogs are not interchangeable:
+ *
+ * - QAIQ (the Settings alias catalog): routed aliases are provider bindings (NVIDIA/OpenRouter/…).
+ *   Applying one to a native CLI would produce `--model <foreign-vendor-model>` → model_not_found,
+ *   so this path stays QAIQ-only, exactly as before.
+ * - Native CLIs (claude, codex, …): routed through {@link resolveNativeAgentModelForTaskKind},
+ *   which only ever emits a model the agent itself lists. No verifiable pin → no flag → CLI default.
+ *
+ * The native path additionally requires a caller-supplied {@link ResolveEffectiveAgentModelRequest.taskKind}
+ * and never falls back to the text heuristic. That is deliberate: only a caller that evaluated the
+ * work (a workflow node) sends `taskKind`, while the composer sends none and displays the model it
+ * will use in a chip. Routing a composer turn on guessed intent would swap the model underneath
+ * that chip — the UI would be lying about what ran. Workflow turns have no such chip, and their
+ * assignment is recorded in the run transcript.
  *
  * Precedence for the task kind used to route: explicit {@link ResolveEffectiveAgentModelRequest.agentModel}
  * (short-circuits above) > caller-supplied {@link ResolveEffectiveAgentModelRequest.taskKind} >
- * text-heuristic {@link classifyAgentTaskKind} over the prompt/command.
+ * text-heuristic {@link classifyAgentTaskKind} over the prompt/command (QAIQ only).
  */
 export function resolveEffectiveRequestAgentModel(
     request: ResolveEffectiveAgentModelRequest,
     readPref: QaapPreferenceReader,
     agentId: string,
+    context?: QaapAgentModelRoutingContext,
 ): QaapCreateAgentTaskQaiqModel | undefined {
     const explicit = resolveRequestAgentModel(request);
     if (explicit) {
         return explicit;
     }
     if (!agentUsesSettingsModelCatalog(agentId)) {
-        return undefined;
+        return resolveNativeRequestAgentModel(request, agentId, context);
     }
     let kind: QaapAgentTaskKind;
     if (request.taskKind) {
@@ -136,4 +165,20 @@ export function resolveEffectiveRequestAgentModel(
     }
     const binding = resolveRoutedQaiqModelBinding(readPref, kind);
     return binding ? bindingToAgentModel(binding) : undefined;
+}
+
+function resolveNativeRequestAgentModel(
+    request: ResolveEffectiveAgentModelRequest,
+    agentId: string,
+    context: QaapAgentModelRoutingContext | undefined,
+): QaapCreateAgentTaskQaiqModel | undefined {
+    if (!request.taskKind || !context?.listNativeModels) {
+        return undefined;
+    }
+    return resolveNativeAgentModelForTaskKind(
+        agentId,
+        request.taskKind,
+        context.listNativeModels(agentId) ?? [],
+        context.nativeTable,
+    );
 }
