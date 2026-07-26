@@ -303,8 +303,23 @@ function recordJoinArrival(
     join: QaapWorkflowJoinNode,
     from: string,
 ): { readonly run: QaapWorkflowRun; readonly fired: boolean } {
+    const previous = run.joinArrivals[join.id] ?? [];
     if (run.firedJoins.includes(join.id)) {
-        return { run, fired: false };
+        // A predecessor arriving at a join it already fed is a NEW round of a loop, not a late
+        // arrival: re-arm the join instead of swallowing it. Without this, a cycle that fans out
+        // again could never satisfy its fan-in a second time — the branches would report, nothing
+        // would be released, and the run would end on its last branch as if it had succeeded.
+        if (!previous.includes(from)) {
+            return {
+                run: { ...run, joinArrivals: { ...run.joinArrivals, [join.id]: [...previous, from] } },
+                fired: false,
+            };
+        }
+        run = {
+            ...run,
+            joinArrivals: { ...run.joinArrivals, [join.id]: [] },
+            firedJoins: run.firedJoins.filter(id => id !== join.id),
+        };
     }
     const arrived = [...new Set([...(run.joinArrivals[join.id] ?? []), from])];
     const expected = new Set(def.edges.filter(edge => edge.to === join.id).map(edge => edge.from)).size;

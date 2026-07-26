@@ -113,7 +113,10 @@ export class QaapWorkflowEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
-            const record = await this.service.start(template.build({ verify: body.verify === true }), {
+            const record = await this.service.start(template.build({
+                verify: body.verify === true,
+                reviewFix: body.reviewFix === true,
+            }), {
                 cwd: resolved.cwd,
                 ownerLogin: this.ownerLogin(ctx),
                 inputs: checkScript ? { ...inputs, checkScript } : inputs,

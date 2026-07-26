@@ -22,8 +22,10 @@ import {
     QAAP_WORKFLOW_PLAN_REVIEW_ARTIFACT,
     QAAP_WORKFLOW_REVIEW_DIFF_ARTIFACT,
     QAAP_WORKFLOW_REVIEW_LENSES,
+    QAAP_WORKFLOW_REVIEW_VERDICT_ARTIFACT,
     QAAP_WORKFLOW_STRUCTURE_ARTIFACT,
     QAAP_WORKFLOW_VERIFICATION_ARTIFACT,
+    QAAP_WORKFLOW_VERIFY_FAILURE_ARTIFACT,
 } from './qaap-workflow-ir';
 
 export interface QaapWorkflowPromptContext {
@@ -94,6 +96,21 @@ function inlineDiff(context: QaapWorkflowPromptContext): string {
         ? `${diff.slice(0, DEFAULT_REVIEW_DIFF_CAP_CHARS)}\n…(diff truncated)`
         : diff;
     return capped || '(empty diff — inspect the working tree yourself)';
+}
+
+/**
+ * What the failing check printed, as a fix turn receives it — or the instruction to go and get it
+ * when the capture is missing.
+ *
+ * The failure is repository output, not agent text, and it still goes through the marker redaction:
+ * a test that prints a verdict marker would otherwise reach a turn whose own output the graph reads
+ * back.
+ */
+function verificationFailureSection(context: QaapWorkflowPromptContext): readonly string[] {
+    const failure = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_VERIFY_FAILURE_ARTIFACT]);
+    return failure
+        ? ['', 'This is what the check printed when it failed — fix THIS, and do not go looking for something else to fix:', '', failure]
+        : ['', 'The failing output was not captured. Run the check yourself first, then fix exactly what it reports.'];
 }
 
 /** Agent-written text on its way into a verdict-bearing prompt: never carries a live marker. */
@@ -234,7 +251,8 @@ export class QaapWorkflowPromptRegistry {
             `Goal: ${requireInput('fix-goal', context, 'task')}`,
             goalCheckLine(context),
             '',
-            'Read the failure, fix the cause rather than the symptom, and change as little as possible.',
+            'Fix the cause rather than the symptom, and change as little as possible.',
+            ...verificationFailureSection(context),
         ].join('\n'));
 
         this.register('fix-verification', context => [
@@ -242,7 +260,30 @@ export class QaapWorkflowPromptRegistry {
             'Fix it, changing as little as possible.',
             '',
             `Original task: ${requireInput('fix-verification', context, 'task')}`,
+            ...verificationFailureSection(context),
         ].join('\n'));
+
+        // The turn that answers a rejection. It gets the objections AND the diff it wrote, because
+        // "fix what the reviewer said" is unanswerable without both: the objections name file:line
+        // in a change the turn no longer has in front of it.
+        this.register('fix-review', context => {
+            const verdict = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_REVIEW_VERDICT_ARTIFACT]);
+            return [
+                'An independent reviewer REJECTED the change you just made. It is still in the working tree:'
+                + ' repair it in place, do not start over, and do not undo work the reviewer did not object to.',
+                '',
+                `Original task: ${requireInput('fix-review', context, 'task')}`,
+                '',
+                'What the reviewer said:',
+                verdict ?? '(the verdict was not captured — re-read the diff below and fix what is actually wrong with it)',
+                '',
+                'Address every objection, or state plainly why one of them is mistaken. The same review runs again on the'
+                + ' result, so unrelated edits only widen what has to be judged a second time.',
+                '',
+                'The change you wrote, as the reviewer saw it:',
+                inlineDiff(context),
+            ].join('\n');
+        });
 
         // Reuse the runner's reviewer prompt so the @@QAAP:VERDICT@@ contract lives in exactly one
         // place. A judge node declares requireSentinel, and without this instruction a faithful

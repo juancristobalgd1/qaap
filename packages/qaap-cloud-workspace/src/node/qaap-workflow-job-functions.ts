@@ -39,6 +39,12 @@ const GIT_TIMEOUT_MS = 60_000;
 /** Per-script wall clock for verification; the whole node is additionally bounded by the job timeout. */
 const VERIFY_SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_VERIFY_OUTPUT_BYTES = 64 * 1024;
+/**
+ * How much of the failing output the fix turn is handed. Far below the 64 KB capture: a prompt that
+ * carries a whole build log buries the three lines that matter, and the run store caps artifacts
+ * anyway.
+ */
+const MAX_VERIFY_ARTIFACT_CHARS = 12_000;
 
 /**
  * What the run compares against. A workflow's change is everything since the run STARTED, so the
@@ -116,6 +122,14 @@ interface VerifyOutput {
     readonly scripts?: readonly string[];
     readonly failedScript?: string;
     readonly summary?: string;
+    /**
+     * The failure again, cut down to what a fix prompt can carry. Named `artifact` for the same
+     * reason `git-diff` is: the dispatcher stores exactly this field under the node's `artifactKey`,
+     * so a deterministic op declares what it publishes instead of the dispatcher learning the shape
+     * of every op's result. Kept separate from {@link summary} so the run index never holds the
+     * whole 64 KB capture.
+     */
+    readonly artifact?: string;
 }
 
 @injectable()
@@ -210,10 +224,28 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
             context.emitOutput(`\n[qaap-workflow] verifying: npm run ${script}\n`);
             const failure = await this.runVerificationScript(context, script);
             if (failure) {
-                return { outcome: 'fail', failedScript: script, summary: failure.slice(0, MAX_VERIFY_OUTPUT_BYTES) };
+                return {
+                    outcome: 'fail',
+                    failedScript: script,
+                    summary: failure.slice(0, MAX_VERIFY_OUTPUT_BYTES),
+                    artifact: this.failureArtifact(script, failure),
+                };
             }
         }
         return { outcome: 'success', scripts };
+    }
+
+    /**
+     * The failing output as the fix turn receives it: the script that failed, then the END of what
+     * it printed. The tail, not the head — the head of `npm run` is npm's own banner, while the
+     * reason for a non-zero exit (the failing assertion, `Found 12 errors.`) lands last.
+     */
+    protected failureArtifact(script: string, failure: string): string {
+        const trimmed = failure.trim();
+        const tail = trimmed.length > MAX_VERIFY_ARTIFACT_CHARS
+            ? `…(earlier output trimmed)\n${trimmed.slice(-MAX_VERIFY_ARTIFACT_CHARS)}`
+            : trimmed;
+        return `\`npm run ${script}\` failed:\n\n${tail}`;
     }
 
     /** Run one npm script; return an error summary on failure, or undefined on success. Overridable for tests. */
@@ -227,8 +259,22 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
             });
             return undefined;
         } catch (error) {
-            return error instanceof Error ? error.message : String(error);
+            return this.describeScriptFailure(error);
         }
+    }
+
+    /**
+     * What the script actually printed. `error.message` alone is `Command failed: npm run compile`
+     * plus stderr — and the tools this repository verifies with (tsc, mocha) report on STDOUT, so a
+     * fix turn given only the message is told that something failed and nothing about what.
+     */
+    protected describeScriptFailure(error: unknown): string {
+        const streams = error as { readonly stdout?: unknown; readonly stderr?: unknown } | undefined;
+        const stdout = typeof streams?.stdout === 'string' ? streams.stdout.trim() : '';
+        const stderr = typeof streams?.stderr === 'string' ? streams.stderr.trim() : '';
+        const message = error instanceof Error ? error.message : String(error);
+        // execFile already folds stderr into its message; only add it when it is not there already.
+        return [message, stdout, stderr && !message.includes(stderr) ? stderr : ''].filter(Boolean).join('\n');
     }
 
     protected async readPackageJson(context: QaapJobFunctionContext): Promise<unknown> {

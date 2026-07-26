@@ -106,6 +106,33 @@ describe('advanceQaapWorkflowRun', () => {
         expect(straggler.run.firedJoins).to.deep.equal(['join']);
     });
 
+    it('re-arms a join when a loop fans out into it a second time', () => {
+        // A fired join used to stay fired for the whole run, so a cycle that fans out again could
+        // never satisfy its fan-in twice: the second round's branches reported, nothing was
+        // released, and the run ended on its last branch as if it had succeeded.
+        const looping: QaapWorkflowDef = {
+            ...fanOutDef('all'),
+            edges: [...fanOutDef('all').edges, { from: 'synthesize', to: 'plan', when: 'fail' }],
+        };
+        let state = advanceQaapWorkflowRun(looping, startQaapWorkflowRun(looping, { runId: 'r3b' }).run, 'plan', 'success').run;
+        state = advanceQaapWorkflowRun(looping, state, 'left', 'success').run;
+        state = advanceQaapWorkflowRun(looping, state, 'right', 'success').run;
+        state = advanceQaapWorkflowRun(looping, state, 'join', 'success').run;
+        expect(state.active).to.deep.equal(['synthesize']);
+
+        // Second round: the same two branches reach the same join again.
+        state = advanceQaapWorkflowRun(looping, state, 'synthesize', 'fail').run;
+        state = advanceQaapWorkflowRun(looping, state, 'plan', 'success').run;
+        const half = advanceQaapWorkflowRun(looping, state, 'left', 'success');
+        expect(half.dispatch, 'the join must wait for the second branch again').to.deep.equal([]);
+        expect(half.run.status).to.equal('running');
+
+        const rearmed = advanceQaapWorkflowRun(looping, half.run, 'right', 'success');
+        expect(rearmed.dispatch).to.deep.equal(['join']);
+        expect(rearmed.run.status).to.equal('running');
+        expect(rearmed.run.visits.join).to.equal(2);
+    });
+
     it('detects a stalled wait-all join when the last live branch dies', () => {
         const def: QaapWorkflowDef = {
             ...fanOutDef('all'),

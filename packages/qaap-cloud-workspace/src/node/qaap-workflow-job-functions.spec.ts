@@ -20,11 +20,15 @@ function buildRegistry(): { registry: QaapJobFunctionRegistry; definitions: Map<
 
 /** Verify contribution whose script runner is stubbed, so no npm process is spawned. */
 class TestVerifyFunctions extends QaapWorkflowJobFunctions {
-    constructor(protected readonly failingScripts: ReadonlySet<string>) { super(); }
+    constructor(protected readonly failingScripts: ReadonlySet<string>, protected readonly output?: string) { super(); }
     readonly ran: string[] = [];
     protected override async runVerificationScript(_context: QaapJobFunctionContext, script: string): Promise<string | undefined> {
         this.ran.push(script);
-        return this.failingScripts.has(script) ? `npm run ${script} failed` : undefined;
+        return this.failingScripts.has(script) ? (this.output ?? `npm run ${script} failed`) : undefined;
+    }
+    /** Exposes the real failure formatter, which the stub above bypasses. */
+    describe(error: unknown): string {
+        return this.describeScriptFailure(error);
     }
 }
 
@@ -42,9 +46,9 @@ describe('QaapWorkflowJobFunctions.verify', () => {
     beforeEach(() => dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-workflow-verify-')));
     afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-    function verifyDefinition(failing: string[] = []): { definition: QaapJobFunctionDefinition; contribution: TestVerifyFunctions } {
+    function verifyDefinition(failing: string[] = [], output?: string): { definition: QaapJobFunctionDefinition; contribution: TestVerifyFunctions } {
         const { registry, definitions } = buildRegistry();
-        const contribution = new TestVerifyFunctions(new Set(failing));
+        const contribution = new TestVerifyFunctions(new Set(failing), output);
         contribution.registerFunctions(registry);
         return { definition: definitions.get(QAAP_WORKFLOW_VERIFY_FUNCTION)!, contribution };
     }
@@ -84,5 +88,47 @@ describe('QaapWorkflowJobFunctions.verify', () => {
         const { definition } = verifyDefinition();
         const result = await definition.execute(context(dir), {}) as { outcome: string };
         expect(result.outcome).to.equal('success');
+    });
+
+    describe('what the fix turn is handed', () => {
+        it('publishes the failing output as the node artifact', async () => {
+            // Without this the failure is captured, kept in the job result, and never seen again:
+            // the fix turn is told to read a failure the prompt does not contain.
+            writePackageJson({ build: 'tsc -b' });
+            const { definition } = verifyDefinition(['build'], 'src/cart.ts(12,5): error TS2345: string is not number');
+            const result = await definition.execute(context(dir), {}) as { artifact?: string };
+            expect(result.artifact).to.contain('npm run build');
+            expect(result.artifact).to.contain('error TS2345');
+        });
+
+        it('keeps the END of a long log, where the reason for the exit code is', async () => {
+            writePackageJson({ build: 'tsc -b' });
+            const noise = 'npm banner line\n'.repeat(4000);
+            const { definition } = verifyDefinition(['build'], `${noise}Found 12 errors in 3 files.`);
+            const result = await definition.execute(context(dir), {}) as { artifact?: string };
+            expect(result.artifact).to.contain('Found 12 errors');
+            expect(result.artifact).to.contain('earlier output trimmed');
+            expect(result.artifact!.length).to.be.lessThan(noise.length);
+        });
+
+        it('publishes nothing when the workspace verifies cleanly', async () => {
+            writePackageJson({ build: 'tsc -b' });
+            const { definition } = verifyDefinition();
+            const result = await definition.execute(context(dir), {}) as { artifact?: string };
+            expect(result.artifact).to.equal(undefined);
+        });
+
+        it('captures stdout, where the compilers this repository verifies with report', async () => {
+            // `error.message` from execFile is 'Command failed: …' plus STDERR only, and tsc/mocha
+            // print their diagnostics on stdout: message-only means "something failed", nothing more.
+            const { contribution } = verifyDefinition();
+            const described = contribution.describe(Object.assign(
+                new Error('Command failed: npm run build\nnpm ERR! code 2'),
+                { stdout: 'src/cart.ts(12,5): error TS2345', stderr: 'npm ERR! code 2' },
+            ));
+            expect(described).to.contain('error TS2345');
+            // stderr is already inside the message; repeating it just pushes the useful part away.
+            expect(described.split('npm ERR! code 2')).to.have.lengthOf(2);
+        });
     });
 });

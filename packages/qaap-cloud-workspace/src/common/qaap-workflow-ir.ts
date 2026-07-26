@@ -47,6 +47,20 @@ export const QAAP_WORKFLOW_REVIEW_LENSES: readonly QaapWorkflowReviewLens[] = [
 /** The plan reviewer's objections, handed back to the plan turn when it has to try again. */
 export const QAAP_WORKFLOW_PLAN_REVIEW_ARTIFACT = 'plan.review';
 
+/**
+ * What the failing verification actually printed, captured by the `verify` node and inlined by the
+ * fix prompts. Without it the fix turn is told "verification failed", is asked to "read the
+ * failure", and has no failure to read: measured live, it re-explored the repository from scratch
+ * before touching anything.
+ */
+export const QAAP_WORKFLOW_VERIFY_FAILURE_ARTIFACT = 'verify.failure';
+
+/**
+ * The reviewer of record's verdict, kept so the turn that has to answer it can read the objections
+ * instead of guessing what was wrong with a change the graph already rejected.
+ */
+export const QAAP_WORKFLOW_REVIEW_VERDICT_ARTIFACT = 'review.verdict';
+
 /** How concurrent writer nodes isolate their working tree. */
 export type QaapWorkflowIsolation = 'cwd' | 'worktree' | 'cwd-readonly';
 
@@ -518,6 +532,18 @@ export function buildImplementThenReviewWorkflow(options?: {
      * written on a plan that did not survive scrutiny.
      */
     readonly withPlanGate?: boolean;
+    /**
+     * Close the review loop: a `verdict:fail` re-enters a fix turn carrying the reviewer's
+     * objections and the diff it wrote, and the fixed change is captured and judged again — instead
+     * of the graph detecting the problem and giving up on it.
+     *
+     * Opt-in, like every other topology change here, and for a sharper reason: the default graph's
+     * `verdict:fail → done-fail` is the contract `qaap-workflow-review-conformance.spec.ts` pins
+     * against the runner's own review decision. Turning the loop on by default would make a rejected
+     * change end somewhere the runner never ends, and would spend a fix turn plus a whole second
+     * review on every run that is rejected today.
+     */
+    readonly withReviewFixLoop?: boolean;
 }): QaapWorkflowDef {
     const reviewMode = options?.reviewMode ?? 'high-risk';
     const withVerify = (options?.withVerify ?? false) || (options?.withGoal ?? false);
@@ -675,7 +701,9 @@ export function buildImplementThenReviewWorkflow(options?: {
     const afterImplement = withVerify ? 'verify' : undefined;
     if (withVerify) {
         nodes.push(
-            { kind: 'deterministic', id: 'verify', op: 'verify' },
+            // The failing output is the artifact: a fix turn that cannot see what broke re-derives
+            // it, and the prompt that tells it to "read the failure" has nothing to point at.
+            { kind: 'deterministic', id: 'verify', op: 'verify', artifactKey: QAAP_WORKFLOW_VERIFY_FAILURE_ARTIFACT },
             {
                 kind: 'agent-turn',
                 id: 'implement-fix',
@@ -760,6 +788,9 @@ export function buildImplementThenReviewWorkflow(options?: {
                 isolation: 'cwd-readonly',
                 promptRef: 'synthesize-review',
                 requireSentinel: true,
+                // The verdict is kept whether or not the fix loop is on: it costs one capped
+                // artifact, and it is the only record of WHY a run ended rejected.
+                artifactKey: QAAP_WORKFLOW_REVIEW_VERDICT_ARTIFACT,
             },
         );
         edges.push({ from: 'reviewed', to: verdictNodeId, when: 'always' });
@@ -773,6 +804,7 @@ export function buildImplementThenReviewWorkflow(options?: {
             isolation: 'cwd-readonly',
             promptRef: 'adversarial-review',
             requireSentinel: true,
+            artifactKey: QAAP_WORKFLOW_REVIEW_VERDICT_ARTIFACT,
         });
         edges.push({ from: 'git-diff', to: verdictNodeId, when: 'success' });
     }
@@ -793,10 +825,37 @@ export function buildImplementThenReviewWorkflow(options?: {
     edges.push(
         { from: 'git-diff', to: 'done-inconclusive', when: 'fail' },
         { from: verdictNodeId, to: 'done-pass', when: 'verdict:pass' },
-        { from: verdictNodeId, to: 'done-fail', when: 'verdict:fail' },
         { from: verdictNodeId, to: 'done-inconclusive', when: 'verdict:inconclusive' },
         { from: verdictNodeId, to: 'done-inconclusive', when: 'fail' },
     );
+    if (options?.withReviewFixLoop) {
+        // The review fix-loop, mirroring the plan gate's `judge-plan --verdict:fail--> plan`: the
+        // rejection re-enters a turn that is HANDED the objections, and the result is judged again.
+        nodes.push({
+            kind: 'agent-turn',
+            id: 'implement-review-fix',
+            capability: 'implement',
+            costTier: 'standard',
+            agentRef: options?.implementAgentRef,
+            isolation: 'cwd',
+            // Its own node, not the verification fix turn: `fix-verification` would tell this turn
+            // the build is red when a reviewer rejected it, and with `withVerify` off that node does
+            // not exist at all. A separate id also keeps the two loops on separate visit budgets.
+            promptRef: 'fix-review',
+        });
+        edges.push(
+            { from: verdictNodeId, to: 'implement-review-fix', when: 'verdict:fail' },
+            // Straight back to the capture, deliberately skipping the risk gate: the change is
+            // already under review, and re-classifying it could route a rejected-then-edited change
+            // to `done-skip` — a rejection laundered into "review skipped".
+            { from: 'implement-review-fix', to: 'git-diff', when: 'success' },
+            // A fix turn that cannot run leaves the change rejected, which is what it was.
+            { from: 'implement-review-fix', to: 'done-fail', when: 'fail' },
+            { from: 'implement-review-fix', to: 'done-fail', when: 'blocked' },
+        );
+    } else {
+        edges.push({ from: verdictNodeId, to: 'done-fail', when: 'verdict:fail' });
+    }
     if (withMultiLensReview) {
         // A synthesis turn that is cancelled would otherwise leave the run with no edge to follow.
         // The lone judge keeps its historical edge set, which the review conformance pinned.

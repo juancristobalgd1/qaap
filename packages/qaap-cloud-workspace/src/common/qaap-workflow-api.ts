@@ -29,6 +29,14 @@ export interface QaapStartWorkflowRequest {
      */
     readonly verify?: boolean;
     /**
+     * Close the review loop: when the reviewer rejects the change, hand its objections and the diff
+     * to a fix turn and review the result again, instead of ending the run rejected. Off by default
+     * because it changes where a rejected run ends — today that is `review.failed`, which mirrors
+     * the runner's own review decision — and because each rejection then costs a fix turn plus a
+     * second full review. Bounded by the run's `maxVisitsPerNode`, like every other loop here.
+     */
+    readonly reviewFix?: boolean;
+    /**
      * This run's own wall clocks, in minutes. `maxNodeMinutes` bounds one dispatched node — a
      * wedged agent CLI then fails its node and the graph routes on, instead of holding the run
      * forever — and `maxRunMinutes` bounds the whole run. Both are clamped to [1 min, 24 h]; out of

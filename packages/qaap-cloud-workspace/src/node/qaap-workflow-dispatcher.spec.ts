@@ -281,6 +281,82 @@ describe('QaapWorkflowDispatcher', () => {
         });
     });
 
+    describe('the fix turns are shown what they must fix', () => {
+        it('hands the failing verification output to the fix turn', async () => {
+            // Regression: the verify function captured up to 64 KB of the failure and no node
+            // declared an artifact for it, so `fix-verification` said "read the failure" with no
+            // failure in the prompt.
+            const started = await store.start(buildImplementThenReviewWorkflow({ withVerify: true }), {
+                cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'add a discount' },
+            });
+            await dispatcher.dispatch(started.record, started.dispatch);
+            const runId = started.record.run.id;
+
+            await dispatcher.onAgentTaskFinished('task-1', 'completed');
+            await dispatcher.onJobFinished('job-1', 'succeeded', {
+                outcome: 'fail',
+                failedScript: 'build',
+                summary: 'the raw 64 KB capture',
+                artifact: '`npm run build` failed:\n\nsrc/cart.ts(12,5): error TS2345',
+            });
+
+            const record = store.get('ada', runId)!;
+            expect(record.artifacts['verify.failure']).to.contain('error TS2345');
+            // …and it is there BEFORE the fix turn is started, which is the only moment it matters.
+            expect(record.run.active).to.deep.equal(['implement-fix']);
+            expect(agent.started).to.deep.equal(['task-1', 'task-2']);
+            // The run index keeps the prompt-sized excerpt, never the whole capture.
+            expect(record.artifacts['verify.failure']).to.not.contain('64 KB');
+        });
+
+        it('sends a rejected change back into a fix turn with the verdict attached', async () => {
+            const def = buildImplementThenReviewWorkflow({ withReviewFixLoop: true });
+            const started = await store.start(def, { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'add a discount' } });
+            await dispatcher.dispatch(started.record, started.dispatch);
+            const runId = started.record.run.id;
+
+            await dispatcher.onAgentTaskFinished('task-1', 'completed');
+            await dispatcher.onJobFinished('job-1', 'succeeded', { outcome: 'risk:high' });
+            await dispatcher.onJobFinished('job-2', 'succeeded', { outcome: 'success', artifact: '+ total *= 0.9;' });
+            await dispatcher.onAgentTaskFinished(
+                'task-2', 'completed', resultLog('blocker | src/cart.ts:12 | applied twice\n@@QAAP:VERDICT@@ fail'),
+            );
+
+            const rejected = store.get('ada', runId)!;
+            expect(rejected.run.status).to.equal('running', 'the graph must not give up on a rejection');
+            expect(rejected.run.active).to.deep.equal(['implement-review-fix']);
+            expect(rejected.artifacts['review.verdict']).to.contain('applied twice');
+            expect(agent.started).to.deep.equal(['task-1', 'task-2', 'task-3']);
+
+            // The fixed change is captured again and re-judged, so the second verdict is a real one.
+            await dispatcher.onAgentTaskFinished('task-3', 'completed');
+            expect(jobs.started).to.deep.equal(['job-1', 'job-2', 'job-3']);
+            await dispatcher.onJobFinished('job-3', 'succeeded', { outcome: 'success', artifact: '+ total = round(total * 0.9);' });
+            await dispatcher.onAgentTaskFinished('task-4', 'completed', resultLog('@@QAAP:VERDICT@@ pass fixed'));
+
+            const final = store.get('ada', runId)!;
+            expect(final.run.status).to.equal('succeeded');
+            expect(final.run.bindings).to.have.property('review.passed');
+            expect(final.artifacts['review.diff']).to.contain('round(total * 0.9)');
+        });
+
+        it('ends the run rejected when the review fix turn cannot run', async () => {
+            const def = buildImplementThenReviewWorkflow({ withReviewFixLoop: true });
+            const started = await store.start(def, { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'add a discount' } });
+            await dispatcher.dispatch(started.record, started.dispatch);
+
+            await dispatcher.onAgentTaskFinished('task-1', 'completed');
+            await dispatcher.onJobFinished('job-1', 'succeeded', { outcome: 'risk:high' });
+            await dispatcher.onJobFinished('job-2', 'succeeded', { outcome: 'success', artifact: 'diff' });
+            await dispatcher.onAgentTaskFinished('task-2', 'completed', 'nope\n@@QAAP:VERDICT@@ fail');
+            await dispatcher.onAgentTaskFinished('task-3', 'failed');
+
+            const record = store.get('ada', started.record.run.id)!;
+            expect(record.run.status).to.equal('failed');
+            expect(record.run.bindings).to.have.property('review.failed');
+        });
+    });
+
     describe('fan-out and fan-in', () => {
         /** Two explorers that reconverge on a join before a synthesis turn. */
         const fanOut: QaapWorkflowDef = {

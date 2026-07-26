@@ -19,6 +19,8 @@ import { buildImplementThenReviewWorkflow, QaapWorkflowDef } from './qaap-workfl
 export interface QaapWorkflowTemplateOptions {
     /** Insert the graph-level verification step and its fix-loop (see `QaapStartWorkflowRequest`). */
     readonly verify?: boolean;
+    /** Send a rejected change back into a fix turn and review it again (see `QaapStartWorkflowRequest`). */
+    readonly reviewFix?: boolean;
 }
 
 export interface QaapWorkflowTemplate {
@@ -66,6 +68,7 @@ export class QaapWorkflowTemplateRegistry {
             build: options => buildImplementThenReviewWorkflow({
                 reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
                 withVerify: options?.verify,
+                withReviewFixLoop: options?.reviewFix,
             }),
         });
 
@@ -80,9 +83,10 @@ export class QaapWorkflowTemplateRegistry {
             },
             // How many fix turns a goal may take is the run's own budget (`maxVisitsPerNode`) and
             // its wall clock — one set of bounds, not a second private one that could disagree.
-            build: () => buildImplementThenReviewWorkflow({
+            build: options => buildImplementThenReviewWorkflow({
                 reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
                 withGoal: true,
+                withReviewFixLoop: options?.reviewFix,
             }),
         });
 
@@ -98,6 +102,7 @@ export class QaapWorkflowTemplateRegistry {
             build: options => buildImplementThenReviewWorkflow({
                 reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
                 withVerify: options?.verify,
+                withReviewFixLoop: options?.reviewFix,
                 withPlan: true,
             }),
         });
@@ -114,6 +119,7 @@ export class QaapWorkflowTemplateRegistry {
             build: options => buildImplementThenReviewWorkflow({
                 reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
                 withVerify: options?.verify,
+                withReviewFixLoop: options?.reviewFix,
                 withParallelExploration: true,
             }),
         });
@@ -142,6 +148,7 @@ export class QaapWorkflowTemplateRegistry {
                 // to switch reviewing back ON where the operator turned it off.
                 reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
                 withVerify: options?.verify,
+                withReviewFixLoop: options?.reviewFix,
                 withMultiLensReview: true,
             }),
         });
@@ -159,6 +166,7 @@ export class QaapWorkflowTemplateRegistry {
             build: options => buildImplementThenReviewWorkflow({
                 reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
                 withVerify: options?.verify,
+                withReviewFixLoop: options?.reviewFix,
                 withPlanGate: true,
             }),
         });
