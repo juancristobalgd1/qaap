@@ -90,6 +90,10 @@ export interface QaapAgentMessageWireSnapshot {
     readonly traceEvents?: QaapTranscriptTraceEventDTO[];
     readonly segments?: QaapAgentMessageSegmentDTO[];
     readonly createdAt: number;
+    /** @see QaapAgentMessageDTO.turnAgentId */
+    readonly turnAgentId?: string;
+    /** @see QaapAgentMessageDTO.turnAgentModel */
+    readonly turnAgentModel?: QaapAgentMessageDTO['turnAgentModel'];
 }
 
 function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageDTO {
@@ -100,18 +104,25 @@ function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageD
         createdAt: message.createdAt,
         traceEvents: message.traceEvents,
         segments: message.segments,
+        turnAgentId: message.turnAgentId,
+        turnAgentModel: message.turnAgentModel,
     });
 }
 
 /** Drop legacy segments from live wire payloads when structured traceEvents are present. */
 export function toAgentMessageWirePayload(
-    message: Pick<QaapAgentMessageDTO, 'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments'>,
+    message: Pick<
+        QaapAgentMessageDTO,
+        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel'
+    >,
 ): QaapAgentMessageDTO {
     const base: QaapAgentMessageDTO = {
         id: message.id,
         role: message.role,
         content: message.content,
         createdAt: message.createdAt,
+        ...(message.turnAgentId ? { turnAgentId: message.turnAgentId } : {}),
+        ...(message.turnAgentModel ? { turnAgentModel: message.turnAgentModel } : {}),
     };
     if (message.traceEvents?.length) {
         return { ...base, traceEvents: [...message.traceEvents] };
@@ -124,13 +135,18 @@ export function toAgentMessageWirePayload(
 
 /** Snapshot for delta computation — traceEvents-only when structured trace is available. */
 export function toAgentMessageWireSnapshot(
-    message: Pick<QaapAgentMessageDTO, 'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments'>,
+    message: Pick<
+        QaapAgentMessageDTO,
+        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel'
+    >,
 ): QaapAgentMessageWireSnapshot {
     const snapshot: QaapAgentMessageWireSnapshot = {
         id: message.id,
         role: message.role,
         content: message.content,
         createdAt: message.createdAt,
+        ...(message.turnAgentId ? { turnAgentId: message.turnAgentId } : {}),
+        ...(message.turnAgentModel ? { turnAgentModel: message.turnAgentModel } : {}),
     };
     if (message.traceEvents?.length) {
         return { ...snapshot, traceEvents: [...message.traceEvents] };

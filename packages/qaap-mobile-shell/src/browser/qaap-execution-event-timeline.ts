@@ -34,6 +34,9 @@ import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
+import { createAgentMetaBadge, resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
+import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
 import { createTranscriptCodeView, patchTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from './qaap-transcript-code-view';
 import {
     isTranscriptWebSearchTool,
@@ -683,6 +686,18 @@ export interface MobileProcessAccordionOptions {
      * accordion, otherwise it visibly oscillates open/closed during the stream.
      */
     readonly settled?: boolean;
+    /**
+     * Which agent/model actually executed this turn (e.g. a routine or a
+     * delegated sub-task run under a different pick than the composer's
+     * current selection). Rendered as a small provenance badge in the
+     * header, mirroring how Cursor labels a delegated subtask. Omitted for
+     * historical turns that predate this field. `turnAgentModel` may be
+     * unset even when `turnAgentId` is known — some agent CLIs run their own
+     * default model without reporting a pick, and the badge must not invent
+     * one in that case.
+     */
+    readonly turnAgentId?: string;
+    readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
 }
 
 /**
@@ -714,7 +729,7 @@ export function wrapMobileProcessAccordion(
     timeline: HTMLElement,
     options: MobileProcessAccordionOptions,
 ): HTMLElement {
-    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb, settled } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb, settled, turnAgentId, turnAgentModel } = options;
     const details = document.createElement('details');
     details.className =
         `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''}` +
@@ -759,6 +774,7 @@ export function wrapMobileProcessAccordion(
     chevron.setAttribute('aria-hidden', 'true');
 
     header.append(label);
+    syncMobileProcessAccordionProvenance(header, turnAgentId, turnAgentModel);
     syncMobileProcessAccordionRunStop(header, isWorking, options.onStopRun);
     header.append(chevron);
     // Orb lives in the pinned stream footer — never in the accordion header.
@@ -905,7 +921,7 @@ export function syncMobileProcessAccordionState(
         return;
     }
     const details = accordion as HTMLDetailsElement;
-    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb, turnAgentId, turnAgentModel } = options;
 
     // Update the label regardless of toggle state.
     const label = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-label');
@@ -920,6 +936,7 @@ export function syncMobileProcessAccordionState(
 
     const header = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-header');
     if (header) {
+        syncMobileProcessAccordionProvenance(header, turnAgentId, turnAgentModel);
         syncMobileProcessAccordionRunStop(header, isWorking, options.onStopRun);
         syncMobileProcessAccordionBrandLogo(header, false);
     }
@@ -999,6 +1016,52 @@ function resolveMobileProcessOutcome(
         return 'failed';
     }
     return 'processed';
+}
+
+/** Class of the small "which agent/model ran this turn" badge in the accordion header. */
+export const MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS = 'theia-mobile-process-accordion-provenance';
+
+/**
+ * Adds, updates, or removes the turn-provenance badge (agent, optionally
+ * "· model") in the accordion header. Idempotent: re-running with the same
+ * `turnAgentId`/`turnAgentModel` is a no-op, so calling it on every streaming
+ * sync tick (see {@link syncMobileProcessAccordionState}) never duplicates or
+ * flickers the badge. Inserted right before the stop button/chevron so it
+ * reads `<label> <badge> [stop] <chevron>`, and always before the model-less
+ * fallback is skipped entirely (no "unknown model" placeholder) per the
+ * product rule: never invent a model the backend didn't report.
+ */
+function syncMobileProcessAccordionProvenance(
+    header: HTMLElement,
+    turnAgentId: string | undefined,
+    turnAgentModel: QaapCreateAgentTaskQaiqModel | undefined,
+): void {
+    const existing = header.querySelector<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`);
+    if (!turnAgentId) {
+        existing?.remove();
+        return;
+    }
+    const modelLabel = turnAgentModel ? formatQaiqModelSelectionLabel(turnAgentModel) : undefined;
+    const agentLabel = resolveAgentDisplayLabel(turnAgentId);
+    const combinedLabel = modelLabel ? `${agentLabel} · ${modelLabel}` : agentLabel;
+    if (existing) {
+        if (existing.dataset.qaapProvenanceKey === combinedLabel) {
+            return;
+        }
+        existing.remove();
+    }
+    const badge = createAgentMetaBadge(turnAgentId, combinedLabel);
+    badge.classList.add(MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS);
+    badge.dataset.qaapProvenanceKey = combinedLabel;
+    badge.title = combinedLabel;
+    const stopButton = header.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`);
+    const chevron = header.querySelector('.theia-mobile-process-accordion-chevron');
+    const insertBeforeEl = stopButton ?? chevron;
+    if (insertBeforeEl) {
+        header.insertBefore(badge, insertBeforeEl);
+    } else {
+        header.append(badge);
+    }
 }
 
 /**

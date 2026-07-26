@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { agentUsesSettingsModelCatalog } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-model-selection';
-import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
+import type { QaapAgentTaskKind, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import { resolveRequestAgentModel } from './qaap-agent-task';
 import {
     parseTheiaLanguageModelId,
@@ -13,7 +13,9 @@ import {
     type QaapQaiqModelBinding,
 } from './qaap-qaiq-model-binding';
 
-export type QaapAgentTaskKind = 'exploration' | 'implementation' | 'general';
+// `QaapAgentTaskKind` now lives in `qaap-agent-task.ts` (it's part of `QaapCreateAgentTaskRequest`'s
+// public shape); re-exported here so existing importers of this module keep working.
+export type { QaapAgentTaskKind } from './qaap-agent-task';
 
 type AliasMap = Record<string, { readonly selectedModel?: string } | undefined>;
 
@@ -89,6 +91,12 @@ export interface ResolveEffectiveAgentModelRequest {
     readonly prompt?: string;
     readonly command?: string;
     readonly interactionModeId?: string;
+    /**
+     * Classification hint from the task's creator (e.g. a workflow node) — see
+     * {@link QaapCreateAgentTaskRequest.taskKind}. Takes precedence over the text-heuristic
+     * classifier ({@link classifyAgentTaskKind}) but never over an explicit {@link agentModel}.
+     */
+    readonly taskKind?: QaapAgentTaskKind;
 }
 
 /**
@@ -97,6 +105,10 @@ export interface ResolveEffectiveAgentModelRequest {
  * (NVIDIA/OpenRouter/…), and applying one to a native-catalog CLI (claude, codex, grok, …)
  * produces `--model <foreign-vendor-model>` → model_not_found. Native CLIs without an explicit
  * pick run on their own default model.
+ *
+ * Precedence for the task kind used to route: explicit {@link ResolveEffectiveAgentModelRequest.agentModel}
+ * (short-circuits above) > caller-supplied {@link ResolveEffectiveAgentModelRequest.taskKind} >
+ * text-heuristic {@link classifyAgentTaskKind} over the prompt/command.
  */
 export function resolveEffectiveRequestAgentModel(
     request: ResolveEffectiveAgentModelRequest,
@@ -110,11 +122,18 @@ export function resolveEffectiveRequestAgentModel(
     if (!agentUsesSettingsModelCatalog(agentId)) {
         return undefined;
     }
-    const prompt = (request.prompt ?? request.command ?? '').trim();
-    if (!prompt) {
-        return undefined;
+    let kind: QaapAgentTaskKind;
+    if (request.taskKind) {
+        kind = request.taskKind;
+    } else {
+        // Preserve prior behavior exactly when no taskKind hint is supplied: an empty prompt/command
+        // means there is nothing to classify, so no routing is attempted at all (not even 'general').
+        const prompt = (request.prompt ?? request.command ?? '').trim();
+        if (!prompt) {
+            return undefined;
+        }
+        kind = classifyAgentTaskKind(prompt, request.interactionModeId);
     }
-    const kind = classifyAgentTaskKind(prompt, request.interactionModeId);
     const binding = resolveRoutedQaiqModelBinding(readPref, kind);
     return binding ? bindingToAgentModel(binding) : undefined;
 }

@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@theia/core/lib/browser';
 import { reportQaapClientError } from '../common/qaap-client-error-report';
 import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, cancelConversationRun, conversationToSummary, resolveRunUserMessageId, restoreConversationCheckpoint } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
+import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
 import {
     extractLastFailedToolFromMessage,
     resolveAgentTurnFailureTechnicalContent,
@@ -545,10 +546,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // own accordion, and in a multi-turn conversation a historical
         // (already-settled) turn's accordion would otherwise be mislabeled
         // whenever a later turn happened to end up cancelled.
-        const isCancelled = this.isAgentMessageCancelled(message ?? this.resolveLastAgentMessage(conv));
+        const effectiveMessage = message ?? this.resolveLastAgentMessage(conv);
+        const isCancelled = this.isAgentMessageCancelled(effectiveMessage);
         const elapsedMs = this.resolveConversationElapsedMs(conv);
         const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
+        const provenance = this.resolveTurnProvenance(conv, effectiveMessage);
         const accordion = wrapMobileProcessAccordion(eventTimeline, {
             isWorking,
             isError,
@@ -558,6 +561,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             activityVerb,
             onStopRun: this.resolveRunStopHandler(conv, message, isWorking),
             settled: this.isConversationFinalResponseCommitted(conv, streaming),
+            turnAgentId: provenance.turnAgentId,
+            turnAgentModel: provenance.turnAgentModel,
         });
         this.bindMobileExecutionEventTimelineFileOpen(accordion);
         body.append(accordion);
@@ -783,6 +788,29 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     /**
+     * Which agent/model actually ran `message`'s turn — read off the driving
+     * user message via {@link resolveRunUserMessageId}, mirroring how
+     * {@link resolveRunStopHandler} finds the same message to address a
+     * per-run stop. Rendered as a small provenance badge in the turn's
+     * process-accordion header (see {@link MobileProcessAccordionOptions}).
+     * Returns an empty object for historical turns that predate the field or
+     * when the driving user message can't be resolved -- callers must not
+     * fall back to guessing the current composer selection, since that would
+     * mislabel a turn that ran under a different pick.
+     */
+    protected resolveTurnProvenance(
+        conv: QaapAgentConversationDTO | undefined,
+        message: QaapAgentMessageDTO | undefined,
+    ): { readonly turnAgentId?: string; readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel } {
+        if (!conv || !message) {
+            return {};
+        }
+        const userMessageId = resolveRunUserMessageId(conv.messages, message.id);
+        const userMessage = userMessageId ? conv.messages.find(entry => entry.id === userMessageId) : undefined;
+        return { turnAgentId: userMessage?.turnAgentId, turnAgentModel: userMessage?.turnAgentModel };
+    }
+
+    /**
      * Decides how a single closing-narrative text segment should render:
      * skipped (exact duplicate of an earlier closing block, or the same
      * message the "Task failed" dialog already shows), a compact error card
@@ -960,6 +988,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // cancelled.
         const message = this.resolveTranscriptRowAgentMessage(row, conv);
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
+        const provenance = this.resolveTurnProvenance(conv, message);
         syncMobileProcessAccordionState(accordion, {
             isWorking,
             isError: this.isConversationError(conv),
@@ -973,6 +1002,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             // the one moment auto-collapse is allowed. Streaming syncs must
             // never collapse, even if the working flag flickers between tools.
             settled: this.isConversationFinalResponseCommitted(conv, streaming),
+            turnAgentId: provenance.turnAgentId,
+            turnAgentModel: provenance.turnAgentModel,
         });
         // Re-ensure the slow-turn hint on every sync (runs on every streaming
         // tick): this is what lets the hint survive `accordion` being wholly

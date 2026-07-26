@@ -30953,6 +30953,24 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   color: var(--theia-descriptionForeground);
   font-size: 12px;
   font-weight: 500;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Which agent/model ran this turn (see qaap-execution-event-timeline.ts). Shares
+   the header row with the label, stop button and chevron -- it must shrink
+   before either of those so the chevron's tap target never gets crowded out
+   on a narrow viewport. */
+.theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-meta-badge-label {
+  max-width: 12ch;
 }
 
 .theia-mobile-process-accordion.theia-mod-working .theia-mobile-process-accordion-label {
@@ -30972,6 +30990,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   font-size: 12px;
   opacity: 0.72;
   transition: transform 200ms ease;
+  flex: 0 0 auto;
 }
 
 .theia-mobile-process-accordion[open] .theia-mobile-process-accordion-chevron {

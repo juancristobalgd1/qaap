@@ -553,7 +553,17 @@ export class QaapAgentConversationStore {
         }
         this.streamMetrics.recordLatencyMark(id, 'task_created');
 
-        const messagesWithTask = next.messages.map(m => m.id === userMessage.id ? { ...m, taskId: task!.id } : m);
+        const messagesWithTask = next.messages.map(m => m.id === userMessage.id
+            ? {
+                ...m,
+                taskId: task!.id,
+                // `task.agentId` is only resolved asynchronously (spawnProcessWhenReady →
+                // buildAgentCommand), so it is always undefined at this synchronous point today;
+                // fall back to the id the store itself already resolved for this turn.
+                turnAgentId: task!.agentId ?? turnAgentId,
+                ...(turnModel ? { turnAgentModel: turnModel } : {}),
+            }
+            : m);
         next = { ...next, messages: messagesWithTask };
         const autoLinked = this.tryAutoLinkConversationToGitBranch(next);
         if (autoLinked) {
@@ -2050,7 +2060,14 @@ export class QaapAgentConversationStore {
         }
         this.modelFallbackTriedByUserMessage.set(loopBudgetKey, tried);
         const messagesWithTask = retryConv.messages.map(message => message.id === userMessageId
-            ? { ...message, taskId: spawned.id }
+            ? {
+                ...message,
+                taskId: spawned.id,
+                // Same fallback rationale as the initial-spawn site: task.agentId is not resolved
+                // synchronously by taskRunner.create().
+                turnAgentId: spawned.agentId ?? conv.agentId,
+                turnAgentModel: nextModel,
+            }
             : message);
         const nextConv = { ...retryConv, messages: messagesWithTask };
         this.conversations.set(conversationId, nextConv);

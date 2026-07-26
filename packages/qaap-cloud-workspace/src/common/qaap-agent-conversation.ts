@@ -67,6 +67,19 @@ export interface QaapAgentMessage {
     readonly createdAt: number;
     /** When set on a user message, points at the agent-task spawned for that turn. */
     readonly taskId?: string;
+    /**
+     * Set on the user message that triggered a turn: which agent (`'qaiq'`, `'claude'`, `'codex'`, …)
+     * actually drove it. Unlike {@link QaapAgentConversation.agentId} — which is per-conversation and
+     * gets overwritten by every subsequent turn — this is per-message, so historical turns can still
+     * be attributed correctly after the conversation's active agent has since changed.
+     */
+    readonly turnAgentId?: string;
+    /**
+     * Set alongside {@link turnAgentId}: the model (provider + vendor + modelId) that drove this
+     * turn, including after a mid-turn fallback-model retry picked a different one than the
+     * conversation's current default.
+     */
+    readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
     /** Original user turn that owns this backend-generated auto-continuation chain. */
     readonly autoContinueRootMessageId?: string;
     /** When the user message's task ended unsuccessfully — short reason for the UI. */

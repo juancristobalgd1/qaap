@@ -124,6 +124,14 @@ export interface QaapAgentMessageDTO {
     readonly segments?: QaapAgentMessageSegmentDTO[];
     readonly createdAt: number;
     readonly taskId?: string;
+    /**
+     * Set on the user message that triggered a turn: which agent actually drove it. See the
+     * backend {@code QaapAgentMessage.turnAgentId} doc — per-message, unlike the per-conversation
+     * (last-write-wins) {@link QaapAgentConversationDTO.agentId}.
+     */
+    readonly turnAgentId?: string;
+    /** Set alongside {@link turnAgentId}: the model that drove this turn. */
+    readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
     readonly error?: string;
     /** True while THIS agent message's run is still streaming (in-session multitasking). */
     readonly runActive?: boolean;

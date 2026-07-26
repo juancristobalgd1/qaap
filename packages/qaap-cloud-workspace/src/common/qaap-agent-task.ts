@@ -135,6 +135,16 @@ export function resolveTaskAgentModel(task: {
     return task.agentModel ?? task.qaiqModel;
 }
 
+/**
+ * Model-routing classification for a task: `'exploration'` (read-only/cheap work),
+ * `'implementation'` (writes/expensive work), or `'general'` (no strong signal either way).
+ * A value supplied by the task's creator (e.g. a workflow node's capability/costTier via
+ * {@link QaapCreateAgentTaskRequest.taskKind}) has more authority than the text-heuristic
+ * classifier (`classifyAgentTaskKind`) but less than an explicit {@link QaapCreateAgentTaskRequest.agentModel}
+ * pick — see `resolveEffectiveRequestAgentModel` in `qaap-agent-task-model-routing.ts`.
+ */
+export type QaapAgentTaskKind = 'exploration' | 'implementation' | 'general';
+
 export interface QaapCreateAgentTaskRequest {
     readonly title?: string;
     /** A raw shell command to run. Provide this OR {@link prompt}. */
@@ -189,6 +199,13 @@ export interface QaapCreateAgentTaskRequest {
     readonly toolApprovalRules?: import('./qaap-agent-conversation').QaapAgentToolApprovalRules;
     /** Optional submit diagnostics forwarded by the browser for end-to-end latency logs. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
+    /**
+     * Model-routing hint supplied by the task's creator (e.g. a workflow node's capability/costTier
+     * — see `resolveQaapWorkflowTaskKind`). Used by `resolveEffectiveRequestAgentModel` in place of
+     * the text-heuristic classifier when no explicit {@link agentModel} was sent; an explicit
+     * {@link agentModel} still wins over this hint.
+     */
+    readonly taskKind?: QaapAgentTaskKind;
 }
 
 /** A coding agent the runner knows how to invoke. */

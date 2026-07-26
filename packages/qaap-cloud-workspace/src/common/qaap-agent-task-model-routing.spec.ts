@@ -111,4 +111,67 @@ describe('resolveEffectiveRequestAgentModel', () => {
             'claude',
         )).to.deep.equal(explicit);
     });
+
+    // Precedence: explicit agentModel > caller-supplied taskKind > text-heuristic classifyAgentTaskKind.
+    describe('taskKind precedence', () => {
+        const readPref = (key: string): unknown => {
+            if (key === 'ai-features.languageModelAliases') {
+                return {
+                    'default/universal': { selectedModel: 'openrouter/meta-llama/llama-3.3-70b-instruct:free' },
+                    'default/code': { selectedModel: 'anthropic/claude-sonnet-4-20250514' },
+                };
+            }
+            return undefined;
+        };
+
+        it('an explicit agentModel wins over a supplied taskKind', () => {
+            const explicit = { provider: 'anthropic' as const, vendor: 'anthropic', modelId: 'claude-opus' };
+            const routed = resolveEffectiveRequestAgentModel(
+                { prompt: 'Explore the auth module', taskKind: 'implementation', agentModel: explicit },
+                readPref,
+                'qaiq',
+            );
+            expect(routed).to.deep.equal(explicit);
+        });
+
+        it('a supplied taskKind wins over the text-heuristic classifier', () => {
+            // Prompt text reads as exploration, but the caller (e.g. a workflow 'implement' node)
+            // asserts it is implementation work — the hint must override the heuristic.
+            const routed = resolveEffectiveRequestAgentModel(
+                { prompt: 'Where should this refactor land? Explore first.', taskKind: 'implementation' },
+                readPref,
+                'qaiq',
+            );
+            expect(routed?.modelId).to.equal('claude-sonnet-4-20250514');
+        });
+
+        it('falls back to the text-heuristic classifier when taskKind is undefined', () => {
+            const routed = resolveEffectiveRequestAgentModel(
+                { prompt: 'Where is the SSE handler defined?', taskKind: undefined },
+                readPref,
+                'qaiq',
+            );
+            expect(routed?.modelId).to.equal('meta-llama/llama-3.3-70b-instruct:free');
+        });
+
+        it('keeps prior behavior for an empty prompt when taskKind is undefined: no routing at all', () => {
+            const routed = resolveEffectiveRequestAgentModel(
+                { prompt: '', taskKind: undefined },
+                readPref,
+                'qaiq',
+            );
+            expect(routed).to.equal(undefined);
+        });
+
+        it('routes an empty prompt when taskKind is explicitly supplied', () => {
+            // A workflow-originated request always carries taskKind, so an (unlikely) empty prompt
+            // must still route rather than silently falling through like the no-hint case above.
+            const routed = resolveEffectiveRequestAgentModel(
+                { prompt: '', taskKind: 'exploration' },
+                readPref,
+                'qaiq',
+            );
+            expect(routed?.modelId).to.equal('meta-llama/llama-3.3-70b-instruct:free');
+        });
+    });
 });
