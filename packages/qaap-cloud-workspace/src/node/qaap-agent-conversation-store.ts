@@ -1318,11 +1318,15 @@ export class QaapAgentConversationStore {
         this.subtaskMailboxDelivered.add(task.id);
         const detail = await this.taskRunner.detail(task.id);
         const log = this.filterAgentLogChunk((detail?.log ?? '').trim());
+        const leaderUserMessageId = leaderTaskId ? this.taskToConversation.get(leaderTaskId)?.userMessageId : undefined;
         const message: QaapAgentMessage = {
             id: randomUUID(),
             role: 'agent',
             content: formatSubtaskMailboxMessage(task, log),
             createdAt: Date.now(),
+            // Belongs to the leader's run, which is not necessarily the last user message once a
+            // peer run has posted one in the meantime.
+            ...(leaderUserMessageId ? { runUserMessageId: leaderUserMessageId } : {}),
         };
         const next: QaapAgentConversation = {
             ...conv,
@@ -1471,6 +1475,9 @@ export class QaapAgentConversationStore {
                 segments,
                 ...(traceEvents ? { traceEvents } : {}),
                 createdAt: now,
+                // The run that owns this message. Sealed here, at creation, because the append
+                // position stops identifying the turn as soon as a peer run interleaves.
+                runUserMessageId: ref.userMessageId,
                 // Marks the message as the live end of a run. With several agents in one session
                 // the conversation status can no longer say which turns are still working, and the
                 // per-run stop must only appear on the ones that are.
@@ -1525,19 +1532,18 @@ export class QaapAgentConversationStore {
         if (!conv) {
             return;
         }
+        const previousAgentMessageId = ref.agentMessageId;
         for (const event of events) {
-            const next = this.applyAgUiTranscriptEvent(ref.conversationId, event);
+            // `ref` is passed (not just its ids) so the event lands on THIS run's agent message
+            // and so a message created here is written back onto the ref. Resolving the target
+            // from the array tail instead would make every concurrent run of the session
+            // converge on whichever agent message happens to be last, merging their output.
+            const next = this.applyAgUiTranscriptEvent(ref.conversationId, event, ref);
             if (next) {
                 conv = next;
             }
         }
-        const agentMessage = ref.agentMessageId
-            ? conv.messages.find(message => message.id === ref.agentMessageId)
-            : conv.messages[conv.messages.length - 1]?.role === 'agent'
-                ? conv.messages[conv.messages.length - 1]
-                : undefined;
-        if (agentMessage?.role === 'agent') {
-            ref.agentMessageId = agentMessage.id;
+        if (ref.agentMessageId !== previousAgentMessageId) {
             this.taskToConversation.set(taskId, ref);
         }
     }
@@ -1640,6 +1646,8 @@ export class QaapAgentConversationStore {
                 segments,
                 ...(traceEvents ? { traceEvents } : {}),
                 createdAt: now,
+                /** See the sibling creation site: the run this message belongs to. */
+                runUserMessageId: ref.userMessageId,
                 /** See the sibling creation site: live-run marker for the per-run stop. */
                 runActive: true,
             }));
@@ -1877,6 +1885,7 @@ export class QaapAgentConversationStore {
             const reply = this.appendAgentReply(
                 { ...withUsageBaseline, status: this.settleStatusForRun(conversationId, task.id, 'idle') },
                 body,
+                userMessageId,
             );
             if (structuredParsed?.segments?.length) {
                 const messages = reply.messages.map((message, index, all) => {
@@ -2213,12 +2222,18 @@ export class QaapAgentConversationStore {
         return next;
     }
 
-    protected appendAgentReply(conv: QaapAgentConversation, content: string): QaapAgentConversation {
+    protected appendAgentReply(
+        conv: QaapAgentConversation,
+        content: string,
+        /** The run this reply answers — see {@link QaapAgentMessage.runUserMessageId}. */
+        runUserMessageId?: string,
+    ): QaapAgentConversation {
         const message: QaapAgentMessage = {
             id: randomUUID(),
             role: 'agent',
             content,
             createdAt: Date.now(),
+            ...(runUserMessageId ? { runUserMessageId } : {}),
         };
         return {
             ...conv,
@@ -2290,6 +2305,9 @@ export class QaapAgentConversationStore {
                 content: options.failureBody?.trim() ?? '',
                 error: options.reason,
                 createdAt: Date.now(),
+                // A run that died before streaming anything still appends at the end of the
+                // array, so the failed turn needs the same explicit link as a streamed one.
+                runUserMessageId: options.userMessageId,
             };
             agentMessageId = failureMessage.id;
             messages = [...messages, failureMessage];
@@ -2730,18 +2748,53 @@ export class QaapAgentConversationStore {
     }
 
     /**
-     * Apply one AG-UI event onto the streaming tail agent message — emits incremental wire deltas
-     * (append/patch_trace_event) instead of full message replacements when possible.
+     * The agent message an AG-UI event belongs to, for a known run: the one the run already owns,
+     * else the one sealed to its user turn (a backend restart loses `ref.agentMessageId` but not
+     * the sealed link), else none — the caller creates one.
+     *
+     * Deliberately never falls back to "the last message if it is an agent message": that is what
+     * made two runs of the same session write into one message.
      */
-    applyAgUiTranscriptEvent(conversationId: string, event: QaapAgUiEvent): QaapAgentConversation | undefined {
+    protected resolveRunAgentMessageId(
+        conv: QaapAgentConversation,
+        run: { readonly userMessageId: string; readonly agentMessageId?: string },
+    ): string | undefined {
+        if (run.agentMessageId && conv.messages.some(message => message.id === run.agentMessageId)) {
+            return run.agentMessageId;
+        }
+        for (let index = conv.messages.length - 1; index >= 0; index--) {
+            const message = conv.messages[index];
+            if (message.role === 'agent' && message.runUserMessageId === run.userMessageId) {
+                return message.id;
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * Apply one AG-UI event onto a streaming agent message — emits incremental wire deltas
+     * (append/patch_trace_event) instead of full message replacements when possible.
+     *
+     * `run` identifies which of the session's concurrent runs the event came from; without it
+     * (the external `POST .../ag-ui/events` route, which has no run context) the event falls back
+     * to the tail agent message, as before.
+     */
+    applyAgUiTranscriptEvent(
+        conversationId: string,
+        event: QaapAgUiEvent,
+        /** Mutated in place: an agent message created here is written back onto the run's ref. */
+        run?: { readonly userMessageId: string; agentMessageId?: string },
+    ): QaapAgentConversation | undefined {
         const conv = this.conversations.get(conversationId);
         if (!conv) {
             return undefined;
         }
         const now = Date.now();
-        let agentMessageId = conv.messages[conv.messages.length - 1]?.role === 'agent'
-            ? conv.messages[conv.messages.length - 1].id
-            : undefined;
+        let agentMessageId = run
+            ? this.resolveRunAgentMessageId(conv, run)
+            : conv.messages[conv.messages.length - 1]?.role === 'agent'
+                ? conv.messages[conv.messages.length - 1].id
+                : undefined;
         let messages = conv.messages;
         if (!agentMessageId) {
             agentMessageId = randomUUID();
@@ -2751,8 +2804,12 @@ export class QaapAgentConversationStore {
                 content: '',
                 traceEvents: [],
                 createdAt: now,
+                ...(run ? { runUserMessageId: run.userMessageId } : {}),
             };
             messages = [...conv.messages, seed];
+            if (run) {
+                run.agentMessageId = agentMessageId;
+            }
             this.agUiReducerByAgentMessageId.delete(agentMessageId);
         }
         const previousReducer = this.agUiReducerByAgentMessageId.get(agentMessageId);
@@ -2762,10 +2819,22 @@ export class QaapAgentConversationStore {
             agentId: conv.agentId,
         });
         this.agUiReducerByAgentMessageId.set(agentMessageId, reducer);
-        const agentMessage = buildAgentMessageFromQaapAgUiReducer(
+        const previousMessage = messages.find(message => message.id === agentMessageId);
+        const rebuilt = buildAgentMessageFromQaapAgUiReducer(
             reducer,
-            messages.find(message => message.id === agentMessageId)?.createdAt ?? now,
+            previousMessage?.createdAt ?? now,
         );
+        // The reducer only knows the trace, so it rebuilds the message from scratch every tick.
+        // Which run owns the message, and whether that run is still live, are not part of that
+        // trace — carry both across, or they would survive exactly until the next event arrived.
+        // `runActive` is carried, never re-asserted: once the turn settles and clears it, a late
+        // event must not resurrect the marker.
+        const runOwner = previousMessage?.runUserMessageId ?? run?.userMessageId;
+        const agentMessage: QaapAgentMessage = {
+            ...rebuilt,
+            ...(runOwner ? { runUserMessageId: runOwner } : {}),
+            ...(previousMessage?.runActive ? { runActive: true } : {}),
+        };
         messages = messages.map(message => message.id === agentMessageId ? agentMessage : message);
         const next: QaapAgentConversation = {
             ...conv,

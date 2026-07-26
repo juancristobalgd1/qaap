@@ -133,6 +133,12 @@ export interface QaapAgentMessageDTO {
     /** Set alongside {@link turnAgentId}: the model that drove this turn. */
     readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
     readonly error?: string;
+    /**
+     * Set on an agent message: the user message whose run produced it. See the backend
+     * {@code QaapAgentMessage.runUserMessageId} doc — array order cannot pair the two once
+     * several runs share a session. Read via {@link resolveRunUserMessageId}.
+     */
+    readonly runUserMessageId?: string;
     /** True while THIS agent message's run is still streaming (in-session multitasking). */
     readonly runActive?: boolean;
     /** Client-only attachment previews for optimistic pending-user rows (never sent to VPS). */
@@ -586,7 +592,16 @@ export async function cancelConversationRun(id: string, userMessageId: string): 
     }
 }
 
-/** The user turn whose run produced `agentMessageId` — the id a per-run stop is addressed to. */
+/**
+ * The user turn whose run produced `agentMessageId` — the id a per-run stop is addressed to,
+ * and the message the provenance badge reads its agent/model off.
+ *
+ * Prefers the explicit {@link QaapAgentMessageDTO.runUserMessageId} link the backend seals onto
+ * the agent message when the run starts. The positional walk-back is only a fallback for turns
+ * recorded before that field existed: an agent message is appended when its run first produces
+ * output, so two runs sharing a session leave `[userA, userB, agentA, agentB]` and the walk-back
+ * pairs `agentA` with `userB` — the wrong turn.
+ */
 export function resolveRunUserMessageId(
     messages: readonly QaapAgentMessageDTO[],
     agentMessageId: string | undefined,
@@ -597,6 +612,10 @@ export function resolveRunUserMessageId(
     const index = messages.findIndex(message => message.id === agentMessageId);
     if (index < 0) {
         return undefined;
+    }
+    const sealed = messages[index].runUserMessageId;
+    if (sealed && messages.some(message => message.id === sealed && message.role === 'user')) {
+        return sealed;
     }
     for (let i = index - 1; i >= 0; i--) {
         const message = messages[i];

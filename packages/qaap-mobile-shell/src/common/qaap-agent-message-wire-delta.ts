@@ -94,6 +94,8 @@ export interface QaapAgentMessageWireSnapshot {
     readonly turnAgentId?: string;
     /** @see QaapAgentMessageDTO.turnAgentModel */
     readonly turnAgentModel?: QaapAgentMessageDTO['turnAgentModel'];
+    /** @see QaapAgentMessageDTO.runUserMessageId */
+    readonly runUserMessageId?: string;
 }
 
 function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageDTO {
@@ -106,6 +108,7 @@ function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageD
         segments: message.segments,
         turnAgentId: message.turnAgentId,
         turnAgentModel: message.turnAgentModel,
+        runUserMessageId: message.runUserMessageId,
     });
 }
 
@@ -113,7 +116,7 @@ function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageD
 export function toAgentMessageWirePayload(
     message: Pick<
         QaapAgentMessageDTO,
-        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel'
+        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'runUserMessageId'
     >,
 ): QaapAgentMessageDTO {
     const base: QaapAgentMessageDTO = {
@@ -123,6 +126,7 @@ export function toAgentMessageWirePayload(
         createdAt: message.createdAt,
         ...(message.turnAgentId ? { turnAgentId: message.turnAgentId } : {}),
         ...(message.turnAgentModel ? { turnAgentModel: message.turnAgentModel } : {}),
+        ...(message.runUserMessageId ? { runUserMessageId: message.runUserMessageId } : {}),
     };
     if (message.traceEvents?.length) {
         return { ...base, traceEvents: [...message.traceEvents] };
@@ -137,7 +141,7 @@ export function toAgentMessageWirePayload(
 export function toAgentMessageWireSnapshot(
     message: Pick<
         QaapAgentMessageDTO,
-        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel'
+        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'runUserMessageId'
     >,
 ): QaapAgentMessageWireSnapshot {
     const snapshot: QaapAgentMessageWireSnapshot = {
@@ -147,6 +151,7 @@ export function toAgentMessageWireSnapshot(
         createdAt: message.createdAt,
         ...(message.turnAgentId ? { turnAgentId: message.turnAgentId } : {}),
         ...(message.turnAgentModel ? { turnAgentModel: message.turnAgentModel } : {}),
+        ...(message.runUserMessageId ? { runUserMessageId: message.runUserMessageId } : {}),
     };
     if (message.traceEvents?.length) {
         return { ...snapshot, traceEvents: [...message.traceEvents] };

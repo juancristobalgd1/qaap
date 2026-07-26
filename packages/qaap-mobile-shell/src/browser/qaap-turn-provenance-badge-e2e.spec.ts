@@ -744,4 +744,45 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             .equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(openRouterFallback)}`);
         expect(retryLabel, 'the badge no longer shows the original model').to.not.equal(firstLabel);
     });
+
+    // ─── 5. Two runs sharing one session ────────────────────────────────────
+
+    it('badges each turn with the agent that ran it when two runs interleave in one session', () => {
+        // The user sends A (QAIQ) and then B (@claude) before A has produced any
+        // output. Agent messages are appended when their run first speaks, so the
+        // array is [userA, userB, agentA, agentB] and the user turn directly above
+        // agentA belongs to the OTHER run.
+        const ui = createArtifactsUi();
+        const agentASegments = [finishedTool('a1')];
+        const conv: QaapAgentConversationDTO = {
+            id: 'conv-concurrent',
+            cwd: '/workspace',
+            agentId: 'claude',
+            title: 'Two runs',
+            status: 'streaming',
+            createdAt: 0,
+            updatedAt: Date.now(),
+            messages: [
+                { id: 'user-a', role: 'user', content: 'refactor', createdAt: 1, turnAgentId: 'qaiq', turnAgentModel: anthropicSonnet },
+                { id: 'user-b', role: 'user', content: '@claude review', createdAt: 2, turnAgentId: 'claude', turnAgentModel: openRouterFallback },
+                { id: 'agent-a', role: 'agent', content: '', createdAt: 3, segments: agentASegments, runUserMessageId: 'user-a' },
+                { id: 'agent-b', role: 'agent', content: '', createdAt: 4, segments: [finishedTool('b1')], runUserMessageId: 'user-b' },
+            ],
+        };
+
+        const rowA = ui.createTranscriptAgentSegmentsRow(agentASegments, undefined, conv, { streaming: true, message: conv.messages[2] });
+        const badgesA = [...rowA.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];
+
+        expect(badgesA, 'exactly one badge on the first run\'s accordion').to.have.length(1);
+        // `title` rather than `textContent`: the badge also carries a brand glyph, and QAIQ's
+        // is a text monogram that would otherwise prefix the label.
+        expect(badgesA[0].title, 'the first run is still badged QAIQ, not the newer @claude turn').to
+            .equal(`${resolveAgentDisplayLabel('qaiq')} · ${formatQaiqModelSelectionLabel(anthropicSonnet)}`);
+
+        const rowB = ui.createTranscriptAgentSegmentsRow([finishedTool('b1')], undefined, conv, { streaming: true, message: conv.messages[3] });
+        const badgesB = [...rowB.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];
+        expect(badgesB, 'exactly one badge on the peer run\'s accordion').to.have.length(1);
+        expect(badgesB[0].title).to
+            .equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(openRouterFallback)}`);
+    });
 });

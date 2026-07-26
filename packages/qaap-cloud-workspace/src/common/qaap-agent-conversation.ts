@@ -82,6 +82,15 @@ export interface QaapAgentMessage {
     readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
     /** Original user turn that owns this backend-generated auto-continuation chain. */
     readonly autoContinueRootMessageId?: string;
+    /**
+     * Set on an agent message: the user message whose run produced it. An agent message is
+     * created lazily on its run's first output and appended at the end of the array, so with
+     * several runs sharing one session the array order alone (`[userA, userB, agentA, agentB]`)
+     * no longer identifies the driving turn — walking back to the nearest user message pairs
+     * `agentA` with `userB`. Anything that must address a specific run (the per-run stop, the
+     * provenance badge) reads this instead; see {@code resolveRunUserMessageId}.
+     */
+    readonly runUserMessageId?: string;
     /** When the user message's task ended unsuccessfully — short reason for the UI. */
     readonly error?: string;
     /**
