@@ -31,7 +31,9 @@ describe('resolveQaapWorkflowTaskKind', () => {
         ['explore', 'general'],
         ['measure', 'exploration'],
         ['implement', 'implementation'],
-        ['judge', 'implementation'],
+        // Never the writer's alias — see resolveQaapWorkflowTaskKind's doc: pinning the judge to
+        // `implementation` hands the review to the model that wrote the change.
+        ['judge', 'general'],
         ['creative', 'general'],
         ['synthesize', 'general'],
         ['general', 'general'],

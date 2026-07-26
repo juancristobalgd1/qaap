@@ -117,9 +117,16 @@ describe('QaapWorkflowAgentTurnAdapter backend cooldown', () => {
 });
 
 describe('QaapWorkflowAgentTurnAdapter model routing hand-off', () => {
-    it('derives taskKind from the node capability (judge, standard tier -> implementation)', async () => {
+    it('keeps a judge off the writer\'s alias (judge, standard tier -> general)', async () => {
         const { adapter, taskKinds } = buildAdapter();
         await adapter.startAgentTurn(judgeNode, context);
+        expect(taskKinds).to.deep.equal(['general']);
+    });
+
+    it('derives implementation for an implement node', async () => {
+        const { adapter, taskKinds } = buildAdapter();
+        const implementNode: QaapWorkflowAgentTurnNode = { ...judgeNode, id: 'implement-1', capability: 'implement', isolation: 'cwd' };
+        await adapter.startAgentTurn(implementNode, context);
         expect(taskKinds).to.deep.equal(['implementation']);
     });
 

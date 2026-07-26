@@ -30,8 +30,15 @@ import { QaapWorkflowAgentTurnNode, QaapWorkflowCapability, QaapWorkflowCostTier
  * saved. Keeping the two axes (which backend, which model) on the same principle is the point:
  * - `measure` — mechanical metric gathering, cheap by nature → `'exploration'`.
  * - `implement` — writes changes to the workspace → `'implementation'` (the `code` alias).
- * - `judge` — reviews a diff for correctness; needs the same reasoning quality as implementation,
- *   so it routes to `'implementation'` too rather than the cheaper `exploration` one.
+ * - `judge` — deliberately NOT `'implementation'`, even though a review needs real reasoning.
+ *   Pinning it to the same `code` alias as the writer guarantees the reviewer is the same model
+ *   that wrote the change whenever both turns land on the same backend — which is exactly what the
+ *   judge-independence routing exists to prevent, and it is a regression against the prompt-text
+ *   heuristic this hint replaced (that one already sent a judge prompt to `'general'` and an
+ *   implement prompt to `'implementation'`). Independence is enforced on the backend axis; the
+ *   model axis must at least not undo it. Note the limitation: `'general'` only means "not pinned
+ *   to the writer's alias" — real model independence would need a dedicated reviewer alias, and
+ *   the alias set has none today.
  * - `explore` / `synthesize` / `creative` / `general` — no signal that justifies either specialized
  *   alias, so they route to `'general'`: the operator's configured default model, i.e. exactly what
  *   would run with no routing at all. `explore` reaches the cheaper alias only via `costTier: 'cheap'`.
@@ -50,8 +57,8 @@ export function resolveQaapWorkflowTaskKind(
         case 'measure':
             return 'exploration';
         case 'implement':
-        case 'judge':
             return 'implementation';
+        case 'judge':
         case 'explore':
         case 'synthesize':
         case 'creative':

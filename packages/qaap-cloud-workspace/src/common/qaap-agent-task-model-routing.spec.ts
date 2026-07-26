@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { QaapAgentTaskKind } from './qaap-agent-task';
 import {
     classifyAgentTaskKind,
     resolveEffectiveRequestAgentModel,
@@ -173,5 +174,23 @@ describe('resolveEffectiveRequestAgentModel', () => {
             );
             expect(routed?.modelId).to.equal('meta-llama/llama-3.3-70b-instruct:free');
         });
+    });
+});
+
+describe('QaapAgentTaskKind.is', () => {
+
+    it('accepts the three kinds', () => {
+        for (const kind of ['exploration', 'implementation', 'general']) {
+            expect(QaapAgentTaskKind.is(kind), kind).to.equal(true);
+        }
+    });
+
+    it('rejects anything else an untyped HTTP body could carry', () => {
+        // The task-create endpoint narrows `body.taskKind` with this guard: an unknown string would
+        // otherwise reach the routing switch and silently take the default branch, which reads as
+        // "the hint did nothing" rather than "the hint was invalid".
+        for (const value of ['Exploration', 'implement', '', 'general ', 0, 1, true, null, undefined, {}, ['general']]) {
+            expect(QaapAgentTaskKind.is(value), JSON.stringify(value) ?? 'undefined').to.equal(false);
+        }
     });
 });

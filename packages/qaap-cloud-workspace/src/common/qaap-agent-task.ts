@@ -145,6 +145,14 @@ export function resolveTaskAgentModel(task: {
  */
 export type QaapAgentTaskKind = 'exploration' | 'implementation' | 'general';
 
+export namespace QaapAgentTaskKind {
+    const VALUES: ReadonlySet<string> = new Set<QaapAgentTaskKind>(['exploration', 'implementation', 'general']);
+    /** Narrows an untrusted value (an HTTP body field) to a task kind. */
+    export function is(value: unknown): value is QaapAgentTaskKind {
+        return typeof value === 'string' && VALUES.has(value);
+    }
+}
+
 export interface QaapCreateAgentTaskRequest {
     readonly title?: string;
     /** A raw shell command to run. Provide this OR {@link prompt}. */

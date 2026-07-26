@@ -11,6 +11,7 @@ import * as https from 'https';
 import { WebSocketServer, WebSocket as WsClient } from 'ws';
 import {
     QAAP_AGENT_TASK_API_PATH,
+    QaapAgentTaskKind,
     type QaapAgentTaskAllResponse,
     type QaapAgentTaskListResponse,
     type QaapCreateAgentTaskRequest,
@@ -393,6 +394,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 autoApprove: body.autoApprove,
                 interactionModeId: body.interactionModeId,
                 approvalPolicyId: body.approvalPolicyId,
+                // Part of the request type, so a caller may legitimately send it; this handler
+                // builds its argument field by field and was dropping it on the floor, which made
+                // the hint look ineffective from outside the process. Validated rather than
+                // forwarded raw: the body is untyped JSON, and an unknown value would reach the
+                // routing switch and silently take the default branch.
+                taskKind: QaapAgentTaskKind.is(body.taskKind) ? body.taskKind : undefined,
             }, ownerLogin);
             res.status(201).json(task);
         } catch (error) {
