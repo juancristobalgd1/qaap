@@ -11,10 +11,17 @@
  * turn workflow authoring into prompt injection with the run's own credentials and cwd.
  */
 
-import { buildAgentReviewPrompt } from './qaap-agent-review';
+import {
+    buildAgentReviewPrompt,
+    buildAgentReviewVerdictInstruction,
+    DEFAULT_REVIEW_DIFF_CAP_CHARS,
+    redactAgentReviewVerdictMarkers,
+} from './qaap-agent-review';
 import {
     QAAP_WORKFLOW_PLAN_ARTIFACT,
+    QAAP_WORKFLOW_PLAN_REVIEW_ARTIFACT,
     QAAP_WORKFLOW_REVIEW_DIFF_ARTIFACT,
+    QAAP_WORKFLOW_REVIEW_LENSES,
     QAAP_WORKFLOW_STRUCTURE_ARTIFACT,
     QAAP_WORKFLOW_VERIFICATION_ARTIFACT,
 } from './qaap-workflow-ir';
@@ -42,6 +49,63 @@ function goalCheckLine(context: QaapWorkflowPromptContext): string {
 }
 
 export class QaapWorkflowPromptError extends Error { }
+
+/** What each review lens is asked to look for. Keyed by the lens' `promptRef`. */
+interface QaapWorkflowReviewLensBody {
+    /** Named in the synthesis prompt too, so the decider knows which question each report answers. */
+    readonly title: string;
+    readonly questions: readonly string[];
+}
+
+const REVIEW_LENS_BODIES: Readonly<Record<string, QaapWorkflowReviewLensBody>> = {
+    'review-lens-correctness': {
+        title: 'Correctness',
+        questions: [
+            '- Bugs the change introduces: wrong conditions, off-by-one, unhandled errors, wrong types at the boundary.',
+            '- Edge cases and inputs it stops handling (empty, missing, concurrent, very large).',
+            '- Callers, tests or callers-of-callers this breaks, including ones not in the diff.',
+            '- State that is now written twice, never written, or written in the wrong order.',
+        ],
+    },
+    'review-lens-safety': {
+        title: 'Safety and side effects',
+        questions: [
+            '- Anything destructive or irreversible: deleted data, overwritten files, force pushes, dropped tables.',
+            '- Security: injection, missing validation, secrets or tokens in code or logs, broken tenant isolation, widened permissions.',
+            '- Blast radius: shared/global state, configuration or dependency changes that reach code the task never mentioned.',
+            '- Resource behaviour that only shows up in production: unbounded loops or growth, leaked processes, missing timeouts.',
+        ],
+    },
+    'review-lens-intent': {
+        title: 'Does this do what was asked',
+        questions: [
+            '- Does the change actually satisfy the task, or only the easy part of it?',
+            '- Scope creep: changes the task never asked for.',
+            '- Faked completion: tests weakened, skipped or asserting nothing; guards deleted to make something pass; stubs left behind.',
+            '- Anything claimed as done that the diff does not contain.',
+        ],
+    },
+};
+
+/** The diff as prompts inline it: capped, and with an explicit empty branch. */
+function inlineDiff(context: QaapWorkflowPromptContext): string {
+    const diff = context.artifacts?.[QAAP_WORKFLOW_REVIEW_DIFF_ARTIFACT] ?? '';
+    const capped = diff.length > DEFAULT_REVIEW_DIFF_CAP_CHARS
+        ? `${diff.slice(0, DEFAULT_REVIEW_DIFF_CAP_CHARS)}\n…(diff truncated)`
+        : diff;
+    return capped || '(empty diff — inspect the working tree yourself)';
+}
+
+/** Agent-written text on its way into a verdict-bearing prompt: never carries a live marker. */
+function quoteAgentText(value: string | undefined): string | undefined {
+    const trimmed = value?.trim();
+    return trimmed ? redactAgentReviewVerdictMarkers(trimmed) : undefined;
+}
+
+const READ_ONLY_RULES: readonly string[] = [
+    'You may run read-only commands to inspect the repository. Do NOT edit any file, do NOT commit, do NOT fix anything — you only judge.',
+    'Do not start an application, dev server, watcher, or any other long-lived process. Use bounded read-only checks instead.',
+];
 
 const REQUIRED_INPUT_MISSING = (ref: string, key: string): string =>
     `Workflow prompt "${ref}" requires input "${key}".`;
@@ -189,5 +253,146 @@ export class QaapWorkflowPromptRegistry {
             originalCommand: requireInput('adversarial-review', context, 'task'),
             diff: context.artifacts?.[QAAP_WORKFLOW_REVIEW_DIFF_ARTIFACT] ?? '',
         }));
+
+        this.registerReviewLenses();
+        this.registerPlanGate();
+    }
+
+    /**
+     * Multi-lens review. Each lens asks its OWN question of the same diff and answers with findings
+     * only — the verdict belongs to the synthesis turn, which is the one node that sees all three.
+     */
+    protected registerReviewLenses(): void {
+        for (const lens of QAAP_WORKFLOW_REVIEW_LENSES) {
+            const body = REVIEW_LENS_BODIES[lens.promptRef];
+            if (!body) {
+                throw new QaapWorkflowPromptError(`Review lens "${lens.promptRef}" has no prompt body.`);
+            }
+            this.register(lens.promptRef, context => [
+                `You are one of ${QAAP_WORKFLOW_REVIEW_LENSES.length} independent reviewers reading the SAME change through DIFFERENT lenses.`,
+                `Your lens is: ${body.title}. Stay inside it — the other lenses cover the rest, and duplicating them buys nothing.`,
+                'Another agent just finished a task in this repository and its uncommitted changes are still in the working tree.',
+                `The task that produced the changes was started with: ${requireInput(lens.promptRef, context, 'task')}`,
+                '',
+                'Look for:',
+                ...body.questions,
+                ...READ_ONLY_RULES,
+                '',
+                'Report at most 10 lines. One finding per line, as: SEVERITY | file:line | what is wrong and why it matters.',
+                'SEVERITY is blocker, major or minor. If your lens finds nothing, answer exactly: no findings.',
+                'Do NOT give a verdict and do NOT emit any review marker. A separate step weighs all lenses and decides;',
+                'a verdict from you would be a third of the picture presented as the whole answer.',
+                '',
+                'Unified diff of the uncommitted changes:',
+                inlineDiff(context),
+            ].join('\n'));
+        }
+
+        // The one node that decides. It sees every lens, so it is also the only one that can tell
+        // agreement from "nobody was looking".
+        this.register('synthesize-review', context => {
+            const reports = QAAP_WORKFLOW_REVIEW_LENSES.map(lens => {
+                const body = REVIEW_LENS_BODIES[lens.promptRef];
+                const report = quoteAgentText(context.artifacts?.[lens.artifactKey]);
+                return [
+                    `### Lens: ${body?.title ?? lens.nodeId}`,
+                    report ?? '(this lens produced no report — that reviewer did not run)',
+                ].join('\n');
+            });
+            return [
+                'You are the reviewer of record. Independent reviewers just read the SAME uncommitted change,'
+                + ' each through a different lens, and their reports are below. You decide, once.',
+                `The task that produced the changes was started with: ${requireInput('synthesize-review', context, 'task')}`,
+                '',
+                'How to weigh them:',
+                '- Confirm a finding yourself before it decides anything: the lenses can be wrong, and you are the one on record.',
+                '- One substantiated blocker is enough to fail, even if the other lenses were happy — they were not looking for it.',
+                '- The lenses disagree because they asked different questions. Do not average them and do not count votes.',
+                '- A lens reporting nothing means it found nothing under ITS lens, not that the change is good.',
+                '- A missing report means that reviewer never ran. Say so in your reason instead of reading it as agreement.',
+                ...READ_ONLY_RULES,
+                '',
+                buildAgentReviewVerdictInstruction(),
+                '',
+                'Lens reports:',
+                ...reports,
+                '',
+                'Unified diff of the uncommitted changes:',
+                inlineDiff(context),
+            ].join('\n');
+        });
+    }
+
+    /**
+     * Plan gate. Same read-only plan as `plan-task`, but the reader is a judge rather than a person:
+     * it must be checkable, and a rejected plan comes back here with the objections attached.
+     */
+    protected registerPlanGate(): void {
+        this.register('plan-under-review', context => {
+            const objections = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_PLAN_REVIEW_ARTIFACT]);
+            const previous = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_PLAN_ARTIFACT]);
+            return [
+                'Explore this repository READ-ONLY and propose a plan. Do not edit, create or delete any file.',
+                'An independent reviewer decides whether this plan is worth implementing, so make it checkable:',
+                '- what you will change, file by file, with real paths that exist (or the exact path you will create);',
+                '- how you will verify it — the exact command;',
+                '- what you will deliberately NOT do, and what you are unsure about.',
+                'Keep it under 20 lines. No preamble. Do not emit any review marker: you are the one being reviewed.',
+                '',
+                `Task: ${requireInput('plan-under-review', context, 'task')}`,
+                ...(objections
+                    ? [
+                        '',
+                        '---',
+                        'Your previous plan was REJECTED. Address these objections; do not restate the same plan with new wording:',
+                        '',
+                        objections,
+                        ...(previous ? ['', 'The plan that was rejected:', '', previous] : []),
+                    ]
+                    : []),
+            ].join('\n');
+        });
+
+        this.register('plan-review', context => {
+            const plan = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_PLAN_ARTIFACT]);
+            return [
+                'You are an INDEPENDENT senior reviewer. Another agent proposed the plan below and NOTHING has been'
+                + ' implemented yet — you are the gate before any file is touched.',
+                `The task it is planning for: ${requireInput('plan-review', context, 'task')}`,
+                '',
+                'Judge the plan, not its prose:',
+                '- Would it actually solve the task, or only the part that is easy to write down?',
+                '- Are the files, paths and symbols it names real? Check them.',
+                '- Is the verification concrete enough to tell success from failure?',
+                '- Does it reach further than the task asked, or do anything destructive or irreversible?',
+                '- What has it missed that this repository makes obvious?',
+                'Fail it only for something that would make the implementation wrong, unsafe or unverifiable —'
+                + ' not for style, and not for what you would have written instead. Rejecting a workable plan costs a whole extra turn.',
+                ...READ_ONLY_RULES,
+                '',
+                buildAgentReviewVerdictInstruction(),
+                'Before that line, list the objections that must be fixed, one per line: the plan turn gets them verbatim.',
+                '',
+                'The proposed plan:',
+                plan ?? '(no plan was captured — fail it and say the plan never arrived)',
+            ].join('\n');
+        });
+
+        this.register('implement-reviewed-plan', context => {
+            const plan = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_PLAN_ARTIFACT]);
+            return [
+                requireInput('implement-reviewed-plan', context, 'task'),
+                ...(plan
+                    ? [
+                        '',
+                        '---',
+                        'An independent reviewer ACCEPTED this plan. Follow it. If you find it is wrong once you are inside the code,',
+                        'say so and stop rather than silently doing something else — what passed review was this plan, not the task in general.',
+                        '',
+                        plan,
+                    ]
+                    : []),
+            ].join('\n');
+        });
     }
 }

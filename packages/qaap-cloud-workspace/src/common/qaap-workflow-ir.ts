@@ -19,6 +19,34 @@ export const QAAP_WORKFLOW_VERIFICATION_ARTIFACT = 'explore.verification';
 /** The plan a person approves before any file is touched. */
 export const QAAP_WORKFLOW_PLAN_ARTIFACT = 'plan.proposal';
 
+/**
+ * One lens of a multi-lens review: a distinct QUESTION about the same diff, the node that asks it,
+ * and the artifact its findings land in for the synthesis turn to weigh.
+ *
+ * Three lenses instead of one judge because a single verdict says nothing about its own
+ * reliability: three questions that disagree are information ("two lenses passed it, the safety one
+ * did not"), where one silent pass is only a coin whose bias nobody measured.
+ */
+export interface QaapWorkflowReviewLens {
+    readonly nodeId: string;
+    readonly promptRef: string;
+    readonly artifactKey: string;
+}
+
+/**
+ * The lenses of the multi-lens review, deliberately non-overlapping: does the change WORK, is it
+ * SAFE, and is it what was actually ASKED. Two lenses asking the same question would double the
+ * cost for one answer.
+ */
+export const QAAP_WORKFLOW_REVIEW_LENSES: readonly QaapWorkflowReviewLens[] = [
+    { nodeId: 'judge-correctness', promptRef: 'review-lens-correctness', artifactKey: 'review.lens.correctness' },
+    { nodeId: 'judge-safety', promptRef: 'review-lens-safety', artifactKey: 'review.lens.safety' },
+    { nodeId: 'judge-intent', promptRef: 'review-lens-intent', artifactKey: 'review.lens.intent' },
+];
+
+/** The plan reviewer's objections, handed back to the plan turn when it has to try again. */
+export const QAAP_WORKFLOW_PLAN_REVIEW_ARTIFACT = 'plan.review';
+
 /** How concurrent writer nodes isolate their working tree. */
 export type QaapWorkflowIsolation = 'cwd' | 'worktree' | 'cwd-readonly';
 
@@ -396,26 +424,47 @@ function edgeMatches(when: QaapWorkflowEdgeWhen, outcome: QaapWorkflowNodeOutcom
  */
 export type QaapWorkflowReviewMode = 'high-risk' | 'all' | 'off';
 
+/** Which optional prefixes and review shape a build asked for; the id and name derive from it. */
+interface QaapWorkflowShape {
+    readonly withExploration: boolean;
+    readonly withGoal: boolean;
+    readonly withPlan: boolean;
+    readonly withPlanGate: boolean;
+    readonly withMultiLensReview: boolean;
+}
+
 /** Definition ids are the contract a run is replayed against, so each shape owns one. */
-function definitionId(withExploration: boolean, withGoal = false, withPlan = false): string {
-    if (withPlan) {
+function definitionId(shape: QaapWorkflowShape): string {
+    if (shape.withPlanGate) {
+        return 'qaap.plan-gate-then-implement';
+    }
+    if (shape.withPlan) {
         return 'qaap.plan-then-implement';
     }
-    if (withGoal) {
+    if (shape.withGoal) {
         return 'qaap.goal';
     }
-    return withExploration ? 'qaap.explore-then-implement' : 'qaap.implement-then-review';
+    if (shape.withMultiLensReview) {
+        return 'qaap.multi-lens-review';
+    }
+    return shape.withExploration ? 'qaap.explore-then-implement' : 'qaap.implement-then-review';
 }
 
 /** Shown on every node's task title, so it must describe the shape that actually ran. */
-function definitionName(withExploration: boolean, reviewMode: QaapWorkflowReviewMode, withGoal = false, withPlan = false): string {
-    if (withPlan) {
+function definitionName(shape: QaapWorkflowShape, reviewMode: QaapWorkflowReviewMode): string {
+    if (shape.withPlanGate) {
+        return 'Plan, review the plan, then implement';
+    }
+    if (shape.withPlan) {
         return 'Plan first, implement after approval';
     }
-    if (withGoal) {
+    if (shape.withGoal) {
         return 'Work until the goal check passes';
     }
-    if (withExploration) {
+    if (shape.withMultiLensReview) {
+        return 'Implement, then review through three lenses';
+    }
+    if (shape.withExploration) {
         return 'Explore in parallel, then implement and review';
     }
     return reviewMode === 'all' ? 'Implement then review every change' : 'Implement then adversarial review';
@@ -456,12 +505,30 @@ export function buildImplementThenReviewWorkflow(options?: {
      * review conformance proved it, and the loop is bounded by the run's `maxVisitsPerNode` budget.
      */
     readonly withVerify?: boolean;
+    /**
+     * Review the diff through {@link QAAP_WORKFLOW_REVIEW_LENSES} at once and let a synthesis turn
+     * issue the single verdict. Opt-in because it multiplies the review cost by the number of
+     * lenses, and that is the caller's call, not the template's.
+     */
+    readonly withMultiLensReview?: boolean;
+    /**
+     * Gate the run on a REVIEWED plan: a read-only plan turn writes its proposal, a judge accepts or
+     * rejects it, and only an accepted plan reaches the implement turn. A rejected plan re-enters
+     * the PLAN turn — never the implement turn — carrying the reviewer's objections, so nothing is
+     * written on a plan that did not survive scrutiny.
+     */
+    readonly withPlanGate?: boolean;
 }): QaapWorkflowDef {
     const reviewMode = options?.reviewMode ?? 'high-risk';
     const withVerify = (options?.withVerify ?? false) || (options?.withGoal ?? false);
     const withExploration = options?.withParallelExploration ?? false;
     const withGoal = options?.withGoal ?? false;
-    const withPlan = options?.withPlan ?? false;
+    const withPlanGate = options?.withPlanGate ?? false;
+    // The human gate and the judge gate both own the `plan` node id and the run's entry, so a build
+    // takes one of them. The reviewed gate wins: it is the more specific request.
+    const withPlan = (options?.withPlan ?? false) && !withPlanGate;
+    const withMultiLensReview = options?.withMultiLensReview ?? false;
+    const shape: QaapWorkflowShape = { withExploration, withGoal, withPlan, withPlanGate, withMultiLensReview };
     const nodes: QaapWorkflowNode[] = [
         {
             kind: 'agent-turn',
@@ -470,9 +537,10 @@ export function buildImplementThenReviewWorkflow(options?: {
             costTier: 'standard',
             agentRef: options?.implementAgentRef,
             isolation: 'cwd',
-            promptRef: withPlan ? 'implement-approved-plan'
-                : withGoal ? 'goal-task'
-                    : withExploration ? 'implement-with-findings' : 'user-task',
+            promptRef: withPlanGate ? 'implement-reviewed-plan'
+                : withPlan ? 'implement-approved-plan'
+                    : withGoal ? 'goal-task'
+                        : withExploration ? 'implement-with-findings' : 'user-task',
         },
         { kind: 'emit', id: 'done-skip', bindingKey: 'review.skipped' },
     ];
@@ -507,9 +575,64 @@ export function buildImplementThenReviewWorkflow(options?: {
         );
     }
 
+    // Reviewed-plan prefix. The whole point is that the compuerta sits BEFORE the first edit: the
+    // plan turn is read-only, the judge reads the proposal, and a rejected plan costs one read-only
+    // turn instead of a diff nobody wanted. Everything downstream (implement → verify → review) is
+    // the unchanged tail, so the gate is a prefix and not a second graph.
+    if (withPlanGate) {
+        nodes.push(
+            {
+                kind: 'agent-turn',
+                id: 'plan',
+                // 'explore', not a new capability: the act is the same one the explore lane already
+                // names — read the repository and report, writing nothing. It also routes to the
+                // strong backends first (see DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE), which is what a
+                // plan the rest of the run is judged against deserves.
+                capability: 'explore',
+                costTier: 'standard',
+                agentRef: options?.exploreAgentRef,
+                isolation: 'cwd-readonly',
+                promptRef: 'plan-under-review',
+                artifactKey: QAAP_WORKFLOW_PLAN_ARTIFACT,
+            },
+            {
+                kind: 'agent-turn',
+                id: 'judge-plan',
+                capability: 'judge',
+                costTier: 'standard',
+                agentRef: options?.judgeAgentRef,
+                isolation: 'cwd-readonly',
+                promptRef: 'plan-review',
+                requireSentinel: true,
+                // The objections travel back into the plan turn; without this the rejected turn
+                // would be asked to try again with no idea what was wrong with the first attempt.
+                artifactKey: QAAP_WORKFLOW_PLAN_REVIEW_ARTIFACT,
+            },
+            { kind: 'emit', id: 'done-unplanned', bindingKey: 'plan.failed' },
+            { kind: 'emit', id: 'done-plan-inconclusive', bindingKey: 'plan.inconclusive' },
+        );
+        edges.push(
+            { from: 'plan', to: 'judge-plan', when: 'success' },
+            // A plan turn that could not run must not silently become an unplanned implementation.
+            { from: 'plan', to: 'done-unplanned', when: 'fail' },
+            { from: 'plan', to: 'done-unplanned', when: 'blocked' },
+            { from: 'judge-plan', to: 'implement', when: 'verdict:pass' },
+            // Rejection re-enters the PLAN turn, not the implement turn: the run replans instead of
+            // building on a plan that was just refused. Bounded by the run's `maxVisitsPerNode`.
+            { from: 'judge-plan', to: 'plan', when: 'verdict:fail' },
+            // Unlike the post-implement review — where the work is already paid for, so an
+            // undecidable verdict keeps it and flags it — here nothing has been written yet.
+            // Stopping costs one read-only turn; implementing on a plan the gate could not judge
+            // would make the gate optional in exactly the case it exists for.
+            { from: 'judge-plan', to: 'done-plan-inconclusive', when: 'verdict:inconclusive' },
+            { from: 'judge-plan', to: 'done-unplanned', when: 'fail' },
+            { from: 'judge-plan', to: 'done-unplanned', when: 'blocked' },
+        );
+    }
+
     // Parallel prefix. Both explorers are read-only, so they share the cwd safely; their findings
     // reach `implement` as run artifacts, and the join is what makes it wait for both.
-    const entry: string | readonly string[] = withPlan ? 'plan'
+    const entry: string | readonly string[] = withPlan || withPlanGate ? 'plan'
         : withExploration ? ['explore-structure', 'explore-verification'] : 'implement';
     if (withExploration) {
         nodes.push(
@@ -581,7 +704,7 @@ export function buildImplementThenReviewWorkflow(options?: {
         // runner returning undefined when QAAP_AGENT_REVIEW is off.
         edges.push({ from: afterImplement ?? 'implement', to: 'done-skip', when: 'success' });
         return {
-            id: definitionId(withExploration, withGoal, withPlan),
+            id: definitionId(shape),
             version: 1,
             name: withExploration ? 'Explore in parallel, then implement (review off)' : 'Implement (review off)',
             entry,
@@ -594,20 +717,65 @@ export function buildImplementThenReviewWorkflow(options?: {
         { kind: 'deterministic', id: 'risk-classify', op: 'risk-classify' },
         // The captured diff becomes the artifact the judge's prompt inlines.
         { kind: 'deterministic', id: 'git-diff', op: 'git-diff', artifactKey: QAAP_WORKFLOW_REVIEW_DIFF_ARTIFACT },
-        {
+        { kind: 'emit', id: 'done-pass', bindingKey: 'review.passed' },
+        { kind: 'emit', id: 'done-fail', bindingKey: 'review.failed' },
+        { kind: 'emit', id: 'done-inconclusive', bindingKey: 'review.inconclusive' },
+    );
+
+    // Which node actually issues the verdict: the lone judge, or the turn that synthesizes the
+    // lenses. Everything after it is wired against this id, so the two shapes share one tail.
+    const verdictNodeId = withMultiLensReview ? 'review-synthesis' : 'judge';
+    if (withMultiLensReview) {
+        for (const lens of QAAP_WORKFLOW_REVIEW_LENSES) {
+            nodes.push({
+                kind: 'agent-turn',
+                id: lens.nodeId,
+                capability: 'judge',
+                costTier: 'standard',
+                agentRef: options?.judgeAgentRef,
+                isolation: 'cwd-readonly',
+                promptRef: lens.promptRef,
+                // No sentinel: a lens reports FINDINGS. If each lens emitted its own verdict the
+                // graph would have three verdicts and no decision, and the first one to say "fail"
+                // would silently become the run's answer.
+                artifactKey: lens.artifactKey,
+            });
+            // 'always', not 'success': a lens that dies must not strand the other two at the join —
+            // that is exactly the fan-in that hung runs forever before. The synthesis turn is told
+            // which lenses are missing and weighs what it has.
+            edges.push({ from: 'git-diff', to: lens.nodeId, when: 'success' });
+            edges.push({ from: lens.nodeId, to: 'reviewed', when: 'always' });
+        }
+        nodes.push(
+            { kind: 'join', id: 'reviewed', wait: 'all' },
+            {
+                kind: 'agent-turn',
+                id: verdictNodeId,
+                // 'judge', not 'synthesize': this turn DECIDES. It must be routed away from the
+                // backend that wrote the change (see the judge-independence rule) and onto the
+                // review model slot, which a 'synthesize' capability would not do.
+                capability: 'judge',
+                costTier: 'standard',
+                agentRef: options?.judgeAgentRef,
+                isolation: 'cwd-readonly',
+                promptRef: 'synthesize-review',
+                requireSentinel: true,
+            },
+        );
+        edges.push({ from: 'reviewed', to: verdictNodeId, when: 'always' });
+    } else {
+        nodes.push({
             kind: 'agent-turn',
-            id: 'judge',
+            id: verdictNodeId,
             capability: 'judge',
             costTier: 'standard',
             agentRef: options?.judgeAgentRef,
             isolation: 'cwd-readonly',
             promptRef: 'adversarial-review',
             requireSentinel: true,
-        },
-        { kind: 'emit', id: 'done-pass', bindingKey: 'review.passed' },
-        { kind: 'emit', id: 'done-fail', bindingKey: 'review.failed' },
-        { kind: 'emit', id: 'done-inconclusive', bindingKey: 'review.inconclusive' },
-    );
+        });
+        edges.push({ from: 'git-diff', to: verdictNodeId, when: 'success' });
+    }
     edges.push({ from: afterImplement ?? 'implement', to: 'risk-classify', when: 'success' });
     if (reviewMode === 'all') {
         // No gate: every edited change reaches the judge, low or high risk.
@@ -623,17 +791,21 @@ export function buildImplementThenReviewWorkflow(options?: {
         );
     }
     edges.push(
-        { from: 'git-diff', to: 'judge', when: 'success' },
         { from: 'git-diff', to: 'done-inconclusive', when: 'fail' },
-        { from: 'judge', to: 'done-pass', when: 'verdict:pass' },
-        { from: 'judge', to: 'done-fail', when: 'verdict:fail' },
-        { from: 'judge', to: 'done-inconclusive', when: 'verdict:inconclusive' },
-        { from: 'judge', to: 'done-inconclusive', when: 'fail' },
+        { from: verdictNodeId, to: 'done-pass', when: 'verdict:pass' },
+        { from: verdictNodeId, to: 'done-fail', when: 'verdict:fail' },
+        { from: verdictNodeId, to: 'done-inconclusive', when: 'verdict:inconclusive' },
+        { from: verdictNodeId, to: 'done-inconclusive', when: 'fail' },
     );
+    if (withMultiLensReview) {
+        // A synthesis turn that is cancelled would otherwise leave the run with no edge to follow.
+        // The lone judge keeps its historical edge set, which the review conformance pinned.
+        edges.push({ from: verdictNodeId, to: 'done-inconclusive', when: 'blocked' });
+    }
     return {
-        id: definitionId(withExploration, withGoal, withPlan),
+        id: definitionId(shape),
         version: 1,
-        name: definitionName(withExploration, reviewMode, withGoal, withPlan),
+        name: definitionName(shape, reviewMode),
         entry,
         nodes,
         edges,

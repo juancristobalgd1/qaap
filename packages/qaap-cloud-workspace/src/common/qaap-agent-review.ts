@@ -105,6 +105,27 @@ export function parseAgentReviewVerdict(rawOutput: string | undefined): { status
 }
 
 /**
+ * The one instruction that makes a verdict parseable. Shared by every prompt whose node declares
+ * `requireSentinel`, so the contract with {@link parseAgentReviewVerdict} lives in a single place:
+ * the marker and the words "pass"/"fail" are spelled apart on purpose (see the parser's note).
+ */
+export function buildAgentReviewVerdictInstruction(): string {
+    return 'End your final message with exactly one line: the marker ' + QAAP_AGENT_REVIEW_VERDICT_MARKER
+        + ' followed by a space, then the single word "pass" or "fail", then a short reason.'
+        + ' Emit that marker exactly once, only in that final line.';
+}
+
+/**
+ * Neutralize verdict markers inside text an agent produced, before it is inlined into a prompt
+ * whose own output IS parsed for a verdict. Without this, a review lens (or any earlier turn) could
+ * write the marker into its findings, the synthesis turn would carry it into its context, and an
+ * echo of the prompt would decide the run — a verdict nobody issued.
+ */
+export function redactAgentReviewVerdictMarkers(text: string): string {
+    return text.split(QAAP_AGENT_REVIEW_VERDICT_MARKER).join('@@REDACTED-MARKER@@');
+}
+
+/**
  * How much diff the reviewer prompt inlines. Producers of a diff artifact cap at the same number:
  * storing more than the prompt can carry only bloats the run index.
  */
@@ -136,9 +157,7 @@ export function buildAgentReviewPrompt(options: {
         'You may run read-only commands to inspect the repository. Do NOT edit any file, do NOT commit, do NOT fix anything — you only judge.',
         'Do not start an application, dev server, watcher, or any other long-lived process. Use existing Preview evidence and bounded read-only checks instead.',
         '',
-        'End your final message with exactly one line: the marker ' + QAAP_AGENT_REVIEW_VERDICT_MARKER
-        + ' followed by a space, then the single word "pass" or "fail", then a short reason.'
-        + ' Emit that marker exactly once, only in that final line.',
+        buildAgentReviewVerdictInstruction(),
         '',
         'Unified diff of the uncommitted changes:',
         diff || '(empty diff — inspect the working tree yourself)',

@@ -117,6 +117,51 @@ export class QaapWorkflowTemplateRegistry {
                 withParallelExploration: true,
             }),
         });
+
+        this.registerOptionalTopologies();
+    }
+
+    /**
+     * Opt-in topologies. Both cost more than the default shape — one multiplies the review, the
+     * other adds a turn before any code is written — so they are separate template ids a caller
+     * chooses, never a change of behaviour for the templates above.
+     */
+    protected registerOptionalTopologies(): void {
+        this.register({
+            summary: {
+                id: 'qaap.multi-lens-review',
+                name: 'Implement, then review through three lenses',
+                description:
+                    'Implements the task, then reviews the diff through three independent lenses at once — correctness, safety '
+                    + 'and whether it does what was asked — and lets a synthesis step weigh their findings into a single verdict. '
+                    + 'Costs one review turn per lens plus the synthesis.',
+                requiredInputs: ['task'],
+            },
+            build: options => buildImplementThenReviewWorkflow({
+                // Still the deployment's review mode: a caller asking for more review does not get
+                // to switch reviewing back ON where the operator turned it off.
+                reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
+                withVerify: options?.verify,
+                withMultiLensReview: true,
+            }),
+        });
+
+        this.register({
+            summary: {
+                id: 'qaap.plan-gate-then-implement',
+                name: 'Plan, review the plan, then implement',
+                description:
+                    'Proposes a plan read-only and has an independent judge accept or reject it BEFORE anything is written. '
+                    + 'A rejected plan is rewritten against the reviewer\'s objections; only an accepted plan reaches the '
+                    + 'implementing turn, which then classifies risk and reviews as usual.',
+                requiredInputs: ['task'],
+            },
+            build: options => buildImplementThenReviewWorkflow({
+                reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
+                withVerify: options?.verify,
+                withPlanGate: true,
+            }),
+        });
     }
 
     /** Isolated for tests; the live registry reads the process env. */
