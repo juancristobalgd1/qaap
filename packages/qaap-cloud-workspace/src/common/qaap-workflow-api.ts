@@ -6,6 +6,7 @@
 /** HTTP contract for Dynamic Workflow runs (ADR-001). */
 
 import { QaapWorkflowRun } from './qaap-workflow-run';
+import { QaapWorkflowTraceEntry } from './qaap-workflow-trace';
 
 /** HTTP base path for workflow runs. */
 export const QAAP_WORKFLOW_API_PATH = '/qaap/api/workflows';
@@ -77,6 +78,11 @@ export interface QaapWorkflowRunSummary {
     readonly checkScript?: string;
     /** Present only while the run waits for a person; POST `/:id/continue` with its `nodeId`. */
     readonly pendingDecision?: QaapWorkflowPendingDecision;
+    /**
+     * What the run did, step by step. Returned when fetching ONE run — the list stays a list. Every
+     * `detail` is a phrase the backend composes; repository output never travels through here.
+     */
+    readonly trace?: readonly QaapWorkflowTraceEntry[];
     readonly createdAt: number;
     readonly updatedAt: number;
 }

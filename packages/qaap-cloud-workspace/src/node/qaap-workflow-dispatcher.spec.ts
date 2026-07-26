@@ -447,3 +447,89 @@ describe('QaapWorkflowDispatcher plan mode', () => {
         expect(agent.started).to.have.length(1, 'boot reconciliation must not approve a plan for anyone');
     });
 });
+
+describe('QaapWorkflowDispatcher run trace', () => {
+    let directory: string;
+    let store: TestStore;
+    let agent: FakeAgentPort;
+    let jobs: FakeJobPort;
+    let dispatcher: QaapWorkflowDispatcher;
+
+    beforeEach(() => {
+        directory = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-workflow-trace-'));
+        store = new TestStore(directory);
+        store.initialize();
+        agent = new FakeAgentPort();
+        jobs = new FakeJobPort();
+        dispatcher = new QaapWorkflowDispatcher(store, { agent, deterministic: jobs });
+    });
+
+    afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+    it('records every step with what happened and how long it took', async () => {
+        const started = await store.start(buildImplementThenReviewWorkflow(), {
+            cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' },
+        });
+        await dispatcher.dispatch(started.record, started.dispatch);
+        const runId = started.record.run.id;
+
+        await dispatcher.onAgentTaskFinished('task-1', 'completed');
+        await dispatcher.onJobFinished('job-1', 'succeeded', { outcome: 'risk:high', files: [{}, {}, {}] });
+        await dispatcher.onJobFinished('job-2', 'succeeded', { outcome: 'success', artifact: 'diff' });
+        await dispatcher.onAgentTaskFinished('task-2', 'completed', 'nope\n@@QAAP:VERDICT@@ fail leaks the token');
+
+        const trace = store.get('ada', runId)!.trace;
+        expect(trace.map(step => step.nodeId)).to.deep.equal(['implement', 'risk-classify', 'git-diff', 'judge']);
+        expect(trace.map(step => step.outcome)).to.deep.equal(['success', 'risk:high', 'success', 'verdict:fail']);
+        // The two entries a person actually reads when a run goes red.
+        expect(trace[1].detail).to.equal('High risk: 3 files changed since the run started.');
+        expect(trace[3].detail).to.equal('The reviewer rejected the change.');
+        // Every executed step is traceable back to its own log.
+        expect(trace[0].externalId).to.equal('task-1');
+        expect(trace.every(step => typeof step.durationMs === 'number')).to.equal(true);
+    });
+
+    it('says a step timed out instead of just failing it', async () => {
+        const started = await store.start(buildImplementThenReviewWorkflow(), {
+            cwd: '/repo',
+            ownerLogin: 'ada',
+            inputs: { task: 'fix the login bug' },
+            budget: { ...DEFAULT_QAAP_WORKFLOW_RUN_BUDGET, maxNodeMs: 60_000 },
+        });
+        await dispatcher.dispatch(started.record, started.dispatch);
+
+        await dispatcher.sweepDeadlines(Date.now() + 5 * 60_000);
+
+        const trace = store.get('ada', started.record.run.id)!.trace;
+        expect(trace[0].detail).to.contain('wall clock ran out');
+    });
+
+    it('names the step that was still in flight when the run expired', async () => {
+        const started = await store.start(buildImplementThenReviewWorkflow(), {
+            cwd: '/repo',
+            ownerLogin: 'ada',
+            inputs: { task: 'fix the login bug' },
+            budget: { ...DEFAULT_QAAP_WORKFLOW_RUN_BUDGET, maxRunMs: 60_000 },
+        });
+        await dispatcher.dispatch(started.record, started.dispatch);
+
+        await dispatcher.sweepDeadlines(Date.now() + 5 * 60_000);
+
+        const trace = store.get('ada', started.record.run.id)!.trace;
+        expect(trace).to.have.length(1);
+        expect(trace[0].nodeId).to.equal('implement');
+        expect(trace[0].detail).to.contain('Still running when');
+    });
+
+    it('survives a restart, because a diagnosis you lose on reboot is no diagnosis', async () => {
+        const started = await store.start(buildImplementThenReviewWorkflow(), {
+            cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' },
+        });
+        await dispatcher.dispatch(started.record, started.dispatch);
+        await dispatcher.onAgentTaskFinished('task-1', 'completed');
+
+        const restored = new TestStore(directory);
+        restored.initialize();
+        expect(restored.get('ada', started.record.run.id)!.trace.map(step => step.nodeId)).to.deep.equal(['implement']);
+    });
+});

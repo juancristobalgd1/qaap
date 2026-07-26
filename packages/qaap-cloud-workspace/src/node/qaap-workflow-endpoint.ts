@@ -136,7 +136,8 @@ export class QaapWorkflowEndpoint implements BackendApplicationContribution {
             res.status(404).json({ error: nls.localize('qaap/workflows/runNotFound', 'Workflow run not found.') });
             return;
         }
-        res.json(this.toSummary(record));
+        // The trace only on the single-run read: a list of runs stays a list.
+        res.json({ ...this.toSummary(record), trace: record.trace });
     }
 
     protected async handleContinue(req: Request, res: Response): Promise<void> {

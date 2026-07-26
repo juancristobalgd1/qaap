@@ -19,6 +19,7 @@ import {
     expireQaapWorkflowRun,
     startQaapWorkflowRun,
 } from '../common/qaap-workflow-run';
+import { appendQaapWorkflowTrace, QaapWorkflowTraceEntry } from '../common/qaap-workflow-trace';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
 
 const STORE_MODE = 0o700;
@@ -77,6 +78,8 @@ export interface QaapPersistedWorkflowRun {
      * dispatch entry is gone.
      */
     readonly routedAgents: Readonly<Record<string, string>>;
+    /** What the run actually did, node by node — the answer to "why did this end like this?". */
+    readonly trace: readonly QaapWorkflowTraceEntry[];
 }
 
 interface PersistedWorkflowRunIndex {
@@ -202,6 +205,7 @@ export class QaapWorkflowRunStore {
                 dispatched: {},
                 artifacts: {},
                 routedAgents: {},
+                trace: [],
             };
             return { records: [...records, record], result: { record, dispatch: started.dispatch } };
         }, result => result.record);
@@ -216,6 +220,8 @@ export class QaapWorkflowRunStore {
         bindingRef?: string,
         /** Text this node produced for later prompts, stored under the node's `artifactKey`. */
         artifact?: { readonly key: string; readonly value: string },
+        /** Short generated phrase for the trace; never raw repository output. */
+        detail?: string,
     ): Promise<QaapWorkflowDispatchResult> {
         return this.mutate(records => {
             const owner = this.normalizeOwner(ownerLogin);
@@ -232,7 +238,9 @@ export class QaapWorkflowRunStore {
             }
             const advanced = advanceQaapWorkflowRun(previous.def, previous.run, nodeId, outcome, bindingRef);
             const dispatched = { ...previous.dispatched };
+            const executed = dispatched[nodeId];
             delete dispatched[nodeId];
+            const finishedAt = this.now();
             const record: QaapPersistedWorkflowRun = {
                 ...previous,
                 run: advanced.run,
@@ -240,7 +248,17 @@ export class QaapWorkflowRunStore {
                 artifacts: artifact
                     ? { ...previous.artifacts, [artifact.key]: artifact.value.slice(0, MAX_ARTIFACT_CHARS) }
                     : previous.artifacts,
-                updatedAt: this.now(),
+                trace: appendQaapWorkflowTrace(previous.trace, {
+                    nodeId,
+                    kind: previous.def.nodes.find(node => node.id === nodeId)?.kind ?? 'deterministic',
+                    outcome,
+                    ...(executed ? { startedAt: executed.dispatchedAt, durationMs: finishedAt - executed.dispatchedAt } : {}),
+                    finishedAt,
+                    ...(previous.routedAgents[nodeId] ? { agentRef: previous.routedAgents[nodeId] } : {}),
+                    ...(executed ? { externalId: executed.externalId } : {}),
+                    ...(detail ? { detail } : {}),
+                }),
+                updatedAt: finishedAt,
             };
             const next = [...records];
             next[index] = record;
@@ -341,11 +359,30 @@ export class QaapWorkflowRunStore {
                 return { records, result: undefined };
             }
             const previous = records[index];
+            const expiredAt = this.now();
+            // Close the story: without this the trace ends on whatever finished last, and the step
+            // that was still in flight when the clock ran out — usually the interesting one —
+            // simply never appears.
+            let trace = previous.trace;
+            for (const nodeId of previous.run.active) {
+                const executed = previous.dispatched[nodeId];
+                trace = appendQaapWorkflowTrace(trace, {
+                    nodeId,
+                    kind: previous.def.nodes.find(node => node.id === nodeId)?.kind ?? 'agent-turn',
+                    outcome: 'fail',
+                    ...(executed ? { startedAt: executed.dispatchedAt, durationMs: expiredAt - executed.dispatchedAt } : {}),
+                    finishedAt: expiredAt,
+                    ...(previous.routedAgents[nodeId] ? { agentRef: previous.routedAgents[nodeId] } : {}),
+                    ...(executed ? { externalId: executed.externalId } : {}),
+                    detail: 'Still running when the run\'s wall clock ran out.',
+                });
+            }
             const record: QaapPersistedWorkflowRun = {
                 ...previous,
                 run: expireQaapWorkflowRun(previous.run),
                 dispatched: {},
-                updatedAt: this.now(),
+                trace,
+                updatedAt: expiredAt,
             };
             const next = [...records];
             next[index] = record;
@@ -390,6 +427,7 @@ export class QaapWorkflowRunStore {
                     inputs: record.inputs ?? {},
                     artifacts: record.artifacts ?? {},
                     routedAgents: record.routedAgents ?? {},
+                    trace: record.trace ?? [],
                 });
             }
         }

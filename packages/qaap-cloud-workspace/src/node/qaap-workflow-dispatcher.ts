@@ -19,6 +19,7 @@ import { QaapJobState } from '../common/qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowDeterministicNode, QaapWorkflowNode } from '../common/qaap-workflow-ir';
 import { resolveAgentTurnOutcome, resolveDeterministicOutcome } from '../common/qaap-workflow-outcome';
 import { findTimedOutQaapWorkflowNodes, hasQaapWorkflowRunExpired } from '../common/qaap-workflow-run';
+import { describeQaapWorkflowStep } from '../common/qaap-workflow-trace';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 
 export interface QaapWorkflowDispatchContext {
@@ -137,7 +138,7 @@ export class QaapWorkflowDispatcher {
             } catch (error) {
                 // A node that could not even start is a failed node, not a stuck run.
                 console.warn(`[qaap-workflow] failed to start node "${nodeId}":`, error);
-                await this.report(record.ownerLogin, record.run.id, nodeId, 'fail');
+                await this.report(record.ownerLogin, record.run.id, nodeId, 'fail', undefined, 'The step could not be started.');
             }
         }
         for (const settled of selfSettled) {
@@ -156,12 +157,14 @@ export class QaapWorkflowDispatcher {
             return;
         }
         this.ports.agent.noteAgentTurnResult?.(externalId, state);
+        const outcome = resolveAgentTurnOutcome(node, state, log);
         await this.report(
             found.record.ownerLogin,
             found.record.run.id,
             found.nodeId,
-            resolveAgentTurnOutcome(node, state, log),
+            outcome,
             extractAgentTurnArtifact(node, log),
+            describeQaapWorkflowStep(node, outcome),
         );
     }
 
@@ -172,12 +175,14 @@ export class QaapWorkflowDispatcher {
             return;
         }
         const node = found.record.def.nodes.find(entry => entry.id === found.nodeId);
+        const outcome = resolveDeterministicOutcome(state, result);
         await this.report(
             found.record.ownerLogin,
             found.record.run.id,
             found.nodeId,
-            resolveDeterministicOutcome(state, result),
+            outcome,
             node?.kind === 'deterministic' ? extractNodeArtifact(node, result) : undefined,
+            describeQaapWorkflowStep(node, outcome, result),
         );
     }
 
@@ -262,7 +267,10 @@ export class QaapWorkflowDispatcher {
                 // Report BEFORE cancelling: the cancellation's own terminal event then arrives for a
                 // node that already left `active`, where the store drops it as stale. The other
                 // order would let 'cancelled' (blocked) win the race over the timeout's 'fail'.
-                await this.report(record.ownerLogin, record.run.id, nodeId, 'fail');
+                await this.report(
+                    record.ownerLogin, record.run.id, nodeId, 'fail', undefined,
+                    `Stopped after ${Math.round((now - entry.dispatchedAt) / 60_000)} min: the run's node wall clock ran out.`,
+                );
                 await this.cancelDispatched(entry);
             }
         }
@@ -285,8 +293,9 @@ export class QaapWorkflowDispatcher {
         nodeId: string,
         outcome: Parameters<QaapWorkflowRunStore['report']>[3],
         artifact?: { readonly key: string; readonly value: string },
+        detail?: string,
     ): Promise<void> {
-        const result = await this.store.report(ownerLogin, runId, nodeId, outcome, undefined, artifact);
+        const result = await this.store.report(ownerLogin, runId, nodeId, outcome, undefined, artifact, detail);
         if (result.dispatch.length > 0) {
             await this.dispatch(result.record, result.dispatch);
         }
