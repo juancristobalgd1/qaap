@@ -157,6 +157,19 @@ export function toAgentMessageWireSnapshot(
     return snapshot;
 }
 
+/**
+ * Turn provenance (which agent/model actually drove the turn) is sealed onto the USER message and
+ * has no representation in any incremental delta kind — a change to it can only travel as a full
+ * message. Fingerprinting it here is what keeps `computeAgentMessageWireDelta` from collapsing a
+ * re-seal (fallback-model retry) into `noop`, which `fireAgentMessageWireUpdate` drops outright.
+ */
+function turnProvenanceFingerprint(
+    message: Pick<QaapAgentMessageDTO, 'turnAgentId' | 'turnAgentModel'>,
+): string {
+    const model = message.turnAgentModel;
+    return `${message.turnAgentId ?? ''}|${model ? `${model.provider}:${model.vendor}:${model.modelId}` : ''}`;
+}
+
 function segmentFingerprint(segment: QaapAgentMessageSegmentDTO): string {
     if (segment.type === 'tool') {
         return `t:${segment.toolUseId}:${segment.finished ? '1' : '0'}:${segment.args?.length ?? 0}:${segment.result?.length ?? 0}:${segment.name}`;
@@ -382,6 +395,9 @@ export function computeAgentMessageWireDelta(
         return { kind: 'message_start', message: toWireMessage(next) };
     }
     if (previous.id !== next.id || previous.role !== next.role) {
+        return { kind: 'replace', message: toWireMessage(next) };
+    }
+    if (turnProvenanceFingerprint(previous) !== turnProvenanceFingerprint(next)) {
         return { kind: 'replace', message: toWireMessage(next) };
     }
 

@@ -497,11 +497,24 @@ export class QaapAgentConversationStore {
             }
         }
         const turnAgentId = this.resolveTurnAgent(conv, content, agentOverride);
+        const modelPatch = agentModelOverride && agentSupportsModelPicker(turnAgentId)
+            ? { agentModel: agentModelOverride, qaiqModel: agentModelOverride }
+            : {};
+        // The model that will actually drive this turn. Resolved BEFORE the user message is built
+        // so the very first SSE frame already carries the provenance the badge renders from:
+        // sealing it after `taskRunner.create()` would ship an unsealed frame that the client's
+        // replace-by-id merge (`QaapThreadStore.appendLiveMessage`) can never repair on its own.
+        const turnModel = modelPatch.agentModel ?? conv.agentModel ?? conv.qaiqModel;
+        // Agents without a model picker (shell, native CLIs) run no model of ours — sealing one
+        // would badge the turn with a model that never executed. Same guard as buildTaskCreateRequest.
+        const sealedTurnModel = agentSupportsModelPicker(turnAgentId) ? turnModel : undefined;
         const userMessage: QaapAgentMessage = {
             id: randomUUID(),
             role: 'user',
             content,
             createdAt: Date.now(),
+            turnAgentId,
+            ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
             ...(internal?.autoContinueRootMessageId
                 ? { autoContinueRootMessageId: internal.autoContinueRootMessageId }
                 : {}),
@@ -517,9 +530,7 @@ export class QaapAgentConversationStore {
             messages,
             // Posting a new turn implicitly resumes a paused chat.
             paused: undefined,
-            ...(agentModelOverride && agentSupportsModelPicker(turnAgentId)
-                ? { agentModel: agentModelOverride, qaiqModel: agentModelOverride }
-                : {}),
+            ...modelPatch,
             ...(interactionModeId ? { interactionModeId } : {}),
             ...(approvalPolicyId ? { approvalPolicyId } : {}),
             ...(toolApprovalRules ? { toolApprovalRules } : {}),
@@ -537,7 +548,6 @@ export class QaapAgentConversationStore {
 
         // Pre-spawn gate: models confirmed to lack function calling cannot drive the coding
         // agent — fail the turn typed instead of burning a doomed CLI run.
-        const turnModel = next.agentModel ?? next.qaiqModel;
         if (agentSupportsModelPicker(turnAgentId) && qaiqModelSupportsToolCalls(turnModel?.modelId) === false) {
             return this.failTurnBeforeSpawn(id, next, userMessage.id, localizeAgentFailureMessage('tool_unsupported'));
         }
@@ -561,7 +571,7 @@ export class QaapAgentConversationStore {
                 // buildAgentCommand), so it is always undefined at this synchronous point today;
                 // fall back to the id the store itself already resolved for this turn.
                 turnAgentId: task!.agentId ?? turnAgentId,
-                ...(turnModel ? { turnAgentModel: turnModel } : {}),
+                ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
             }
             : m);
         next = { ...next, messages: messagesWithTask };
@@ -570,6 +580,13 @@ export class QaapAgentConversationStore {
             next = autoLinked;
         }
         this.conversations.set(id, next);
+        // Provenance already went out with the first frame; only a task runner that resolved its
+        // own agent id synchronously (none does today) can make that frame stale. Re-emit then,
+        // and only then, so the common path keeps its single user-message frame.
+        const sealedUserMessage = messagesWithTask.find(m => m.id === userMessage.id);
+        if (sealedUserMessage && sealedUserMessage.turnAgentId !== userMessage.turnAgentId) {
+            this.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: sealedUserMessage });
+        }
         const startSha = this.captureGitSha(conv.cwd);
         this.taskToConversation.set(task.id, { conversationId: id, userMessageId: userMessage.id, startSha });
         void this.persist();
@@ -2071,6 +2088,13 @@ export class QaapAgentConversationStore {
             : message);
         const nextConv = { ...retryConv, messages: messagesWithTask };
         this.conversations.set(conversationId, nextConv);
+        // The re-attributed user message is the only carrier of the new provenance: the `updated`
+        // summary below has no `messages` (see toConversationSummary), so without this frame every
+        // tab except the one that polls keeps badging the turn with the model that just failed.
+        const resealedUserMessage = messagesWithTask.find(message => message.id === userMessageId);
+        if (resealedUserMessage) {
+            this.fire({ type: 'message', conversationId, cwd: nextConv.cwd, message: resealedUserMessage });
+        }
         this.fire({ type: 'updated', conversation: toConversationSummary(nextConv) });
         this.taskToConversation.set(spawned.id, {
             conversationId,

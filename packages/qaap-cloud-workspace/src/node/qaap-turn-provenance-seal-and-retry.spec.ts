@@ -17,19 +17,39 @@
 // no Inversify container needed.
 
 import { expect } from 'chai';
-import type { QaapAgentConversation, QaapAgentMessage } from '../common/qaap-agent-conversation';
+import type { QaapAgentConversation, QaapAgentConversationEvent, QaapAgentMessage } from '../common/qaap-agent-conversation';
 import type { QaapAgentTask, QaapCreateAgentTaskQaiqModel, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 
+/**
+ * Marker pushed into the same log as the SSE events so the ORDER of "user message frame" vs
+ * "agent process spawned" is assertable: the user bubble must reach every open tab before the
+ * (potentially slow) spawn, and it must already carry its provenance when it does.
+ */
+type RecordedEvent = QaapAgentConversationEvent | { readonly type: 'spawn'; readonly taskId: string };
+
 class TestableQaapAgentConversationStore extends QaapAgentConversationStore {
+    /** Everything that would have gone out over SSE, in emission order. */
+    readonly emitted: RecordedEvent[] = [];
+
     protected override isDirectory(): boolean {
         return true;
     }
 
     protected override async persist(): Promise<void> { /* no-op */ }
     protected override async restoreFromDisk(): Promise<void> { /* no-op */ }
-    protected override fire(): void { /* no-op */ }
+    protected override fire(event: QaapAgentConversationEvent): void {
+        this.emitted.push(event);
+    }
     protected override startTurnWatchdog(): void { /* no-op */ }
+
+    /** The SSE `message` frames carrying the given message id, in emission order. */
+    messageFrames(messageId: string): QaapAgentMessage[] {
+        return this.emitted
+            .filter((event): event is Extract<QaapAgentConversationEvent, { type: 'message' }> => event.type === 'message')
+            .filter(event => event.message.id === messageId)
+            .map(event => event.message);
+    }
 
     seed(conversation: QaapAgentConversation): void {
         this.conversations.set(conversation.id, conversation);
@@ -61,6 +81,8 @@ class TestableQaapAgentConversationStore extends QaapAgentConversationStore {
 
 /** 'qaiq' is the one built-in agent id that supports a model picker via the Settings BYOK catalog. */
 const QAIQ_AGENT_ID = 'qaiq';
+/** 'shell' is the canonical agent WITHOUT a model picker: it execs a command, no model runs. */
+const SHELL_AGENT_ID = 'shell';
 
 function installFakes(
     store: TestableQaapAgentConversationStore,
@@ -70,8 +92,15 @@ function installFakes(
         streamMetrics: { recordLatencyMark: () => undefined },
         taskRunner: {
             defaultAgent: () => QAIQ_AGENT_ID,
-            normalizeAgentId: (agentId: string) => agentId === QAIQ_AGENT_ID ? QAIQ_AGENT_ID : undefined,
-            create: createImpl,
+            normalizeAgentId: (agentId: string) => {
+                const normalized = agentId?.toLowerCase();
+                return normalized === QAIQ_AGENT_ID || normalized === SHELL_AGENT_ID ? normalized : undefined;
+            },
+            create: (request: QaapCreateAgentTaskRequest, owner?: string) => {
+                const task = createImpl(request, owner);
+                store.emitted.push({ type: 'spawn', taskId: task.id });
+                return task;
+            },
             // buildPrompt -> appendTeamDelegation calls this to list delegation targets.
             listAgents: () => [{ id: QAIQ_AGENT_ID, label: 'QAIQ' }],
         },
@@ -181,8 +210,108 @@ describe('turn-provenance sealing and fallback-model re-attribution (backend hal
         expect(updatedUserMessage.turnAgentModel?.modelId).to.equal('nvidia/nemotron-3-super-120b-a12b:free');
         expect(updatedUserMessage.turnAgentId, 'turnAgentId is preserved across the retry').to.equal(QAIQ_AGENT_ID);
         expect(updatedUserMessage.taskId, 'taskId now points at the retry task, not the failed one')
-            .to.equal(spawnedRequests.length === 1 ? 'task-1' : updatedUserMessage.taskId);
+            .to.equal('task-1');
         expect(updated.agentModel, 'the conversation-level model also advances to the fallback')
             .to.deep.equal(updatedUserMessage.turnAgentModel);
+
+        // ...and the re-attribution has to LEAVE the backend. The `updated` summary carries no
+        // messages (toConversationSummary), so a tab that is not the one polling would keep
+        // badging the failed model forever unless the re-sealed user message is emitted too.
+        const frames = store.messageFrames(userMessageId);
+        expect(frames, 'the re-sealed user message is pushed over SSE, not just mutated in memory')
+            .to.have.length(1);
+        expect(frames[0].turnAgentModel, 'the emitted frame carries the fallback model')
+            .to.deep.equal(updatedUserMessage.turnAgentModel);
+        expect(frames[0].turnAgentId, 'the emitted frame keeps the agent attribution').to.equal(QAIQ_AGENT_ID);
+    });
+
+    it('emits the user-message frame ALREADY sealed, and before the agent process is spawned', () => {
+        const store = new TestableQaapAgentConversationStore();
+        const pickedModel: QaapCreateAgentTaskQaiqModel = {
+            provider: 'anthropic',
+            vendor: 'anthropic',
+            modelId: 'claude-4-sonnet',
+        };
+        installFakes(store, request => ({
+            id: 'task-1',
+            title: request.title ?? '',
+            command: request.command ?? '',
+            cwd: request.cwd,
+            state: 'running',
+            createdAt: 1,
+        }));
+
+        const conv = store.create({
+            cwd: '/repo',
+            agent: QAIQ_AGENT_ID,
+            message: 'Fix the flaky test',
+            agentModel: pickedModel,
+        }, 'alice');
+        const userMessageId = conv.messages[0].id;
+
+        // 1. Provenance travels on the wire, not only in the HTTP response of the POST. Every other
+        //    open tab only ever sees these frames.
+        const frames = store.messageFrames(userMessageId);
+        expect(frames, 'the user turn is announced over SSE').to.have.length.greaterThan(0);
+        expect(frames[0].turnAgentId, 'the FIRST frame is already sealed with the agent').to.equal(QAIQ_AGENT_ID);
+        expect(frames[0].turnAgentModel, 'the FIRST frame is already sealed with the model').to.deep.equal(pickedModel);
+
+        // 2. ...without paying for it in perceived latency: the bubble is announced before the
+        //    (potentially slow) agent spawn, never after it.
+        const firstFrameIndex = store.emitted.findIndex(
+            event => event.type === 'message' && event.message.id === userMessageId,
+        );
+        const spawnIndex = store.emitted.findIndex(event => event.type === 'spawn');
+        expect(spawnIndex, 'the fake runner recorded the spawn').to.be.greaterThan(-1);
+        expect(firstFrameIndex, 'the user bubble is emitted BEFORE the agent process is spawned')
+            .to.be.lessThan(spawnIndex);
+
+        // 3. And no client-visible churn: the common path emits the user row exactly once, so a
+        //    replace-by-id merge (QaapThreadStore.appendLiveMessage) can never un-seal the badge.
+        expect(frames, 'exactly one user-message frame on the happy path').to.have.length(1);
+    });
+
+    it('seals no model when the turn is taken by an agent that has no model picker', () => {
+        const store = new TestableQaapAgentConversationStore();
+        const pickedModel: QaapCreateAgentTaskQaiqModel = {
+            provider: 'openai',
+            vendor: 'openrouter',
+            modelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+        };
+        installFakes(store, request => ({
+            id: 'task-1',
+            title: request.title ?? '',
+            command: request.command ?? '',
+            cwd: request.cwd,
+            state: 'running',
+            createdAt: 1,
+        }));
+
+        // A model-picking conversation (the model is pinned on the conversation) that receives a
+        // '@shell' turn: the shell agent execs a command, no model of ours runs it. Sealing the
+        // conversation model here would badge the exec with a model that never executed.
+        const conversationId = 'conv-shell';
+        store.seed({
+            id: conversationId,
+            cwd: '/repo',
+            agentId: QAIQ_AGENT_ID,
+            title: 'Mixed session',
+            status: 'idle',
+            createdAt: 0,
+            updatedAt: 0,
+            agentModel: pickedModel,
+            qaiqModel: pickedModel,
+            messages: [],
+        });
+
+        const next = store.postUserMessage(conversationId, '@shell ls -la');
+        const userMessage = next.messages[next.messages.length - 1];
+        expect(userMessage.turnAgentId, 'the shell agent took the turn').to.equal(SHELL_AGENT_ID);
+        expect(userMessage.turnAgentModel, 'no model is sealed for an agent without a model picker')
+            .to.equal(undefined);
+        expect(store.messageFrames(userMessage.id)[0]?.turnAgentModel, 'and the SSE frame does not carry one either')
+            .to.equal(undefined);
+        expect(next.agentModel, 'the conversation keeps its pinned model for the next qaiq turn')
+            .to.deep.equal(pickedModel);
     });
 });

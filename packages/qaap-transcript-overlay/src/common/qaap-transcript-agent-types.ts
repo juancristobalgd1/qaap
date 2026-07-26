@@ -140,6 +140,10 @@ export interface QaapAgentMessageDTO {
     readonly createdAt: number;
     readonly taskId?: string;
     readonly error?: string;
+    /** Agent that actually drove this turn — sealed on the user message that started it. */
+    readonly turnAgentId?: string;
+    /** Set alongside {@link turnAgentId}: the model that drove this turn. */
+    readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
     /** Client-only attachment previews for optimistic pending-user rows (never sent to VPS). */
     readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
 }

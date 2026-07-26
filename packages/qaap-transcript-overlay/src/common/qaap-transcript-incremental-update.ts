@@ -92,8 +92,21 @@ function fingerprintConversationHeader(conv: QaapAgentConversationDTO): string {
     ].join('|');
 }
 
+/**
+ * Turn provenance (agent + model that actually drove the turn) is sealed onto the user message
+ * and rendered as the accordion badge. It is not derivable from content/segments/traceEvents, so
+ * every fingerprint that gates a repaint has to hash it too — otherwise a re-seal (initial spawn
+ * or fallback-model retry) is indistinguishable from "nothing changed" and the badge never moves.
+ */
+export function fingerprintTurnProvenance(
+    message: Pick<QaapAgentMessageDTO, 'turnAgentId' | 'turnAgentModel'>,
+): string {
+    const model = message.turnAgentModel;
+    return `${message.turnAgentId ?? ''}:${model ? `${model.provider}/${model.vendor}/${model.modelId}` : ''}`;
+}
+
 function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapAgentMessageDTO): void {
-    parts.push(message.id ?? '', hashTranscriptText(message.content));
+    parts.push(message.id ?? '', hashTranscriptText(message.content), `p:${fingerprintTurnProvenance(message)}`);
     if (message.traceEvents?.length) {
         for (const event of message.traceEvents) {
             if (event.type === 'tool_call') {

@@ -149,6 +149,40 @@ describe('applyConversationMessageDelta', () => {
         expect(agentMessageDeltaChanged(agent, { ...agent, createdAt: 99 })).to.equal(false);
     });
 
+    // The turn-provenance badge is fed by turnAgentId/turnAgentModel on the USER row. Both a first
+    // seal and a fallback-model re-attribution change nothing else about that row, so a fingerprint
+    // blind to them makes applyConversationMessageDelta early-return the unchanged conversation and
+    // the badge stays wrong for the rest of the session.
+    it('merges a turn-provenance seal that changes nothing else on the user row', () => {
+        const conv = baseConv();
+        const sealed = {
+            ...conv.messages[0],
+            turnAgentId: 'claude',
+            turnAgentModel: { provider: 'anthropic' as const, vendor: 'anthropic', modelId: 'claude-4-sonnet' },
+        };
+        expect(agentMessageDeltaChanged(conv.messages[0], sealed), 'a provenance seal is a real change').to.equal(true);
+        const merged = applyConversationMessageDelta(conv, sealed);
+        expect(merged, 'the merge is not skipped').to.not.equal(conv);
+        expect(merged.messages[0].turnAgentId).to.equal('claude');
+        expect(merged.messages[0].turnAgentModel?.modelId).to.equal('claude-4-sonnet');
+    });
+
+    it('merges a fallback-model re-attribution of an already sealed user row', () => {
+        const conv = baseConv();
+        const sealed = {
+            ...conv.messages[0],
+            turnAgentId: 'claude',
+            turnAgentModel: { provider: 'anthropic' as const, vendor: 'anthropic', modelId: 'claude-4-sonnet' },
+        };
+        const resealed = {
+            ...sealed,
+            turnAgentModel: { provider: 'openai' as const, vendor: 'openrouter', modelId: 'moonshotai/kimi-k2.6:free' },
+        };
+        expect(agentMessageDeltaChanged(sealed, resealed), 'a model re-attribution is a real change').to.equal(true);
+        const merged = applyConversationMessageDelta({ ...conv, messages: [sealed] }, resealed);
+        expect(merged.messages[0].turnAgentModel?.modelId).to.equal('moonshotai/kimi-k2.6:free');
+    });
+
     it('reuses prefix message references when updating the streaming tail', () => {
         const user = { id: 'user-1', role: 'user' as const, content: 'hi', createdAt: 5 };
         const conv = { ...baseConv(), messages: [user] };

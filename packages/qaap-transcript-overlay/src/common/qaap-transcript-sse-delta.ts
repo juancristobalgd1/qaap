@@ -8,7 +8,7 @@ import type {
     QaapAgentConversationSummaryDTO,
     QaapAgentMessageDTO,
 } from './qaap-transcript-agent-types';
-import { fingerprintAgentSegments } from './qaap-transcript-incremental-update';
+import { fingerprintAgentSegments, fingerprintTurnProvenance } from './qaap-transcript-incremental-update';
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-agent-types';
 
 export interface QaapTranscriptSseMessageEvent {
@@ -100,7 +100,14 @@ function fingerprintTraceEvents(events: readonly QaapTranscriptTraceEventDTO[] |
 }
 
 function agentMessageSnapshotFingerprint(message: QaapAgentMessageDTO): string {
-    return `${message.content ?? ''}|${fingerprintAgentSegments(message.segments ?? [])}|${fingerprintTraceEvents(message.traceEvents)}`;
+    return [
+        message.content ?? '',
+        fingerprintAgentSegments(message.segments ?? []),
+        fingerprintTraceEvents(message.traceEvents),
+        // A turn-provenance re-seal changes nothing else on the row: without this the merge
+        // below early-returns the unchanged conversation and the badge keeps the stale model.
+        fingerprintTurnProvenance(message),
+    ].join('|');
 }
 
 /** True when an SSE payload would change the in-memory agent/user row. */

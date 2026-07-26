@@ -16,6 +16,7 @@ import {
     canStreamPatchAgentTextContentOnly,
     canStreamPatchAgentToolsOnly,
     canStreamPatchStdoutAgentContentOnly,
+    fingerprintTranscriptMessage,
     isStreamingTranscriptTailUnchanged,
     mergeConversationTranscriptFingerprint,
     resolveStreamingTranscriptPatchDecision,
@@ -83,6 +84,57 @@ describe('qaap-transcript-incremental-update', () => {
         });
         expect(buildConversationTranscriptFingerprint(base)).to.not.equal(
             buildConversationTranscriptFingerprint(updated),
+        );
+    });
+
+    // The transcript repaint is gated on this fingerprint. Turn provenance renders as the accordion
+    // badge but lives in neither content, segments nor traceEvents, so a fingerprint blind to it
+    // freezes the badge: the seal (or a fallback-model re-attribution) never reaches the DOM.
+    it('buildConversationTranscriptFingerprint reacts to a turn-provenance seal', () => {
+        const unsealed = conv({
+            messages: [{ id: 'u1', role: 'user', content: 'Fix the bug', createdAt: 1 }],
+        });
+        const sealed = conv({
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'Fix the bug',
+                createdAt: 1,
+                turnAgentId: 'claude',
+                turnAgentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-4-sonnet' },
+            }],
+        });
+        expect(buildConversationTranscriptFingerprint(unsealed)).to.not.equal(
+            buildConversationTranscriptFingerprint(sealed),
+        );
+        expect(fingerprintTranscriptMessage(unsealed.messages[0])).to.not.equal(
+            fingerprintTranscriptMessage(sealed.messages[0]),
+        );
+    });
+
+    it('buildConversationTranscriptFingerprint reacts to a fallback-model re-attribution', () => {
+        const sealed = conv({
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'Fix the bug',
+                createdAt: 1,
+                turnAgentId: 'claude',
+                turnAgentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-4-sonnet' },
+            }],
+        });
+        const resealed = conv({
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'Fix the bug',
+                createdAt: 1,
+                turnAgentId: 'claude',
+                turnAgentModel: { provider: 'openai', vendor: 'openrouter', modelId: 'moonshotai/kimi-k2.6:free' },
+            }],
+        });
+        expect(buildConversationTranscriptFingerprint(sealed)).to.not.equal(
+            buildConversationTranscriptFingerprint(resealed),
         );
     });
 

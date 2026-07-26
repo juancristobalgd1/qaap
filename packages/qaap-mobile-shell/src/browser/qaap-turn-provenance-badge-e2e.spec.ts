@@ -31,6 +31,7 @@ import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-cli
 import {
     applyAgentMessageWireDelta,
     computeAgentMessageWireDelta,
+    toAgentMessageWireSnapshot,
 } from '../common/qaap-agent-message-wire-delta';
 import { TRANSCRIPT_MESSAGE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
@@ -287,12 +288,25 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
 
         // Step D: a turn retried on a fallback model (maybeRetryTurnWithFallbackModel rewrites the
         // driving user message's turnAgentModel) must UPDATE the badge, not add a second one.
-        const retriedUserMessage: QaapAgentMessageDTO = {
-            ...wiredUserMessage!,
-            turnAgentModel: openRouterFallback,
-        };
+        // The retried row is NOT hand-built here: it is produced by the same wire the backend uses,
+        // so a delta layer that cannot express a provenance change (previously: `noop`, dropped by
+        // fireAgentMessageWireUpdate before it ever reached a client) fails this step.
+        const backendRetrySnapshot: QaapAgentMessageDTO = { ...userSnapshot, turnAgentModel: openRouterFallback };
+        const retryDelta = computeAgentMessageWireDelta(
+            toAgentMessageWireSnapshot(wiredUserMessage!),
+            toAgentMessageWireSnapshot(backendRetrySnapshot),
+            'claude',
+        );
+        expect(retryDelta.kind, 'a re-attributed turn must produce a frame the client can apply').to.not.equal('noop');
+        const retriedUserMessage = applyAgentMessageWireDelta(
+            { messages: [wiredUserMessage!] },
+            retryDelta,
+        );
+        expect(retriedUserMessage, 'applying the retry delta must produce a message').to.not.equal(undefined);
+        expect(retriedUserMessage!.turnAgentModel, 'the fallback model survives the wire').to.deep.equal(openRouterFallback);
+        expect(retriedUserMessage!.turnAgentId, 'the agent attribution survives the wire').to.equal('claude');
         agentSegments = [finishedTool('t1'), finishedTool('t2')];
-        conv = conversationWithTurn(retriedUserMessage, agentSegments);
+        conv = conversationWithTurn(retriedUserMessage!, agentSegments);
         const patchedRetry = ui.patchStreamingActivityTimeline(row, agentSegments, conv);
         expect(patchedRetry, 'fallback-model tick patches in place').to.equal(true);
         const badgesAfterRetryTick = [...body.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];

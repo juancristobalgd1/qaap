@@ -39,6 +39,52 @@ describe('computeAgentMessageWireDelta', () => {
         }
     });
 
+    // Turn provenance (badge in the accordion header) rides on the user message and has no
+    // incremental delta kind of its own: if it is not part of the comparison, a re-seal collapses
+    // into `noop` and fireAgentMessageWireUpdate drops the frame outright -- the badge then never
+    // appears (initial seal) or keeps naming the model that just failed (fallback retry).
+    function userMessage(partial: Partial<QaapAgentMessageDTO> & Pick<QaapAgentMessageDTO, 'id'>): QaapAgentMessageWireSnapshot {
+        return {
+            id: partial.id,
+            role: 'user',
+            content: partial.content ?? 'Fix the bug',
+            createdAt: partial.createdAt ?? 1,
+            ...(partial.turnAgentId ? { turnAgentId: partial.turnAgentId } : {}),
+            ...(partial.turnAgentModel ? { turnAgentModel: partial.turnAgentModel } : {}),
+        };
+    }
+
+    const sonnet = { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-4-sonnet' } as const;
+    const fallback = { provider: 'openai', vendor: 'openrouter', modelId: 'moonshotai/kimi-k2.6:free' } as const;
+
+    it('emits a real delta when a turn gets sealed with its provenance', () => {
+        const prev = userMessage({ id: 'u1' });
+        const next = userMessage({ id: 'u1', turnAgentId: 'claude', turnAgentModel: sonnet });
+        const delta = computeAgentMessageWireDelta(prev, next, 'claude');
+        expect(delta.kind, 'a provenance seal is never a noop').to.not.equal('noop');
+        expect(delta.kind).to.equal('replace');
+        if (delta.kind === 'replace') {
+            expect(delta.message.turnAgentId).to.equal('claude');
+            expect(delta.message.turnAgentModel).to.deep.equal(sonnet);
+        }
+    });
+
+    it('emits a real delta when a fallback retry re-attributes the turn to another model', () => {
+        const prev = userMessage({ id: 'u1', turnAgentId: 'claude', turnAgentModel: sonnet });
+        const next = userMessage({ id: 'u1', turnAgentId: 'claude', turnAgentModel: fallback });
+        const delta = computeAgentMessageWireDelta(prev, next, 'claude');
+        expect(delta.kind, 'a model re-attribution is never a noop').to.not.equal('noop');
+        if (delta.kind === 'replace') {
+            expect(delta.message.turnAgentModel).to.deep.equal(fallback);
+        }
+    });
+
+    it('still reports noop when nothing at all changed, provenance included', () => {
+        const prev = userMessage({ id: 'u1', turnAgentId: 'claude', turnAgentModel: sonnet });
+        const next = userMessage({ id: 'u1', turnAgentId: 'claude', turnAgentModel: sonnet });
+        expect(computeAgentMessageWireDelta(prev, next, 'claude').kind).to.equal('noop');
+    });
+
     it('appends stdout content incrementally', () => {
         const prev = agentMessage({ id: 'a1', content: 'Hel' });
         const next = agentMessage({ id: 'a1', content: 'Hello' });
