@@ -13,6 +13,7 @@
 
 import { buildAgentReviewPrompt } from './qaap-agent-review';
 import {
+    QAAP_WORKFLOW_PLAN_ARTIFACT,
     QAAP_WORKFLOW_REVIEW_DIFF_ARTIFACT,
     QAAP_WORKFLOW_STRUCTURE_ARTIFACT,
     QAAP_WORKFLOW_VERIFICATION_ARTIFACT,
@@ -119,6 +120,35 @@ export class QaapWorkflowPromptRegistry {
                         'Two explorers already read this repository for you. Treat their notes as leads to confirm, not as facts:',
                         '',
                         ...findings,
+                    ]
+                    : []),
+            ].join('\n');
+        });
+
+        // Plan mode. The plan turn touches nothing, so a person decides BEFORE any edit exists.
+        this.register('plan-task', context => [
+            'Explore this repository READ-ONLY and propose a plan. Do not edit, create or delete any file.',
+            'A person reads this plan and decides whether the work goes ahead, so write it for them:',
+            '- what you will change, file by file, with paths;',
+            '- how you will verify it (the exact command);',
+            '- what you will deliberately NOT do, and anything you are unsure about.',
+            'Keep it under 20 lines. No preamble.',
+            '',
+            `Task: ${requireInput('plan-task', context, 'task')}`,
+        ].join('\n'));
+
+        this.register('implement-approved-plan', context => {
+            const plan = context.artifacts?.[QAAP_WORKFLOW_PLAN_ARTIFACT]?.trim();
+            return [
+                requireInput('implement-approved-plan', context, 'task'),
+                ...(plan
+                    ? [
+                        '',
+                        '---',
+                        'A person has APPROVED this plan. Follow it. If you find it is wrong, say so and stop rather than',
+                        'silently doing something else — the approval was for this plan, not for the task in general.',
+                        '',
+                        plan,
                     ]
                     : []),
             ].join('\n');

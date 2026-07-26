@@ -381,3 +381,69 @@ describe('QaapWorkflowDispatcher', () => {
         });
     });
 });
+
+describe('QaapWorkflowDispatcher plan mode', () => {
+    let directory: string;
+    let store: TestStore;
+    let agent: FakeAgentPort;
+    let jobs: FakeJobPort;
+    let dispatcher: QaapWorkflowDispatcher;
+
+    beforeEach(() => {
+        directory = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-workflow-plan-'));
+        store = new TestStore(directory);
+        store.initialize();
+        agent = new FakeAgentPort();
+        jobs = new FakeJobPort();
+        dispatcher = new QaapWorkflowDispatcher(store, { agent, deterministic: jobs });
+    });
+
+    afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+    async function startPlanRun(): Promise<string> {
+        const started = await store.start(buildImplementThenReviewWorkflow({ withPlan: true }), {
+            cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'add rate limiting' },
+        });
+        await dispatcher.dispatch(started.record, started.dispatch);
+        return started.record.run.id;
+    }
+
+    it('stops at the gate and touches nothing until a person continues it', async () => {
+        const runId = await startPlanRun();
+        expect(agent.started).to.deep.equal(['task-1'], 'the plan turn, and only the plan turn');
+
+        await dispatcher.onAgentTaskFinished('task-1', 'completed', resultLog('1. edit src/limiter.ts\n2. run npm test'));
+
+        const parked = store.get('ada', runId)!;
+        expect(parked.run.status).to.equal('awaiting-human');
+        expect(parked.run.active).to.deep.equal(['approve-plan']);
+        expect(agent.started).to.have.length(1, 'nothing may be implemented before approval');
+        // The plan is kept so the person can read what they are approving.
+        expect(parked.artifacts['plan.proposal']).to.contain('src/limiter.ts');
+
+        await dispatcher.continueAfterHumanGate('ada', runId, 'approve-plan');
+
+        expect(agent.started).to.deep.equal(['task-1', 'task-2']);
+        expect(store.get('ada', runId)?.run.active).to.deep.equal(['implement']);
+    });
+
+    it('does not implement anything when the plan turn itself failed', async () => {
+        const runId = await startPlanRun();
+        await dispatcher.onAgentTaskFinished('task-1', 'failed');
+
+        const record = store.get('ada', runId)!;
+        expect(record.run.status).to.equal('failed');
+        expect(record.run.bindings).to.have.property('plan.failed');
+        expect(agent.started).to.have.length(1);
+    });
+
+    it('keeps waiting across a restart instead of resuming on its own', async () => {
+        const runId = await startPlanRun();
+        await dispatcher.onAgentTaskFinished('task-1', 'completed', resultLog('the plan'));
+
+        await dispatcher.reconcileOnBoot();
+
+        expect(store.get('ada', runId)?.run.status).to.equal('awaiting-human');
+        expect(agent.started).to.have.length(1, 'boot reconciliation must not approve a plan for anyone');
+    });
+});

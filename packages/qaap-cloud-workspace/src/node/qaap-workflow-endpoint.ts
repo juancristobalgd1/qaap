@@ -15,6 +15,7 @@ import {
 import {
     QAAP_WORKFLOW_API_PATH,
     QaapStartWorkflowRequest,
+    QaapWorkflowPendingDecision,
     QaapWorkflowRunListResponse,
     QaapWorkflowRunSummary,
     QaapWorkflowTemplateListResponse,
@@ -174,9 +175,25 @@ export class QaapWorkflowEndpoint implements BackendApplicationContribution {
             run: record.run,
             templateId: record.def.id,
             ...(record.goalCheckScript ? { checkScript: record.goalCheckScript } : {}),
+            ...(this.pendingDecision(record) ? { pendingDecision: this.pendingDecision(record)! } : {}),
             createdAt: record.createdAt,
             updatedAt: record.updatedAt,
         };
+    }
+
+    /** The gate this run is parked at, with whatever it asks the person to look at. */
+    protected pendingDecision(record: QaapPersistedWorkflowRun): QaapWorkflowPendingDecision | undefined {
+        if (record.run.status !== 'awaiting-human') {
+            return undefined;
+        }
+        for (const nodeId of record.run.active) {
+            const node = record.def.nodes.find(candidate => candidate.id === nodeId);
+            if (node?.kind === 'human-gate') {
+                const detail = node.detailArtifactKey ? record.artifacts[node.detailArtifactKey] : undefined;
+                return { nodeId, reasonRef: node.reasonRef, ...(detail ? { detail } : {}) };
+            }
+        }
+        return undefined;
     }
 
     protected normalizeInputs(inputs: unknown): Record<string, string> {

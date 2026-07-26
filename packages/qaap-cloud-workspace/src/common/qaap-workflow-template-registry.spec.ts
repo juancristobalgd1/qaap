@@ -74,3 +74,38 @@ describe('the goal template', () => {
         expect(registry.get('qaap.goal')!.build().id).to.equal('qaap.goal');
     });
 });
+
+describe('the plan template', () => {
+    let registry: QaapWorkflowTemplateRegistry;
+    beforeEach(() => registry = new QaapWorkflowTemplateRegistry());
+
+    it('puts a real human gate between the plan and the first edit', () => {
+        const def = registry.get('qaap.plan-then-implement')!.build();
+        expect(def.entry).to.equal('plan');
+        const gate = def.nodes.find(node => node.id === 'approve-plan');
+        expect(gate?.kind).to.equal('human-gate');
+        expect(def.edges).to.deep.include({ from: 'plan', to: 'approve-plan', when: 'success' });
+        expect(def.edges).to.deep.include({ from: 'approve-plan', to: 'implement', when: 'human:continue' });
+        expect(validateQaapWorkflowDef(def)).to.deep.include({ ok: true });
+    });
+
+    it('plans read-only, so nothing is changed before someone approves', () => {
+        const def = registry.get('qaap.plan-then-implement')!.build();
+        const plan = def.nodes.find(node => node.id === 'plan');
+        expect(plan?.kind === 'agent-turn' && plan.isolation).to.equal('cwd-readonly');
+    });
+
+    it('names the artifact the gate is about, so the plan can be shown to the approver', () => {
+        const def = registry.get('qaap.plan-then-implement')!.build();
+        const gate = def.nodes.find(node => node.id === 'approve-plan');
+        expect(gate?.kind === 'human-gate' && gate.detailArtifactKey).to.equal('plan.proposal');
+        const plan = def.nodes.find(node => node.id === 'plan');
+        expect(plan?.kind === 'agent-turn' && plan.artifactKey).to.equal('plan.proposal');
+    });
+
+    it('hands the approved plan to the implementing turn', () => {
+        const def = registry.get('qaap.plan-then-implement')!.build();
+        const implement = def.nodes.find(node => node.id === 'implement');
+        expect(implement?.kind === 'agent-turn' && implement.promptRef).to.equal('implement-approved-plan');
+    });
+});

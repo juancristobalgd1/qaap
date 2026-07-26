@@ -88,6 +88,22 @@ export class QaapWorkflowTemplateRegistry {
 
         this.register({
             summary: {
+                id: 'qaap.plan-then-implement',
+                name: 'Plan first, implement after approval',
+                description:
+                    'Proposes a plan read-only, pauses for a person to approve it, and only then implements it — '
+                    + 'the approved plan travels into the implementing turn.',
+                requiredInputs: ['task'],
+            },
+            build: options => buildImplementThenReviewWorkflow({
+                reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
+                withVerify: options?.verify,
+                withPlan: true,
+            }),
+        });
+
+        this.register({
+            summary: {
                 id: 'qaap.explore-then-implement',
                 name: 'Explore in parallel, then implement and review',
                 description:

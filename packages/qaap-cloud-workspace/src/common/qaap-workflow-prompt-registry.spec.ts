@@ -85,3 +85,30 @@ describe('goal prompts', () => {
         expect(prompt).to.contain('npm run test');
     });
 });
+
+describe('plan prompts', () => {
+    let registry: QaapWorkflowPromptRegistry;
+    beforeEach(() => registry = new QaapWorkflowPromptRegistry());
+
+    it('asks for a plan a person can act on, and forbids edits', () => {
+        const prompt = registry.resolve('plan-task', { inputs: { task: 'add rate limiting' }, bindings: {} });
+        expect(prompt).to.contain('READ-ONLY');
+        expect(prompt).to.contain('add rate limiting');
+        expect(prompt).to.contain('deliberately NOT do');
+    });
+
+    it('binds the implementing turn to the plan that was approved', () => {
+        const prompt = registry.resolve('implement-approved-plan', {
+            inputs: { task: 'add rate limiting' },
+            bindings: {},
+            artifacts: { 'plan.proposal': '1. edit src/limiter.ts' },
+        });
+        expect(prompt).to.contain('APPROVED');
+        expect(prompt).to.contain('1. edit src/limiter.ts');
+    });
+
+    it('degrades to the plain task when no plan survived', () => {
+        const prompt = registry.resolve('implement-approved-plan', { inputs: { task: 'add rate limiting' }, bindings: {} });
+        expect(prompt).to.equal('add rate limiting');
+    });
+});

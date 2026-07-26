@@ -57,12 +57,26 @@ export interface QaapWorkflowTemplateListResponse {
     readonly templates: readonly QaapWorkflowTemplateSummary[];
 }
 
+/**
+ * What a person is being asked to decide, while a run sits at a human gate. `detail` is the
+ * artifact the gate names — the proposed plan, typically. It is the one piece of run content the
+ * API returns on purpose: approving something you cannot read is not approval. Owner-scoped like
+ * every other read, so it only ever reaches the person the run belongs to.
+ */
+export interface QaapWorkflowPendingDecision {
+    readonly nodeId: string;
+    readonly reasonRef: string;
+    readonly detail?: string;
+}
+
 /** Public view of a run — the persisted graph state without cwd or template inputs. */
 export interface QaapWorkflowRunSummary {
     readonly run: QaapWorkflowRun;
     readonly templateId: string;
     /** The declared success check of a goal run, so asking for its status says what "done" means. */
     readonly checkScript?: string;
+    /** Present only while the run waits for a person; POST `/:id/continue` with its `nodeId`. */
+    readonly pendingDecision?: QaapWorkflowPendingDecision;
     readonly createdAt: number;
     readonly updatedAt: number;
 }

@@ -16,6 +16,8 @@ export const QAAP_WORKFLOW_REVIEW_DIFF_ARTIFACT = 'review.diff';
 /** Findings of the two parallel explorers, inlined by the `implement-with-findings` prompt. */
 export const QAAP_WORKFLOW_STRUCTURE_ARTIFACT = 'explore.structure';
 export const QAAP_WORKFLOW_VERIFICATION_ARTIFACT = 'explore.verification';
+/** The plan a person approves before any file is touched. */
+export const QAAP_WORKFLOW_PLAN_ARTIFACT = 'plan.proposal';
 
 /** How concurrent writer nodes isolate their working tree. */
 export type QaapWorkflowIsolation = 'cwd' | 'worktree' | 'cwd-readonly';
@@ -87,6 +89,11 @@ export interface QaapWorkflowHumanGateNode {
     readonly kind: 'human-gate';
     readonly id: string;
     readonly reasonRef: string;
+    /**
+     * Run artifact the person is being asked to decide ON, e.g. the plan a turn just wrote. A gate
+     * without it asks someone to approve something they cannot see.
+     */
+    readonly detailArtifactKey?: string;
 }
 
 export interface QaapWorkflowDeterministicNode {
@@ -390,7 +397,10 @@ function edgeMatches(when: QaapWorkflowEdgeWhen, outcome: QaapWorkflowNodeOutcom
 export type QaapWorkflowReviewMode = 'high-risk' | 'all' | 'off';
 
 /** Definition ids are the contract a run is replayed against, so each shape owns one. */
-function definitionId(withExploration: boolean, withGoal = false): string {
+function definitionId(withExploration: boolean, withGoal = false, withPlan = false): string {
+    if (withPlan) {
+        return 'qaap.plan-then-implement';
+    }
     if (withGoal) {
         return 'qaap.goal';
     }
@@ -398,7 +408,10 @@ function definitionId(withExploration: boolean, withGoal = false): string {
 }
 
 /** Shown on every node's task title, so it must describe the shape that actually ran. */
-function definitionName(withExploration: boolean, reviewMode: QaapWorkflowReviewMode, withGoal = false): string {
+function definitionName(withExploration: boolean, reviewMode: QaapWorkflowReviewMode, withGoal = false, withPlan = false): string {
+    if (withPlan) {
+        return 'Plan first, implement after approval';
+    }
     if (withGoal) {
         return 'Work until the goal check passes';
     }
@@ -432,6 +445,12 @@ export function buildImplementThenReviewWorkflow(options?: {
      */
     readonly withGoal?: boolean;
     /**
+     * Propose a plan read-only and WAIT for a person before touching anything. The pause is a real
+     * human gate, so the run survives a restart while it waits, and the approved plan travels into
+     * the implement turn instead of being re-derived.
+     */
+    readonly withPlan?: boolean;
+    /**
      * Insert the runner's post-implement verification with its fix-loop
      * (`verify` fail → `implement-fix` → `verify`). Opt-in for now: the default graph stays as the
      * review conformance proved it, and the loop is bounded by the run's `maxVisitsPerNode` budget.
@@ -442,6 +461,7 @@ export function buildImplementThenReviewWorkflow(options?: {
     const withVerify = (options?.withVerify ?? false) || (options?.withGoal ?? false);
     const withExploration = options?.withParallelExploration ?? false;
     const withGoal = options?.withGoal ?? false;
+    const withPlan = options?.withPlan ?? false;
     const nodes: QaapWorkflowNode[] = [
         {
             kind: 'agent-turn',
@@ -450,7 +470,9 @@ export function buildImplementThenReviewWorkflow(options?: {
             costTier: 'standard',
             agentRef: options?.implementAgentRef,
             isolation: 'cwd',
-            promptRef: withGoal ? 'goal-task' : withExploration ? 'implement-with-findings' : 'user-task',
+            promptRef: withPlan ? 'implement-approved-plan'
+                : withGoal ? 'goal-task'
+                    : withExploration ? 'implement-with-findings' : 'user-task',
         },
         { kind: 'emit', id: 'done-skip', bindingKey: 'review.skipped' },
     ];
@@ -459,9 +481,36 @@ export function buildImplementThenReviewWorkflow(options?: {
         { from: 'implement', to: 'done-skip', when: 'blocked' },
     ];
 
+    // Plan prefix. The plan turn is read-only, so nothing is touched before a person has seen what
+    // is about to happen; the gate holds the run in `awaiting-human` until they continue it.
+    if (withPlan) {
+        nodes.push(
+            {
+                kind: 'agent-turn',
+                id: 'plan',
+                capability: 'explore',
+                costTier: 'standard',
+                agentRef: options?.exploreAgentRef,
+                isolation: 'cwd-readonly',
+                promptRef: 'plan-task',
+                artifactKey: QAAP_WORKFLOW_PLAN_ARTIFACT,
+            },
+            { kind: 'human-gate', id: 'approve-plan', reasonRef: 'plan-approval', detailArtifactKey: QAAP_WORKFLOW_PLAN_ARTIFACT },
+            { kind: 'emit', id: 'done-unplanned', bindingKey: 'plan.failed' },
+        );
+        edges.push(
+            { from: 'plan', to: 'approve-plan', when: 'success' },
+            // A plan turn that could not run must not silently become an unplanned implementation.
+            { from: 'plan', to: 'done-unplanned', when: 'fail' },
+            { from: 'plan', to: 'done-unplanned', when: 'blocked' },
+            { from: 'approve-plan', to: 'implement', when: 'human:continue' },
+        );
+    }
+
     // Parallel prefix. Both explorers are read-only, so they share the cwd safely; their findings
     // reach `implement` as run artifacts, and the join is what makes it wait for both.
-    const entry: string | readonly string[] = withExploration ? ['explore-structure', 'explore-verification'] : 'implement';
+    const entry: string | readonly string[] = withPlan ? 'plan'
+        : withExploration ? ['explore-structure', 'explore-verification'] : 'implement';
     if (withExploration) {
         nodes.push(
             {
@@ -532,7 +581,7 @@ export function buildImplementThenReviewWorkflow(options?: {
         // runner returning undefined when QAAP_AGENT_REVIEW is off.
         edges.push({ from: afterImplement ?? 'implement', to: 'done-skip', when: 'success' });
         return {
-            id: definitionId(withExploration, withGoal),
+            id: definitionId(withExploration, withGoal, withPlan),
             version: 1,
             name: withExploration ? 'Explore in parallel, then implement (review off)' : 'Implement (review off)',
             entry,
@@ -582,9 +631,9 @@ export function buildImplementThenReviewWorkflow(options?: {
         { from: 'judge', to: 'done-inconclusive', when: 'fail' },
     );
     return {
-        id: definitionId(withExploration, withGoal),
+        id: definitionId(withExploration, withGoal, withPlan),
         version: 1,
-        name: definitionName(withExploration, reviewMode, withGoal),
+        name: definitionName(withExploration, reviewMode, withGoal, withPlan),
         entry,
         nodes,
         edges,
