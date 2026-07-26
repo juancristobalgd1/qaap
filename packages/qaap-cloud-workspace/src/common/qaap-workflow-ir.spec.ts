@@ -19,6 +19,20 @@ describe('validateQaapWorkflowDef', () => {
         expect(result.issues).to.deep.equal([]);
     });
 
+    it('rejects a router node, which has no policy engine to report an outcome', () => {
+        const def: QaapWorkflowDef = {
+            id: 'routed', version: 1, name: 'Routed', entry: 'pick',
+            nodes: [
+                { kind: 'router', id: 'pick', policyId: 'cheapest-first' },
+                { kind: 'emit', id: 'done', bindingKey: 'result' },
+            ],
+            edges: [{ from: 'pick', to: 'done', when: 'always' }],
+        };
+        const result = validateQaapWorkflowDef(def);
+        expect(result.ok).to.equal(false);
+        expect(result.issues.map(issue => issue.message).join(' ')).to.contain('not executable yet');
+    });
+
     it('rejects unknown entry and duplicate ids', () => {
         const def: QaapWorkflowDef = {
             id: 'bad',

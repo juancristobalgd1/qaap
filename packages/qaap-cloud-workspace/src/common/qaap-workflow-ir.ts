@@ -170,6 +170,15 @@ export function validateQaapWorkflowDef(def: QaapWorkflowDef): QaapWorkflowValid
         if (node.kind === 'join' && node.wait === 'n' && (!(node.n !== undefined) || node.n < 1)) {
             issues.push({ path: `nodes.${node.id}`, message: 'Join wait "n" requires n >= 1.' });
         }
+        if (node.kind === 'router') {
+            // `policyId` has no engine, so a dispatched router could never report an outcome and
+            // the run would hang on it. Reject the definition instead of accepting a graph we
+            // cannot execute; capability + costTier already cover backend selection today.
+            issues.push({
+                path: `nodes.${node.id}`,
+                message: 'Router nodes are not executable yet: route with capability + costTier on the agent-turn instead.',
+            });
+        }
         if (node.kind === 'agent-turn' && node.isolation === 'worktree' && node.capability === 'judge') {
             // Judges are read-only by product contract; worktree isolation is wasteful/wrong.
             issues.push({

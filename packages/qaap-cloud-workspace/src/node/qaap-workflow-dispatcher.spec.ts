@@ -9,7 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapAgentTaskState } from '../common/qaap-agent-task';
 import { QaapJobState } from '../common/qaap-job';
-import { buildImplementThenReviewWorkflow } from '../common/qaap-workflow-ir';
+import { buildImplementThenReviewWorkflow, QaapWorkflowDef } from '../common/qaap-workflow-ir';
 import {
     QaapWorkflowAgentTurnPort,
     QaapWorkflowDeterministicPort,
@@ -174,5 +174,68 @@ describe('QaapWorkflowDispatcher', () => {
         await dispatcher.reconcileOnBoot();
         expect(store.get('ada', runId)?.run.active).to.deep.equal(['implement']);
         expect(agent.started).to.deep.equal(['task-1']);
+    });
+
+    describe('fan-out and fan-in', () => {
+        /** Two explorers that reconverge on a join before a synthesis turn. */
+        const fanOut: QaapWorkflowDef = {
+            id: 'fan', version: 1, name: 'Explore in parallel, then synthesize', entry: 'plan',
+            nodes: [
+                { kind: 'agent-turn', id: 'plan', capability: 'explore', isolation: 'cwd-readonly', promptRef: 'user-task' },
+                { kind: 'agent-turn', id: 'left', capability: 'explore', isolation: 'cwd-readonly', promptRef: 'user-task' },
+                { kind: 'agent-turn', id: 'right', capability: 'explore', isolation: 'cwd-readonly', promptRef: 'user-task' },
+                { kind: 'join', id: 'join', wait: 'all' },
+                { kind: 'agent-turn', id: 'synthesize', capability: 'synthesize', isolation: 'cwd-readonly', promptRef: 'user-task' },
+                { kind: 'emit', id: 'done', bindingKey: 'advice' },
+            ],
+            edges: [
+                { from: 'plan', to: 'left', when: 'success' },
+                { from: 'plan', to: 'right', when: 'success' },
+                { from: 'left', to: 'join', when: 'always' },
+                { from: 'right', to: 'join', when: 'always' },
+                { from: 'join', to: 'synthesize', when: 'always' },
+                { from: 'synthesize', to: 'done', when: 'always' },
+            ],
+        };
+
+        it('settles a fired join itself instead of hanging the run on it', async () => {
+            // Regression: a join is pushed onto the frontier like any other node, but no runtime
+            // ever reports it. Every fan-in graph used to sit at `running` with active: ['join'].
+            const started = await store.start(fanOut, { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'map the repo' } });
+            await dispatcher.dispatch(started.record, started.dispatch);
+            const runId = started.record.run.id;
+
+            await dispatcher.onAgentTaskFinished('task-1', 'completed');
+            expect(agent.started).to.deep.equal(['task-1', 'task-2', 'task-3']);
+
+            await dispatcher.onAgentTaskFinished('task-2', 'completed');
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['right']);
+
+            await dispatcher.onAgentTaskFinished('task-3', 'completed');
+            // The join fired, settled itself, and released the node behind it.
+            expect(agent.started).to.deep.equal(['task-1', 'task-2', 'task-3', 'task-4']);
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['synthesize']);
+
+            await dispatcher.onAgentTaskFinished('task-4', 'completed');
+            const record = store.get('ada', runId);
+            expect(record?.run.status).to.equal('succeeded');
+            expect(record?.run.bindings).to.have.property('advice');
+        });
+
+        it('heals a run parked on an unsettled join by an older build', async () => {
+            const started = await store.start(fanOut, { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'map the repo' } });
+            await dispatcher.dispatch(started.record, started.dispatch);
+            const runId = started.record.run.id;
+            await dispatcher.onAgentTaskFinished('task-1', 'completed');
+            await dispatcher.onAgentTaskFinished('task-2', 'completed');
+            // Pre-fix state, reproduced by reporting straight to the store: the join fired and sits
+            // in `active` with no runtime behind it, so no event will ever arrive for it.
+            await store.report('ada', runId, 'right', 'success');
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['join']);
+
+            await dispatcher.reconcileOnBoot();
+
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['synthesize']);
+        });
     });
 });

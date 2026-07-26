@@ -49,8 +49,20 @@ export interface QaapWorkflowPorts {
     readonly deterministic: QaapWorkflowDeterministicPort;
 }
 
-/** Node kinds the dispatcher cannot start: they are resolved by the graph or by a person. */
+/** Node kinds with no runtime: they are resolved by the graph itself or by a person. */
 const NON_DISPATCHABLE: ReadonlySet<QaapWorkflowNode['kind']> = new Set(['emit', 'join', 'human-gate', 'router']);
+
+/**
+ * Bookkeeping nodes the dispatcher must settle ITSELF. A fired join is pushed onto the frontier
+ * like any other node, so it sits in `active` until something reports an outcome for it — and no
+ * runtime ever will. Left unreported, every fan-in graph hung forever at `status: running`.
+ * A router has no policy engine yet, so it is rejected at validation; failing it here as well keeps
+ * a graph that slipped through from stalling instead.
+ */
+const SELF_SETTLED: Readonly<Partial<Record<QaapWorkflowNode['kind'], 'success' | 'fail'>>> = {
+    join: 'success',
+    router: 'fail',
+};
 
 /** Constructed by the backend module through {@code toDynamicValue}; the ports are adapters. */
 export class QaapWorkflowDispatcher {
@@ -63,10 +75,17 @@ export class QaapWorkflowDispatcher {
     /** Start every node the store just released, then keep going as outcomes arrive. */
     async dispatch(record: QaapPersistedWorkflowRun, nodeIds: readonly string[]): Promise<void> {
         const byId = new Map(record.def.nodes.map(node => [node.id, node]));
+        // Settled after the real work is started: reporting a join can advance (or finish) the run,
+        // and a sibling node in the same batch must be running by then, not still queued behind it.
+        const selfSettled: Array<{ readonly nodeId: string; readonly outcome: 'success' | 'fail' }> = [];
         for (const nodeId of nodeIds) {
             const node = byId.get(nodeId);
             if (!node || NON_DISPATCHABLE.has(node.kind)) {
-                // Human gates wait for a person; joins and emits are pure graph bookkeeping.
+                // Human gates wait for a person; emits are already recorded by the reducer.
+                const outcome = node && SELF_SETTLED[node.kind];
+                if (outcome) {
+                    selfSettled.push({ nodeId, outcome });
+                }
                 continue;
             }
             const context: QaapWorkflowDispatchContext = {
@@ -84,6 +103,9 @@ export class QaapWorkflowDispatcher {
                 console.warn(`[qaap-workflow] failed to start node "${nodeId}":`, error);
                 await this.report(record.ownerLogin, record.run.id, nodeId, 'fail');
             }
+        }
+        for (const settled of selfSettled) {
+            await this.report(record.ownerLogin, record.run.id, settled.nodeId, settled.outcome);
         }
     }
 
@@ -129,6 +151,17 @@ export class QaapWorkflowDispatcher {
         // Every tenant, not just the anonymous bucket: a run left mid-flight by any owner must be
         // reconciled or it hangs forever on a process that no longer exists.
         for (const record of this.store.listAllUnfinished()) {
+            // Bookkeeping nodes never get a `dispatched` entry, so a run parked on one (written by
+            // a build that did not settle joins) would survive every restart. Settle them first.
+            for (const nodeId of record.run.active) {
+                if (record.dispatched[nodeId]) {
+                    continue;
+                }
+                const outcome = SELF_SETTLED[record.def.nodes.find(node => node.id === nodeId)?.kind ?? 'emit'];
+                if (outcome) {
+                    await this.report(record.ownerLogin, record.run.id, nodeId, outcome);
+                }
+            }
             for (const entry of Object.values(record.dispatched)) {
                 const node = record.def.nodes.find(candidate => candidate.id === entry.nodeId);
                 if (entry.kind === 'agent' && node?.kind === 'agent-turn') {
