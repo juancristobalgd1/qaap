@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { TranscriptFollowUpQueue } from '../common/qaap-transcript-follow-up-queue';
+import { QaapConversationMessageError } from '../common/qaap-agent-conversation-client';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
@@ -38,8 +39,9 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         readonly queue: TranscriptFollowUpQueue;
         /** Messages posted into an existing conversation (the in-session path). */
         readonly conversationSubmits: ConversationSubmit[];
-        /** Tasks that would have spawned a SEPARATE conversation — must stay empty. */
+        /** Tasks that spawned a SEPARATE conversation (only the isolated "New Worktree" path). */
         readonly backgroundSubmits: string[];
+        readonly backgroundOptions: Record<string, unknown>[];
         stopped: number;
     }
 
@@ -50,14 +52,21 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     function createProbe(options: {
         agentWorking: boolean;
         submitFails?: boolean;
+        /** Backend answers 429: the session already runs the maximum number of agents. */
+        atRunLimit?: boolean;
+        /** Backend never sees the message: another POST for this conversation was still open. */
+        submitSkipped?: boolean;
+        destination?: 'local' | 'worktree';
     }): SendNowProbe {
         const queue = new TranscriptFollowUpQueue();
         const conversationSubmits: ConversationSubmit[] = [];
         const backgroundSubmits: string[] = [];
+        const backgroundOptions: Record<string, unknown>[] = [];
         const probe = {
             queue,
             conversationSubmits,
             backgroundSubmits,
+            backgroundOptions,
             stopped: 0,
         } as unknown as SendNowProbe & { ui: MobileProjectsTranscriptStickyComposerUi };
         const ui = Object.create(
@@ -70,19 +79,30 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             transcriptFollowUpQueue: queue,
             transcriptComposerAgentModel: undefined,
             messageService: { error: () => { } },
+            stickyComposerWorkspaceUi: {
+                resolveComposerWorkspaceDestination: () => options.destination ?? 'local',
+            },
             submitTranscriptViaBackendConversation: async (
                 _project: MobileProjectEntry,
                 target: QaapAgentConversationSummaryDTO,
                 draft: string,
                 opts: Record<string, unknown>,
             ) => {
+                if (options.atRunLimit) {
+                    throw new QaapConversationMessageError('too many runs', 429, 'max-concurrent-runs');
+                }
                 if (options.submitFails) {
                     throw new Error('backend down');
                 }
+                if (options.submitSkipped) {
+                    return false;
+                }
                 conversationSubmits.push({ conversationId: target.id, draft, options: opts });
+                return true;
             },
-            submitBackgroundAgentTask: async (_project: MobileProjectEntry, draft: string) => {
+            submitBackgroundAgentTask: async (_project: MobileProjectEntry, draft: string, opts: Record<string, unknown>) => {
                 backgroundSubmits.push(draft);
+                backgroundOptions.push(opts);
                 return undefined;
             },
         };
@@ -121,6 +141,44 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         await probe.ui.sendQueuedFollowUpNow(project, summary, 0);
 
         expect(probe.queue.peek(summary.id).map(entry => entry.draft)).to.deep.equal(['run me']);
+    });
+
+    it('falls back to the queue when the session is already at the agent limit', async () => {
+        const probe = createProbe({ agentWorking: true, atRunLimit: true });
+        const entry = { draft: 'one too many' };
+
+        await (probe.ui as unknown as {
+            startPeerRunOrQueue: (p: MobileProjectEntry, s: QaapAgentConversationSummaryDTO, e: { draft: string }) => Promise<void>;
+        }).startPeerRunOrQueue(project, summary, entry);
+
+        // Not a failed send: the message waits in the queue instead of being lost.
+        expect(probe.conversationSubmits).to.deep.equal([]);
+        expect(probe.queue.peek(summary.id).map(e => e.draft)).to.deep.equal(['one too many']);
+    });
+
+    it('queues a rapid-fire send that the in-flight guard skipped instead of losing it', async () => {
+        const probe = createProbe({ agentWorking: true, submitSkipped: true });
+
+        await (probe.ui as unknown as {
+            startPeerRunOrQueue: (p: MobileProjectEntry, s: QaapAgentConversationSummaryDTO, e: { draft: string }) => Promise<void>;
+        }).startPeerRunOrQueue(project, summary, { draft: 'typed too fast' });
+
+        // The composer draft is already cleared by this point, so a skipped submit must not
+        // evaporate — it lands in the queue.
+        expect(probe.queue.peek(summary.id).map(e => e.draft)).to.deep.equal(['typed too fast']);
+    });
+
+    it('routes a concurrent send to an isolated worktree session when "Run in" says so', async () => {
+        const probe = createProbe({ agentWorking: true, destination: 'worktree' });
+        probe.queue.enqueue(summary.id, { draft: 'isolate me' });
+
+        await probe.ui.sendQueuedFollowUpNow(project, summary, 0);
+
+        // Isolation needs its own working tree, which a conversation cannot have — so it runs as
+        // its own session instead of as a peer sharing this one's files.
+        expect(probe.conversationSubmits).to.deep.equal([]);
+        expect(probe.backgroundSubmits).to.deep.equal(['isolate me']);
+        expect(probe.backgroundOptions[0].worktree).to.equal(true);
     });
 
     it('sends as a normal follow-up (not a peer run) when the agent is idle', async () => {

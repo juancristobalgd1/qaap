@@ -168,6 +168,18 @@ const VISUAL_EVIDENCE_MAX_VIDEO_BYTES = 25 * 1024 * 1024;
  */
 export const MAX_CONCURRENT_CONVERSATION_RUNS = 3;
 
+/** Wire code for {@link QaapMaxConcurrentRunsError} — the client falls back to queueing on it. */
+export const QAAP_MAX_CONCURRENT_RUNS_CODE = 'max-concurrent-runs';
+
+/**
+ * Raised when a conversation already holds {@link MAX_CONCURRENT_CONVERSATION_RUNS} live runs.
+ * Typed (not a bare Error) so the endpoint can answer 429 + code and the composer can queue the
+ * message instead of surfacing it as a failed send.
+ */
+export class QaapMaxConcurrentRunsError extends Error {
+    readonly code = QAAP_MAX_CONCURRENT_RUNS_CODE;
+}
+
 const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 
 /**
@@ -478,7 +490,7 @@ export class QaapAgentConversationStore {
                 this.conversations.set(id, conv);
                 this.fire({ type: 'updated', conversation: toConversationSummary(conv) });
             } else if (activeTaskIds.length >= MAX_CONCURRENT_CONVERSATION_RUNS) {
-                throw new Error(
+                throw new QaapMaxConcurrentRunsError(
                     `This conversation already has ${activeTaskIds.length} agent runs in progress `
                     + `(max ${MAX_CONCURRENT_CONVERSATION_RUNS}).`,
                 );

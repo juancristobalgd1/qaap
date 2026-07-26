@@ -455,9 +455,43 @@ export async function postConversationMessage(
         }),
     });
     if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
+        throw await buildPostMessageError(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+/**
+ * Wire code answered with 429 when a conversation already runs the maximum number of concurrent
+ * agents (see `QaapMaxConcurrentRunsError` in the cloud-workspace store). The composer treats it
+ * as "queue this message", not as a failed send, so the two ends share this literal by contract.
+ */
+export const QAAP_MAX_CONCURRENT_RUNS_CODE = 'max-concurrent-runs';
+
+/** Error carrying the HTTP status/code so callers can branch on the max-concurrent-runs answer. */
+export class QaapConversationMessageError extends Error {
+    constructor(message: string, readonly status: number, readonly code?: string) {
+        super(message);
+    }
+}
+
+async function buildPostMessageError(response: Response): Promise<Error> {
+    const text = await response.text();
+    let message = text || response.statusText;
+    let code: string | undefined;
+    try {
+        const body = JSON.parse(text) as { error?: string; code?: string };
+        message = body.error || message;
+        code = body.code;
+    } catch {
+        // Non-JSON error body — keep the raw text.
+    }
+    return new QaapConversationMessageError(message, response.status, code);
+}
+
+/** True when the send failed only because the session already runs the maximum agents. */
+export function isMaxConcurrentRunsError(error: unknown): boolean {
+    return error instanceof QaapConversationMessageError
+        && (error.code === QAAP_MAX_CONCURRENT_RUNS_CODE || error.status === 429);
 }
 
 export async function renameConversation(id: string, title: string): Promise<QaapAgentConversationDTO> {

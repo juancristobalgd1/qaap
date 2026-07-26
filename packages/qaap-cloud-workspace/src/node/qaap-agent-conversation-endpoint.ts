@@ -28,7 +28,7 @@ import type { QaapAgUiEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
-import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
+import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-agent-conversation-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import {
     QaapGithubAuthGuard,
@@ -485,6 +485,12 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             res.status(202).json(conv);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            if (error instanceof QaapMaxConcurrentRunsError) {
+                // Not a failed send: the session is already running the maximum number of agents,
+                // so the client queues the message instead of reporting an error to the user.
+                res.status(429).json({ error: message, code: error.code });
+                return;
+            }
             res.status(message === 'Conversation not found.' ? 404 : 400).json({ error: message });
         }
     }

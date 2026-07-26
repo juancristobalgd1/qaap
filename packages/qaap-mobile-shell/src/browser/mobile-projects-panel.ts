@@ -2692,8 +2692,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             widget?: AIChatInputWidget;
             agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[];
+            /** Run beside the open turn instead of taking the conversation over. */
+            parallel?: boolean;
         } = {},
-    ): Promise<void> {
+    ): Promise<boolean> {
         return this.transcriptSubmitUi.submitTranscriptViaBackendConversation(project, summary, content, options);
     }
 

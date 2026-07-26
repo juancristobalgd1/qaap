@@ -198,9 +198,13 @@ export class MobileProjectsTranscriptSubmitUi {
              */
             parallel?: boolean;
         } = {},
-    ): Promise<void> {
+    ): Promise<boolean> {
+        // Reports whether the message was actually submitted. A concurrent send that lands while
+        // another POST for this conversation is still open is skipped here — the caller must be
+        // able to tell that apart from a completed send, or the message is silently lost (it was
+        // already cleared from the composer draft by then).
         if (this.submitInFlightByConversationId.has(summary.id)) {
-            return;
+            return false;
         }
         const submitAt = Date.now();
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'ui_submit_clicked', submitAt);
@@ -210,6 +214,7 @@ export class MobileProjectsTranscriptSubmitUi {
         void this.turnSettleNotifier.maybeRequestPermission();
         try {
             await this.submitTranscriptViaBackendConversationInner(project, summary, content, options, submitAt);
+            return true;
         } finally {
             this.submitInFlightByConversationId.delete(summary.id);
         }

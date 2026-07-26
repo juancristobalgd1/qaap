@@ -16,6 +16,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     conversationToSummary,
     getConversation,
+    isMaxConcurrentRunsError,
     recordConversationGitAction,
     updateConversation,
     type QaapAgentConversationDTO,
@@ -252,7 +253,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
         summary: QaapAgentConversationSummaryDTO,
         draft: string,
         options: Record<string, unknown>,
-    ): Promise<void>;
+    ): Promise<boolean>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
     stickyComposerColumnUi: import('./mobile-projects-sticky-composer-column-ui').MobileProjectsStickyComposerColumnUi;
     stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
@@ -1569,7 +1570,113 @@ export class MobileProjectsTranscriptStickyComposerUi {
     ): Promise<void> {
         // The row already left the queue — repaint before the round-trip so the tap feels instant.
         this.refreshComposerActivityStack();
+        if (await this.startIsolatedRunIfRequested(project, entry)) {
+            return;
+        }
         await this.submitQueuedFollowUpEntry(project, summary, entry, { parallel: true });
+    }
+
+    /**
+     * Honours the composer's "Run in" destination for a concurrent send. Peer runs share this
+     * conversation's working tree, so two agents can collide on the same files; picking "New
+     * Worktree" asks for isolation instead — and isolation means a different working tree, which
+     * a conversation cannot have (it is bound to one cwd). So an isolated run becomes its own
+     * session in a fresh worktree. Returns true when it handled the send.
+     */
+    protected async startIsolatedRunIfRequested(
+        project: MobileProjectEntry,
+        entry: TranscriptFollowUpEntry,
+        payload: {
+            readonly variables?: import('@theia/ai-core').AIVariableResolutionRequest[];
+            readonly imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[];
+        } = {},
+    ): Promise<boolean> {
+        if (this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) !== 'worktree') {
+            return false;
+        }
+        await this.host.submitBackgroundAgentTask(project, entry.draft, {
+            openConversation: true,
+            forceVps: true,
+            worktree: true,
+            selectedAgentId: entry.selectedAgentId,
+            modeId: entry.modeId,
+            autoApprove: entry.autoApprove,
+            approvalPolicyId: entry.approvalPolicyId,
+            agentModel: this.host.transcriptComposerAgentModel,
+            variables: payload.variables,
+            imagePreviews: payload.imagePreviews,
+        });
+        return true;
+    }
+
+    /**
+     * Default path for a message sent while an agent works: start a peer run in this conversation.
+     * The only reason to fall back to the queue is the backend's concurrency cap — anything else
+     * is a real send failure and stays visible as one.
+     */
+    protected async startPeerRunOrQueue(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        entry: TranscriptFollowUpEntry,
+        payload: {
+            readonly variables?: import('@theia/ai-core').AIVariableResolutionRequest[];
+            readonly imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[];
+        } = {},
+    ): Promise<void> {
+        if (await this.startIsolatedRunIfRequested(project, entry, payload)) {
+            return;
+        }
+        try {
+            const submitted = await this.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
+                selectedAgentId: entry.selectedAgentId,
+                modeId: entry.modeId,
+                autoApprove: entry.autoApprove,
+                approvalPolicyId: entry.approvalPolicyId,
+                agentModel: this.host.transcriptComposerAgentModel,
+                variables: payload.variables,
+                imagePreviews: payload.imagePreviews,
+                parallel: true,
+            });
+            if (!submitted) {
+                // Another POST for this conversation was still open (rapid-fire sends): the
+                // message never left, and the composer draft is already cleared — queue it.
+                this.queuePeerRunMessage(summary, entry);
+            }
+        } catch (error) {
+            if (!isMaxConcurrentRunsError(error)) {
+                const detail = error instanceof Error ? error.message : String(error);
+                this.host.messageService?.error(nls.localize(
+                    'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail,
+                ));
+                return;
+            }
+            // Session is already at the agent limit — hold the message in the queue, where it
+            // flushes (or can be dispatched by hand) as soon as one of the runs finishes.
+            this.queuePeerRunMessage(summary, entry);
+        }
+    }
+
+    /** Parks a concurrent send in the queue and says so, instead of losing it. */
+    protected queuePeerRunMessage(
+        summary: QaapAgentConversationSummaryDTO,
+        entry: TranscriptFollowUpEntry,
+    ): void {
+        if (!this.enqueueTranscriptFollowUp(summary.id, entry)) {
+            // Queue is full too — the only case where the message cannot be kept anywhere.
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/peerRunQueueFull',
+                'Could not send: this session already has the maximum number of agents and queued messages.',
+            ));
+            return;
+        }
+        this.refreshComposerActivityStack();
+        MobileSnackbar.show(
+            nls.localize(
+                'qaap/mobileProjects/peerRunLimitQueued',
+                'Queued — this session is already running the maximum number of agents',
+            ),
+            { duration: 2600 },
+        );
     }
 
     protected async submitQueuedFollowUpEntry(
@@ -2211,7 +2318,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
             this.host.transcriptComposerDraft = '';
         };
         if (this.isTranscriptStickyComposerAgentWorking() && !isAgentsHubIdleConversationSummary(summary)) {
-            const queued = this.enqueueTranscriptFollowUp(summary.id, {
+            // Sending while an agent works starts ANOTHER agent beside it (in-session
+            // multitasking) rather than waiting in line. The queue is now the overflow path:
+            // it only catches the message once the session holds the backend's run limit.
+            const entry: TranscriptFollowUpEntry = {
                 draft,
                 selectedAgentId,
                 modeId,
@@ -2220,15 +2330,13 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     this.host.transcriptComposerApprovalPolicyId,
                     summary.cwd,
                 ),
-            });
-            if (queued) {
-                clearComposerDraft();
-                this.refreshComposerActivityStack();
-                const input = this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
-                // Column submit clears the textarea; re-dispatch input so the syntax mirror refreshes too.
-                input?.dispatchEvent(new Event('input', { bubbles: true }));
-                this.host.transcriptComposerSendRefresh?.();
-            }
+            };
+            clearComposerDraft();
+            const input = this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
+            // Column submit clears the textarea; re-dispatch input so the syntax mirror refreshes too.
+            input?.dispatchEvent(new Event('input', { bubbles: true }));
+            this.host.transcriptComposerSendRefresh?.();
+            await this.startPeerRunOrQueue(project, summary, entry, { variables, imagePreviews });
             return;
         }
         clearComposerDraft();
