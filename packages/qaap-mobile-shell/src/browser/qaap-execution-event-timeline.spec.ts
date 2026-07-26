@@ -1311,15 +1311,30 @@ describe('qaap-execution-event-timeline', () => {
             expect(fileIcon).to.equal(null);
         });
 
-        it('renders a file icon in the diff summary file list', () => {
+        // The files-changed card prefers a short language badge (TS, MD, #, …)
+        // over a codicon; the codicon is only the fallback for extensions with
+        // no badge. See `resolveMobileDiffFileLanguageBadge`.
+        it('prefers a language badge over a file icon in the diff summary file list', () => {
             const summary = createMobileDiffSummaryElement(2, 1, 1, 0, [
                 { name: 'Canvas.tsx', type: 'add' },
                 { name: 'README.md', type: 'modified' },
             ]);
+            const badges = [...summary.querySelectorAll('.theia-mobile-diff-summary-file-badge')]
+                .map(node => node.textContent);
+            expect(badges).to.deep.equal(['TS', 'MD']);
+            expect(summary.querySelector('.theia-mobile-diff-summary-file-icon')).to.equal(null);
+        });
+
+        it('falls back to a file icon in the diff summary for extensions without a badge', () => {
+            const summary = createMobileDiffSummaryElement(2, 1, 1, 0, [
+                { name: 'logo.svg', type: 'add' },
+                { name: 'ci.yml', type: 'modified' },
+            ]);
+            expect(summary.querySelector('.theia-mobile-diff-summary-file-badge')).to.equal(null);
             const icons = summary.querySelectorAll('.theia-mobile-diff-summary-file-icon');
             expect(icons.length).to.equal(2);
-            expect(icons[0].classList.contains('codicon-file-code')).to.be.true;
-            expect(icons[1].classList.contains('codicon-markdown')).to.be.true;
+            expect(icons[0].classList.contains('codicon-file-media')).to.be.true;
+            expect(icons[1].classList.contains('codicon-settings-gear')).to.be.true;
         });
 
     });
