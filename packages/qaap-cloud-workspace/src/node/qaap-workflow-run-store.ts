@@ -66,6 +66,12 @@ export interface QaapPersistedWorkflowRun {
      * working-tree content and never reaches the run summary the HTTP API returns.
      */
     readonly artifacts: Readonly<Record<string, string>>;
+    /**
+     * Node id → the backend that ran it, kept for the whole run. An adversarial review is only
+     * adversarial if a DIFFERENT model performs it, and the judge starts long after the writer's
+     * dispatch entry is gone.
+     */
+    readonly routedAgents: Readonly<Record<string, string>>;
 }
 
 interface PersistedWorkflowRunIndex {
@@ -187,6 +193,7 @@ export class QaapWorkflowRunStore {
                 updatedAt: now,
                 dispatched: {},
                 artifacts: {},
+                routedAgents: {},
             };
             return { records: [...records, record], result: { record, dispatch: started.dispatch } };
         }, result => result.record);
@@ -262,6 +269,35 @@ export class QaapWorkflowRunStore {
             next[index] = record;
             return { records: next, result: record };
         }, result => result);
+    }
+
+    /**
+     * Remember which backend ran a node. Unlike {@link QaapPersistedWorkflowRun.dispatched}, which
+     * is cleared when the node reports, this survives the whole run: a judge dispatched later has
+     * to know who wrote the code it is about to review.
+     */
+    noteRoutedAgent(
+        ownerLogin: string | undefined,
+        runId: string,
+        nodeId: string,
+        agentRef: string,
+    ): Promise<QaapPersistedWorkflowRun | undefined> {
+        return this.mutate(records => {
+            const owner = this.normalizeOwner(ownerLogin);
+            const index = records.findIndex(entry => entry.run.id === runId && entry.ownerLogin === owner);
+            if (index < 0) {
+                return { records, result: undefined };
+            }
+            const previous = records[index];
+            const record: QaapPersistedWorkflowRun = {
+                ...previous,
+                routedAgents: { ...previous.routedAgents, [nodeId]: agentRef },
+                updatedAt: this.now(),
+            };
+            const next = [...records];
+            next[index] = record;
+            return { records: next, result: record };
+        });
     }
 
     /** Resolve the run and node a job or agent-task id belongs to. */
@@ -345,6 +381,7 @@ export class QaapWorkflowRunStore {
                     cwd: record.cwd ?? '',
                     inputs: record.inputs ?? {},
                     artifacts: record.artifacts ?? {},
+                    routedAgents: record.routedAgents ?? {},
                 });
             }
         }

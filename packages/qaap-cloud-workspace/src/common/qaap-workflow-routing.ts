@@ -33,17 +33,32 @@ export interface QaapWorkflowRoutingResult {
 
 /**
  * Default table. Only agent ids; whether one exists is decided at resolve time against the live
- * catalog, so an entry for an uninstalled agent is simply skipped. Deliberately conservative:
- * judges and exploration prefer a strong reasoner, mechanical work prefers a cheap one.
+ * catalog, so an entry for an uninstalled agent is simply skipped.
+ *
+ * Ordered for GETTING IT RIGHT FIRST TIME, not for unit cost. The previous table sent `implement`
+ * and `explore` to the cheapest backend first, and that is where every failure of the July 2026
+ * audit came from: a free model emitted its tool call as plain text and changed nothing, and
+ * another wedged an explorer for as long as anyone watched. A turn that has to be re-run, or worse
+ * one that silently does nothing, is not cheap.
+ *
+ * The `cheap` tier still puts the cheap backend first — that tier is a caller saying, explicitly,
+ * that this node is worth less than a good answer. Everything else prefers a strong reasoner and
+ * keeps the cheap one as the last resort, which still beats not running at all. Operators reorder
+ * with `QAAP_WORKFLOW_AGENT_ROUTES` per capability.
  */
 export const DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE: QaapWorkflowRoutingTable = {
-    explore: { any: ['qaiq', 'codex', 'claude'] },
-    implement: { cheap: ['qaiq'], standard: ['qaiq', 'codex'], premium: ['codex', 'claude'], any: ['qaiq'] },
-    judge: { any: ['codex', 'claude', 'qaiq'] },
-    synthesize: { any: ['codex', 'qaiq'] },
-    measure: { any: ['qaiq'] },
-    creative: { any: ['claude', 'qaiq'] },
-    general: { any: ['qaiq'] },
+    explore: { cheap: ['qaiq', 'claude', 'codex'], any: ['claude', 'codex', 'qaiq'] },
+    implement: {
+        cheap: ['qaiq', 'claude', 'codex'],
+        standard: ['claude', 'codex', 'qaiq'],
+        premium: ['claude', 'codex'],
+        any: ['claude', 'codex', 'qaiq'],
+    },
+    judge: { any: ['claude', 'codex', 'qaiq'] },
+    synthesize: { any: ['claude', 'codex', 'qaiq'] },
+    measure: { cheap: ['qaiq'], any: ['qaiq', 'claude', 'codex'] },
+    creative: { any: ['claude', 'codex', 'qaiq'] },
+    general: { any: ['claude', 'codex', 'qaiq'] },
 };
 
 export class QaapWorkflowRoutingPolicy {

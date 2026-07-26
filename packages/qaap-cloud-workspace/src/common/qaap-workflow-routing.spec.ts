@@ -24,7 +24,20 @@ describe('QaapWorkflowRoutingPolicy', () => {
 
     it('prefers the tier-specific list before the capability default', () => {
         const result = policy.resolve('implement', 'premium', all);
-        expect(result).to.deep.equal({ agentRef: 'codex', reason: 'routed' });
+        expect(result).to.deep.equal({ agentRef: 'claude', reason: 'routed' });
+    });
+
+    it('sends work that must be right to a strong reasoner, cheap backend last', () => {
+        // The July 2026 audit failures were all the cheapest-first default: a free model that
+        // emitted its tool call as text and changed nothing, and one that wedged an explorer.
+        for (const capability of ['implement', 'explore', 'judge', 'synthesize'] as const) {
+            expect(policy.resolve(capability, 'standard', all).agentRef, capability).to.equal('claude');
+        }
+        // …unless the caller explicitly asked for cheap, which is them saying this node is worth
+        // less than a good answer.
+        expect(policy.resolve('implement', 'cheap', all).agentRef).to.equal('qaiq');
+        // The cheap backend still runs the node when nothing better is installed.
+        expect(policy.resolve('implement', 'standard', only('qaiq')).agentRef).to.equal('qaiq');
     });
 
     it('skips uninstalled agents and picks the first available one', () => {
@@ -33,7 +46,7 @@ describe('QaapWorkflowRoutingPolicy', () => {
     });
 
     it('falls back to the capability-wide list when the tier yields nothing available', () => {
-        // premium = [codex, claude]; any = [qaiq]. Only qaiq installed → routes via `any`.
+        // premium = [claude, codex]; any ends with qaiq. Only qaiq installed → routes via `any`.
         const result = policy.resolve('implement', 'premium', only('qaiq'));
         expect(result).to.deep.equal({ agentRef: 'qaiq', reason: 'routed' });
     });
@@ -76,7 +89,7 @@ describe('parseQaapWorkflowRoutingTable', () => {
 
     it('lets an override shrink the preference list of the capability it names', () => {
         const table = parseQaapWorkflowRoutingTable('{"judge":{"any":["qaiq"]}}');
-        // Default judge order starts with codex; the override drops it entirely.
+        // Default judge order starts with claude and includes codex; the override drops both.
         expect(table.judge?.any).to.deep.equal(['qaiq']);
         expect(new QaapWorkflowRoutingPolicy(table).resolve('judge', undefined, only('codex')).reason)
             .to.equal('fallback');

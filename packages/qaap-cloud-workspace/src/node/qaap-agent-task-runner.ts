@@ -2191,6 +2191,10 @@ export class QaapAgentTaskRunner {
             // free model that wrote its Edit call as plain text.
             const emptyTurn = await this.detectEmptyAgentTurnForTask(task);
             if (emptyTurn.empty) {
+                // A backend that returns nothing is not a slow backend, it is a broken one for this
+                // workload — the observed cause is a model that writes tool calls as prose. Feed the
+                // health tracker so later turns route around it instead of repeating the no-op.
+                this.agentHealth?.noteFailure(this.resolveTaskAgentId(task));
                 const current = this.tasks.get(task.id);
                 if (current) {
                     this.tasks.set(task.id, {

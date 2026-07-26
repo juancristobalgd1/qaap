@@ -102,8 +102,9 @@ describe('reviewSuccessfulAgentTask externalReview guard', () => {
 
     it('prefers an independent reviewer over the agent that wrote the change', () => {
         const instance = new RoutingRunner();
-        // Task agent is qaiq; default judge routing puts codex, then claude, ahead of it.
-        expect(instance.candidates(baseTask)).to.deep.equal(['codex', 'claude', 'qaiq']);
+        // Task agent is qaiq; default judge routing puts the strong reasoners ahead of it, so the
+        // review is performed by someone other than the writer whenever one is installed.
+        expect(instance.candidates(baseTask)).to.deep.equal(['claude', 'codex', 'qaiq']);
     });
 
     it('skips a reviewer whose CLI is cooling down', () => {

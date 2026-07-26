@@ -454,7 +454,9 @@ export function buildImplementThenReviewWorkflow(options?: {
                 kind: 'agent-turn',
                 id: 'explore-structure',
                 capability: 'explore',
-                costTier: 'cheap',
+                // Not 'cheap': these findings are what the implement turn builds on, so a wrong map
+                // costs far more than the turn saved. Cheapness is the caller's call, not ours.
+                costTier: 'standard',
                 agentRef: options?.exploreAgentRef,
                 isolation: 'cwd-readonly',
                 promptRef: 'explore-structure',
@@ -464,7 +466,9 @@ export function buildImplementThenReviewWorkflow(options?: {
                 kind: 'agent-turn',
                 id: 'explore-verification',
                 capability: 'explore',
-                costTier: 'cheap',
+                // Not 'cheap': these findings are what the implement turn builds on, so a wrong map
+                // costs far more than the turn saved. Cheapness is the caller's call, not ours.
+                costTier: 'standard',
                 agentRef: options?.exploreAgentRef,
                 isolation: 'cwd-readonly',
                 promptRef: 'explore-verification',
