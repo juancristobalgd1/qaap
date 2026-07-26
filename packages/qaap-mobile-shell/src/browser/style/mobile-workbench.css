@@ -32490,3 +32490,30 @@ body.theia-dark .theia-mobile-agent-web-search,
 .theia-mobile-process-accordion-run-stop + .theia-mobile-process-accordion-chevron {
   margin-left: 8px;
 }
+
+/*
+ * Reserve the composer's pill row while it is empty.
+ *
+ * The Working / Changes pills mount and unmount many times during a turn, and each time the
+ * transcript above resized by the row's height — the conversation jumped under the reader's
+ * eyes mid-stream. Holding that space at all times keeps the transcript at the height it has
+ * WITH pills, so a pill appearing changes nothing but the pill.
+ *
+ * 28px is measured, not derived: the pill is 30px min-height plus 4px of air above the card,
+ * but the composer's own padding absorbs part of it, and 28px is what makes the transcript
+ * scroller land on exactly the height it has while a pill is mounted.
+ *
+ * Scoped to the execution shell (a transcript is on screen); the Work Hub landing composer has
+ * nothing above it to keep still. Skipped when the queue popover is mounted, which is a taller
+ * element that occupies the same slot.
+ */
+.theia-mobile-projects.theia-mod-agents-hub-shell-active
+  .theia-mobile-projects-sticky-composer-inner:not(:has(> .theia-mobile-sticky-composer-changes-pill-host)):not(
+    :has(> .theia-mobile-sticky-composer-activity-stack)
+  )::before {
+  content: '';
+  display: block;
+  flex: 0 0 auto;
+  height: 28px;
+  pointer-events: none;
+}
