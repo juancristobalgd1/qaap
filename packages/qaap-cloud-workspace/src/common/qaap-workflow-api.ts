@@ -35,6 +35,13 @@ export interface QaapStartWorkflowRequest {
      */
     readonly maxNodeMinutes?: number;
     readonly maxRunMinutes?: number;
+    /**
+     * For a goal run: the npm SCRIPT NAME whose exit code decides whether the goal is met. Never a
+     * command — it is looked up in the repository's own `package.json` and invoked as
+     * `npm run <name>`, so a caller cannot turn a success check into arbitrary execution. An
+     * unknown name falls back to the repository's usual verification scripts.
+     */
+    readonly checkScript?: string;
 }
 
 /** A workflow template a client may start, safe to expose (no prompt bodies). */
@@ -54,6 +61,8 @@ export interface QaapWorkflowTemplateListResponse {
 export interface QaapWorkflowRunSummary {
     readonly run: QaapWorkflowRun;
     readonly templateId: string;
+    /** The declared success check of a goal run, so asking for its status says what "done" means. */
+    readonly checkScript?: string;
     readonly createdAt: number;
     readonly updatedAt: number;
 }

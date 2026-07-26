@@ -55,3 +55,33 @@ describe('QaapWorkflowPromptRegistry', () => {
         expect(() => registry.register('user-task', () => 'other')).to.throw(QaapWorkflowPromptError, /Duplicate/);
     });
 });
+
+describe('goal prompts', () => {
+    let registry: QaapWorkflowPromptRegistry;
+    beforeEach(() => registry = new QaapWorkflowPromptRegistry());
+
+    it('names the mechanical check, so the turn can run the very same one', () => {
+        const prompt = registry.resolve('goal-task', {
+            inputs: { task: 'leave npm test green', checkScript: 'test' },
+            bindings: {},
+        });
+        expect(prompt).to.contain('leave npm test green');
+        expect(prompt).to.contain('npm run test');
+        expect(prompt).to.contain('Nothing else counts as done');
+    });
+
+    it('falls back to the repository\'s own scripts when no check was declared', () => {
+        const prompt = registry.resolve('goal-task', { inputs: { task: 'ship it' }, bindings: {} });
+        expect(prompt).to.contain('own verification scripts');
+        expect(prompt).to.not.contain('npm run undefined');
+    });
+
+    it('tells the fix turn the goal is unmet rather than restating the task', () => {
+        const prompt = registry.resolve('fix-goal', {
+            inputs: { task: 'leave npm test green', checkScript: 'test' },
+            bindings: {},
+        });
+        expect(prompt).to.contain('NOT met');
+        expect(prompt).to.contain('npm run test');
+    });
+});

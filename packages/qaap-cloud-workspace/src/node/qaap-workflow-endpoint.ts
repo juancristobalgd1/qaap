@@ -21,6 +21,7 @@ import {
 } from '../common/qaap-workflow-api';
 import { QaapWorkflowPromptError } from '../common/qaap-workflow-prompt-registry';
 import { resolveQaapWorkflowRunBudget } from '../common/qaap-workflow-run';
+import { isQaapVerificationScriptName } from './qaap-agent-verification';
 import { QaapWorkflowTemplateRegistry } from '../common/qaap-workflow-template-registry';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunRequestError, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { QaapWorkflowService } from './qaap-workflow-service';
@@ -85,6 +86,15 @@ export class QaapWorkflowEndpoint implements BackendApplicationContribution {
             return;
         }
         const inputs = this.normalizeInputs(body.inputs);
+        // Shape-checked here so a malformed name is a 400 rather than a run that quietly verifies
+        // something else; whether the repository declares it is resolved at check time.
+        const checkScript = typeof body.checkScript === 'string' ? body.checkScript.trim() : undefined;
+        if (checkScript !== undefined && !isQaapVerificationScriptName(checkScript)) {
+            res.status(400).json({
+                error: nls.localize('qaap/workflows/invalidCheckScript', '"checkScript" must be an npm script name.'),
+            });
+            return;
+        }
         const missing = template.summary.requiredInputs.filter(key => !inputs[key]?.trim());
         if (missing.length > 0) {
             res.status(400).json({
@@ -105,7 +115,8 @@ export class QaapWorkflowEndpoint implements BackendApplicationContribution {
             const record = await this.service.start(template.build({ verify: body.verify === true }), {
                 cwd: resolved.cwd,
                 ownerLogin: this.ownerLogin(ctx),
-                inputs,
+                inputs: checkScript ? { ...inputs, checkScript } : inputs,
+                goalCheckScript: checkScript,
                 budget: resolveQaapWorkflowRunBudget(body),
             });
             res.status(201).json(this.toSummary(record));
@@ -162,6 +173,7 @@ export class QaapWorkflowEndpoint implements BackendApplicationContribution {
         return {
             run: record.run,
             templateId: record.def.id,
+            ...(record.goalCheckScript ? { checkScript: record.goalCheckScript } : {}),
             createdAt: record.createdAt,
             updatedAt: record.updatedAt,
         };

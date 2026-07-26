@@ -29,6 +29,17 @@ export interface QaapWorkflowPromptContext {
 
 export type QaapWorkflowPromptTemplate = (context: QaapWorkflowPromptContext) => string;
 
+/**
+ * How this run knows the goal is met. Named so the turn can run the very same check itself instead
+ * of guessing, which is the whole difference between a goal and a wish.
+ */
+function goalCheckLine(context: QaapWorkflowPromptContext): string {
+    const script = context.inputs.checkScript?.trim();
+    return script
+        ? `Success is decided mechanically by \`npm run ${script}\` exiting 0. Nothing else counts as done.`
+        : 'Success is decided mechanically by this repository\'s own verification scripts (typecheck, build, test, lint) exiting 0.';
+}
+
 export class QaapWorkflowPromptError extends Error { }
 
 const REQUIRED_INPUT_MISSING = (ref: string, key: string): string =>
@@ -112,6 +123,25 @@ export class QaapWorkflowPromptRegistry {
                     : []),
             ].join('\n');
         });
+
+        // Goal runs. The difference from `user-task` is the contract: the turn is told what "done"
+        // means MECHANICALLY, and that a machine — not its own judgement — will decide.
+        this.register('goal-task', context => [
+            `Goal: ${requireInput('goal-task', context, 'task')}`,
+            '',
+            goalCheckLine(context),
+            'Do not stop at a plan or a partial change: the run only finishes when that check passes.',
+            'If you believe the goal is already met, run the check and say what it printed.',
+        ].join('\n'));
+
+        this.register('fix-goal', context => [
+            'The goal is NOT met yet: its success check failed after the previous turn.',
+            '',
+            `Goal: ${requireInput('fix-goal', context, 'task')}`,
+            goalCheckLine(context),
+            '',
+            'Read the failure, fix the cause rather than the symptom, and change as little as possible.',
+        ].join('\n'));
 
         this.register('fix-verification', context => [
             'The previous turn left the workspace failing its own verification.',

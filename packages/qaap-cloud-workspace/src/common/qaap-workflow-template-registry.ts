@@ -71,6 +71,23 @@ export class QaapWorkflowTemplateRegistry {
 
         this.register({
             summary: {
+                id: 'qaap.goal',
+                name: 'Work until the goal check passes',
+                description:
+                    'Works toward a declared goal and does not finish until its success check — an npm script of your choosing, '
+                    + 'or the repository\'s own verification scripts — exits 0, re-entering a fix turn each time it fails.',
+                requiredInputs: ['task'],
+            },
+            // How many fix turns a goal may take is the run's own budget (`maxVisitsPerNode`) and
+            // its wall clock — one set of bounds, not a second private one that could disagree.
+            build: () => buildImplementThenReviewWorkflow({
+                reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
+                withGoal: true,
+            }),
+        });
+
+        this.register({
+            summary: {
                 id: 'qaap.explore-then-implement',
                 name: 'Explore in parallel, then implement and review',
                 description:

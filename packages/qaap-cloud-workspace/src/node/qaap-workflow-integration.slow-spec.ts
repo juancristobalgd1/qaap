@@ -199,6 +199,56 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
         });
     });
 
+    describe('a goal run measured by its declared check', () => {
+        beforeEach(() => {
+            fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({
+                name: 'e2e',
+                version: '1.0.0',
+                scripts: {
+                    // The repo's usual scripts pass; only the goal's own check is red.
+                    test: 'node -e "process.exit(0)"',
+                    lint: 'node -e "process.exit(0)"',
+                    'goal:check': 'node -e "process.exit(1)"',
+                },
+            }));
+        });
+
+        it('is unmet while the declared check fails, even though the repo verifies green', async () => {
+            // The whole point of a goal: the CALLER decides what done means, not the repo layout.
+            const result = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), { script: 'goal:check' }) as
+                { outcome: string; failedScript: string };
+            expect(result.outcome).to.equal('fail');
+            expect(result.failedScript).to.equal('goal:check');
+
+            const withoutGoal = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), {}) as { outcome: string };
+            expect(withoutGoal.outcome, 'the repo\'s own scripts are green').to.equal('success');
+        });
+
+        it('runs ONLY the declared check, not the repository\'s list as well', async () => {
+            fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({
+                name: 'e2e',
+                version: '1.0.0',
+                scripts: { test: 'node -e "process.exit(1)"', 'goal:check': 'node -e "process.exit(0)"' },
+            }));
+            const result = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), { script: 'goal:check' }) as
+                { outcome: string; scripts: string[] };
+            expect(result.outcome).to.equal('success');
+            expect(result.scripts).to.deep.equal(['goal:check']);
+        });
+
+        it('refuses a check that is not an npm script name', () => {
+            const definition = functions.get('qaap.workflow.verify')!;
+            expect(() => definition.normalizeInput({ script: 'test; rm -rf /' })).to.throw(/npm script name/);
+        });
+
+        it('falls back to the repository scripts for a name it does not declare', async () => {
+            const result = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), { script: 'not-declared' }) as
+                { outcome: string; scripts: string[] };
+            expect(result.outcome).to.equal('success');
+            expect(result.scripts).to.deep.equal(['test', 'lint']);
+        });
+    });
+
     describe('verify against a real package.json', () => {
         it('fails the node when a verification script exits non-zero', async () => {
             fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({

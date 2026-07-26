@@ -56,7 +56,7 @@ describe('QaapWorkflowJobFunctions.verify', () => {
     it('runs typecheck, build, test, lint in that order and succeeds when all pass', async () => {
         writePackageJson({ lint: 'eslint', test: 'mocha', build: 'tsc -b', typecheck: 'tsc --noEmit' });
         const { definition, contribution } = verifyDefinition();
-        const result = await definition.execute(context(dir), undefined) as { outcome: string; scripts: string[] };
+        const result = await definition.execute(context(dir), {}) as { outcome: string; scripts: string[] };
         expect(result.outcome).to.equal('success');
         expect(contribution.ran).to.deep.equal(['typecheck', 'build', 'test', 'lint']);
     });
@@ -64,7 +64,7 @@ describe('QaapWorkflowJobFunctions.verify', () => {
     it('stops at the first failing script and reports it', async () => {
         writePackageJson({ typecheck: 'tsc --noEmit', build: 'tsc -b', test: 'mocha' });
         const { definition, contribution } = verifyDefinition(['build']);
-        const result = await definition.execute(context(dir), undefined) as { outcome: string; failedScript: string };
+        const result = await definition.execute(context(dir), {}) as { outcome: string; failedScript: string };
         expect(result.outcome).to.equal('fail');
         expect(result.failedScript).to.equal('build');
         // 'test' after the failing 'build' never runs.
@@ -74,7 +74,7 @@ describe('QaapWorkflowJobFunctions.verify', () => {
     it('succeeds with nothing to run when there are no verification scripts', async () => {
         writePackageJson({ start: 'node .' });
         const { definition, contribution } = verifyDefinition();
-        const result = await definition.execute(context(dir), undefined) as { outcome: string; scripts: string[] };
+        const result = await definition.execute(context(dir), {}) as { outcome: string; scripts: string[] };
         expect(result.outcome).to.equal('success');
         expect(result.scripts).to.deep.equal([]);
         expect(contribution.ran).to.deep.equal([]);
@@ -82,7 +82,7 @@ describe('QaapWorkflowJobFunctions.verify', () => {
 
     it('succeeds when there is no package.json at all', async () => {
         const { definition } = verifyDefinition();
-        const result = await definition.execute(context(dir), undefined) as { outcome: string };
+        const result = await definition.execute(context(dir), {}) as { outcome: string };
         expect(result.outcome).to.equal('success');
     });
 });

@@ -390,12 +390,18 @@ function edgeMatches(when: QaapWorkflowEdgeWhen, outcome: QaapWorkflowNodeOutcom
 export type QaapWorkflowReviewMode = 'high-risk' | 'all' | 'off';
 
 /** Definition ids are the contract a run is replayed against, so each shape owns one. */
-function definitionId(withExploration: boolean): string {
+function definitionId(withExploration: boolean, withGoal = false): string {
+    if (withGoal) {
+        return 'qaap.goal';
+    }
     return withExploration ? 'qaap.explore-then-implement' : 'qaap.implement-then-review';
 }
 
 /** Shown on every node's task title, so it must describe the shape that actually ran. */
-function definitionName(withExploration: boolean, reviewMode: QaapWorkflowReviewMode): string {
+function definitionName(withExploration: boolean, reviewMode: QaapWorkflowReviewMode, withGoal = false): string {
+    if (withGoal) {
+        return 'Work until the goal check passes';
+    }
     if (withExploration) {
         return 'Explore in parallel, then implement and review';
     }
@@ -419,6 +425,13 @@ export function buildImplementThenReviewWorkflow(options?: {
      */
     readonly withParallelExploration?: boolean;
     /**
+     * Run against a declared GOAL rather than an instruction: the turn is told what "done" means
+     * mechanically, and the run does not finish until the success check passes. Implies the
+     * verification fix-loop, since without it nothing would re-enter the graph when the check is
+     * red — the loop is what makes a goal a goal instead of a wish.
+     */
+    readonly withGoal?: boolean;
+    /**
      * Insert the runner's post-implement verification with its fix-loop
      * (`verify` fail → `implement-fix` → `verify`). Opt-in for now: the default graph stays as the
      * review conformance proved it, and the loop is bounded by the run's `maxVisitsPerNode` budget.
@@ -426,8 +439,9 @@ export function buildImplementThenReviewWorkflow(options?: {
     readonly withVerify?: boolean;
 }): QaapWorkflowDef {
     const reviewMode = options?.reviewMode ?? 'high-risk';
-    const withVerify = options?.withVerify ?? false;
+    const withVerify = (options?.withVerify ?? false) || (options?.withGoal ?? false);
     const withExploration = options?.withParallelExploration ?? false;
+    const withGoal = options?.withGoal ?? false;
     const nodes: QaapWorkflowNode[] = [
         {
             kind: 'agent-turn',
@@ -436,7 +450,7 @@ export function buildImplementThenReviewWorkflow(options?: {
             costTier: 'standard',
             agentRef: options?.implementAgentRef,
             isolation: 'cwd',
-            promptRef: withExploration ? 'implement-with-findings' : 'user-task',
+            promptRef: withGoal ? 'goal-task' : withExploration ? 'implement-with-findings' : 'user-task',
         },
         { kind: 'emit', id: 'done-skip', bindingKey: 'review.skipped' },
     ];
@@ -497,7 +511,7 @@ export function buildImplementThenReviewWorkflow(options?: {
                 costTier: 'standard',
                 agentRef: options?.implementAgentRef,
                 isolation: 'cwd',
-                promptRef: 'fix-verification',
+                promptRef: withGoal ? 'fix-goal' : 'fix-verification',
             },
             { kind: 'emit', id: 'done-unverified', bindingKey: 'verify.failed' },
         );
@@ -518,7 +532,7 @@ export function buildImplementThenReviewWorkflow(options?: {
         // runner returning undefined when QAAP_AGENT_REVIEW is off.
         edges.push({ from: afterImplement ?? 'implement', to: 'done-skip', when: 'success' });
         return {
-            id: definitionId(withExploration),
+            id: definitionId(withExploration, withGoal),
             version: 1,
             name: withExploration ? 'Explore in parallel, then implement (review off)' : 'Implement (review off)',
             entry,
@@ -568,9 +582,9 @@ export function buildImplementThenReviewWorkflow(options?: {
         { from: 'judge', to: 'done-inconclusive', when: 'fail' },
     );
     return {
-        id: definitionId(withExploration),
+        id: definitionId(withExploration, withGoal),
         version: 1,
-        name: definitionName(withExploration, reviewMode),
+        name: definitionName(withExploration, reviewMode, withGoal),
         entry,
         nodes,
         edges,

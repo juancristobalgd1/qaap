@@ -56,6 +56,11 @@ export interface QaapPersistedWorkflowRun {
      * committed or not — agents are told to work toward a PR, so many of them commit.
      */
     readonly baseRef?: string;
+    /**
+     * The run's declared success check: the npm script that decides whether its goal is met. Absent
+     * means "whatever this repository verifies with", which is the pre-goal behaviour.
+     */
+    readonly goalCheckScript?: string;
     readonly createdAt: number;
     readonly updatedAt: number;
     /** Node id → its live execution. Persisted so a restart can still map events back to nodes. */
@@ -93,6 +98,8 @@ export interface QaapStartWorkflowRunOptions {
     readonly inputs?: Readonly<Record<string, string>>;
     /** Commit the repository is on right now; the run's change is measured against it. */
     readonly baseRef?: string;
+    /** npm script that must exit 0 for this run's goal to count as met. */
+    readonly goalCheckScript?: string;
     readonly budget?: QaapWorkflowRunBudget;
 }
 
@@ -189,6 +196,7 @@ export class QaapWorkflowRunStore {
                 cwd: options.cwd,
                 inputs: options.inputs ?? {},
                 ...(options.baseRef ? { baseRef: options.baseRef } : {}),
+                ...(options.goalCheckScript ? { goalCheckScript: options.goalCheckScript } : {}),
                 createdAt: now,
                 updatedAt: now,
                 dispatched: {},

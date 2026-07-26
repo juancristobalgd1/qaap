@@ -24,7 +24,11 @@ import {
     resolveTaskReviewRisk,
 } from '../common/qaap-agent-review';
 import { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
-import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
+import {
+    isQaapVerificationScriptName,
+    resolveQaapAgentVerificationScripts,
+    resolveQaapDeclaredVerificationScript,
+} from './qaap-agent-verification';
 import { QaapJobFunctionContribution, QaapJobFunctionContext, QaapJobFunctionRegistry } from './qaap-job-function-registry';
 
 const execFileAsync = promisify(execFile);
@@ -47,6 +51,12 @@ const MAX_VERIFY_OUTPUT_BYTES = 64 * 1024;
  */
 export interface QaapWorkflowBaseRefInput {
     readonly baseRef?: string;
+    /**
+     * The run's declared success check: the one npm script that decides whether the goal is met.
+     * Only meaningful to the `verify` op. A name, never a command — see
+     * {@link resolveQaapDeclaredVerificationScript}.
+     */
+    readonly script?: string;
 }
 
 /** Git refs only — this value reaches `git` as an argument. */
@@ -55,7 +65,7 @@ const SAFE_GIT_REF = /^[0-9a-zA-Z._\-/]{1,255}$/;
 const BASE_REF_INPUT_SCHEMA = {
     type: 'object',
     additionalProperties: false,
-    properties: { baseRef: { type: 'string' } },
+    properties: { baseRef: { type: 'string' }, script: { type: 'string' } },
 } as const;
 
 function normalizeBaseRefInput(input: unknown): QaapWorkflowBaseRefInput {
@@ -65,14 +75,19 @@ function normalizeBaseRefInput(input: unknown): QaapWorkflowBaseRefInput {
     if (typeof input !== 'object' || Array.isArray(input)) {
         throw new Error(nls.localize('qaap/workflows/functions/inputMustBeObject', 'Function input must be an object.'));
     }
-    const baseRef = (input as Record<string, unknown>).baseRef;
-    if (baseRef === undefined) {
-        return {};
-    }
-    if (typeof baseRef !== 'string' || !SAFE_GIT_REF.test(baseRef)) {
+    const record = input as Record<string, unknown>;
+    const baseRef = record.baseRef;
+    if (baseRef !== undefined && (typeof baseRef !== 'string' || !SAFE_GIT_REF.test(baseRef))) {
         throw new Error(nls.localize('qaap/workflows/functions/invalidBaseRef', '"baseRef" must be a git ref.'));
     }
-    return { baseRef };
+    const script = record.script;
+    if (script !== undefined && (typeof script !== 'string' || !isQaapVerificationScriptName(script))) {
+        throw new Error(nls.localize('qaap/workflows/functions/invalidScript', '"script" must be an npm script name.'));
+    }
+    return {
+        ...(typeof baseRef === 'string' ? { baseRef } : {}),
+        ...(typeof script === 'string' ? { script } : {}),
+    };
 }
 
 export const QAAP_WORKFLOW_CLASSIFY_RISK_FUNCTION = 'qaap.workflow.classify-risk';
@@ -175,7 +190,7 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                 outputSchema: { type: 'object' },
             },
             normalizeInput: normalizeBaseRefInput,
-            execute: async context => this.verify(context),
+            execute: async (context, input) => this.verify(context, input.script),
         });
     }
 
@@ -184,8 +199,13 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
      * order via `npm run <script>` and stop at the first non-zero exit. No scripts means nothing to
      * verify, which is a success (the node exists to gate on failure, not to require config).
      */
-    protected async verify(context: QaapJobFunctionContext): Promise<VerifyOutput> {
-        const scripts = resolveQaapAgentVerificationScripts(await this.readPackageJson(context));
+    protected async verify(context: QaapJobFunctionContext, declaredScript?: string): Promise<VerifyOutput> {
+        const packageJson = await this.readPackageJson(context);
+        // A run that declared its own success check is measured by THAT, and by nothing else: the
+        // point of a goal is that the caller, not the repository layout, decides what "done" means.
+        // An unknown name falls back to the repository's scripts rather than verifying nothing.
+        const declared = resolveQaapDeclaredVerificationScript(packageJson, declaredScript);
+        const scripts = declared ? [declared] : resolveQaapAgentVerificationScripts(packageJson);
         for (const script of scripts) {
             context.emitOutput(`\n[qaap-workflow] verifying: npm run ${script}\n`);
             const failure = await this.runVerificationScript(context, script);

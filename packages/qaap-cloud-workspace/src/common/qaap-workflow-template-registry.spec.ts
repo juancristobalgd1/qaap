@@ -50,3 +50,27 @@ describe('QaapWorkflowTemplateRegistry', () => {
         expect(() => registry.register(template)).to.throw(/Duplicate/);
     });
 });
+
+describe('the goal template', () => {
+    let registry: QaapWorkflowTemplateRegistry;
+    beforeEach(() => registry = new QaapWorkflowTemplateRegistry());
+
+    it('cannot finish without passing its check: the fix-loop is part of the graph', () => {
+        // A goal without a loop back into work is a wish. Verification is implied, never optional.
+        const def = registry.get('qaap.goal')!.build();
+        expect(def.nodes.map(node => node.id)).to.include.members(['verify', 'implement-fix']);
+        expect(def.edges).to.deep.include({ from: 'verify', to: 'implement-fix', when: 'fail' });
+        expect(def.edges).to.deep.include({ from: 'implement-fix', to: 'verify', when: 'success' });
+        expect(validateQaapWorkflowDef(def)).to.deep.include({ ok: true });
+    });
+
+    it('tells both turns they are working against a goal, not an instruction', () => {
+        const def = registry.get('qaap.goal')!.build();
+        const promptRefs = def.nodes.filter(node => node.kind === 'agent-turn').map(node => node.promptRef);
+        expect(promptRefs).to.include.members(['goal-task', 'fix-goal']);
+    });
+
+    it('keeps its own definition id, so a run stays replayable against the right shape', () => {
+        expect(registry.get('qaap.goal')!.build().id).to.equal('qaap.goal');
+    });
+});
