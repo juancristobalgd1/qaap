@@ -17,6 +17,11 @@ import {
 } from './qaap-workflow-dispatcher';
 import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
 
+/** An agent log whose terminal record carries `text` as the turn's final message. */
+function resultLog(text: string): string {
+    return JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: text });
+}
+
 class TestStore extends QaapWorkflowRunStore {
     constructor(protected readonly testDirectory: string) { super(); }
     initialize(): void { this.init(); }
@@ -108,6 +113,25 @@ describe('QaapWorkflowDispatcher', () => {
         expect(record?.run.status).to.equal('succeeded');
         expect(record?.run.bindings).to.have.property('review.passed');
         expect(record?.dispatched).to.deep.equal({});
+    });
+
+    it('keeps the captured diff so the judge downstream can be shown the real change', async () => {
+        // Regression: the git-diff node computed a diff that nothing stored, so the reviewer prompt
+        // always fell back to its empty-diff branch.
+        const runId = await startRun();
+        await dispatcher.onAgentTaskFinished('task-1', 'completed');
+        await dispatcher.onJobFinished('job-1', 'succeeded', { outcome: 'risk:high' });
+        await dispatcher.onJobFinished('job-2', 'succeeded', { outcome: 'success', artifact: '--- a/cart.js\n+++ b/cart.js' });
+
+        expect(store.get('ada', runId)?.artifacts['review.diff']).to.contain('+++ b/cart.js');
+    });
+
+    it('stores no artifact for a node that declares no artifact key', async () => {
+        const runId = await startRun();
+        await dispatcher.onAgentTaskFinished('task-1', 'completed');
+        await dispatcher.onJobFinished('job-1', 'succeeded', { outcome: 'risk:high', artifact: 'not declared' });
+
+        expect(store.get('ada', runId)?.artifacts).to.deep.equal({});
     });
 
     it('routes a silent reviewer to inconclusive instead of passing the change', async () => {
@@ -220,6 +244,43 @@ describe('QaapWorkflowDispatcher', () => {
             const record = store.get('ada', runId);
             expect(record?.run.status).to.equal('succeeded');
             expect(record?.run.bindings).to.have.property('advice');
+        });
+
+        it('drives the shipped parallel template: both explorers, then one implement turn', async () => {
+            const def = buildImplementThenReviewWorkflow({ withParallelExploration: true });
+            const started = await store.start(def, { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
+            await dispatcher.dispatch(started.record, started.dispatch);
+            const runId = started.record.run.id;
+
+            // Both explorers start at once — that is what a multi-node entry buys.
+            expect(agent.started).to.deep.equal(['task-1', 'task-2']);
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['explore-structure', 'explore-verification']);
+
+            await dispatcher.onAgentTaskFinished('task-1', 'completed', resultLog('edit src/auth/session.ts'));
+            expect(agent.started).to.have.length(2, 'the join must wait for the second explorer');
+
+            await dispatcher.onAgentTaskFinished('task-2', 'completed', resultLog('run npm test'));
+            expect(agent.started).to.deep.equal(['task-1', 'task-2', 'task-3']);
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['implement']);
+
+            // Findings survive as artifacts, which is the only reason exploring in parallel pays off.
+            expect(store.get('ada', runId)?.artifacts).to.deep.equal({
+                'explore.structure': 'edit src/auth/session.ts',
+                'explore.verification': 'run npm test',
+            });
+        });
+
+        it('still reaches implement when one explorer dies', async () => {
+            const def = buildImplementThenReviewWorkflow({ withParallelExploration: true });
+            const started = await store.start(def, { cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' } });
+            await dispatcher.dispatch(started.record, started.dispatch);
+            const runId = started.record.run.id;
+
+            await dispatcher.onAgentTaskFinished('task-1', 'failed');
+            await dispatcher.onAgentTaskFinished('task-2', 'completed', resultLog('run npm test'));
+
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['implement']);
+            expect(store.get('ada', runId)?.artifacts).to.deep.equal({ 'explore.verification': 'run npm test' });
         });
 
         it('heals a run parked on an unsettled join by an older build', async () => {

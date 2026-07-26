@@ -13,6 +13,7 @@
  * budgets or restart recovery are duplicated here.
  */
 
+import { extractAgentFinalMessage } from '../common/qaap-agent-empty-turn';
 import { QaapAgentTaskState } from '../common/qaap-agent-task';
 import { QaapJobState } from '../common/qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowDeterministicNode, QaapWorkflowNode } from '../common/qaap-workflow-ir';
@@ -63,6 +64,33 @@ const SELF_SETTLED: Readonly<Partial<Record<QaapWorkflowNode['kind'], 'success' 
     join: 'success',
     router: 'fail',
 };
+
+/**
+ * The text a deterministic node published for later prompts, or undefined when the node declares
+ * no `artifactKey` or the runtime returned nothing usable.
+ */
+function extractNodeArtifact(
+    node: QaapWorkflowDeterministicNode,
+    result: unknown,
+): { readonly key: string; readonly value: string } | undefined {
+    if (!node.artifactKey) {
+        return undefined;
+    }
+    const value = (result as { readonly artifact?: unknown } | undefined)?.artifact;
+    return typeof value === 'string' && value.length > 0 ? { key: node.artifactKey, value } : undefined;
+}
+
+/** What an agent turn hands to later nodes: its final message, under the node's `artifactKey`. */
+function extractAgentTurnArtifact(
+    node: QaapWorkflowAgentTurnNode,
+    log: string | undefined,
+): { readonly key: string; readonly value: string } | undefined {
+    if (!node.artifactKey) {
+        return undefined;
+    }
+    const value = extractAgentFinalMessage(log).trim();
+    return value.length > 0 ? { key: node.artifactKey, value } : undefined;
+}
 
 /** Constructed by the backend module through {@code toDynamicValue}; the ports are adapters. */
 export class QaapWorkflowDispatcher {
@@ -120,7 +148,13 @@ export class QaapWorkflowDispatcher {
             return;
         }
         this.ports.agent.noteAgentTurnResult?.(externalId, state);
-        await this.report(found.record.ownerLogin, found.record.run.id, found.nodeId, resolveAgentTurnOutcome(node, state, log));
+        await this.report(
+            found.record.ownerLogin,
+            found.record.run.id,
+            found.nodeId,
+            resolveAgentTurnOutcome(node, state, log),
+            extractAgentTurnArtifact(node, log),
+        );
     }
 
     /** Route a finished job back into its run. Ignores jobs that belong to no workflow. */
@@ -129,11 +163,13 @@ export class QaapWorkflowDispatcher {
         if (!found) {
             return;
         }
+        const node = found.record.def.nodes.find(entry => entry.id === found.nodeId);
         await this.report(
             found.record.ownerLogin,
             found.record.run.id,
             found.nodeId,
             resolveDeterministicOutcome(state, result),
+            node?.kind === 'deterministic' ? extractNodeArtifact(node, result) : undefined,
         );
     }
 
@@ -196,8 +232,9 @@ export class QaapWorkflowDispatcher {
         runId: string,
         nodeId: string,
         outcome: Parameters<QaapWorkflowRunStore['report']>[3],
+        artifact?: { readonly key: string; readonly value: string },
     ): Promise<void> {
-        const result = await this.store.report(ownerLogin, runId, nodeId, outcome);
+        const result = await this.store.report(ownerLogin, runId, nodeId, outcome, undefined, artifact);
         if (result.dispatch.length > 0) {
             await this.dispatch(result.record, result.dispatch);
         }

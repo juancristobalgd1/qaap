@@ -15,10 +15,16 @@ import { resolveAgentReviewMode } from './qaap-agent-review';
 import { QaapWorkflowTemplateSummary } from './qaap-workflow-api';
 import { buildImplementThenReviewWorkflow, QaapWorkflowDef } from './qaap-workflow-ir';
 
+/** Per-run knobs a caller may set on a template without being able to author the graph itself. */
+export interface QaapWorkflowTemplateOptions {
+    /** Insert the graph-level verification step and its fix-loop (see `QaapStartWorkflowRequest`). */
+    readonly verify?: boolean;
+}
+
 export interface QaapWorkflowTemplate {
     readonly summary: QaapWorkflowTemplateSummary;
     /** Build the immutable definition for one run. */
-    build(): QaapWorkflowDef;
+    build(options?: QaapWorkflowTemplateOptions): QaapWorkflowDef;
 }
 
 export class QaapWorkflowTemplateRegistry {
@@ -57,8 +63,25 @@ export class QaapWorkflowTemplateRegistry {
             },
             // Match the deployment's configured review mode so a started run behaves like the
             // runner's own review under the same QAAP_AGENT_REVIEW setting.
-            build: () => buildImplementThenReviewWorkflow({
+            build: options => buildImplementThenReviewWorkflow({
                 reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
+                withVerify: options?.verify,
+            }),
+        });
+
+        this.register({
+            summary: {
+                id: 'qaap.explore-then-implement',
+                name: 'Explore in parallel, then implement and review',
+                description:
+                    'Runs two read-only explorers at once — where the change belongs, and how the repository is verified — '
+                    + 'hands their findings to the implement turn, then classifies risk and reviews as usual.',
+                requiredInputs: ['task'],
+            },
+            build: options => buildImplementThenReviewWorkflow({
+                reviewMode: resolveAgentReviewMode(this.reviewModeEnv()),
+                withVerify: options?.verify,
+                withParallelExploration: true,
             }),
         });
     }

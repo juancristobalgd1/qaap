@@ -69,6 +69,7 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
         const prompt = this.prompts.resolve(node.promptRef, {
             inputs: record.inputs,
             bindings: record.run.bindings,
+            artifacts: record.artifacts,
         });
         // An unpinned turn declares only capability + tier; the policy maps that onto an installed
         // backend, and an unresolved ref falls back to the runner's own default agent.
@@ -145,6 +146,9 @@ export class QaapWorkflowDeterministicAdapter implements QaapWorkflowDeterminist
             functionId,
             title: `${record.def.name} · ${node.id}`,
             cwd: record.cwd,
+            // Measure against where the repository was when the run started, not against HEAD:
+            // an agent that commits its work leaves a clean tree and would look like no change.
+            input: record.baseRef ? { baseRef: record.baseRef } : {},
             // One run must never start the same node twice, even if a report is replayed.
             idempotencyKey: `workflow:${context.runId}:${context.nodeId}`,
         }, context.ownerLogin || undefined);

@@ -105,6 +105,12 @@ export function parseAgentReviewVerdict(rawOutput: string | undefined): { status
 }
 
 /**
+ * How much diff the reviewer prompt inlines. Producers of a diff artifact cap at the same number:
+ * storing more than the prompt can carry only bloats the run index.
+ */
+export const DEFAULT_REVIEW_DIFF_CAP_CHARS = 30_000;
+
+/**
  * Adversarial reviewer prompt. The diff is inlined (capped) so the reviewer judges the actual
  * change even if it never runs a git command; it may still inspect the tree read-only. The
  * sentinel instruction spells the verdict words separately from the marker on purpose — see
@@ -115,7 +121,7 @@ export function buildAgentReviewPrompt(options: {
     readonly diff: string;
     readonly diffCapChars?: number;
 }): string {
-    const cap = options.diffCapChars ?? 30_000;
+    const cap = options.diffCapChars ?? DEFAULT_REVIEW_DIFF_CAP_CHARS;
     const diff = options.diff.length > cap ? `${options.diff.slice(0, cap)}\n…(diff truncated)` : options.diff;
     return [
         'You are an INDEPENDENT senior code reviewer with a clean context. Another agent just finished a task in this repository and its uncommitted changes are still in the working tree.',

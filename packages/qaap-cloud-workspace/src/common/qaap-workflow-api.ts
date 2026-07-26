@@ -20,6 +20,13 @@ export interface QaapStartWorkflowRequest {
     readonly cwd: string;
     /** Template inputs, e.g. `{ task: 'fix the login bug' }`. */
     readonly inputs?: Readonly<Record<string, string>>;
+    /**
+     * Add a graph-level verification step with its own fix-loop after the implement turn. Off by
+     * default because the runner already verifies each turn and repairs it in place; turning it on
+     * buys a SECOND, independent repair attempt (a fresh turn against the failing scripts) at the
+     * cost of running the scripts twice.
+     */
+    readonly verify?: boolean;
 }
 
 /** A workflow template a client may start, safe to expose (no prompt bodies). */

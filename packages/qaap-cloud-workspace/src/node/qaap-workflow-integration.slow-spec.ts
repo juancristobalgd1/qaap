@@ -90,7 +90,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
     describe('risk-classify against a real repository', () => {
         it('reports low risk for a small, non-sensitive edit', async () => {
             fs.writeFileSync(path.join(repo, 'README.md'), '# base\nsmall tweak\n');
-            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), undefined) as
+            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), {}) as
                 { outcome: string; files: { path: string }[] };
             expect(result.outcome).to.equal('risk:low');
             expect(result.files.map(file => file.path)).to.deep.equal(['README.md']);
@@ -101,7 +101,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
                 fs.writeFileSync(path.join(repo, name), 'export const x = 1;\n');
             }
             git(repo, 'add', '.');
-            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), undefined) as
+            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), {}) as
                 { outcome: string };
             expect(result.outcome).to.equal('risk:high');
         });
@@ -110,7 +110,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             fs.mkdirSync(path.join(repo, 'src', 'auth'), { recursive: true });
             fs.writeFileSync(path.join(repo, 'src', 'auth', 'login.ts'), 'export const a = 1;\n');
             git(repo, 'add', '.');
-            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), undefined) as
+            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), {}) as
                 { outcome: string };
             expect(result.outcome).to.equal('risk:high');
         });
@@ -123,7 +123,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             fs.writeFileSync(path.join(repo, 'src', 'auth', 'session.ts'), 'export const createSession = () => ({});\n');
             expect(fs.existsSync(path.join(repo, '.git')), 'repo present').to.equal(true);
 
-            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), undefined) as
+            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), {}) as
                 { outcome: string; files: { path: string }[] };
             expect(result.outcome).to.equal('risk:high');
             expect(result.files.map(file => file.path)).to.include('src/auth/session.ts');
@@ -133,16 +133,64 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             for (const name of ['a.ts', 'b.ts', 'c.ts']) {
                 fs.writeFileSync(path.join(repo, name), 'export const x = 1;\n');
             }
-            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), undefined) as
+            const result = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), {}) as
                 { outcome: string };
             expect(result.outcome).to.equal('risk:high');
+        });
+    });
+
+    describe('a change the agent COMMITTED', () => {
+        /** The base the run started from, which is what the graph must measure against. */
+        function baseRef(cwd: string): string {
+            return execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim();
+        }
+
+        function commitSensitiveChange(): void {
+            fs.mkdirSync(path.join(repo, 'src', 'auth'), { recursive: true });
+            fs.writeFileSync(path.join(repo, 'src', 'auth', 'session.ts'), 'export const token = 1;\n');
+            git(repo, 'add', '.');
+            git(repo, 'commit', '-q', '-m', 'add session handling');
+        }
+
+        it('is invisible against HEAD — the failure observed live', async () => {
+            // The default agent prompt tells coding turns to work toward a reviewable PR, so agents
+            // commit. A committed change leaves a clean tree: measured against HEAD it looks like
+            // nothing happened, and the adversarial review is skipped on unreviewed work.
+            const base = baseRef(repo);
+            commitSensitiveChange();
+
+            const blind = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), {}) as
+                { outcome: string; files: unknown[] };
+            expect(blind.outcome, 'HEAD sees nothing').to.equal('risk:low');
+            expect(blind.files).to.have.length(0);
+
+            const withBase = await functions.get('qaap.workflow.classify-risk')!.execute(contextFor(repo), { baseRef: base }) as
+                { outcome: string; files: { path: string }[] };
+            expect(withBase.outcome).to.equal('risk:high');
+            expect(withBase.files.map(file => file.path)).to.include('src/auth/session.ts');
+        });
+
+        it('reaches the reviewer as a real diff, not an empty one', async () => {
+            const base = baseRef(repo);
+            commitSensitiveChange();
+
+            const result = await functions.get('qaap.workflow.git-diff')!.execute(contextFor(repo), { baseRef: base }) as
+                { outcome: string; diff: string; artifact: string };
+            expect(result.outcome).to.equal('success');
+            expect(result.diff).to.contain('src/auth/session.ts');
+            expect(result.artifact).to.contain('export const token = 1;');
+        });
+
+        it('refuses a baseRef that is not a git ref', async () => {
+            const definition = functions.get('qaap.workflow.git-diff')!;
+            expect(() => definition.normalizeInput({ baseRef: 'HEAD; rm -rf /' })).to.throw(/git ref/);
         });
     });
 
     describe('git-diff against a real repository', () => {
         it('captures the actual working-tree diff', async () => {
             fs.writeFileSync(path.join(repo, 'README.md'), '# base\nchanged line\n');
-            const result = await functions.get('qaap.workflow.git-diff')!.execute(contextFor(repo), undefined) as
+            const result = await functions.get('qaap.workflow.git-diff')!.execute(contextFor(repo), {}) as
                 { outcome: string; diff: string; truncated: boolean };
             expect(result.outcome).to.equal('success');
             expect(result.diff).to.contain('changed line');
@@ -156,7 +204,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({
                 name: 'e2e', version: '1.0.0', scripts: { test: 'node -e "process.exit(1)"' },
             }));
-            const result = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), undefined) as
+            const result = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), {}) as
                 { outcome: string; failedScript: string };
             expect(result.outcome).to.equal('fail');
             expect(result.failedScript).to.equal('test');
@@ -166,7 +214,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({
                 name: 'e2e', version: '1.0.0', scripts: { test: 'node -e "process.exit(0)"' },
             }));
-            const result = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), undefined) as
+            const result = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), {}) as
                 { outcome: string };
             expect(result.outcome).to.equal('success');
         });
@@ -193,7 +241,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
                         : node.op === 'git-diff' ? 'qaap.workflow.git-diff'
                             : 'qaap.workflow.verify';
                     pending.set(id, async () => {
-                        const result = await functions.get(functionId)!.execute(contextFor(repo), undefined);
+                        const result = await functions.get(functionId)!.execute(contextFor(repo), {});
                         const settled = { state: 'succeeded' as QaapJobState, result };
                         jobResults.set(id, settled);
                         return settled;
@@ -274,6 +322,9 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             const record = store.get('ada', started.record.run.id)!;
             expect(record.run.status).to.equal('succeeded');
             expect(record.run.bindings).to.have.property('review.passed');
+            // The reviewer must be handed the real change: the diff the git-diff node captured is
+            // stored as the run's artifact, which is what the adversarial-review prompt inlines.
+            expect(record.artifacts['review.diff']).to.contain('src/auth/session.ts');
         });
 
         it('fails a high-risk change the reviewer rejects', async () => {

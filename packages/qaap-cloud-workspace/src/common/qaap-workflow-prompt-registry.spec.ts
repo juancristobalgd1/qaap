@@ -26,13 +26,22 @@ describe('QaapWorkflowPromptRegistry', () => {
             .to.throw(QaapWorkflowPromptError, /requires input "task"/);
     });
 
-    it('mentions the diff artifact in the review prompt when one was emitted', () => {
+    it('inlines the captured diff so the reviewer judges the actual change', () => {
+        // Regression: the graph computed the diff and threw it away, and the judge reviewed an
+        // empty one — it had to rediscover the change from the working tree on every run.
         const prompt = registry.resolve('adversarial-review', {
             inputs: { task: 'fix the login bug' },
-            bindings: { 'review.diff': 'artifacts/diff.patch' },
+            bindings: {},
+            artifacts: { 'review.diff': '--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n+const token = 1;' },
         });
         expect(prompt).to.contain('fix the login bug');
-        expect(prompt).to.contain('artifacts/diff.patch');
+        expect(prompt).to.contain('+const token = 1;');
+        expect(prompt).to.not.contain('inspect the working tree yourself');
+    });
+
+    it('falls back to the empty-diff branch when no artifact was captured', () => {
+        const prompt = registry.resolve('adversarial-review', { inputs: { task: 'fix the login bug' }, bindings: {} });
+        expect(prompt).to.contain('inspect the working tree yourself');
     });
 
     it('instructs the reviewer to emit the verdict sentinel', () => {

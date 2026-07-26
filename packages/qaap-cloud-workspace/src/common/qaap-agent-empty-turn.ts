@@ -85,6 +85,33 @@ export function detectEmptyAgentTurn(
     };
 }
 
+/**
+ * The turn's final visible message, or '' when the log carries no terminal record. Reads the same
+ * `result` field {@link detectEmptyAgentTurn} judges, so "empty turn" and "nothing to hand on to
+ * the next node" can never disagree.
+ */
+export function extractAgentFinalMessage(log: string | undefined): string {
+    if (!log?.trim()) {
+        return '';
+    }
+    let final = '';
+    for (const line of log.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('{') || !trimmed.includes('"result"')) {
+            continue;
+        }
+        try {
+            const parsed = JSON.parse(trimmed) as { readonly type?: unknown; readonly result?: unknown };
+            if (parsed.type === 'result' && typeof parsed.result === 'string') {
+                final = parsed.result;
+            }
+        } catch {
+            continue;
+        }
+    }
+    return final;
+}
+
 /** Shortened `result` text for diagnostics, never the whole blob. */
 export function summarizeAgentResultText(text: string): string {
     const normalized = text.replace(/\s+/g, ' ').trim();

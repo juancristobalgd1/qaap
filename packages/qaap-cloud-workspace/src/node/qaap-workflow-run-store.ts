@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { DEFAULT_REVIEW_DIFF_CAP_CHARS } from '../common/qaap-agent-review';
 import { QaapWorkflowDef, QaapWorkflowNodeOutcome, validateQaapWorkflowDef } from '../common/qaap-workflow-ir';
 import {
     QaapWorkflowRun,
@@ -22,6 +23,11 @@ import { writeJsonAtomic } from './qaap-write-json-atomic';
 const STORE_MODE = 0o700;
 const INDEX_MODE = 0o600;
 const MAX_RUNS_PER_OWNER = 200;
+/**
+ * Hard cap per stored artifact. Producers already cap at what a prompt can carry; this is the
+ * store's own guarantee that one enormous change cannot grow the shared run index without bound.
+ */
+const MAX_ARTIFACT_CHARS = DEFAULT_REVIEW_DIFF_CAP_CHARS;
 
 /**
  * The definition travels with the run: defs are immutable `id@version` and are not stored
@@ -44,10 +50,21 @@ export interface QaapPersistedWorkflowRun {
     readonly cwd: string;
     /** Values a node's `promptRef` template resolves against, e.g. the user's task text. */
     readonly inputs: Readonly<Record<string, string>>;
+    /**
+     * Commit the repository was on when the run started. Everything after it is this run's change,
+     * committed or not — agents are told to work toward a PR, so many of them commit.
+     */
+    readonly baseRef?: string;
     readonly createdAt: number;
     readonly updatedAt: number;
     /** Node id → its live execution. Persisted so a restart can still map events back to nodes. */
     readonly dispatched: Readonly<Record<string, QaapWorkflowDispatchedNode>>;
+    /**
+     * Text a deterministic node produced for later `promptRef` templates (the captured diff, say),
+     * keyed by the producing node's `artifactKey`. Server-side like `cwd` and `inputs`: it is
+     * working-tree content and never reaches the run summary the HTTP API returns.
+     */
+    readonly artifacts: Readonly<Record<string, string>>;
 }
 
 interface PersistedWorkflowRunIndex {
@@ -67,6 +84,8 @@ export interface QaapStartWorkflowRunOptions {
     readonly ownerLogin?: string;
     /** Template values for `promptRef` resolution, e.g. `{ task: 'fix the login bug' }`. */
     readonly inputs?: Readonly<Record<string, string>>;
+    /** Commit the repository is on right now; the run's change is measured against it. */
+    readonly baseRef?: string;
     readonly budget?: QaapWorkflowRunBudget;
 }
 
@@ -162,9 +181,11 @@ export class QaapWorkflowRunStore {
                 ownerLogin: owner,
                 cwd: options.cwd,
                 inputs: options.inputs ?? {},
+                ...(options.baseRef ? { baseRef: options.baseRef } : {}),
                 createdAt: now,
                 updatedAt: now,
                 dispatched: {},
+                artifacts: {},
             };
             return { records: [...records, record], result: { record, dispatch: started.dispatch } };
         }, result => result.record);
@@ -177,6 +198,8 @@ export class QaapWorkflowRunStore {
         nodeId: string,
         outcome: QaapWorkflowNodeOutcome,
         bindingRef?: string,
+        /** Text this node produced for later prompts, stored under the node's `artifactKey`. */
+        artifact?: { readonly key: string; readonly value: string },
     ): Promise<QaapWorkflowDispatchResult> {
         return this.mutate(records => {
             const owner = this.normalizeOwner(ownerLogin);
@@ -198,6 +221,9 @@ export class QaapWorkflowRunStore {
                 ...previous,
                 run: advanced.run,
                 dispatched,
+                artifacts: artifact
+                    ? { ...previous.artifacts, [artifact.key]: artifact.value.slice(0, MAX_ARTIFACT_CHARS) }
+                    : previous.artifacts,
                 updatedAt: this.now(),
             };
             const next = [...records];
@@ -289,6 +315,7 @@ export class QaapWorkflowRunStore {
                     dispatched: record.dispatched ?? {},
                     cwd: record.cwd ?? '',
                     inputs: record.inputs ?? {},
+                    artifacts: record.artifacts ?? {},
                 });
             }
         }

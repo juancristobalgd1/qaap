@@ -17,7 +17,12 @@ import { execFile } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { promisify } from 'util';
-import { parseGitNumstat, QaapReviewChangedFile, resolveTaskReviewRisk } from '../common/qaap-agent-review';
+import {
+    DEFAULT_REVIEW_DIFF_CAP_CHARS,
+    parseGitNumstat,
+    QaapReviewChangedFile,
+    resolveTaskReviewRisk,
+} from '../common/qaap-agent-review';
 import { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import { QaapJobFunctionContribution, QaapJobFunctionContext, QaapJobFunctionRegistry } from './qaap-job-function-registry';
@@ -30,6 +35,45 @@ const GIT_TIMEOUT_MS = 60_000;
 /** Per-script wall clock for verification; the whole node is additionally bounded by the job timeout. */
 const VERIFY_SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_VERIFY_OUTPUT_BYTES = 64 * 1024;
+
+/**
+ * What the run compares against. A workflow's change is everything since the run STARTED, so the
+ * caller passes the commit the repository was on back then.
+ *
+ * `HEAD` is not a safe default at read time: the default agent prompt tells a coding turn to work
+ * toward a reviewable PR, so agents commit. Observed live — an agent committed its fix, left a
+ * clean tree, and `git diff HEAD` reported an empty change: risk `low`, adversarial review skipped
+ * on work that was never reviewed.
+ */
+export interface QaapWorkflowBaseRefInput {
+    readonly baseRef?: string;
+}
+
+/** Git refs only — this value reaches `git` as an argument. */
+const SAFE_GIT_REF = /^[0-9a-zA-Z._\-/]{1,255}$/;
+
+const BASE_REF_INPUT_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    properties: { baseRef: { type: 'string' } },
+} as const;
+
+function normalizeBaseRefInput(input: unknown): QaapWorkflowBaseRefInput {
+    if (input === undefined || input === null) {
+        return {};
+    }
+    if (typeof input !== 'object' || Array.isArray(input)) {
+        throw new Error(nls.localize('qaap/workflows/functions/inputMustBeObject', 'Function input must be an object.'));
+    }
+    const baseRef = (input as Record<string, unknown>).baseRef;
+    if (baseRef === undefined) {
+        return {};
+    }
+    if (typeof baseRef !== 'string' || !SAFE_GIT_REF.test(baseRef)) {
+        throw new Error(nls.localize('qaap/workflows/functions/invalidBaseRef', '"baseRef" must be a git ref.'));
+    }
+    return { baseRef };
+}
 
 export const QAAP_WORKFLOW_CLASSIFY_RISK_FUNCTION = 'qaap.workflow.classify-risk';
 export const QAAP_WORKFLOW_GIT_DIFF_FUNCTION = 'qaap.workflow.git-diff';
@@ -44,6 +88,12 @@ interface GitDiffOutput {
     readonly outcome: QaapWorkflowNodeOutcome;
     readonly diff: string;
     readonly truncated: boolean;
+    /**
+     * The diff again, capped at what a reviewer prompt can carry. The dispatcher stores this under
+     * the node's `artifactKey` so the judge downstream inlines the real change instead of an empty
+     * diff. Kept separate from {@link diff} so the run index never holds the full 256 KB capture.
+     */
+    readonly artifact: string;
 }
 
 interface VerifyOutput {
@@ -57,7 +107,7 @@ interface VerifyOutput {
 export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
 
     registerFunctions(registry: QaapJobFunctionRegistry): void {
-        registry.register<undefined, ClassifyRiskOutput>({
+        registry.register<QaapWorkflowBaseRefInput, ClassifyRiskOutput>({
             descriptor: {
                 id: QAAP_WORKFLOW_CLASSIFY_RISK_FUNCTION,
                 label: nls.localize('qaap/workflows/functions/classifyRiskLabel', 'Classify change risk'),
@@ -67,17 +117,17 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                 ),
                 resourceClass: 'workspace',
                 workspaceAccess: 'read',
-                inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+                inputSchema: BASE_REF_INPUT_SCHEMA,
                 outputSchema: { type: 'object' },
             },
-            normalizeInput: () => undefined,
-            execute: async context => {
-                const files = await this.changedFiles(context);
+            normalizeInput: normalizeBaseRefInput,
+            execute: async (context, input) => {
+                const files = await this.changedFiles(context, input.baseRef);
                 return { outcome: resolveTaskReviewRisk(files) === 'high' ? 'risk:high' : 'risk:low', files };
             },
         });
 
-        registry.register<undefined, GitDiffOutput>({
+        registry.register<QaapWorkflowBaseRefInput, GitDiffOutput>({
             descriptor: {
                 id: QAAP_WORKFLOW_GIT_DIFF_FUNCTION,
                 label: nls.localize('qaap/workflows/functions/gitDiffLabel', 'Capture working-tree diff'),
@@ -87,12 +137,12 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                 ),
                 resourceClass: 'workspace',
                 workspaceAccess: 'read',
-                inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+                inputSchema: BASE_REF_INPUT_SCHEMA,
                 outputSchema: { type: 'object' },
             },
-            normalizeInput: () => undefined,
-            execute: async context => {
-                const tracked = await this.git(context, ['diff', 'HEAD']);
+            normalizeInput: normalizeBaseRefInput,
+            execute: async (context, input) => {
+                const tracked = await this.git(context, ['diff', input.baseRef ?? 'HEAD']);
                 const untracked = (await this.git(context, ['ls-files', '--others', '--exclude-standard']))
                     .split('\n').map(line => line.trim()).filter(Boolean);
                 // New files are absent from `git diff HEAD`; name them so the reviewer knows they
@@ -101,15 +151,17 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                     ? `${tracked}\n# new files (untracked, not shown in the diff above):\n${untracked.map(file => `#   ${file}`).join('\n')}\n`
                     : tracked;
                 const truncated = Buffer.byteLength(diff, 'utf8') > MAX_DIFF_BYTES;
+                const captured = truncated ? `${diff.slice(0, MAX_DIFF_BYTES)}\n… diff truncated …` : diff;
                 return {
                     outcome: 'success',
-                    diff: truncated ? `${diff.slice(0, MAX_DIFF_BYTES)}\n… diff truncated …` : diff,
+                    diff: captured,
                     truncated,
+                    artifact: captured.slice(0, DEFAULT_REVIEW_DIFF_CAP_CHARS),
                 };
             },
         });
 
-        registry.register<undefined, VerifyOutput>({
+        registry.register<QaapWorkflowBaseRefInput, VerifyOutput>({
             descriptor: {
                 id: QAAP_WORKFLOW_VERIFY_FUNCTION,
                 label: nls.localize('qaap/workflows/functions/verifyLabel', 'Verify the workspace'),
@@ -119,10 +171,10 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
                 ),
                 resourceClass: 'workspace',
                 workspaceAccess: 'read',
-                inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+                inputSchema: BASE_REF_INPUT_SCHEMA,
                 outputSchema: { type: 'object' },
             },
-            normalizeInput: () => undefined,
+            normalizeInput: normalizeBaseRefInput,
             execute: async context => this.verify(context),
         });
     }
@@ -178,8 +230,8 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
      * untracked files for exactly this reason; their line counts are unknown and stay at 0, so they
      * still feed the file-count and sensitive-path signals.
      */
-    protected async changedFiles(context: QaapJobFunctionContext): Promise<QaapReviewChangedFile[]> {
-        const numstat = await this.git(context, ['diff', '--numstat', 'HEAD']);
+    protected async changedFiles(context: QaapJobFunctionContext, baseRef?: string): Promise<QaapReviewChangedFile[]> {
+        const numstat = await this.git(context, ['diff', '--numstat', baseRef ?? 'HEAD']);
         const untracked = await this.git(context, ['ls-files', '--others', '--exclude-standard']);
         return [
             ...parseGitNumstat(numstat),

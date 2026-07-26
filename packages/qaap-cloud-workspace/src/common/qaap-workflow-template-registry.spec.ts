@@ -20,11 +20,25 @@ describe('QaapWorkflowTemplateRegistry', () => {
         expect(JSON.stringify(summary)).to.not.contain('@@QAAP');
     });
 
-    it('builds a valid definition for every registered template', () => {
+    it('builds a valid definition for every registered template, with and without verify', () => {
         for (const summary of registry.list()) {
-            const def = registry.get(summary.id)!.build();
-            expect(validateQaapWorkflowDef(def), summary.id).to.deep.include({ ok: true });
+            for (const verify of [false, true]) {
+                const def = registry.get(summary.id)!.build({ verify });
+                expect(validateQaapWorkflowDef(def), `${summary.id} verify=${verify}`).to.deep.include({ ok: true });
+            }
         }
+    });
+
+    it('reaches the verification fix-loop when a caller asks for it', () => {
+        // The loop existed and was tested, but nothing could turn it on: the registry always built
+        // the graph without it, so `withVerify` was dead code from the API's point of view.
+        const withoutVerify = registry.get('qaap.implement-then-review')!.build();
+        expect(withoutVerify.nodes.map(node => node.id)).to.not.include('verify');
+
+        const withVerify = registry.get('qaap.implement-then-review')!.build({ verify: true });
+        expect(withVerify.nodes.map(node => node.id)).to.include.members(['verify', 'implement-fix']);
+        expect(withVerify.edges).to.deep.include({ from: 'verify', to: 'implement-fix', when: 'fail' });
+        expect(withVerify.edges).to.deep.include({ from: 'implement-fix', to: 'verify', when: 'success' });
     });
 
     it('returns undefined for an unknown id instead of throwing', () => {

@@ -17,6 +17,7 @@ import {
     QaapWorkflowJoinNode,
     QaapWorkflowNode,
     QaapWorkflowNodeOutcome,
+    qaapWorkflowEntryNodes,
     stepQaapWorkflow,
 } from './qaap-workflow-ir';
 
@@ -104,7 +105,7 @@ export function startQaapWorkflowRun(
         nodeRuns: 0,
         budget: options.budget ?? DEFAULT_QAAP_WORKFLOW_RUN_BUDGET,
     };
-    return dispatchNodes(def, run, [def.entry]);
+    return dispatchNodes(def, run, qaapWorkflowEntryNodes(def));
 }
 
 /**

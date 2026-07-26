@@ -14,6 +14,8 @@
 import { DisposableCollection } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { isQaapAgentTaskFinished } from '../common/qaap-agent-task';
 import { isQaapJobFinished } from '../common/qaap-job';
 import { QaapWorkflowDef } from '../common/qaap-workflow-ir';
@@ -25,6 +27,8 @@ import {
     QaapStartWorkflowRunOptions,
     QaapWorkflowRunStore,
 } from './qaap-workflow-run-store';
+
+const execFileAsync = promisify(execFile);
 
 @injectable()
 export class QaapWorkflowService implements BackendApplicationContribution {
@@ -69,9 +73,27 @@ export class QaapWorkflowService implements BackendApplicationContribution {
 
     /** Start a workflow run and dispatch its entry nodes. */
     async start(def: QaapWorkflowDef, options: QaapStartWorkflowRunOptions): Promise<QaapPersistedWorkflowRun> {
-        const started = await this.store.start(def, options);
+        const started = await this.store.start(def, {
+            ...options,
+            baseRef: options.baseRef ?? await this.captureBaseRef(options.cwd),
+        });
         await this.dispatcher.dispatch(started.record, started.dispatch);
         return this.store.get(options.ownerLogin, started.record.run.id) ?? started.record;
+    }
+
+    /**
+     * The commit the repository is on right now, so the run's risk gate and diff see everything the
+     * agents do — including work they commit, which the default prompt actively encourages.
+     * Undefined outside a git repository; the deterministic ops then fall back to `HEAD`.
+     */
+    protected async captureBaseRef(cwd: string): Promise<string | undefined> {
+        try {
+            const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd, timeout: 10_000 });
+            const ref = stdout.trim();
+            return /^[0-9a-f]{7,40}$/.test(ref) ? ref : undefined;
+        } catch {
+            return undefined;
+        }
     }
 
     /** Resume a run parked at a human gate. */
