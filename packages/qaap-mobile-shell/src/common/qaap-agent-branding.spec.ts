@@ -46,6 +46,40 @@ describe('qaap-agent-branding', () => {
         expect(second).to.include('antigravity__mask0_111_52-');
     });
 
+    it('resolveAgentBrand uniquifies the openclaw lobster gradient across calls', () => {
+        const first = resolveAgentBrand('openclaw')?.svg ?? '';
+        const second = resolveAgentBrand('openclaw')?.svg ?? '';
+        expect(first).to.not.equal(second);
+        // The suffix must land on both the definition and every url(#...) reference,
+        // otherwise the fill silently falls back to none.
+        for (const svg of [first, second]) {
+            const defined = svg.match(/\bid="([^"]+)"/g) ?? [];
+            expect(defined).to.have.lengthOf(1);
+            const gradientId = /\bid="([^"]+)"/.exec(svg)?.[1] ?? '';
+            expect(gradientId).to.match(/^openclaw__lobster-gradient-\d+$/);
+            expect(svg.split(`url(#${gradientId})`)).to.have.lengthOf(4);
+            expect(svg).to.not.include('url(#openclaw__lobster-gradient)');
+        }
+    });
+
+    it('every built-in brand mark uses a distinct svg', () => {
+        const ids = [
+            QAIQ_AGENT_ID, 'codex', 'claude', 'grok', 'opencode', 'goose', 'hermes',
+            'openclaw', 'cursor', 'antigravity', 'copilot', 'qwen', 'kimi', 'coder',
+        ];
+        const seen = new Map<string, string>();
+        for (const id of ids) {
+            const svg = resolveAgentBrand(id)?.svg ?? '';
+            expect(svg, `${id} has no svg`).to.include('<svg');
+            // Strip the uniquify suffix so two genuinely different marks are not
+            // reported as distinct purely because their generated ids differ.
+            const shape = svg.replace(/-(\d+)(?=["))])/g, '');
+            const clash = seen.get(shape);
+            expect(clash, `${id} renders the same mark as ${clash}`).to.equal(undefined);
+            seen.set(shape, id);
+        }
+    });
+
     it('resolveAgentBrand returns undefined for unknown ids', () => {
         expect(resolveAgentBrand('unknown-agent')).to.equal(undefined);
         expect(resolveAgentBrand(undefined)).to.equal(undefined);
