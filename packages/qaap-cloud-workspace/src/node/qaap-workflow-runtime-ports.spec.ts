@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QaapWorkflowAgentTurnNode } from '../common/qaap-workflow-ir';
+import { QaapWorkflowAgentTurnNode, QaapWorkflowEdge, QaapWorkflowNode } from '../common/qaap-workflow-ir';
 import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-registry';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
@@ -39,7 +39,9 @@ interface Harness {
 
 interface HarnessOptions {
     /** Nodes the run's definition declares, so writer turns can be told from read-only ones. */
-    readonly nodes?: readonly QaapWorkflowAgentTurnNode[];
+    readonly nodes?: readonly QaapWorkflowNode[];
+    /** Edges of the run's definition, so "who produced what I am judging" can be walked. */
+    readonly edges?: readonly QaapWorkflowEdge[];
     /** Node id → backend already routed in this run. */
     readonly routedAgents?: Readonly<Record<string, string>>;
     /** Installed backends; defaults to codex + qaiq. */
@@ -54,6 +56,9 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
     const taskKinds: (string | undefined)[] = [];
     const requests: CapturedRequest[] = [];
     const noted: string[] = [];
+    // Mutated by noteRoutedAgent exactly as the real store does, so dispatching several judge nodes
+    // in a row through one adapter reproduces what the dispatcher's serial loop actually sees.
+    const routedAgents: Record<string, string> = { ...(options.routedAgents ?? {}) };
     let counter = 0;
     const adapter = Object.create(QaapWorkflowAgentTurnAdapter.prototype) as QaapWorkflowAgentTurnAdapter;
     Object.assign(adapter, {
@@ -64,14 +69,15 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
         store: {
             get: () => ({
                 run: { id: 'r1', bindings: {} },
-                def: { name: 'Wf', nodes: [...(options.nodes ?? [])] },
+                def: { name: 'Wf', nodes: [...(options.nodes ?? [])], edges: [...(options.edges ?? [])] },
                 inputs: { task: 'do it' },
                 cwd: '/repo',
                 artifacts: {},
-                routedAgents: { ...(options.routedAgents ?? {}) },
+                routedAgents: { ...routedAgents },
             }),
             noteRoutedAgent: async (_owner: string, _runId: string, nodeId: string, agentRef: string) => {
                 noted.push(`${nodeId}:${agentRef}`);
+                routedAgents[nodeId] = agentRef;
                 return undefined;
             },
         },
@@ -275,11 +281,18 @@ describe('QaapWorkflowAgentTurnAdapter judge independence', () => {
     });
 
     it('does not exclude a read-only turn — an explorer wrote nothing to review', async () => {
+        // The real shape: the explorer's findings reach the judge only THROUGH the implement turn,
+        // so the author of the change under review is `implement`, not the explorer. The upstream
+        // walk has to stop at the first agent-turn for this to hold.
         const explorer: QaapWorkflowAgentTurnNode = {
             kind: 'agent-turn', id: 'explore', capability: 'explore', isolation: 'cwd-readonly', promptRef: 'explore-structure',
         };
         const { adapter, createdWith } = buildAdapter({
-            nodes: [explorer, judgeNode],
+            nodes: [explorer, implementNode, judgeNode],
+            edges: [
+                { from: 'explore', to: 'implement', when: 'success' },
+                { from: 'implement', to: 'judge', when: 'success' },
+            ],
             routedAgents: { explore: 'codex' },
         });
         await adapter.startAgentTurn(judgeNode, { ...context, nodeId: 'judge' });
@@ -290,5 +303,131 @@ describe('QaapWorkflowAgentTurnAdapter judge independence', () => {
         const { adapter, noted } = buildAdapter({ nodes });
         await adapter.startAgentTurn(implementNode, { ...context, nodeId: 'implement' });
         expect(noted).to.deep.equal(['implement:codex']);
+    });
+});
+
+describe('QaapWorkflowAgentTurnAdapter independence beyond the writer', () => {
+
+    const implementNode: QaapWorkflowAgentTurnNode = {
+        kind: 'agent-turn', id: 'implement', capability: 'implement', isolation: 'cwd', promptRef: 'user-task',
+    };
+    const gitDiff: QaapWorkflowNode = { kind: 'deterministic', id: 'git-diff', op: 'git-diff', artifactKey: 'review.diff' };
+    const lens = (id: string): QaapWorkflowAgentTurnNode => ({
+        kind: 'agent-turn', id, capability: 'judge', isolation: 'cwd-readonly', promptRef: 'review-lens-correctness', artifactKey: `review.lens.${id}`,
+    });
+    const lenses = [lens('judge-correctness'), lens('judge-safety'), lens('judge-intent')];
+    /** git-diff fans out to all three lenses, exactly as the multi-lens template wires them. */
+    const lensEdges: QaapWorkflowEdge[] = [
+        { from: 'implement', to: 'git-diff', when: 'success' },
+        ...lenses.map((node): QaapWorkflowEdge => ({ from: 'git-diff', to: node.id, when: 'success' })),
+    ];
+    const synthesisNode: QaapWorkflowAgentTurnNode = {
+        kind: 'agent-turn', id: 'review-synthesis', capability: 'judge', isolation: 'cwd-readonly', promptRef: 'synthesize-review', requireSentinel: true,
+    };
+    const planNode: QaapWorkflowAgentTurnNode = {
+        kind: 'agent-turn', id: 'plan', capability: 'explore', isolation: 'cwd-readonly', promptRef: 'plan-under-review', artifactKey: 'plan.proposal',
+    };
+    const judgePlanNode: QaapWorkflowAgentTurnNode = {
+        kind: 'agent-turn', id: 'judge-plan', capability: 'judge', isolation: 'cwd-readonly', promptRef: 'plan-review', requireSentinel: true,
+    };
+    const planGateEdges: QaapWorkflowEdge[] = [
+        { from: 'plan', to: 'judge-plan', when: 'success' },
+        // The rejection edge closes a cycle in the graph; walking upstream must still terminate.
+        { from: 'judge-plan', to: 'plan', when: 'verdict:fail' },
+    ];
+
+    it('gives each lens of a multi-lens review its own backend, then reuses a lens before the writer', async () => {
+        // The three lenses are released together and started serially, each after the previous one's
+        // backend is recorded. Before this, all three resolved against an identical blocked set over
+        // an identical preference order: one opinion, reported three times.
+        const { adapter, createdWith } = buildAdapter({
+            nodes: [implementNode, gitDiff, ...lenses],
+            edges: lensEdges,
+            routedAgents: { implement: 'claude' },
+            installed: ['claude', 'codex', 'qaiq'],
+        });
+        for (const node of lenses) {
+            await adapter.startAgentTurn(node, { ...context, nodeId: node.id });
+        }
+        // Two independent lenses, and a third that has run out of backends: it falls back to another
+        // lens's model rather than to the writer's — a weaker third eye still beats a rubber stamp.
+        expect(createdWith).to.deep.equal(['codex', 'qaiq', 'codex']);
+    });
+
+    it('keeps the synthesis turn off the lenses it is summarizing', async () => {
+        const { adapter, createdWith } = buildAdapter({
+            nodes: [
+                implementNode,
+                gitDiff,
+                lenses[0],
+                lenses[1],
+                { kind: 'join', id: 'reviewed', wait: 'all' },
+                synthesisNode,
+            ],
+            edges: [
+                ...lensEdges.slice(0, 3),
+                { from: 'judge-correctness', to: 'reviewed', when: 'always' },
+                { from: 'judge-safety', to: 'reviewed', when: 'always' },
+                { from: 'reviewed', to: 'review-synthesis', when: 'always' },
+            ],
+            routedAgents: { implement: 'claude', 'judge-correctness': 'codex', 'judge-safety': 'codex' },
+            installed: ['claude', 'codex', 'qaiq'],
+        });
+        await adapter.startAgentTurn(synthesisNode, { ...context, nodeId: 'review-synthesis' });
+        expect(createdWith).to.deep.equal(['qaiq']);
+    });
+
+    it('keeps the plan gate off the backend that wrote the plan', async () => {
+        // Nobody wrote anything yet — the plan turn is read-only — so the writer rule saw nothing to
+        // exclude and the gate was handed straight back to the plan's own author.
+        const { adapter, createdWith } = buildAdapter({
+            nodes: [planNode, judgePlanNode],
+            edges: planGateEdges,
+            routedAgents: { plan: 'codex' },
+        });
+        await adapter.startAgentTurn(judgePlanNode, { ...context, nodeId: 'judge-plan' });
+        expect(createdWith).to.deep.equal(['qaiq']);
+    });
+
+    it('still lets the plan author judge the plan when nothing else can be held read-only', async () => {
+        // The ordering this pins: enforceability first, independence second. grok is independent of
+        // the plan's author but cannot be stopped from editing the tree, and a judge that can edit
+        // the code is no verdict at all.
+        const routing = new QaapWorkflowRoutingPolicy({ judge: { any: ['codex', 'grok'] } });
+        const { adapter, createdWith } = buildAdapter({
+            routing,
+            installed: ['codex', 'grok'],
+            nodes: [planNode, judgePlanNode],
+            edges: planGateEdges,
+            routedAgents: { plan: 'codex' },
+        });
+        await adapter.startAgentTurn(judgePlanNode, { ...context, nodeId: 'judge-plan' });
+        expect(createdWith).to.deep.equal(['codex']);
+    });
+
+    it('routes a lone judge exactly as it did before independence was generalized', async () => {
+        // Byte-identity fixation for the one-judge shapes. The explorers authored the findings the
+        // implement turn built on, not the change under review, so the upstream walk must stop at
+        // `implement` and leave claude free to judge. Revisiting the same judge (the fix loop) must
+        // not treat its own earlier turn as a peer either.
+        const explorer: QaapWorkflowAgentTurnNode = {
+            kind: 'agent-turn', id: 'explore', capability: 'explore', isolation: 'cwd-readonly', promptRef: 'explore-structure', artifactKey: 'explore.structure',
+        };
+        const { adapter, createdWith } = buildAdapter({
+            nodes: [explorer, implementNode, gitDiff, judgeNode],
+            edges: [
+                { from: 'explore', to: 'implement', when: 'success' },
+                { from: 'implement', to: 'git-diff', when: 'success' },
+                { from: 'git-diff', to: 'judge', when: 'success' },
+            ],
+            // codex is the judge table's second choice: if the walk failed to stop at `implement`
+            // the explorer's backend would be excluded too and the judge would slide on to qaiq.
+            routedAgents: { explore: 'codex' },
+            installed: ['claude', 'codex', 'qaiq'],
+        });
+        await adapter.startAgentTurn(implementNode, { ...context, nodeId: 'implement' });
+        await adapter.startAgentTurn(judgeNode, context);
+        await adapter.startAgentTurn(judgeNode, context);
+        expect(createdWith).to.deep.equal(['claude', 'codex', 'codex']);
     });
 });

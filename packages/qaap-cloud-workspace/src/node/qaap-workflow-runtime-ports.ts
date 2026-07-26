@@ -37,6 +37,11 @@ import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-
 /** Nothing excluded — a plain routing pass. */
 const EMPTY_EXCLUSION: ReadonlySet<string> = new Set();
 
+/** Two exclusion tiers blocking the same backends resolve identically; the repeat is dropped. */
+function isSameAgentSet(one: ReadonlySet<string>, other: ReadonlySet<string>): boolean {
+    return one.size === other.size && [...one].every(agentRef => other.has(agentRef));
+}
+
 /**
  * Set to `'1'` to refuse a `cwd-readonly` node whose backend cannot enforce read-only, instead of
  * running it unrestricted with a warning. Opt-in because fail-closed would break runs that complete
@@ -119,10 +124,12 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
     /**
      * Which backend runs this node.
      *
-     * A judge is routed AWAY from every backend that already wrote in this run: "independent
-     * adversarial review" is only true if a different model performs it, and with one strong
-     * backend installed the table would happily pick the same one that just implemented the change
-     * — a model grading its own homework, presented as an independent verdict.
+     * A judge is routed AWAY from every backend that had a hand in what it is about to judge — the
+     * writers, the authors of the material flowing into it, and the peers that already judged in
+     * this run (see {@link judgeExclusionsOf}). "Independent adversarial review" is only true if a
+     * different model performs it, and with one strong backend installed the table would happily
+     * pick the same one that just implemented the change — a model grading its own homework,
+     * presented as an independent verdict.
      *
      * A `cwd-readonly` node is additionally routed away from every backend that cannot be held to
      * read-only at all (see `qaap-agent-readonly-workspace.ts`): sending an explorer or a judge to a
@@ -147,12 +154,16 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
             node.agentRef,
         );
         const readOnly = node.isolation === 'cwd-readonly';
-        const writers = node.capability === 'judge' ? this.writerAgentsOf(record) : EMPTY_EXCLUSION;
         // Preference order, strongest constraint first, each one dropped only when it leaves nothing
         // installed. Enforceability outranks independence: a judge that shares the writer's model
         // still returns a verdict, while a judge that can edit the code invalidates the verdict
-        // itself — which is precisely the failure this ordering exists to prevent.
-        const exclusions = writers.size > 0 ? [writers, EMPTY_EXCLUSION] : [EMPTY_EXCLUSION];
+        // itself — which is precisely the failure this ordering exists to prevent. That is why the
+        // independence tiers are the INNER loop: every one of them is tried under the restrictable
+        // predicate before any of them is tried without it.
+        const exclusions = [
+            ...(node.capability === 'judge' ? this.judgeExclusionsOf(node, record) : []),
+            EMPTY_EXCLUSION,
+        ];
         const restrictions = readOnly ? [true, false] : [false];
         let last: QaapWorkflowRoutingResult = { agentRef: undefined, reason: 'fallback' };
         for (const restrictable of restrictions) {
@@ -192,6 +203,122 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
             throw new Error(`${detail}. Refusing to dispatch (${QAAP_WORKFLOW_STRICT_READONLY_ENV}=1).`);
         }
         console.warn(`[qaap-workflow] ${detail}; dispatching it unrestricted — this turn can modify the run's workspace.`);
+    }
+
+    /**
+     * Ordered exclusion sets for a judge node, strongest first — each dropped only when it leaves
+     * nothing installed.
+     *
+     * The first tier is full independence: nobody who produced what this node is judging, and
+     * nobody who has already judged it. The second is the historical guarantee alone — stay off the
+     * writers. So the degradation chain prefers, in order: a fully independent judge, a judge that
+     * at least did not write the code, and only then a judge that did. Reviewing with a backend
+     * another lens already used still beats not reviewing at all.
+     *
+     * With a single judge and no read-only author feeding it, the two tiers block exactly the same
+     * backends and the repeat is dropped, which is what keeps the one-judge shapes routing exactly
+     * as they did before independence was generalized beyond the writers.
+     */
+    protected judgeExclusionsOf(
+        node: QaapWorkflowAgentTurnNode,
+        record: QaapPersistedWorkflowRun,
+    ): readonly ReadonlySet<string>[] {
+        const writers = this.writerAgentsOf(record);
+        const independent = new Set([
+            ...writers,
+            ...this.upstreamAuthorsOf(node, record),
+            ...this.peerJudgeAgentsOf(node, record),
+        ]);
+        const tiers: ReadonlySet<string>[] = [];
+        for (const tier of [independent, writers]) {
+            // An empty tier is the unconstrained pass that already terminates the chain, and a tier
+            // that blocks what a previous one blocked would resolve to the same backend twice.
+            if (tier.size > 0 && !tiers.some(previous => isSameAgentSet(previous, tier))) {
+                tiers.push(tier);
+            }
+        }
+        return tiers;
+    }
+
+    /**
+     * Backends that authored what flows INTO this node: its nearest agent-turn ancestors, reached
+     * through the deterministic steps and joins in between.
+     *
+     * This is the general form of "no model grades its own homework". The writer rule only ever
+     * caught the model that EDITED the tree, so it saw nothing to exclude in the two places where a
+     * judgment rests on something an agent merely wrote down: a plan gate judging a proposal from a
+     * read-only plan turn, and a synthesis turn judging three read-only lens reports. In both the
+     * author was invisible and the gate could be handed straight back to the author.
+     *
+     * The walk stops at the first agent-turn on each branch: what THAT turn read is its own
+     * business. That is why the explorers behind an implement turn are not excluded from reviewing
+     * the implementation — they authored the findings, not the change under review.
+     */
+    protected upstreamAuthorsOf(
+        node: QaapWorkflowAgentTurnNode,
+        record: QaapPersistedWorkflowRun,
+    ): ReadonlySet<string> {
+        const byId = new Map(record.def.nodes.map(candidate => [candidate.id, candidate]));
+        const incoming = new Map<string, string[]>();
+        for (const edge of record.def.edges) {
+            const sources = incoming.get(edge.to);
+            if (sources) {
+                sources.push(edge.from);
+            } else {
+                incoming.set(edge.to, [edge.from]);
+            }
+        }
+        const authors = new Set<string>();
+        // Seeded with the node itself: this graph has cycles by design — a rejected plan re-enters
+        // the plan turn, a failed verification re-enters an implement turn — so an unguarded walk
+        // backwards would never terminate.
+        const visited = new Set<string>([node.id]);
+        const pending = [...(incoming.get(node.id) ?? [])];
+        for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+            if (visited.has(id)) {
+                continue;
+            }
+            visited.add(id);
+            if (byId.get(id)?.kind === 'agent-turn') {
+                const agentRef = record.routedAgents[id];
+                if (agentRef) {
+                    authors.add(agentRef);
+                }
+                continue;
+            }
+            pending.push(...(incoming.get(id) ?? []));
+        }
+        return authors;
+    }
+
+    /**
+     * Backends that have already judged in this run.
+     *
+     * Three lenses on one model are one lens. The dispatcher starts a released batch serially and
+     * awaits {@link QaapWorkflowRunStore.noteRoutedAgent} before returning, so lens two genuinely
+     * sees where lens one went; without this every lens resolved against an identical blocked set
+     * over an identical preference order and landed on the same backend, and a three-eyed review
+     * was one opinion reported three times.
+     *
+     * A node's own earlier visit is not a peer: a re-planned gate or a re-reviewed fix loop must be
+     * free to keep its lane, and self-exclusion would also make the single-judge shapes route
+     * differently on a second visit — the one thing this generalization must not change.
+     */
+    protected peerJudgeAgentsOf(
+        node: QaapWorkflowAgentTurnNode,
+        record: QaapPersistedWorkflowRun,
+    ): ReadonlySet<string> {
+        const peers = new Set<string>();
+        for (const [nodeId, agentRef] of Object.entries(record.routedAgents)) {
+            if (nodeId === node.id) {
+                continue;
+            }
+            const candidate = record.def.nodes.find(entry => entry.id === nodeId);
+            if (candidate?.kind === 'agent-turn' && candidate.capability === 'judge') {
+                peers.add(agentRef);
+            }
+        }
+        return peers;
     }
 
     /** Backends that already ran a node allowed to modify the workspace in this run. */
