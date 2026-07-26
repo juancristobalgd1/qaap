@@ -18,6 +18,7 @@ import { QaapAgentTaskState } from '../common/qaap-agent-task';
 import { QaapJobState } from '../common/qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowDeterministicNode, QaapWorkflowNode } from '../common/qaap-workflow-ir';
 import { resolveAgentTurnOutcome, resolveDeterministicOutcome } from '../common/qaap-workflow-outcome';
+import { findTimedOutQaapWorkflowNodes, hasQaapWorkflowRunExpired } from '../common/qaap-workflow-run';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 
 export interface QaapWorkflowDispatchContext {
@@ -37,12 +38,19 @@ export interface QaapWorkflowAgentTurnPort {
      * route around it instead of failing the same way run after run.
      */
     noteAgentTurnResult?(externalId: string, state: QaapAgentTaskState): void;
+    /**
+     * Stop a turn the run has stopped waiting for. Without it a timed-out node leaves its CLI
+     * running: the graph would move on while the abandoned process still edits the same cwd.
+     */
+    cancelAgentTurn?(externalId: string): Promise<void>;
 }
 
 export interface QaapWorkflowDeterministicPort {
     /** Start a deterministic step and return its job id. */
     startDeterministic(node: QaapWorkflowDeterministicNode, context: QaapWorkflowDispatchContext): Promise<string>;
     lookupDeterministic(externalId: string): Promise<{ readonly state: QaapJobState; readonly result?: unknown } | undefined>;
+    /** Stop a job the run has stopped waiting for. */
+    cancelDeterministic?(externalId: string): Promise<void>;
 }
 
 export interface QaapWorkflowPorts {
@@ -224,6 +232,50 @@ export class QaapWorkflowDispatcher {
                     await this.onJobFinished(entry.externalId, job.state, job.result);
                 }
             }
+        }
+    }
+
+    /**
+     * Enforce the runs' own wall clocks. Called on a timer AND at boot, because a deadline is
+     * persisted state, not a live timer: a run that expires while the backend is down must be
+     * expired when it comes back, not resumed as if no time had passed.
+     *
+     * A timed-out NODE routes the graph's failure edge — the run may still repair itself. An
+     * expired RUN is terminal. Either way the abandoned process is cancelled, never left editing
+     * the workspace behind the graph's back.
+     */
+    async sweepDeadlines(now: number): Promise<void> {
+        for (const record of this.store.listAllUnfinished()) {
+            if (hasQaapWorkflowRunExpired(record.run, record.createdAt, now)) {
+                console.warn(`[qaap-workflow] run ${record.run.id} exceeded its wall clock; stopping it.`);
+                await Promise.all(Object.values(record.dispatched).map(entry => this.cancelDispatched(entry)));
+                await this.store.expire(record.ownerLogin, record.run.id);
+                continue;
+            }
+            const dispatchedAt: Record<string, number> = {};
+            for (const entry of Object.values(record.dispatched)) {
+                dispatchedAt[entry.nodeId] = entry.dispatchedAt;
+            }
+            for (const nodeId of findTimedOutQaapWorkflowNodes(record.run, dispatchedAt, now)) {
+                const entry = record.dispatched[nodeId];
+                console.warn(`[qaap-workflow] node "${nodeId}" of run ${record.run.id} exceeded its wall clock; failing it.`);
+                // Report BEFORE cancelling: the cancellation's own terminal event then arrives for a
+                // node that already left `active`, where the store drops it as stale. The other
+                // order would let 'cancelled' (blocked) win the race over the timeout's 'fail'.
+                await this.report(record.ownerLogin, record.run.id, nodeId, 'fail');
+                await this.cancelDispatched(entry);
+            }
+        }
+    }
+
+    protected async cancelDispatched(entry: { readonly kind: 'agent' | 'job'; readonly externalId: string }): Promise<void> {
+        try {
+            await (entry.kind === 'agent'
+                ? this.ports.agent.cancelAgentTurn?.(entry.externalId)
+                : this.ports.deterministic.cancelDeterministic?.(entry.externalId));
+        } catch (error) {
+            // A process that cannot be cancelled must not stop the sweep from freeing the run.
+            console.warn(`[qaap-workflow] failed to cancel ${entry.kind} ${entry.externalId}:`, error);
         }
     }
 

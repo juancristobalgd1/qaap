@@ -27,6 +27,14 @@ export interface QaapStartWorkflowRequest {
      * cost of running the scripts twice.
      */
     readonly verify?: boolean;
+    /**
+     * This run's own wall clocks, in minutes. `maxNodeMinutes` bounds one dispatched node — a
+     * wedged agent CLI then fails its node and the graph routes on, instead of holding the run
+     * forever — and `maxRunMinutes` bounds the whole run. Both are clamped to [1 min, 24 h]; out of
+     * range or absent falls back to the defaults (30 min per node, 4 h per run).
+     */
+    readonly maxNodeMinutes?: number;
+    readonly maxRunMinutes?: number;
 }
 
 /** A workflow template a client may start, safe to expose (no prompt bodies). */

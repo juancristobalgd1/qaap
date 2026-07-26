@@ -11,7 +11,7 @@
  * binding it changes no existing behaviour.
  */
 
-import { DisposableCollection } from '@theia/core';
+import { Disposable, DisposableCollection } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { execFile } from 'child_process';
@@ -29,6 +29,11 @@ import {
 } from './qaap-workflow-run-store';
 
 const execFileAsync = promisify(execFile);
+/**
+ * How often the wall clocks are checked. Coarse on purpose: a deadline is a backstop against a
+ * wedged process, so a minute of slack costs nothing and the sweep stays free when nothing runs.
+ */
+const DEADLINE_SWEEP_INTERVAL_MS = 60_000;
 
 @injectable()
 export class QaapWorkflowService implements BackendApplicationContribution {
@@ -46,6 +51,7 @@ export class QaapWorkflowService implements BackendApplicationContribution {
     protected readonly jobs: QaapJobRuntime;
 
     protected readonly toDispose = new DisposableCollection();
+    protected deadlineTimer: NodeJS.Timeout | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -64,11 +70,30 @@ export class QaapWorkflowService implements BackendApplicationContribution {
 
     onStart(): void {
         void this.dispatcher.reconcileOnBoot()
+            // Runs that expired while the backend was down are stopped on the way back up, before
+            // the timer's first tick.
+            .then(() => this.sweepDeadlines())
             .catch(error => console.warn('[qaap-workflow] boot reconciliation failed:', error));
+        this.deadlineTimer = setInterval(() => void this.sweepDeadlines(), DEADLINE_SWEEP_INTERVAL_MS);
+        this.toDispose.push(Disposable.create(() => {
+            if (this.deadlineTimer) {
+                clearInterval(this.deadlineTimer);
+                this.deadlineTimer = undefined;
+            }
+        }));
     }
 
     onStop(): void {
         this.toDispose.dispose();
+    }
+
+    protected async sweepDeadlines(): Promise<void> {
+        try {
+            await this.dispatcher.sweepDeadlines(Date.now());
+        } catch (error) {
+            // The sweep is a backstop; one bad run must not stop the next tick.
+            console.warn('[qaap-workflow] deadline sweep failed:', error);
+        }
     }
 
     /** Start a workflow run and dispatch its entry nodes. */

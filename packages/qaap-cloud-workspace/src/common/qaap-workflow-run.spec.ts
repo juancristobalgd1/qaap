@@ -6,9 +6,15 @@
 import { expect } from 'chai';
 import { buildImplementThenReviewWorkflow, type QaapWorkflowDef } from './qaap-workflow-ir';
 import {
+    DEFAULT_QAAP_WORKFLOW_RUN_BUDGET,
     advanceQaapWorkflowRun,
+    expireQaapWorkflowRun,
+    findTimedOutQaapWorkflowNodes,
+    hasQaapWorkflowRunExpired,
+    resolveQaapWorkflowRunBudget,
     startQaapWorkflowRun,
     type QaapWorkflowRun,
+    type QaapWorkflowRunBudget,
 } from './qaap-workflow-run';
 
 function fanOutDef(wait: 'all' | 'any' | 'n', n?: number): QaapWorkflowDef {
@@ -208,5 +214,85 @@ describe('advanceQaapWorkflowRun', () => {
         const late = advanceQaapWorkflowRun(def, finished, 'implement', 'success');
         expect(late.run).to.equal(finished);
         expect(late.dispatch).to.deep.equal([]);
+    });
+});
+
+describe('workflow wall clocks', () => {
+    const MINUTE = 60_000;
+
+    function runningRun(budget: Partial<QaapWorkflowRunBudget> = {}): QaapWorkflowRun {
+        const def = buildImplementThenReviewWorkflow();
+        return startQaapWorkflowRun(def, {
+            runId: 'clock',
+            budget: { ...DEFAULT_QAAP_WORKFLOW_RUN_BUDGET, ...budget },
+        }).run;
+    }
+
+    describe('resolveQaapWorkflowRunBudget', () => {
+        it('keeps the defaults when the caller declares nothing', () => {
+            expect(resolveQaapWorkflowRunBudget()).to.deep.equal(DEFAULT_QAAP_WORKFLOW_RUN_BUDGET);
+        });
+
+        it('takes the caller’s minutes', () => {
+            const budget = resolveQaapWorkflowRunBudget({ maxNodeMinutes: 5, maxRunMinutes: 90 });
+            expect(budget.maxNodeMs).to.equal(5 * MINUTE);
+            expect(budget.maxRunMs).to.equal(90 * MINUTE);
+            // The loop bounds are not the caller's to set.
+            expect(budget.maxNodeRuns).to.equal(DEFAULT_QAAP_WORKFLOW_RUN_BUDGET.maxNodeRuns);
+        });
+
+        it('clamps instead of rejecting, so a bad clock never blocks a start', () => {
+            expect(resolveQaapWorkflowRunBudget({ maxNodeMinutes: 0.1 }).maxNodeMs).to.equal(MINUTE);
+            expect(resolveQaapWorkflowRunBudget({ maxRunMinutes: 99_999 }).maxRunMs).to.equal(24 * 60 * MINUTE);
+            for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+                expect(resolveQaapWorkflowRunBudget({ maxNodeMinutes: bad }).maxNodeMs, String(bad))
+                    .to.equal(DEFAULT_QAAP_WORKFLOW_RUN_BUDGET.maxNodeMs);
+            }
+        });
+    });
+
+    describe('findTimedOutQaapWorkflowNodes', () => {
+        it('finds the node that outlived the clock, and only that one', () => {
+            const run = runningRun({ maxNodeMs: 10 * MINUTE });
+            const timedOut = findTimedOutQaapWorkflowNodes(run, { implement: 1_000 }, 1_000 + 11 * MINUTE);
+            expect(timedOut).to.deep.equal(['implement']);
+            expect(findTimedOutQaapWorkflowNodes(run, { implement: 1_000 }, 1_000 + 9 * MINUTE)).to.deep.equal([]);
+        });
+
+        it('never times out a node with no runtime behind it', () => {
+            // Joins settle themselves and never get a dispatch entry; ageing them would fail a node
+            // that is not actually running anywhere.
+            const run = runningRun({ maxNodeMs: MINUTE });
+            expect(findTimedOutQaapWorkflowNodes(run, {}, Date.parse('2026-07-26T00:00:00Z'))).to.deep.equal([]);
+        });
+
+        it('does nothing when the run declares no node clock', () => {
+            const run = runningRun({ maxNodeMs: undefined });
+            expect(findTimedOutQaapWorkflowNodes(run, { implement: 0 }, 99 * MINUTE)).to.deep.equal([]);
+        });
+    });
+
+    describe('hasQaapWorkflowRunExpired', () => {
+        it('expires a run past its clock', () => {
+            const run = runningRun({ maxRunMs: 30 * MINUTE });
+            expect(hasQaapWorkflowRunExpired(run, 0, 31 * MINUTE)).to.equal(true);
+            expect(hasQaapWorkflowRunExpired(run, 0, 29 * MINUTE)).to.equal(false);
+        });
+
+        it('does not age a run parked on a human gate', () => {
+            // A person taking their time is not a stuck run.
+            const run: QaapWorkflowRun = { ...runningRun({ maxRunMs: MINUTE }), status: 'awaiting-human' };
+            expect(hasQaapWorkflowRunExpired(run, 0, 99 * MINUTE)).to.equal(false);
+        });
+    });
+
+    it('expireQaapWorkflowRun terminates once and leaves a finished run alone', () => {
+        const expired = expireQaapWorkflowRun(runningRun());
+        expect(expired.status).to.equal('budget-exhausted');
+        expect(expired.terminationReason).to.equal('run-timeout');
+        expect(expired.active).to.deep.equal([]);
+
+        const succeeded: QaapWorkflowRun = { ...runningRun(), status: 'succeeded', terminationReason: 'emit' };
+        expect(expireQaapWorkflowRun(succeeded)).to.equal(succeeded);
     });
 });

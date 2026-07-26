@@ -20,6 +20,7 @@ import {
     QaapWorkflowTemplateListResponse,
 } from '../common/qaap-workflow-api';
 import { QaapWorkflowPromptError } from '../common/qaap-workflow-prompt-registry';
+import { resolveQaapWorkflowRunBudget } from '../common/qaap-workflow-run';
 import { QaapWorkflowTemplateRegistry } from '../common/qaap-workflow-template-registry';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunRequestError, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { QaapWorkflowService } from './qaap-workflow-service';
@@ -105,6 +106,7 @@ export class QaapWorkflowEndpoint implements BackendApplicationContribution {
                 cwd: resolved.cwd,
                 ownerLogin: this.ownerLogin(ctx),
                 inputs,
+                budget: resolveQaapWorkflowRunBudget(body),
             });
             res.status(201).json(this.toSummary(record));
         } catch (error) {

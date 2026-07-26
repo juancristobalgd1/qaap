@@ -36,7 +36,9 @@ export type QaapWorkflowTerminationReason =
     /** A join can never be satisfied because every branch that feeds it has ended. */
     | 'stalled'
     | 'max-node-runs'
-    | 'max-visits';
+    | 'max-visits'
+    /** The run outlived its own wall clock. */
+    | 'run-timeout';
 
 /** Bounds cycles in `edges`; job loops own their own budgets, agent-only graphs need these. */
 export interface QaapWorkflowRunBudget {
@@ -44,12 +46,86 @@ export interface QaapWorkflowRunBudget {
     readonly maxNodeRuns: number;
     /** Dispatches allowed for a single node id, so a cycle cannot spin forever. */
     readonly maxVisitsPerNode: number;
+    /**
+     * How long one dispatched node may stay unfinished before the run gives up on it and routes
+     * its failure edge. Counting node runs bounds LOOPS, not hangs: an agent CLI that stops
+     * producing output holds its node — and the whole run — for as long as the process lives.
+     */
+    readonly maxNodeMs?: number;
+    /**
+     * How long the whole run may take. Paused while a human gate is open: a person taking their
+     * time is not a stuck run.
+     */
+    readonly maxRunMs?: number;
 }
 
 export const DEFAULT_QAAP_WORKFLOW_RUN_BUDGET: QaapWorkflowRunBudget = {
     maxNodeRuns: 64,
     maxVisitsPerNode: 8,
+    // Generous against real turns (minutes) and still bounded: a wedged CLI costs one node's
+    // budget, not the run. Callers set their own on the start request.
+    maxNodeMs: 30 * 60 * 1000,
+    maxRunMs: 4 * 60 * 60 * 1000,
 };
+
+/** Wall clocks a caller may set, in the units the HTTP API speaks. */
+export interface QaapWorkflowRunBudgetRequest {
+    readonly maxNodeMinutes?: number;
+    readonly maxRunMinutes?: number;
+}
+
+const MIN_BUDGET_MS = 60_000;
+const MAX_BUDGET_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A caller's wall clocks, clamped to [1 min, 24 h]. Anything absent, non-finite or out of range
+ * falls back to the default rather than failing the start: a bad timeout must not be the reason a
+ * run never happens, and an unclamped one would defeat the point of having a clock at all.
+ */
+export function resolveQaapWorkflowRunBudget(request?: QaapWorkflowRunBudgetRequest): QaapWorkflowRunBudget {
+    return {
+        ...DEFAULT_QAAP_WORKFLOW_RUN_BUDGET,
+        maxNodeMs: clampMinutes(request?.maxNodeMinutes) ?? DEFAULT_QAAP_WORKFLOW_RUN_BUDGET.maxNodeMs,
+        maxRunMs: clampMinutes(request?.maxRunMinutes) ?? DEFAULT_QAAP_WORKFLOW_RUN_BUDGET.maxRunMs,
+    };
+}
+
+function clampMinutes(minutes: number | undefined): number | undefined {
+    if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) {
+        return undefined;
+    }
+    return Math.min(Math.max(Math.round(minutes * 60_000), MIN_BUDGET_MS), MAX_BUDGET_MS);
+}
+
+/** A node that outlived {@link QaapWorkflowRunBudget.maxNodeMs}, given how long each has run. */
+export function findTimedOutQaapWorkflowNodes(
+    run: QaapWorkflowRun,
+    dispatchedAtByNode: Readonly<Record<string, number>>,
+    now: number,
+): readonly string[] {
+    const limit = run.budget.maxNodeMs;
+    if (!limit || run.status !== 'running') {
+        return [];
+    }
+    return run.active.filter(nodeId => {
+        const dispatchedAt = dispatchedAtByNode[nodeId];
+        // Bookkeeping nodes have no runtime entry and settle immediately; never time those out.
+        return dispatchedAt !== undefined && now - dispatchedAt > limit;
+    });
+}
+
+/** Whether the run as a whole outlived its clock. A run parked on a human gate does not age. */
+export function hasQaapWorkflowRunExpired(run: QaapWorkflowRun, startedAt: number, now: number): boolean {
+    return run.status === 'running' && !!run.budget.maxRunMs && now - startedAt > run.budget.maxRunMs;
+}
+
+/** Terminate a run that ran out of wall clock. Idempotent for an already-finished run. */
+export function expireQaapWorkflowRun(run: QaapWorkflowRun): QaapWorkflowRun {
+    if (run.status !== 'running' && run.status !== 'awaiting-human') {
+        return run;
+    }
+    return terminate(run, 'budget-exhausted', 'run-timeout');
+}
 
 export interface QaapWorkflowRun {
     readonly id: string;

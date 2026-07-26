@@ -15,6 +15,7 @@ import {
     QaapWorkflowDeterministicPort,
     QaapWorkflowDispatcher,
 } from './qaap-workflow-dispatcher';
+import { DEFAULT_QAAP_WORKFLOW_RUN_BUDGET } from '../common/qaap-workflow-run';
 import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
 
 /** An agent log whose terminal record carries `text` as the turn's final message. */
@@ -30,9 +31,14 @@ class TestStore extends QaapWorkflowRunStore {
 
 class FakeAgentPort implements QaapWorkflowAgentTurnPort {
     readonly started: string[] = [];
+    readonly cancelled: string[] = [];
     readonly tasks = new Map<string, { state: QaapAgentTaskState; log?: string }>();
     failNext = false;
     private counter = 0;
+
+    async cancelAgentTurn(externalId: string): Promise<void> {
+        this.cancelled.push(externalId);
+    }
 
     async startAgentTurn(): Promise<string> {
         if (this.failNext) {
@@ -52,8 +58,13 @@ class FakeAgentPort implements QaapWorkflowAgentTurnPort {
 
 class FakeJobPort implements QaapWorkflowDeterministicPort {
     readonly started: string[] = [];
+    readonly cancelled: string[] = [];
     readonly jobs = new Map<string, { state: QaapJobState; result?: unknown }>();
     private counter = 0;
+
+    async cancelDeterministic(externalId: string): Promise<void> {
+        this.cancelled.push(externalId);
+    }
 
     async startDeterministic(): Promise<string> {
         const id = `job-${++this.counter}`;
@@ -198,6 +209,76 @@ describe('QaapWorkflowDispatcher', () => {
         await dispatcher.reconcileOnBoot();
         expect(store.get('ada', runId)?.run.active).to.deep.equal(['implement']);
         expect(agent.started).to.deep.equal(['task-1']);
+    });
+
+    describe('wall clocks', () => {
+        const MINUTE = 60_000;
+
+        async function startWithClocks(budget: { maxNodeMs?: number; maxRunMs?: number }): Promise<string> {
+            const started = await store.start(buildImplementThenReviewWorkflow(), {
+                cwd: '/repo',
+                ownerLogin: 'ada',
+                inputs: { task: 'fix the login bug' },
+                budget: { ...DEFAULT_QAAP_WORKFLOW_RUN_BUDGET, ...budget },
+            });
+            await dispatcher.dispatch(started.record, started.dispatch);
+            return started.record.run.id;
+        }
+
+        it('frees a run held by a wedged turn, and stops the process behind it', async () => {
+            // The live failure this exists for: an agent CLI stopped producing output and its node
+            // stayed active for as long as the process lived, with the run pinned behind it.
+            const runId = await startWithClocks({ maxNodeMs: 10 * MINUTE });
+
+            await dispatcher.sweepDeadlines(Date.now() + 11 * MINUTE);
+
+            expect(agent.cancelled).to.deep.equal(['task-1']);
+            const record = store.get('ada', runId)!;
+            // 'fail' from the entry turn routes the template's failure edge — the run ends honestly
+            // rather than reporting success on work that never happened.
+            expect(record.run.status).to.equal('failed');
+            expect(record.run.bindings).to.have.property('review.skipped');
+        });
+
+        it('leaves a node alone while it is still inside its clock', async () => {
+            const runId = await startWithClocks({ maxNodeMs: 10 * MINUTE });
+
+            await dispatcher.sweepDeadlines(Date.now() + 9 * MINUTE);
+
+            expect(agent.cancelled).to.deep.equal([]);
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['implement']);
+        });
+
+        it('stops a run that outlived its own clock and cancels what it was waiting for', async () => {
+            const runId = await startWithClocks({ maxRunMs: 30 * MINUTE });
+
+            await dispatcher.sweepDeadlines(Date.now() + 31 * MINUTE);
+
+            const record = store.get('ada', runId)!;
+            expect(record.run.status).to.equal('budget-exhausted');
+            expect(record.run.terminationReason).to.equal('run-timeout');
+            expect(record.run.active).to.deep.equal([]);
+            expect(record.dispatched).to.deep.equal({});
+            expect(agent.cancelled).to.deep.equal(['task-1']);
+        });
+
+        it('cancels a wedged deterministic job too, not just agent turns', async () => {
+            const runId = await startWithClocks({ maxNodeMs: 10 * MINUTE });
+            await dispatcher.onAgentTaskFinished('task-1', 'completed');
+            expect(store.get('ada', runId)?.run.active).to.deep.equal(['risk-classify']);
+
+            await dispatcher.sweepDeadlines(Date.now() + 11 * MINUTE);
+
+            expect(jobs.cancelled).to.deep.equal(['job-1']);
+            expect(store.get('ada', runId)?.run.status).to.equal('failed');
+        });
+
+        it('is a no-op when nothing is overdue, so the timer costs nothing', async () => {
+            const runId = await startWithClocks({});
+            await dispatcher.sweepDeadlines(Date.now());
+            expect(store.get('ada', runId)?.run.status).to.equal('running');
+            expect(agent.cancelled).to.deep.equal([]);
+        });
     });
 
     describe('fan-out and fan-in', () => {

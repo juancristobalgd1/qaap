@@ -118,6 +118,13 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
         const detail = await this.runner.detail(externalId);
         return detail && { state: detail.state, log: detail.log };
     }
+
+    async cancelAgentTurn(externalId: string): Promise<void> {
+        // A timed-out turn is not a healthy backend that happened to be slow: leaving it out of the
+        // health tracker would keep routing later turns to a CLI that wedges.
+        this.noteAgentTurnResult(externalId, 'failed');
+        this.runner.cancel(externalId);
+    }
 }
 
 @injectable()
@@ -158,5 +165,9 @@ export class QaapWorkflowDeterministicAdapter implements QaapWorkflowDeterminist
     async lookupDeterministic(externalId: string): Promise<{ readonly state: QaapJobState; readonly result?: unknown } | undefined> {
         const job = this.jobs.get(externalId);
         return job && { state: job.state, result: job.result };
+    }
+
+    async cancelDeterministic(externalId: string): Promise<void> {
+        this.jobs.cancel(externalId);
     }
 }

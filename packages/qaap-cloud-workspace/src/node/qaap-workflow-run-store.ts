@@ -16,6 +16,7 @@ import {
     QaapWorkflowRun,
     QaapWorkflowRunBudget,
     advanceQaapWorkflowRun,
+    expireQaapWorkflowRun,
     startQaapWorkflowRun,
 } from '../common/qaap-workflow-run';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
@@ -282,6 +283,34 @@ export class QaapWorkflowRunStore {
      */
     interrupt(ownerLogin: string | undefined, runId: string, nodeId: string): Promise<QaapWorkflowDispatchResult> {
         return this.report(ownerLogin, runId, nodeId, 'fail');
+    }
+
+    /**
+     * End a run that outlived its wall clock. Terminal on purpose — unlike a timed-out NODE, which
+     * routes the graph's failure edge, an expired run has no branch left worth taking.
+     */
+    async expire(ownerLogin: string | undefined, runId: string): Promise<QaapPersistedWorkflowRun | undefined> {
+        const record = await this.mutate<QaapPersistedWorkflowRun | undefined>(records => {
+            const owner = this.normalizeOwner(ownerLogin);
+            const index = records.findIndex(entry => entry.run.id === runId && entry.ownerLogin === owner);
+            if (index < 0) {
+                return { records, result: undefined };
+            }
+            const previous = records[index];
+            const record: QaapPersistedWorkflowRun = {
+                ...previous,
+                run: expireQaapWorkflowRun(previous.run),
+                dispatched: {},
+                updatedAt: this.now(),
+            };
+            const next = [...records];
+            next[index] = record;
+            return { records: next, result: record };
+        });
+        if (record) {
+            this.onDidChangeEmitter.fire(this.clone(record));
+        }
+        return record;
     }
 
     protected async persist(records: readonly QaapPersistedWorkflowRun[]): Promise<void> {
