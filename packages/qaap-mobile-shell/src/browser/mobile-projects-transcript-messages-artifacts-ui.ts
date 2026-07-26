@@ -6,7 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { reportQaapClientError } from '../common/qaap-client-error-report';
-import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, conversationToSummary, restoreConversationCheckpoint } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, cancelConversationRun, conversationToSummary, resolveRunUserMessageId, restoreConversationCheckpoint } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import {
     extractLastFailedToolFromMessage,
@@ -556,11 +556,16 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             elapsedMs,
             turnStartMs,
             activityVerb,
+            onStopRun: this.resolveRunStopHandler(conv, message, isWorking),
             settled: this.isConversationFinalResponseCommitted(conv, streaming),
         });
         this.bindMobileExecutionEventTimelineFileOpen(accordion);
         body.append(accordion);
-        ensureSlowTurnHint(accordion, { isWorking, turnStartMs, onStopTurn: () => this.host.cancelOpenTranscriptStream?.() });
+        ensureSlowTurnHint(accordion, {
+            isWorking,
+            turnStartMs,
+            onStopTurn: this.resolveRunStopHandler(conv, message, isWorking) ?? (() => this.host.cancelOpenTranscriptStream?.()),
+        });
         // Render closing narrative text segments (text after the last tool)
         // as rich content blocks — these are the agent's final answer, not
         // process prose. The timeline model captures them as closingNarrative
@@ -641,6 +646,37 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         renderStreaming: boolean,
     ): boolean {
         return this.isConversationFinalResponseCommitted(conv, renderStreaming);
+    }
+
+    /**
+     * Per-run stop for THIS turn's accordion. A session can hold several agents at once, so the
+     * stop must address the run that produced `message` (identified by its user turn) instead of
+     * the session-wide cancel. Falls back to the session cancel when the run cannot be resolved
+     * (e.g. a historical turn with no matching user message).
+     */
+    protected resolveRunStopHandler(
+        conv: QaapAgentConversationDTO | undefined,
+        message: QaapAgentMessageDTO | undefined,
+        isWorking: boolean,
+    ): (() => void) | undefined {
+        // `isWorking` is conversation-wide: with several agents in one session it is true for
+        // every turn, including ones that already answered. `runActive` is the per-message flag
+        // the backend sets while THAT run streams — the stop belongs only to those.
+        if (!isWorking || !message?.runActive) {
+            return undefined;
+        }
+        const userMessageId = conv && message
+            ? resolveRunUserMessageId(conv.messages, message.id)
+            : undefined;
+        if (!conv || !userMessageId) {
+            return () => this.host.cancelOpenTranscriptStream?.();
+        }
+        return () => {
+            void cancelConversationRun(conv.id, userMessageId).catch(() => {
+                // Backend refused the targeted cancel — fall back to stopping the session.
+                this.host.cancelOpenTranscriptStream?.();
+            });
+        };
     }
 
     protected bindMobileExecutionEventTimelineFileOpen(root: HTMLElement): void {
@@ -931,6 +967,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             elapsedMs: this.resolveConversationElapsedMs(conv),
             turnStartMs,
             activityVerb,
+            onStopRun: this.resolveRunStopHandler(conv, message, isWorking),
             // Only the finalize path calls with streaming=false, and it does so
             // AFTER appending the closing narrative + diff summary — that is
             // the one moment auto-collapse is allowed. Streaming syncs must
@@ -941,7 +978,11 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // tick): this is what lets the hint survive `accordion` being wholly
         // replaced by a full timeline rebuild mid-stream, and what removes it
         // promptly once the turn settles.
-        ensureSlowTurnHint(accordion, { isWorking, turnStartMs, onStopTurn: () => this.host.cancelOpenTranscriptStream?.() });
+        ensureSlowTurnHint(accordion, {
+            isWorking,
+            turnStartMs,
+            onStopTurn: this.resolveRunStopHandler(conv, message, isWorking) ?? (() => this.host.cancelOpenTranscriptStream?.()),
+        });
     }
 
     /**

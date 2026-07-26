@@ -125,6 +125,8 @@ export interface QaapAgentMessageDTO {
     readonly createdAt: number;
     readonly taskId?: string;
     readonly error?: string;
+    /** True while THIS agent message's run is still streaming (in-session multitasking). */
+    readonly runActive?: boolean;
     /** Client-only attachment previews for optimistic pending-user rows (never sent to VPS). */
     readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
 }
@@ -558,6 +560,43 @@ export async function cancelConversation(id: string): Promise<void> {
         return;
     }
     await cancelConversationHttp(id);
+}
+
+/**
+ * Stops ONE run of a multitasking session (the turn started by `userMessageId`), leaving its
+ * peers working. Always HTTP: the WebSocket cancel channel is session-wide by construction.
+ */
+export async function cancelConversationRun(id: string, userMessageId: string): Promise<void> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/cancel`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userMessageId }),
+    });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+}
+
+/** The user turn whose run produced `agentMessageId` — the id a per-run stop is addressed to. */
+export function resolveRunUserMessageId(
+    messages: readonly QaapAgentMessageDTO[],
+    agentMessageId: string | undefined,
+): string | undefined {
+    if (!agentMessageId) {
+        return undefined;
+    }
+    const index = messages.findIndex(message => message.id === agentMessageId);
+    if (index < 0) {
+        return undefined;
+    }
+    for (let i = index - 1; i >= 0; i--) {
+        const message = messages[i];
+        if (message.role === 'user') {
+            return message.id;
+        }
+    }
+    return undefined;
 }
 
 export async function retryConversation(id: string): Promise<QaapAgentConversationDTO> {

@@ -71,6 +71,12 @@ export interface QaapAgentMessage {
     readonly autoContinueRootMessageId?: string;
     /** When the user message's task ended unsuccessfully — short reason for the UI. */
     readonly error?: string;
+    /**
+     * Set on an agent message while ITS run is still streaming. With several agents sharing one
+     * session the conversation status cannot say which turns are live, so the per-run stop (and
+     * anything else that must address one run) keys off this instead.
+     */
+    readonly runActive?: boolean;
 }
 
 export interface QaapContextCompaction {

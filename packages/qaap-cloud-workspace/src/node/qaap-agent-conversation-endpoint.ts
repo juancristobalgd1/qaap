@@ -198,7 +198,13 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            const conv = this.store.cancel(req.params.id);
+            // `userMessageId` narrows the cancel to ONE run of a multitasking session; without
+            // it Stop stays session-wide (every live run), which is what the composer Stop does.
+            const body = (req.body ?? {}) as { userMessageId?: unknown };
+            const userMessageId = typeof body.userMessageId === 'string' ? body.userMessageId.trim() : '';
+            const conv = userMessageId
+                ? this.store.cancelRun(req.params.id, userMessageId)
+                : this.store.cancel(req.params.id);
             if (!conv) {
                 res.status(404).json({ error: 'Conversation not found.' });
                 return;

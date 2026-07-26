@@ -202,6 +202,31 @@ describe('QaapAgentConversationStore in-session parallel runs', () => {
         expect(contents).to.include('peer output');
     });
 
+    it('stops ONE run by its user message and leaves the peer working', () => {
+        const { store, runner } = createStore();
+        store.postUserMessage('c1', 'first');
+        const conv = store.postUserMessage('c1', 'second');
+        const firstUserMessageId = conv.messages.filter(m => m.role === 'user')[0].id;
+
+        const after = store.cancelRun('c1', firstUserMessageId);
+
+        expect(runner.cancelledIds).to.deep.equal(['task-1']);
+        // The peer keeps the session alive — a per-run stop is not a session stop.
+        expect(after?.status).to.equal('streaming');
+        expect(store.activeTaskIds('c1')).to.deep.equal(['task-2']);
+    });
+
+    it('leaves the session idle when the run stopped was the last one', () => {
+        const { store } = createStore();
+        const conv = store.postUserMessage('c1', 'only');
+        const userMessageId = conv.messages.filter(m => m.role === 'user')[0].id;
+
+        const after = store.cancelRun('c1', userMessageId);
+
+        expect(after?.status).to.equal('idle');
+        expect(store.activeTaskIds('c1')).to.deep.equal([]);
+    });
+
     it('stop cancels every run in the session, not just the newest', () => {
         const { store, runner } = createStore();
         store.postUserMessage('c1', 'first');

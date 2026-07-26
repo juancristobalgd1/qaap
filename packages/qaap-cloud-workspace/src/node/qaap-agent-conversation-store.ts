@@ -687,6 +687,45 @@ export class QaapAgentConversationStore {
         return next;
     }
 
+    /**
+     * Stops ONE run of a multitasking session, leaving its peers working. The run is identified
+     * by its user message (the turn the user asked for); its agent message is finalized as
+     * cancelled and the conversation only leaves `streaming` when no peer is left.
+     */
+    cancelRun(id: string, userMessageId: string): QaapAgentConversation | undefined {
+        const conv = this.conversations.get(id);
+        if (!conv) {
+            return undefined;
+        }
+        const userMessage = conv.messages.find(message => message.id === userMessageId && message.role === 'user');
+        const taskId = userMessage?.taskId;
+        if (!taskId) {
+            return conv;
+        }
+        const ref = this.taskToConversation.get(taskId);
+        this.taskRunner.cancel(taskId);
+        for (const subtask of collectSubtasksForLeader(taskId, this.taskRunner.list())) {
+            if (subtask.state === 'running') {
+                this.taskRunner.cancel(subtask.id);
+            }
+        }
+        const agentMessageId = ref?.agentMessageId;
+        let next = this.appendRunCancelledTrace(conv, agentMessageId, 'Turn cancelled.');
+        next = this.finalizeStreamingAgentMessage(next, agentMessageId, 'Turn cancelled.');
+        next = {
+            ...next,
+            // Excludes this run itself, so the session stays streaming while peers work on.
+            status: this.settleStatusForRun(id, taskId, 'idle'),
+            updatedAt: Date.now(),
+        };
+        this.taskToConversation.delete(taskId);
+        this.conversations.set(id, next);
+        this.publishFinalizedAgentMessage(id, next, agentMessageId);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        void this.persist();
+        return next;
+    }
+
     rename(id: string, request: QaapRenameAgentConversationRequest): QaapAgentConversation | undefined {
         return this.update(id, { title: request.title });
     }
@@ -1405,6 +1444,10 @@ export class QaapAgentConversationStore {
                 segments,
                 ...(traceEvents ? { traceEvents } : {}),
                 createdAt: now,
+                // Marks the message as the live end of a run. With several agents in one session
+                // the conversation status can no longer say which turns are still working, and the
+                // per-run stop must only appear on the ones that are.
+                runActive: true,
             });
             messages = [...conv.messages, message];
             this.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, message);
@@ -1570,6 +1613,8 @@ export class QaapAgentConversationStore {
                 segments,
                 ...(traceEvents ? { traceEvents } : {}),
                 createdAt: now,
+                /** See the sibling creation site: live-run marker for the per-run stop. */
+                runActive: true,
             }));
             messages = [...conv.messages, message];
             this.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, message);
@@ -1885,6 +1930,7 @@ export class QaapAgentConversationStore {
         if (blockedNeed !== undefined) {
             withReply = this.appendBlockedTrace(withReply, agentMessageId, blockedNeed);
         }
+        withReply = this.clearRunActive(withReply, agentMessageId);
         this.conversations.set(conversationId, withReply);
         const agentMessage = withReply.messages[withReply.messages.length - 1];
         if (agentMessage) {
@@ -2250,9 +2296,28 @@ export class QaapAgentConversationStore {
             } else if (next.traceEvents?.length || next.segments?.length) {
                 next = syncSettledTraceEventsOnMessage(next);
             }
+            if (next.runActive) {
+                next = { ...next, runActive: undefined };
+            }
             return next;
         });
         return { ...conv, messages };
+    }
+
+    /** Drops the live-run marker once a run's message is settled (success path). */
+    protected clearRunActive(
+        conv: QaapAgentConversation,
+        agentMessageId: string | undefined,
+    ): QaapAgentConversation {
+        if (!agentMessageId) {
+            return conv;
+        }
+        return {
+            ...conv,
+            messages: conv.messages.map(message => message.id === agentMessageId && message.runActive
+                ? { ...message, runActive: undefined }
+                : message),
+        };
     }
 
     protected appendRunCancelledTrace(

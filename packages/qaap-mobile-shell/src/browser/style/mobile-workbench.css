@@ -32456,3 +32456,37 @@ body.theia-dark .theia-mobile-agent-web-search,
   color: var(--theia-descriptionForeground, var(--theia-foreground));
   white-space: nowrap;
 }
+
+/*
+ * Per-run stop in the process accordion header (see qaap-execution-event-timeline.ts).
+ * A session can run several agents at once, so each working turn stops on its own; the
+ * composer Stop remains the session-wide one.
+ */
+.theia-mobile-process-accordion-run-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border-radius: var(--qaap-mobile-radius-control, 8px);
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.theia-mobile-process-accordion-run-stop .codicon {
+  font-size: 11px;
+}
+
+.theia-mobile-process-accordion-run-stop:hover {
+  color: var(--theia-errorForeground, #e06c75);
+  border-color: color-mix(in srgb, var(--theia-errorForeground, #e06c75) 45%, transparent);
+}
+
+.theia-mobile-process-accordion-run-stop + .theia-mobile-process-accordion-chevron {
+  margin-left: 8px;
+}

@@ -21,6 +21,7 @@ import {
     MOBILE_CLOSING_ERROR_CARD_CLASS,
     MOBILE_EXECUTION_TIMELINE_CLASS,
     MOBILE_PROCESS_ACCORDION_CLASS,
+    MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS,
     refreshMobileExecutionEventTimeline,
     resolveMobileActivityVerb,
     syncMobileProcessAccordionState,
@@ -1228,6 +1229,38 @@ describe('qaap-execution-event-timeline', () => {
             const accordion = wrapMobileProcessAccordion(timeline, { isWorking: true, isError: false });
             expect(accordion.classList.contains(MOBILE_PROCESS_ACCORDION_CLASS)).to.be.true;
             expect(accordion.querySelector(`.${MOBILE_EXECUTION_TIMELINE_CLASS}`)).to.not.equal(null);
+        });
+
+        it('renders a per-run stop while working and fires it without toggling the accordion', () => {
+            const timeline = createMobileExecutionEventTimeline([toolSegment('read', 't1', '{}', true)]);
+            let stopped = 0;
+            const accordion = wrapMobileProcessAccordion(timeline, {
+                isWorking: true,
+                isError: false,
+                onStopRun: () => { stopped++; },
+            }) as HTMLDetailsElement;
+            const stop = accordion.querySelector<HTMLButtonElement>(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`);
+            expect(stop).to.not.equal(null);
+
+            const openBefore = accordion.open;
+            stop!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            expect(stopped).to.equal(1);
+            // The button lives inside <summary>: stopping must not collapse the turn being watched.
+            expect(accordion.open).to.equal(openBefore);
+        });
+
+        it('has no per-run stop without a handler, or once the run settles', () => {
+            const timeline = createMobileExecutionEventTimeline([toolSegment('read', 't1', '{}', true)]);
+            const noHandler = wrapMobileProcessAccordion(timeline, { isWorking: true, isError: false });
+            expect(noHandler.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`)).to.equal(null);
+
+            const working = wrapMobileProcessAccordion(
+                createMobileExecutionEventTimeline([toolSegment('read', 't2', '{}', true)]),
+                { isWorking: true, isError: false, onStopRun: () => { } },
+            );
+            expect(working.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`)).to.not.equal(null);
+            syncMobileProcessAccordionState(working, { isWorking: false, isError: false, onStopRun: () => { } });
+            expect(working.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`)).to.equal(null);
         });
 
     });

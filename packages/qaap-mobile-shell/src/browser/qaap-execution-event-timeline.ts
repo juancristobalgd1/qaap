@@ -661,6 +661,12 @@ export interface MobileProcessAccordionOptions {
      * still visible, matching the "leave evidence visible" rule.
      */
     readonly isCancelled?: boolean;
+    /**
+     * Stops THIS run only. A session can hold several agents at once, so the composer's
+     * session-wide Stop is not enough: each working turn carries its own stop in its header.
+     * Omitted (or with `isWorking` false) the header renders without one.
+     */
+    readonly onStopRun?: () => void;
     /** Elapsed execution time in milliseconds, or undefined if unknown. */
     readonly elapsedMs?: number;
     /**
@@ -752,7 +758,9 @@ export function wrapMobileProcessAccordion(
     chevron.className = 'codicon codicon-chevron-down theia-mobile-process-accordion-chevron';
     chevron.setAttribute('aria-hidden', 'true');
 
-    header.append(label, chevron);
+    header.append(label);
+    syncMobileProcessAccordionRunStop(header, isWorking, options.onStopRun);
+    header.append(chevron);
     // Orb lives in the pinned stream footer — never in the accordion header.
     syncMobileProcessAccordionBrandLogo(header, false);
     details.append(header);
@@ -912,6 +920,7 @@ export function syncMobileProcessAccordionState(
 
     const header = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-header');
     if (header) {
+        syncMobileProcessAccordionRunStop(header, isWorking, options.onStopRun);
         syncMobileProcessAccordionBrandLogo(header, false);
     }
 
@@ -1001,6 +1010,50 @@ function resolveMobileProcessOutcome(
  * conjugated (e.g. no invented `'Reading'` from `'Read'`) — so this never
  * introduces a new display string beyond what the timeline already shows.
  */
+export const MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS = 'theia-mobile-process-accordion-run-stop';
+
+/**
+ * Adds (or removes) the per-run stop button in the accordion header. It lives in the `<summary>`,
+ * so the click must not bubble into the native toggle — pressing stop must never also collapse
+ * the turn the user is watching.
+ */
+function syncMobileProcessAccordionRunStop(
+    header: HTMLElement,
+    isWorking: boolean,
+    onStopRun: (() => void) | undefined,
+): void {
+    const existing = header.querySelector<HTMLButtonElement>(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`);
+    if (!isWorking || !onStopRun) {
+        existing?.remove();
+        return;
+    }
+    const attach = (button: HTMLButtonElement): void => {
+        button.onclick = event => {
+            event.preventDefault();
+            event.stopPropagation();
+            onStopRun();
+        };
+    };
+    if (existing) {
+        attach(existing);
+        return;
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS;
+    const label = nls.localize('theia/qaap-mobile-shell/processTimeline/stopThisRun', 'Stop this agent');
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.innerHTML = '<span class="codicon codicon-primitive-square" aria-hidden="true"></span>';
+    attach(button);
+    const chevron = header.querySelector('.theia-mobile-process-accordion-chevron');
+    if (chevron) {
+        header.insertBefore(button, chevron);
+    } else {
+        header.append(button);
+    }
+}
+
 function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: MobileProcessOutcome, activityVerb?: string): string {
     if (elapsedMs === undefined) {
         switch (outcome) {
