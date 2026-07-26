@@ -30969,8 +30969,21 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   min-width: 0;
 }
 
+/*
+ * Cap the label only where the header is actually tight. A fixed 12ch cut
+ * "QAIQ · OpenRouter · openrouter/free" down to "QAIQ · OpenR…" on a desktop
+ * header with hundreds of free pixels, which hides the very thing the badge
+ * exists to show. Wide viewports get room for the whole label; narrow ones
+ * keep the hard cap so the badge can never push the chevron off the row.
+ */
 .theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-meta-badge-label {
-  max-width: 12ch;
+  max-width: 40ch;
+}
+
+@media (max-width: 767px) {
+  .theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-meta-badge-label {
+    max-width: 12ch;
+  }
 }
 
 .theia-mobile-process-accordion.theia-mod-working .theia-mobile-process-accordion-label {
