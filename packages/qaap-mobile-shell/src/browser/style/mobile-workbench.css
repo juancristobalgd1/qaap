@@ -28407,7 +28407,15 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
   overflow: hidden;
 }
 
-.theia-mobile-projects-sticky-composer-agent-identity {
+/* Shared agent-identity visual (avatar + provider sub-icon overlaid in the corner + short
+   label) -- built by createAgentIdentityElement in qaap-agent-ui.ts. Used by BOTH the
+   composer's agent-picker button (which also layers its own
+   .theia-mobile-projects-sticky-composer-agent-* classes on top, see the codex-context-tray
+   overrides below) and the transcript's turn-provenance badge
+   (qaap-execution-event-timeline.ts / .theia-mobile-process-accordion-provenance and
+   .theia-mobile-turn-provenance-standalone), so neither surface can visually diverge from
+   the other. */
+.theia-qaap-agent-identity {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -28415,7 +28423,7 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
   max-width: 100%;
 }
 
-.theia-mobile-projects-sticky-composer-agent-avatar {
+.theia-qaap-agent-identity-avatar {
   position: relative;
   display: inline-flex;
   flex: 0 0 auto;
@@ -28424,7 +28432,7 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
   align-self: center;
 }
 
-.theia-mobile-projects-sticky-composer-agent-provider-badge {
+.theia-qaap-agent-identity-provider-badge {
   position: absolute;
   right: 0;
   bottom: 0;
@@ -28442,15 +28450,21 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
   pointer-events: none;
 }
 
-.theia-mobile-projects-sticky-composer-agent-provider-badge .theia-qaap-llm-provider-icon {
+.theia-qaap-agent-identity-provider-badge .theia-qaap-llm-provider-icon {
   width: 9px;
   height: 9px;
   border-radius: 2px;
 }
 
-.theia-mobile-projects-sticky-composer-agent-provider-badge .theia-qaap-llm-provider-icon svg {
+.theia-qaap-agent-identity-provider-badge .theia-qaap-llm-provider-icon svg {
   width: 100%;
   height: 100%;
+}
+
+.theia-qaap-agent-identity-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .qaap-codex-context-tray .theia-mobile-projects-sticky-composer-agent:not(.theia-mod-logo-only) .theia-mobile-projects-sticky-composer-agent-identity {
@@ -30963,26 +30977,43 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 /* Which agent/model ran this turn (see qaap-execution-event-timeline.ts). Shares
    the header row with the label, stop button and chevron -- it must shrink
    before either of those so the chevron's tap target never gets crowded out
-   on a narrow viewport. */
+   on a narrow viewport. Uses the shared .theia-qaap-agent-identity visual (avatar +
+   provider sub-icon + short model label, see createAgentIdentityElement) -- the
+   provider is already shown by the sub-icon, so the text itself is only ever the
+   short model id (or the agent name alone when no model is known) and comfortably
+   fits even on a narrow viewport without truncating. */
 .theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance {
   flex: 0 1 auto;
   min-width: 0;
 }
 
-/*
- * Cap the label only where the header is actually tight. A fixed 12ch cut
- * "QAIQ · OpenRouter · openrouter/free" down to "QAIQ · OpenR…" on a desktop
- * header with hundreds of free pixels, which hides the very thing the badge
- * exists to show. Wide viewports get room for the whole label; narrow ones
- * keep the hard cap so the badge can never push the chevron off the row.
- */
-.theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-meta-badge-label {
-  max-width: 40ch;
+.theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-identity-label {
+  max-width: 22ch;
 }
 
 @media (max-width: 767px) {
-  .theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-meta-badge-label {
-    max-width: 12ch;
+  .theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-identity-label {
+    max-width: 16ch;
+  }
+}
+
+/* Standalone turn-provenance badge for a turn with no tool segments (no process
+   accordion header to host the badge in, see qaap-execution-event-timeline.ts /
+   syncTranscriptStandaloneTurnProvenance). Same row height and vertical rhythm as
+   the accordion header so the badge lands in the same visual slot either way. */
+.theia-mobile-turn-provenance-standalone {
+  display: inline-flex;
+  min-height: 28px;
+  margin: 0 0 8px 0;
+}
+
+.theia-mobile-turn-provenance-standalone .theia-qaap-agent-identity-label {
+  max-width: 22ch;
+}
+
+@media (max-width: 767px) {
+  .theia-mobile-turn-provenance-standalone .theia-qaap-agent-identity-label {
+    max-width: 16ch;
   }
 }
 

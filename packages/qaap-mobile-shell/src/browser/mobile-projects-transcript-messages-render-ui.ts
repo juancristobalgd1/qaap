@@ -13,7 +13,7 @@ import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-
 import { buildConversationTranscriptFingerprint, fingerprintTranscriptMessage, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { hasMobileExecutionEventTimeline } from './qaap-execution-event-timeline';
+import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
@@ -300,7 +300,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 msg.role,
                 normalizeAgentMessageContentForDisplay(msg.content),
                 undefined,
-                { deferHeavyContent, streaming: streamingTail },
+                { deferHeavyContent, streaming: streamingTail, conv: normalized, message: msg },
             );
         }
         if (index === conv.messages.length - 1 && sameConversation && previousLastMessageId && msg.id && msg.id !== previousLastMessageId) {
@@ -1238,6 +1238,14 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 normalizeAgentMessageContentForDisplay(nextMsg.content),
                 { streaming: existingRow.classList.contains('theia-mod-streaming') },
             );
+            // This row (createTranscriptMessageRow) has no segments-body wrapper --
+            // its standalone turn-provenance badge lives directly on `existingRow`.
+            // Re-sync on every content-only tick, same as the accordion/no-tool
+            // paths, so a row created before the driving user message was sealed
+            // (an unlikely race, but the wire delta layer doesn't rule it out)
+            // still ends up attributed once the field arrives.
+            const provenance = this.artifactsUi.resolveTurnProvenance(conv, nextMsg);
+            syncTranscriptStandaloneTurnProvenance(existingRow, provenance.turnAgentId, provenance.turnAgentModel);
             return true;
         }
         if (!prevComparable) {
@@ -1405,6 +1413,14 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         }
         const body = document.createElement('div');
         body.className = 'theia-mobile-agent-transcript-segments';
+        // A failed turn with no trace segments has no process accordion to host the
+        // turn-provenance badge in its header -- this is arguably the row where
+        // knowing which agent/model ran matters MOST (a failure with no attribution
+        // forces guessing whether the model or the task was at fault). Same standalone
+        // badge, same host function, as the tool-less success case in
+        // createTranscriptAgentSegmentsRow.
+        const provenance = this.artifactsUi.resolveTurnProvenance(conv, msg);
+        syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel);
         const failedTool = extractLastFailedToolFromMessage(msg);
         const canRetry = conv?.status === 'failed' && !!this.host.retryOpenFailedConversationTask;
         body.append(this.toolUi.createTranscriptAgentFailureDialog(
@@ -1423,12 +1439,30 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         role: 'user' | 'agent',
         content: string,
         _error?: string,
-        options?: { readonly deferHeavyContent?: boolean; readonly streaming?: boolean },
+        options?: {
+            readonly deferHeavyContent?: boolean;
+            readonly streaming?: boolean;
+            /** Only meaningful for `role === 'agent'`: lets a turn rendered with no
+             *  segments at all (e.g. raw shell stdout -- no tool calls, no thinking)
+             *  still show the turn-provenance badge. See
+             *  {@link syncTranscriptStandaloneTurnProvenance}. */
+            readonly conv?: QaapAgentConversationDTO;
+            readonly message?: QaapAgentMessageDTO;
+        },
     ): HTMLElement {
         const row = document.createElement('div');
         row.className = `theia-mobile-agent-transcript-msg theia-mod-${role}`;
         if (options?.deferHeavyContent) {
             row.setAttribute('data-transcript-row-deferred', '1');
+        }
+        if (role === 'agent') {
+            // This row type has no `.theia-mobile-agent-transcript-segments` wrapper
+            // (it is a flat row > content element) -- mount the standalone badge
+            // directly on `row`, still the first flex child, so it lands in the same
+            // visual slot as the segments-body-hosted badge (both sit at the top of
+            // the same padded flex column, see .theia-mobile-agent-transcript-msg).
+            const provenance = this.artifactsUi.resolveTurnProvenance(options?.conv, options?.message);
+            syncTranscriptStandaloneTurnProvenance(row, provenance.turnAgentId, provenance.turnAgentModel);
         }
         // Ownership is conveyed by alignment and the bubble surface, so no redundant "You" label.
         const contentEl = document.createElement('div');

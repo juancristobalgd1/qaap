@@ -34,8 +34,8 @@ import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
-import { createAgentMetaBadge, resolveAgentDisplayLabel } from './qaap-agent-ui';
-import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
+import { createAgentIdentityElement, resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
 import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
 import { createTranscriptCodeView, patchTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from './qaap-transcript-code-view';
 import {
@@ -1022,14 +1022,86 @@ function resolveMobileProcessOutcome(
 export const MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS = 'theia-mobile-process-accordion-provenance';
 
 /**
- * Adds, updates, or removes the turn-provenance badge (agent, optionally
- * "· model") in the accordion header. Idempotent: re-running with the same
- * `turnAgentId`/`turnAgentModel` is a no-op, so calling it on every streaming
- * sync tick (see {@link syncMobileProcessAccordionState}) never duplicates or
- * flickers the badge. Inserted right before the stop button/chevron so it
- * reads `<label> <badge> [stop] <chevron>`, and always before the model-less
- * fallback is skipped entirely (no "unknown model" placeholder) per the
- * product rule: never invent a model the backend didn't report.
+ * Class of the standalone turn-provenance badge rendered for a turn that has no process
+ * accordion (no tool segments) to host the badge in its header. Mounted as the FIRST child of
+ * the turn's segments body -- the same slot the accordion (and its header badge) would occupy if
+ * this turn had used tools -- so the badge always lands in the same visual position regardless
+ * of whether this particular turn ran any tools. See
+ * {@link syncTranscriptStandaloneTurnProvenance}.
+ */
+export const MOBILE_TURN_PROVENANCE_STANDALONE_CLASS = 'theia-mobile-turn-provenance-standalone';
+
+/**
+ * The badge text/title pair shared by both provenance-badge hosts (the accordion header and the
+ * standalone no-tool-turn badge). The VISIBLE text is only ever the short model id (the provider
+ * is already conveyed by the avatar's corner sub-icon, see {@link createAgentIdentityElement} --
+ * showing "Provider · modelId" in text on top of that icon would be the exact redundancy this
+ * design replaces) or, when no model is known, the agent's own display label. `fullLabel` is the
+ * full, unambiguous "Agent · Provider · modelId" string reserved for the `title` tooltip -- the
+ * only place that needs to fully disambiguate once the visible text is just "free". Always skips
+ * inventing a model label when `turnAgentModel` is unset -- some agent CLIs run their own default
+ * model without reporting a pick.
+ */
+function resolveTranscriptProvenanceBadgeText(
+    turnAgentId: string,
+    turnAgentModel: QaapCreateAgentTaskQaiqModel | undefined,
+): { readonly visibleLabel: string; readonly fullLabel: string } {
+    const agentLabel = resolveAgentDisplayLabel(turnAgentId);
+    const modelId = turnAgentModel?.modelId?.trim();
+    if (!modelId) {
+        return { visibleLabel: agentLabel, fullLabel: agentLabel };
+    }
+    return {
+        visibleLabel: formatQaiqModelIdShortLabel(modelId),
+        fullLabel: `${agentLabel} · ${formatQaiqModelSelectionLabel(turnAgentModel!)}`,
+    };
+}
+
+/** Idempotency key for a provenance badge: the raw agent/vendor/modelId tuple, not the derived
+ *  visible text -- two different picks that happen to format to the same short model id must
+ *  still be recognized as a change (and refresh the title), and this must never collide with a
+ *  falsy sentinel the way an empty string could. */
+function transcriptProvenanceBadgeKey(
+    turnAgentId: string,
+    turnAgentModel: QaapCreateAgentTaskQaiqModel | undefined,
+): string {
+    return `${turnAgentId}::${turnAgentModel?.vendor ?? ''}::${turnAgentModel?.modelId ?? ''}`;
+}
+
+/**
+ * Builds the turn-provenance badge element: the same agent-avatar + provider-sub-icon + short
+ * model label visual as the composer's agent picker (see {@link createAgentIdentityElement}),
+ * carrying the full unambiguous label as its `title` and the raw provenance tuple as its
+ * idempotency dataset key. Shared by both provenance-badge hosts so they can never visually
+ * diverge -- see {@link syncMobileProcessAccordionProvenance} and
+ * {@link syncTranscriptStandaloneTurnProvenance}.
+ */
+function createTranscriptProvenanceBadgeElement(
+    hostClass: string,
+    turnAgentId: string,
+    turnAgentModel: QaapCreateAgentTaskQaiqModel | undefined,
+): HTMLElement {
+    const { visibleLabel, fullLabel } = resolveTranscriptProvenanceBadgeText(turnAgentId, turnAgentModel);
+    const badge = createAgentIdentityElement({
+        agentId: turnAgentId,
+        agentModel: turnAgentModel,
+        label: visibleLabel,
+    });
+    badge.classList.add(hostClass);
+    badge.dataset.qaapProvenanceKey = transcriptProvenanceBadgeKey(turnAgentId, turnAgentModel);
+    badge.title = fullLabel;
+    return badge;
+}
+
+/**
+ * Adds, updates, or removes the turn-provenance badge (agent avatar, optionally with the
+ * provider's icon overlaid in the corner and the short model name as text) in the accordion
+ * header. Idempotent: re-running with the same `turnAgentId`/`turnAgentModel` is a no-op, so
+ * calling it on every streaming sync tick (see {@link syncMobileProcessAccordionState}) never
+ * duplicates or flickers the badge. Inserted right before the stop button/chevron so it reads
+ * `<label> <badge> [stop] <chevron>`, and always before the model-less fallback is skipped
+ * entirely (no "unknown model" placeholder) per the product rule: never invent a model the
+ * backend didn't report.
  */
 function syncMobileProcessAccordionProvenance(
     header: HTMLElement,
@@ -1041,19 +1113,14 @@ function syncMobileProcessAccordionProvenance(
         existing?.remove();
         return;
     }
-    const modelLabel = turnAgentModel ? formatQaiqModelSelectionLabel(turnAgentModel) : undefined;
-    const agentLabel = resolveAgentDisplayLabel(turnAgentId);
-    const combinedLabel = modelLabel ? `${agentLabel} · ${modelLabel}` : agentLabel;
+    const key = transcriptProvenanceBadgeKey(turnAgentId, turnAgentModel);
     if (existing) {
-        if (existing.dataset.qaapProvenanceKey === combinedLabel) {
+        if (existing.dataset.qaapProvenanceKey === key) {
             return;
         }
         existing.remove();
     }
-    const badge = createAgentMetaBadge(turnAgentId, combinedLabel);
-    badge.classList.add(MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS);
-    badge.dataset.qaapProvenanceKey = combinedLabel;
-    badge.title = combinedLabel;
+    const badge = createTranscriptProvenanceBadgeElement(MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS, turnAgentId, turnAgentModel);
     const stopButton = header.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`);
     const chevron = header.querySelector('.theia-mobile-process-accordion-chevron');
     const insertBeforeEl = stopButton ?? chevron;
@@ -1062,6 +1129,47 @@ function syncMobileProcessAccordionProvenance(
     } else {
         header.append(badge);
     }
+}
+
+/**
+ * Adds, updates, or removes the standalone turn-provenance badge for a turn body that has no
+ * process accordion (the turn produced no tool segments, so {@link renderMobileExecutionEventTimeline}
+ * never wraps anything in {@link wrapMobileProcessAccordion} and there is no header to host the
+ * badge in). Mounted as the FIRST child of `body` -- always via `prepend`, so repeated calls (every
+ * streaming sync tick) keep it in that same slot even after later content (thought brief, text
+ * blocks) has been appended -- matching the position the accordion occupies for a turn that did use
+ * tools, so the eye finds the badge in the same place either way.
+ *
+ * Idempotent exactly like {@link syncMobileProcessAccordionProvenance}: re-running with the same
+ * `turnAgentId`/`turnAgentModel` is a no-op (dataset-key compare), and an undefined `turnAgentId`
+ * (historical turns predating the field) removes any existing badge and leaves no gap -- no
+ * reserved space, no layout shift.
+ *
+ * Callers must remove this badge (or call this with `turnAgentId: undefined`) when a row is
+ * upgraded from the no-tool representation to the execution-event-timeline/accordion
+ * representation (see `upgradeToMobileExecutionEventTimeline` in
+ * `mobile-projects-transcript-messages-artifacts-ui.ts`), so a turn never ends up showing both the
+ * standalone badge and the accordion header badge at once.
+ */
+export function syncTranscriptStandaloneTurnProvenance(
+    body: HTMLElement,
+    turnAgentId: string | undefined,
+    turnAgentModel: QaapCreateAgentTaskQaiqModel | undefined,
+): void {
+    const existing = body.querySelector<HTMLElement>(`:scope > .${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`);
+    if (!turnAgentId) {
+        existing?.remove();
+        return;
+    }
+    const key = transcriptProvenanceBadgeKey(turnAgentId, turnAgentModel);
+    if (existing) {
+        if (existing.dataset.qaapProvenanceKey === key) {
+            return;
+        }
+        existing.remove();
+    }
+    const badge = createTranscriptProvenanceBadgeElement(MOBILE_TURN_PROVENANCE_STANDALONE_CLASS, turnAgentId, turnAgentModel);
+    body.prepend(badge);
 }
 
 /**

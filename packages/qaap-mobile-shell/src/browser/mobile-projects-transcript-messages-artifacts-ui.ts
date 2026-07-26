@@ -123,9 +123,11 @@ import {
     hasMobileExecutionEventTimeline,
     MOBILE_CLOSING_ERROR_CARD_CLASS,
     MOBILE_TOOL_FILE_OPEN_EVENT,
+    MOBILE_TURN_PROVENANCE_STANDALONE_CLASS,
     refreshMobileExecutionEventTimeline,
     resolveMobileActivityVerb,
     syncMobileProcessAccordionState,
+    syncTranscriptStandaloneTurnProvenance,
     wrapMobileProcessAccordion,
 } from './qaap-execution-event-timeline';
 import { ensureSlowTurnHint } from './qaap-slow-turn-hint';
@@ -459,6 +461,17 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 message: options?.message,
             });
         } else {
+            // No tools (yet, or ever, for a turn that never calls one) — there is no
+            // process accordion to host the turn-provenance badge in its header, so
+            // render a standalone badge as the FIRST child of `body`, the same slot
+            // the accordion occupies for a turn that did use tools (see
+            // renderMobileExecutionEventTimeline / wrapMobileProcessAccordion above).
+            // This is deliberately NOT an empty accordion -- there is no process to
+            // expand for a tool-less turn, and a collapsible control with nothing
+            // inside would be worse than no accordion at all.
+            const effectiveMessage = options?.message ?? this.resolveLastAgentMessage(conv);
+            const provenance = this.resolveTurnProvenance(conv, effectiveMessage);
+            syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel);
             // No tools yet — render thinking content (if any) as a thought brief,
             // then visible text segments. This preserves the thinking-phase UX
             // (collapsible reasoning block with live indicator) before the first
@@ -792,13 +805,22 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      * user message via {@link resolveRunUserMessageId}, mirroring how
      * {@link resolveRunStopHandler} finds the same message to address a
      * per-run stop. Rendered as a small provenance badge in the turn's
-     * process-accordion header (see {@link MobileProcessAccordionOptions}).
+     * process-accordion header (see {@link MobileProcessAccordionOptions}),
+     * or as the standalone badge for a turn with no segments-based host to
+     * put an accordion in (see {@link syncTranscriptStandaloneTurnProvenance}).
      * Returns an empty object for historical turns that predate the field or
      * when the driving user message can't be resolved -- callers must not
      * fall back to guessing the current composer selection, since that would
      * mislabel a turn that ran under a different pick.
+     *
+     * Public (not protected): row builders that live outside this class --
+     * {@link MobileProjectsTranscriptMessagesRenderUi.createTranscriptAgentFailureRow}
+     * and {@link MobileProjectsTranscriptMessagesRenderUi.createTranscriptMessageRow}
+     * -- need the exact same provenance resolution for the turns they build
+     * (a failed turn with no trace segments, a raw-stdout turn with no
+     * segments at all), and must not reimplement it.
      */
-    protected resolveTurnProvenance(
+    resolveTurnProvenance(
         conv: QaapAgentConversationDTO | undefined,
         message: QaapAgentMessageDTO | undefined,
     ): { readonly turnAgentId?: string; readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel } {
@@ -1039,10 +1061,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // Remove legacy elements: thought brief, activity timeline, artifacts,
         // and all text blocks (process-prose text blocks will be re-rendered
         // as narrative inside the timeline; closing-narrative text blocks will
-        // be re-rendered after the timeline).
+        // be re-rendered after the timeline). The standalone turn-provenance
+        // badge (rendered while this row had no tools, see
+        // createTranscriptAgentSegmentsRow) is removed here too -- the
+        // upgraded row gets its own provenance badge in the accordion header,
+        // and a turn must never show both at once.
         segmentsBody.querySelectorAll(
             `[${TRANSCRIPT_THOUGHT_BRIEF_ATTR}], [${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}], ` +
-            `.theia-mobile-agent-transcript-artifacts, [${TRANSCRIPT_SEGMENT_INDEX_ATTR}]`,
+            `.theia-mobile-agent-transcript-artifacts, [${TRANSCRIPT_SEGMENT_INDEX_ATTR}], ` +
+            `.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`,
         ).forEach(el => el.remove());
         // Remove any leftover trace status / live footer (re-added by the helper if streaming)
         segmentsBody.querySelector('.theia-mobile-agent-trace-status')?.remove();
@@ -2574,9 +2601,20 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         conv: QaapAgentConversationDTO | undefined,
         streaming: boolean,
     ): boolean {
-        const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
         if (!segmentsBody) {
             return false;
+        }
+        // This path only ever handles a row with no tool segments (callers in
+        // patchStreamingActivityTimeline already returned early for a row that has,
+        // or just gained, an execution event timeline) -- keep the standalone
+        // turn-provenance badge in sync on every tick, the same way
+        // syncRowProcessAccordion keeps the accordion header badge in sync for a
+        // row that has tools.
+        if (!hasMobileExecutionEventTimeline(row)) {
+            const message = this.resolveTranscriptRowAgentMessage(row, conv);
+            const provenance = this.resolveTurnProvenance(conv, message);
+            syncTranscriptStandaloneTurnProvenance(segmentsBody, provenance.turnAgentId, provenance.turnAgentModel);
         }
         const thinking = resolveTranscriptThinkingContent([...segments]);
         const stats = resolveTranscriptActivityStats([...segments]);

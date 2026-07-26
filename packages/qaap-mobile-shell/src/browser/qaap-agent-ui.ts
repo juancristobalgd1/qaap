@@ -479,6 +479,84 @@ export function populateModeToolbarButton(
     button.append(label, chevron);
 }
 
+/** Extra classes layered onto {@link createAgentIdentityElement}'s parts, so a caller can
+ *  apply its own surface-specific styling (narrow-viewport rules, container tweaks) on top
+ *  of the shared identity classes without forking the DOM structure. */
+export interface QaapAgentIdentityExtraClasses {
+    readonly root?: string;
+    readonly avatar?: string;
+    readonly providerBadge?: string;
+    readonly label?: string;
+}
+
+export interface QaapAgentIdentityOptions {
+    readonly agentId: string;
+    /** The LLM pick that drove this identity, if known. Omit (or leave `modelId` empty) to
+     *  render the avatar WITHOUT a provider sub-icon -- never invent a model that wasn't
+     *  actually reported. */
+    readonly agentModel?: { readonly vendor: string; readonly modelId: string };
+    /** Visible text next to the avatar. Omit entirely to render the avatar alone, with no
+     *  label element at all (the composer's logo-only button state). */
+    readonly label?: string;
+    readonly iconSize?: QaapAgentUiSize;
+    readonly extraClasses?: QaapAgentIdentityExtraClasses;
+}
+
+/**
+ * Builds the "identity" visual shared by every surface that needs to show which agent --
+ * and, when an LLM pick is known, which provider -- is behind something: the agent's brand
+ * avatar with the provider's icon overlaid in the corner, plus a short text label. Extracted
+ * from the composer's agent-picker button ({@link populateAgentToolbarButton}) so other
+ * surfaces (the transcript's turn-provenance badge, see `qaap-execution-event-timeline.ts`)
+ * render the exact same visual language instead of inventing their own text-only rendering --
+ * a single shared DOM/CSS contract that can't diverge between the two surfaces.
+ *
+ * Deliberately does NOT include a chevron: that is composer-specific UI (a picker affordance),
+ * appended by the caller when needed.
+ *
+ * Never shows a provider sub-icon without a model, and never invents one when
+ * {@link appendLlmProviderIcon} can't resolve an icon for the reported vendor.
+ */
+export function createAgentIdentityElement(options: QaapAgentIdentityOptions): HTMLElement {
+    const identity = document.createElement('span');
+    identity.className = 'theia-qaap-agent-identity';
+    if (options.extraClasses?.root) {
+        identity.classList.add(options.extraClasses.root);
+    }
+
+    const iconSize = options.iconSize ?? 'sm';
+    const avatar = document.createElement('span');
+    avatar.className = 'theia-qaap-agent-identity-avatar';
+    if (options.extraClasses?.avatar) {
+        avatar.classList.add(options.extraClasses.avatar);
+    }
+    appendAgentBrandIcon(avatar, options.agentId, iconSize);
+
+    const modelId = options.agentModel?.modelId?.trim();
+    if (modelId) {
+        const providerBadge = document.createElement('span');
+        providerBadge.className = 'theia-qaap-agent-identity-provider-badge';
+        if (options.extraClasses?.providerBadge) {
+            providerBadge.classList.add(options.extraClasses.providerBadge);
+        }
+        if (appendLlmProviderIcon(providerBadge, options.agentModel!.vendor, modelId, iconSize)) {
+            avatar.append(providerBadge);
+        }
+    }
+    identity.append(avatar);
+
+    if (options.label !== undefined) {
+        const labelEl = document.createElement('span');
+        labelEl.className = 'theia-qaap-agent-identity-label';
+        if (options.extraClasses?.label) {
+            labelEl.classList.add(options.extraClasses.label);
+        }
+        labelEl.textContent = options.label;
+        identity.append(labelEl);
+    }
+    return identity;
+}
+
 /** Sticky composer toolbar agent button — brand icon + provider badge + short model name (agent name is aria/title only). */
 export function populateAgentToolbarButton(
     button: HTMLButtonElement,
@@ -494,23 +572,18 @@ export function populateAgentToolbarButton(
     chevron.setAttribute('aria-hidden', 'true');
     const modelId = options.agentModel?.modelId?.trim();
     if (modelId) {
-        const identity = document.createElement('span');
-        identity.className = 'theia-mobile-projects-sticky-composer-agent-identity';
-
-        const avatar = document.createElement('span');
-        avatar.className = 'theia-mobile-projects-sticky-composer-agent-avatar';
-        appendAgentBrandIcon(avatar, options.agentId, 'sm');
-        const badge = document.createElement('span');
-        badge.className = 'theia-mobile-projects-sticky-composer-agent-provider-badge';
-        if (appendLlmProviderIcon(badge, options.agentModel!.vendor, options.agentModel!.modelId, 'sm')) {
-            avatar.append(badge);
-        }
-        identity.append(avatar);
-
-        const labelEl = document.createElement('span');
-        labelEl.className = 'theia-mobile-projects-sticky-composer-agent-label';
-        labelEl.textContent = formatQaiqModelIdShortLabel(modelId);
-        identity.append(labelEl, chevron);
+        const identity = createAgentIdentityElement({
+            agentId: options.agentId,
+            agentModel: options.agentModel,
+            label: formatQaiqModelIdShortLabel(modelId),
+            extraClasses: {
+                root: 'theia-mobile-projects-sticky-composer-agent-identity',
+                avatar: 'theia-mobile-projects-sticky-composer-agent-avatar',
+                providerBadge: 'theia-mobile-projects-sticky-composer-agent-provider-badge',
+                label: 'theia-mobile-projects-sticky-composer-agent-label',
+            },
+        });
+        identity.append(chevron);
         button.append(identity);
         button.classList.remove('theia-mod-logo-only');
     } else {
