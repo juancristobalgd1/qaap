@@ -400,6 +400,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // forwarded raw: the body is untyped JSON, and an unknown value would reach the
                 // routing switch and silently take the default branch.
                 taskKind: QaapAgentTaskKind.is(body.taskKind) ? body.taskKind : undefined,
+                // Same field-by-field hazard as `taskKind` above. Only ever narrows what the turn
+                // may do, so honouring it from a caller is safe; dropping it silently is not, since
+                // a caller asking for a restricted turn would get an unrestricted one and no word
+                // of it. Coerced strictly: anything other than a literal `true` leaves the turn
+                // unrestricted rather than guessing from a truthy value.
+                readOnlyWorkspace: body.readOnlyWorkspace === true ? true : undefined,
             }, ownerLogin);
             res.status(201).json(task);
         } catch (error) {

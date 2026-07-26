@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import type { QaapAgentReadOnlyEnforcement } from './qaap-agent-readonly-workspace';
 
 /** HTTP base path for the background agent-task endpoints. */
 export const QAAP_AGENT_TASK_API_PATH = '/qaap/api/agent-tasks';
@@ -58,6 +59,14 @@ export interface QaapAgentTask {
     readonly parentId?: string;
     /** Whether skip-permission flags were applied when the CLI was spawned. */
     readonly autoApprove?: boolean;
+    /** The caller required this turn not to modify {@link cwd} — see {@link readOnlyEnforcement}. */
+    readonly readOnlyWorkspace?: boolean;
+    /**
+     * What the resolved backend can actually enforce for {@link readOnlyWorkspace}. Recorded rather
+     * than assumed: `'none'` means the turn ran unrestricted and the read-only claim is only prompt
+     * text, which is exactly the state a reader must be able to tell apart from a real guarantee.
+     */
+    readonly readOnlyEnforcement?: QaapAgentReadOnlyEnforcement;
     /**
      * Set when an orchestrator (a workflow run) owns the adversarial review for this turn, so the
      * runner must not also run its own. Without it a workflow-driven turn is reviewed twice — once
@@ -199,6 +208,16 @@ export interface QaapCreateAgentTaskRequest {
      * for background tasks; set `false` to require manual CLI approval (will hang if unattended).
      */
     readonly autoApprove?: boolean;
+    /**
+     * The turn must not modify {@link cwd}. Set by callers that dispatch read-only work — a workflow
+     * node with `isolation: 'cwd-readonly'`, i.e. an explorer or a judge. It wins over
+     * {@link autoApprove} and {@link approvalPolicyId}: those decide who approves a write, this
+     * decides that the backend is launched without the ability to write in the first place.
+     *
+     * How much of that is a real guarantee depends on the backend — the runner records the answer on
+     * {@link QaapAgentTask.readOnlyEnforcement}.
+     */
+    readonly readOnlyWorkspace?: boolean;
     /**
      * The caller runs its own adversarial review for this turn, so the runner must skip its
      * internal one. Used by workflow runs, whose graph owns the judge node.

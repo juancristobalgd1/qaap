@@ -14,6 +14,7 @@ import {
     commandHasAutoApproveFlags,
 } from './qaap-agent-auto-approve';
 import { QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS } from './qaap-agent-subagent-policy';
+import { formatReadOnlyFlagsForAgent } from './qaap-agent-readonly-workspace';
 import {
     formatQaiqCoreToolsFlag,
 } from './qaap-qaiq-tool-policy';
@@ -32,6 +33,13 @@ export interface QaapAgentApprovalFlagOptions {
     readonly autoApprove?: boolean;
     readonly interactionModeId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
+    /**
+     * The turn must not modify its working directory (a workflow node with `isolation: 'cwd-readonly'`
+     * — an explorer, a judge). Overrides every approval preset: an approval policy decides who says
+     * yes to a write, read-only decides that no write is on the menu at all.
+     * See `qaap-agent-readonly-workspace.ts` for what each backend can actually enforce.
+     */
+    readonly readOnlyWorkspace?: boolean;
 }
 
 export function resolveEffectiveToolApprovalRules(
@@ -101,6 +109,9 @@ export function applyAgentApprovalPolicyToCommand(
     command: string,
     options: QaapAgentApprovalFlagOptions,
 ): string {
+    if (options.readOnlyWorkspace) {
+        return applyReadOnlyWorkspaceToCommand(command, options.agentId);
+    }
     if (shouldUseInteractiveAgentApprovals(options)) {
         return stripNonInteractiveApprovalFlags(command, options.agentId);
     }
@@ -125,6 +136,33 @@ export function applyAgentApprovalPolicyToCommand(
     }
     if (policyId === 'full-access' || rules?.network) {
         return applyAutoApproveToCommand(command, agentId);
+    }
+    return command;
+}
+
+/**
+ * Replace this backend's approval flags with its read-only flags. The strip step is load-bearing: a
+ * template that already carries `--dangerously-skip-permissions` / `--full-auto` would otherwise sit
+ * next to the restriction and win.
+ *
+ * A backend with no read-only mechanism gets its command back untouched. That is not silent failure —
+ * `resolveAgentReadOnlyEnforcement` reports `'none'` for the same agent id, and the caller (the
+ * workflow adapter, the task runner) is responsible for routing away from it and recording what it got.
+ */
+export function applyReadOnlyWorkspaceToCommand(command: string, agentId: string | undefined): string {
+    const effectiveId = agentId?.trim().toLowerCase() || inferAgentIdFromCommand(command);
+    const flags = formatReadOnlyFlagsForAgent(effectiveId);
+    if (!flags) {
+        return command;
+    }
+    if (effectiveId === 'qaiq' || effectiveId === 'openclaude') {
+        return injectAfterPattern(stripQaiqPermissionFlags(command), /\b(qaiq|openclaude)\b/, flags);
+    }
+    if (effectiveId === 'claude') {
+        return injectAfterExecutable(stripClaudeApprovalFlags(command), 'claude', flags);
+    }
+    if (effectiveId === 'codex') {
+        return injectAfterExecutable(stripCodexApprovalFlags(command), 'codex', flags);
     }
     return command;
 }

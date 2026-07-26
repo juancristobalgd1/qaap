@@ -13,6 +13,7 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { QaapAgentTaskState } from '../common/qaap-agent-task';
+import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
 import { QaapJobState } from '../common/qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowDeterministicNode } from '../common/qaap-workflow-ir';
 import { resolveQaapWorkflowTaskKind } from '../common/qaap-workflow-model-routing';
@@ -35,6 +36,13 @@ import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-
 
 /** Nothing excluded — a plain routing pass. */
 const EMPTY_EXCLUSION: ReadonlySet<string> = new Set();
+
+/**
+ * Set to `'1'` to refuse a `cwd-readonly` node whose backend cannot enforce read-only, instead of
+ * running it unrestricted with a warning. Opt-in because fail-closed would break runs that complete
+ * today on installations with only unrestrictable agent CLIs.
+ */
+export const QAAP_WORKFLOW_STRICT_READONLY_ENV = 'QAAP_WORKFLOW_STRICT_READONLY';
 
 /** Deterministic ops that already have a runtime. Others fail loudly instead of silently passing. */
 const FUNCTION_BY_OP: Readonly<Partial<Record<QaapWorkflowDeterministicNode['op'], string>>> = {
@@ -78,14 +86,22 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
         // An unpinned turn declares only capability + tier; the policy maps that onto an installed
         // backend, and an unresolved ref falls back to the runner's own default agent.
         const routed = this.resolveBackend(node, record);
+        const readOnly = node.isolation === 'cwd-readonly';
+        if (readOnly) {
+            this.assertReadOnlyEnforceable(node, routed, context);
+        }
         const task = this.runner.create({
             title: `${record.def.name} · ${node.id}`,
             prompt,
             cwd: record.cwd,
             agent: routed.agentRef,
+            // Makes the node's declared isolation a restriction on the spawned CLI instead of a
+            // sentence in the prompt. Before this, a `cwd-readonly` judge ran with Edit/Write in hand
+            // and was observed writing into the very tree it was grading.
+            readOnlyWorkspace: readOnly,
             // The graph owns the review (its judge node), so the runner must not review this turn
             // as well. Only writer turns would trigger it; a read-only judge never does.
-            externalReview: node.isolation !== 'cwd-readonly',
+            externalReview: !readOnly,
             // Hands the orchestrator's own capability/costTier evaluation to model routing, so a
             // cheap explore/measure turn and a premium implement/judge turn land on different
             // models instead of both falling through to the runner's prompt-text heuristic.
@@ -108,26 +124,74 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
      * backend installed the table would happily pick the same one that just implemented the change
      * — a model grading its own homework, presented as an independent verdict.
      *
-     * Independence is preferred, never required: if excluding the writers leaves nothing installed,
-     * the same backend reviews rather than the change going unreviewed. The judge node's
-     * `requireSentinel` still governs the verdict either way.
+     * A `cwd-readonly` node is additionally routed away from every backend that cannot be held to
+     * read-only at all (see `qaap-agent-readonly-workspace.ts`): sending an explorer or a judge to a
+     * CLI with no restriction mechanism leaves the isolation as prompt text, which is how a judge
+     * came to write into the file it was grading.
+     *
+     * Both constraints are preferred, never required: if excluding the writers — or the
+     * unrestrictable backends — leaves nothing installed, the node still runs rather than the change
+     * going unreviewed. The judge node's `requireSentinel` still governs the verdict either way, and
+     * an unenforceable read-only dispatch is reported by {@link assertReadOnlyEnforceable}.
      */
     protected resolveBackend(
         node: QaapWorkflowAgentTurnNode,
         record: QaapPersistedWorkflowRun,
     ): QaapWorkflowRoutingResult {
-        const resolve = (blocked: ReadonlySet<string>): QaapWorkflowRoutingResult => this.routing.resolve(
+        const resolve = (blocked: ReadonlySet<string>, restrictable: boolean): QaapWorkflowRoutingResult => this.routing.resolve(
             node.capability,
             node.costTier,
-            agentRef => !blocked.has(agentRef) && this.isAgentAvailable(agentRef),
+            agentRef => !blocked.has(agentRef)
+                && (!restrictable || canEnforceReadOnlyWorkspace(agentRef))
+                && this.isAgentAvailable(agentRef),
             node.agentRef,
         );
-        if (node.capability !== 'judge') {
-            return resolve(EMPTY_EXCLUSION);
+        const readOnly = node.isolation === 'cwd-readonly';
+        const writers = node.capability === 'judge' ? this.writerAgentsOf(record) : EMPTY_EXCLUSION;
+        // Preference order, strongest constraint first, each one dropped only when it leaves nothing
+        // installed. Enforceability outranks independence: a judge that shares the writer's model
+        // still returns a verdict, while a judge that can edit the code invalidates the verdict
+        // itself — which is precisely the failure this ordering exists to prevent.
+        const exclusions = writers.size > 0 ? [writers, EMPTY_EXCLUSION] : [EMPTY_EXCLUSION];
+        const restrictions = readOnly ? [true, false] : [false];
+        let last: QaapWorkflowRoutingResult = { agentRef: undefined, reason: 'fallback' };
+        for (const restrictable of restrictions) {
+            for (const blocked of exclusions) {
+                last = resolve(blocked, restrictable);
+                if (last.agentRef) {
+                    return last;
+                }
+            }
         }
-        const writers = this.writerAgentsOf(record);
-        const independent = writers.size > 0 ? resolve(writers) : undefined;
-        return independent?.agentRef ? independent : resolve(EMPTY_EXCLUSION);
+        return last;
+    }
+
+    /**
+     * Fail-closed switch for read-only isolation, opt-in via {@link QAAP_WORKFLOW_STRICT_READONLY_ENV}.
+     *
+     * Off by default on purpose: turning it on unilaterally would fail every read-only node on an
+     * installation whose only agent CLI has no restriction mechanism — runs that complete today. With
+     * it off the turn still runs, but the restriction is applied as far as the backend allows and the
+     * shortfall is logged here and recorded on the task (`readOnlyEnforcement`), so a partial
+     * guarantee is never mistaken for a full one.
+     */
+    protected assertReadOnlyEnforceable(
+        node: QaapWorkflowAgentTurnNode,
+        routed: QaapWorkflowRoutingResult,
+        context: QaapWorkflowDispatchContext,
+    ): void {
+        // An undefined ref means the runner picks its own default agent, which is unknown here — the
+        // runner resolves and records the real enforcement level once it knows which CLI it spawned.
+        if (routed.agentRef && canEnforceReadOnlyWorkspace(routed.agentRef)) {
+            return;
+        }
+        const backend = routed.agentRef ?? 'the runner default agent';
+        const detail = `node "${node.id}" of run ${context.runId} declares cwd-readonly, but ${backend} `
+            + 'cannot enforce it';
+        if (process.env[QAAP_WORKFLOW_STRICT_READONLY_ENV] === '1') {
+            throw new Error(`${detail}. Refusing to dispatch (${QAAP_WORKFLOW_STRICT_READONLY_ENV}=1).`);
+        }
+        console.warn(`[qaap-workflow] ${detail}; dispatching it unrestricted — this turn can modify the run's workspace.`);
     }
 
     /** Backends that already ran a node allowed to modify the workspace in this run. */

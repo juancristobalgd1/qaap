@@ -58,6 +58,10 @@ import {
     shouldUseQaiqStdioApprovals,
 } from '../common/qaap-agent-approval-flags';
 import {
+    resolveAgentReadOnlyEnforcement,
+    type QaapAgentReadOnlyEnforcement,
+} from '../common/qaap-agent-readonly-workspace';
+import {
     QAIQ_STDIO_APPROVAL_FLAGS,
     buildQaiqControlResponseLine,
     buildQaiqStdioPromptLine,
@@ -1103,6 +1107,7 @@ export class QaapAgentTaskRunner {
             createdAt: Date.now(),
             parentId,
             autoApprove,
+            ...(request.readOnlyWorkspace ? { readOnlyWorkspace: true } : {}),
             ...(request.externalReview ? { externalReview: true } : {}),
             ...(ownerLogin ? { ownerLogin } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
@@ -1149,6 +1154,7 @@ export class QaapAgentTaskRunner {
         approvalPolicyId?: string,
         toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'],
         userQuery?: string,
+        readOnlyWorkspace?: boolean,
     ): { command: string; stdinPrompt?: string; agentId: string } {
         const id = this.resolveAgentId(prompt, agentId);
         const runnerPrompt = this.stripLeadingAgentMention(prompt);
@@ -1196,9 +1202,15 @@ export class QaapAgentTaskRunner {
             autoApprove,
             interactionModeId,
             toolApprovalRules,
+            readOnlyWorkspace,
         };
+        // A read-only turn is never routed through the interactive stdio approval flow: that flow
+        // exists so a human can say yes to a write, and on a read-only turn there is no write to say
+        // yes to. Letting it through would also append QAIQ_STDIO_APPROVAL_FLAGS after the read-only
+        // flags and hand the permission decision back to the model's own prompt.
         const useStdioApprovals = id === QAIQ_AGENT_ID
             && !!detected
+            && !readOnlyWorkspace
             && shouldUseQaiqStdioApprovals(approvalOptions);
         if (detected) {
             const vars = this.buildTemplateVars(id, agentModel, interaction);
@@ -1957,6 +1969,7 @@ export class QaapAgentTaskRunner {
                     request.approvalPolicyId,
                     request.toolApprovalRules,
                     request.userQuery,
+                    task.readOnlyWorkspace,
                 );
                 this.recordTaskLatencyMark(task.id, 'build_agent_command_end');
                 if (stdinPrompt) {
@@ -1967,6 +1980,11 @@ export class QaapAgentTaskRunner {
                     ...commandTask,
                     command,
                     agentId,
+                    // Resolved here, not by the caller: only now is the concrete backend known (an
+                    // unpinned dispatch falls through to the runner's own default agent).
+                    ...(task.readOnlyWorkspace
+                        ? { readOnlyEnforcement: this.noteReadOnlyEnforcement(task.id, agentId) }
+                        : {}),
                     ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
                 };
                 this.tasks.set(task.id, next);
@@ -1982,6 +2000,23 @@ export class QaapAgentTaskRunner {
             }
         }
         this.spawnProcess(task);
+    }
+
+    /**
+     * Record — and, when it is not a real guarantee, say out loud — what read-only means for the
+     * backend this turn actually landed on. A `'none'` backend is not refused here: refusing would
+     * fail runs that work today on an installation without a restrictable CLI. It is reported instead,
+     * so nobody reads "cwd-readonly" off a node and assumes the workspace was protected.
+     */
+    protected noteReadOnlyEnforcement(taskId: string, agentId: string): QaapAgentReadOnlyEnforcement {
+        const enforcement = resolveAgentReadOnlyEnforcement(agentId);
+        if (enforcement === 'none') {
+            console.warn(
+                `[qaap-agent-tasks] task ${taskId} was dispatched read-only, but agent "${agentId}" exposes no `
+                + 'read-only mechanism. The turn can modify its workspace; "read-only" is prompt text only.',
+            );
+        }
+        return enforcement;
     }
 
     protected spawnProcess(task: QaapAgentTask): void {

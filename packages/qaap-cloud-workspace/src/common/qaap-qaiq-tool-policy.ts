@@ -95,12 +95,28 @@ const BLOCKED_THEIA_TOOL_NAMES = new Set([
     'Coder',
 ]);
 
+/**
+ * Tools that can change the workspace, directly or by delegating to a turn that can. Removed from the
+ * `--tools` allowlist on a read-only turn — see `qaap-agent-readonly-workspace.ts`. `Agent` is in the
+ * list because a subagent inherits the ability to write; leaving it in would reopen the door the
+ * other entries close.
+ */
+const QAAP_QAIQ_WORKSPACE_MUTATING_TOOLS: ReadonlySet<string> = new Set(['Write', 'Edit', 'NotebookEdit', 'Agent']);
+
 export interface QaapQaiqCoreToolsOptions {
     readonly shell?: boolean;
+    /**
+     * `false` drops every workspace-mutating tool from the allowlist, so the CLI is launched without
+     * the ability to edit at all. Combine with `shell: false` — a surviving `Bash` turns the denial
+     * into a formality (`echo … > file`).
+     */
+    readonly write?: boolean;
 }
 
 export function resolveQaiqCoreToolNames(options: QaapQaiqCoreToolsOptions = {}): readonly string[] {
-    const tools = QAAP_QAIQ_CORE_CODING_TOOLS.filter(tool => options.shell !== false || tool !== 'Bash');
+    const tools = QAAP_QAIQ_CORE_CODING_TOOLS
+        .filter(tool => options.shell !== false || tool !== 'Bash')
+        .filter(tool => options.write !== false || !QAAP_QAIQ_WORKSPACE_MUTATING_TOOLS.has(tool));
     // Read-only web tools are always available (see QAAP_QAIQ_NETWORK_TOOLS) — not gated by policy.
     return [...tools, ...QAAP_QAIQ_NETWORK_TOOLS];
 }

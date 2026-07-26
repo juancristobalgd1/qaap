@@ -9,7 +9,7 @@ import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-regis
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { QaapWorkflowDispatchContext } from './qaap-workflow-dispatcher';
-import { QaapWorkflowAgentTurnAdapter } from './qaap-workflow-runtime-ports';
+import { QAAP_WORKFLOW_STRICT_READONLY_ENV, QaapWorkflowAgentTurnAdapter } from './qaap-workflow-runtime-ports';
 
 /** Judge turn: unpinned, so routing decides the backend. */
 const judgeNode: QaapWorkflowAgentTurnNode = {
@@ -23,10 +23,17 @@ const judgeNode: QaapWorkflowAgentTurnNode = {
 
 const context: QaapWorkflowDispatchContext = { runId: 'r1', nodeId: 'judge', ownerLogin: 'ada' };
 
+interface CapturedRequest {
+    readonly agent?: string;
+    readonly taskKind?: string;
+    readonly readOnlyWorkspace?: boolean;
+}
+
 interface Harness {
     adapter: QaapWorkflowAgentTurnAdapter;
     createdWith: (string | undefined)[];
     taskKinds: (string | undefined)[];
+    requests: CapturedRequest[];
     noted: string[];
 }
 
@@ -37,19 +44,22 @@ interface HarnessOptions {
     readonly routedAgents?: Readonly<Record<string, string>>;
     /** Installed backends; defaults to codex + qaiq. */
     readonly installed?: readonly string[];
+    /** Routing table override, to exercise backends the default table never reaches. */
+    readonly routing?: QaapWorkflowRoutingPolicy;
 }
 
 /** Real routing policy + registry; runner/store stubbed. codex and qaiq both installed. */
 function buildAdapter(options: HarnessOptions = {}): Harness {
     const createdWith: (string | undefined)[] = [];
     const taskKinds: (string | undefined)[] = [];
+    const requests: CapturedRequest[] = [];
     const noted: string[] = [];
     let counter = 0;
     const adapter = Object.create(QaapWorkflowAgentTurnAdapter.prototype) as QaapWorkflowAgentTurnAdapter;
     Object.assign(adapter, {
         routedAgentByTask: new Map(),
         agentHealth: new QaapAgentHealthTracker(),
-        routing: new QaapWorkflowRoutingPolicy(),
+        routing: options.routing ?? new QaapWorkflowRoutingPolicy(),
         prompts: new QaapWorkflowPromptRegistry(),
         store: {
             get: () => ({
@@ -68,14 +78,15 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
         runner: {
             listAgents: () => (options.installed ?? ['codex', 'qaiq'])
                 .map(id => ({ id, label: id, available: true })),
-            create: (request: { agent?: string; taskKind?: string }) => {
+            create: (request: CapturedRequest) => {
                 createdWith.push(request.agent);
                 taskKinds.push(request.taskKind);
+                requests.push(request);
                 return { id: `task-${++counter}` };
             },
         },
     });
-    return { adapter, createdWith, taskKinds, noted };
+    return { adapter, createdWith, taskKinds, requests, noted };
 }
 
 describe('QaapWorkflowAgentTurnAdapter backend cooldown', () => {
@@ -149,6 +160,87 @@ describe('QaapWorkflowAgentTurnAdapter model routing hand-off', () => {
         };
         await adapter.startAgentTurn(exploreNode, context);
         expect(taskKinds).to.deep.equal(['exploration']);
+    });
+});
+
+describe('QaapWorkflowAgentTurnAdapter read-only isolation', () => {
+
+    const writerNode: QaapWorkflowAgentTurnNode = {
+        kind: 'agent-turn',
+        id: 'implement',
+        capability: 'implement',
+        isolation: 'cwd',
+        promptRef: 'user-task',
+    };
+
+    it('dispatches a cwd-readonly node as a restricted turn', async () => {
+        const { adapter, requests } = buildAdapter();
+        await adapter.startAgentTurn(judgeNode, context);
+        expect(requests[0].readOnlyWorkspace).to.equal(true);
+    });
+
+    it('does not restrict a node whose isolation lets it write', async () => {
+        const { adapter, requests } = buildAdapter();
+        await adapter.startAgentTurn(writerNode, { ...context, nodeId: 'implement' });
+        expect(requests[0].readOnlyWorkspace).to.equal(false);
+    });
+
+    it('routes a read-only node away from a backend that cannot enforce read-only', async () => {
+        // grok is first in this table and installed, but has no read-only mechanism: a judge sent
+        // there would run with edit tools in hand, which is the failure this guards.
+        const routing = new QaapWorkflowRoutingPolicy({
+            judge: { any: ['grok', 'codex'] },
+            implement: { any: ['grok', 'codex'] },
+        });
+        const { adapter, createdWith } = buildAdapter({ routing, installed: ['grok', 'codex'] });
+        await adapter.startAgentTurn(judgeNode, context);
+        expect(createdWith).to.deep.equal(['codex']);
+    });
+
+    it('still prefers the cheapest route for a writer node — the constraint is read-only-only', async () => {
+        const routing = new QaapWorkflowRoutingPolicy({ implement: { any: ['grok', 'codex'] } });
+        const { adapter, createdWith } = buildAdapter({ routing, installed: ['grok', 'codex'] });
+        await adapter.startAgentTurn(writerNode, { ...context, nodeId: 'implement' });
+        expect(createdWith).to.deep.equal(['grok']);
+    });
+
+    it('runs unrestricted rather than not at all when no enforcing backend is installed', async () => {
+        // Preferred, never required: failing the node here would break installations whose only
+        // agent CLI has no restriction mechanism. The shortfall is warned about and recorded instead.
+        const routing = new QaapWorkflowRoutingPolicy({ judge: { any: ['grok'] } });
+        const { adapter, createdWith, requests } = buildAdapter({ routing, installed: ['grok'] });
+        await adapter.startAgentTurn(judgeNode, context);
+        expect(createdWith).to.deep.equal(['grok']);
+        // The request still asks for the restriction; the runner records what the backend gave.
+        expect(requests[0].readOnlyWorkspace).to.equal(true);
+    });
+
+    it('enforceability outranks judge independence', async () => {
+        // codex both wrote the code and is the only backend that can be held read-only. A judge that
+        // shares the writer's model is a weaker verdict; a judge that can edit the code is no verdict.
+        const routing = new QaapWorkflowRoutingPolicy({ judge: { any: ['codex', 'grok'] } });
+        const { adapter, createdWith } = buildAdapter({
+            routing,
+            installed: ['codex', 'grok'],
+            nodes: [writerNode, judgeNode],
+            routedAgents: { implement: 'codex' },
+        });
+        await adapter.startAgentTurn(judgeNode, context);
+        expect(createdWith).to.deep.equal(['codex']);
+    });
+
+    it('refuses an unenforceable read-only node under the opt-in strict switch', async () => {
+        const routing = new QaapWorkflowRoutingPolicy({ judge: { any: ['grok'] } });
+        const { adapter } = buildAdapter({ routing, installed: ['grok'] });
+        process.env[QAAP_WORKFLOW_STRICT_READONLY_ENV] = '1';
+        try {
+            await adapter.startAgentTurn(judgeNode, context).then(
+                () => expect.fail('expected the dispatch to be refused'),
+                (error: Error) => expect(error.message).to.include('cannot enforce it'),
+            );
+        } finally {
+            delete process.env[QAAP_WORKFLOW_STRICT_READONLY_ENV];
+        }
     });
 });
 
