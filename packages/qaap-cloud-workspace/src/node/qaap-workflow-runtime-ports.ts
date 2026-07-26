@@ -15,8 +15,9 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { QaapAgentTaskState } from '../common/qaap-agent-task';
 import { QaapJobState } from '../common/qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowDeterministicNode } from '../common/qaap-workflow-ir';
+import { resolveQaapWorkflowTaskKind } from '../common/qaap-workflow-model-routing';
 import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-registry';
-import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
+import { QaapWorkflowRoutingPolicy, QaapWorkflowRoutingResult } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapJobRuntime } from './qaap-job-runtime';
@@ -30,7 +31,10 @@ import {
     QAAP_WORKFLOW_GIT_DIFF_FUNCTION,
     QAAP_WORKFLOW_VERIFY_FUNCTION,
 } from './qaap-workflow-job-functions';
-import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+
+/** Nothing excluded — a plain routing pass. */
+const EMPTY_EXCLUSION: ReadonlySet<string> = new Set();
 
 /** Deterministic ops that already have a runtime. Others fail loudly instead of silently passing. */
 const FUNCTION_BY_OP: Readonly<Partial<Record<QaapWorkflowDeterministicNode['op'], string>>> = {
@@ -73,12 +77,7 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
         });
         // An unpinned turn declares only capability + tier; the policy maps that onto an installed
         // backend, and an unresolved ref falls back to the runner's own default agent.
-        const routed = this.routing.resolve(
-            node.capability,
-            node.costTier,
-            agentRef => this.isAgentAvailable(agentRef),
-            node.agentRef,
-        );
+        const routed = this.resolveBackend(node, record);
         const task = this.runner.create({
             title: `${record.def.name} · ${node.id}`,
             prompt,
@@ -87,11 +86,60 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
             // The graph owns the review (its judge node), so the runner must not review this turn
             // as well. Only writer turns would trigger it; a read-only judge never does.
             externalReview: node.isolation !== 'cwd-readonly',
+            // Hands the orchestrator's own capability/costTier evaluation to model routing, so a
+            // cheap explore/measure turn and a premium implement/judge turn land on different
+            // models instead of both falling through to the runner's prompt-text heuristic.
+            taskKind: resolveQaapWorkflowTaskKind(node.capability, node.costTier),
         }, context.ownerLogin || undefined);
         if (routed.agentRef) {
             this.routedAgentByTask.set(task.id, routed.agentRef);
+            // Durable, unlike the map above, which only lives until this task reports: a judge
+            // dispatched later still has to know who wrote the code.
+            await this.store.noteRoutedAgent(context.ownerLogin, context.runId, node.id, routed.agentRef);
         }
         return task.id;
+    }
+
+    /**
+     * Which backend runs this node.
+     *
+     * A judge is routed AWAY from every backend that already wrote in this run: "independent
+     * adversarial review" is only true if a different model performs it, and with one strong
+     * backend installed the table would happily pick the same one that just implemented the change
+     * — a model grading its own homework, presented as an independent verdict.
+     *
+     * Independence is preferred, never required: if excluding the writers leaves nothing installed,
+     * the same backend reviews rather than the change going unreviewed. The judge node's
+     * `requireSentinel` still governs the verdict either way.
+     */
+    protected resolveBackend(
+        node: QaapWorkflowAgentTurnNode,
+        record: QaapPersistedWorkflowRun,
+    ): QaapWorkflowRoutingResult {
+        const resolve = (blocked: ReadonlySet<string>): QaapWorkflowRoutingResult => this.routing.resolve(
+            node.capability,
+            node.costTier,
+            agentRef => !blocked.has(agentRef) && this.isAgentAvailable(agentRef),
+            node.agentRef,
+        );
+        if (node.capability !== 'judge') {
+            return resolve(EMPTY_EXCLUSION);
+        }
+        const writers = this.writerAgentsOf(record);
+        const independent = writers.size > 0 ? resolve(writers) : undefined;
+        return independent?.agentRef ? independent : resolve(EMPTY_EXCLUSION);
+    }
+
+    /** Backends that already ran a node allowed to modify the workspace in this run. */
+    protected writerAgentsOf(record: QaapPersistedWorkflowRun): ReadonlySet<string> {
+        const writers = new Set<string>();
+        for (const [nodeId, agentRef] of Object.entries(record.routedAgents)) {
+            const node = record.def.nodes.find(candidate => candidate.id === nodeId);
+            if (node?.kind === 'agent-turn' && node.isolation !== 'cwd-readonly') {
+                writers.add(agentRef);
+            }
+        }
+        return writers;
     }
 
     noteAgentTurnResult(externalId: string, state: QaapAgentTaskState): void {
@@ -155,7 +203,11 @@ export class QaapWorkflowDeterministicAdapter implements QaapWorkflowDeterminist
             cwd: record.cwd,
             // Measure against where the repository was when the run started, not against HEAD:
             // an agent that commits its work leaves a clean tree and would look like no change.
-            input: record.baseRef ? { baseRef: record.baseRef } : {},
+            input: {
+                ...(record.baseRef ? { baseRef: record.baseRef } : {}),
+                // Only the verify op reads it; the others ignore an extra key.
+                ...(record.goalCheckScript ? { script: record.goalCheckScript } : {}),
+            },
             // One run must never start the same node twice, even if a report is replayed.
             idempotencyKey: `workflow:${context.runId}:${context.nodeId}`,
         }, context.ownerLogin || undefined);

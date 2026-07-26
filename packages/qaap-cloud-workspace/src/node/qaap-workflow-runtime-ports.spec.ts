@@ -26,11 +26,24 @@ const context: QaapWorkflowDispatchContext = { runId: 'r1', nodeId: 'judge', own
 interface Harness {
     adapter: QaapWorkflowAgentTurnAdapter;
     createdWith: (string | undefined)[];
+    taskKinds: (string | undefined)[];
+    noted: string[];
+}
+
+interface HarnessOptions {
+    /** Nodes the run's definition declares, so writer turns can be told from read-only ones. */
+    readonly nodes?: readonly QaapWorkflowAgentTurnNode[];
+    /** Node id → backend already routed in this run. */
+    readonly routedAgents?: Readonly<Record<string, string>>;
+    /** Installed backends; defaults to codex + qaiq. */
+    readonly installed?: readonly string[];
 }
 
 /** Real routing policy + registry; runner/store stubbed. codex and qaiq both installed. */
-function buildAdapter(): Harness {
+function buildAdapter(options: HarnessOptions = {}): Harness {
     const createdWith: (string | undefined)[] = [];
+    const taskKinds: (string | undefined)[] = [];
+    const noted: string[] = [];
     let counter = 0;
     const adapter = Object.create(QaapWorkflowAgentTurnAdapter.prototype) as QaapWorkflowAgentTurnAdapter;
     Object.assign(adapter, {
@@ -41,23 +54,28 @@ function buildAdapter(): Harness {
         store: {
             get: () => ({
                 run: { id: 'r1', bindings: {} },
-                def: { name: 'Wf' },
+                def: { name: 'Wf', nodes: [...(options.nodes ?? [])] },
                 inputs: { task: 'do it' },
                 cwd: '/repo',
+                artifacts: {},
+                routedAgents: { ...(options.routedAgents ?? {}) },
             }),
+            noteRoutedAgent: async (_owner: string, _runId: string, nodeId: string, agentRef: string) => {
+                noted.push(`${nodeId}:${agentRef}`);
+                return undefined;
+            },
         },
         runner: {
-            listAgents: () => [
-                { id: 'codex', label: 'Codex', available: true },
-                { id: 'qaiq', label: 'QAIQ', available: true },
-            ],
-            create: (request: { agent?: string }) => {
+            listAgents: () => (options.installed ?? ['codex', 'qaiq'])
+                .map(id => ({ id, label: id, available: true })),
+            create: (request: { agent?: string; taskKind?: string }) => {
                 createdWith.push(request.agent);
+                taskKinds.push(request.taskKind);
                 return { id: `task-${++counter}` };
             },
         },
     });
-    return { adapter, createdWith };
+    return { adapter, createdWith, taskKinds, noted };
 }
 
 describe('QaapWorkflowAgentTurnAdapter backend cooldown', () => {
@@ -95,5 +113,83 @@ describe('QaapWorkflowAgentTurnAdapter backend cooldown', () => {
     it('ignores results for tasks it did not route (pinned or foreign)', () => {
         const { adapter } = buildAdapter();
         expect(() => adapter.noteAgentTurnResult('task-unknown', 'failed')).to.not.throw();
+    });
+});
+
+describe('QaapWorkflowAgentTurnAdapter model routing hand-off', () => {
+    it('derives taskKind from the node capability (judge, standard tier -> implementation)', async () => {
+        const { adapter, taskKinds } = buildAdapter();
+        await adapter.startAgentTurn(judgeNode, context);
+        expect(taskKinds).to.deep.equal(['implementation']);
+    });
+
+    it('lets an explicit cheap costTier override the capability default', async () => {
+        const { adapter, taskKinds } = buildAdapter();
+        const cheapJudgeNode: QaapWorkflowAgentTurnNode = { ...judgeNode, costTier: 'cheap' };
+        await adapter.startAgentTurn(cheapJudgeNode, context);
+        expect(taskKinds).to.deep.equal(['exploration']);
+    });
+
+    it('derives exploration for an explore node the caller marked cheap', async () => {
+        const { adapter, taskKinds } = buildAdapter();
+        const exploreNode: QaapWorkflowAgentTurnNode = {
+            kind: 'agent-turn',
+            id: 'explore-1',
+            capability: 'explore',
+            costTier: 'cheap',
+            isolation: 'cwd-readonly',
+            promptRef: 'explore-structure',
+        };
+        await adapter.startAgentTurn(exploreNode, context);
+        expect(taskKinds).to.deep.equal(['exploration']);
+    });
+});
+
+describe('QaapWorkflowAgentTurnAdapter judge independence', () => {
+    const implementNode: QaapWorkflowAgentTurnNode = {
+        kind: 'agent-turn',
+        id: 'implement',
+        capability: 'implement',
+        isolation: 'cwd',
+        promptRef: 'user-task',
+    };
+    const nodes = [implementNode, judgeNode];
+
+    it('keeps the judge off the backend that wrote the code', async () => {
+        // "Independent adversarial review" is only true if a different model performs it. With the
+        // writer excluded the judge falls to the next installed candidate.
+        const { adapter, createdWith } = buildAdapter({ nodes, routedAgents: { implement: 'codex' } });
+        await adapter.startAgentTurn(judgeNode, { ...context, nodeId: 'judge' });
+        expect(createdWith).to.deep.equal(['qaiq']);
+    });
+
+    it('reviews with the same backend rather than not reviewing at all', async () => {
+        // Only one backend installed: an unreviewed change is worse than a self-review, and the
+        // verdict sentinel still governs the outcome.
+        const { adapter, createdWith } = buildAdapter({
+            nodes,
+            routedAgents: { implement: 'codex' },
+            installed: ['codex'],
+        });
+        await adapter.startAgentTurn(judgeNode, { ...context, nodeId: 'judge' });
+        expect(createdWith).to.deep.equal(['codex']);
+    });
+
+    it('does not exclude a read-only turn — an explorer wrote nothing to review', async () => {
+        const explorer: QaapWorkflowAgentTurnNode = {
+            kind: 'agent-turn', id: 'explore', capability: 'explore', isolation: 'cwd-readonly', promptRef: 'explore-structure',
+        };
+        const { adapter, createdWith } = buildAdapter({
+            nodes: [explorer, judgeNode],
+            routedAgents: { explore: 'codex' },
+        });
+        await adapter.startAgentTurn(judgeNode, { ...context, nodeId: 'judge' });
+        expect(createdWith).to.deep.equal(['codex']);
+    });
+
+    it('remembers the backend durably, so a later judge can avoid it', async () => {
+        const { adapter, noted } = buildAdapter({ nodes });
+        await adapter.startAgentTurn(implementNode, { ...context, nodeId: 'implement' });
+        expect(noted).to.deep.equal(['implement:codex']);
     });
 });
