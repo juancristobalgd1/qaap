@@ -106,6 +106,21 @@ describe('resolveEffectiveRequestAgentModel', () => {
         }
     });
 
+    it('still routes the legacy agent id that migrates onto the Settings catalog', () => {
+        // `openclaude` is the old id for `qaiq`, and the catalog check normalizes before looking
+        // up. Drop that normalization and the legacy id silently stops routing — the turn keeps
+        // running, on whatever model the CLI defaults to, with nothing to show it changed.
+        const readPref = (key: string): unknown => key === 'ai-features.languageModelAliases'
+            ? { 'default/code': { selectedModel: 'anthropic/claude-sonnet-4-20250514' } }
+            : undefined;
+        const routed = resolveEffectiveRequestAgentModel(
+            { prompt: 'Implement the OAuth callback fix' },
+            readPref,
+            'openclaude',
+        );
+        expect(routed?.modelId).to.equal('claude-sonnet-4-20250514');
+    });
+
     it('keeps an explicit picker model for a native-catalog agent', () => {
         const explicit = { provider: 'anthropic' as const, vendor: 'claude', modelId: 'claude-haiku-4-5' };
         expect(resolveEffectiveRequestAgentModel(
