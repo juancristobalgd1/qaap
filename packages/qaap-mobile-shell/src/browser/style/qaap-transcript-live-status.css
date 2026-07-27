@@ -1,6 +1,6 @@
 /* Claude-style live turn row: logo + activity + elapsed · tokens.
- * Lives as the last child of the transcript scroller so it scrolls with the
- * thread and stays below the latest agent message. */
+ * Lives as the last child of the transcript scroller for the whole backend turn.
+ * Removed only when the task finishes (idle/failed) — not on mid-stream "settled". */
 
 .theia-mobile-agent-transcript-stream-footer {
   flex: 0 0 auto;
@@ -8,7 +8,6 @@
   z-index: 2;
   width: 100%;
   box-sizing: border-box;
-  /* Opaque so any residual composer lip cannot show through the status row. */
   background: var(--q-bg, var(--qaap-bg, var(--theia-editor-background, #0a0a0a)));
 }
 
@@ -33,14 +32,10 @@
  * Canonical host: direct child of the transcript scroller (always last).
  * Nested copies inside message rows/segments stay hidden (off-DOM build leak).
  */
-.theia-mobile-agent-transcript > .theia-mobile-agent-live-status {
+.theia-mobile-agent-transcript>.theia-mobile-agent-live-status {
   display: flex !important;
   flex: 0 0 auto;
   margin-top: 4px;
-  /* Opaque + above the virtual window: streaming rows are position:absolute
-   * inside the spacer and can paint into this band until sizes[] catch up. */
-  position: relative;
-  z-index: 2;
   background: var(--q-bg, var(--qaap-bg, var(--theia-editor-background, #0a0a0a)));
 }
 
@@ -76,9 +71,7 @@
  * hide only the duplicate orb+label chrome. Do NOT `display:none` the whole
  * activity host — that swings scrollHeight and bounces follow-tail.
  */
-.theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status)
-  .theia-mobile-agent-activity > .qaap-agent-setup,
-.theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status)
-  .theia-mobile-agent-activity > .theia-mobile-agent-stream-line {
+.theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status) .theia-mobile-agent-activity>.qaap-agent-setup,
+.theia-mobile-agent-transcript-real-chat:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status) .theia-mobile-agent-activity>.theia-mobile-agent-stream-line {
   display: none !important;
 }

@@ -14,13 +14,13 @@ import {
 } from './qaap-agent-context-usage';
 import { QAAP_BRAND_LOGO_INDICATOR_CLASS, syncShimmerTextElement } from './qaap-agent-setup-phrases';
 
-/** Live turn row: always the last child of the transcript scroller while streaming. */
+/** Live turn row: always the last child of the transcript scroller while the turn is in flight. */
 export const TRANSCRIPT_LIVE_STATUS_ATTR = 'data-transcript-live-status';
 export const TRANSCRIPT_LIVE_STATUS_CLASS = 'theia-mobile-agent-live-status';
 export const TRANSCRIPT_LIVE_STATUS_LOGO_CLASS = 'qaap-transcript-live-status-logo';
 /**
  * Legacy pinned host (sibling of the scroller). Kept for host reshape / clear paths;
- * live-status now mounts inside the scroller as its last child.
+ * live-status mounts inside the scroller as its last child.
  */
 export const TRANSCRIPT_STREAM_FOOTER_HOST_CLASS = 'theia-mobile-agent-transcript-stream-footer';
 
@@ -96,7 +96,6 @@ export function createTranscriptLiveStatusElement(
 export function ensureTranscriptStreamFooterHost(chatHost: HTMLElement): HTMLElement {
     let host = chatHost.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_STREAM_FOOTER_HOST_CLASS}`);
     if (host) {
-        // Keep the footer after the scroller even if replaceChildren reordered children.
         const scroller = chatHost.querySelector(':scope > .theia-mobile-agent-transcript');
         if (scroller && host.previousElementSibling !== scroller) {
             chatHost.append(host);
@@ -145,6 +144,31 @@ export function removeInlineTranscriptLiveStatusFromScroller(chatHost: HTMLEleme
 }
 
 /**
+ * Detach the canonical scroller-tail live-status (same node) so a full
+ * `replaceChildren` / virtual mount can rebuild messages without destroying the
+ * ThinkingOrb + shimmer timers. Caller must re-append via
+ * {@link ensureTranscriptLiveStatusAtScrollerTail}.
+ */
+export function detachTranscriptLiveStatusFromScroller(scroller: HTMLElement): HTMLElement | undefined {
+    const live = scroller.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_LIVE_STATUS_CLASS}`);
+    live?.remove();
+    return live ?? undefined;
+}
+
+/**
+ * Insert message / activity / compaction nodes *before* the live-status tail so
+ * a mid-turn append never buries the chrome for a frame (visible jump + orb flash).
+ */
+export function appendBeforeTranscriptLiveStatus(scroller: HTMLElement, node: Node): void {
+    const live = scroller.querySelector(`:scope > .${TRANSCRIPT_LIVE_STATUS_CLASS}`);
+    if (live) {
+        scroller.insertBefore(node, live);
+        return;
+    }
+    scroller.append(node);
+}
+
+/**
  * Keep `element` as the last child of the transcript scroller so new message rows
  * never bury the live-status chrome mid-turn.
  */
@@ -162,6 +186,14 @@ export function ensureTranscriptLiveStatusAtScrollerTail(
     return scroller;
 }
 
+/** @deprecated Alias — live-status mounts at the scroller tail. */
+export function ensureTranscriptLiveStatusPinned(
+    chatHost: HTMLElement,
+    element: HTMLElement,
+): HTMLElement | undefined {
+    return ensureTranscriptLiveStatusAtScrollerTail(chatHost, element);
+}
+
 /** Hide and empty the legacy pinned footer host (live-status no longer mounts there). */
 export function clearLegacyTranscriptStreamFooterHost(chatHost: HTMLElement): void {
     const footerHost = chatHost.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_STREAM_FOOTER_HOST_CLASS}`);
@@ -174,7 +206,6 @@ export function clearLegacyTranscriptStreamFooterHost(chatHost: HTMLElement): vo
 
 export function formatTranscriptLiveStatusMeta(snapshot: TranscriptLiveStatusSnapshot): string {
     const parts: string[] = [formatTranscriptStreamElapsed(snapshot.elapsedMs)];
-    // Always show the token meter beside elapsed — never drop it when count is 0.
     const rawTokens = snapshot.tokenCount !== undefined
         ? snapshot.tokenCount
         : Math.round(snapshot.streamChars / 4);
@@ -184,7 +215,15 @@ export function formatTranscriptLiveStatusMeta(snapshot: TranscriptLiveStatusSna
 
 export function formatTranscriptLiveStatusActivity(snapshot: TranscriptLiveStatusSnapshot): string {
     const label = snapshot.activityTitle.replace(/…+$/u, '').trim();
-    return label ? `${label}…` : '…';
+    if (!label) {
+        return '…';
+    }
+    // Duration-based labels ("Processing for 12s", "Processed in 8s") read as
+    // complete sentences — appending "…" makes them look unfinished.
+    if (/\d+s$/.test(label) || /\d+m\b/.test(label)) {
+        return label;
+    }
+    return `${label}…`;
 }
 
 export function formatTranscriptLiveStatusText(snapshot: TranscriptLiveStatusSnapshot): string {
