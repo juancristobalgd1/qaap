@@ -24,9 +24,13 @@ import {
 import { deriveVisualFlowSteps } from '../common/qaap-visual-flow-plan';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { captureSameOriginPreview } from '@theia/qaap-adapters/lib/browser/qaap-preview-overflow-actions';
-import { validateQaapPreviewDocument } from './qaap-preview-visual-validation';
+import {
+    qaapPreviewDocumentIsProxyFailure,
+    validateQaapPreviewDocument,
+} from './qaap-preview-visual-validation';
 import { conversationLikelyNeedsVisualVerification, parseQaapCaptureDirective } from '../common/qaap-visual-verification';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     resumeQaapMiniBrowserPreview,
     syncQaapMiniBrowserPreviewSuspension,
@@ -152,11 +156,12 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
             // Mount the preview widget for headless capture without yanking the Work Hub surface
             // to Browser/Preview — the user opens that tab only via an explicit affordance.
             await this.bootstrap.openPreview(readyUrl, true, { silent: true }).catch(() => undefined);
+            const capturePreviewUrl = this.bootstrap.previewUrl ?? readyUrl;
             // Work Hub normally suspends preview iframes to avoid background HMR traffic. Resume
             // them only for this bounded capture, then restore the normal shell policy.
             resumeQaapMiniBrowserPreview(this.shell);
             try {
-                await this.captureVisualVerification(summary.id, readyUrl, targetAgentMessageId, conversation);
+                await this.captureVisualVerification(summary.id, capturePreviewUrl, targetAgentMessageId, conversation);
             } catch (error) {
                 console.warn('[qaap-visual-verification] automatic capture failed:', error);
                 if (needsVisualVerification && outOfBudget && targetAgentMessageId) {
@@ -277,8 +282,9 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
         for (let attempt = 0; attempt < attempts; attempt++) {
             // The Work Hub suspension policy parks preview iframes at about:blank, which the
             // port-based match rejects — fall back to the active surface and navigate it directly.
-            frame = this.previewSurfaces.getSurfaceForPreviewUrl(previewUrl)?.frame
-                ?? this.previewSurfaces.getActiveSurface()?.frame;
+            // Fail closed: an active surface may belong to another project. Only a surface whose
+            // registered URL matches this execution may be navigated, inspected, or captured.
+            frame = this.previewSurfaces.getSurfaceForPreviewUrl(previewUrl)?.frame;
             if (frame) {
                 let currentHref: string | undefined;
                 try {
@@ -320,6 +326,12 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
                 atTarget = false;
             }
             if (frame && doc?.body && doc.readyState === 'complete' && atTarget) {
+                if (qaapPreviewDocumentIsProxyFailure(doc)) {
+                    throw new Error(nls.localize(
+                        'qaap/visualVerification/previewExecutionMismatch',
+                        'Qaap refused to capture a preview that belongs to another execution.',
+                    ));
+                }
                 return { frame, doc };
             }
             await new Promise(resolve => setTimeout(resolve, VISUAL_CAPTURE_INTERVAL_MS));

@@ -13,7 +13,11 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
-import { parsePreviewProxyPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import {
+    parsePreviewIdentityPath,
+    parsePreviewProxyPath,
+    rebasePreviewUrlToIdentityClaim,
+} from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
@@ -29,7 +33,13 @@ import {
     QaapProjectDescriptor,
     QaapProjectKind,
 } from './qaap-project-bootstrap-types';
-import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, toDevPreviewUrl, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import {
+    fetchQaapCurrentDevPreview,
+    probeQaapDevPreviewPort,
+    probeQaapIdentityPreview,
+    toDevPreviewUrl,
+    waitForQaapDevPreviewPort,
+} from './qaap-dev-preview-client';
 import {
     getImplicitDevPort,
     getQaapIdeListenPort,
@@ -1635,26 +1645,42 @@ export class QaapProjectBootstrapService {
         isPrimary: boolean = true,
         options?: { auto?: boolean; silent?: boolean },
     ): Promise<void> {
+        let identity: ReturnType<typeof parsePreviewIdentityPath>;
+        try {
+            identity = parsePreviewIdentityPath(new URL(url, resolveDevPreviewPublicOrigin()).pathname);
+        } catch {
+            identity = undefined;
+        }
+        if (identity) {
+            const probe = await probeQaapIdentityPreview(identity.previewId);
+            if (!probe.ready) {
+                await this.reconcileSupersededPreviewClaim();
+            }
+        }
         // Re-claim the target port right before opening: claims are TTL'd server-side and the
         // proxy fails closed, so an open without a live claim 403s the owner's own preview.
         const targetPortForClaim = this.extractPort(url);
         if (targetPortForClaim !== undefined && !isReservedIdePort(targetPortForClaim)) {
             await this.claimDevPreviewPort(targetPortForClaim);
         }
+        const activeClaim = this.activePreviewClaim;
+        const targetUrl = activeClaim && activeClaim.port === targetPortForClaim
+            ? rebasePreviewUrlToIdentityClaim(url, activeClaim.previewUrl)
+            : url;
         if (options?.auto && !this.mayAutoOpenPreviewNow()) {
             // Stage instead of navigating: record the ready URL and flip to `running` so the
             // transcript listener offers the "Open preview" pill; the user performs navigation.
-            this._previewUrl = url;
+            this._previewUrl = targetUrl;
             this.persistPhase('running');
             this.setPhase('running');
             this.syncHubSession('running');
             return;
         }
         try {
-            await this.openPreviewWidget(url);
-            this._previewUrl = url;
+            await this.openPreviewWidget(targetUrl);
+            this._previewUrl = targetUrl;
             if (isPrimary) {
-                const targetPort = this.extractPort(url);
+                const targetPort = this.extractPort(targetUrl);
                 if (targetPort !== undefined) {
                     this.markPortOpened(targetPort, true);
                 }
@@ -1664,7 +1690,7 @@ export class QaapProjectBootstrapService {
             this.syncHubSession('running');
             if (typeof window !== 'undefined' && !options?.silent) {
                 window.dispatchEvent(new CustomEvent('qaap-bootstrap-preview-opened', {
-                    detail: { url, userInitiated: !options?.auto },
+                    detail: { url: targetUrl, userInitiated: !options?.auto },
                 }));
             }
             this.syncMiniBrowserPreviewSuspensionAfterOpen();

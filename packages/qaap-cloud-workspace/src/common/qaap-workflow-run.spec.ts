@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { buildImplementThenReviewWorkflow, type QaapWorkflowDef } from './qaap-workflow-ir';
+import { buildEvidenceAuditWorkflow, buildImplementThenReviewWorkflow, type QaapWorkflowDef } from './qaap-workflow-ir';
 import {
     DEFAULT_QAAP_WORKFLOW_RUN_BUDGET,
     advanceQaapWorkflowRun,
@@ -131,6 +131,35 @@ describe('advanceQaapWorkflowRun', () => {
         expect(rearmed.dispatch).to.deep.equal(['join']);
         expect(rearmed.run.status).to.equal('running');
         expect(rearmed.run.visits.join).to.equal(2);
+    });
+
+    it('runs the evidence audit in parallel and can pass after a rejected-report revision', () => {
+        const def = buildEvidenceAuditWorkflow();
+        let current = startQaapWorkflowRun(def, {
+            runId: 'audit',
+            budget: { maxNodeRuns: 32, maxVisitsPerNode: 3 },
+        });
+        expect(current.dispatch).to.deep.equal(['audit-auth', 'audit-inputs', 'audit-integrations']);
+
+        current = advanceQaapWorkflowRun(def, current.run, 'audit-auth', 'success');
+        expect(current.dispatch).to.deep.equal([]);
+        current = advanceQaapWorkflowRun(def, current.run, 'audit-inputs', 'success');
+        expect(current.dispatch).to.deep.equal([]);
+        current = advanceQaapWorkflowRun(def, current.run, 'audit-integrations', 'success');
+        expect(current.dispatch).to.deep.equal(['audit-mapped']);
+        current = advanceQaapWorkflowRun(def, current.run, 'audit-mapped', 'success');
+        expect(current.dispatch).to.deep.equal(['audit-synthesis']);
+        current = advanceQaapWorkflowRun(def, current.run, 'audit-synthesis', 'success');
+        expect(current.dispatch).to.deep.equal(['audit-judge']);
+        current = advanceQaapWorkflowRun(def, current.run, 'audit-judge', 'verdict:fail');
+        expect(current.dispatch).to.deep.equal(['audit-revise']);
+        current = advanceQaapWorkflowRun(def, current.run, 'audit-revise', 'success');
+        expect(current.dispatch).to.deep.equal(['audit-judge']);
+        current = advanceQaapWorkflowRun(def, current.run, 'audit-judge', 'verdict:pass', 'artifacts/audit.md');
+
+        expect(current.run.status).to.equal('succeeded');
+        expect(current.run.bindings).to.deep.equal({ 'audit.passed': 'artifacts/audit.md' });
+        expect(current.run.visits['audit-judge']).to.equal(2);
     });
 
     it('detects a stalled wait-all join when the last live branch dies', () => {

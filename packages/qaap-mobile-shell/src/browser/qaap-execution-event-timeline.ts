@@ -707,10 +707,9 @@ export interface MobileProcessAccordionOptions {
  * The accordion is auto-expanded when `isWorking` or `isError` is true, and
  * auto-collapsed only when a successful turn is finalized (`settled: true`).
  * Once the user manually toggles it (detected via the `data-user-toggled`
- * attribute), auto-expansion is suppressed for the remainder of the active
- * turn. A successful final settle still collapses the accordion so the final
- * response can take focus. The flag is never cleared programmatically; a new
- * turn renders a fresh accordion element or a fresh turn-state key.
+ * attribute), their open/closed choice wins over every automatic transition
+ * for the remainder of that turn. The flag is never cleared programmatically;
+ * a new turn renders a fresh accordion element or a fresh turn-state key.
  */
 export function createMobileProcessAccordion(
     segments: readonly QaapAgentMessageSegmentDTO[],
@@ -739,10 +738,13 @@ export function wrapMobileProcessAccordion(
     // by a full re-render or a patch fallback), restore the previous element's
     // open/user-toggled state instead of recomputing it — a transient
     // `isWorking === false` snapshot at rebuild time must not create the new
-    // accordion collapsed. A successful final settle is the only exception:
-    // it always starts collapsed because the final response is now committed.
+    // accordion collapsed. A successful final settle starts collapsed unless
+    // this turn has a remembered manual choice.
     const remembered = turnStartMs !== undefined ? processAccordionTurnState.get(turnStartMs) : undefined;
-    if (settled === true && !isError && !isCancelled) {
+    if (remembered?.userToggled) {
+        details.open = remembered.open;
+        details.setAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR, '1');
+    } else if (settled === true && !isError && !isCancelled) {
         details.open = false;
     } else if (remembered) {
         // Keep mid-stream rebuilds expanded while the agent is active unless
@@ -753,9 +755,6 @@ export function wrapMobileProcessAccordion(
             details.open = true;
         } else {
             details.open = remembered.open;
-        }
-        if (remembered.userToggled) {
-            details.setAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR, '1');
         }
     } else {
         details.open = isWorking || isError || !!isCancelled;
@@ -903,10 +902,10 @@ function syncMobileProcessAccordionLabelTicker(
  *
  * Rules:
  * - If the user has manually toggled (`data-user-toggled="1"`), the auto
- *   expansion logic below is skipped while the turn is active — the flag is
- *   never cleared by this function, so the user's choice persists until the
- *   turn really settles. A new turn renders a fresh accordion element/state
- *   key, so the flag naturally starts clear again.
+ *   expansion logic below is skipped for the remainder of the turn — the flag
+ *   is never cleared by this function, so the user's choice also wins at final
+ *   settlement. A new turn renders a fresh accordion element/state key, so the
+ *   flag naturally starts clear again.
  * - Working or error → expanded. Completed successfully → collapsed, but only
  *   on a `settled` sync. A transient `isWorking === false` during streaming
  *   leaves the accordion exactly as-is, so it never oscillates mid-stream.
@@ -949,10 +948,8 @@ export function syncMobileProcessAccordionState(
 
     const finalSuccessfulSettle = options.settled === true && !isError && !isCancelled;
 
-    // If the user manually toggled, respect their choice while the turn is
-    // active — never fight the user by auto-expanding during intermediate
-    // transitions. Final successful settlement is allowed to collapse.
-    if (!finalSuccessfulSettle && details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
+    // A manual choice owns this turn, including the final settlement.
+    if (details.getAttribute(PROCESS_ACCORDION_USER_TOGGLED_ATTR) === '1') {
         return;
     }
 

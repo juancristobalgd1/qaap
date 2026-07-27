@@ -45,6 +45,17 @@ describe('QaapWorkflowTemplateRegistry', () => {
         expect(registry.get('nope')).to.equal(undefined);
     });
 
+    it('exposes a read-only evidence-audit graph with independent review and revision', () => {
+        const template = registry.get('qaap.evidence-audit');
+        expect(template?.summary.requiredInputs).to.deep.equal(['task']);
+        const def = template!.build();
+        expect(def.entry).to.deep.equal(['audit-auth', 'audit-inputs', 'audit-integrations']);
+        expect(def.nodes.filter(node => node.kind === 'agent-turn')
+            .every(node => node.kind === 'agent-turn' && node.isolation === 'cwd-readonly')).to.equal(true);
+        expect(def.edges).to.deep.include({ from: 'audit-judge', to: 'audit-revise', when: 'verdict:fail' });
+        expect(def.edges).to.deep.include({ from: 'audit-revise', to: 'audit-judge', when: 'success' });
+    });
+
     it('refuses to register a duplicate id', () => {
         const template = registry.get('qaap.implement-then-review')!;
         expect(() => registry.register(template)).to.throw(/Duplicate/);

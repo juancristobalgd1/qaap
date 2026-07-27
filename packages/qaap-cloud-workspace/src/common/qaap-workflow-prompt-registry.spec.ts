@@ -86,6 +86,47 @@ describe('goal prompts', () => {
     });
 });
 
+describe('evidence-audit prompts', () => {
+    let registry: QaapWorkflowPromptRegistry;
+    beforeEach(() => registry = new QaapWorkflowPromptRegistry());
+
+    it('keeps investigator scopes disjoint and bounded', () => {
+        const auth = registry.resolve('audit-auth', { inputs: { task: 'audit security' }, bindings: {} });
+        const inputs = registry.resolve('audit-inputs', { inputs: { task: 'audit security' }, bindings: {} });
+        expect(auth).to.include('authentication, authorization, tenant isolation');
+        expect(auth).to.include('at most 5 candidates');
+        expect(inputs).to.include('XSS, SSRF');
+        expect(inputs).to.include('safe reproduction strategy');
+    });
+
+    it('synthesizes investigator artifacts as leads and requires calibrated evidence', () => {
+        const prompt = registry.resolve('audit-synthesis', {
+            inputs: { task: 'audit security' },
+            bindings: {},
+            artifacts: {
+                'audit.auth': 'Possible IDOR in api/account.ts:42',
+                'audit.inputs': 'Rejected XSS: output is escaped',
+                'audit.integrations': 'No webhook findings',
+            },
+        });
+        expect(prompt).to.include('Possible IDOR in api/account.ts:42');
+        expect(prompt).to.include('leads, not facts');
+        expect(prompt).to.include('expected versus observed result');
+        expect(prompt).to.include('what was not verified');
+    });
+
+    it('makes the independent reviewer reject unsupported or inflated findings', () => {
+        const prompt = registry.resolve('audit-review', {
+            inputs: { task: 'audit security' },
+            bindings: {},
+            artifacts: { 'audit.report': 'Critical: dangerous-looking function name.' },
+        });
+        expect(prompt).to.include('Reject it if');
+        expect(prompt).to.include('inflated severities');
+        expect(prompt).to.include('@@QAAP:VERDICT@@');
+    });
+});
+
 describe('plan prompts', () => {
     let registry: QaapWorkflowPromptRegistry;
     beforeEach(() => registry = new QaapWorkflowPromptRegistry());

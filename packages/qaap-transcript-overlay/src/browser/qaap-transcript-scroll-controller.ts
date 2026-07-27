@@ -96,6 +96,7 @@ export function restoreTranscriptScrollAnchor(scroller: HTMLElement, anchor: Tra
 
 type TranscriptScrollReconcileIntent =
     | { readonly kind: 'follow-tail' }
+    | { readonly kind: 'position-turn'; readonly row: HTMLElement }
     | { readonly kind: 'preserve-anchor'; readonly anchor: TranscriptScrollAnchor; readonly settlePass?: boolean };
 
 /** Distance from the live edge that still counts as "glued" for follow writes. */
@@ -245,6 +246,12 @@ export class TranscriptScrollController {
         if (!current) {
             return next;
         }
+        if (next.kind === 'position-turn') {
+            return next;
+        }
+        if (current.kind === 'position-turn') {
+            return current;
+        }
         if (next.kind === 'follow-tail' || current.kind === 'follow-tail') {
             return { kind: 'follow-tail' };
         }
@@ -259,6 +266,25 @@ export class TranscriptScrollController {
         this.reconcileIntent = undefined;
         this.reconcileNeedsSettlePass = false;
         if (!scroller || !intent) {
+            return;
+        }
+        if (intent.kind === 'position-turn') {
+            if (typeof window !== 'undefined'
+                && new URLSearchParams(window.location.search).get('qaapRenderMetrics') === '1') {
+                // eslint-disable-next-line no-console
+                console.log('[QAAP scroll trace] flush position-turn', JSON.stringify({
+                    phase: this.currentPhase,
+                    connected: intent.row.isConnected,
+                    scrollTop: scroller.scrollTop,
+                    scrollHeight: scroller.scrollHeight,
+                    clientHeight: scroller.clientHeight,
+                    rowTop: intent.row.getBoundingClientRect().top,
+                }));
+            }
+            if (this.currentPhase === 'positioning-turn' && intent.row.isConnected) {
+                this.placeReadingPosition(scroller, intent.row);
+                this.completePositionTurn();
+            }
             return;
         }
         if (this.shouldFollowTail()) {
@@ -339,6 +365,33 @@ export class TranscriptScrollController {
         this.placeReadingPosition(scroller, row);
     }
 
+    /**
+     * Place a newly inserted turn on the next animation frame. Full transcript
+     * rendering swaps the row DOM before the browser has committed
+     * content-visibility and markdown layout; measuring synchronously can
+     * therefore clamp against the previous scroll range. This is one
+     * reconciliation write, and an intervening user gesture cancels it through
+     * the phase guard.
+     */
+    schedulePositionTurnStart(scroller: HTMLElement, row: HTMLElement): void {
+        if (!transcriptScrollPhaseAllowsViewportMutation(this.currentPhase, 'position-turn')) {
+            return;
+        }
+        if (typeof window !== 'undefined'
+            && new URLSearchParams(window.location.search).get('qaapRenderMetrics') === '1') {
+            // eslint-disable-next-line no-console
+            console.log('[QAAP scroll trace] schedule position-turn', JSON.stringify({
+                phase: this.currentPhase,
+                connected: row.isConnected,
+                scrollTop: scroller.scrollTop,
+                scrollHeight: scroller.scrollHeight,
+                clientHeight: scroller.clientHeight,
+                rowTop: row.getBoundingClientRect().top,
+            }));
+        }
+        this.scheduleScrollReconciliation(scroller, { kind: 'position-turn', row });
+    }
+
     onContentChanged(scroller: HTMLElement): void {
         this.cancelPendingPreserveAnchor();
         if (!this.shouldFollowTail()) {
@@ -375,6 +428,8 @@ export class TranscriptScrollController {
         let userGestureActive = false;
         let touchActive = false;
         let gestureTimer: ReturnType<typeof setTimeout> | undefined;
+        let resizeObserver: ResizeObserver | undefined;
+        let childObserver: MutationObserver | undefined;
         /**
          * The reader crossed into the live-edge band while still scrolling. Re-attaching
          * mid-gesture lets the next streaming tick snap the viewport to the tail while the
@@ -419,17 +474,16 @@ export class TranscriptScrollController {
         const onWheel = (event: WheelEvent): void => {
             userGestureActive = true;
             this.programmaticScrollUntil = 0;
-            // Upward wheel detaches immediately; downward may re-follow on scroll settle.
-            if (event.deltaY < 0) {
-                pendingReturnToLiveEdge = false;
-                this.notifyUserDetach('wheel');
-            }
+            pendingReturnToLiveEdge = false;
+            this.notifyUserDetach('wheel');
             expireGesture();
         };
         const onTouchStart = (): void => {
             touchActive = true;
             userGestureActive = true;
             this.programmaticScrollUntil = 0;
+            pendingReturnToLiveEdge = false;
+            this.notifyUserDetach('touch');
             expireGesture();
         };
         const onTouchMove = (): void => {
@@ -445,6 +499,8 @@ export class TranscriptScrollController {
             if (event.pointerType !== 'mouse' || event.buttons > 0) {
                 userGestureActive = true;
                 this.programmaticScrollUntil = 0;
+                pendingReturnToLiveEdge = false;
+                this.notifyUserDetach('pointer');
                 expireGesture();
             }
         };
@@ -452,12 +508,8 @@ export class TranscriptScrollController {
             if (eventHasTranscriptScrollIntent(event)) {
                 userGestureActive = true;
                 this.programmaticScrollUntil = 0;
-                const key = event.key;
-                if (key === 'ArrowUp' || key === 'PageUp' || key === 'Home'
-                    || ((event.ctrlKey || event.metaKey) && ['f', 'F', 'g', 'G'].includes(key))) {
-                    pendingReturnToLiveEdge = false;
-                    this.notifyUserDetach('keyboard');
-                }
+                pendingReturnToLiveEdge = false;
+                this.notifyUserDetach('keyboard');
                 expireGesture();
             }
         };
@@ -494,6 +546,32 @@ export class TranscriptScrollController {
                 settleGesture();
             }
         };
+
+        // A DOM patch can finish before deferred rows, markdown, images, or
+        // content-visibility have contributed their final height. Mutation-time
+        // reconciliation alone then leaves a following viewport above the new
+        // live edge. Observe row boxes and feed those post-layout changes back
+        // through the same one-rAF reconciliation path.
+        if (typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => {
+                if (this.shouldFollowTail()) {
+                    this.onContentChanged(scroller);
+                }
+            });
+            const observeChildren = (): void => {
+                for (const child of scroller.children) {
+                    if (child instanceof HTMLElement) {
+                        resizeObserver?.observe(child);
+                    }
+                }
+            };
+            observeChildren();
+            if (typeof MutationObserver !== 'undefined') {
+                childObserver = new MutationObserver(observeChildren);
+                childObserver.observe(scroller, { childList: true });
+            }
+        }
+
         scroller.addEventListener('wheel', onWheel, { passive: true });
         scroller.addEventListener('touchstart', onTouchStart, { passive: true });
         scroller.addEventListener('touchmove', onTouchMove, { passive: true });
@@ -507,6 +585,8 @@ export class TranscriptScrollController {
 
         return Disposable.create(() => {
             clearGestureTimer();
+            childObserver?.disconnect();
+            resizeObserver?.disconnect();
             scroller.removeEventListener('wheel', onWheel);
             scroller.removeEventListener('touchstart', onTouchStart);
             scroller.removeEventListener('touchmove', onTouchMove);

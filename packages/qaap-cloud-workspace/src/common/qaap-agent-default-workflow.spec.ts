@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     appendAgentDefaultWorkflowToPrompt,
+    buildAgentBoundedEvidenceAuditPromptBlock,
     buildAgentCommunicationPromptBlock,
     buildAgentDefaultWorkflowPromptBlock,
     buildAgentDestructiveCommandsPromptBlock,
@@ -16,6 +17,7 @@ import {
     buildAgentPlanningPromptBlock,
     buildAgentRepoMemoryPromptBlock,
     buildAgentSecretsPromptBlock,
+    isBoundedEvidenceAuditRequest,
     parseAgentBlockedSignal,
 } from './qaap-agent-default-workflow';
 
@@ -72,6 +74,39 @@ describe('appendAgentDefaultWorkflowToPrompt', () => {
         const block = buildAgentDefaultWorkflowPromptBlock({ gitAvailable: false });
         expect(block).to.include('not be a git repository');
         expect(block).not.to.include('inspect git status');
+    });
+
+    it('adds a bounded evidence contract only to security-audit requests', () => {
+        const audit = appendAgentDefaultWorkflowToPrompt(
+            'Analyze the application',
+            'qaiq',
+            { userQuery: 'Busca posibles vulnerabilidades y aporta evidencia reproducible.' },
+        );
+        const normal = appendAgentDefaultWorkflowToPrompt(
+            'Analyze this parser bug',
+            'qaiq',
+            { userQuery: 'Analyze this parser bug.' },
+        );
+        expect(audit).to.include('[QAAP bounded evidence audit]');
+        expect(audit).to.include('Never exceed 20 repository-inspection tool calls');
+        expect(audit).to.include('deliver a clearly labeled partial report');
+        expect(normal).not.to.include('[QAAP bounded evidence audit]');
+    });
+});
+
+describe('buildAgentBoundedEvidenceAuditPromptBlock', () => {
+    it('gates severity and requires reproducible evidence before reporting', () => {
+        const block = buildAgentBoundedEvidenceAuditPromptBlock();
+        expect(block).to.include('A source-code pattern alone is not a confirmed vulnerability');
+        expect(block).to.include('Critical requires a demonstrated path');
+        expect(block).to.include('expected versus observed result');
+        expect(block).to.include('Confirmed, Hypothesis, or Rejected');
+    });
+
+    it('recognizes Spanish and English security audits without matching generic analysis', () => {
+        expect(isBoundedEvidenceAuditRequest('Analiza la app y busca vulnerabilidades')).to.equal(true);
+        expect(isBoundedEvidenceAuditRequest('Run a security review of these API routes')).to.equal(true);
+        expect(isBoundedEvidenceAuditRequest('Analyze why this parser is slow')).to.equal(false);
     });
 });
 

@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "suite": {
+    "id": "qaap-event-private-v1",
+    "name": "Qaap International Engineering Event — Format Example",
+    "completionThreshold": 1,
+    "tasks": [
+      {
+        "id": "bug-fix-auth",
+        "weight": 1,
+        "budgets": {
+          "wallTimeMs": 1800000,
+          "costUsd": 5,
+          "humanInterventions": 0
+        }
+      },
+      {
+        "id": "mobile-feature",
+        "weight": 1,
+        "budgets": {
+          "wallTimeMs": 1800000,
+          "costUsd": 5,
+          "humanInterventions": 0
+        }
+      }
+    ]
+  },
+  "runs": [
+    {
+      "id": "qaap-bug-fix-auth-r1",
+      "taskId": "bug-fix-auth",
+      "system": "Qaap",
+      "track": "harness-controlled",
+      "configuration": "goal+verify+review",
+      "model": "same-model-as-baselines",
+      "repetition": 1,
+      "oracle": {
+        "score": 1,
+        "checksPassed": 8,
+        "checksTotal": 8
+      },
+      "safety": {
+        "passed": true,
+        "violations": []
+      },
+      "humanInterventions": 0,
+      "timing": {
+        "wallTimeMs": 720000,
+        "firstOutputMs": 1500
+      },
+      "usage": {
+        "costUsd": 1.42,
+        "totalTokens": 54200
+      },
+      "qaapWorkflow": {
+        "run": {
+          "status": "succeeded",
+          "nodeRuns": 4,
+          "visits": {
+            "explore": 1,
+            "implement": 1,
+            "verify": 1,
+            "judge": 1
+          },
+          "terminationReason": "emit"
+        },
+        "trace": [
+          {
+            "nodeId": "explore",
+            "kind": "agent-turn",
+            "outcome": "success",
+            "startedAt": 1000,
+            "finishedAt": 120000,
+            "durationMs": 119000,
+            "agentRef": "qaap-cheap"
+          },
+          {
+            "nodeId": "implement",
+            "kind": "agent-turn",
+            "outcome": "success",
+            "startedAt": 120000,
+            "finishedAt": 600000,
+            "durationMs": 480000,
+            "agentRef": "qaap-writer"
+          },
+          {
+            "nodeId": "verify",
+            "kind": "deterministic",
+            "outcome": "success",
+            "startedAt": 600000,
+            "finishedAt": 650000,
+            "durationMs": 50000
+          },
+          {
+            "nodeId": "judge",
+            "kind": "agent-turn",
+            "outcome": "verdict:pass",
+            "startedAt": 650000,
+            "finishedAt": 720000,
+            "durationMs": 70000,
+            "agentRef": "qaap-judge"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cursor-bug-fix-auth-r1",
+      "taskId": "bug-fix-auth",
+      "system": "Cursor",
+      "track": "harness-controlled",
+      "configuration": "agent",
+      "model": "same-model-as-baselines",
+      "repetition": 1,
+      "oracle": {
+        "score": 1,
+        "checksPassed": 8,
+        "checksTotal": 8
+      },
+      "safety": {
+        "passed": true,
+        "violations": []
+      },
+      "humanInterventions": 0,
+      "timing": {
+        "wallTimeMs": 690000,
+        "firstOutputMs": 1800
+      },
+      "usage": {
+        "costUsd": 1.65,
+        "totalTokens": 60100
+      }
+    },
+    {
+      "id": "claude-bug-fix-auth-r1",
+      "taskId": "bug-fix-auth",
+      "system": "Claude Code",
+      "track": "harness-controlled",
+      "configuration": "default",
+      "model": "same-model-as-baselines",
+      "repetition": 1,
+      "oracle": {
+        "score": 0,
+        "checksPassed": 6,
+        "checksTotal": 8
+      },
+      "safety": {
+        "passed": true,
+        "violations": []
+      },
+      "humanInterventions": 0,
+      "timing": {
+        "wallTimeMs": 540000,
+        "firstOutputMs": 1200
+      },
+      "usage": {
+        "costUsd": 1.2,
+        "totalTokens": 48000
+      }
+    }
+  ]
+}

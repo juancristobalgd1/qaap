@@ -403,7 +403,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             .to.equal('huggingface-color.svg');
     });
 
-    it('places a newly submitted user turn into reading position', () => {
+    it('places a newly submitted user turn into reading position', async () => {
         const { renderUi, host } = createRenderUi();
         const chatHost = document.createElement('div');
         chatHost.className = 'theia-mobile-agent-transcript-real-chat';
@@ -426,8 +426,62 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             { id: 'user-2', role: 'user', content: 'Next', createdAt: 3 },
         ]));
 
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
         expect(scrollToCalls).to.equal(1);
         // New turn pins for reading; stream may grow off-screen until Jump to latest.
+        expect(ensureTranscriptScrollController(messageHost).phase).to.equal('detached');
+    });
+
+    it('positions a user turn when SSE coalesces it with the agent placeholder', async () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        let scrollToCalls = 0;
+        messageHost.scrollTo = () => {
+            scrollToCalls++;
+        };
+
+        const previous = conversationWithMessages([
+            { id: 'user-1', role: 'user', content: 'First', createdAt: 1 },
+            { id: 'agent-1', role: 'agent', content: 'Done', createdAt: 2 },
+        ]);
+        host.transcriptLastConv = previous;
+        host.transcriptLastRenderedConversationId = previous.id;
+
+        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
+            ...previous.messages,
+            { id: 'user-2', role: 'user', content: 'Next', createdAt: 3 },
+            { id: 'agent-2', role: 'agent', content: '', createdAt: 4 },
+        ]));
+
+        expect(messageHost.querySelector('[data-transcript-message-id="user-2"]')).to.not.equal(null);
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        expect(scrollToCalls).to.equal(1);
+        expect(ensureTranscriptScrollController(messageHost).phase).to.equal('detached');
+    });
+
+    it('positions a virtualized user turn by index even when its row is not mounted', () => {
+        const { renderUi } = createRenderUi();
+        const messageHost = document.createElement('div');
+        Object.defineProperty(messageHost, 'clientHeight', { configurable: true, value: 400 });
+        const calls: Array<{ index: number; contextPx?: number }> = [];
+        const list = {
+            scrollToIndex: (index: number, contextPx?: number): void => {
+                calls.push({ index, contextPx });
+            },
+        };
+
+        (renderUi as unknown as {
+            positionTranscriptVirtualListAtUserTurn(
+                host: HTMLElement,
+                virtualList: typeof list,
+                index: number,
+            ): void;
+        }).positionTranscriptVirtualListAtUserTurn(messageHost, list, 63);
+
+        expect(calls).to.deep.equal([{ index: 63, contextPx: 56 }]);
         expect(ensureTranscriptScrollController(messageHost).phase).to.equal('detached');
     });
 
@@ -517,7 +571,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
                 requestAnimationFrame(() => resolve());
             });
         });
-        expect(scrollTop).to.equal(1400);
+        expect(scrollTop).to.equal(1000); // max scrollTop = scrollHeight - clientHeight
     });
 
     it('does not apply a stale captured anchor after jump-to-latest on streaming patch', async () => {
@@ -578,7 +632,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
                 requestAnimationFrame(() => resolve());
             });
         });
-        expect(scrollTop).to.equal(1400);
+        expect(scrollTop).to.equal(1000); // max scrollTop = scrollHeight - clientHeight
     });
 
     function settledConversation(

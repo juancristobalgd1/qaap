@@ -138,6 +138,36 @@ export function parsePreviewIdentityPath(pathname: string): QaapPreviewIdentityP
 }
 
 /**
+ * Replaces a retired preview/proxy identity with the newly claimed identity while preserving the
+ * app route, query, and hash. A fresh claim supersedes the previous `/qaap-preview/:id/` URL, so
+ * continuing to navigate to the caller's original URL would render the proxy's execution-mismatch
+ * 403 page even though the replacement claim is valid.
+ */
+export function rebasePreviewUrlToIdentityClaim(sourceUrl: string, claimedPreviewUrl: string): string {
+    try {
+        const source = new URL(sourceUrl);
+        const claimed = new URL(claimedPreviewUrl);
+        const claimedIdentity = parsePreviewIdentityPath(claimed.pathname);
+        if (!claimedIdentity) {
+            return claimedPreviewUrl;
+        }
+        const sourceIdentity = parsePreviewIdentityPath(source.pathname);
+        const sourceProxy = parsePreviewProxyPath(source.pathname);
+        const targetPath = sourceIdentity?.targetPath
+            ?? sourceProxy?.targetPath
+            ?? source.pathname
+            ?? '/';
+        const normalizedTargetPath = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
+        claimed.pathname = `${QAAP_IDENTITY_PREVIEW_PATH_PREFIX}/${encodeURIComponent(claimedIdentity.previewId)}${normalizedTargetPath}`;
+        claimed.search = source.search;
+        claimed.hash = source.hash;
+        return claimed.toString();
+    } catch {
+        return claimedPreviewUrl;
+    }
+}
+
+/**
  * User-facing URL for browsing history (direct `localhost:PORT` instead of `/qaap-dev/:port/`).
  */
 function stripPreviewHistoryCacheBust(url: URL): void {

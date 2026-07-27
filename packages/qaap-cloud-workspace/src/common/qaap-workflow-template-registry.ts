@@ -13,7 +13,7 @@
 
 import { resolveAgentReviewMode } from './qaap-agent-review';
 import { QaapWorkflowTemplateSummary } from './qaap-workflow-api';
-import { buildImplementThenReviewWorkflow, QaapWorkflowDef } from './qaap-workflow-ir';
+import { buildEvidenceAuditWorkflow, buildImplementThenReviewWorkflow, QaapWorkflowDef } from './qaap-workflow-ir';
 
 /** Per-run knobs a caller may set on a template without being able to author the graph itself. */
 export interface QaapWorkflowTemplateOptions {
@@ -122,6 +122,18 @@ export class QaapWorkflowTemplateRegistry {
                 withReviewFixLoop: options?.reviewFix,
                 withParallelExploration: true,
             }),
+        });
+
+        this.register({
+            summary: {
+                id: 'qaap.evidence-audit',
+                name: 'Parallel evidence audit with independent review',
+                description:
+                    'Runs three read-only security investigators in parallel, synthesizes a bounded evidence report, '
+                    + 'and has an independent judge reject unsupported findings or inflated severities before completion.',
+                requiredInputs: ['task'],
+            },
+            build: () => buildEvidenceAuditWorkflow(),
         });
 
         this.registerOptionalTopologies();

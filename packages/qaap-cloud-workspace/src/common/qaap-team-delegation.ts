@@ -20,6 +20,8 @@ export function buildTeamDelegationPromptBlock(availableAgentIds: readonly strin
         '  qaap-task [--agent <id>] "<prompt>"',
         'Sub-tasks run detached on the VPS; parentId is set automatically. The command prints the new task id and exits (fire-and-forget).',
         'Use delegation for parallelizable work only — keep sequential steps in this turn.',
+        'For a broad audit or review spanning 3+ independent areas, spawn 2-4 disjoint READ-ONLY sub-tasks instead of serially scanning the whole repository. Put "READ-ONLY; do not modify files" in every audit sub-task prompt.',
+        'Do not repeat a delegated scope locally and do not claim a sub-task finding before its mailbox result arrives. Qaap automatically starts a synthesis turn after every sub-task settles.',
         'When sub-tasks finish, their stdout is stored server-side; mention spawned task ids in your reply.',
         agentHint,
     ].filter(Boolean).join('\n');

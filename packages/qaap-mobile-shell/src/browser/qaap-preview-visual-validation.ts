@@ -25,6 +25,18 @@ function inputHasLabel(input: HTMLInputElement | HTMLTextAreaElement | HTMLSelec
     return !!id && [...doc.querySelectorAll('label[for]')].some(label => label.getAttribute('for') === id);
 }
 
+const QAAP_PREVIEW_PROXY_FAILURES = new Set([
+    'This preview belongs to another execution.',
+    'This preview port belongs to another workspace.',
+    'Cannot proxy the Qaap IDE port. Use a different dev-server port.',
+]);
+
+/** True when the iframe rendered Qaap's fail-closed proxy response instead of the project app. */
+export function qaapPreviewDocumentIsProxyFailure(doc: Document): boolean {
+    const bodyText = doc.body?.innerText?.trim() ?? doc.body?.textContent?.trim() ?? '';
+    return QAAP_PREVIEW_PROXY_FAILURES.has(bodyText);
+}
+
 /** Fast same-origin DOM smoke check run immediately before screenshot capture. */
 export function validateQaapPreviewDocument(
     doc: Document,

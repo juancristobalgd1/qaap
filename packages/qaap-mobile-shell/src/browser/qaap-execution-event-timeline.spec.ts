@@ -1086,13 +1086,38 @@ describe('qaap-execution-event-timeline', () => {
             expect((accordion as HTMLDetailsElement).open).to.be.false;
         });
 
-        it('collapses on final successful settle even after the user manually expanded it', () => {
+        it('keeps the user-expanded state on final successful settle', () => {
             const segments = [toolSegment('read', 't1', '{}', true)];
             const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false });
             accordion.setAttribute('data-user-toggled', '1');
             (accordion as HTMLDetailsElement).open = true;
             syncMobileProcessAccordionState(accordion, { isWorking: false, isError: false, settled: true });
-            expect((accordion as HTMLDetailsElement).open).to.be.false;
+            expect((accordion as HTMLDetailsElement).open).to.be.true;
+        });
+
+        it('restores a manual open choice across a settled rebuild', () => {
+            const segments = [toolSegment('read', 't1', '{}', true)];
+            const turnStartMs = 987654324;
+            const streaming = createMobileProcessAccordion(segments, {
+                isWorking: true,
+                isError: false,
+                turnStartMs,
+            }) as HTMLDetailsElement;
+            document.body.append(streaming);
+            const header = streaming.querySelector<HTMLElement>('.theia-mobile-process-accordion-header')!;
+            header.click();
+            streaming.open = true;
+            streaming.dispatchEvent(new window.Event('toggle'));
+
+            const rebuilt = createMobileProcessAccordion(segments, {
+                isWorking: false,
+                isError: false,
+                turnStartMs,
+                settled: true,
+            }) as HTMLDetailsElement;
+            expect(rebuilt.open).to.be.true;
+            expect(rebuilt.getAttribute('data-user-toggled')).to.equal('1');
+            streaming.remove();
         });
 
         it('respects user toggle — does not auto-expand after user interaction', () => {

@@ -169,6 +169,108 @@ describe('qaap-transcript-scroll-controller', () => {
         expect(controller.shouldFollowTail()).to.equal(false);
     });
 
+    it('positions a newly inserted turn once after layout commits', () => {
+        const scroller = document.createElement('div');
+        const row = document.createElement('div');
+        scroller.append(row);
+        document.body.append(scroller);
+        let scrollTop = 0;
+        let scrollHeight = 400;
+        let rowTop = 40;
+        let scrollToCalls = 0;
+        Object.defineProperties(scroller, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: {
+                configurable: true,
+                get: () => scrollHeight,
+            },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    scrollToCalls++;
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+            getBoundingClientRect: {
+                configurable: true,
+                value: () => ({ top: 0, bottom: 100, left: 0, right: 320, width: 320, height: 100, x: 0, y: 0, toJSON: () => ({}) }),
+            },
+        });
+        Object.defineProperty(row, 'getBoundingClientRect', {
+            configurable: true,
+            value: () => ({ top: rowTop, bottom: rowTop + 20, left: 0, right: 320, width: 320, height: 20, x: 0, y: rowTop, toJSON: () => ({}) }),
+        });
+        const pendingRafs: FrameRequestCallback[] = [];
+        const previousRaf = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            pendingRafs.push(callback);
+            return pendingRafs.length;
+        };
+        const controller = ensureTranscriptScrollController(scroller);
+        try {
+            controller.beginPositionTurn();
+            controller.schedulePositionTurnStart(scroller, row);
+            expect(scrollToCalls).to.equal(0);
+
+            // Layout committed after the DOM swap and exposed the real range.
+            rowTop = 760;
+            scrollHeight = 900;
+            pendingRafs.splice(0).forEach(callback => callback(0));
+
+            expect(scrollToCalls).to.equal(1);
+            expect(scrollTop).to.equal(720);
+            expect(controller.phase).to.equal('detached');
+        } finally {
+            globalThis.requestAnimationFrame = previousRaf;
+            scroller.remove();
+        }
+    });
+
+    it('does not apply a queued turn position after user intent', () => {
+        const scroller = document.createElement('div');
+        const row = document.createElement('div');
+        scroller.append(row);
+        document.body.append(scroller);
+        let scrollToCalls = 0;
+        Object.defineProperties(scroller, {
+            scrollTop: { configurable: true, writable: true, value: 0 },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: { configurable: true, value: 900 },
+            scrollTo: {
+                configurable: true,
+                value(): void {
+                    scrollToCalls++;
+                },
+            },
+        });
+        const pendingRafs: FrameRequestCallback[] = [];
+        const previousRaf = globalThis.requestAnimationFrame;
+        globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            pendingRafs.push(callback);
+            return pendingRafs.length;
+        };
+        const controller = ensureTranscriptScrollController(scroller);
+        try {
+            controller.beginPositionTurn();
+            controller.schedulePositionTurnStart(scroller, row);
+            controller.notifyUserDetach('wheel');
+            pendingRafs.splice(0).forEach(callback => callback(0));
+
+            expect(scrollToCalls).to.equal(0);
+            expect(controller.phase).to.equal('detached');
+        } finally {
+            globalThis.requestAnimationFrame = previousRaf;
+            scroller.remove();
+        }
+    });
+
     it('jumpToLatest clears an active text selection', () => {
         const scroller = document.createElement('div');
         scroller.textContent = 'Selectable transcript line';
@@ -318,6 +420,119 @@ describe('qaap-transcript-scroll-controller', () => {
         }
         expect(scrollToCalls).to.equal(1);
         expect(scrollTop).to.equal(420); // scrollHeight - clientHeight
+    });
+
+    it('reconciles delayed row height after layout while following', () => {
+        const scroller = document.createElement('div');
+        const row = document.createElement('div');
+        scroller.append(row);
+        let scrollTop = 300;
+        let scrollHeight = 400;
+        let scrollToCalls = 0;
+        Object.defineProperties(scroller, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: {
+                configurable: true,
+                get: () => scrollHeight,
+            },
+            scrollTo: {
+                configurable: true,
+                value(options: ScrollToOptions): void {
+                    scrollToCalls++;
+                    if (typeof options.top === 'number') {
+                        scrollTop = options.top;
+                    }
+                },
+            },
+        });
+        let resizeCallback: ResizeObserverCallback | undefined;
+        const PreviousResizeObserver = globalThis.ResizeObserver;
+        const pendingRafs: FrameRequestCallback[] = [];
+        const previousRaf = globalThis.requestAnimationFrame;
+        globalThis.ResizeObserver = class {
+            constructor(callback: ResizeObserverCallback) {
+                resizeCallback = callback;
+            }
+            disconnect(): void { }
+            observe(): void { }
+            unobserve(): void { }
+        } as typeof ResizeObserver;
+        globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            pendingRafs.push(callback);
+            return pendingRafs.length;
+        };
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.jumpToLatest();
+        const binding = controller.bind(scroller);
+        try {
+            // The DOM patch already ran at the old height. A deferred row then
+            // materializes another 75 px (content-visibility/image/markdown).
+            scrollHeight = 475;
+            resizeCallback?.([], {} as ResizeObserver);
+            expect(pendingRafs).to.have.length(1);
+            pendingRafs.splice(0).forEach(callback => callback(0));
+            expect(scrollToCalls).to.equal(1);
+            expect(scrollTop).to.equal(375);
+        } finally {
+            binding.dispose();
+            globalThis.ResizeObserver = PreviousResizeObserver;
+            globalThis.requestAnimationFrame = previousRaf;
+        }
+    });
+
+    it('does not chase delayed row height after user intent detaches follow', () => {
+        const scroller = document.createElement('div');
+        scroller.append(document.createElement('div'));
+        let scrollTop = 300;
+        let scrollHeight = 400;
+        let scrollToCalls = 0;
+        Object.defineProperties(scroller, {
+            scrollTop: {
+                configurable: true,
+                get: () => scrollTop,
+                set: (value: number) => { scrollTop = value; },
+            },
+            clientHeight: { configurable: true, value: 100 },
+            scrollHeight: {
+                configurable: true,
+                get: () => scrollHeight,
+            },
+            scrollTo: {
+                configurable: true,
+                value(): void {
+                    scrollToCalls++;
+                },
+            },
+        });
+        let resizeCallback: ResizeObserverCallback | undefined;
+        const PreviousResizeObserver = globalThis.ResizeObserver;
+        globalThis.ResizeObserver = class {
+            constructor(callback: ResizeObserverCallback) {
+                resizeCallback = callback;
+            }
+            disconnect(): void { }
+            observe(): void { }
+            unobserve(): void { }
+        } as typeof ResizeObserver;
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.jumpToLatest();
+        const binding = controller.bind(scroller);
+        try {
+            scroller.dispatchEvent(new window.WheelEvent('wheel', { deltaY: 24 }));
+            scrollHeight = 475;
+            resizeCallback?.([], {} as ResizeObserver);
+            expect(controller.phase).to.equal('detached');
+            expect(scrollToCalls).to.equal(0);
+            expect(scrollTop).to.equal(300);
+        } finally {
+            binding.dispose();
+            globalThis.ResizeObserver = PreviousResizeObserver;
+        }
     });
 
     it('follow-tail ignores shrink under the latched high-water then writes on next grow', () => {

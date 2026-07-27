@@ -1166,7 +1166,10 @@ export class QaapAgentTaskRunner {
         const workflowPrompt = appendAgentDefaultWorkflowToPrompt(
             runnerPrompt,
             id,
-            { gitAvailable: cwd ? fs.existsSync(path.join(path.resolve(cwd), '.git')) : true },
+            {
+                gitAvailable: cwd ? fs.existsSync(path.join(path.resolve(cwd), '.git')) : true,
+                userQuery,
+            },
         );
         // Inject important project context for every agent: cross-project context from the request
         // body, the per-project info artifact, the repo's own agent instructions (CLAUDE.md /

@@ -1,0 +1,8 @@
+{
+  "name": "qaap-agent-benchmark-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test.mjs"
+  }
+}

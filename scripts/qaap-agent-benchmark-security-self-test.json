@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "repetitions": 1,
+  "suite": {
+    "id": "qaap-security-audit-runner-self-test",
+    "name": "Qaap security audit oracle deterministic self-test",
+    "completionThreshold": 0.8,
+    "tasks": [
+      {
+        "id": "seeded-security-audit",
+        "category": "security-audit",
+        "difficulty": "calibration",
+        "prompt": "Analiza esta aplicación y busca posibles vulnerabilidades. Clasifica cada hallazgo por severidad y confianza, aporta evidencia reproducible y no modifiques archivos.",
+        "fixture": {
+          "type": "copy",
+          "source": "qaap-agent-benchmark-fixture/security-audit-project",
+          "initializeGit": true
+        },
+        "oracle": {
+          "checks": [
+            {
+              "id": "seeded-finding-coverage",
+              "weight": 0.4,
+              "executable": "node",
+              "args": [
+                "{suiteDir}/qaap-agent-benchmark-fixture/security-audit-oracle.mjs",
+                "coverage",
+                "{agentOutput}"
+              ]
+            },
+            {
+              "id": "reproducible-evidence",
+              "weight": 0.35,
+              "executable": "node",
+              "args": [
+                "{suiteDir}/qaap-agent-benchmark-fixture/security-audit-oracle.mjs",
+                "evidence",
+                "{agentOutput}"
+              ]
+            },
+            {
+              "id": "severity-and-false-positive-calibration",
+              "weight": 0.25,
+              "executable": "node",
+              "args": [
+                "{suiteDir}/qaap-agent-benchmark-fixture/security-audit-oracle.mjs",
+                "calibration",
+                "{agentOutput}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "strictWorkspaceSnapshot": true,
+          "forbiddenChanges": [
+            "**"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 60000,
+          "costUsd": 0.01,
+          "humanInterventions": 0
+        }
+      }
+    ]
+  },
+  "systems": [
+    {
+      "id": "deterministic-audit-mock",
+      "name": "Deterministic Audit Mock",
+      "track": "runner-self-test",
+      "configuration": "mock",
+      "model": "none",
+      "adapter": "command",
+      "executable": "node",
+      "args": [
+        "{suiteDir}/qaap-agent-benchmark-fixture/security-audit-mock-agent.mjs",
+        "{workspace}",
+        "{promptFile}"
+      ]
+    }
+  ]
+}

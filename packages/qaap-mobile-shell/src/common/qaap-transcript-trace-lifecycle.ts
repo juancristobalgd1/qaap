@@ -28,9 +28,10 @@ export function appendTraceRunCancelledEvent(
         message: options.reason ?? 'Turn cancelled.',
         startedAt: at,
     };
+    const alreadyRecorded = cancelledTools.some(event => event.type === 'run_cancelled');
     return {
         ...message,
-        traceEvents: [...cancelledTools, runCancelled],
+        traceEvents: alreadyRecorded ? cancelledTools : [...cancelledTools, runCancelled],
     };
 }
 

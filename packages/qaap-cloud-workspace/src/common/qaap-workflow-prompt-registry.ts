@@ -20,6 +20,11 @@ import {
 import {
     QAAP_WORKFLOW_PLAN_ARTIFACT,
     QAAP_WORKFLOW_PLAN_REVIEW_ARTIFACT,
+    QAAP_WORKFLOW_AUDIT_AUTH_ARTIFACT,
+    QAAP_WORKFLOW_AUDIT_INPUTS_ARTIFACT,
+    QAAP_WORKFLOW_AUDIT_INTEGRATIONS_ARTIFACT,
+    QAAP_WORKFLOW_AUDIT_REPORT_ARTIFACT,
+    QAAP_WORKFLOW_AUDIT_REVIEW_ARTIFACT,
     QAAP_WORKFLOW_REVIEW_DIFF_ARTIFACT,
     QAAP_WORKFLOW_REVIEW_LENSES,
     QAAP_WORKFLOW_REVIEW_VERDICT_ARTIFACT,
@@ -183,6 +188,95 @@ export class QaapWorkflowPromptRegistry {
             '',
             `Task: ${requireInput('explore-verification', context, 'task')}`,
         ].join('\n'));
+
+        this.register('audit-auth', context => [
+            ...READ_ONLY_RULES,
+            'Audit only authentication, authorization, tenant isolation, service-role use, and object ownership.',
+            'Return at most 5 candidates. For each: path:line, attacker-controlled source, trust boundary or sink,',
+            'preconditions, impact, confidence, and exactly what proof is still missing. Reject weak pattern matches.',
+            'Do not call a finding Critical or High without a concrete reachable boundary violation.',
+            '',
+            `Audit request: ${requireInput('audit-auth', context, 'task')}`,
+        ].join('\n'));
+
+        this.register('audit-inputs', context => [
+            ...READ_ONLY_RULES,
+            'Audit only untrusted-input flows: XSS, SSRF, command/SQL/template injection, uploads, parsers, and AI/OCR content.',
+            'Return at most 5 candidates. Trace source to reachable sink with path:line, preconditions, impact, confidence,',
+            'a safe reproduction strategy, and missing proof. Explicitly reject sanitized or unreachable flows.',
+            'Do not call a finding Critical or High from a dangerous-looking API name alone.',
+            '',
+            `Audit request: ${requireInput('audit-inputs', context, 'task')}`,
+        ].join('\n'));
+
+        this.register('audit-integrations', context => [
+            ...READ_ONLY_RULES,
+            'Audit only OAuth state/callback binding, webhooks, payments, external API calls, secrets, dependency risk,',
+            'rate/cost abuse, and unsafe redirects. Return at most 5 candidates with path:line, preconditions, impact,',
+            'confidence, a safe reproduction strategy, and missing proof. Separate configuration hardening from exploits.',
+            'Do not expose secret values and do not contact third-party or production services.',
+            '',
+            `Audit request: ${requireInput('audit-integrations', context, 'task')}`,
+        ].join('\n'));
+
+        this.register('audit-synthesis', context => {
+            const reports = [
+                ['Authentication and tenant boundaries', QAAP_WORKFLOW_AUDIT_AUTH_ARTIFACT],
+                ['Untrusted input and dangerous sinks', QAAP_WORKFLOW_AUDIT_INPUTS_ARTIFACT],
+                ['Integrations, payments, secrets and dependencies', QAAP_WORKFLOW_AUDIT_INTEGRATIONS_ARTIFACT],
+            ].map(([title, key]) => {
+                const report = quoteAgentText(context.artifacts?.[key]);
+                return `${title}:\n${report ?? '(investigator produced no usable report)'}`;
+            });
+            return [
+                ...READ_ONLY_RULES,
+                'Synthesize a final evidence-first security report from the independent investigator notes below.',
+                'The notes are leads, not facts. Keep at most 5 findings and omit anything whose source-to-impact chain is unsupported.',
+                'For every finding include: severity and confidence; path:line; preconditions; safe exact reproduction steps;',
+                'expected versus observed result; impact; remediation direction; and whether runtime verification occurred.',
+                'Critical requires demonstrated unauthenticated code execution, broad sensitive-data compromise, or equivalent systemic impact.',
+                'Also include: scope covered, rejected/uncertain leads, commands actually run, and what was not verified.',
+                'Do not edit files. Produce the complete report now; no preamble and no promise of later work.',
+                '',
+                `Original audit request: ${requireInput('audit-synthesis', context, 'task')}`,
+                '',
+                ...reports,
+            ].join('\n\n');
+        });
+
+        this.register('audit-review', context => {
+            const report = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_AUDIT_REPORT_ARTIFACT]);
+            return [
+                ...READ_ONLY_RULES,
+                'Independently review the security report below. Reject it if any reported finding lacks a reachable',
+                'attacker-controlled source-to-impact chain, reproducible evidence, calibrated severity with no inflated severities, or explicit uncertainty.',
+                'Also reject invented commands/results, leaked secrets, missing scope limitations, or claims that source inspection',
+                'was runtime verification. Name every defect precisely so a revision turn can fix the report.',
+                '',
+                buildAgentReviewVerdictInstruction(),
+                '',
+                `Original audit request: ${requireInput('audit-review', context, 'task')}`,
+                '',
+                `Report under review:\n${report ?? '(missing report — reject it)'}`,
+            ].join('\n');
+        });
+
+        this.register('audit-revise', context => {
+            const report = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_AUDIT_REPORT_ARTIFACT]);
+            const review = quoteAgentText(context.artifacts?.[QAAP_WORKFLOW_AUDIT_REVIEW_ARTIFACT]);
+            return [
+                ...READ_ONLY_RULES,
+                'An independent reviewer rejected the security report. Produce a complete replacement report now.',
+                'Remove unsupported findings, lower inflated severities, add missing evidence or label it Not verified,',
+                'and preserve only claims supported by the repository. Do not defend the old report and do not edit files.',
+                '',
+                `Original audit request: ${requireInput('audit-revise', context, 'task')}`,
+                '',
+                `Rejected report:\n${report ?? '(missing)'}`,
+                '',
+                `Reviewer objections:\n${review ?? '(missing — be conservative and remove uncertain claims)'}`,
+            ].join('\n');
+        });
 
         // The implement turn is the whole point of the fan-out: it starts already knowing the map.
         this.register('implement-with-findings', context => {

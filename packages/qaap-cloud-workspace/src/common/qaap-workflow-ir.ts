@@ -60,6 +60,12 @@ export const QAAP_WORKFLOW_VERIFY_FAILURE_ARTIFACT = 'verify.failure';
  * instead of guessing what was wrong with a change the graph already rejected.
  */
 export const QAAP_WORKFLOW_REVIEW_VERDICT_ARTIFACT = 'review.verdict';
+/** Independent security-audit lane outputs and the synthesized report they feed. */
+export const QAAP_WORKFLOW_AUDIT_AUTH_ARTIFACT = 'audit.auth';
+export const QAAP_WORKFLOW_AUDIT_INPUTS_ARTIFACT = 'audit.inputs';
+export const QAAP_WORKFLOW_AUDIT_INTEGRATIONS_ARTIFACT = 'audit.integrations';
+export const QAAP_WORKFLOW_AUDIT_REPORT_ARTIFACT = 'audit.report';
+export const QAAP_WORKFLOW_AUDIT_REVIEW_ARTIFACT = 'audit.review';
 
 /**
  * What a node may do to the run's working tree.
@@ -883,6 +889,92 @@ export function buildImplementThenReviewWorkflow(options?: {
         version: 1,
         name: definitionName(shape, reviewMode),
         entry,
+        nodes,
+        edges,
+    };
+}
+
+/**
+ * Read-only security-audit graph.
+ *
+ * Three disjoint investigators run concurrently, a synthesizer turns their candidates into one
+ * bounded evidence report, and an independent judge tries to reject unsupported findings or
+ * inflated severities. A rejected report is revised against the recorded objections and judged
+ * again; the workflow run budget is the loop bound.
+ */
+export function buildEvidenceAuditWorkflow(): QaapWorkflowDef {
+    const investigator = (
+        id: string,
+        promptRef: string,
+        artifactKey: string,
+    ): QaapWorkflowAgentTurnNode => ({
+        kind: 'agent-turn',
+        id,
+        capability: 'explore',
+        costTier: 'standard',
+        isolation: 'cwd-readonly',
+        promptRef,
+        artifactKey,
+    });
+    const nodes: QaapWorkflowNode[] = [
+        investigator('audit-auth', 'audit-auth', QAAP_WORKFLOW_AUDIT_AUTH_ARTIFACT),
+        investigator('audit-inputs', 'audit-inputs', QAAP_WORKFLOW_AUDIT_INPUTS_ARTIFACT),
+        investigator('audit-integrations', 'audit-integrations', QAAP_WORKFLOW_AUDIT_INTEGRATIONS_ARTIFACT),
+        { kind: 'join', id: 'audit-mapped', wait: 'all' },
+        {
+            kind: 'agent-turn',
+            id: 'audit-synthesis',
+            capability: 'synthesize',
+            costTier: 'standard',
+            isolation: 'cwd-readonly',
+            promptRef: 'audit-synthesis',
+            artifactKey: QAAP_WORKFLOW_AUDIT_REPORT_ARTIFACT,
+        },
+        {
+            kind: 'agent-turn',
+            id: 'audit-judge',
+            capability: 'judge',
+            costTier: 'standard',
+            isolation: 'cwd-readonly',
+            promptRef: 'audit-review',
+            requireSentinel: true,
+            artifactKey: QAAP_WORKFLOW_AUDIT_REVIEW_ARTIFACT,
+        },
+        {
+            kind: 'agent-turn',
+            id: 'audit-revise',
+            capability: 'synthesize',
+            costTier: 'standard',
+            isolation: 'cwd-readonly',
+            promptRef: 'audit-revise',
+            artifactKey: QAAP_WORKFLOW_AUDIT_REPORT_ARTIFACT,
+        },
+        { kind: 'emit', id: 'audit-pass', bindingKey: 'audit.passed' },
+        { kind: 'emit', id: 'audit-fail', bindingKey: 'audit.failed' },
+        { kind: 'emit', id: 'audit-inconclusive', bindingKey: 'audit.inconclusive' },
+    ];
+    const edges: QaapWorkflowEdge[] = [
+        { from: 'audit-auth', to: 'audit-mapped', when: 'always' },
+        { from: 'audit-inputs', to: 'audit-mapped', when: 'always' },
+        { from: 'audit-integrations', to: 'audit-mapped', when: 'always' },
+        { from: 'audit-mapped', to: 'audit-synthesis', when: 'always' },
+        { from: 'audit-synthesis', to: 'audit-judge', when: 'success' },
+        { from: 'audit-synthesis', to: 'audit-inconclusive', when: 'fail' },
+        { from: 'audit-synthesis', to: 'audit-inconclusive', when: 'blocked' },
+        { from: 'audit-judge', to: 'audit-pass', when: 'verdict:pass' },
+        { from: 'audit-judge', to: 'audit-revise', when: 'verdict:fail' },
+        { from: 'audit-judge', to: 'audit-inconclusive', when: 'verdict:inconclusive' },
+        { from: 'audit-judge', to: 'audit-inconclusive', when: 'fail' },
+        { from: 'audit-judge', to: 'audit-inconclusive', when: 'blocked' },
+        { from: 'audit-revise', to: 'audit-judge', when: 'success' },
+        { from: 'audit-revise', to: 'audit-fail', when: 'fail' },
+        { from: 'audit-revise', to: 'audit-fail', when: 'blocked' },
+    ];
+    return {
+        id: 'qaap.evidence-audit',
+        version: 1,
+        name: 'Parallel evidence audit with independent review',
+        entry: ['audit-auth', 'audit-inputs', 'audit-integrations'],
         nodes,
         edges,
     };

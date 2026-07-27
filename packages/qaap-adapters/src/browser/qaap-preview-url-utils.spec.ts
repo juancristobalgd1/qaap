@@ -9,6 +9,7 @@ import {
     canonicalPreviewHistoryKey,
     getSameOriginPreviewProxyPort,
     normalizePreviewUrlForSameOrigin,
+    rebasePreviewUrlToIdentityClaim,
     toPreviewHistoryDisplayUrl,
 } from './qaap-preview-url-utils';
 
@@ -58,5 +59,21 @@ describe('qaap-preview-url-utils', () => {
         const proxied = 'http://localhost:3000/qaap-dev/3001/';
         expect(canonicalPreviewHistoryKey(direct, origin))
             .to.equal(canonicalPreviewHistoryKey(proxied, origin));
+    });
+
+    it('rebases retired preview identities to the live claim without losing the app route', () => {
+        const claim = 'http://localhost:3000/qaap-preview/live-execution/';
+        expect(rebasePreviewUrlToIdentityClaim(
+            'http://localhost:3000/qaap-preview/retired-execution/dashboard?tab=activity#latest',
+            claim,
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/dashboard?tab=activity#latest');
+        expect(rebasePreviewUrlToIdentityClaim(
+            'http://localhost:3000/qaap-dev/5173/settings',
+            claim,
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/settings');
+        expect(rebasePreviewUrlToIdentityClaim(
+            'http://127.0.0.1:5173/profile',
+            claim,
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/profile');
     });
 });

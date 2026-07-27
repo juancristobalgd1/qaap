@@ -40,6 +40,21 @@ describe('qaap-transcript-trace-lifecycle', () => {
         });
     });
 
+    it('appendTraceRunCancelledEvent is idempotent when cancel and task outcome race', () => {
+        const once = appendTraceRunCancelledEvent(agentMessage(), {
+            id: 'cancel-1',
+            reason: 'Turn cancelled.',
+            at: 10,
+        });
+        const twice = appendTraceRunCancelledEvent(once, {
+            id: 'cancel-2',
+            reason: 'Turn cancelled.',
+            at: 20,
+        });
+        expect(twice.traceEvents?.filter(event => event.type === 'run_cancelled')).to.have.length(1);
+        expect(twice.traceEvents?.[0]).to.deep.include({ id: 'cancel-1', startedAt: 10 });
+    });
+
     it('appendTraceVerificationWarningEvent appends an error row without failing the turn', () => {
         const next = appendTraceVerificationWarningEvent(
             agentMessage({ content: 'done' }),

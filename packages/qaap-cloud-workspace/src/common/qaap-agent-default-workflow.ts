@@ -24,6 +24,7 @@ const BLOCKED_SIGNAL_MARKER = '[QAAP blocked signal]';
 const SECRETS_MARKER = '[QAAP secrets]';
 const DESTRUCTIVE_COMMANDS_MARKER = '[QAAP destructive commands]';
 const REPO_MEMORY_MARKER = '[QAAP repo memory]';
+const BOUNDED_EVIDENCE_AUDIT_MARKER = '[QAAP bounded evidence audit]';
 
 const WEB_GENERATION_MARKER = '[QAAP web generation quality]';
 const VISUAL_EVIDENCE_MARKER = '[QAAP visual evidence]';
@@ -151,6 +152,50 @@ export function buildAgentParallelToolsPromptBlock(): string {
 export interface QaapAgentDefaultWorkflowOptions {
     /** When false, omit git-status/branch instructions (ephemeral workspaces without `.git`). */
     readonly gitAvailable?: boolean;
+    /** Latest clean user request, used to attach narrow task-specific contracts. */
+    readonly userQuery?: string;
+}
+
+/**
+ * A broad security review is unusually prone to spending the whole turn collecting candidates and
+ * never producing the requested report. Keep detection deliberately narrow so ordinary "analyze
+ * this bug" requests do not inherit a security-audit budget.
+ */
+export function isBoundedEvidenceAuditRequest(userQuery: string | undefined): boolean {
+    const normalized = userQuery?.trim().toLowerCase() ?? '';
+    if (!normalized) {
+        return false;
+    }
+    return [
+        /\bvulnerabil(?:idad|idades|ity|ities)\b/,
+        /\bsecurity\s+(?:audit|review|assessment)\b/,
+        /\bauditor[ií]a\s+de\s+seguridad\b/,
+        /\b(?:pentest|penetration\s+test|threat\s+model)\b/,
+        /\b(?:xss|csrf|ssrf|sql\s+injection)\b/,
+    ].some(pattern => pattern.test(normalized));
+}
+
+/**
+ * Task-specific completion contract for read-only security audits. This is intentionally concrete:
+ * it caps exploration, defines what counts as evidence, and forces a useful checkpoint before the
+ * expensive validation tail. The backend cannot synthesize after a user hard-cancels a process, so
+ * the checkpoint also preserves honest partial value without pretending the audit completed.
+ */
+export function buildAgentBoundedEvidenceAuditPromptBlock(): string {
+    return [
+        BOUNDED_EVIDENCE_AUDIT_MARKER,
+        'This is a bounded, evidence-first security audit. Finish a useful report in this turn; broad exploration is not the deliverable.',
+        'Work in four phases and do not go backwards:',
+        '1. Map once: inspect the repo layout and the highest-risk trust boundaries. Batch independent Read/Grep/Glob calls. Maximum 6 inspection rounds.',
+        '2. Triage: keep at most 5 highest-risk hypotheses. Do not reread an unchanged file; record path, line, attacker-controlled source, sink/boundary, and missing proof.',
+        '3. Checkpoint: before deeper validation, emit a concise visible checkpoint naming the candidates and marking each Confirmed, Hypothesis, or Rejected.',
+        '4. Validate and report: spend at most 2 targeted tool calls per hypothesis, then stop using tools and write the report. Never exceed 20 repository-inspection tool calls total unless the user explicitly asked for an exhaustive audit.',
+        'A source-code pattern alone is not a confirmed vulnerability. Confirm only when evidence establishes attacker control, the reachable sink or access-control failure, exploit preconditions, and concrete impact.',
+        'Severity gate: Critical requires a demonstrated path to unauthenticated code execution, broad sensitive-data compromise, or equivalent systemic impact; High requires a demonstrated serious boundary violation. Otherwise lower the severity and state the uncertainty.',
+        'Every reported finding must include: severity and confidence; path:line; preconditions; safe exact reproduction steps; expected versus observed result; impact; and the smallest remediation direction.',
+        'Do not run destructive or state-changing proof-of-concept requests against live services. Prefer tests, local fixtures, static call-chain proof, or read-only requests.',
+        'Finish with scope covered, confirmed findings, rejected/uncertain leads, commands actually run, and what was not verified. If the budget expires, deliver a clearly labeled partial report instead of continuing to search.',
+    ].join('\n');
 }
 
 export function buildAgentSearchHygienePromptBlock(): string {
@@ -302,6 +347,10 @@ export function appendAgentDefaultWorkflowToPrompt(
     }
     if (!prompt.includes(ENGINEERING_CONTRACT_MARKER)) {
         blocks.push(buildAgentEngineeringContractPromptBlock());
+    }
+    if (isBoundedEvidenceAuditRequest(options.userQuery ?? prompt)
+        && !prompt.includes(BOUNDED_EVIDENCE_AUDIT_MARKER)) {
+        blocks.push(buildAgentBoundedEvidenceAuditPromptBlock());
     }
     if (!prompt.includes(BLOCKED_SIGNAL_MARKER)) {
         blocks.push(buildAgentBlockedSignalPromptBlock());

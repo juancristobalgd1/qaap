@@ -5,7 +5,10 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
-import { validateQaapPreviewDocument } from './qaap-preview-visual-validation';
+import {
+    qaapPreviewDocumentIsProxyFailure,
+    validateQaapPreviewDocument,
+} from './qaap-preview-visual-validation';
 
 describe('validateQaapPreviewDocument', () => {
     let disableJSDOM: () => void;
@@ -32,5 +35,12 @@ describe('validateQaapPreviewDocument', () => {
         expect(result.issues.some(issue => issue.includes('empty'))).to.equal(true);
         expect(result.issues.some(issue => issue.includes('accessible name'))).to.equal(true);
         expect(result.issues.some(issue => issue.includes('lack a label'))).to.equal(true);
+    });
+
+    it('recognizes a proxy execution mismatch as non-project content', () => {
+        document.body.textContent = 'This preview belongs to another execution.';
+        expect(qaapPreviewDocumentIsProxyFailure(document)).to.equal(true);
+        document.body.innerHTML = '<h1>Project dashboard</h1><p>Actual application content.</p>';
+        expect(qaapPreviewDocumentIsProxyFailure(document)).to.equal(false);
     });
 });

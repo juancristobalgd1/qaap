@@ -17157,10 +17157,6 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* Scroll position is managed by the transcript controllers (bottom pinning,
-     sticky-pin measurement, virtual-list anchoring). Native scroll anchoring
-     reacting to their layout writes bounces the scroll position. */
-  overflow-anchor: none;
 }
 
 .theia-mobile-agent-transcript:focus,

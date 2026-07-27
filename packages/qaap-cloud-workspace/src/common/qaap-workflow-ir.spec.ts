@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import {
+    buildEvidenceAuditWorkflow,
     buildImplementThenReviewWorkflow,
     dryRunQaapWorkflowPath,
     stepQaapWorkflow,
@@ -186,6 +187,24 @@ describe('buildImplementThenReviewWorkflow', () => {
             expect(judge.isolation).to.equal('cwd-readonly');
             expect(judge.requireSentinel).to.equal(true);
         }
+    });
+});
+
+describe('buildEvidenceAuditWorkflow', () => {
+    it('fans out three read-only investigators before synthesis and independent review', () => {
+        const def = buildEvidenceAuditWorkflow();
+        expect(validateQaapWorkflowDef(def)).to.deep.equal({ ok: true, issues: [] });
+        expect(def.entry).to.deep.equal(['audit-auth', 'audit-inputs', 'audit-integrations']);
+        const judge = def.nodes.find(node => node.id === 'audit-judge');
+        expect(judge?.kind === 'agent-turn' && judge.requireSentinel).to.equal(true);
+        expect(def.edges).to.deep.include({ from: 'audit-mapped', to: 'audit-synthesis', when: 'always' });
+        expect(def.edges).to.deep.include({ from: 'audit-synthesis', to: 'audit-judge', when: 'success' });
+    });
+
+    it('revises a rejected report and re-enters the judge', () => {
+        const def = buildEvidenceAuditWorkflow();
+        expect(def.edges).to.deep.include({ from: 'audit-judge', to: 'audit-revise', when: 'verdict:fail' });
+        expect(def.edges).to.deep.include({ from: 'audit-revise', to: 'audit-judge', when: 'success' });
     });
 });
 

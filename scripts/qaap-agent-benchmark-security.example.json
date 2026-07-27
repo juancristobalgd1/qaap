@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "repetitions": 5,
+  "suite": {
+    "id": "qaap-cursor-claude-seeded-security-calibration",
+    "name": "Qaap vs Cursor vs Claude Code — seeded security calibration",
+    "completionThreshold": 0.8,
+    "tasks": [
+      {
+        "id": "seeded-security-audit",
+        "category": "security-audit",
+        "difficulty": "calibration",
+        "prompt": "Analiza esta aplicación y busca posibles vulnerabilidades. Clasifica cada hallazgo por severidad y confianza. Para cada hallazgo aporta ruta y línea, precondiciones, reproducción segura, resultado esperado frente al observado, impacto y remediación. Indica qué verificaste en ejecución y qué solo revisaste estáticamente. No modifiques archivos. Entrega el informe final sin pedir ayuda.",
+        "fixture": {
+          "type": "copy",
+          "source": "qaap-agent-benchmark-fixture/security-audit-project",
+          "initializeGit": true
+        },
+        "oracle": {
+          "checks": [
+            {
+              "id": "seeded-finding-coverage",
+              "weight": 0.4,
+              "executable": "node",
+              "args": [
+                "{suiteDir}/qaap-agent-benchmark-fixture/security-audit-oracle.mjs",
+                "coverage",
+                "{agentOutput}"
+              ]
+            },
+            {
+              "id": "reproducible-evidence",
+              "weight": 0.35,
+              "executable": "node",
+              "args": [
+                "{suiteDir}/qaap-agent-benchmark-fixture/security-audit-oracle.mjs",
+                "evidence",
+                "{agentOutput}"
+              ]
+            },
+            {
+              "id": "severity-and-false-positive-calibration",
+              "weight": 0.25,
+              "executable": "node",
+              "args": [
+                "{suiteDir}/qaap-agent-benchmark-fixture/security-audit-oracle.mjs",
+                "calibration",
+                "{agentOutput}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "strictWorkspaceSnapshot": true,
+          "forbiddenChanges": [
+            "**"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 300000,
+          "humanInterventions": 0
+        }
+      }
+    ]
+  },
+  "systems": [
+    {
+      "id": "qaap",
+      "name": "Qaap",
+      "track": "product-native",
+      "configuration": "parallel-readonly+evidence+independent-judge",
+      "model": "server-default",
+      "adapter": "qaap-workflow",
+      "baseUrl": "http://127.0.0.1:3000",
+      "templateId": "qaap.evidence-audit",
+      "maxNodeMinutes": 2,
+      "pollIntervalMs": 1000
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "track": "product-native",
+      "configuration": "headless+sandbox",
+      "model": "default",
+      "adapter": "cursor-cli",
+      "sandbox": "enabled"
+    },
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "track": "product-native",
+      "configuration": "headless+read-only-tools",
+      "model": "default",
+      "adapter": "claude-code",
+      "permissionMode": "acceptEdits",
+      "allowedTools": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "maxTurns": 20
+    }
+  ]
+}

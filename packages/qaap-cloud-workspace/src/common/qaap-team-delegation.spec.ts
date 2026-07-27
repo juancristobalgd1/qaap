@@ -11,6 +11,8 @@ describe('buildTeamDelegationPromptBlock', () => {
         const block = buildTeamDelegationPromptBlock(['qaiq', 'codex', 'shell']);
         expect(block).to.include('qaap-task');
         expect(block).to.include('qaiq, codex');
+        expect(block).to.include('2-4 disjoint READ-ONLY sub-tasks');
+        expect(block).to.include('automatically starts a synthesis turn');
         expect(block).not.to.include('shell');
     });
 

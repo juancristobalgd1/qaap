@@ -53,6 +53,7 @@ module.exports = [
                 process: false,
                 os: false,
                 timers: false,
+                native_keymap: false,
             },
         },
         module: {
@@ -63,5 +64,14 @@ module.exports = [
         },
         ignoreWarnings: configs[0].ignoreWarnings,
     },
-    nodeConfig.config
+    {
+        ...nodeConfig.config,
+        resolve: {
+            ...nodeConfig.config.resolve,
+            alias: {
+                ...nodeConfig.config.resolve.alias,
+                '../plugin/gotd-api-init': false,
+            },
+        },
+    }
 ];

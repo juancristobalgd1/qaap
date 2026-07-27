@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "repetitions": 1,
+  "suite": {
+    "id": "qaap-cursor-claude-live-smoke",
+    "name": "Qaap vs Cursor vs Claude Code — live smoke only",
+    "completionThreshold": 1,
+    "tasks": [
+      {
+        "id": "repair-answer",
+        "category": "bug-fix",
+        "difficulty": "smoke",
+        "prompt": "Fix answer.js so it exports the numeric answer 42. Inspect the repository, implement the change, and verify it. Do not ask for help.",
+        "fixture": {
+          "type": "copy",
+          "source": "qaap-agent-benchmark-fixture/project",
+          "initializeGit": true
+        },
+        "oracle": {
+          "checks": [
+            {
+              "id": "hidden-answer-check",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/qaap-agent-benchmark-fixture/oracle.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 600000,
+          "humanInterventions": 0
+        }
+      }
+    ]
+  },
+  "systems": [
+    {
+      "id": "qaap",
+      "name": "Qaap",
+      "track": "product-native",
+      "configuration": "goal+verify+review-fix",
+      "model": "server-default",
+      "adapter": "qaap-workflow",
+      "baseUrl": "http://127.0.0.1:3000",
+      "templateId": "qaap.goal",
+      "checkScript": "test",
+      "reviewFix": true,
+      "pollIntervalMs": 1000
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "track": "product-native",
+      "configuration": "headless+sandbox",
+      "model": "default",
+      "adapter": "cursor-cli",
+      "sandbox": "enabled"
+    },
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "track": "product-native",
+      "configuration": "headless+accept-edits",
+      "model": "default",
+      "adapter": "claude-code",
+      "permissionMode": "acceptEdits",
+      "maxTurns": 30
+    }
+  ]
+}

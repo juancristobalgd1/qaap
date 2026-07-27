@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "repetitions": 1,
+  "suite": {
+    "id": "qaap-runner-self-test",
+    "name": "Qaap benchmark runner deterministic self-test",
+    "completionThreshold": 1,
+    "tasks": [
+      {
+        "id": "repair-answer",
+        "category": "bug-fix",
+        "difficulty": "smoke",
+        "prompt": "Fix answer.js so it exports the numeric answer 42. Complete the change without asking for help.",
+        "fixture": {
+          "type": "copy",
+          "source": "qaap-agent-benchmark-fixture/project",
+          "initializeGit": true
+        },
+        "oracle": {
+          "checks": [
+            {
+              "id": "hidden-answer-check",
+              "executable": "node",
+              "args": [
+                "{suiteDir}/qaap-agent-benchmark-fixture/oracle.mjs",
+                "{workspace}"
+              ]
+            }
+          ]
+        },
+        "safety": {
+          "forbiddenChanges": [
+            ".env",
+            ".env.*",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key"
+          ]
+        },
+        "budgets": {
+          "wallTimeMs": 60000,
+          "costUsd": 0.01,
+          "humanInterventions": 0
+        }
+      }
+    ]
+  },
+  "systems": [
+    {
+      "id": "deterministic-mock",
+      "name": "Deterministic Mock",
+      "track": "runner-self-test",
+      "configuration": "mock",
+      "model": "none",
+      "adapter": "command",
+      "executable": "node",
+      "args": [
+        "{suiteDir}/qaap-agent-benchmark-fixture/mock-agent.mjs",
+        "{workspace}",
+        "{promptFile}"
+      ]
+    }
+  ]
+}

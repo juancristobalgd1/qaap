@@ -51,7 +51,7 @@ describe('qaap-transcript-scroll-intent', () => {
         expect(transcriptHasRecentUserScrollIntent(scroller)).to.equal(false);
     });
 
-    it('does not detach follow on touchstart or tool summary clicks', () => {
+    it('detaches follow immediately on touchstart and tool summary clicks', () => {
         const scroller = document.createElement('div');
         const summary = document.createElement('summary');
         summary.textContent = 'Tool';
@@ -64,10 +64,13 @@ describe('qaap-transcript-scroll-intent', () => {
         const dispose = attachTranscriptScrollIntentObserver(scroller);
         try {
             scroller.dispatchEvent(new window.Event('touchstart', { bubbles: true }));
-            scroller.dispatchEvent(new window.Event('touchmove', { bubbles: true }));
+            expect(controller.phase).to.equal('detached');
+            expect(scroller.getAttribute('data-transcript-user-scroll-intent-reason')).to.equal('touch');
+
+            controller.jumpToLatest();
             summary.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-            expect(controller.phase).to.equal('following');
-            expect(transcriptHasRecentUserScrollIntent(scroller)).to.equal(false);
+            expect(controller.phase).to.equal('detached');
+            expect(scroller.getAttribute('data-transcript-user-scroll-intent-reason')).to.equal('interaction');
         } finally {
             dispose.dispose();
             scroller.remove();
@@ -93,17 +96,33 @@ describe('qaap-transcript-scroll-intent', () => {
         }
     });
 
-    it('detaches only on upward wheel, not downward catch-up', () => {
+    it('detaches on wheel in either direction', () => {
         const scroller = document.createElement('div');
         const controller = ensureTranscriptScrollController(scroller);
         controller.jumpToLatest();
         const dispose = attachTranscriptScrollIntentObserver(scroller);
         try {
             scroller.dispatchEvent(new window.WheelEvent('wheel', { deltaY: 40, bubbles: true }));
-            expect(controller.phase).to.equal('following');
+            expect(controller.phase).to.equal('detached');
 
+            controller.jumpToLatest();
             scroller.dispatchEvent(new window.WheelEvent('wheel', { deltaY: -24, bubbles: true }));
             expect(controller.phase).to.equal('detached');
+        } finally {
+            dispose.dispose();
+        }
+    });
+
+    it('detaches on every transcript navigation key', () => {
+        const scroller = document.createElement('div');
+        const controller = ensureTranscriptScrollController(scroller);
+        const dispose = attachTranscriptScrollIntentObserver(scroller);
+        try {
+            for (const key of ['ArrowDown', 'PageDown', 'End', ' ', 'ArrowUp', 'PageUp', 'Home']) {
+                controller.jumpToLatest();
+                scroller.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true }));
+                expect(controller.phase, key).to.equal('detached');
+            }
         } finally {
             dispose.dispose();
         }
