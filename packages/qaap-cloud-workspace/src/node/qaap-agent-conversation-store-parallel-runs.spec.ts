@@ -155,6 +155,23 @@ describe('QaapAgentConversationStore in-session parallel runs', () => {
         expect(taskIds).to.deep.equal(['task-1', 'task-2']);
     });
 
+    it('uses the optimistic client message id to make a retried submit idempotent', () => {
+        const { store, runner } = createStore();
+        const internal = { clientMessageId: 'pending-user-123' };
+
+        store.postUserMessage(
+            'c1', 'como estas?', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal,
+        );
+        const retried = store.postUserMessage(
+            'c1', 'como estas?', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal,
+        );
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(retried.messages.filter(message => message.role === 'user')).to.have.length(1);
+        expect(retried.messages.find(message => message.role === 'user')?.clientMessageId)
+            .to.equal('pending-user-123');
+    });
+
     it('caps how many agents may share one session', () => {
         const { store } = createStore();
         for (let i = 0; i < MAX_CONCURRENT_CONVERSATION_RUNS; i++) {

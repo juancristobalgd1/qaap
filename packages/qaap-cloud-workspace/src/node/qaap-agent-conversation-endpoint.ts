@@ -472,6 +472,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         }
         const agent = typeof body.agent === 'string' ? body.agent.trim() : undefined;
         const agentModel = body.agentModel ?? body.qaiqModel;
+        const rawClientMessageId = typeof body.clientMessageId === 'string' ? body.clientMessageId.trim() : '';
+        const clientMessageId = /^[A-Za-z0-9._:-]{1,160}$/.test(rawClientMessageId)
+            ? rawClientMessageId
+            : undefined;
         try {
             const autoApprove = typeof body.autoApprove === 'boolean' ? body.autoApprove : undefined;
             const interactionModeId = typeof body.interactionModeId === 'string' ? body.interactionModeId.trim() : undefined;
@@ -487,6 +491,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 approvalPolicyId,
                 toolApprovalRules,
                 sanitizeLatencyMarks(body.latencyMarks),
+                clientMessageId ? { clientMessageId } : undefined,
             );
             res.status(202).json(conv);
         } catch (error) {

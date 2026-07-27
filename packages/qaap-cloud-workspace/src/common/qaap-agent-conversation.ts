@@ -59,6 +59,8 @@ export interface QaapAgentMessage {
     readonly id: string;
     readonly role: QaapAgentMessageRole;
     readonly content: string;
+    /** Correlates this persisted user row with the client-only optimistic row it confirms. */
+    readonly clientMessageId?: string;
     /** Structured execution trace for AG-UI style providers. */
     readonly traceEvents?: import('@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model').QaapTranscriptTraceEventDTO[];
     /** Present for agent turns driven by QAIQ stream-json. */
@@ -298,6 +300,8 @@ export interface QaapCreateAgentConversationRequest {
 
 export interface QaapPostAgentMessageRequest {
     readonly content: string;
+    /** ID of the optimistic user row that this request confirms. */
+    readonly clientMessageId?: string;
     /** When set, overrides the conversation's stored agent for this turn (and updates it). */
     readonly agent?: string;
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;

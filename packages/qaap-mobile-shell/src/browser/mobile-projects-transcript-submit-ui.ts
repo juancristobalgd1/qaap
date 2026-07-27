@@ -345,6 +345,7 @@ export class MobileProjectsTranscriptSubmitUi {
             const updated = await postConversationMessage(summary.id, outbound, {
                 agent,
                 agentModel,
+                clientMessageId: pendingUserMessage.id,
                 autoApprove: options.autoApprove,
                 interactionModeId: options.modeId,
                 approvalPolicyId: options.approvalPolicyId

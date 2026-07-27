@@ -221,6 +221,41 @@ describe('applyConversationMessageDelta', () => {
         expect(next.messages[1]?.id).to.equal('user-real-1');
         expect(next.messages[1]?.content).to.equal('fix the bug');
     });
+
+    it('reconciles an optimistic user row after a peer agent event interleaves', () => {
+        const pending = {
+            id: 'pending-user-parallel',
+            role: 'user' as const,
+            content: 'como estas?',
+            createdAt: 15,
+        };
+        const conv = {
+            ...baseConv(),
+            messages: [
+                ...baseConv().messages,
+                pending,
+                {
+                    id: 'agent-peer',
+                    role: 'agent' as const,
+                    content: 'still working',
+                    createdAt: 16,
+                },
+            ],
+        };
+        const next = applyConversationMessageDelta(conv, {
+            id: 'user-real-parallel',
+            role: 'user',
+            content: 'como estas?',
+            clientMessageId: pending.id,
+            createdAt: 17,
+        });
+
+        expect(next.messages.map(message => message.id)).to.deep.equal([
+            'user-1',
+            'user-real-parallel',
+            'agent-peer',
+        ]);
+    });
 });
 
 describe('appendOptimisticPendingUserMessage', () => {
@@ -256,5 +291,20 @@ describe('appendOptimisticPendingUserMessage', () => {
         );
         expect(messages).to.have.length(2);
         expect(messages[1]?.id).to.equal('pending-user-1');
+    });
+
+    it('does not re-add a pending row when a correlated real row is no longer at the tail', () => {
+        const messages = appendOptimisticPendingUserMessage([
+            {
+                id: 'user-real',
+                role: 'user',
+                content: 'como estas?',
+                clientMessageId: 'pending-user-1',
+                createdAt: 20,
+            },
+            { id: 'agent-peer', role: 'agent', content: 'working', createdAt: 21 },
+        ], pending('como estas?'));
+
+        expect(messages.map(message => message.id)).to.deep.equal(['user-real', 'agent-peer']);
     });
 });

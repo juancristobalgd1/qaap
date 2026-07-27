@@ -135,6 +135,8 @@ export interface QaapAgentMessageDTO {
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;
+    /** Correlates a persisted user row with the client-only optimistic row it confirms. */
+    readonly clientMessageId?: string;
     readonly traceEvents?: QaapTranscriptTraceEventDTO[];
     readonly segments?: QaapAgentMessageSegmentDTO[];
     readonly createdAt: number;

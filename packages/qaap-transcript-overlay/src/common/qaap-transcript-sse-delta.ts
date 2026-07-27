@@ -145,6 +145,26 @@ export function appendOptimisticPendingUserMessage(
     messages: readonly QaapAgentMessageDTO[],
     pending: QaapAgentMessageDTO,
 ): QaapAgentMessageDTO[] {
+    const correlated = messages.some(message =>
+        message.role === 'user' && message.clientMessageId === pending.id
+    );
+    if (correlated) {
+        return messages.filter(message => message.id !== pending.id);
+    }
+    let replacedExistingPending = false;
+    const withExistingPendingReplaced = messages.flatMap(message => {
+        if (message.id !== pending.id) {
+            return [message];
+        }
+        if (replacedExistingPending) {
+            return [];
+        }
+        replacedExistingPending = true;
+        return [pending];
+    });
+    if (replacedExistingPending) {
+        return withExistingPendingReplaced;
+    }
     const trimmed = stripTrailingPendingUserMessages(messages);
     const last = trimmed[trimmed.length - 1];
     const outbound = pending.content ?? '';
@@ -160,15 +180,57 @@ export function applyConversationMessageDelta(
     message: QaapAgentMessageDTO,
 ): QaapAgentConversationDTO {
     const index = conv.messages.findIndex(entry => entry.id === message.id);
+    const matchingPendingIndexes = message.role === 'user'
+        ? conv.messages.reduce<number[]>((indexes, entry, entryIndex) => {
+            if (
+                entry.role === 'user'
+                && entry.id.startsWith('pending-user-')
+                && (
+                    entry.id === message.clientMessageId
+                    || (!message.clientMessageId && (entry.content ?? '') === (message.content ?? ''))
+                )
+            ) {
+                indexes.push(entryIndex);
+            }
+            return indexes;
+        }, [])
+        : [];
     if (index >= 0) {
         const previous = conv.messages[index];
-        if (previous && !agentMessageDeltaChanged(previous, message)) {
+        if (previous && !agentMessageDeltaChanged(previous, message) && matchingPendingIndexes.length === 0) {
             return conv;
         }
     }
     const updatedAt = Math.max(conv.updatedAt, message.createdAt);
     let messages: QaapAgentMessageDTO[];
-    if (index >= 0) {
+    if (matchingPendingIndexes.length > 0) {
+        const matchingPending = new Set(matchingPendingIndexes);
+        let inserted = false;
+        messages = [];
+        for (let entryIndex = 0; entryIndex < conv.messages.length; entryIndex++) {
+            const entry = conv.messages[entryIndex];
+            if (matchingPending.has(entryIndex)) {
+                if (index < 0 && !inserted) {
+                    messages.push(message);
+                    inserted = true;
+                }
+                continue;
+            }
+            if (entry?.id === message.id) {
+                if (!inserted) {
+                    messages.push(message);
+                    inserted = true;
+                }
+                continue;
+            }
+            if (entry) {
+                messages.push(entry);
+            }
+        }
+        if (!inserted) {
+            messages.push(message);
+        }
+    } else if (index >= 0) {
         if (index === conv.messages.length - 1) {
             messages = conv.messages.slice(0, index).concat(message);
         } else {

@@ -200,6 +200,8 @@ const MAX_LOOP_SPAWNS_PER_USER_MESSAGE = 4;
 interface PostUserMessageInternalOptions {
     /** Keeps every backend-generated continuation charged to the original human turn. */
     readonly autoContinueRootMessageId?: string;
+    /** Correlates a browser optimistic row with the persisted user message. */
+    readonly clientMessageId?: string;
 }
 
 /**
@@ -477,6 +479,14 @@ export class QaapAgentConversationStore {
         if (!conv) {
             throw new Error('Conversation not found.');
         }
+        if (internal?.clientMessageId) {
+            const alreadyAccepted = conv.messages.some(message =>
+                message.role === 'user' && message.clientMessageId === internal.clientMessageId
+            );
+            if (alreadyAccepted) {
+                return conv;
+            }
+        }
         if (conv.status === 'streaming') {
             // In-session multitasking: a new user message no longer waits for (or cancels) the
             // turn in flight — it spawns a peer run that streams into its own agent message
@@ -513,6 +523,7 @@ export class QaapAgentConversationStore {
             role: 'user',
             content,
             createdAt: Date.now(),
+            ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
             turnAgentId,
             ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
             ...(internal?.autoContinueRootMessageId

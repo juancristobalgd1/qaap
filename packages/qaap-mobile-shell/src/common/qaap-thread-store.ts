@@ -13,6 +13,7 @@ import {
     type QaapConversationSummaryField,
 } from './qaap-conversation-change';
 import type { QaapAgUiTraceReducerState } from './qaap-ag-ui-transcript-adapter';
+import { applyConversationMessageDelta } from './qaap-transcript-sse-delta';
 
 function normalizeCwd(cwd: string): string {
     let normalized = cwd.replace(/\\/g, '/');
@@ -144,15 +145,11 @@ export class QaapThreadStore {
         if (!document) {
             return;
         }
-        const existingIndex = document.messages.findIndex(existing => existing.id === message.id);
-        const messages = existingIndex >= 0
-            ? document.messages.map((existing, index) => index === existingIndex ? message : existing)
-            : [...document.messages, message];
-        this.documents.set(conversationId, {
-            ...document,
-            messages,
-            updatedAt: Math.max(document.updatedAt, message.createdAt ?? Date.now()),
-        });
+        const next = applyConversationMessageDelta(document, message);
+        if (next === document) {
+            return;
+        }
+        this.documents.set(conversationId, next);
         this.notifyThread(conversationId);
     }
 
@@ -265,11 +262,10 @@ export class QaapThreadStore {
             return undefined;
         }
         if (delta.kind === 'message_start') {
-            const next: QaapAgentConversationDTO = {
-                ...document,
-                messages: [...document.messages, delta.message],
-                updatedAt: Date.now(),
-            };
+            const next = applyConversationMessageDelta(document, delta.message);
+            if (next === document) {
+                return document;
+            }
             this.documents.set(conversationId, next);
             this.notifyThread(conversationId);
             return next;

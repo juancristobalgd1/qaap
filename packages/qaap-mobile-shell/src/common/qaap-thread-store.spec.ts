@@ -154,6 +154,38 @@ describe('qaap-thread-store', () => {
         expect(store.getDocument('conv-1')?.messages[0]?.content).to.contain('[QAAP visual verification]');
     });
 
+    it('reconciles a cached optimistic row when a peer message interleaves first', () => {
+        const store = new QaapThreadStore();
+        store.setDocument({
+            id: 'conv-1',
+            cwd: '/workspace/demo',
+            agentId: 'qaiq',
+            title: 'Demo',
+            status: 'streaming',
+            createdAt: 1,
+            updatedAt: 3,
+            messages: [
+                { id: 'user-1', role: 'user', content: 'hola', createdAt: 1 },
+                { id: 'pending-user-2', role: 'user', content: 'como estas?', createdAt: 2 },
+                { id: 'agent-peer', role: 'agent', content: 'working', createdAt: 3 },
+            ],
+        });
+
+        store.appendLiveMessage('conv-1', {
+            id: 'user-2',
+            role: 'user',
+            content: 'como estas?',
+            clientMessageId: 'pending-user-2',
+            createdAt: 4,
+        });
+
+        expect(store.getDocument('conv-1')?.messages.map(message => message.id)).to.deep.equal([
+            'user-1',
+            'user-2',
+            'agent-peer',
+        ]);
+    });
+
     it('listStreamingSummaries returns only active threads', () => {
         const store = new QaapThreadStore();
         store.applySummarySnapshot([{

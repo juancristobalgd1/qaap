@@ -114,3 +114,28 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
         expect(h.createCalls).to.equal(2); // stale mapping ignored, fresh create
     });
 });
+
+describe('QaapAgentConversationEndpoint message correlation', () => {
+
+    it('forwards a valid optimistic client message id to the conversation store', () => {
+        let internal: unknown;
+        const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
+        Object.assign(endpoint, {
+            store: {
+                postUserMessage: (...args: unknown[]) => {
+                    internal = args[9];
+                    return { id: 'conv-1', messages: [] };
+                },
+            },
+        });
+        const response = fakeRes();
+
+        (endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): void }).handlePostMessage({
+            params: { id: 'conv-1' },
+            body: { content: 'como estas?', clientMessageId: 'pending-user-123' },
+        }, response);
+
+        expect(response.statusCode).to.equal(202);
+        expect(internal).to.deep.equal({ clientMessageId: 'pending-user-123' });
+    });
+});

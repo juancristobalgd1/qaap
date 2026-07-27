@@ -118,6 +118,8 @@ export interface QaapAgentMessageDTO {
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;
+    /** Correlates a persisted user row with the client-only optimistic row it confirms. */
+    readonly clientMessageId?: string;
     /** Structured Codex/Cursor-style execution trace. Preferred over parsing content. */
     readonly traceEvents?: QaapTranscriptTraceEventDTO[];
     /** Legacy transport shape retained for existing VPS agents. Prefer traceEvents for new providers. */
@@ -440,6 +442,8 @@ export interface QaapPostConversationMessageOptions {
     readonly agent?: string;
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     readonly autoApprove?: boolean;
+    /** ID of the optimistic user row that this request confirms. */
+    readonly clientMessageId?: string;
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
@@ -463,6 +467,7 @@ export async function postConversationMessage(
             agent,
             agentModel,
             qaiqModel: agentModel,
+            clientMessageId: options.clientMessageId,
             interactionModeId: options.interactionModeId,
             approvalPolicyId: options.approvalPolicyId,
             toolApprovalRules: options.toolApprovalRules,
